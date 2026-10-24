@@ -15467,3 +15467,22 @@ or cost is further along, since either can refuse. The local guard remains
 only where there is no server. Rule: a client may be stricter than the
 server only where there is no server; anywhere else, a refusal the server
 would not make is a defect that looks exactly like the product working.
+
+## 613. A status on a timer is a guess presented as a fact
+
+While a reply was on its way, the bubble cycled labels picked from the words
+of the question: "Searching the web…", "Reading sources…", "Cross-checking
+what they say…" every 1.4 seconds whether or not a search ever started, and
+"Composing the image…" for a feature AMV removed. The suite meant to stop
+this (search-is-real) read `window.__statuses`, which nothing ever filled,
+so "no label claimed a search" passed on an empty list; its source check
+matched a comment.
+
+Fixed: the timer says only that AMV is thinking. "Searching" appears when a
+search starts (server_tool_use), with the query it actually ran, then "Found
+N results" when they come back; the finished panel keeps each query with
+what it found and marks the sources the answer cited. The suite now records
+every status off the message itself and drives scripted streams. Rule: an
+intermediate status is held to the same standard as a result - it is said
+when there is an event that proves it - and a test that reads a list must
+first prove the list can be non-empty.

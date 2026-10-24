@@ -9046,37 +9046,16 @@ async function _callAITurn(msgs, _opts) {
                                        : (_searchBudget[_routeKey] || 0);
   const _webSearchOn = _webAllowed && _webMaxUses > 0;
 
-  // Working status: cycle contextual labels until the first token
-  // arrives, so the user always sees what AMV is doing.
-  const _lastUser=(msgs.filter(m=>m.r==='u').slice(-1)[0]||{});
-  const _uTxt=(typeof _lastUser.c==='string'?_lastUser.c:(_lastUser.d||'')).toLowerCase();
-  /* WHAT IT SAYS WHILE YOU WAIT.
+  /* ONLY WHAT IS TRUE WHATEVER HAPPENS NEXT.
 
-     Longer runs than before, because these used to run out after three lines
-     and then sit on the last one - a label that stops moving reads as a product
-     that has stopped, which is the opposite of what a status is for.
-
-     Every line still has to be TRUE. There is no "Searching the web" when
-     search is off this turn, no "Writing code" on a turn that is not about
-     code, and nothing claiming a step AMV is not taking. The variety is in how
-     the same real work is described, not in inventing work. */
-  const _statusPhases=(()=>{
-    if(/\b(search|latest|news|current|today|who is|what is|find)\b/.test(_uTxt))
-      return _webSearchOn
-        ? ['Thinking…','Searching the web…','Reading sources…','Cross-checking what they say…','Pulling it together…','Writing…']
-        : ['Thinking…','Working through it…','Getting it straight…','Writing…'];   // no search this turn, so do not say there is one
-    if(/\b(code|build|function|app|bug|fix|script|debug)\b/.test(_uTxt))
-      return ['Thinking…','Reading the problem…','Working out the approach…','Writing code…','Checking it over…'];
-    if(/\b(analyz|summar|explain|compare|review)\b/.test(_uTxt))
-      return ['Thinking…','Reading it through…','Working out the shape of it…','Organizing…','Writing…'];
-    if(/\b(image|picture|photo|draw|generate)\b/.test(_uTxt))
-      return ['Thinking…','Composing the image…','Rendering…'];
-    if(/\b(plan|schedule|book|organi[sz]e|remind|every (morning|day|week))\b/.test(_uTxt))
-      return ['Thinking…','Working out the steps…','Putting it in order…','Writing…'];
-    if(/\b(recipe|cook|meal|dinner|ingredient)\b/.test(_uTxt))
-      return ['Thinking…','Working through what you have…','Cooking something up…','Writing…'];
-    return ['Thinking…','Working through it…','Getting it straight…','Writing…'];
-  })();
+     These ran on a timer and guessed from the question: "Searching the web…",
+     "Reading sources…" and "Cross-checking what they say…" every 1.4 seconds
+     whether or not a search ever started, and "Composing the image…" for a
+     feature AMV does not have. A status is a claim, and a claim made on a
+     schedule is a guess wearing the clothes of a fact. The timer now says only
+     that AMV is thinking; everything about searching comes from the search
+     itself (server_tool_use and its results, below), with the real query. */
+  const _statusPhases=['Thinking…','Working through it…','Still working on it…'];
   let _phaseIdx=0;
   const _statusTimer=setInterval(()=>{
     _phaseIdx++;
@@ -9312,7 +9291,8 @@ async function _callAITurn(msgs, _opts) {
 
     const _toolBlocks={}; let _stopReason='';
     // Live research tracking - real searches and real sources, surfaced as they happen.
-    const _research={ active:false, searches:0, sources:new Map(), done:false };
+    const _research={ active:false, searches:0, sources:new Map(), done:false, trail:[] };
+    const _srvSearch={};   // stream index -> the search being started there, until its query is complete
     /* Which sentence each source backs: the engine attaches the passage it
        relied on to the text block that uses it. Kept, and shown under the
        answer (_citesHTML), so a claim can be checked against its source. */
@@ -9412,17 +9392,40 @@ async function _callAITurn(msgs, _opts) {
              && String(evt.content_block.name||'').startsWith('web_search')){
             _research.active=true;
             _research.searches++;
+            const _s={ q:String((evt.content_block.input&&evt.content_block.input.query)||''), n:null, hosts:[], json:'' };
+            _research.trail.push(_s);
+            _srvSearch[evt.index]=_s;
+            _clearStatus();
+            msgs[streamIdx]={...msgs[streamIdx], _status:_s.q ? T('Searching “{0}”…').replace('{0}', _s.q.slice(0,80)) : T('Searching the web…')};
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          /* The query arrives in pieces; it is named once it is whole. */
+          if(evt.type==='content_block_delta' && evt.delta?.type==='input_json_delta' && _srvSearch[evt.index]){
+            _srvSearch[evt.index].json += (evt.delta.partial_json||'');
+          }
+          if(evt.type==='content_block_stop' && _srvSearch[evt.index]){
+            const _s=_srvSearch[evt.index]; delete _srvSearch[evt.index];
+            try{ const q=JSON.parse(_s.json||'{}').query; if(q) _s.q=String(q).slice(0,200); }catch(e){}
+            if(_s.q && !(msgs[streamIdx]&&msgs[streamIdx].c)){ msgs[streamIdx]={...msgs[streamIdx], _status:T('Searching “{0}”…').replace('{0}', _s.q.slice(0,80))}; }
             _renderResearch(msgs, streamIdx, _research);
           }
           if(evt.type==='content_block_start' && evt.content_block?.type==='web_search_tool_result'){
             const results = evt.content_block.content;
+            /* The results belong to the oldest search still waiting for them. */
+            const _s=_research.trail.find(x=>x.n===null);
+            if(_s) _s.n=0;
             if(Array.isArray(results)){
               for(const r of results){
                 const url = r && (r.url || r.page_url);
-                if(url && !_research.sources.has(url)){
+                if(!url) continue;
+                if(_s){ _s.n++; const h=_rsHost(url); if(h && !_s.hosts.includes(h)) _s.hosts.push(h); }
+                if(!_research.sources.has(url)){
                   _research.sources.set(url, { url, title: (r.title||r.page_title||url).slice(0,120) });
                 }
               }
+            }
+            if(_s && !(msgs[streamIdx]&&msgs[streamIdx].c)){
+              msgs[streamIdx]={...msgs[streamIdx], _status:(_s.n ? T('Found {0} results').replace('{0}', _s.n) : T('That search found nothing'))};
             }
             _renderResearch(msgs, streamIdx, _research);
           }
@@ -9468,6 +9471,7 @@ async function _callAITurn(msgs, _opts) {
     // Freeze the research panel into its "done" state so it persists with the answer.
     if(_research.active){
       _research.done=true;
+      _research.cited=new Set(_cites.map(c=>c.url));
       const _finishedPanel=_buildResearchPanel(_research, true);
       if(msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], _research:_finishedPanel};
     }
@@ -10391,18 +10395,25 @@ function _citesHTML(m){
         + (c.claim ? '<div class="cite-for">' + escH(T('Supports:')) + ' ' + escH(c.claim) + '</div>' : '')).join('')
       + '</li>').join('') + '</ol></details>';
 }
+function _rsHost(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
 function _buildResearchPanel(state, finished){
   const n = state.sources.size;
   const searches = state.searches;
-  const sources = [...state.sources.values()];
-  const host = (u)=>{ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return u; } };
+  const cited = state.cited || new Set();
+  /* Cited first: those are the ones the answer stands on. */
+  const sources = [...state.sources.values()].sort((a, b) => (cited.has(b.url) ? 1 : 0) - (cited.has(a.url) ? 1 : 0));
+  const host = (u)=>_rsHost(u) || u;
 
-  // dedupe display hosts, keep first 12 for the chips
   const shown = sources.slice(0, 12);
   const chips = shown.map(s=>
-    '<a class="rsrc-chip" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+'">'+
-      '<span class="rsrc-fav"></span>'+escH(host(s.url))+
+    '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+'">'+
+      '<span class="rsrc-fav">'+escH((host(s.url)[0]||'').toUpperCase())+'</span>'+escH(host(s.url))+
     '</a>'
+  ).join('');
+  /* Each search as it really ran: what was asked, and what came back. */
+  const trail = (state.trail||[]).filter(t=>t.q || t.n!=null).map(t=>
+    '<li class="rsrc-q"><span class="rsrc-qt">'+(t.q ? '“'+escH(t.q)+'”' : escH(T('A search')))+'</span> '+
+    '<span class="rsrc-qn">'+escH(t.n==null ? T('searching…') : t.n ? T('{0} results').replace('{0}', t.n)+(t.hosts.length?' · '+t.hosts.slice(0,3).join(', '):'') : T('nothing found'))+'</span></li>'
   ).join('');
 
   const head = finished
@@ -10410,7 +10421,8 @@ function _buildResearchPanel(state, finished){
     : '<span class="rsrc-spin"></span> Researching\u2026 '+searches+' search'+(searches===1?'':'es')+', '+n+' source'+(n===1?'':'s')+' so far';
 
   return '<div class="rsrc-panel'+(finished?' done':'')+'">'+
-    '<div class="rsrc-head">'+head+'</div>'+
+    '<div class="rsrc-head">'+head+(finished&&cited.size?' · '+escH(T('{0} cited').replace('{0}', cited.size)):'')+'</div>'+
+    (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
     (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+(sources.length-12)+' more</span>':'')+'</div>':'')+
   '</div>';
 }

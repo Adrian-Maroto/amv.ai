@@ -36,7 +36,26 @@ await page.evaluate(() => {
   window.__sent = null;
   window.__statuses = [];
   const realFetch = window.fetch;
+  /* Every status the bubble shows, as it shows it - recorded off the message
+     itself, so a label set and replaced within one tick is still counted. */
+  const realSet = window.setMsgs || setMsgs;
+  window.__statuses = [];
+  window.setMsgs = setMsgs = function (m) {
+    try { const l = m && m[m.length - 1]; if (l && l._status && window.__statuses[window.__statuses.length - 1] !== l._status) window.__statuses.push(l._status); } catch (e) {}
+    return realSet.apply(this, arguments);
+  };
+  window.__stream = null;   // a scripted stream: [[delayMs, event], ...]
   window.fetch = async (url, opts) => {
+    if (opts && opts.body && String(url).includes('/v1/') && window.__stream) {
+      try { window.__sent = JSON.parse(opts.body); } catch (e) { window.__sent = 'unparsed'; }
+      const steps = window.__stream; window.__stream = null;
+      const enc = new TextEncoder();
+      const body = new ReadableStream({ async start(c) {
+        for (const [ms, ev] of steps) { if (ms) await new Promise(r => setTimeout(r, ms)); c.enqueue(enc.encode('data: ' + JSON.stringify(ev) + '\n\n')); }
+        c.close();
+      } });
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
     if (opts && opts.body && String(url).includes('/v1/')) {
       try { window.__sent = JSON.parse(opts.body); } catch (e) { window.__sent = 'unparsed'; }
       /* An empty, well-formed SSE stream: the turn ends immediately with no
@@ -165,6 +184,54 @@ section('And with it off, nothing on screen claims a search');
      'and no label said otherwise', shown);
 }
 
+/* One turn with a scripted stream, run to the end; returns what was shown. */
+async function streamed(text, steps) {
+  await page.evaluate((st) => { window.__statuses = []; window.__stream = st; }, steps);
+  await turn(text, { model: 'smart' });
+  await page.waitForFunction(() => S.busy === false, null, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  return page.evaluate(() => { const m = getMsgs(); const l = m[m.length - 1] || {}; return { statuses: window.__statuses.slice(), research: l._research || '' }; });
+}
+const START = { type: 'message_start', message: { usage: { input_tokens: 1 } } };
+const textAt = (i, t, cites) => [[0, { type: 'content_block_start', index: i, content_block: { type: 'text', text: '', citations: cites || [] } }],
+  [0, { type: 'content_block_delta', index: i, delta: { type: 'text_delta', text: t } }], [0, { type: 'content_block_stop', index: i }]];
+
+section('A question about today, with no search run, never says it is searching');
+{
+  /* Search was ON and the question was search-shaped, and the engine took four
+     seconds and searched nothing. The timer used to fill those seconds with
+     "Searching the web…", "Reading sources…", "Cross-checking what they say…". */
+  const r = await streamed('what is the latest news today', [[0, START], [4200, null]].filter(x => x[1]).concat(textAt(0, 'From what I know already.'), [[0, { type: 'message_stop' }]]).map((x, i) => i === 1 ? [4200, x[1]] : x));
+  ok(r.statuses.length >= 2, 'the wait was long enough for the timer to say several things', r.statuses);
+  ok(!r.statuses.some(x => /search|reading sources|cross-check|composing|rendering/i.test(x)), 'and none of them claimed a search, a source or an image', r.statuses);
+  ok(!r.research, 'and no research panel appeared', r.research.slice(0, 80));
+}
+
+section('A search that really runs is shown as it runs: its own query, then what it found');
+{
+  const urls = ['https://www.booking.com/kyoto', 'https://www.japan-guide.com/kyoto', 'https://reddit.com/r/japantravel/kyoto'];
+  const r = await streamed('best hotels near kyoto station', [
+    [0, START],
+    [300, { type: 'content_block_start', index: 0, content_block: { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: {} } }],
+    [0, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"query":"hotels near ' } }],
+    [0, { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: 'Kyoto Station"}' } }],
+    [0, { type: 'content_block_stop', index: 0 }],
+    [600, { type: 'content_block_start', index: 1, content_block: { type: 'web_search_tool_result', tool_use_id: 'srv1',
+      content: urls.map((u, i) => ({ type: 'web_search_result', url: u, title: 'Result ' + i })) } }],
+    [0, { type: 'content_block_stop', index: 1 }],
+    [600, null],
+  ].filter(x => x[1]).concat(textAt(2, 'The Granvia sits on top of the station.',
+      [{ type: 'web_search_result_location', url: urls[1], title: 'Kyoto hotels', cited_text: 'Hotel Granvia is inside the station building.' }]),
+    [[0, { type: 'message_stop' }]]));
+  ok(r.statuses.includes('Searching “hotels near Kyoto Station”…'), 'it said the query it actually searched, word for word', r.statuses);
+  ok(r.statuses.includes('Found 3 results'), 'then how many results came back', r.statuses);
+  ok(r.statuses.indexOf('Found 3 results') > r.statuses.indexOf('Searching “hotels near Kyoto Station”…'), 'in that order', r.statuses);
+  ok(!r.statuses.some(x => /reading sources|cross-check/i.test(x)), 'and nothing it could not know', r.statuses);
+  ok(/“hotels near Kyoto Station”/.test(r.research) && /3 results/.test(r.research), 'the finished panel keeps the search: its query and what it found', r.research.slice(0, 400));
+  ok(/1 cited/.test(r.research) && /class="rsrc-chip cited"[^>]*href="https:\/\/www\.japan-guide\.com\/kyoto"/.test(r.research),
+     'and marks the one source the answer cited as cited', r.research.slice(0, 600));
+}
+
 section('The words on screen come from the same decision as the tool');
 {
   /* Read it from the bundle too: the label branch and the tools branch must be
@@ -178,13 +245,14 @@ section('The words on screen come from the same decision as the tool');
   const src = await page.evaluate((fn) => {
     return {
       one: /_webSearchOn\s*=/.test(fn),
-      labelsGuarded: /_webSearchOn[\s\S]{0,200}Searching the web/.test(fn),
+      /* No search label on a timer: the only "Searching" comes from a search. */
+      labelsGuarded: !/_statusPhases\s*=[^;]*Search/.test(fn) && /server_tool_use[\s\S]{0,600}Searching/.test(fn),
       toolsGuarded: /if\(_webSearchOn\)\s*tools\.push/.test(fn),
       noPickerCheck: !/S\.model===['"]smart['"]/.test(fn),
     };
   }, fn);
   ok(src.one, 'there is a single named decision', src);
-  ok(src.labelsGuarded, 'the "Searching the web" label sits behind it', src.labelsGuarded);
+  ok(src.labelsGuarded, 'no timer claims a search; the label comes from the search itself', src.labelsGuarded);
   ok(src.toolsGuarded, 'and so does the tool', src.toolsGuarded);
   ok(src.noPickerCheck, 'and nothing keys off the picker value any more', src.noPickerCheck);
 }

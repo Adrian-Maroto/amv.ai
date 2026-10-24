@@ -17296,3 +17296,16 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .srv-more{ margin-top:var(--sp-3); font-size:var(--t-sm); }
 .srv-more summary{ cursor:pointer; color:var(--mu); min-height:28px; }
 .srv-more .srv-lbl{ margin-top:var(--sp-2); }
+
+/* LAYER A333 - the research trail as it really ran (_buildResearchPanel):
+   each search's own query and what it found, and the sources the answer cited
+   marked as cited. The mark beside a source is the site's initial on a plain
+   tile, not a decoration standing in for a logo. */
+.rsrc-trail{ list-style:none; margin:var(--sp-2) 0 0; padding:0; display:grid; gap:var(--sp-1); }
+.rsrc-q{ font-size:var(--t-sm); color:var(--mu); display:flex; flex-wrap:wrap; gap:var(--sp-1); }
+.rsrc-qt{ color:var(--tx); }
+.rsrc-qn{ color:var(--dim); }
+.rsrc-fav{ background:var(--s3); opacity:1; display:inline-grid; place-items:center;
+  font-size:9px; font-weight:700; color:var(--mu); line-height:1; }
+.rsrc-chip.cited{ border-color:color-mix(in srgb,var(--accent) 45%,var(--bd)); color:var(--tx); }
+.rsrc-chip.cited .rsrc-fav{ background:color-mix(in srgb,var(--accent) 22%,var(--s3)); color:var(--accent-txt); }
