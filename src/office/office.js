@@ -475,7 +475,7 @@ async function _oeEditText(z, main, format, changes, applied, refused){
       let at = hits[0].p;
       for(const line of lines) at = _oeParaAfter(at, line, word);
       touched.add(hits[0].d);
-      applied.push({ kind: 'insert', after, insert: lines.join('\n') });
+      applied.push({ kind: 'insert', after, insert: lines.join('\n'), src: ch });
       continue;
     }
     const find = String(ch.find == null ? '' : ch.find), rep = String(ch.with == null ? '' : ch.with).replace(_OE_CTRL, '');
@@ -497,7 +497,7 @@ async function _oeEditText(z, main, format, changes, applied, refused){
       }
     }
     if(!done){ refused.push({ change: ch, why: '"' + find.slice(0, 80) + '" runs across a tab, a line break or a field; change the text on either side of it.' }); continue; }
-    applied.push({ kind: 'replace', find, with: rep, count: done, blocked, before: n });
+    applied.push({ kind: 'replace', find, with: rep, count: done, blocked, before: n, src: ch });
   }
   const out = new Map();
   for(const d of touched) out.set(d.path.toLowerCase(), _oeSer(d.doc));
@@ -617,7 +617,7 @@ async function _oeEditCells(z, main, changes, applied, refused){
     if(f && (f.getAttribute('ref') || f.getAttribute('t') === 'array')){ refused.push({ change: ch, why: ref + ' starts a formula other cells share; change it in Excel itself.' }); continue; }
     _oeWrite(sh.doc, c, mean);
     sh.touched = true;
-    applied.push({ kind: 'cell', sheet: sh.s.name, cell: ref, mean });
+    applied.push({ kind: 'cell', sheet: sh.s.name, cell: ref, mean, src: ch });
   }
   /* EVERY FORMULA'S SAVED RESULT GOES, IN EVERY SHEET.
 
@@ -750,17 +750,61 @@ async function amvOfficeEditTool(input){
   const v = _officeKeep(held.name, r.buf, held.format);
   v.file = _officeEditName(held.name, held.versions.length - 1);
   const said = r.applied.map(_officeSays);
+  /* WHAT THE PERSON KEEPS IS THEIRS TO CHOOSE (docs/OWNER-DECISIONS.md #11).
+     The version this one was made from, and each change that made it, are
+     kept with it, so a change can be left out and the file rebuilt from the
+     original through the same edit-and-reopen check. */
+  v.base = cur.buf; v.format = held.format; v.held = held.name;
+  v.picks = r.applied.map((a, i) => ({ src: a.src, cell: a.kind === 'cell', said: said[i], on: true }));
   return {
     text:'Edited ' + held.name + ' and checked it by opening the new file again. Changed:\n' + said.map(x => '- ' + x).join('\n')
       + (refusedText ? '\nNOT changed (refused):\n' + refusedText : '')
       + (held.format === 'xlsx' ? '\nEvery formula in the workbook is worked out again when it is opened in Excel, Google Sheets, Numbers or LibreOffice; a preview that does not calculate shows formula cells empty.' : '')
       + '\nThe edited file is ready to download below as "' + v.file + '". A further change builds on this version.',
     render:'<div class="chat-run oe-card"><div class="chat-run-h">' + escH(v.file) + '</div>'
-      + '<ul class="oe-list">' + said.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>'
+      + '<ul class="oe-list">' + said.map((x, i) => '<li><label class="oe-pick"><input type="checkbox" checked data-oe-v="' + escH(v.id) + '" data-oe-i="' + i + '"> ' + escH(x) + '</label></li>').join('') + '</ul>'
+      + '<p class="pj-note oe-say" data-oe-say="' + escH(v.id) + '">' + escH(T('Untick a change to leave it out of the file.')) + '</p>'
       + (r.refused.length ? '<p class="pj-note">' + escH(T('Not changed:')) + ' ' + escH(r.refused.map(x => x.why).join(' ')) + '</p>' : '')
       + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button></div>'
   };
 }
+/* A change left out, or put back: the file is made again from the version
+   before, with only the changes still ticked, and checked by reopening it like
+   any other edit. Only the newest version can be changed this way - a later
+   edit was built on this one as it stood, and moving it underneath that edit
+   would hand the person a file nobody has checked. */
+async function _oePickChanged(box){
+  const id = box.getAttribute('data-oe-v'), i = +box.getAttribute('data-oe-i');
+  let held = null, v = null;
+  for(const h of _OFFICE_FILES.values()){ const f = h.versions.find(x => x.id === id); if(f){ held = h; v = f; break; } }
+  const say = document.querySelector('[data-oe-say="' + id + '"]');
+  const tell = (msg) => { if(say) say.textContent = msg; };
+  if(!v || !v.picks || !v.picks[i]){ box.checked = !box.checked; tell(T('That edited file was made in an earlier visit and is not kept. Attach the file again and ask for the change.')); return; }
+  if(held.versions[held.versions.length - 1] !== v){ box.checked = !box.checked; tell(T('A later change was made on top of this version; change that one instead.')); return; }
+  const was = v.picks[i].on;
+  v.picks[i].on = box.checked;
+  const kept = v.picks.filter(p => p.on);
+  const boxes = document.querySelectorAll('[data-oe-v="' + id + '"]');
+  boxes.forEach(b => { b.disabled = true; });
+  try{
+    if(!kept.length){ v.buf = v.base.slice(0); tell(T('Every change is left out, so the file is as it was.')); return; }
+    const r = await amvOfficeEdit(v.base, v.format, { changes: kept.filter(p => !p.cell).map(p => p.src), cells: kept.filter(p => p.cell).map(p => p.src) });
+    if(!r.buf || r.applied.length !== kept.length){
+      v.picks[i].on = was; box.checked = was;
+      tell(T('Those changes could not be made together, so the file was left as it was.') + (r.why ? ' ' + r.why : ''));
+      return;
+    }
+    v.buf = r.buf;
+    tell(T('Kept {0} of {1} changes. The download has exactly those.').replace('{0}', kept.length).replace('{1}', v.picks.length));
+  } finally { boxes.forEach(b => { b.disabled = false; }); }
+}
+try{
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if(t && t.matches && t.matches('input[data-oe-v]')) _oePickChanged(t);
+  });
+}catch(e){}
+try{ window._oePickChanged = _oePickChanged; }catch(e){}
 /* ── From a message, to a download ──────────────────────────────────────── */
 function _exportName(text, ext){
   const first = (String(text || '').match(/^#{1,3}\s+(.+)$/m) || [])[1] || String(text || '').split('\n').find(l => l.trim()) || 'AMV';

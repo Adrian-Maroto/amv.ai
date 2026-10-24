@@ -17279,3 +17279,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
   background:var(--s2); border:1px solid var(--bd); border-left:3px solid var(--bdl); border-radius:var(--r-sm); }
 .chat-mcp-rcpt b{ color:var(--tx); font-weight:600; }
 .chat-mcp-rcpt.bad{ border-left-color:var(--red); }
+
+/* LAYER A331 - an Office edit's changes, each one kept or left out by the
+   person (office.js, _oePickChanged). The box sits beside the change it
+   controls; the line under the list says what the download now holds. */
+.oe-pick{ display:flex; align-items:flex-start; gap:var(--sp-2); cursor:pointer; min-height:28px; }
+.oe-pick input{ margin-top:3px; flex-shrink:0; width:16px; height:16px; accent-color:var(--accent); }
+.oe-say{ margin-top:var(--sp-2); }

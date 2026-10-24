@@ -259,6 +259,39 @@ section('A second change builds on the first');
   ok(sameExcept(prev, unzip(got.buf), ['word/document.xml']).length === 0, 'everything else still byte-identical', true);
 }
 
+section('Each change is the person\'s to keep or leave out, and the file holds exactly what is kept');
+{
+  /* docs/OWNER-DECISIONS.md #11: AMV's change to a document is a set of
+     edits the person accepts or rejects. Leaving one out rebuilds the file
+     from the version before, through the same edit-and-reopen check. */
+  nextTurns = [toolUse('office_edit', { file: 'lease-docx.docx', changes: [
+    { find: 'Pets allowed', with: 'No pets' },
+    { find: '24 months', with: '36 months' },
+  ] }), text('Done.')];
+  await say('no pets, and make it three years');
+  const boxes = page.locator('.oe-card').last().locator('input[data-oe-v]');
+  ok(await boxes.count() === 2, 'each change has its own box, ticked', await boxes.count());
+  await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
+  await boxes.nth(0).uncheck();
+  const said = page.locator('.oe-card').last().locator('.oe-say');
+  await page.waitForFunction(() => /Kept 1 of 2/.test((document.querySelectorAll('.oe-card .oe-say')[document.querySelectorAll('.oe-card .oe-say').length - 1] || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  ok(/Kept 1 of 2/.test(await said.innerText()), 'it says what the download now holds', await said.innerText());
+  const got = await download();
+  const doc = unzip(got.buf).get('word/document.xml').toString('utf8');
+  ok(/36 months/.test(doc) && /Pets allowed/.test(doc) && !/No pets/.test(doc),
+     'the file has the kept change and not the one left out', (doc.match(/Pets allowed|No pets|\d\d months/g) || []).join(', '));
+  ok(/by the 1st/.test(doc) && /Late payments/.test(doc), 'and everything earlier is still in it', true);
+
+  /* An earlier card cannot be changed under a later edit built on it. */
+  const older = page.locator('.oe-card').nth(-2).locator('input[data-oe-v]');
+  if (await older.count()) {
+    await older.first().uncheck().catch(() => {});
+    await page.waitForTimeout(400);
+    const olderSay = await page.locator('.oe-card').nth(-2).locator('.oe-say').innerText().catch(() => '');
+    ok(/later change/i.test(olderSay) && await older.first().isChecked(), 'an earlier version says a later change was built on it, and stays as it was', olderSay);
+  }
+}
+
 section('A workbook: numbers stay numbers, a formula is a formula, Excel works it out again');
 {
   await attach('budget-exceljs.xlsx');
