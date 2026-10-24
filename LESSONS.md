@@ -15432,3 +15432,18 @@ for the server to grant the plan - it still decides nothing itself.
 Same audit, same shape as 604 and 609: Plausible and Google Analytics were
 allowed to load but not to send, so an owner's analytics stayed empty. The
 page-head suite now checks that what a script may load, it may finish.
+
+## 611. A guard against an edge case must not cost the main case
+
+LESSONS 605 tried to stop Firefox sending a turn that was ended at once
+(container headers, no sound): first "under 300ms is nothing", then "no
+timed slice before stop is nothing". Both passed in Chromium. Both dropped
+ordinary turns in Firefox, which delivers a short turn's sound in a single
+piece at stop - the Firefox lane said so ("what was heard was sent as the
+message - got []") and it reached production before anyone read that line.
+
+Reverted to sending any recording with something in it. The cost of the edge
+case is half a second billed for a turn somebody ended by accident; the cost
+of the guard was voice not working. Rules: weigh a guard by the case it can
+break, not the one it fixes; and a change justified by one engine is not done
+until that engine's lane has run on it.

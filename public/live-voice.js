@@ -129,13 +129,11 @@ function _lvEndTurn(){
   LV.state = 'hearing';
   _voiceSetState('thinking', '');
   const seconds = Math.max(0.5, (Date.now() - LV.turnAt) / 1000);
-  /* How many timed slices the recorder had handed over BEFORE the turn
-     ended. Counted here, not afterwards: Firefox hands over one more on stop
-     even for a turn ended at once - the container's headers and no sound - so
-     a blob with a size is not proof anything was said. Sent, it is billed as
-     half a second, and silence can come back transcribed as words AMV would
-     then answer. A turn that produced no slice of its own recorded nothing. */
-  const slices = LV.chunks.length;
+  /* ANY RECORDING WITH SOMETHING IN IT IS SENT (LESSONS 611). Two rules tried
+     to tell a turn ended at once from a real one - under 300ms, and "no timed
+     slice before stop" - and both dropped real speech in Firefox, which hands
+     over a short turn's sound in one piece at stop. A real turn lost is far
+     worse than an empty one billed as half a second. */
   const rec = LV.rec; LV.rec = null;
   const done = async () => {
     const blob = new Blob(LV.chunks, { type: (LV.mime || 'audio/webm').split(';')[0] });
@@ -143,7 +141,7 @@ function _lvEndTurn(){
     if(!LV.on) return;
     /* Nothing was recorded (the turn ended before the first slice): listen
        again quietly, rather than sending nothing to be refused. */
-    if(!blob.size || !slices){ _lvListen(); return; }
+    if(!blob.size){ _lvListen(); return; }
     let d;
     try{ d = await AMV_API.transcribeAudio(blob, seconds, ''); }
     catch(e){
