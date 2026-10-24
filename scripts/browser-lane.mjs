@@ -64,7 +64,12 @@ await new Promise((resolve) => {
     p.on('exit', (code) => {
       clearTimeout(kill);
       /* The first failing assertion, so the summary says WHAT broke. */
-      const first = (out.replace(/\x1b\[[0-9;]*m/g, '').split('\n').find(l => /✗|Error:|TypeError|Timeout/.test(l)) || '').trim().slice(0, 160);
+      const lines = out.replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+      const at = lines.findIndex(l => /✗|Error:|TypeError|Timeout/.test(l));
+      /* And what it got, when the assertion said: "zero uncaught page errors"
+         alone does not say which error, and that is the part to fix. */
+      const got = at >= 0 && /^\s*got:/.test(lines[at + 1] || '') ? ' - ' + lines[at + 1].trim() : '';
+      const first = at < 0 ? '' : (lines[at].trim() + got).slice(0, 400);
       results[s] = { ok: code === 0, first };
       n++; process.stderr.write('\r[' + n + '/' + eligible.length + ']'); one();
     });

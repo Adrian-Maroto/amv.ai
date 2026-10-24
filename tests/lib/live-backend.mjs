@@ -23,7 +23,7 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { LAUNCH, BROWSER, armGeom } from './harness.mjs';
+import { LAUNCH, BROWSER, armGeom, forEngine } from './harness.mjs';
 import { createServer } from 'http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -144,6 +144,7 @@ export async function serveArtifact(port, apiBase) {
       body = Buffer.from(String(body).replace(
         /<meta name="amv-api-base" content="[^"]*">/,
         `<meta name="amv-api-base" content="${apiBase}">`));
+      body = forEngine(body);
     }
     res.writeHead(200, { 'Content-Type': TYPES[file.slice(file.lastIndexOf('.'))] || 'application/octet-stream' });
     res.end(body);

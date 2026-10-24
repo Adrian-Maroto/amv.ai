@@ -41,6 +41,16 @@ function providedChromium() {
 export const ENGINE = ['chromium', 'webkit', 'firefox'].includes(process.env.AMV_BROWSER) ? process.env.AMV_BROWSER : 'chromium';
 export const BROWSER = playwright[ENGINE];
 export const chromium = playwright.chromium;
+/* The page's policy says upgrade-insecure-requests, which is right for a site
+   served over https. Chromium and Firefox leave a loopback address alone;
+   WebKit upgrades it, so every file the page fetches from this plain-http test
+   server went to https on a port that does not speak it and failed with "Load
+   failed". Only the test server is plain http, so only here, and only for
+   WebKit, the one directive is dropped - the rest of the policy is unchanged. */
+export function forEngine(html){
+  if (ENGINE !== 'webkit') return html;
+  return Buffer.from(String(html).replace(/upgrade-insecure-requests;?/, ''), 'utf8');
+}
 export const LAUNCH = (() => {
   if (ENGINE !== 'chromium') return {};
   const exe = providedChromium();
@@ -98,7 +108,7 @@ export async function serveApp(opts = {}) {
       }
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
+    res.end(forEngine(html));
   });
   /* THE OPERATING SYSTEM PICKS THE PORT, BECAUSE IT IS THE ONLY THING THAT
      KNOWS WHICH ARE FREE.
