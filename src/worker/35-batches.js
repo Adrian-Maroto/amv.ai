@@ -790,7 +790,7 @@ async function aiProxy(request, env, ctx, principal) {
   const releaseUSD = async () => {
     if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
     if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
-    if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, CREDIT_TTL_MS); bookedCreditUSD = 0; }
+    if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, 0, true); bookedCreditUSD = 0; }
   };
   /* Already past a plan limit and running on credit: the plan's own dollar
      ceiling is not booked as well - the credit is what pays for this one. */
@@ -823,7 +823,7 @@ async function aiProxy(request, env, ctx, principal) {
      against what was paid - atomically, so a burst cannot spend past it. Too
      little left is the plan's own refusal, with the balance said. */
   if (overflowWhy) {
-    const cr = await _reserveUSD(env, creditName, estUSD * CREDIT_MARKUP, credit.bought, CREDIT_TTL_MS);
+    const cr = await _reserveUSD(env, creditName, estUSD * CREDIT_MARKUP, credit.bought, 0, true);
     bookedCreditUSD = cr.reserved;
     if (!cr.allowed) {
       await refundReservation();

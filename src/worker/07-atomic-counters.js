@@ -10,6 +10,9 @@
      • {op:'incr', amount, ttlMs}         -> {value}           atomic add, returns new total
      • {op:'get'}                         -> {value}
      • {op:'checkCap', cap}               -> {allowed, value}  read-only ceiling test
+
+   `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
+   for a count that must never lapse - money somebody paid for.
    ===================================================================== */
 export class AMVCounter {
   constructor(state, env) { this.state = state; this.env = env; }
@@ -38,6 +41,7 @@ export class AMVCounter {
       const next = Math.max(0, cur + (body.amount || 0));
       await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
+      else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: next });
     }
     /* ATOMIC TEST-AND-INCREMENT - this is what makes a quota a quota.
@@ -58,6 +62,7 @@ export class AMVCounter {
       if (next > body.cap) return json({ allowed: false, value: cur });
       await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
+      else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ allowed: true, value: next });
     }
     /* ATOMIC CLAIM - a real mutual-exclusion lock.
@@ -103,6 +108,7 @@ export class AMVCounter {
       return json({ released: true, wasHeld: true });
     }
     if (op === 'get') {
+      if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: (await this.state.storage.get('v')) || 0 });
     }
     /* A TALLY: how many times each job id was switched on, and in all.
@@ -253,7 +259,11 @@ async function _counterKVFallback(env, name, payload) {
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
   }
-  if (op === 'get') return { value: parseFloat(await env.AMV_KV.get('ctr:' + name) || '0') };
+  if (op === 'get') {
+    const raw = await env.AMV_KV.get('ctr:' + name);
+    if (payload.keep && raw != null) await env.AMV_KV.put('ctr:' + name, raw);
+    return { value: parseFloat(raw || '0') };
+  }
   if (op === 'checkCap') { const cur = parseFloat(await env.AMV_KV.get('ctr:' + name) || '0'); return { allowed: cur < payload.cap, value: cur }; }
   return { error: 'bad op' };
 }

@@ -1,7 +1,9 @@
 /* ══════════════════════════════════════════════════════════════════════════
    (Prediction markets used to live at the top of this file: a quote-then-trade
    flow on Kalshi and Polymarket. It was removed on the owner's decision - see
-   LESSONS 595. The file keeps its name so the build order does not move.)
+   LESSONS 595. The file was renamed for what it holds - renewals, the
+   transaction ledger, invoices and the claim-once helpers - keeping its 49-
+   prefix, so the build order did not move.)
    ══════════════════════════════════════════════════════════════════════════ */
 
 async function stripeAutoRenew(request, env) {

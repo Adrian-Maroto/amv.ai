@@ -27,12 +27,20 @@
 const CREDIT_PACKS_USD = [10, 25, 50];
 const CREDIT_MARKUP = 2.2;
 const CREDIT_MAX_USD = 500;
-const CREDIT_TTL_MS = 400 * 86400000;
+/* CREDIT NEVER EXPIRES (docs/OWNER-DECISIONS.md #12).
+
+   It was CREDIT_TTL_MS = 400 days, and the balance is two counters - bought
+   and spent - each with its OWN timer, reset by its own writes. Somebody who
+   bought $50 once and used it slowly kept refreshing "spent" and never
+   "bought", so 400 days after the purchase "bought" was deleted and the
+   balance went to nothing while they were still using it. Money somebody paid
+   for is now kept with no expiry at all, and every read of a balance cancels
+   the timer a counter written before this change still carries. */
 const _creditBuyName = (subject) => `creditbuy:${subject}`;
 const _creditSpentName = (subject) => `creditspent:${subject}`;
 async function _creditState(env, subject){
-  const bought = +((await counter(env, _creditBuyName(subject), { op: 'get' })).value || 0);
-  const spent = +((await counter(env, _creditSpentName(subject), { op: 'get' })).value || 0);
+  const bought = +((await counter(env, _creditBuyName(subject), { op: 'get', keep: true })).value || 0);
+  const spent = +((await counter(env, _creditSpentName(subject), { op: 'get', keep: true })).value || 0);
   /* `left` is exact - it is what decides whether a message may book against
      the credit, and a fraction of a cent paid for is still paid for. `balance`
      is the same rounded to cents, for saying. */
@@ -61,7 +69,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!subject || !(usd > 0) || !ref) return false;
   const once = await _onceOrRetry(env, 'creditref', ref, CLAIM_ONCE_TTL_S, async () => {
     await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
-    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, ttlMs: CREDIT_TTL_MS, strict: true });
+    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true });
   });
   if(!once.claimed) return false;
   await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
@@ -90,7 +98,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS, strict: true });
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
     }

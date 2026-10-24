@@ -104,7 +104,7 @@ Functions 52/52 (100.0%), code 94.0%.
 | `46-referrals.js` | 27/27 | 96.6% |
 | `47-renewal-sweep.js` | 6/6 | 95.1% |
 | `48-other-calendars.js` | 8/10 | 73.7% |
-| `49-prediction-markets.js` | 9/9 | 90.9% |
+| `49-renewals-and-ledger.js` | 9/9 | 90.9% |
 | `50-extra-usage.js` | 10/10 | 91.6% |
 | `51-marketplace.js` | 3/3 | 93.4% |
 | `52-marketplace-trust.js` | 10/10 | 93.4% |

@@ -887,20 +887,20 @@ async function _releaseSpendGate(env, book) {
    refused while a few cents remain. That is the correct direction for a control
    whose whole job is to stop a bill: being stopped one call early is a smaller
    harm than an unbounded overshoot, and it is what the token path already does. */
-async function _reserveUSD(env, name, usd, cap, ttlMs) {
+async function _reserveUSD(env, name, usd, cap, ttlMs, keep) {
   /* No ceiling means nothing to reserve against - the counter is still written
      afterwards, it just cannot refuse. */
   if (cap == null) return { allowed: true, value: 0, reserved: 0 };
   const amount = Math.max(0, +usd || 0);
-  const r = await counter(env, name, { op: 'reserve', amount, cap, ttlMs });
+  const r = await counter(env, name, keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs });
   return { allowed: !!(r && r.allowed), value: (r && r.value) || 0,
            reserved: (r && r.allowed) ? amount : 0 };
 }
 /* Hand back money booked for work that did not happen. Never throws: a refund
    that fails must not also fail the refusal it belongs to. */
-async function _releaseUSD(env, name, usd, ttlMs) {
+async function _releaseUSD(env, name, usd, ttlMs, keep) {
   if (!(+usd > 0)) return;
-  try { await counter(env, name, { op: 'incr', amount: -(+usd), ttlMs }); }
+  try { await counter(env, name, keep ? { op: 'incr', amount: -(+usd), keep: true } : { op: 'incr', amount: -(+usd), ttlMs }); }
   catch (e) { audit(env, 'spend_release_failed', { name, usd: +usd }); }
 }
 

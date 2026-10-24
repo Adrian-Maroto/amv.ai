@@ -1759,20 +1759,20 @@ async function _releaseSpendGate(env, book) {
    refused while a few cents remain. That is the correct direction for a control
    whose whole job is to stop a bill: being stopped one call early is a smaller
    harm than an unbounded overshoot, and it is what the token path already does. */
-async function _reserveUSD(env, name, usd, cap, ttlMs) {
+async function _reserveUSD(env, name, usd, cap, ttlMs, keep) {
   /* No ceiling means nothing to reserve against - the counter is still written
      afterwards, it just cannot refuse. */
   if (cap == null) return { allowed: true, value: 0, reserved: 0 };
   const amount = Math.max(0, +usd || 0);
-  const r = await counter(env, name, { op: 'reserve', amount, cap, ttlMs });
+  const r = await counter(env, name, keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs });
   return { allowed: !!(r && r.allowed), value: (r && r.value) || 0,
            reserved: (r && r.allowed) ? amount : 0 };
 }
 /* Hand back money booked for work that did not happen. Never throws: a refund
    that fails must not also fail the refusal it belongs to. */
-async function _releaseUSD(env, name, usd, ttlMs) {
+async function _releaseUSD(env, name, usd, ttlMs, keep) {
   if (!(+usd > 0)) return;
-  try { await counter(env, name, { op: 'incr', amount: -(+usd), ttlMs }); }
+  try { await counter(env, name, keep ? { op: 'incr', amount: -(+usd), keep: true } : { op: 'incr', amount: -(+usd), ttlMs }); }
   catch (e) { audit(env, 'spend_release_failed', { name, usd: +usd }); }
 }
 
@@ -2222,6 +2222,9 @@ function validateMessagesPayload(body) {
      • {op:'incr', amount, ttlMs}         -> {value}           atomic add, returns new total
      • {op:'get'}                         -> {value}
      • {op:'checkCap', cap}               -> {allowed, value}  read-only ceiling test
+
+   `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
+   for a count that must never lapse - money somebody paid for.
    ===================================================================== */
 export class AMVCounter {
   constructor(state, env) { this.state = state; this.env = env; }
@@ -2250,6 +2253,7 @@ export class AMVCounter {
       const next = Math.max(0, cur + (body.amount || 0));
       await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
+      else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: next });
     }
     /* ATOMIC TEST-AND-INCREMENT - this is what makes a quota a quota.
@@ -2270,6 +2274,7 @@ export class AMVCounter {
       if (next > body.cap) return json({ allowed: false, value: cur });
       await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
+      else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ allowed: true, value: next });
     }
     /* ATOMIC CLAIM - a real mutual-exclusion lock.
@@ -2315,6 +2320,7 @@ export class AMVCounter {
       return json({ released: true, wasHeld: true });
     }
     if (op === 'get') {
+      if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: (await this.state.storage.get('v')) || 0 });
     }
     /* A TALLY: how many times each job id was switched on, and in all.
@@ -2465,7 +2471,11 @@ async function _counterKVFallback(env, name, payload) {
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
   }
-  if (op === 'get') return { value: parseFloat(await env.AMV_KV.get('ctr:' + name) || '0') };
+  if (op === 'get') {
+    const raw = await env.AMV_KV.get('ctr:' + name);
+    if (payload.keep && raw != null) await env.AMV_KV.put('ctr:' + name, raw);
+    return { value: parseFloat(raw || '0') };
+  }
   if (op === 'checkCap') { const cur = parseFloat(await env.AMV_KV.get('ctr:' + name) || '0'); return { allowed: cur < payload.cap, value: cur }; }
   return { error: 'bad op' };
 }
@@ -21326,7 +21336,7 @@ async function aiProxy(request, env, ctx, principal) {
   const releaseUSD = async () => {
     if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
     if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
-    if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, CREDIT_TTL_MS); bookedCreditUSD = 0; }
+    if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, 0, true); bookedCreditUSD = 0; }
   };
   /* Already past a plan limit and running on credit: the plan's own dollar
      ceiling is not booked as well - the credit is what pays for this one. */
@@ -21359,7 +21369,7 @@ async function aiProxy(request, env, ctx, principal) {
      against what was paid - atomically, so a burst cannot spend past it. Too
      little left is the plan's own refusal, with the balance said. */
   if (overflowWhy) {
-    const cr = await _reserveUSD(env, creditName, estUSD * CREDIT_MARKUP, credit.bought, CREDIT_TTL_MS);
+    const cr = await _reserveUSD(env, creditName, estUSD * CREDIT_MARKUP, credit.bought, 0, true);
     bookedCreditUSD = cr.reserved;
     if (!cr.allowed) {
       await refundReservation();
@@ -22953,7 +22963,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      plan's own ledger as well, which would charge it twice. */
   if (creditName) {
     const dCred = cost * CREDIT_MARKUP - (reservedCreditUSD || 0);
-    if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, ttlMs: CREDIT_TTL_MS });
+    if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, keep: true });
   } else {
     const dAcct = cost - (reservedUSD || 0);
     if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });
@@ -26369,7 +26379,9 @@ async function calEvents(request, env) {
 /* ══════════════════════════════════════════════════════════════════════════
    (Prediction markets used to live at the top of this file: a quote-then-trade
    flow on Kalshi and Polymarket. It was removed on the owner's decision - see
-   LESSONS 595. The file keeps its name so the build order does not move.)
+   LESSONS 595. The file was renamed for what it holds - renewals, the
+   transaction ledger, invoices and the claim-once helpers - keeping its 49-
+   prefix, so the build order did not move.)
    ══════════════════════════════════════════════════════════════════════════ */
 
 async function stripeAutoRenew(request, env) {
@@ -26833,12 +26845,20 @@ async function _releaseClaim(env, kind, id){
 const CREDIT_PACKS_USD = [10, 25, 50];
 const CREDIT_MARKUP = 2.2;
 const CREDIT_MAX_USD = 500;
-const CREDIT_TTL_MS = 400 * 86400000;
+/* CREDIT NEVER EXPIRES (docs/OWNER-DECISIONS.md #12).
+
+   It was CREDIT_TTL_MS = 400 days, and the balance is two counters - bought
+   and spent - each with its OWN timer, reset by its own writes. Somebody who
+   bought $50 once and used it slowly kept refreshing "spent" and never
+   "bought", so 400 days after the purchase "bought" was deleted and the
+   balance went to nothing while they were still using it. Money somebody paid
+   for is now kept with no expiry at all, and every read of a balance cancels
+   the timer a counter written before this change still carries. */
 const _creditBuyName = (subject) => `creditbuy:${subject}`;
 const _creditSpentName = (subject) => `creditspent:${subject}`;
 async function _creditState(env, subject){
-  const bought = +((await counter(env, _creditBuyName(subject), { op: 'get' })).value || 0);
-  const spent = +((await counter(env, _creditSpentName(subject), { op: 'get' })).value || 0);
+  const bought = +((await counter(env, _creditBuyName(subject), { op: 'get', keep: true })).value || 0);
+  const spent = +((await counter(env, _creditSpentName(subject), { op: 'get', keep: true })).value || 0);
   /* `left` is exact - it is what decides whether a message may book against
      the credit, and a fraction of a cent paid for is still paid for. `balance`
      is the same rounded to cents, for saying. */
@@ -26867,7 +26887,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!subject || !(usd > 0) || !ref) return false;
   const once = await _onceOrRetry(env, 'creditref', ref, CLAIM_ONCE_TTL_S, async () => {
     await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
-    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, ttlMs: CREDIT_TTL_MS, strict: true });
+    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true });
   });
   if(!once.claimed) return false;
   await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
@@ -26896,7 +26916,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS, strict: true });
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
     }

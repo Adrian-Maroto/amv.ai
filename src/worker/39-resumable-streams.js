@@ -263,7 +263,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      plan's own ledger as well, which would charge it twice. */
   if (creditName) {
     const dCred = cost * CREDIT_MARKUP - (reservedCreditUSD || 0);
-    if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, ttlMs: CREDIT_TTL_MS });
+    if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, keep: true });
   } else {
     const dAcct = cost - (reservedUSD || 0);
     if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });

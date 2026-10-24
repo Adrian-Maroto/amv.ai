@@ -107,6 +107,39 @@ account files are switched on (the `AMV_FILES` storage binding); without it
 the file is kept on the device that saved it, and the card says exactly
 that. Two open copies following each other without a save is still to come.
 
+**Decided 24 October, on the owner's standing instruction to answer each of
+these the way a company out to beat ChatGPT and Claude at a billion users
+would.** Each is built one at a time, tested and gated; where one needs an
+account only the owner holds, everything up to that step is built and the step
+is named below.
+
+**12. Extra-usage credit never expires - YES, now.** It lapsed 400 days after
+each counter's last write, and "bought" and "spent" lapsed separately, so a
+pack used slowly vanished mid-use. Credit somebody paid for is kept with no
+expiry; reading a balance rescues credit bought under the old timer. Shipped.
+
+**13. The five-hour window starts at the person's first message - YES.** Fixed
+five-hour blocks on the server's clock reopen at a time nobody can predict.
+The window opens when somebody starts and reopens five hours later, at a time
+the screen states exactly.
+
+**14. Lifetime usage - YES, as totals only.** Day, month and all-time totals by
+engine and by feature, never what was asked. Neither ChatGPT nor Claude shows
+a person their lifetime usage; storing totals only adds no privacy surface.
+
+**15. Team limits are written down, not left to omission - YES.** Per person:
+requests a minute and the five-hour window. Pooled for the team, sized by
+seats: the month, the top-engine week and extra credit. Admins see each
+member's share.
+
+**16. A persistent cloud computer - YES: disposable compute, durable state.**
+Files, browser sign-ins and task state are saved before the container sleeps
+and restored when it wakes. Needs object storage bound (below).
+
+**17. Long-running work as durable tasks - YES.** Checkpointed steps on the
+Durable Objects AMV already runs, resumable after any restart, so the same
+task can run for minutes or months.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from
