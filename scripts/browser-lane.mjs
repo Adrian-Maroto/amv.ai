@@ -70,7 +70,11 @@ await new Promise((resolve) => {
          alone does not say which error, and that is the part to fix. */
       const got = at >= 0 && /^\s*got:/.test(lines[at + 1] || '') ? ' - ' + lines[at + 1].trim() : '';
       const first = at < 0 ? '' : (lines[at].trim() + got).slice(0, 400);
-      results[s] = { ok: code === 0, first };
+      /* What the engine said, for a failing suite: the first few console
+         errors (harness.mjs prints them in these lanes). */
+      const said = [...new Set(lines.filter(l => /\[(webkit|firefox) console\]/.test(l)).map(l => l.replace(/^.*console\]\s*/, '').slice(0, 200)))].slice(0, 4);
+      if (code !== 0 && said.length) results[s] = { ok: false, first, said };
+      if (!results[s]) results[s] = { ok: code === 0, first };
       n++; process.stderr.write('\r[' + n + '/' + eligible.length + ']'); one();
     });
   };
@@ -87,7 +91,7 @@ const newly = pass.filter(s => !passingBefore.has(s));
 let md = '## ' + ENGINE + ': ' + pass.length + ' of ' + eligible.length + ' suites pass\n\n'
   + (regressed.length ? '**Regressed** (passed before, fail now):\n' + regressed.map(s => '- `' + s + '`: ' + (results[s].first || 'failed')).join('\n') + '\n\n' : 'No regressions.\n\n')
   + (newly.length ? 'Newly passing - add with `--update`:\n' + newly.map(s => '- `' + s + '`').join('\n') + '\n\n' : '')
-  + (fail.length ? '<details><summary>Failing in ' + ENGINE + ' (' + fail.length + ')</summary>\n\n' + fail.map(s => '- `' + s + '`: ' + (results[s].first || 'failed')).join('\n') + '\n\n</details>\n' : '');
+  + (fail.length ? '<details><summary>Failing in ' + ENGINE + ' (' + fail.length + ')</summary>\n\n' + fail.map(s => '- `' + s + '`: ' + (results[s].first || 'failed') + ((results[s].said || []).length ? '\n  - the browser said: ' + results[s].said.map(x => '`' + x.replace(/`/g, "'") + '`').join('; ') : '')).join('\n') + '\n\n</details>\n' : '');
 console.log(md);
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n');
 if (UPDATE) {

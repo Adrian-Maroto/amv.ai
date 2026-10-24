@@ -21,6 +21,11 @@ on:
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Run only suites whose name contains this (empty = all)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -47,4 +52,6 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.engine }}
       - run: node build.mjs
       - name: Browser suites in ${{ matrix.engine }}
-        run: node scripts/browser-lane.mjs --engine=${{ matrix.engine }} --jobs=3
+        run: node scripts/browser-lane.mjs --engine=${{ matrix.engine }} --jobs=3 --only="$ONLY"
+        env:
+          ONLY: ${{ github.event.inputs.only }}

@@ -266,6 +266,16 @@ export async function armConfirm(pageOrContext) {
 }
 
 export async function armGeom(pageOrContext) {
+  /* In the WebKit and Firefox lanes, what the browser itself said - a refused
+     script, a blocked request - is printed, because those engines report
+     much of it only to the console, and a lane that says "it did not start"
+     without saying what the browser refused is a lane nobody can act on.
+     Chromium's gate keeps its output as it is. */
+  if (ENGINE !== 'chromium' && typeof pageOrContext.on === 'function') {
+    pageOrContext.on('console', (m) => {
+      try { if (m.type() === 'error' || m.type() === 'warning') console.log('  [' + ENGINE + ' console] ' + String(m.text()).slice(0, 300)); } catch (e) {}
+    });
+  }
   await armWait(pageOrContext);
   await armConfirm(pageOrContext);
   await pageOrContext.addInitScript(() => {
