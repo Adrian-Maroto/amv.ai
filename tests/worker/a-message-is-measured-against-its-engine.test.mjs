@@ -138,6 +138,9 @@ section('A picture counts by its encoded size');
   const img = { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'A'.repeat(4000000) } }] };
   const f = W._fitsContext({ messages: [img] }, eng);
   ok(!f.ok && f.tokens === 1000000, 'four million encoded characters is a million tokens, over the room', f);
+  const nested = { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'A'.repeat(4000000) } }] }] };
+  const fn = W._fitsContext({ messages: [nested] }, eng);
+  ok(!fn.ok && fn.tokens === 1000000, 'and so does a picture inside a tool result, a screenshot', fn);
   ok(W._fitsContext({ messages: [{ role: 'user', content: 'hi' }] }, {}).room === 200000 - 16000 - 8000,
      'an engine that does not say falls back to 200,000');
 }

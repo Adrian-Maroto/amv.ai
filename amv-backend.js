@@ -23253,6 +23253,12 @@ function _fitsContext(body, eng) {
       if (typeof b.text === 'string') tok += _estimateTextTokens(b.text);
       if (typeof b.content === 'string') tok += _estimateTextTokens(b.content);
       if (b.source && typeof b.source.data === 'string') tok += Math.ceil(b.source.data.length / 4);
+      /* A tool result carries blocks of its own - a screenshot is a picture
+         inside one - and they are read like any other. */
+      if (Array.isArray(b.content)) for (const x of b.content) {
+        if (x && typeof x.text === 'string') tok += _estimateTextTokens(x.text);
+        if (x && x.source && typeof x.source.data === 'string') tok += Math.ceil(x.source.data.length / 4);
+      }
     }
   }
   const room = (Number(eng && eng.context) || 200000) - (Number(eng && eng.maxOut) || 16000) - 8000;

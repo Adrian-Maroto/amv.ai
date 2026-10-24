@@ -213,7 +213,7 @@ section('A password is refused before anybody is asked');
 
 section('The server counts a picture nested in a tool result');
 {
-  const big = 'A'.repeat(700000);
+  const big = 'A'.repeat(3300000);   /* past the 3.2 million character bound */
   const r = await page.evaluate(async (data) => {
     const res = await fetch(AMV_API.base + '/v1/messages', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, _aiHeaders()),
       body: JSON.stringify({ model: 'amv-core', max_tokens: 100, stream: true, messages: [
@@ -223,7 +223,7 @@ section('The server counts a picture nested in a tool result');
       ] }) });
     return { status: res.status, body: await res.text() };
   }, big);
-  ok(r.status === 400 && /too large/i.test(r.body), 'a 700KB picture inside a tool result is refused as too large', r);
+  ok(r.status === 400 && /too large/i.test(r.body), 'a 3.3MB picture inside a tool result is refused as too large', r);
 }
 
 if (report('amv-asks-before-it-touches-your-screen') > 0) process.exitCode = 1;
