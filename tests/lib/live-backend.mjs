@@ -214,7 +214,13 @@ export async function bootLive(opts = {}) {
   const mounted = sameSite && (!appUrl || appUrl === 'http://localhost' || appUrl === SITE);
   if (mounted) { apiBase = SITE + '/api'; env.APP_URL = SITE; }
   const browser = await BROWSER.launch(LAUNCH);
-  const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
+  /* Outside Chromium the page's service worker is blocked. A request from a
+     page a service worker controls is not seen by Playwright's routes in
+     WebKit (Playwright's own advice is to block service workers when routing),
+     so every request to the server went to the real network and only one of
+     thirty live suites ever passed there. Chromium keeps its service worker. */
+  const NO_SW = ENGINE !== 'chromium' ? { serviceWorkers: 'block' } : {};
+  const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, ...NO_SW });
   /* Armed on the CONTEXT rather than the page, so every page this context makes
      carries the subpixel-tolerant comparators. See armGeom in harness.mjs for
      why comparing a rect against a whole number needs half a pixel of slack. */
@@ -294,7 +300,7 @@ export async function bootLive(opts = {}) {
        shared with the first except the server. The place a locally-granted
        plan stops being a plan. */
     async otherDevice() {
-      const c2 = await browser.newContext();
+      const c2 = await browser.newContext({ ...NO_SW });
       const toWorker2 = async (route) => {
         const req = route.request();
         let b = null; try { b = req.postDataBuffer(); } catch (e) {}
