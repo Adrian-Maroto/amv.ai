@@ -1,0 +1,50 @@
+name: browsers
+
+# THE SAME SUITES IN SAFARI'S AND FIREFOX'S ENGINES.
+#
+# Every browser suite in `tests` runs in Chromium. People use Safari - on an
+# iPhone it is the only engine there is - and Firefox. This lane runs every
+# e2e suite that can run in another engine (scripts/browser-lane.mjs picks
+# them: nothing Chromium-only like CDP or a virtual authenticator) through
+# WebKit and Firefox, and writes what passes and what fails into the run's
+# summary.
+#
+# A RATCHET, NOT A WALL. It fails only when a suite listed as passing for that
+# engine in tests/browser-lanes.json stops passing. Nobody knows yet what fails
+# in WebKit; a lane red on day one for all of it would be switched off within a
+# week, so the list starts empty and only grows as suites are made to pass.
+#
+# Nightly and on demand, not on every push: two engines across the browser
+# suites is too many minutes per commit for a measurement, and it does not
+# gate the deploy - `tests` does that.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browsers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lane:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [webkit, firefox]
+    steps:
+      # Pinned to the same commits as tests.yml, for the same reason (AMV-058).
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - run: node build.mjs
+      - name: Browser suites in ${{ matrix.engine }}
+        run: node scripts/browser-lane.mjs --engine=${{ matrix.engine }} --jobs=3

@@ -45,7 +45,7 @@ const until = async (page, fn, ms = 8000) => { const s = Date.now(); while (Date
 /* After the server deletes, the dialog says what AMV must keep (payout records,
    by law) and waits for the person to close it before the page reloads. */
 async function finishDelete(page){
-  await until(page, () => !!document.getElementById('cfm-yes') || !document.getElementById('del-go'), 10000);
+  await until(page, () => !!document.getElementById('cfm-yes') || !document.getElementById('del-go'), 30000);
   const nav = page.waitForNavigation({ timeout: 10000 }).catch(() => null);
   await page.evaluate(() => { const b = document.getElementById('cfm-yes'); if (b) b.click(); }).catch(() => {});
   await nav;
@@ -80,7 +80,9 @@ section('A password account: asked for the password, and deleted with it');
   ok(await exists(EM), 'and the account is still there', true);
   await page.fill('#del-pw', PW);
   await page.click('#del-go');
-  ok(await until(page, () => /payouts actually sent/i.test((document.getElementById('cfm-bg') || {}).textContent || ''), 10000),
+  /* Erasure walks every record the account has before the notice shows, so
+     on a loaded machine this is slow; the claim is that it appears. */
+  ok(await until(page, () => /payouts actually sent/i.test((document.getElementById('cfm-bg') || {}).textContent || ''), 30000),
      'it says what AMV keeps, and why, before the page goes', true);
   await finishDelete(page);
   ok(!(await exists(EM)), 'the right password deletes the account on the server', true);

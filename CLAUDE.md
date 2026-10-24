@@ -360,6 +360,12 @@ Companion docs (do not duplicate them here - read them):
   gate - the never-called list is what to act on. Its first run found an
   unlocked team-task write with no callers left, and a route that hands out
   Google's picker values that nothing tested.
+- **Safari's and Firefox's engines are measured nightly** (`.github/workflows/browsers.yml`,
+  `scripts/browser-lane.mjs`): every e2e suite that uses nothing Chromium-only
+  runs through WebKit and Firefox (`AMV_BROWSER`, read by both harnesses). A
+  ratchet, not a wall - it fails only when a suite listed as passing for that
+  engine in `tests/browser-lanes.json` stops passing; the run summary lists
+  what fails and what newly passes (`--update` adds those).
 - **Performance is measured, not inferred.** There used to be one perf check, a
   ceiling on the gzipped size of `index.html`, and the page sat comfortably
   inside it the whole time it was taking 12.6 SECONDS to paint - a

@@ -23,8 +23,7 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { chromium } from 'playwright';
-import { LAUNCH, armGeom } from './harness.mjs';
+import { LAUNCH, BROWSER, armGeom } from './harness.mjs';
 import { createServer } from 'http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -193,7 +192,7 @@ export async function bootLive(opts = {}) {
      checkout returns, emailed links - would point into the OTHER suite's
      server. That is a failure that reads as the product being broken. */
   if (wanted && port !== wanted && String(env.APP_URL || '') === 'http://localhost:' + wanted) env.APP_URL = 'http://localhost:' + port;
-  const browser = await chromium.launch(LAUNCH);
+  const browser = await BROWSER.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
   /* Armed on the CONTEXT rather than the page, so every page this context makes
      carries the subpixel-tolerant comparators. See armGeom in harness.mjs for

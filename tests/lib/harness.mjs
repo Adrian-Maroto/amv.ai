@@ -1,6 +1,6 @@
 /* Shared test harness: serves the built app and boots it into a known state.
    Every e2e test uses this so a boot-sequence change breaks one file, not twenty. */
-import { chromium } from 'playwright';
+import * as playwright from 'playwright';
 import { createServer } from 'http';
 import { readFileSync, existsSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -35,7 +35,14 @@ function providedChromium() {
   }
   return '';
 }
+/* WHICH ENGINE. Chromium unless AMV_BROWSER names another - the WebKit and
+   Firefox lane (scripts/browser-lane.mjs, .github/workflows/browsers.yml)
+   runs the same suites through Safari's and Firefox's engines. */
+export const ENGINE = ['chromium', 'webkit', 'firefox'].includes(process.env.AMV_BROWSER) ? process.env.AMV_BROWSER : 'chromium';
+export const BROWSER = playwright[ENGINE];
+export const chromium = playwright.chromium;
 export const LAUNCH = (() => {
+  if (ENGINE !== 'chromium') return {};
   const exe = providedChromium();
   return exe ? { executablePath: exe } : {};
 })();
@@ -257,7 +264,7 @@ export async function armGeom(pageOrContext) {
 export async function bootApp(opts = {}) {
   const { url, server } = await serveApp(
     { apiBase: opts.apiBase === undefined ? '' : opts.apiBase });
-  const browser = await chromium.launch(LAUNCH);
+  const browser = await BROWSER.launch(LAUNCH);
   /* `hasTouch` is off unless a suite asks. It is not cosmetic: it decides
      whether `@media(hover:none)` applies, and this stylesheet uses that query
      to set the minimum height of controls on a phone. Without it the tap-target
