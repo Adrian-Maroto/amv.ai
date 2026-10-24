@@ -72,6 +72,33 @@ step that loses most people. Play can list the installed web app as it is.
 The App Store needs a native shell and its own review cycle; it waits until
 the web app's retention on iPhone is measured.
 
+**10. Plugins that carry their own code - NO, not as a marketplace item.**
+A marketplace where third parties ship code that runs for millions of people
+is the classic supply-chain attack: one compromised or sold-on plugin reaches
+every account that installed it, and "sandboxed, signed and scanned" narrows
+that without closing it - a scanner passes what it does not recognise, and a
+signature proves who shipped the code, not what it does. What people want
+from plugins is already served without it:
+- declarative plugins (Crew jobs, assistants, skills) - data, not code -
+  install from the marketplace today;
+- code that needs to run is a connector (MCP), run by the bridge on the
+  person's own computer, every tool call asked first;
+- a one-off program runs in the code sandbox, with no network and no reach
+  into the account.
+The comfortable middle option - "allow code plugins, but sandboxed" - is the
+trap: it keeps the whole blast radius and adds a review queue. Revisit only
+for code AMV itself reviews and ships, never third-party code by default.
+
+**11. Documents, sheets and slides you and AMV edit together - YES, next,
+in this order.** It is where the work people pay for lives. Step one, the one
+that can be verified: AMV's change to a document is a set of tracked edits
+the person accepts or rejects, read back from the saved file - the same
+shape as the Office round-trip (only the changed text moves; nothing is
+offered until it reopens). Step two: the same document open on two devices
+stays in step, through the sync AMV already has. Live multi-cursor editing
+between people comes last, and only on a Durable Object per document, because
+that is the only way two writers cannot silently overwrite each other.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from
