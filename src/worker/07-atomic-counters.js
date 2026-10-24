@@ -11,6 +11,10 @@
      • {op:'get'}                         -> {value}
      • {op:'checkCap', cap}               -> {allowed, value}  read-only ceiling test
 
+     • {op:'session', windowMs, cap, amount} -> {allowed, value, start}
+       a window that OPENS with the first use and lasts windowMs from then
+     • {op:'sessionRelease', start, amount} / {op:'sessionGet', windowMs}
+
    `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
    for a count that must never lapse - money somebody paid for.
    ===================================================================== */
@@ -106,6 +110,38 @@ export class AMVCounter {
       }
       await this.state.storage.delete('claim');
       return json({ released: true, wasHeld: true });
+    }
+    /* A WINDOW THAT STARTS WHEN THE PERSON DOES (docs/OWNER-DECISIONS.md #13).
+
+       The five-hour window was a fixed block on the server's clock, so it
+       reopened at a time nobody could predict - 15:00 for one person, an hour
+       after they started for another. Here the window opens with the first
+       message after the last one closed and lasts five hours from that
+       moment, and the answer carries when it opened, so every refusal and
+       every meter can say exactly when it reopens. Opening, checking and
+       counting are one step, so two messages at once cannot both open a
+       window or both take the last place in it. */
+    if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
+      const now = Date.now();
+      const windowMs = Math.max(60000, Number(body.windowMs) || 5 * 3600000);
+      let ses = await this.state.storage.get('ses');
+      if (op === 'sessionRelease') {
+        if (ses && ses.start === body.start) {
+          ses.count = Math.max(0, ses.count - (Number(body.amount) || 0));
+          await this.state.storage.put('ses', ses);
+        }
+        return json({ value: ses ? ses.count : 0 });
+      }
+      const open = ses && now - ses.start < windowMs;
+      if (op === 'sessionGet') return json(open ? { value: ses.count, start: ses.start } : { value: 0, start: null });
+      if (!open) ses = { start: now, count: 0 };
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: ses.count, start: ses.start });
+      if (ses.count + amount > body.cap) return json({ allowed: false, value: ses.count, start: ses.start });
+      ses.count += amount;
+      await this.state.storage.put('ses', ses);
+      await this.state.storage.setAlarm(ses.start + windowMs + 60000);
+      return json({ allowed: true, value: ses.count, start: ses.start });
     }
     if (op === 'get') {
       if (body.keep) await this.state.storage.deleteAlarm();
@@ -209,7 +245,7 @@ async function counter(env, name, payload) {
        is never read from: paid for and never seen. The caller asks for that to
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck')) {
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
@@ -258,6 +294,23 @@ async function _counterKVFallback(env, name, payload) {
     if (next > payload.cap) return { allowed: false, value: cur };
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
+  }
+  if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
+    const now = Date.now();
+    const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);
+    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) {}
+    const save = (s) => env.AMV_KV.put('ses:' + name, JSON.stringify(s), { expirationTtl: Math.ceil(windowMs / 1000) + 3600 });
+    if (op === 'sessionRelease') {
+      if (ses && ses.start === payload.start) { ses.count = Math.max(0, ses.count - (Number(payload.amount) || 0)); await save(ses); }
+      return { value: ses ? ses.count : 0 };
+    }
+    const open = ses && now - ses.start < windowMs;
+    if (op === 'sessionGet') return open ? { value: ses.count, start: ses.start } : { value: 0, start: null };
+    if (!open) ses = { start: now, count: 0 };
+    const amount = Number(payload.amount);
+    if (!Number.isFinite(amount) || amount < 0 || ses.count + amount > payload.cap) return { allowed: false, value: ses.count, start: ses.start };
+    ses.count += amount; await save(ses);
+    return { allowed: true, value: ses.count, start: ses.start };
   }
   if (op === 'get') {
     const raw = await env.AMV_KV.get('ctr:' + name);

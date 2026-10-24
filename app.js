@@ -16178,7 +16178,8 @@ function _paintServerUsage(){
       '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
       '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('This month'))+'</span><span>'+escH(T('{0}% used').replace('{0}', inc.pct))+'</span></div>'+bar(inc.pct, 100)+when(inc.resetAt)+
         (inc.by === 'cost' ? '<div class="srv-why">'+escH(T('The engines you used cost more than average, so the month is further along than its token count.'))+'</div>' : '')+'</div>'+
-      (w5.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('5-hour window'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(w5.used)).replace('{1}', n(w5.limit)))+'</span></div>'+bar(w5.used, w5.limit)+when(w5.resetAt)+'</div>' : '')+
+      (w5.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('5-hour window'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(w5.used)).replace('{1}', n(w5.limit)))+'</span></div>'+bar(w5.used, w5.limit)+
+        (w5.resetAt ? when(w5.resetAt) : '<div class="srv-when">'+escH(T('Starts with your next message and lasts 5 hours'))+'</div>')+'</div>' : '')+
       '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Today'))+'</span><span>'+escH(T('{0} of {1} tokens').replace('{0}', n(d.day.used)).replace('{1}', n(d.day.limit)))+'</span></div>'+bar(d.day.used, d.day.limit)+when(d.day.resetAt)+'</div>'+
       (top.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Top engine this week'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(top.used)).replace('{1}', n(top.limit)))+'</span></div>'+bar(top.used, top.limit)+when(top.resetAt)+'</div>' : '')+
       '<details class="srv-more"><summary>'+escH(T('Details'))+'</summary>'+

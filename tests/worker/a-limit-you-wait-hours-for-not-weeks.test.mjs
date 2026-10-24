@@ -31,24 +31,46 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'windows.harness.mjs');
 writeFileSync(harness, src + `
-export { PLAN_LIMITS, ENGINES, window5hKey, weekKey, WINDOW_5H_MS,
+export { PLAN_LIMITS, ENGINES, weekKey, WINDOW_5H_MS,
          _DEAREST_ENGINE_IN_COST, _baseLimits, COHORT_OVERHEAD_SHARE };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
-section('The five-hour window really rolls, and cannot be moved');
+section('The five-hour window opens with the first message and reopens five hours after it');
 {
-  const t = Date.UTC(2026, 0, 15, 9, 30);
-  ok(W.window5hKey(t) === W.window5hKey(t + 60 * 1000),
-     'a minute later is the same window', W.window5hKey(t));
-  ok(W.window5hKey(t) !== W.window5hKey(t + W.WINDOW_5H_MS),
-     'five hours later is a different one', [W.window5hKey(t), W.window5hKey(t + W.WINDOW_5H_MS)]);
-  /* Derived from absolute time, so it cannot be reset by changing a timezone -
-     which a date-string key would allow, and which is the cheapest possible
-     way round a limit. */
-  ok(/^\d+$/.test(W.window5hKey(t)), 'the key is absolute time, not a local date', W.window5hKey(t));
+  /* docs/OWNER-DECISIONS.md #13. It was a fixed block of absolute time, so it
+     reopened at a moment unrelated to when somebody started. Driven through
+     the real Durable Object with the clock moved by hand. */
+  const store = new Map(); let alarmAt = null;
+  const doObj = new W.AMVCounter({ storage: {
+    async get(k) { return store.get(k); }, async put(k, v) { store.set(k, v); },
+    async delete(k) { store.delete(k); }, async deleteAll() { store.clear(); },
+    async setAlarm(t) { alarmAt = t; }, async deleteAlarm() { alarmAt = null; },
+  } }, {});
+  const call = async (body) => (await doObj.fetch(new Request('https://do/c', { method: 'POST', body: JSON.stringify(body) }))).json();
+  const realNow = Date.now; let now = Date.UTC(2026, 0, 15, 9, 37);
+  Date.now = () => now;
+  try {
+    const idle = await call({ op: 'sessionGet', windowMs: W.WINDOW_5H_MS });
+    ok(idle.value === 0 && idle.start === null, 'before the first message there is no window and nothing to wait for', idle);
+    const first = await call({ op: 'session', amount: 1, cap: 3, windowMs: W.WINDOW_5H_MS });
+    ok(first.allowed && first.start === now, 'the first message opens it, at 09:37', first);
+    now += 60 * 60 * 1000;
+    await call({ op: 'session', amount: 1, cap: 3, windowMs: W.WINDOW_5H_MS });
+    await call({ op: 'session', amount: 1, cap: 3, windowMs: W.WINDOW_5H_MS });
+    const full = await call({ op: 'session', amount: 1, cap: 3, windowMs: W.WINDOW_5H_MS });
+    ok(!full.allowed && full.start === first.start, 'a fourth message on a cap of three is refused, in the same window', full);
+    ok(full.start + W.WINDOW_5H_MS === Date.UTC(2026, 0, 15, 14, 37), 'and it reopens at 14:37 - five hours after the person started', new Date(full.start + W.WINDOW_5H_MS).toISOString());
+    const back = await call({ op: 'sessionRelease', start: first.start, amount: 1 });
+    ok(back.value === 2, 'a message that failed gives its place back to the window it took it from', back);
+    const stale = await call({ op: 'sessionRelease', start: first.start - 1, amount: 1 });
+    ok(stale.value === 2, 'and a give-back for a window that already closed changes nothing', stale);
+    now = Date.UTC(2026, 0, 15, 14, 37) + 1000;
+    const again = await call({ op: 'session', amount: 1, cap: 3, windowMs: W.WINDOW_5H_MS });
+    ok(again.allowed && again.value === 1 && again.start === now, 'after five hours the next message opens a new window, from that moment', again);
+  } finally { Date.now = realNow; }
   const day = 24 * 60 * 60 * 1000;
-  ok((day / W.WINDOW_5H_MS) >= 4, 'so it reopens at least four times a day', day / W.WINDOW_5H_MS);
+  ok((day / W.WINDOW_5H_MS) >= 4, 'so it can reopen at least four times a day', day / W.WINDOW_5H_MS);
 }
 
 section('The week starts on a Monday and holds all seven days');
@@ -134,7 +156,7 @@ section('A refusal names the window that clears soonest');
      gets a subscription cancelled. */
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const at = code.indexOf('const win5Name =');
-  const region = code.slice(at, at + 3000);
+  const region = code.slice(at, at + 4500);
   const five = region.indexOf('quota_window');
   const week = region.indexOf('quota_top_week');
   const month = region.indexOf('quota_messages');

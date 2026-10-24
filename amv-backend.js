@@ -1957,16 +1957,17 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
    in miniature, with the lockout landing in the middle of whatever they were
    doing and lasting until midnight in a timezone they may not live in.
 
-   A rolling five-hour window cannot lock anybody out for long. The worst wait
+   A five-hour window cannot lock anybody out for long. The worst wait
    is a few hours, it arrives four or five times a day, and it bounds a burst -
    which is the only thing a short window is actually good at - without ever
    becoming a wall. That is why the products people compare AMV to are shaped
    this way, and it is the right shape for the same reason.
 
-   Computed from absolute time, so the window does not move with a timezone
-   and cannot be reset by changing one. */
+   It opens with the person's first message and lasts five hours from then
+   (the counter's 'session' op, docs/OWNER-DECISIONS.md #13). It used to be a
+   fixed block of absolute time, which reopened at a moment that had nothing
+   to do with when somebody started. Either way no timezone moves it. */
 const WINDOW_5H_MS = 5 * 60 * 60 * 1000;
-const window5hKey = (now = Date.now()) => String(Math.floor(now / WINDOW_5H_MS));
 
 /* The week the DEAREST engines are counted over. Long enough that somebody
    doing a hard week of work is not stopped on Wednesday, short enough that a
@@ -2223,6 +2224,10 @@ function validateMessagesPayload(body) {
      • {op:'get'}                         -> {value}
      • {op:'checkCap', cap}               -> {allowed, value}  read-only ceiling test
 
+     • {op:'session', windowMs, cap, amount} -> {allowed, value, start}
+       a window that OPENS with the first use and lasts windowMs from then
+     • {op:'sessionRelease', start, amount} / {op:'sessionGet', windowMs}
+
    `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
    for a count that must never lapse - money somebody paid for.
    ===================================================================== */
@@ -2318,6 +2323,38 @@ export class AMVCounter {
       }
       await this.state.storage.delete('claim');
       return json({ released: true, wasHeld: true });
+    }
+    /* A WINDOW THAT STARTS WHEN THE PERSON DOES (docs/OWNER-DECISIONS.md #13).
+
+       The five-hour window was a fixed block on the server's clock, so it
+       reopened at a time nobody could predict - 15:00 for one person, an hour
+       after they started for another. Here the window opens with the first
+       message after the last one closed and lasts five hours from that
+       moment, and the answer carries when it opened, so every refusal and
+       every meter can say exactly when it reopens. Opening, checking and
+       counting are one step, so two messages at once cannot both open a
+       window or both take the last place in it. */
+    if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
+      const now = Date.now();
+      const windowMs = Math.max(60000, Number(body.windowMs) || 5 * 3600000);
+      let ses = await this.state.storage.get('ses');
+      if (op === 'sessionRelease') {
+        if (ses && ses.start === body.start) {
+          ses.count = Math.max(0, ses.count - (Number(body.amount) || 0));
+          await this.state.storage.put('ses', ses);
+        }
+        return json({ value: ses ? ses.count : 0 });
+      }
+      const open = ses && now - ses.start < windowMs;
+      if (op === 'sessionGet') return json(open ? { value: ses.count, start: ses.start } : { value: 0, start: null });
+      if (!open) ses = { start: now, count: 0 };
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: ses.count, start: ses.start });
+      if (ses.count + amount > body.cap) return json({ allowed: false, value: ses.count, start: ses.start });
+      ses.count += amount;
+      await this.state.storage.put('ses', ses);
+      await this.state.storage.setAlarm(ses.start + windowMs + 60000);
+      return json({ allowed: true, value: ses.count, start: ses.start });
     }
     if (op === 'get') {
       if (body.keep) await this.state.storage.deleteAlarm();
@@ -2421,7 +2458,7 @@ async function counter(env, name, payload) {
        is never read from: paid for and never seen. The caller asks for that to
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck')) {
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
@@ -2470,6 +2507,23 @@ async function _counterKVFallback(env, name, payload) {
     if (next > payload.cap) return { allowed: false, value: cur };
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
+  }
+  if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
+    const now = Date.now();
+    const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);
+    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) {}
+    const save = (s) => env.AMV_KV.put('ses:' + name, JSON.stringify(s), { expirationTtl: Math.ceil(windowMs / 1000) + 3600 });
+    if (op === 'sessionRelease') {
+      if (ses && ses.start === payload.start) { ses.count = Math.max(0, ses.count - (Number(payload.amount) || 0)); await save(ses); }
+      return { value: ses ? ses.count : 0 };
+    }
+    const open = ses && now - ses.start < windowMs;
+    if (op === 'sessionGet') return open ? { value: ses.count, start: ses.start } : { value: 0, start: null };
+    if (!open) ses = { start: now, count: 0 };
+    const amount = Number(payload.amount);
+    if (!Number.isFinite(amount) || amount < 0 || ses.count + amount > payload.cap) return { allowed: false, value: ses.count, start: ses.start };
+    ses.count += amount; await save(ses);
+    return { allowed: true, value: ses.count, start: ses.start };
   }
   if (op === 'get') {
     const raw = await env.AMV_KV.get('ctr:' + name);
@@ -21174,7 +21228,8 @@ async function aiProxy(request, env, ctx, principal) {
      refusal at any stage hands back everything booked before it - a partial
      booking left behind is an allowance nobody spent. */
   const nowMs = Date.now();
-  const win5Name = `msgs5h:${subject}:${window5hKey(nowMs)}`;
+  /* One window per account that opens with its first message (op 'session'). */
+  const win5Name = `msgs5h:${subject}`;
   const win5Cap = Number(limits.messages5h) || 0;
   const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
   const topCap = Number(limits.topMessagesWeek) || 0;
@@ -21192,7 +21247,10 @@ async function aiProxy(request, env, ctx, principal) {
   const booked = [];
   const unbook = async () => {
     for (const b of booked) {
-      try { await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs }); } catch (e) {}
+      try {
+        if (b.session) await counter(env, b.name, { op: 'sessionRelease', start: b.session, amount: b.amount });
+        else await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs });
+      } catch (e) {}
     }
   };
   const refuseWindow = async (message, code, resetAt) => {
@@ -21208,15 +21266,15 @@ async function aiProxy(request, env, ctx, principal) {
   };
 
   if (win5Cap > 0) {
-    const r5 = await counter(env, win5Name, { op: 'reserve', amount: 1, cap: win5Cap, ttlMs: WINDOW_5H_MS * 3 });
+    const r5 = await counter(env, win5Name, { op: 'session', amount: 1, cap: win5Cap, windowMs: WINDOW_5H_MS });
     if (!r5.allowed) {
-      const resetAt = (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS;
+      const resetAt = (+r5.start || nowMs) + WINDOW_5H_MS;
       const refused = await windowOrCredit(
         'That is a lot of messages in a short space of time, so this window is full. It reopens at '
         + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + ' - a few hours, not the rest of the month.',
         'quota_window', resetAt);
       if (refused) return refused;
-    } else booked.push({ name: win5Name, amount: 1, ttlMs: WINDOW_5H_MS * 3 });
+    } else booked.push({ name: win5Name, amount: 1, session: r5.start });
   }
 
   if (topCap > 0 && isTopEngine) {
@@ -23074,7 +23132,8 @@ async function usageReport(request, env) {
   /* The same keys the proxy reserves against, read at the same instant, so the
      screen cannot show one window while a different one refuses. */
   const nowMs = Date.now();
-  const win5Used = (await counter(env, `msgs5h:${subject}:${window5hKey(nowMs)}`, { op: 'get' })).value || 0;
+  const win5 = await counter(env, `msgs5h:${subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
+  const win5Used = (win5 && win5.value) || 0;
   const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
   /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
 
@@ -23119,8 +23178,11 @@ async function usageReport(request, env) {
        on, so the number on the screen is the moment the counter actually
        rolls rather than an estimate of it. */
     window5h: {
+      /* It opens with the first message, so until then there is no reset
+         time to give - `startsAt: null` says "it starts when you do". */
       used: win5Used, limit: limits.messages5h || 0,
-      resetAt: (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS,
+      startedAt: (win5 && win5.start) || null,
+      resetAt: (win5 && win5.start) ? win5.start + WINDOW_5H_MS : null,
     },
     topEngineWeek: {
       used: topUsed, limit: limits.topMessagesWeek || 0,

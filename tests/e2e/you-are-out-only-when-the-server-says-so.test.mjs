@@ -19,6 +19,7 @@
      only one there is. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { sessionOp } from '../lib/session-op.mjs';
 
 const ev = (t, d) => 'event: ' + t + '\ndata: ' + JSON.stringify(d) + '\n\n';
 const reply = (t) => ev('message_start', { type: 'message_start', message: { usage: { input_tokens: 12, output_tokens: 0 } } })
@@ -38,6 +39,7 @@ const env = makeEnv({
   APP_URL: 'http://localhost:9244', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
   AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
+    { const so = sessionOp(vals, n, b); if (so) return r(so); }
     if (b.op === 'reserve') {
       if (b.cap != null && cur + b.amount > b.cap) return r({ allowed: false, value: cur });
       vals.set(n, cur + b.amount); return r({ allowed: true, value: vals.get(n) });

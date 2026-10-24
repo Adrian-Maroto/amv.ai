@@ -25,6 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { sessionOp } from '../lib/session-op.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -62,7 +63,8 @@ function mkEnv(extra) {
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
-        if (b.op === 'reserve') {
+        { const so = sessionOp(vals, n, b); if (so) return ((o) => new Response(JSON.stringify(o)))(so); }
+      if (b.op === 'reserve') {
           if (b.cap != null && cur + b.amount > b.cap) return new Response(JSON.stringify({ allowed: false, value: cur }));
           vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: vals.get(n) }));
         }
@@ -181,7 +183,8 @@ section('Every meter says when it comes back, and the month counts what it cost'
   ok(u.day.resetAt === nextMidnight, 'today\u2019s tokens come back at the next UTC midnight, said as a moment', u.day.resetAt);
   ok(u.month.resetAt > before && u.month.resetAt <= before + 32 * 86400000, 'the month says when it comes back, within a month', u.month.resetAt);
   ok(u.included && u.included.pct === 0 && u.included.resetAt === u.month.resetAt, 'an untouched month reads 0% and resets with the month', u.included);
-  ok(u.window5h.resetAt > before && u.topEngineWeek.resetAt > before, 'and the five-hour and weekly meters still say theirs', [u.window5h.resetAt, u.topEngineWeek.resetAt]);
+  ok(u.window5h.resetAt === null && u.window5h.startedAt === null, 'before a message the five-hour window has not opened, so it names no time it does not have', u.window5h);
+  ok(u.topEngineWeek.resetAt > before, 'and the weekly meter says its own', u.topEngineWeek.resetAt);
 
   const ent = await W.DB.get(env, 'ent', USER);
   const costName = `cost:${USER}:${W._periodKeyOf({ email: USER, plan: 'pro', billingRenewedAt: ent.renewedAt })}`;

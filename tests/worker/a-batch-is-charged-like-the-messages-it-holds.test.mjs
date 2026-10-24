@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { sessionOp } from '../lib/session-op.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(__dir, '..', '..', 'amv-backend.js'), 'utf8');
@@ -59,7 +60,8 @@ const env = {
   },
   AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
-    if (b.op === 'reserve') { if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return r({ allowed: true, value: cur + b.amount, reserved: b.amount }); }
+    { const so = sessionOp(vals, n, b); if (so) return r(so); }
+      if (b.op === 'reserve') { if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return r({ allowed: true, value: cur + b.amount, reserved: b.amount }); }
     if (b.op === 'incr') { vals.set(n, cur + b.amount); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
     if (b.op === 'checkCap') return r({ allowed: b.cap == null || cur < b.cap, value: cur });
@@ -155,7 +157,7 @@ section('A full window makes an item wait - not fail, and not run');
 {
   const id = await held(A, [req('w', 'wait')]);
   await unwait(id);
-  const full = [...vals.keys()].filter(k => k.startsWith('msgs5h:dev-a@example.com:'));
+  const full = [...vals.keys()].filter(k => k === 'msgs5h:dev-a@example.com');
   const prev = full.map(k => [k, vals.get(k)]);
   for (const k of full) vals.set(k, 1e9);
   const calls0 = modelCalls;

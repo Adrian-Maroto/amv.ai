@@ -628,7 +628,8 @@ async function aiProxy(request, env, ctx, principal) {
      refusal at any stage hands back everything booked before it - a partial
      booking left behind is an allowance nobody spent. */
   const nowMs = Date.now();
-  const win5Name = `msgs5h:${subject}:${window5hKey(nowMs)}`;
+  /* One window per account that opens with its first message (op 'session'). */
+  const win5Name = `msgs5h:${subject}`;
   const win5Cap = Number(limits.messages5h) || 0;
   const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
   const topCap = Number(limits.topMessagesWeek) || 0;
@@ -646,7 +647,10 @@ async function aiProxy(request, env, ctx, principal) {
   const booked = [];
   const unbook = async () => {
     for (const b of booked) {
-      try { await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs }); } catch (e) {}
+      try {
+        if (b.session) await counter(env, b.name, { op: 'sessionRelease', start: b.session, amount: b.amount });
+        else await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs });
+      } catch (e) {}
     }
   };
   const refuseWindow = async (message, code, resetAt) => {
@@ -662,15 +666,15 @@ async function aiProxy(request, env, ctx, principal) {
   };
 
   if (win5Cap > 0) {
-    const r5 = await counter(env, win5Name, { op: 'reserve', amount: 1, cap: win5Cap, ttlMs: WINDOW_5H_MS * 3 });
+    const r5 = await counter(env, win5Name, { op: 'session', amount: 1, cap: win5Cap, windowMs: WINDOW_5H_MS });
     if (!r5.allowed) {
-      const resetAt = (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS;
+      const resetAt = (+r5.start || nowMs) + WINDOW_5H_MS;
       const refused = await windowOrCredit(
         'That is a lot of messages in a short space of time, so this window is full. It reopens at '
         + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + ' - a few hours, not the rest of the month.',
         'quota_window', resetAt);
       if (refused) return refused;
-    } else booked.push({ name: win5Name, amount: 1, ttlMs: WINDOW_5H_MS * 3 });
+    } else booked.push({ name: win5Name, amount: 1, session: r5.start });
   }
 
   if (topCap > 0 && isTopEngine) {

@@ -374,7 +374,8 @@ async function usageReport(request, env) {
   /* The same keys the proxy reserves against, read at the same instant, so the
      screen cannot show one window while a different one refuses. */
   const nowMs = Date.now();
-  const win5Used = (await counter(env, `msgs5h:${subject}:${window5hKey(nowMs)}`, { op: 'get' })).value || 0;
+  const win5 = await counter(env, `msgs5h:${subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
+  const win5Used = (win5 && win5.value) || 0;
   const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
   /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
 
@@ -419,8 +420,11 @@ async function usageReport(request, env) {
        on, so the number on the screen is the moment the counter actually
        rolls rather than an estimate of it. */
     window5h: {
+      /* It opens with the first message, so until then there is no reset
+         time to give - `startsAt: null` says "it starts when you do". */
       used: win5Used, limit: limits.messages5h || 0,
-      resetAt: (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS,
+      startedAt: (win5 && win5.start) || null,
+      resetAt: (win5 && win5.start) ? win5.start + WINDOW_5H_MS : null,
     },
     topEngineWeek: {
       used: topUsed, limit: limits.topMessagesWeek || 0,

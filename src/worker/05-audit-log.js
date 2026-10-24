@@ -134,16 +134,17 @@ const todayKey = () => new Date().toISOString().slice(0, 10);
    in miniature, with the lockout landing in the middle of whatever they were
    doing and lasting until midnight in a timezone they may not live in.
 
-   A rolling five-hour window cannot lock anybody out for long. The worst wait
+   A five-hour window cannot lock anybody out for long. The worst wait
    is a few hours, it arrives four or five times a day, and it bounds a burst -
    which is the only thing a short window is actually good at - without ever
    becoming a wall. That is why the products people compare AMV to are shaped
    this way, and it is the right shape for the same reason.
 
-   Computed from absolute time, so the window does not move with a timezone
-   and cannot be reset by changing one. */
+   It opens with the person's first message and lasts five hours from then
+   (the counter's 'session' op, docs/OWNER-DECISIONS.md #13). It used to be a
+   fixed block of absolute time, which reopened at a moment that had nothing
+   to do with when somebody started. Either way no timezone moves it. */
 const WINDOW_5H_MS = 5 * 60 * 60 * 1000;
-const window5hKey = (now = Date.now()) => String(Math.floor(now / WINDOW_5H_MS));
 
 /* The week the DEAREST engines are counted over. Long enough that somebody
    doing a hard week of work is not stopped on Wednesday, short enough that a

@@ -22,13 +22,14 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { sessionOp } from '../lib/session-op.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'credit.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, CREDIT_MARKUP, window5hKey, _periodKeyOf };\n');
+  + '\nexport { DB, CREDIT_MARKUP, _periodKeyOf };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -65,6 +66,7 @@ function mkEnv(extra) {
       await Promise.resolve();
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
       const r = (o) => new Response(JSON.stringify(o));
+      { const so = sessionOp(vals, n, b); if (so) return r(so); }
       if (b.op === 'reserve') {
         const amt = Number(b.amount);
         if (!Number.isFinite(amt) || amt < 0) return r({ allowed: false, value: cur });
