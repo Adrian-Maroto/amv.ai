@@ -264,6 +264,31 @@ const LIBRARY_TOOLS = [{
   }, required:['query'] }
 }];
 function libraryToolsOffered(){ return _libWho() ? LIBRARY_TOOLS : []; }
+/* THEIR PAST CHATS (amvChatSearch / amvChatRead in project-search.js). Memory
+   keeps facts; these find the conversation itself and read its exact turns.
+   Offered when the switch in Privacy is on, outside a temporary chat, and
+   only when there is another saved conversation to find. */
+const CHAT_HISTORY_TOOLS = [{
+  name:'chat_search',
+  description:'Search the person\u2019s earlier conversations with AMV for passages about something. Use when they refer to something discussed before that is not in this conversation ("the plan we worked out last week", "what did I say my budget was", "like we did before"), or when the exact earlier wording matters more than a remembered summary. Returns matching passages with each conversation\u2019s title, date and id. Quote what was said; never guess.',
+  input_schema:{ type:'object', properties:{
+    query:{ type:'string', description:'Words that would have been used in that conversation, in its language.' }
+  }, required:['query'] }
+},{
+  name:'chat_read',
+  description:'Read the exact turns of one earlier conversation, by the id chat_search returned. Use when a passage is not enough and the surrounding turns matter. Returns the turns in order, numbered, and says whether more follows.',
+  input_schema:{ type:'object', properties:{
+    id:{ type:'string', description:'The conversation id from chat_search.' },
+    from:{ type:'integer', description:'The turn number to start from (0 for the beginning).' }
+  }, required:['id'] }
+}];
+function chatToolsOffered(){
+  try{
+    if(loadStr('amv_cap_chats') === '0' || _isTempChat()) return [];
+    const cur = getCurConv(), ws = (cur && cur.wsId) || null;
+    return (S.convs || []).some(c => c && c.id !== (cur && cur.id) && !c.temp && (c.wsId || null) === ws && (c.msgs || []).length) ? CHAT_HISTORY_TOOLS : [];
+  }catch(e){ return []; }
+}
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
 async function _officeEditTool(input){
@@ -828,6 +853,11 @@ async function _amvRunTool(name, input, onStatus){
 
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
+    if(name==='chat_search' || name==='chat_read'){
+      onStatus && onStatus(name==='chat_search' ? 'Searching your past chats\u2026' : 'Reading an earlier chat\u2026');
+      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      return { text: await (name==='chat_search' ? window.amvChatSearch : window.amvChatRead)(input), render:null };
+    }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');
       if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };

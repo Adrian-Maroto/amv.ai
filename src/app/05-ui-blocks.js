@@ -1130,6 +1130,8 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
     /* Their file library, while they are signed in to have one. */
     try{ tools = tools.concat(libraryToolsOffered()); }catch(e){}
+    /* And their earlier conversations, to find what was actually said. */
+    try{ tools = tools.concat(chatToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}

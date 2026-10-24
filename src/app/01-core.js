@@ -160,7 +160,7 @@ const _GLOBAL_KEYS = new Set(['amv_cookie_session','amv_links','amv_user','amv_t
    device: whoever signs in first inherits what was already visible to everyone,
    and nobody after them sees it. */
 const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
-  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory','amv_cap_chats',
   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
   'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision',
   /* These three were written through raw localStorage, which skips scoping

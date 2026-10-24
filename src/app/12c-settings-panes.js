@@ -1606,10 +1606,12 @@ function _renderSetPaneInner(only, into){
       '<div class="ss2">'+
         capToggle('cap-websearch','Web search','Look things up online when it helps.', loadStr('amv_cap_websearch')!=='0')+
         capToggle('cap-memory','Memory','Remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
+        capToggle('cap-chats','Past chats','Look back through your earlier chats when you refer to them.', loadStr('amv_cap_chats')!=='0')+
         capToggle('cap-suggestions','Answer blocks','Tappable choices, cards and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
       '</div>';
     on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
+    on($('cap-chats'),'change',function(){ saveStr('amv_cap_chats',this.checked?'1':'0'); toast(this.checked?'Past chats on':'Past chats off','info',2000); });
     on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Answer blocks on':'Answer blocks off','info',2000); });
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes

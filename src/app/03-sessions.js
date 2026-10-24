@@ -2154,7 +2154,7 @@ function eraseDeviceData(email){
   // for no privacy gain.
   ['amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_token','amv_api_refresh','amv_token_exp',
    'amv_user','amv_owner','amv_credits','amv_credits_autoreload','amv_nickname','amv_work',
-   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory','amv_cap_chats',
    'amv_cap_suggestions','amv_skills','amv_active_skills','amv_oauth_return','amv_oauth_state',
    'amv_analytics_id','amv_market_local','amv_market_purchases','amv_market_wallet',
    'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads']

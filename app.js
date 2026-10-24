@@ -160,7 +160,7 @@ const _GLOBAL_KEYS = new Set(['amv_cookie_session','amv_links','amv_user','amv_t
    device: whoever signs in first inherits what was already visible to everyone,
    and nobody after them sees it. */
 const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
-  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+  'amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory','amv_cap_chats',
   'amv_cap_suggestions','amv_skills','amv_active_skills','amv_plugin_web',
   'amv_plugin_code','amv_plugin_canvas','amv_plugin_automations','amv_plugin_vision',
   /* These three were written through raw localStorage, which skips scoping
@@ -6482,7 +6482,7 @@ function eraseDeviceData(email){
   // for no privacy gain.
   ['amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_token','amv_api_refresh','amv_token_exp',
    'amv_user','amv_owner','amv_credits','amv_credits_autoreload','amv_nickname','amv_work',
-   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory',
+   'amv_instructions','amv_location_opt','amv_improve_opt','amv_cap_websearch','amv_cap_memory','amv_cap_chats',
    'amv_cap_suggestions','amv_skills','amv_active_skills','amv_oauth_return','amv_oauth_state',
    'amv_analytics_id','amv_market_local','amv_market_purchases','amv_market_wallet',
    'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads']
@@ -9094,6 +9094,8 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
     /* Their file library, while they are signed in to have one. */
     try{ tools = tools.concat(libraryToolsOffered()); }catch(e){}
+    /* And their earlier conversations, to find what was actually said. */
+    try{ tools = tools.concat(chatToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -28548,6 +28550,31 @@ const LIBRARY_TOOLS = [{
   }, required:['query'] }
 }];
 function libraryToolsOffered(){ return _libWho() ? LIBRARY_TOOLS : []; }
+/* THEIR PAST CHATS (amvChatSearch / amvChatRead in project-search.js). Memory
+   keeps facts; these find the conversation itself and read its exact turns.
+   Offered when the switch in Privacy is on, outside a temporary chat, and
+   only when there is another saved conversation to find. */
+const CHAT_HISTORY_TOOLS = [{
+  name:'chat_search',
+  description:'Search the person\u2019s earlier conversations with AMV for passages about something. Use when they refer to something discussed before that is not in this conversation ("the plan we worked out last week", "what did I say my budget was", "like we did before"), or when the exact earlier wording matters more than a remembered summary. Returns matching passages with each conversation\u2019s title, date and id. Quote what was said; never guess.',
+  input_schema:{ type:'object', properties:{
+    query:{ type:'string', description:'Words that would have been used in that conversation, in its language.' }
+  }, required:['query'] }
+},{
+  name:'chat_read',
+  description:'Read the exact turns of one earlier conversation, by the id chat_search returned. Use when a passage is not enough and the surrounding turns matter. Returns the turns in order, numbered, and says whether more follows.',
+  input_schema:{ type:'object', properties:{
+    id:{ type:'string', description:'The conversation id from chat_search.' },
+    from:{ type:'integer', description:'The turn number to start from (0 for the beginning).' }
+  }, required:['id'] }
+}];
+function chatToolsOffered(){
+  try{
+    if(loadStr('amv_cap_chats') === '0' || _isTempChat()) return [];
+    const cur = getCurConv(), ws = (cur && cur.wsId) || null;
+    return (S.convs || []).some(c => c && c.id !== (cur && cur.id) && !c.temp && (c.wsId || null) === ws && (c.msgs || []).length) ? CHAT_HISTORY_TOOLS : [];
+  }catch(e){ return []; }
+}
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
 async function _officeEditTool(input){
@@ -29112,6 +29139,11 @@ async function _amvRunTool(name, input, onStatus){
 
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
+    if(name==='chat_search' || name==='chat_read'){
+      onStatus && onStatus(name==='chat_search' ? 'Searching your past chats\u2026' : 'Reading an earlier chat\u2026');
+      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      return { text: await (name==='chat_search' ? window.amvChatSearch : window.amvChatRead)(input), render:null };
+    }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');
       if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
@@ -33353,10 +33385,12 @@ function _renderSetPaneInner(only, into){
       '<div class="ss2">'+
         capToggle('cap-websearch','Web search','Look things up online when it helps.', loadStr('amv_cap_websearch')!=='0')+
         capToggle('cap-memory','Memory','Remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
+        capToggle('cap-chats','Past chats','Look back through your earlier chats when you refer to them.', loadStr('amv_cap_chats')!=='0')+
         capToggle('cap-suggestions','Answer blocks','Tappable choices, cards and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
       '</div>';
     on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
+    on($('cap-chats'),'change',function(){ saveStr('amv_cap_chats',this.checked?'1':'0'); toast(this.checked?'Past chats on':'Past chats off','info',2000); });
     on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Answer blocks on':'Answer blocks off','info',2000); });
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
