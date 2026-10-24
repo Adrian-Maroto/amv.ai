@@ -219,10 +219,8 @@ export async function bootLive(opts = {}) {
      carries the subpixel-tolerant comparators. See armGeom in harness.mjs for
      why comparing a rect against a whole number needs half a pixel of slack. */
   await armGeom(context);
-  const page = await context.newPage();
 
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
   const served = [];
   const pending = [];
 
@@ -261,6 +259,12 @@ export async function bootLive(opts = {}) {
   };
   await context.route(BACKEND + '/**', toWorker);
   if (mounted) await context.route(SITE + '/api/**', toWorker);
+  /* The page is opened AFTER the routes. Chromium applies a context's routes
+     to a page that already exists; WebKit does not, so every request a WebKit
+     page made went to the real network (or, through /api, to the static
+     server's 404) and no sign-up could ever complete. */
+  const page = await context.newPage();
+  page.on('pageerror', e => errors.push(e.message));
 
   await page.goto(`http://localhost:${port}`, { waitUntil: 'load' });
   /* CI has twice lost a live suite's page to a navigation in the middle of a
