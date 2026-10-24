@@ -40,6 +40,13 @@ const CTX_COMPACT_MIN_TOKENS = 6000;
 /* Recent turns are never compacted however big they get. The last thing
    somebody said is the thing they are talking about. */
 const CTX_KEEP_MIN_TURNS = 6;
+/* AND A COUNT, NOT ONLY A WEIGHT. The server takes at most 200 messages in a
+   request (MAX_MESSAGES in src/worker/06-input-validation.js) and refuses the
+   whole turn above it. The split below was by tokens alone, so a long chat of
+   short turns fitted the budget easily and was refused for its count. A turn
+   where AMV used a tool goes on the wire as two messages, so it counts two.
+   A few are kept in hand for the turn being sent. */
+const CTX_MAX_WIRE = 190;
 
 /* Where the split falls: the index of the oldest turn that still goes
    verbatim. Everything before it is the brief's job.
@@ -50,13 +57,16 @@ const CTX_KEEP_MIN_TURNS = 6;
 function _ctxSplit(msgs, budget){
   budget = budget || CTX_HISTORY_BUDGET;
   const n = msgs.length;
-  let used = 0, i = n - 1;
+  let used = 0, wire = 0, i = n - 1;
   for(; i >= 0; i--){
     const t = _tok(msgs[i].c || msgs[i].text || '');
+    const w = (msgs[i]._toolContent && msgs[i]._toolResults) ? 2 : 1;
+    /* The count is never exceeded - the server would refuse the turn. */
+    if(wire + w > CTX_MAX_WIRE) break;
     /* The minimum is honoured even when a single turn blows the budget:
        sending nothing at all is worse than sending one long turn. */
     if(used + t > budget && (n - 1 - i) >= CTX_KEEP_MIN_TURNS) break;
-    used += t;
+    used += t; wire += w;
   }
   return { from: Math.max(0, i + 1), tokens: used };
 }

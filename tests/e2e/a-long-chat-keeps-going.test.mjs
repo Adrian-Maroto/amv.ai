@@ -173,6 +173,46 @@ section('The chat surface stops telling people their chat is full');
      'while missing context is stated plainly', r.degraded);
 }
 
+section('A chat of many short turns stays under the server\u2019s message limit');
+{
+  /* The server refuses a request of more than MAX_MESSAGES messages. The split
+     was by tokens alone, so 230 one-line turns fitted the budget easily and the
+     turn was refused for its count. A tool turn goes on the wire as two. */
+  const backend = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const MAX = +((backend.match(/const MAX_MESSAGES = (\d+)/) || [])[1] || 0);
+  ok(MAX > 0, 'the server\u2019s limit was found', MAX);
+  const r = await page.evaluate(() => {
+    const msgs = [];
+    for (let i = 0; i < 230; i++) {
+      const m = { r: i % 2 ? 'a' : 'u', c: 'ok ' + i };
+      if (i % 2 && i % 10 === 1) { m._toolContent = [{ type: 'text', text: 'x' }]; m._toolResults = [{ type: 'tool_result', content: 'y' }]; }
+      msgs.push(m);
+    }
+    const split = _ctxSplit(msgs);
+    /* Counted the way the send path puts them on the wire. */
+    let wire = 0; msgs.slice(split.from).forEach(m => { wire += (m._toolContent && m._toolResults) ? 2 : 1; });
+    return { from: split.from, wire, total: msgs.length };
+  });
+  ok(r.from > 0, 'the oldest turns go to the brief even though they weigh almost nothing', r);
+  ok(r.wire <= MAX, 'and what is sent is within the server\u2019s limit, counting a tool turn as two', r);
+  ok(r.wire >= MAX - 15, 'while keeping as much of the chat verbatim as the limit allows', r);
+}
+
+section('An answer may be as long as the engine allows, not shorter');
+{
+  /* The page asked for less than the server allows - Auto 6,000 whatever it
+     routed to, Pulse 4,000, Apex 16,000 of 32,000 - so long answers were cut
+     off by the page. Each engine's ceiling is read from the server bundle. */
+  const backend = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const maxOut = {};
+  for (const m of backend.matchAll(/'(amv-[a-z]+)':\s*\{[^}]*?maxOut:\s*(\d+)/g)) maxOut[m[1]] = +m[2];
+  const models = await page.evaluate(() => Object.fromEntries(Object.entries(MODELS).map(([k, v]) => [k, { model: v.model, tokens: v.tokens }])));
+  const engines = Object.values(models).filter(v => maxOut[v.model]);
+  ok(engines.length >= 5, 'every engine in the picker was matched to the server\u2019s ceiling', Object.keys(maxOut));
+  ok(engines.every(v => v.tokens === maxOut[v.model]), 'each asks for exactly the server\u2019s ceiling', engines.map(v => v.model + ' ' + v.tokens + '/' + maxOut[v.model]));
+  ok(models.auto.tokens === Math.max(...Object.values(maxOut)), 'and Auto asks for the most any engine gives, for the server to clamp', models.auto);
+}
+
 section('The send path really uses it - the seam, not just the helper');
 {
   /* `_ctxPrepare` can be perfect while the request still says `.slice(-20)`,

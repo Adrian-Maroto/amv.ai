@@ -778,13 +778,22 @@ function isAdmin(){ return isOwnerMode(); }
 try{ if(typeof location!=='undefined' && /[?&]owner=1\b/.test(location.search)){ saveStr('amv_owner','1'); } }catch(e){}
 try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(e){}
 // Models
+/* `tokens` is the longest answer each engine is ASKED for, and it is the
+   server's own ceiling for that engine (maxOut in src/worker/01-config.js).
+   It was lower than the server's on three of them - Auto at 6,000 whatever it
+   routed to, Pulse at 4,000, Apex at half its 32,000 - so long answers were cut
+   off by the page, not by the engine or the plan. Asking for the ceiling costs
+   nothing by itself: an answer is billed by what it actually says, and the
+   server fits the ceiling to the allowance that is left rather than refusing.
+   Auto asks for the most any engine gives; the server clamps it to the one it
+   picks. */
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:4000, cost:1, rec:'free' },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:32000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:16000, cost:1, rec:'free' },
   core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
   swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', tokens:32000, cost:3, rec:'pro' },
   coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:32000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
      it out of the picker and kept it in the product's own idea of what it can
      do. Nothing reads it: MODEL_ORDER never listed it, and the only other
