@@ -30,7 +30,7 @@ section('Not before somebody has had real answers');
   ok(await shown(), 'after the sixth: the card', await shown());
   const t = await page.evaluate(() => document.querySelector('.upn').textContent);
   ok(/Use AMV Forge with AMV Pro/.test(t), 'Free is offered Pro, by the engine it unlocks', t.slice(0, 60));
-  ok(t.includes(Number(100000).toLocaleString()) && t.includes(Number(3000).toLocaleString()), 'with the plans page’s own figures', t);
+  ok(t.includes(Number(1000).toLocaleString() + ' messages every 5 hours, up from 25'), 'with the plans page’s own figures - the window that binds', t);
   ok(!/Claude|Anthropic|Opus|Fable|Sonnet|Haiku/.test(t), 'and nothing but AMV names on it', t);
 }
 

@@ -133,7 +133,7 @@ section('In Spanish, the money screens are Spanish');
     return { line: (pro.querySelector('.pl2-line') || {}).textContent || '', feats: [...pro.querySelectorAll('.pl2-feats li')].map(e => e.textContent) };
   });
   ok(/primer nivel/.test(cards.line), 'the card’s own line is Spanish', cards.line);
-  ok(cards.feats.some(f => /mensajes al mes/.test(f)) && cards.feats.some(f => /Hasta \d+ mensajes de Forge/.test(f)),
+  ok(cards.feats.some(f => /Uso mensual/.test(f)) && cards.feats.some(f => /[\d,.]+ cada 5 horas/.test(f)) && cards.feats.some(f => /Hasta \d+ mensajes de Forge/.test(f)),
      'and so is what it includes, with the numbers in their places', cards.feats);
   ok(!cards.feats.some(f => /\{[a-z]+\}/.test(f)), 'with no slot left unfilled', cards.feats);
 }
