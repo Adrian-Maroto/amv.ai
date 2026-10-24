@@ -198,6 +198,28 @@ section('Stripe’s own status decides, not just the price');
   ok(back.plan === 'pro' && back.pastDueSince === undefined, 'active restores it cleanly', back);
 }
 
+section('A subscription nobody has paid for yet does not start the plan');
+{
+  /* The card form leaves an 'incomplete' subscription while the bank asks the
+     person to confirm. It used to be granted off its price alone, so a plan
+     started before any money moved and stayed if the confirmation was never
+     finished. */
+  const env = makeEnv();
+  await W._linkCustomer(env, 'carol@x.com', 'cus_9');
+  const send = (type, status, extra) => stripeEvent(env, { id: 'evt_i' + type + status, type,
+      data: { object: Object.assign({ customer: 'cus_9', status, id: 'sub_9', subscription: 'sub_9',
+        items: { data: [{ price: { id: 'price_pro' } }] }, lines: { data: [{ price: { id: 'price_pro' } }] } }, extra || {}) } });
+  await send('customer.subscription.updated', 'incomplete');
+  const inc = await ent(env, 'carol@x.com');
+  ok(!inc || inc.plan !== 'pro', 'an incomplete subscription grants nothing', inc && inc.plan);
+  await send('invoice.paid', undefined, { billing_reason: 'subscription_create' });
+  const paid = await ent(env, 'carol@x.com');
+  ok(paid && paid.plan === 'pro', 'the plan starts when its first invoice is paid', paid && paid.plan);
+  await send('customer.subscription.updated', 'paused');
+  const paused = await ent(env, 'carol@x.com');
+  ok(paused && paused.plan === 'free', 'and a paused subscription is not paid for, so it ends the plan', paused && paused.plan);
+}
+
 section('Every read of the plan honours the lapse - not just some of them');
 {
   // The risk is one caller using ent.plan directly and handing out compute a

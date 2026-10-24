@@ -97,6 +97,9 @@ section('It lets the page reach only what the page reaches');
     /* Named with its caller: Stripe.js, loaded from js.stripe.com, runs in
        this page and calls api.stripe.com from here. */
     if (h === 'https://api.stripe.com' && loaded.has('https://js.stripe.com')) return false;
+    /* gtag.js, loaded from www.googletagmanager.com when an owner turns on
+       Google Analytics, sends its events to these. */
+    if (/^https:\/\/\*\.(google-analytics\.com|analytics\.google\.com)$/.test(h) && loaded.has('https://www.googletagmanager.com')) return false;
     return !app.includes(h.replace(/^https:\/\//, ''));
   });
   ok(unused.length === 0, 'every other host in connect-src is one the page calls', unused);
@@ -127,6 +130,22 @@ section('A script from another host is not asked for in a mode its host refuses'
   ok(/https:\/\/accounts\.google\.com(\/gsi\/style)?(\s|$)/.test(dir('style-src')), "style-src allows Google's sign-in stylesheet", dir('style-src'));
   ok(/https:\/\/accounts\.google\.com/.test(dir('frame-src')) && /https:\/\/accounts\.google\.com/.test(dir('connect-src')),
      'and its frame and its connection', { frame: dir('frame-src'), connect: dir('connect-src') });
+}
+
+section('What a script is allowed to load, it is allowed to finish');
+{
+  /* A third party allowed in script-src that is then refused the rest of what
+     it needs is a feature that loads and silently does nothing:
+     - Stripe runs a card's 3-D Secure check in a frame on hooks.stripe.com;
+       refused, every card whose bank asks to confirm fails at the last step.
+     - Plausible and Google Analytics send their events to their own hosts;
+       refused, an owner's analytics show nothing, and nothing says why. */
+  const csp = meta('http-equiv', 'Content-Security-Policy') || '';
+  const dir = (n) => ((csp.match(new RegExp('(?:^|[;\\s])' + n + '\\s+([^;]*)')) || [])[1] || '');
+  ok(/https:\/\/hooks\.stripe\.com/.test(dir('frame-src')), "frame-src allows Stripe's card-confirmation frame", dir('frame-src'));
+  ok(/https:\/\/plausible\.io/.test(dir('connect-src')), 'connect-src lets Plausible send what it counts', dir('connect-src'));
+  ok(/google-analytics\.com/.test(dir('connect-src')) && /analytics\.google\.com/.test(dir('connect-src')),
+     'and Google Analytics', dir('connect-src'));
 }
 
 report();

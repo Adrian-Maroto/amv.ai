@@ -27092,12 +27092,19 @@ async function stripeWebhook(request, env, ctx) {
          'subscription_cycle' and cancels nothing. */
       if (type === 'invoice.paid' && obj.billing_reason === 'subscription_create' && obj.customer && subId)
         await _cancelSupersededSubs(env, obj.customer, subId, email || '');
-      const DEAD = ['unpaid', 'canceled', 'incomplete_expired'];
+      /* 'paused' is a subscription nobody is paying for, the same as the rest. */
+      const DEAD = ['unpaid', 'canceled', 'incomplete_expired', 'paused'];
+      /* Only these are paid for. 'incomplete' is a subscription whose first
+         payment has not happened - the card form leaves one behind while the
+         bank asks the person to confirm - and it fell through to the grant
+         below, so the plan started before any money had moved, and stayed if
+         the confirmation was never finished. It now waits for invoice.paid. */
+      const PAID = status === 'active' || status === 'trialing';
       if (email && DEAD.indexOf(status) >= 0) {
         await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status, eventAt: evtAt, sub: subId });
       } else if (email && status === 'past_due') {
         await _markPastDue(env, email, { sub: obj.id || '' });
-      } else if (email && plan) {
+      } else if (email && plan && PAID) {
         /* For the per-seat plan the QUANTITY is the entitlement. Stripe is the
            only thing that knows how many seats are actually being paid for, so
            it is read off the subscription item rather than trusted from a

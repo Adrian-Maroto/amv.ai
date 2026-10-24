@@ -18934,12 +18934,30 @@ function _mountStripe(pk,plan){
           // plans for free whenever the request failed or needed 3-D Secure.
           const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/v1/subscribe',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token},body:JSON.stringify({plan,payment_method:paymentMethod.id})});
           const d=await r.json().catch(()=>({}));
-          if(!r.ok || !d.ok){
-            const el=$('stripe-card-errors');
-            if(el) el.textContent = d.need || d.error || 'Payment was not completed.';
-            sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
-            return;   // no plan, no payment method saved
+          const fail=(msg)=>{ const el=$('stripe-card-errors'); if(el) el.textContent=msg; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; };
+          /* THE BANK ASKS THE PERSON TO CONFIRM (3-D Secure). The server has
+             started the subscription and handed back the payment to confirm.
+             This used to print "your bank needs to confirm" and stop - with
+             nothing to confirm it with - so every card that needs it (most of
+             Europe and the UK under strong customer authentication, and India)
+             could never subscribe here. Stripe shows the bank's own check; the
+             plan is still granted only by the server, when Stripe reports the
+             first invoice paid, so this waits for the server to say so. */
+          if(d.code==='requires_action' && d.clientSecret){
+            sb.textContent='Waiting for your bank…';
+            const conf=await stripe.confirmCardPayment(d.clientSecret);
+            if(conf.error){ fail(conf.error.message || 'Your bank did not confirm the payment, so nothing was charged.'); return; }
+            sb.textContent='Starting your plan…';
+            for(let i=0;i<15;i++){
+              try{ await syncEntitlement(); }catch(e){}
+              if(loadStr('amv_plan')===plan){ closePaySheet(); renderBillingView(); toast('You are now on '+PLANS[plan].name+'!','success'); return; }
+              await new Promise(x=>setTimeout(x,2000));
+            }
+            closePaySheet(); renderBillingView();
+            toast('Your bank confirmed the payment. Your plan starts as soon as the payment clears - usually within a minute.','info',9000);
+            return;
           }
+          if(!r.ok || !d.ok){ fail(d.need || d.error || 'Payment was not completed.'); return; }   // no plan, no payment method saved
           _setPlan(plan); closePaySheet(); renderBillingView(); toast('You are now on '+PLANS[plan].name+'!','success');
         }catch(e){ const el=$('stripe-card-errors'); if(el) el.textContent='Could not complete subscription. Try again.'; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; }
       });

@@ -36,10 +36,20 @@ await page.evaluate(() => document.getElementById('ck')?.remove());
 const describe = () => page.evaluate(() => {
   const e = document.activeElement;
   if (!e || e === document.body) return { none: true };
-  const cs = getComputedStyle(e);
+  /* A switch's checkbox is invisible on purpose; its ring is drawn on the
+     track beside it (.sw input:focus-visible + .sw-sl). Measured there - the
+     invisible input's own outline is not something anybody sees, which is
+     why Chromium "passed" on it and WebKit, which draws none there, did not. */
+  /* The focus ring fades in (a 0.2s transition on box-shadow), and right after
+     Tab its value is still the transparent start. Finished first, so what is
+     measured is what a person sees a moment later - not an in-between frame
+     that read as a ring in one engine and as nothing in another. */
+  try { document.getAnimations().forEach(a => { if (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) a.finish(); }); } catch (_) {}
+  const shown = (e.matches && e.matches('.sw input') && e.nextElementSibling) ? e.nextElementSibling : e;
+  const cs = getComputedStyle(shown);
   const b = e.getBoundingClientRect();
   const ring = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
-    || (cs.boxShadow && cs.boxShadow !== 'none');
+    || (cs.boxShadow && cs.boxShadow !== 'none' && !/^rgba\(0, 0, 0, 0\) 0px 0px 0px 0px$/.test(cs.boxShadow));
   return {
     tag: e.tagName, cls: (e.className || '').toString().slice(0, 26),
     txt: (e.textContent || '').trim().slice(0, 18), ring,

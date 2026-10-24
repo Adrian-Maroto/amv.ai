@@ -156,6 +156,50 @@ section('The card form refuses to report a payment it could not make');
      'the sheet stays open rather than closing on a success that did not happen', r.sheetStillOpen);
 }
 
+section('A card whose bank asks to confirm is confirmed, and the plan waits for the server');
+{
+  /* 3-D Secure: the server starts the subscription and hands back the payment
+     to confirm. The form used to print "your bank needs to confirm" and stop,
+     with nothing to confirm it with, so a card that needs it - most of Europe
+     and the UK, and India - could never subscribe here. */
+  const run = (bankSays) => page.evaluate(async (bankSays) => {
+    saveStr('amv_api_base', 'https://backend.example.workers.dev');
+    saveStr('amv_api_token', 'tok'); saveStr('amv_token_exp', String(Date.now() + 3e6));
+    saveStr('amv_plan', 'free');
+    const seen = { confirmed: null, planWhenConfirming: null, syncs: 0 };
+    const realFetch = window.fetch;
+    window.fetch = async (url, init) => /\/v1\/subscribe$/.test(String(url))
+      ? new Response(JSON.stringify({ ok: false, code: 'requires_action', clientSecret: 'pi_1_secret_2',
+          need: 'Your bank needs to confirm this payment before the plan starts.' }), { status: 402, headers: { 'Content-Type': 'application/json' } })
+      : realFetch(url, init);
+    const realStripe = window.Stripe;
+    window.Stripe = () => Object.assign(realStripe(), {
+      confirmCardPayment: async (secret) => { seen.confirmed = secret; seen.planWhenConfirming = loadStr('amv_plan');
+        return bankSays === 'yes' ? { paymentIntent: { status: 'succeeded' } } : { error: { message: 'Your bank declined the confirmation.' } }; },
+    });
+    const realSync = window.syncEntitlement;
+    window.syncEntitlement = async () => { seen.syncs++; if (bankSays === 'yes' && seen.syncs >= 2) saveStr('amv_plan', 'pro'); };
+    const ovr = document.getElementById('ovr');
+    ovr.innerHTML = '<div id="pay-body"><div id="stripe-card-element"></div><div id="stripe-card-errors"></div><button id="pay-submit">Pay</button></div>';
+    _mountStripe('pk_test_51AbCdEfGhIjKlMnOpQrStUv', 'pro');
+    document.getElementById('pay-submit').click();
+    const t0 = Date.now();
+    while (Date.now() - t0 < 9000 && (bankSays === 'yes' ? loadStr('amv_plan') !== 'pro' : !(document.getElementById('stripe-card-errors') || {}).textContent)) await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 300));
+    window.fetch = realFetch; window.Stripe = realStripe; window.syncEntitlement = realSync;
+    return { ...seen, plan: loadStr('amv_plan'), err: (document.getElementById('stripe-card-errors') || {}).textContent || '' };
+  }, bankSays);
+
+  const yes = await run('yes');
+  ok(yes.confirmed === 'pi_1_secret_2', 'the bank\'s check is started with the payment the server handed back', yes.confirmed);
+  ok(yes.planWhenConfirming === 'free', 'nothing is granted while the bank is asking', yes.planWhenConfirming);
+  ok(yes.plan === 'pro' && yes.syncs >= 2, 'and the plan starts when the server says the payment cleared', yes);
+
+  const no = await run('no');
+  ok(no.plan === 'free', 'a declined confirmation grants nothing', no.plan);
+  ok(/declined/i.test(no.err), 'and says why, where the card is', no.err);
+}
+
 section('PayPal with no server does not load an SDK that can take money');
 {
   /* The SDK path built and captured the order in the browser. With no server

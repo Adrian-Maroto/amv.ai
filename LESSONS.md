@@ -15406,3 +15406,29 @@ The same lane run found why WebKit's live suites never passed: a page its
 service worker controls is not routed by Playwright in WebKit. bootLive
 blocks the service worker there (keepServiceWorker for the suite about it),
 and 27 more suites pass (332 of 367).
+
+## 610. A card whose bank asks to confirm could never subscribe
+
+The card form sends a tokenised card to /v1/subscribe; when the bank wants
+3-D Secure, the server starts the subscription and returns the payment's
+client secret with "Your bank needs to confirm this payment". The page printed
+that sentence and stopped. Nothing ever ran the confirmation, and the policy
+did not even allow Stripe's confirmation frame (hooks.stripe.com). Strong
+customer authentication makes that most cards in Europe and the UK, and
+India: a whole continent could not pay through the form, and every attempt
+looked like the bank's fault.
+
+Reading that path found the opposite hole on the server: a
+customer.subscription.updated with status 'incomplete' - exactly the
+subscription that confirmation leaves behind - fell through to the grant,
+because only unpaid/canceled/incomplete_expired were treated as dead. The
+plan started before any money moved and stayed if the confirmation was
+abandoned. A subscription event now grants only on active or trialing;
+'paused' revokes; the first paid invoice starts the plan.
+
+The page now runs stripe.confirmCardPayment with the secret and then waits
+for the server to grant the plan - it still decides nothing itself.
+
+Same audit, same shape as 604 and 609: Plausible and Google Analytics were
+allowed to load but not to send, so an owner's analytics stayed empty. The
+page-head suite now checks that what a script may load, it may finish.
