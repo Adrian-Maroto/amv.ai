@@ -3530,6 +3530,41 @@ function _fmtResetIn(ms){
 }
 try{ window.AMVUsage = AMVUsage; }catch(e){}
 
+/* WHO DECIDES WHETHER YOU MAY SEND: THE SERVER, WHEN THERE IS ONE.
+
+   AMVUsage above is a tally this browser keeps, against a cap it works out for
+   itself (a third of the daily allowance per five hours). It never matched
+   the server: the server's five-hour limit counts MESSAGES, its windows sit on
+   a different clock, and it is per account where this is per device. For a
+   signed-in account it still locked the composer - so a Pro customer in a
+   long coding chat, re-sending a 30,000-token conversation each turn, was
+   stopped after a handful of turns by a limit no server had set, with plenty
+   of their real allowance left.
+
+   For a signed-in account on a live server, the server is the only thing that
+   refuses (its 429 carries the real reset time, and quotaLock takes it from
+   there). The local tally stays for a deployment with no server, where it is
+   the only guard there is. */
+function _usageServerOwned(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } }
+/* The server's last report, so the sidebar and the Usage screen show one set
+   of numbers. Refreshed after a reply, at most every 15 seconds. */
+let _srvUsage = null, _srvUsageAt = 0, _srvUsageP = null;
+let _srvUsageWho = '', _srvUsageTry = 0;
+function _srvUsageRefresh(force){
+  if(!_usageServerOwned()) return Promise.resolve(null);
+  /* Another account signed in on this tab never sees the last one's numbers. */
+  const who = (S && S.user && S.user.email) || '';
+  if(who !== _srvUsageWho){ _srvUsage = null; _srvUsageAt = 0; _srvUsageWho = who; }
+  if(_srvUsageP) return _srvUsageP;
+  _srvUsageTry = Date.now();
+  if(!force && _srvUsage && Date.now() - _srvUsageAt < 15000) return Promise.resolve(_srvUsage);
+  _srvUsageP = AMV_API.usage().then(d => {
+    if(d && d.day && d.month && who === _srvUsageWho){ _srvUsage = d; _srvUsageAt = Date.now(); }
+    return _srvUsage;
+  }).catch(() => _srvUsage).finally(() => { _srvUsageP = null; try{ _renderSbUsage(); }catch(e){} });
+  return _srvUsageP;
+}
+
 /* ── Out-of-usage lock ─────────────────────────
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
@@ -3610,7 +3645,7 @@ try{ window.quotaLock=quotaLock; window.quotaLocked=quotaLocked; }catch(e){}
 function _budgetGuard(estPerStep){
   estPerStep = estPerStep || 4000;
   try{
-    if(typeof AMVUsage==='undefined') return {ok:true};
+    if(typeof AMVUsage==='undefined' || _usageServerOwned()) return {ok:true};
     const s = AMVUsage.status();
     // need room for at least one more step; warn/stop if under that
     if(s.remaining < estPerStep){
@@ -3991,7 +4026,7 @@ const AEGIS = {
     if(this._times.length >= this.cfg.rpmMax)
       return { ok:false, reason:'Hit the per-minute request limit. Try again shortly.', retryMs:15000 };
     const u=this.usage();
-    if(u.inTok+u.outTok >= this.cfg.dailyTokenCap)
+    if(u.inTok+u.outTok >= this.cfg.dailyTokenCap && !_usageServerOwned())
       return { ok:false, reason:'Daily token cap reached for this device. Resets at midnight UTC.', retryMs:null };
     return { ok:true };
   },
@@ -8632,16 +8667,6 @@ async function _readLongMessage(text){
     toast('That message is ' + chars + ' characters, which is read in parts - and that needs the AMV engine, which is not connected on this deployment. Nothing was sent.', 'error', 9000);
     return null;
   }
-  try{
-    if(typeof AMVUsage !== 'undefined'){
-      const st = AMVUsage.status();
-      if(st && Number.isFinite(st.remaining) && st.remaining < n + 1){
-        toast('Reading this takes ' + (n + 1) + ' messages (' + n + ' parts and the answer) and you have ' + st.remaining
-          + ' left right now. Nothing was sent, and nothing was used.', 'error', 9000);
-        return null;
-      }
-    }
-  }catch(e){}
   const yes = await showConfirmAsync('This message is ' + chars + ' characters - more than an engine reads at once. '
     + 'AMV will read it in ' + n + ' parts, take faithful notes on each, and answer from those notes and the exact end of your message. '
     + 'It uses ' + (n + 1) + ' messages of your allowance. Read it?');
@@ -8700,7 +8725,7 @@ async function sendMsg(_opts) {
   // clearing, so nothing is consumed and the user's text stays in the box.
   try{
     if(quotaLocked()){ _renderQuotaNotice(); return; }
-    if(typeof AMVUsage!=='undefined'){
+    if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){
       const _qst=AMVUsage.status();
       if(_qst.remaining<=0){
         quotaLock(_qst.resetsAt);
@@ -8911,7 +8936,7 @@ async function _callAITurn(msgs, _opts) {
   // live reset countdown, lock the composer, and never stack duplicates.
   try{
     if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
-    if(typeof AMVUsage!=='undefined'){
+    if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){
       const st=AMVUsage.status();
       if(st.remaining <= 0){
         S.busy=false;
@@ -8944,6 +8969,7 @@ async function _callAITurn(msgs, _opts) {
        both sent the dearest engine and then priced the turn at its rate. */
     try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.core).model, _inTok, _outTok); }catch(e){}
     try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+    try{ _srvUsageRefresh(); }catch(e){}
   };
   const mdl=MODELS[_routeKey]||MODELS.core;
   /* A temporary chat starts from nothing it was not told in this conversation. */
@@ -9827,7 +9853,7 @@ function renderChatView() {
   // re-render the composer notice (and pick up a still-exhausted local window).
   try{
     if(quotaLocked()) _renderQuotaNotice();
-    else if(typeof AMVUsage!=='undefined'){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
+    else if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
   }catch(e){}
   // Model selector popup
   on($('inp-mdl-btn'),'click',showModelPicker);
@@ -11543,8 +11569,50 @@ function updateSbUser(){
 }
 /* Sidebar usage meter - shows how much of the current window is used, so a user
    sees their limit approaching (and can upgrade before hitting the wall). */
+/* For a signed-in account the meter is the server's, and it is the ONE meter
+   nearest to stopping them - the five-hour messages, today's tokens or the
+   month - with the moment that one reopens. */
+function _usageBinding(d){
+  const pct = (u, l) => l > 0 ? Math.min(100, Math.round((u / l) * 100)) : -1;
+  const all = [
+    { k: 'session', label: T('5-hour window'), pct: pct(d.window5h && d.window5h.used, d.window5h && d.window5h.limit), at: d.window5h && d.window5h.resetAt },
+    { k: 'day', label: T('Today'), pct: pct(d.day.used, d.day.limit), at: d.day.resetAt },
+    { k: 'month', label: T('This month'), pct: d.included ? d.included.pct : pct(d.month.used, d.month.limit), at: (d.included && d.included.resetAt) || d.month.resetAt },
+  ].filter(m => m.pct >= 0);
+  /* The furthest along wins; on a tie, the longer wait, because that is the
+     one worth knowing about. */
+  all.sort((a, b) => (b.pct - a.pct) || ((+b.at || 0) - (+a.at || 0)));
+  return all[0] || null;
+}
+function _usageResetWords(at){
+  const ms = (+at || 0) - Date.now();
+  if(!(+at) ) return '';
+  if(ms < 86400000) return T('Resets in {0}').replace('{0}', _fmtResetIn(Math.max(0, ms)));
+  try{ return T('Resets {0}').replace('{0}', new Date(+at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })); }catch(e){ return ''; }
+}
 function _renderSbUsage(){
   const el=$('sb-usage'); if(!el) return;
+  if(_usageServerOwned()){
+    const who=(S.user&&S.user.email)||'';
+    if(!_srvUsage || who!==_srvUsageWho){
+      el.style.display='none';
+      /* A failed read renders this again; it asks again only after a pause. */
+      if(who!==_srvUsageWho || Date.now()-_srvUsageTry > 30000) _srvUsageRefresh();
+      return;
+    }
+    const m=_usageBinding(_srvUsage);
+    if(!m){ el.style.display='none'; return; }
+    const near=m.pct>=80, full=m.pct>=100, plan=String(_srvUsage.plan||'free');
+    el.style.display='';
+    el.innerHTML=
+      '<div class="sb-usage-top"><span>'+escH(m.label)+'</span><span class="sb-usage-pct">'+m.pct+'%</span></div>'+
+      '<div class="sb-usage-bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+m.pct+'" aria-label="'+escH(m.label)+'"><div class="sb-usage-fill" style="width:'+m.pct+'%;background:'+(full?'var(--red)':near?'var(--gold)':'var(--accent)')+'"></div></div>'+
+      '<div class="sb-usage-reset">'+escH(_usageResetWords(m.at))+'</div>'+
+      (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">'+escH(T('Upgrade for more'))+'</button>' : '');
+    const up=el.querySelector('[data-sb-upgrade]');
+    if(up) up.addEventListener('click',()=>{ setTab('plans'); });
+    return;
+  }
   if(typeof AMVUsage==='undefined'){ el.style.display='none'; return; }
   let st; try{ st=AMVUsage.status(); }catch(e){ el.style.display='none'; return; }
   const pct=Math.min(100, Math.round((st.used/st.cap)*100)||0);
@@ -15984,6 +16052,7 @@ function _usageContentHTML(){
     '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet - start a chat to see your impact grow.</span></div>';
   // --- Task #7: rolling usage window ---
   const us=AMVUsage.status();
+  const srvOwned=_usageServerOwned();
   const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
   const barColor = us.pct>=90 ? '#ff4d4d' : (us.pct>=70 ? '#e0b341' : 'var(--accent)');
   const usagePanel=
@@ -15997,7 +16066,7 @@ function _usageContentHTML(){
         '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
       '</div>'+
       (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent-txt);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
-      '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window - no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
+      '<p class="usage-note">'+escH(T('Counted on this device, because this AMV has no server to count it.'))+'</p>'+
     '</div>';
   // --- 14-day activity trend chart ---
   const _daily=AMVValue.daily(14);
@@ -16031,7 +16100,7 @@ function _usageContentHTML(){
         '<div class="vcard"><div class="vcard-n">'+week.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Saved this week</div></div>'+
         '<div class="vcard"><div class="vcard-n">'+S.memory.length+'</div><div class="vcard-l">Things AMV remembers</div></div>'+
       '</div>'+
-      usagePanel+
+      (srvOwned ? '' : usagePanel)+
       trendPanel+
       '<div class="ss2"><h3>What you\u2019ve used</h3><div class="vbreak">'+breakdown+'</div></div>'+
       /* THIS DEVICE, said as this device.
@@ -16059,7 +16128,7 @@ window._usageContentHTML=_usageContentHTML;
 function _paintServerUsage(){
   const host = document.getElementById('srv-usage');
   if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
-  AMV_API.usage().then(d=>{
+  _srvUsageRefresh(true).then(d=>{
     if(!d || !d.day || !d.month){
       host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
       return;
@@ -16071,11 +16140,21 @@ function _paintServerUsage(){
     };
     const n = v => (+v || 0).toLocaleString();
     const bonus = +(d.month.bonus || 0);
+    const when = at => '<div class="srv-when">'+escH(_usageResetWords(at))+'</div>';
+    const inc = d.included || { pct: d.month.limit > 0 ? Math.min(100, Math.round(d.month.used / d.month.limit * 100)) : 0, resetAt: d.month.resetAt };
+    const w5 = d.window5h || {}, top = d.topEngineWeek || {};
     host.innerHTML =
       '<h3>Your plan allowance</h3>'+
       '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
-      '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
-      '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('This month'))+'</span><span>'+escH(T('{0}% used').replace('{0}', inc.pct))+'</span></div>'+bar(inc.pct, 100)+when(inc.resetAt)+
+        (inc.by === 'cost' ? '<div class="srv-why">'+escH(T('The engines you used cost more than average, so the month is further along than its token count.'))+'</div>' : '')+'</div>'+
+      (w5.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('5-hour window'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(w5.used)).replace('{1}', n(w5.limit)))+'</span></div>'+bar(w5.used, w5.limit)+when(w5.resetAt)+'</div>' : '')+
+      '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Today'))+'</span><span>'+escH(T('{0} of {1} tokens').replace('{0}', n(d.day.used)).replace('{1}', n(d.day.limit)))+'</span></div>'+bar(d.day.used, d.day.limit)+when(d.day.resetAt)+'</div>'+
+      (top.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Top engine this week'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(top.used)).replace('{1}', n(top.limit)))+'</span></div>'+bar(top.used, top.limit)+when(top.resetAt)+'</div>' : '')+
+      '<details class="srv-more"><summary>'+escH(T('Details'))+'</summary>'+
+        '<div class="srv-lbl"><span>'+escH(T('Tokens this month'))+'</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+
+        '<div class="srv-lbl"><span>'+escH(T('Messages this month'))+'</span><span>'+n(d.messages && d.messages.used)+'</span></div>'+
+      '</details>'+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent-txt);cursor:pointer">See your invites &rarr;</a></div>'
@@ -16084,7 +16163,7 @@ function _paintServerUsage(){
         ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
           'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'
         : '')+
-      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
+      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. '+escH(T('Each limit is separate: running out today does not spend your month. Times are in your time zone.'))+'</p>';
     const go = host.querySelector('[data-sp-go]');
     if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
     const tm = host.querySelector('[data-sp-team]');

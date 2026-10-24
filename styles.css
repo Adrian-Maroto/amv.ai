@@ -17286,3 +17286,13 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .oe-pick{ display:flex; align-items:flex-start; gap:var(--sp-2); cursor:pointer; min-height:28px; }
 .oe-pick input{ margin-top:3px; flex-shrink:0; width:16px; height:16px; accent-color:var(--accent); }
 .oe-say{ margin-top:var(--sp-2); }
+
+/* LAYER A332 - the server's usage, each meter with the moment it reopens
+   (_paintServerUsage). The reason line appears only when the month is further
+   along by cost than by tokens; the token and message counts sit under
+   Details for whoever wants them. */
+.srv-when{ font-size:var(--t-xs); color:var(--mu); margin-top:var(--sp-1); }
+.srv-why{ font-size:var(--t-xs); color:var(--mu); margin-top:var(--sp-1); }
+.srv-more{ margin-top:var(--sp-3); font-size:var(--t-sm); }
+.srv-more summary{ cursor:pointer; color:var(--mu); min-height:28px; }
+.srv-more .srv-lbl{ margin-top:var(--sp-2); }

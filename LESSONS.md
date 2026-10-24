@@ -15447,3 +15447,23 @@ case is half a second billed for a turn somebody ended by accident; the cost
 of the guard was voice not working. Rules: weigh a guard by the case it can
 break, not the one it fixes; and a change justified by one engine is not done
 until that engine's lane has run on it.
+
+## 612. A limit only the page believed stopped people who had paid
+
+The page kept a token tally of its own (AMVUsage) against a cap it derived
+itself - a third of the daily allowance per five hours - and locked the
+composer when the tally ran out. The server's five-hour limit counts
+messages, sits on another clock and is per account; the tally counted tokens,
+per device. For a signed-in Pro account in a long chat (each turn re-sends the
+conversation), the page refused after a handful of turns while most of the
+real allowance was untouched, and the sidebar showed the same invented
+percentage. A second device gate (AEGIS's daily token cap) and a long-message
+check that compared tokens left to a count of messages had the same flaw.
+
+Fixed: for a signed-in account on a live server, the server is the only thing
+that refuses (its 429 carries the reset time). The sidebar and the Usage
+screen draw the server's meters, and the month is shown as whichever of tokens
+or cost is further along, since either can refuse. The local guard remains
+only where there is no server. Rule: a client may be stricter than the
+server only where there is no server; anywhere else, a refusal the server
+would not make is a defect that looks exactly like the product working.

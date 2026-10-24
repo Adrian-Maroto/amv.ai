@@ -1587,6 +1587,7 @@ function _usageContentHTML(){
     '<div class="vrow"><span>'+(typeLabel[t]||t)+'</span><span class="vrow-n">'+n+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">Nothing yet - start a chat to see your impact grow.</span></div>';
   // --- Task #7: rolling usage window ---
   const us=AMVUsage.status();
+  const srvOwned=_usageServerOwned();
   const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
   const barColor = us.pct>=90 ? '#ff4d4d' : (us.pct>=70 ? '#e0b341' : 'var(--accent)');
   const usagePanel=
@@ -1600,7 +1601,7 @@ function _usageContentHTML(){
         '<span>'+us.reqs+' request'+(us.reqs===1?'':'s')+' &middot; resets every '+us.windowHours+'h</span>'+
       '</div>'+
       (us.pct>=90?'<div class="usage-warn">You\u2019re nearly out for this window. It refreshes in '+AMVUsage.resetLabel()+', or <a data-stab="plans" style="color:var(--accent-txt);cursor:pointer">upgrade for more &rarr;</a></div>':'')+
-      '<p class="usage-note">Your usage refreshes on a rolling '+us.windowHours+'-hour window - no daily lockout. Heavier plans get a bigger allowance per window.</p>'+
+      '<p class="usage-note">'+escH(T('Counted on this device, because this AMV has no server to count it.'))+'</p>'+
     '</div>';
   // --- 14-day activity trend chart ---
   const _daily=AMVValue.daily(14);
@@ -1634,7 +1635,7 @@ function _usageContentHTML(){
         '<div class="vcard"><div class="vcard-n">'+week.hoursSaved+'<span class="vcard-u">hrs</span></div><div class="vcard-l">Saved this week</div></div>'+
         '<div class="vcard"><div class="vcard-n">'+S.memory.length+'</div><div class="vcard-l">Things AMV remembers</div></div>'+
       '</div>'+
-      usagePanel+
+      (srvOwned ? '' : usagePanel)+
       trendPanel+
       '<div class="ss2"><h3>What you\u2019ve used</h3><div class="vbreak">'+breakdown+'</div></div>'+
       /* THIS DEVICE, said as this device.
@@ -1662,7 +1663,7 @@ window._usageContentHTML=_usageContentHTML;
 function _paintServerUsage(){
   const host = document.getElementById('srv-usage');
   if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
-  AMV_API.usage().then(d=>{
+  _srvUsageRefresh(true).then(d=>{
     if(!d || !d.day || !d.month){
       host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
       return;
@@ -1674,11 +1675,21 @@ function _paintServerUsage(){
     };
     const n = v => (+v || 0).toLocaleString();
     const bonus = +(d.month.bonus || 0);
+    const when = at => '<div class="srv-when">'+escH(_usageResetWords(at))+'</div>';
+    const inc = d.included || { pct: d.month.limit > 0 ? Math.min(100, Math.round(d.month.used / d.month.limit * 100)) : 0, resetAt: d.month.resetAt };
+    const w5 = d.window5h || {}, top = d.topEngineWeek || {};
     host.innerHTML =
       '<h3>Your plan allowance</h3>'+
       '<p class="srv-sub">Counted by AMV\u2019s servers - these are the limits that actually apply.</p>'+
-      '<div class="srv-row"><div class="srv-lbl"><span>Today</span><span>'+n(d.day.used)+' / '+n(d.day.limit)+'</span></div>'+bar(d.day.used, d.day.limit)+'</div>'+
-      '<div class="srv-row"><div class="srv-lbl"><span>This month</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+bar(d.month.used, d.month.limit)+'</div>'+
+      '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('This month'))+'</span><span>'+escH(T('{0}% used').replace('{0}', inc.pct))+'</span></div>'+bar(inc.pct, 100)+when(inc.resetAt)+
+        (inc.by === 'cost' ? '<div class="srv-why">'+escH(T('The engines you used cost more than average, so the month is further along than its token count.'))+'</div>' : '')+'</div>'+
+      (w5.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('5-hour window'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(w5.used)).replace('{1}', n(w5.limit)))+'</span></div>'+bar(w5.used, w5.limit)+when(w5.resetAt)+'</div>' : '')+
+      '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Today'))+'</span><span>'+escH(T('{0} of {1} tokens').replace('{0}', n(d.day.used)).replace('{1}', n(d.day.limit)))+'</span></div>'+bar(d.day.used, d.day.limit)+when(d.day.resetAt)+'</div>'+
+      (top.limit > 0 ? '<div class="srv-row"><div class="srv-lbl"><span>'+escH(T('Top engine this week'))+'</span><span>'+escH(T('{0} of {1} messages').replace('{0}', n(top.used)).replace('{1}', n(top.limit)))+'</span></div>'+bar(top.used, top.limit)+when(top.resetAt)+'</div>' : '')+
+      '<details class="srv-more"><summary>'+escH(T('Details'))+'</summary>'+
+        '<div class="srv-lbl"><span>'+escH(T('Tokens this month'))+'</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+
+        '<div class="srv-lbl"><span>'+escH(T('Messages this month'))+'</span><span>'+n(d.messages && d.messages.used)+'</span></div>'+
+      '</details>'+
       (bonus > 0
         ? '<div class="srv-bonus">Includes <b>+'+n(bonus)+'</b> bonus tokens from invites you have earned. '+
           '<a data-sp-go="invite" style="color:var(--accent-txt);cursor:pointer">See your invites &rarr;</a></div>'
@@ -1687,7 +1698,7 @@ function _paintServerUsage(){
         ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
           'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'
         : '')+
-      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. Daily and monthly allowances are separate: running out today does not spend your month.</p>';
+      '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. '+escH(T('Each limit is separate: running out today does not spend your month. Times are in your time zone.'))+'</p>';
     const go = host.querySelector('[data-sp-go]');
     if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
     const tm = host.querySelector('[data-sp-team]');

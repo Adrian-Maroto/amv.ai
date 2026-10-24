@@ -386,9 +386,26 @@ async function usageReport(request, env) {
      there is something to divide, because a made-up figure here would be worse
      than none. */
   const perMessageUSD = msgUsed > 0 ? +(mCost / msgUsed).toFixed(6) : null;
+  /* THE METER THAT CAN STOP SOMEBODY, SAID AS THE ONE THEY SEE.
+
+     A paid month is bounded twice: by tokens, and by what those tokens cost -
+     the dollar ceiling that keeps the dearest engine from running a plan at a
+     loss. Only the token meter was on the screen, so somebody on the top engine
+     could read 68% used and be refused, by a ceiling they were never shown, at
+     what looked like two thirds of the month. The dollars stay internal; the
+     share of the ceiling does not. `included` is whichever of the two is
+     further along, which is the honest answer to "how much of my month is
+     left". */
+  const monthResetAt = _periodResetAtOf(user, nowMs);
+  const ceiling = _monthlyCeilingUSD(user);
+  const costPct = ceiling > 0 ? Math.min(100, Math.round((mCost / ceiling) * 100)) : null;
+  const tokPct = limits.monthTokens > 0 ? Math.min(100, Math.round((mUsed / limits.monthTokens) * 100)) : 0;
+  const dayStart = new Date(nowMs);
   return json({
     plan: user.plan,
-    day: { used: dUsed, limit: limits.dayTokens },
+    day: { used: dUsed, limit: limits.dayTokens,
+           resetAt: Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), dayStart.getUTCDate() + 1) },
+    included: { pct: Math.max(tokPct, costPct || 0), by: (costPct || 0) > tokPct ? 'cost' : 'tokens', resetAt: monthResetAt },
     /* The unit the plan is sold in, so the app can show what was bought rather
        than translating tokens for somebody who never asked about tokens. */
     messages: { used: msgUsed, limit: limits.monthMessages || 0, perMessageUSD },
@@ -411,7 +428,7 @@ async function usageReport(request, env) {
     },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
-    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
+    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), costPct, bonus: limits.bonusTokens || 0, resetAt: monthResetAt },
     // Said plainly, because "used" meaning the whole team is a surprise otherwise.
     /* Only when the counters really are pooled. Somebody on a team who kept
        their own better plan is NOT sharing, and telling them they are would

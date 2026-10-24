@@ -591,6 +591,41 @@ function _fmtResetIn(ms){
 }
 try{ window.AMVUsage = AMVUsage; }catch(e){}
 
+/* WHO DECIDES WHETHER YOU MAY SEND: THE SERVER, WHEN THERE IS ONE.
+
+   AMVUsage above is a tally this browser keeps, against a cap it works out for
+   itself (a third of the daily allowance per five hours). It never matched
+   the server: the server's five-hour limit counts MESSAGES, its windows sit on
+   a different clock, and it is per account where this is per device. For a
+   signed-in account it still locked the composer - so a Pro customer in a
+   long coding chat, re-sending a 30,000-token conversation each turn, was
+   stopped after a handful of turns by a limit no server had set, with plenty
+   of their real allowance left.
+
+   For a signed-in account on a live server, the server is the only thing that
+   refuses (its 429 carries the real reset time, and quotaLock takes it from
+   there). The local tally stays for a deployment with no server, where it is
+   the only guard there is. */
+function _usageServerOwned(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } }
+/* The server's last report, so the sidebar and the Usage screen show one set
+   of numbers. Refreshed after a reply, at most every 15 seconds. */
+let _srvUsage = null, _srvUsageAt = 0, _srvUsageP = null;
+let _srvUsageWho = '', _srvUsageTry = 0;
+function _srvUsageRefresh(force){
+  if(!_usageServerOwned()) return Promise.resolve(null);
+  /* Another account signed in on this tab never sees the last one's numbers. */
+  const who = (S && S.user && S.user.email) || '';
+  if(who !== _srvUsageWho){ _srvUsage = null; _srvUsageAt = 0; _srvUsageWho = who; }
+  if(_srvUsageP) return _srvUsageP;
+  _srvUsageTry = Date.now();
+  if(!force && _srvUsage && Date.now() - _srvUsageAt < 15000) return Promise.resolve(_srvUsage);
+  _srvUsageP = AMV_API.usage().then(d => {
+    if(d && d.day && d.month && who === _srvUsageWho){ _srvUsage = d; _srvUsageAt = Date.now(); }
+    return _srvUsage;
+  }).catch(() => _srvUsage).finally(() => { _srvUsageP = null; try{ _renderSbUsage(); }catch(e){} });
+  return _srvUsageP;
+}
+
 /* ── Out-of-usage lock ─────────────────────────
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
@@ -671,7 +706,7 @@ try{ window.quotaLock=quotaLock; window.quotaLocked=quotaLocked; }catch(e){}
 function _budgetGuard(estPerStep){
   estPerStep = estPerStep || 4000;
   try{
-    if(typeof AMVUsage==='undefined') return {ok:true};
+    if(typeof AMVUsage==='undefined' || _usageServerOwned()) return {ok:true};
     const s = AMVUsage.status();
     // need room for at least one more step; warn/stop if under that
     if(s.remaining < estPerStep){
@@ -1052,7 +1087,7 @@ const AEGIS = {
     if(this._times.length >= this.cfg.rpmMax)
       return { ok:false, reason:'Hit the per-minute request limit. Try again shortly.', retryMs:15000 };
     const u=this.usage();
-    if(u.inTok+u.outTok >= this.cfg.dailyTokenCap)
+    if(u.inTok+u.outTok >= this.cfg.dailyTokenCap && !_usageServerOwned())
       return { ok:false, reason:'Daily token cap reached for this device. Resets at midnight UTC.', retryMs:null };
     return { ok:true };
   },

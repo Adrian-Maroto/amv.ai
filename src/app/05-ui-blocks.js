@@ -712,16 +712,6 @@ async function _readLongMessage(text){
     toast('That message is ' + chars + ' characters, which is read in parts - and that needs the AMV engine, which is not connected on this deployment. Nothing was sent.', 'error', 9000);
     return null;
   }
-  try{
-    if(typeof AMVUsage !== 'undefined'){
-      const st = AMVUsage.status();
-      if(st && Number.isFinite(st.remaining) && st.remaining < n + 1){
-        toast('Reading this takes ' + (n + 1) + ' messages (' + n + ' parts and the answer) and you have ' + st.remaining
-          + ' left right now. Nothing was sent, and nothing was used.', 'error', 9000);
-        return null;
-      }
-    }
-  }catch(e){}
   const yes = await showConfirmAsync('This message is ' + chars + ' characters - more than an engine reads at once. '
     + 'AMV will read it in ' + n + ' parts, take faithful notes on each, and answer from those notes and the exact end of your message. '
     + 'It uses ' + (n + 1) + ' messages of your allowance. Read it?');
@@ -780,7 +770,7 @@ async function sendMsg(_opts) {
   // clearing, so nothing is consumed and the user's text stays in the box.
   try{
     if(quotaLocked()){ _renderQuotaNotice(); return; }
-    if(typeof AMVUsage!=='undefined'){
+    if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){
       const _qst=AMVUsage.status();
       if(_qst.remaining<=0){
         quotaLock(_qst.resetsAt);
@@ -991,7 +981,7 @@ async function _callAITurn(msgs, _opts) {
   // live reset countdown, lock the composer, and never stack duplicates.
   try{
     if(quotaLocked()){ S.busy=false; _renderQuotaNotice(); return; }
-    if(typeof AMVUsage!=='undefined'){
+    if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){
       const st=AMVUsage.status();
       if(st.remaining <= 0){
         S.busy=false;
@@ -1024,6 +1014,7 @@ async function _callAITurn(msgs, _opts) {
        both sent the dearest engine and then priced the turn at its rate. */
     try{ AEGIS.recordUsage((MODELS[_routeKey]||MODELS.core).model, _inTok, _outTok); }catch(e){}
     try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
+    try{ _srvUsageRefresh(); }catch(e){}
   };
   const mdl=MODELS[_routeKey]||MODELS.core;
   /* A temporary chat starts from nothing it was not told in this conversation. */
@@ -1907,7 +1898,7 @@ function renderChatView() {
   // re-render the composer notice (and pick up a still-exhausted local window).
   try{
     if(quotaLocked()) _renderQuotaNotice();
-    else if(typeof AMVUsage!=='undefined'){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
+    else if(typeof AMVUsage!=='undefined' && !_usageServerOwned()){ const st=AMVUsage.status(); if(st.remaining<=0) quotaLock(st.resetsAt); }
   }catch(e){}
   // Model selector popup
   on($('inp-mdl-btn'),'click',showModelPicker);
@@ -3623,8 +3614,50 @@ function updateSbUser(){
 }
 /* Sidebar usage meter - shows how much of the current window is used, so a user
    sees their limit approaching (and can upgrade before hitting the wall). */
+/* For a signed-in account the meter is the server's, and it is the ONE meter
+   nearest to stopping them - the five-hour messages, today's tokens or the
+   month - with the moment that one reopens. */
+function _usageBinding(d){
+  const pct = (u, l) => l > 0 ? Math.min(100, Math.round((u / l) * 100)) : -1;
+  const all = [
+    { k: 'session', label: T('5-hour window'), pct: pct(d.window5h && d.window5h.used, d.window5h && d.window5h.limit), at: d.window5h && d.window5h.resetAt },
+    { k: 'day', label: T('Today'), pct: pct(d.day.used, d.day.limit), at: d.day.resetAt },
+    { k: 'month', label: T('This month'), pct: d.included ? d.included.pct : pct(d.month.used, d.month.limit), at: (d.included && d.included.resetAt) || d.month.resetAt },
+  ].filter(m => m.pct >= 0);
+  /* The furthest along wins; on a tie, the longer wait, because that is the
+     one worth knowing about. */
+  all.sort((a, b) => (b.pct - a.pct) || ((+b.at || 0) - (+a.at || 0)));
+  return all[0] || null;
+}
+function _usageResetWords(at){
+  const ms = (+at || 0) - Date.now();
+  if(!(+at) ) return '';
+  if(ms < 86400000) return T('Resets in {0}').replace('{0}', _fmtResetIn(Math.max(0, ms)));
+  try{ return T('Resets {0}').replace('{0}', new Date(+at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })); }catch(e){ return ''; }
+}
 function _renderSbUsage(){
   const el=$('sb-usage'); if(!el) return;
+  if(_usageServerOwned()){
+    const who=(S.user&&S.user.email)||'';
+    if(!_srvUsage || who!==_srvUsageWho){
+      el.style.display='none';
+      /* A failed read renders this again; it asks again only after a pause. */
+      if(who!==_srvUsageWho || Date.now()-_srvUsageTry > 30000) _srvUsageRefresh();
+      return;
+    }
+    const m=_usageBinding(_srvUsage);
+    if(!m){ el.style.display='none'; return; }
+    const near=m.pct>=80, full=m.pct>=100, plan=String(_srvUsage.plan||'free');
+    el.style.display='';
+    el.innerHTML=
+      '<div class="sb-usage-top"><span>'+escH(m.label)+'</span><span class="sb-usage-pct">'+m.pct+'%</span></div>'+
+      '<div class="sb-usage-bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+m.pct+'" aria-label="'+escH(m.label)+'"><div class="sb-usage-fill" style="width:'+m.pct+'%;background:'+(full?'var(--red)':near?'var(--gold)':'var(--accent)')+'"></div></div>'+
+      '<div class="sb-usage-reset">'+escH(_usageResetWords(m.at))+'</div>'+
+      (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">'+escH(T('Upgrade for more'))+'</button>' : '');
+    const up=el.querySelector('[data-sb-upgrade]');
+    if(up) up.addEventListener('click',()=>{ setTab('plans'); });
+    return;
+  }
   if(typeof AMVUsage==='undefined'){ el.style.display='none'; return; }
   let st; try{ st=AMVUsage.status(); }catch(e){ el.style.display='none'; return; }
   const pct=Math.min(100, Math.round((st.used/st.cap)*100)||0);

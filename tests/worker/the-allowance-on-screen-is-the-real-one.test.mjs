@@ -165,6 +165,33 @@ section('A shared allowance says it is shared');
   ok(solo.shared === null, 'an ordinary account is not told about a team it is not on', solo.shared);
 }
 
+section('Every meter says when it comes back, and the month counts what it cost');
+{
+  /* "How much is left" is half the question; "until when" is the other half,
+     and the day and the month did not answer it. And a paid month is bounded
+     by cost as well as tokens: the meter a person sees has to be whichever is
+     further along, or the dearest engine refuses them at what the screen
+     called two thirds of a month. Checked by SPENDING cost and reading the
+     meter back, not by reading a field. */
+  const env = mkEnv();
+  const tok = await signedIn(env, 'pro');
+  const before = Date.now();
+  let u = (await post(env, '/v1/usage', {}, tok)).body;
+  const midnight = new Date(before); const nextMidnight = Date.UTC(midnight.getUTCFullYear(), midnight.getUTCMonth(), midnight.getUTCDate() + 1);
+  ok(u.day.resetAt === nextMidnight, 'today\u2019s tokens come back at the next UTC midnight, said as a moment', u.day.resetAt);
+  ok(u.month.resetAt > before && u.month.resetAt <= before + 32 * 86400000, 'the month says when it comes back, within a month', u.month.resetAt);
+  ok(u.included && u.included.pct === 0 && u.included.resetAt === u.month.resetAt, 'an untouched month reads 0% and resets with the month', u.included);
+  ok(u.window5h.resetAt > before && u.topEngineWeek.resetAt > before, 'and the five-hour and weekly meters still say theirs', [u.window5h.resetAt, u.topEngineWeek.resetAt]);
+
+  const ent = await W.DB.get(env, 'ent', USER);
+  const costName = `cost:${USER}:${W._periodKeyOf({ email: USER, plan: 'pro', billingRenewedAt: ent.renewedAt })}`;
+  env._counters.set(costName, 15 * 0.45 * 0.9);   // nine tenths of the Pro month's cost ceiling, almost no tokens
+  u = (await post(env, '/v1/usage', {}, tok)).body;
+  ok(u.month.costPct === 90, 'the share of the cost ceiling spent is reported as a share, not as dollars of ceiling', u.month.costPct);
+  ok(u.included.pct === 90 && u.included.by === 'cost', 'and the month the screen shows is the one that will refuse: 90%, by cost', u.included);
+  ok(Math.round(u.month.used / u.month.limit * 100) < 90, 'even though its token count alone says far less', u.month.used);
+}
+
 section('The screen reads those numbers, rather than inventing its own');
 {
   /* The defect was never in the Worker - it was a page confidently drawing a
@@ -176,6 +203,7 @@ section('The screen reads those numbers, rather than inventing its own');
      'and draws no allowance against a hardcoded number', true);
   ok(!/'\+mc\+' \/ 30</.test(client),
      'nor messages against a hardcoded 30', true);
+  ok(/d\.included/.test(client) && /_usageResetWords\(/.test(client), 'it shows the month the server says, and when each meter comes back', true);
 }
 
 globalThis.fetch = realFetch;
