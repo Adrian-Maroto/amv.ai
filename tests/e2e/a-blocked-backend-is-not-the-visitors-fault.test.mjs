@@ -380,7 +380,10 @@ section('And the bar it puts up does not sit on a dialog somebody is answering')
     try { _agentConsent('add a login page and run the tests'); } catch (e) { return false; }
     return true;
   });
-  await page.waitForTimeout(600);
+  /* Until the bar is really on screen (with a ceiling), not a fixed 600ms:
+     on a loaded WebKit it arrived later than that and read as missing. */
+  await page.waitForFunction(() => { const b = document.getElementById('offline-bar'); return b && b.getBoundingClientRect().bottom > 0; }, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
   ok(armed, 'the status bar and a tall dialog are both up', armed);
 
   const d = await page.evaluate(() => {

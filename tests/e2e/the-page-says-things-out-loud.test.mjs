@@ -82,14 +82,17 @@ section('An answer arriving is announced at both ends');
 {
   const r = await page.evaluate(async () => {
     const live = document.getElementById('sr-live');
+    /* Waited for, with a ceiling, rather than slept: the region is cleared and
+       then written, and on a loaded WebKit the write came after a fixed 140ms.
+       The claim is that it is announced, not how fast. */
+    const until = async (re) => { const t = Date.now(); while (Date.now() - t < 3000) { if (re.test(live.textContent)) return live.textContent; await new Promise(s => setTimeout(s, 30)); } return live.textContent; };
     setMsgs([{ r: 'u', c: 'hi' }, { r: 'a', c: '', streaming: true }]);
     renderChatMsgs();
-    await new Promise(s => setTimeout(s, 140));
-    const start = live.textContent;
+    const start = await until(/answering/i);
     setMsgs([{ r: 'u', c: 'hi' }, { r: 'a', c: 'Here is the answer.', streaming: false }]);
     renderChatMsgs();
-    await new Promise(s => setTimeout(s, 140));
-    return { start, finish: live.textContent };
+    const finish = await until(/Here is the answer/);
+    return { start, finish };
   });
   ok(/answering/i.test(r.start), 'the start of a response is announced', r.start);
   ok(/answered/i.test(r.finish) && /Here is the answer/.test(r.finish),
