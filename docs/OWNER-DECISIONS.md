@@ -130,7 +130,9 @@ a person their lifetime usage; storing totals only adds no privacy surface.
 **15. Team limits are written down, not left to omission - YES.** Per person:
 requests a minute and the five-hour window. Pooled for the team, sized by
 seats: the month, the top-engine week and extra credit. Admins see each
-member's share.
+member's share. *Shipped:* the limits are written out (they were left out,
+so a team had no weekly top-engine count at all) and the five-hour window is
+counted per person; the per-member breakdown for admins is still to come.
 
 **16. A persistent cloud computer - YES: disposable compute, durable state.**
 Files, browser sign-ins and task state are saved before the container sleeps

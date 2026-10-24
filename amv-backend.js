@@ -20237,9 +20237,25 @@ function _baseLimits(user) {
   if (user.plan === 'team') {
     const seats = _teamSeatCount(user.customCfg);
     const per = PLAN_LIMITS.pro;
+    /* WRITTEN DOWN, NOT LEFT TO OMISSION (docs/OWNER-DECISIONS.md #15).
+
+       This returned only tokens and rpm, and a limit with no number is a limit
+       that does not apply: a team had no monthly message ceiling, no five-hour
+       window and - the one that mattered - no weekly count on the top engines,
+       which every other plan has because it is what keeps the dearest engine
+       inside the budget a seat pays for. Now:
+
+         per person - requests a minute and the five-hour window, both burst
+         controls, so one teammate's burst never stops another's afternoon;
+         pooled, sized by seats - the month, the monthly message ceiling, and
+         the top-engine week at Pro's per-seat number, the one already shown
+         to fit inside a plan's compute budget (a seat costs more than Pro). */
     return {
       dayTokens: per.dayTokens * seats,
       monthTokens: per.monthTokens * seats,
+      monthMessages: per.monthMessages * seats,
+      topMessagesWeek: per.topMessagesWeek * seats,
+      messages5h: per.messages5h,         // per person (counted by address, not pool)
       rpm: per.rpm,                       // per person: this is a burst control, not a pool
       allModels: true,                    // Apex included - it is what the seat price buys
     };
@@ -21280,8 +21296,10 @@ async function aiProxy(request, env, ctx, principal) {
      refusal at any stage hands back everything booked before it - a partial
      booking left behind is an allowance nobody spent. */
   const nowMs = Date.now();
-  /* One window per account that opens with its first message (op 'session'). */
-  const win5Name = `msgs5h:${subject}`;
+  /* One window per PERSON that opens with their first message (op 'session').
+     By address, not by the billing subject: on a team the window is each
+     member's own burst control, never a pool one teammate can empty. */
+  const win5Name = `msgs5h:${user.email || subject}`;
   const win5Cap = Number(limits.messages5h) || 0;
   const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
   const topCap = Number(limits.topMessagesWeek) || 0;
@@ -23189,7 +23207,7 @@ async function usageReport(request, env) {
   /* The same keys the proxy reserves against, read at the same instant, so the
      screen cannot show one window while a different one refuses. */
   const nowMs = Date.now();
-  const win5 = await counter(env, `msgs5h:${subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
+  const win5 = await counter(env, `msgs5h:${user.email || subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
   const win5Used = (win5 && win5.value) || 0;
   const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
   /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.

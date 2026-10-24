@@ -67,6 +67,27 @@ section('A plan with its own budget still gets a ceiling');
      'and an ordinary plan carries its own', team.monthMessages);
 }
 
+section('A team carries every limit, pooled where a pool is right and per person where it is not');
+{
+  /* docs/OWNER-DECISIONS.md #15. A team's limits listed tokens and rpm only,
+     and a field with no number is a limit that does not apply - so a team had
+     no weekly count on the top engines at all. */
+  const five = W._baseLimits({ plan: 'team', customCfg: { seats: 5 } });
+  const ten = W._baseLimits({ plan: 'team', customCfg: { seats: 10 } });
+  const pro = W.PLAN_LIMITS.pro;
+  for (const f of ['monthMessages', 'messages5h', 'topMessagesWeek', 'monthTokens', 'dayTokens', 'rpm'])
+    ok(typeof five[f] === 'number' && five[f] > 0, `a team states ${f}`, five[f]);
+  ok(five.topMessagesWeek === pro.topMessagesWeek * 5 && ten.topMessagesWeek === pro.topMessagesWeek * 10,
+     'the top-engine week is pooled at Pro\u2019s per-seat number', [five.topMessagesWeek, ten.topMessagesWeek]);
+  ok(five.monthMessages === pro.monthMessages * 5, 'as is the monthly message ceiling', five.monthMessages);
+  ok(five.messages5h === pro.messages5h && ten.messages5h === pro.messages5h && five.rpm === ten.rpm,
+     'while the five-hour window and the request rate are per person, the same at any size', [five.messages5h, ten.messages5h]);
+  /* Per person in fact, not only in the table: the window is counted by
+     address, never by the team's billing subject. */
+  const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  ok(/const win5Name = `msgs5h:\$\{user\.email \|\| subject\}`/.test(src), 'and the window\u2019s counter is named by the person, not the pool', true);
+}
+
 section('The counter is reserved before the model runs, and given back if it does not');
 {
   /* Counting a message after a success undercounts every turn that failed

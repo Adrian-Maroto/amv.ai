@@ -213,7 +213,7 @@ section('The screen can say when each window reopens');
   const rep = code.slice(code.indexOf('async function usageReport'), code.indexOf('async function usageReport') + 3000);
   ok(/window5h:\s*\{/.test(rep) && /topEngineWeek:\s*\{/.test(rep), 'both windows are reported', true);
   ok((rep.match(/resetAt:/g) || []).length >= 2, 'each with the moment it reopens', true);
-  ok(/msgs5h:\$\{subject\}/.test(rep) && /msgtop:\$\{subject\}/.test(rep),
+  ok(/msgs5h:\$\{user\.email \|\| subject\}/.test(rep) && /msgtop:\$\{subject\}/.test(rep),
      'read from the same keys the proxy reserves against', true);
 }
 

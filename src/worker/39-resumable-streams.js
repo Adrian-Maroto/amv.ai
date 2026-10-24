@@ -379,7 +379,7 @@ async function usageReport(request, env) {
   /* The same keys the proxy reserves against, read at the same instant, so the
      screen cannot show one window while a different one refuses. */
   const nowMs = Date.now();
-  const win5 = await counter(env, `msgs5h:${subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
+  const win5 = await counter(env, `msgs5h:${user.email || subject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS });
   const win5Used = (win5 && win5.value) || 0;
   const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
   /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.

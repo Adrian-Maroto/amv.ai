@@ -241,9 +241,25 @@ function _baseLimits(user) {
   if (user.plan === 'team') {
     const seats = _teamSeatCount(user.customCfg);
     const per = PLAN_LIMITS.pro;
+    /* WRITTEN DOWN, NOT LEFT TO OMISSION (docs/OWNER-DECISIONS.md #15).
+
+       This returned only tokens and rpm, and a limit with no number is a limit
+       that does not apply: a team had no monthly message ceiling, no five-hour
+       window and - the one that mattered - no weekly count on the top engines,
+       which every other plan has because it is what keeps the dearest engine
+       inside the budget a seat pays for. Now:
+
+         per person - requests a minute and the five-hour window, both burst
+         controls, so one teammate's burst never stops another's afternoon;
+         pooled, sized by seats - the month, the monthly message ceiling, and
+         the top-engine week at Pro's per-seat number, the one already shown
+         to fit inside a plan's compute budget (a seat costs more than Pro). */
     return {
       dayTokens: per.dayTokens * seats,
       monthTokens: per.monthTokens * seats,
+      monthMessages: per.monthMessages * seats,
+      topMessagesWeek: per.topMessagesWeek * seats,
+      messages5h: per.messages5h,         // per person (counted by address, not pool)
       rpm: per.rpm,                       // per person: this is a burst control, not a pool
       allModels: true,                    // Apex included - it is what the seat price buys
     };

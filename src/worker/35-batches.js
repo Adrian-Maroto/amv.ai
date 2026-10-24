@@ -628,8 +628,10 @@ async function aiProxy(request, env, ctx, principal) {
      refusal at any stage hands back everything booked before it - a partial
      booking left behind is an allowance nobody spent. */
   const nowMs = Date.now();
-  /* One window per account that opens with its first message (op 'session'). */
-  const win5Name = `msgs5h:${subject}`;
+  /* One window per PERSON that opens with their first message (op 'session').
+     By address, not by the billing subject: on a team the window is each
+     member's own burst control, never a pool one teammate can empty. */
+  const win5Name = `msgs5h:${user.email || subject}`;
   const win5Cap = Number(limits.messages5h) || 0;
   const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
   const topCap = Number(limits.topMessagesWeek) || 0;
