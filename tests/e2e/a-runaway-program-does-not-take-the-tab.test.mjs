@@ -77,6 +77,19 @@ section('An unawaited rejection ends the run instead of hanging it');
   ok(r.ms < 8000, 'and does not sit there until the cap', r.ms);
 }
 
+section('The reason is said in every browser, not only where the stack carries it');
+{
+  /* V8 starts a stack with "Error: message"; Firefox's and Safari's stacks are
+     only the frames. The sandbox reported the stack, so in those browsers a
+     failing program said where and never why. A stack without its message is
+     made here so Chromium shows it too. */
+  const thrown = await page.evaluate(() => runCode('const e = new Error("the file was empty"); e.stack = "load@blob:x:2:9"; throw e;', 'js'));
+  ok(/the file was empty/.test(thrown.stderr), 'a thrown error says what went wrong', thrown.stderr);
+  ok(/load@blob/.test(thrown.stderr), 'and still says where', thrown.stderr);
+  const rejected = await page.evaluate(() => runCode('const e = new Error("no network"); e.stack = "f@blob:x:1:1"; Promise.reject(e); await new Promise(()=>{});', 'js'));
+  ok(/no network/.test(rejected.stderr), 'and so does a rejection nobody awaited', rejected.stderr);
+}
+
 section('THE FINDING: a runaway program does not end the sandbox');
 {
   /* What "cannot stop it" actually costs, measured on the thing that breaks.

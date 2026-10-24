@@ -25,13 +25,16 @@ section('Saving a conversation writes one copy, to the key that is read back');
 {
   const r = await page.evaluate(async () => {
     const wrote = [];
-    const real = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = (k, v) => { wrote.push({ k, n: String(v).length }); return real(k, v); };
+    /* On Storage.prototype: assigning localStorage.setItem replaces the
+       method in Chromium, but in Firefox it STORES an item named "setItem",
+       and the spy sees nothing. */
+    const real = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) { if (this === localStorage) wrote.push({ k, n: String(v).length }); return real.call(this, k, v); };
     S.user = { name: 'U', email: 'u@x.com', ini: 'U' };
     S.convs = [{ id: 'c1', title: 'T', msgs: [{ r: 'user', c: 'hello there' }] }];
     S.cur = 'c1';
     _autoSave();
-    localStorage.setItem = real;
+    Storage.prototype.setItem = real;
     return { wrote, key: convKey('u@x.com') };
   });
   ok(!r.wrote.some(x => /amv_convs/.test(x.k)),

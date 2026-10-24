@@ -58,10 +58,14 @@
         'self.postMessage({__sbx:' + tag + ',ok:ok,logs:__logs.slice(),error:err||"",' +
         'result:(result===undefined||result===null)?"":String(result)}); }' +
       'self.onerror=function(m,s,l,c,e){ __done(false,(e&&e.stack)?e.stack:String(m)); return true; };' +
-      'self.onunhandledrejection=function(ev){ var r=ev&&ev.reason; __done(false,(r&&r.stack)?r.stack:String(r)); };' +
+      /* The reason, then where. V8's stack starts with "Error: message";
+         Firefox's and Safari's are only the frames, so a stack alone told
+         somebody in those browsers where their program failed and not why. */
+      'function __why(e){ var s=String(e), st=e&&e.stack?String(e.stack):""; return !st?s:(st.indexOf(s)===0?st:s+"\\n"+st); }' +
+      'self.onunhandledrejection=function(ev){ __done(false,__why(ev&&ev.reason)); };' +
       '(async function(){ var __r;' +
         'try{ __r = await (async function(){\n' + code + '\n})(); }' +
-        'catch(e){ __done(false,(e&&e.stack)?e.stack:String(e)); return; }' +
+        'catch(e){ __done(false,__why(e)); return; }' +
         '__done(true,"",__r);' +
       '})();';
   }

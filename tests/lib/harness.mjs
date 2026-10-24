@@ -303,6 +303,15 @@ export async function bootApp(opts = {}) {
   const ownerEmail = opts.ownerEmail === undefined ? 'owner@amv.test' : opts.ownerEmail;
   if (ownerEmail) await page.addInitScript((e) => { window.__AMV_OWNER_EMAIL__ = e; }, ownerEmail);
 
+  /* opts.unreachable: hosts this visitor's network blocks, aborted before the
+     page loads. A suite about a blocked third party states the block rather
+     than relying on the test machine having no internet - which was true of
+     Google's sign-in script only because a crossorigin attribute made every
+     browser refuse it (LESSONS 604). */
+  for (const host of (opts.unreachable || [])) {
+    await page.route((u) => u.hostname === host, (r) => r.abort('connectionreset'));
+  }
+
   /* opts.query lets a suite arrive at a URL the app is really sent to from
      outside - a provider's OAuth return being the one that matters, because the
      handler for it runs once at boot and cannot be reached any other way. */

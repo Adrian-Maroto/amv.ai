@@ -132,6 +132,27 @@ section('It is remembered, and it comes back');
   ok(Math.abs(back.prev - set.prev) < 20, 'and the panes are the same size', { was: set.prev, now: back.prev });
 }
 
+section('A drag that ends without a pointerup is still saved, at the size it ended on');
+{
+  /* Firefox kept the size from BEFORE the last drag while the divider
+     announced the new one, and a capture can end with no pointerup reaching
+     the divider at all (the pointer left the window). Either way the size on
+     screen and the size remembered parted company. Driven with the events
+     themselves, so the ending is the lost capture alone. */
+  const r = await page.evaluate(() => {
+    const bar = document.getElementById('dev-split'), sh = document.getElementById('dev-shell');
+    const b = sh.getBoundingClientRect(), y = b.top + b.height / 2;
+    const ev = (t, x) => bar.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 7, clientX: x, clientY: y }));
+    ev('pointerdown', b.left + b.width * 0.5);
+    ev('pointermove', b.left + b.width * 0.7);       // preview = 30% of the shell
+    bar.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: 7 }));
+    return { saved: parseFloat(loadStr('amv_dev_split')), aria: parseFloat(bar.getAttribute('aria-valuenow')),
+             split: parseFloat(getComputedStyle(sh).getPropertyValue('--dev-split')), on: bar.classList.contains('on') };
+  });
+  ok(r.aria === 30 && r.saved === 30, 'the size the drag ended on is the one written down', r);
+  ok(Math.abs(r.split - 30) < 1 && !r.on, 'and the drag is over, at that size on screen', r);
+}
+
 section('It belongs to the screen, not to the account');
 {
   /* The mistake LESSONS 335 records, pointing the other way: a value about the

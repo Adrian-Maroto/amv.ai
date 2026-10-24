@@ -388,16 +388,17 @@ function _wireSplit(barId, shellId){
     if(!r.width) return _splitGet();
     return _splitClamp(((r.right - clientX) / r.width) * 100);
   };
-  let dragging = false;
+  let dragging = false, last = null;
   bar.addEventListener('pointerdown', (e) => {
-    dragging = true;
+    dragging = true; last = null;
     bar.classList.add('on');
     try{ bar.setPointerCapture(e.pointerId); }catch(_){}
     e.preventDefault();          // or the drag selects the text either side
   });
   bar.addEventListener('pointermove', (e) => {
     if(!dragging) return;
-    _splitApply(shellId, pctFor(e.clientX));
+    last = pctFor(e.clientX);
+    _splitApply(shellId, last);
   });
   const end = (e) => {
     if(!dragging) return;
@@ -405,12 +406,18 @@ function _wireSplit(barId, shellId){
     bar.classList.remove('on');
     try{ bar.releasePointerCapture(e.pointerId); }catch(_){}
     /* Written once at the end rather than on every move: a drag is one
-       decision, not two hundred. */
-    const cur = getComputedStyle(shell).getPropertyValue('--dev-split');
-    _splitSave(parseFloat(cur));
+       decision, not two hundred. The value saved is the one the drag
+       applied - reading it back from the computed style kept the size
+       from before the drag in Firefox, while the divider announced the
+       new one. */
+    if(last !== null) _splitSave(last);
   };
   bar.addEventListener('pointerup', end);
   bar.addEventListener('pointercancel', end);
+  /* A capture can be lost without a pointerup reaching the divider (the
+     pointer left the window, the tab changed); that is the end of the drag
+     too, or it would stay "on" and save nothing. */
+  bar.addEventListener('lostpointercapture', end);
 
   /* A divider that only responds to dragging is one that somebody who cannot
      drag cannot use at all. */

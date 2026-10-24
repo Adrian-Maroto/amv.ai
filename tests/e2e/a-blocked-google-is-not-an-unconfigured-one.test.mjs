@@ -22,12 +22,14 @@
    before the tap - a script that has not arrived looks exactly like one still
    on its way - so the tap is where the distinction belongs.
 
-   THIS SUITE RUNS WITH GOOGLE GENUINELY UNREACHABLE, which is the normal
-   state of the test environment and the reason the fault was found at all. */
+   THIS SUITE MAKES GOOGLE UNREACHABLE (`unreachable` in bootApp). It used
+   to rely on the test machine not reaching Google, and it never did - but
+   only because crossorigin="anonymous" made every browser refuse the script
+   (LESSONS 604). With that gone, Google loads where there is a network. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const app = await bootApp({ tab: 'chat' });
+const app = await bootApp({ tab: 'chat', unreachable: ['accounts.google.com'] });
 const { page, errors } = app;
 await page.setViewportSize({ width: 390, height: 844 });
 
@@ -49,7 +51,7 @@ const tapGoogle = async (clientId) => {
       .filter(x => x.length > 3)[0] || '') };
 };
 
-section('Google really is unreachable here, which is what makes this a test');
+section('Google is unreachable here, which is what makes this a test');
 {
   const loaded = await page.evaluate(() => !!(window.google && window.google.accounts && window.google.accounts.id));
   ok(loaded === false,

@@ -15309,3 +15309,29 @@ Found in the same lane: four of the five install hints (iPhone, Android, Mac
 Safari, Firefox) were never in any language pack, because the text is picked
 from a table inside `T(...)` rather than written as a literal, which is the
 shape the untranslated-strings stage looks for.
+
+## 605. The second engine finds what the first one forgives
+
+The first Firefox and WebKit lanes, read with what each failing assertion
+GOT rather than just its name, turned up three defects Chromium hid:
+
+- a failing program in the code sandbox reported `e.stack`, which in V8
+  begins "Error: message" and in Firefox and Safari is only the frames - so
+  outside Chromium a person saw where their code failed and never why;
+- the preview divider saved its size by reading the CSS variable back on
+  pointerup, and in Firefox remembered the size from before the drag while
+  announcing the new one; a lost pointer capture with no pointerup saved
+  nothing at all;
+- Firefox emits a final recorder slice on stop even for a turn ended at once,
+  so "the blob has a size" was not proof anything was said: it was sent,
+  billed as half a second, and silence can transcribe as words.
+
+And one suite that only passed because of a bug: the blocked-Google suite
+relied on the test machine never reaching Google, which was true only
+because crossorigin made every browser refuse the script (604). It now
+blocks Google itself (`unreachable` in bootApp). A test that depends on the
+environment failing is testing the environment.
+
+Each fix has a section built to fail in Chromium too - an error whose stack
+lacks its message, a drag ended by a lost capture - because a regression
+test only one engine can see is one the gate will not run.
