@@ -2450,9 +2450,18 @@ function _buildResearchPanel(state, finished){
   const host = (u)=>_rsHost(u) || u;
 
   const shown = sources.slice(0, 12);
+  /* The site's own icon, from AMV's server (/v1/site-icon) so the person's
+     browser never visits the sites in an answer; over the site's initial, which
+     is what stays if there is no icon (the same fallback as connector logos). */
+  const base = (window.AMV_API && AMV_API.base) ? String(AMV_API.base).replace(/\/+$/, '') : '';
+  if(base) try{ _cdirWireLogoFallback(); }catch(e){}
+  const icon = (u) => {
+    const h = _rsHost(u); const src = base && h ? safeMediaSrc(base + '/v1/site-icon?host=' + encodeURIComponent(h)) : '';
+    return src ? '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+escH(src)+'">' : '';
+  };
   const chips = shown.map(s=>
     '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+'">'+
-      '<span class="rsrc-fav">'+escH((host(s.url)[0]||'').toUpperCase())+'</span>'+escH(host(s.url))+
+      '<span class="rsrc-fav">'+escH((host(s.url)[0]||'').toUpperCase())+icon(s.url)+'</span>'+escH(host(s.url))+
     '</a>'
   ).join('');
   /* Each search as it really ran: what was asked, and what came back. */

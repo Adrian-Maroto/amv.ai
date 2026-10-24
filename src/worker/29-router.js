@@ -605,6 +605,10 @@ async function _route(request, env, ctx) {
        belonging to anybody and the address it fetches is derived, never
        supplied. A GET so the edge and the browser can both cache it. */
     '/v1/connector-logo',       // and the logo beside each of them
+    /* A research source's icon, for the same reason and on the same terms:
+       fetched here so the person's browser never visits the sites in an
+       answer. The host is checked to be a public name (74-site-icons.js). */
+    '/v1/site-icon',
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -898,6 +902,7 @@ async function _route(request, env, ctx) {
     case '/v1/where':           return whereFrom(request);
     case '/v1/connectors':      return connectorDirectory(request, env);
     case '/v1/connector-logo': return connectorLogo(request, env);
+    case '/v1/site-icon':      return siteIcon(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);

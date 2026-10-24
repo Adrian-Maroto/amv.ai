@@ -230,6 +230,8 @@ section('A search that really runs is shown as it runs: its own query, then what
   ok(/“hotels near Kyoto Station”/.test(r.research) && /3 results/.test(r.research), 'the finished panel keeps the search: its query and what it found', r.research.slice(0, 400));
   ok(/1 cited/.test(r.research) && /class="rsrc-chip cited"[^>]*href="https:\/\/www\.japan-guide\.com\/kyoto"/.test(r.research),
      'and marks the one source the answer cited as cited', r.research.slice(0, 600));
+  ok(/src="https:\/\/engine\.test\/v1\/site-icon\?host=japan-guide\.com"/.test(r.research) && !/src="https:\/\/[^"]*japan-guide\.com\/favicon/.test(r.research),
+     'each source\u2019s icon is asked of AMV\u2019s server, never of the site itself', (r.research.match(/<img[^>]*>/) || [''])[0]);
 }
 
 section('The words on screen come from the same decision as the tool');
