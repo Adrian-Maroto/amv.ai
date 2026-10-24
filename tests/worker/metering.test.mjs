@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { sessionOp } from '../lib/session-op.mjs';
 import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -44,6 +45,7 @@ const env = {
    incr is atomic and returns the NEW total; rateCheck is test-and-increment. */
 globalThis.__mockCounter = async (env_, name, opts) => {
   const cur = counters.get(name) || 0;
+  { const so = sessionOp(counters, name, opts); if (so) return so; }   // the five-hour window
   if (opts.op === 'get')  return { value: cur };
   if (opts.op === 'incr') { const n = Math.max(0, cur + (opts.amount || 0)); counters.set(name, n); return { value: n }; }
   if (opts.op === 'rateCheck') {

@@ -148,6 +148,10 @@ const BACKUP_NEVER = [
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',
+  /* A five-hour usage window held in storage when the counter object is not
+     bound (07-atomic-counters.js): five hours of state at most. Restoring one
+     would reopen a window that has already closed. */
+  'ses:',
   /* Where the automation safety net's sweep and the renewal pass are up to -
      positions, not data. Restoring one would resume a pass over records that
      are no longer the ones it was counting. */
