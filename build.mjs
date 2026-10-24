@@ -124,8 +124,24 @@ function emitBridge() {
    Emitted beside index.html like the bridge and the worker, byte-identical, and
    published - the app's browser asks for both files. */
 function emitSandbox() {
-  writeFileSync('sandbox.html', readFileSync('src/sandbox/sandbox.html'));
-  writeFileSync('sandbox.js', readFileSync('src/sandbox/sandbox.js'));
+  /* ITS SCRIPT IS INSIDE IT, ALLOWED BY HASH - NOT FETCHED UNDER 'self'.
+
+     The frame's origin is opaque, and Safari matches 'self' against that
+     origin, which matches nothing: it refused /sandbox.js ("does not appear in
+     the script-src directive") and no program ever ran in Safari, on any
+     iPhone or Mac. Chromium and Firefox match 'self' against the frame's URL,
+     which is why nothing else noticed. A hash names the one script that may
+     run in every engine and does not depend on what the frame's origin is.
+     sandbox.js is still written beside it, readable, for the suites and grep;
+     it is not published, because nothing requests it. */
+  const sbxJs = readFileSync('src/sandbox/sandbox.js', 'utf8');
+  const sbxHash = createHash('sha256').update(Buffer.from(sbxJs, 'utf8')).digest('base64');
+  let sbxHtml = readFileSync('src/sandbox/sandbox.html', 'utf8');
+  const tag = '<script src="/sandbox.js"></script>';
+  if (!sbxHtml.includes(tag) || !sbxHtml.includes("script-src 'self' ")) throw new Error('sandbox.html: expected its script tag and script-src \'self\' to replace');
+  sbxHtml = sbxHtml.replace("script-src 'self' ", "script-src 'sha256-" + sbxHash + "' ").replace(tag, () => '<script>' + sbxJs + '</script>');
+  writeFileSync('sandbox.html', sbxHtml);
+  writeFileSync('sandbox.js', sbxJs);
   /* Google's file picker, in a window of its own with its own policy, so the
      app's page never loads Google's code (src/picker/). */
   writeFileSync('picker.html', readFileSync('src/picker/picker.html'));
@@ -1069,7 +1085,6 @@ const PUBLISH = [
   'amv-chrome.js',         // its background script
   'amv-chrome-share.js',   // and the one script it runs, on AMV's own address
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
-  'sandbox.js',            // what that frame runs
   'picker.html',           // Google's file picker, opened as its own window
   'picker.js',             // what that window runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export

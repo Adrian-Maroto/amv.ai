@@ -6,7 +6,10 @@
      app, which gives it an OPAQUE origin: no cookies, no storage, no access to
      the app's page. This policy is its own and is the only one in AMV that
      allows WebAssembly (the Python runtime needs it); network is limited to
-     the one host the runtime is fetched from. See src/sandbox/sandbox.js. -->
+     the one host the runtime is fetched from. See src/sandbox/sandbox.js.
+     The build puts that script inside this page and replaces 'self' below
+     with its hash: Safari matches 'self' against the frame's opaque origin
+     and refused the file (build.mjs, emitSandbox). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src https://cdn.jsdelivr.net; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>AMV sandbox</title>

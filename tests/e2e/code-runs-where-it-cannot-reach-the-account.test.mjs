@@ -11,8 +11,31 @@
      · the sandbox only takes work from the window that framed it;
      · signing out removes the frame, and everything running in it;
      · a sandbox that cannot load says so, instead of hanging a run for ever. */
+import { readFileSync } from 'fs';
+import { createHash } from 'crypto';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+
+section('The frame can run its own script in every engine, not only in Chromium');
+{
+  /* Safari matches script-src 'self' against the frame's OPAQUE origin, which
+     matches nothing, and refused /sandbox.js: no program ran in Safari at all
+     (found by the WebKit lane, in the browser's own words). The built frame
+     carries its script inline, allowed by hash. Read from the file a visitor
+     is served. */
+  const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const page = readFileSync(join(ROOT, 'public', 'sandbox.html'), 'utf8');
+  const csp = (page.match(/http-equiv="Content-Security-Policy" content="([^"]*)"/) || [])[1] || '';
+  const scriptSrc = (csp.match(/script-src([^;]*)/) || [])[1] || '';
+  const inline = (page.match(/<script>([\s\S]*?)<\/script>/) || [])[1];
+  ok(!/'self'/.test(scriptSrc), "script-src does not lean on 'self', which an opaque origin cannot match in Safari", scriptSrc);
+  ok(!/<script[^>]+src=/.test(page), 'and the frame fetches no script file', true);
+  ok(inline && scriptSrc.includes("'sha256-" + createHash('sha256').update(inline, 'utf8').digest('base64') + "'"),
+     'its one script is inline and named by its exact hash', scriptSrc);
+  ok(inline === readFileSync(join(ROOT, 'src', 'sandbox', 'sandbox.js'), 'utf8'), 'and it is the sandbox source, unchanged', true);
+}
 
 const app = await bootApp({ tab: 'chat' });
 const { page, errors } = app;

@@ -15352,3 +15352,19 @@ too). The gate tests AMV on a network that blocks Google - the state it was
 always, unknowingly, in. Whether Google's library ever navigates a signed-in
 page is a separate question for a browser with a real client id, not for a
 gate that must say the same thing twice.
+
+## 607. 'self' means nothing to a frame with no origin - in Safari
+
+The code sandbox is a frame with sandbox="allow-scripts" and no
+allow-same-origin, so its origin is opaque, and its policy loaded its script
+with script-src 'self'. Chromium and Firefox match 'self' against the frame's
+URL; Safari matches it against the opaque origin, which matches nothing, and
+refused /sandbox.js. No program ever ran in Safari - on every iPhone and Mac -
+and every Chromium suite passed, because Chromium is the engine that forgives
+it.
+
+Found only once the WebKit lane printed what the browser said ("Refused to
+load .../sandbox.js because it does not appear in the script-src directive").
+The frame now carries its script inline, named by its sha256 in script-src,
+which every engine honours whatever the frame's origin is. A policy for an
+opaque-origin document names its scripts by hash or by full URL, never 'self'.
