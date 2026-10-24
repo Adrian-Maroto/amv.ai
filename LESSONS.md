@@ -15486,3 +15486,20 @@ every status off the message itself and drives scripted streams. Rule: an
 intermediate status is held to the same standard as a result - it is said
 when there is an event that proves it - and a test that reads a list must
 first prove the list can be non-empty.
+
+## 614. A size limit has to be the reader's, not a number someone once picked
+
+The server refused any request over 600,000 characters, and the page split
+anything over about 150,000 characters into parts. Both numbers were set when
+the engines read about 200,000 tokens. Every engine now reads a million, so a
+report the engine could read whole was cut into parts that lost the links
+between them, and an API caller got "request too large" for something the
+engine would have answered. Characters were also the wrong measure: 600,000
+characters of Chinese is four times as many tokens as 600,000 of English.
+
+Fixed: each engine carries its context, the server estimates a request by
+script and refuses with code too_long_for_engine (413) only when it would not
+fit, before anything is booked. The page sends up to ~400,000 estimated tokens
+whole and reads beyond that in parts. Rule: a size bound names the thing that
+imposes it and is measured in that thing's unit; a constant with no owner
+stays behind when the owner changes.

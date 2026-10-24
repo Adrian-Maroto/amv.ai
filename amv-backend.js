@@ -201,18 +201,25 @@ const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s,
    effort levels were recalibrated, and medium remains the documented starting
    point for chat. Forge and Apex are unchanged: the top model is already the
    newest, and moving the paid floor is a pricing decision, not a version bump. */
+/* `context` is how many tokens each engine reads in one request - one million
+   on every engine here, from the provider's model table (it is also what the
+   Models API reports as max_input_tokens). AMV capped every request at about
+   150,000 tokens of input, so a long document was cut into parts and read as
+   notes when the engine could have read it whole. aiProxy now checks a request
+   against its engine's own context instead (_fitsContext). */
+const ENGINE_CONTEXT_TOKENS = 1000000;
 const ENGINES = {
-  'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free',  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
-  'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
-  'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
-  'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
+  'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
+  'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro', context: ENGINE_CONTEXT_TOKENS,   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', context: ENGINE_CONTEXT_TOKENS, inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   /* SWIFT: a top engine answering at up to two and a half times the speed.
      Fast mode exists on one model family only and costs twice its standard
      rate, which is what these prices are. Still below Forge, so it sits on
      the paid floor. Low effort by default, because somebody who chose speed
      chose it. When fast capacity is busy the turn runs at standard speed and
      is billed at the standard rate - see the 429 handling in aiProxy. */
-  'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro',   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
+  'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro', context: ENGINE_CONTEXT_TOKENS,   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
 };
 const FAST_MODE_BETA = 'fast-mode-2026-02-01';
 
@@ -2142,7 +2149,13 @@ function _systemWithIdentity(clientSystem) {
 }
 
 const MAX_MESSAGES = 200;          // conversation turns per request
-const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input - generous but bounded
+/* An abuse bound on the request's size, not the measure of whether it fits:
+   that is each engine's own context, checked by token estimate in aiProxy
+   (_fitsContext). It was 600,000 characters - about 150,000 tokens - while
+   every engine reads a million, so a long document was split into notes the
+   engine never needed. 3.2 million characters is a million tokens of ordinary
+   prose with room to spare, and still a ceiling on what one request can carry. */
+const MAX_TOTAL_CHARS = 3200000;
 const MAX_SYSTEM_CHARS = 100000;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
@@ -21166,6 +21179,15 @@ async function aiProxy(request, env, ctx, principal) {
                   code: 'team_policy', engine: key }, 403);
   }
 
+  /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,
+     so a request too long for its engine costs nothing and says what to do. */
+  const fit = _fitsContext(body, eng);
+  if (!fit.ok) {
+    return json({ error: 'That is more than ' + _engineTitle(key, eng) + ' can read in one request (about '
+      + Math.round(fit.tokens / 1000) + 'k tokens against ' + Math.round(fit.room / 1000) + 'k). Start a new chat for it, or attach it as files so AMV can read it in parts.',
+      code: 'too_long_for_engine', tokens: fit.tokens, room: fit.room }, 413);
+  }
+
   // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.
   //    A Durable Object serializes this op, so parallel requests can't race
   //    past the limit (the bug a plain KV read-then-write would have).
@@ -23203,6 +23225,40 @@ function _estimateInputTokens(messages) {
    would spend the person's last tokens on the engine's thinking and show
    them nothing. */
 const ANSWER_FLOOR_TOKENS = 2048;
+/* TOKENS BY SCRIPT, NOT BY A FLAT FOUR CHARACTERS.
+
+   English runs about four characters to a token; Chinese, Japanese and Korean
+   about one. A flat four-to-one estimate reads a Japanese contract as a
+   quarter of its real size, which is fine for booking (the booking is settled
+   against what the call really cost) and wrong for deciding whether it fits:
+   a request the estimate called 300,000 tokens could be 1.2 million, and the
+   provider would refuse it after AMV had already said yes. */
+function _estimateTextTokens(s) {
+  const t = String(s || '');
+  let wide = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x3400 && c <= 0x9fff) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff)) wide++;
+  }
+  return wide + Math.ceil((t.length - wide) / 4);
+}
+/* Does this request fit the engine it is going to? Text by script; a picture
+   or document by its encoded size, which over-counts rather than under. */
+function _fitsContext(body, eng) {
+  let tok = _estimateTextTokens(body && body.system);
+  for (const m of ((body && body.messages) || [])) {
+    if (typeof m.content === 'string') { tok += _estimateTextTokens(m.content); continue; }
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (typeof b.text === 'string') tok += _estimateTextTokens(b.text);
+      if (typeof b.content === 'string') tok += _estimateTextTokens(b.content);
+      if (b.source && typeof b.source.data === 'string') tok += Math.ceil(b.source.data.length / 4);
+    }
+  }
+  const room = (Number(eng && eng.context) || 200000) - (Number(eng && eng.maxOut) || 16000) - 8000;
+  return { ok: tok <= room, tokens: tok, room };
+}
+
 function _estimateReserveInput(body) {
   const msgs = _estimateInputTokens((body && body.messages) || []);
   const sys = Math.ceil(String((body && body.system) || '').length / 4);

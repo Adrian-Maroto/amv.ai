@@ -201,18 +201,25 @@ const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s,
    effort levels were recalibrated, and medium remains the documented starting
    point for chat. Forge and Apex are unchanged: the top model is already the
    newest, and moving the paid floor is a pricing decision, not a version bump. */
+/* `context` is how many tokens each engine reads in one request - one million
+   on every engine here, from the provider's model table (it is also what the
+   Models API reports as max_input_tokens). AMV capped every request at about
+   150,000 tokens of input, so a long document was cut into parts and read as
+   notes when the engine could have read it whole. aiProxy now checks a request
+   against its engine's own context instead (_fitsContext). */
+const ENGINE_CONTEXT_TOKENS = 1000000;
 const ENGINES = {
-  'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free',  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
-  'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
-  'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
-  'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
+  'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
+  'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro', context: ENGINE_CONTEXT_TOKENS,   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', context: ENGINE_CONTEXT_TOKENS, inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   /* SWIFT: a top engine answering at up to two and a half times the speed.
      Fast mode exists on one model family only and costs twice its standard
      rate, which is what these prices are. Still below Forge, so it sits on
      the paid floor. Low effort by default, because somebody who chose speed
      chose it. When fast capacity is busy the turn runs at standard speed and
      is billed at the standard rate - see the 429 handling in aiProxy. */
-  'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro',   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
+  'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro', context: ENGINE_CONTEXT_TOKENS,   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
 };
 const FAST_MODE_BETA = 'fast-mode-2026-02-01';
 

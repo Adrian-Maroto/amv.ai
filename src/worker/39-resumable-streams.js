@@ -356,6 +356,40 @@ function _estimateInputTokens(messages) {
    would spend the person's last tokens on the engine's thinking and show
    them nothing. */
 const ANSWER_FLOOR_TOKENS = 2048;
+/* TOKENS BY SCRIPT, NOT BY A FLAT FOUR CHARACTERS.
+
+   English runs about four characters to a token; Chinese, Japanese and Korean
+   about one. A flat four-to-one estimate reads a Japanese contract as a
+   quarter of its real size, which is fine for booking (the booking is settled
+   against what the call really cost) and wrong for deciding whether it fits:
+   a request the estimate called 300,000 tokens could be 1.2 million, and the
+   provider would refuse it after AMV had already said yes. */
+function _estimateTextTokens(s) {
+  const t = String(s || '');
+  let wide = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x3400 && c <= 0x9fff) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff)) wide++;
+  }
+  return wide + Math.ceil((t.length - wide) / 4);
+}
+/* Does this request fit the engine it is going to? Text by script; a picture
+   or document by its encoded size, which over-counts rather than under. */
+function _fitsContext(body, eng) {
+  let tok = _estimateTextTokens(body && body.system);
+  for (const m of ((body && body.messages) || [])) {
+    if (typeof m.content === 'string') { tok += _estimateTextTokens(m.content); continue; }
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (typeof b.text === 'string') tok += _estimateTextTokens(b.text);
+      if (typeof b.content === 'string') tok += _estimateTextTokens(b.content);
+      if (b.source && typeof b.source.data === 'string') tok += Math.ceil(b.source.data.length / 4);
+    }
+  }
+  const room = (Number(eng && eng.context) || 200000) - (Number(eng && eng.maxOut) || 16000) - 8000;
+  return { ok: tok <= room, tokens: tok, room };
+}
+
 function _estimateReserveInput(body) {
   const msgs = _estimateInputTokens((body && body.messages) || []);
   const sys = Math.ceil(String((body && body.system) || '').length / 4);

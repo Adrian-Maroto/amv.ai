@@ -8664,9 +8664,26 @@ let _toolRound = 0;
    asks before spending, says how many, and refuses to start a read the
    allowance cannot finish rather than stopping halfway.
    ══════════════════════════════════════════════════════════════ */
-const LONG_MSG_DIRECT = 240000;   /* ~60k tokens: sent whole, with room for history and the answer */
-const LONG_MSG_PART   = 180000;   /* ~45k tokens per part */
-const LONG_MSG_MAX_PARTS = 40;    /* ~7 million characters in one message */
+/* SENT WHOLE WHEN THE ENGINE CAN READ IT WHOLE.
+
+   Every engine reads a million tokens in one request (ENGINE_CONTEXT_TOKENS on
+   the server), and this split anything over 60,000 into notes - lossy, and
+   one model call per part - when the engine could have read the original.
+   Now a message is sent whole up to 400,000 tokens, which leaves room for the
+   conversation, AMV's instructions and the answer; past that it is read in
+   parts of about 150,000. Estimated by script (_tokScript): Chinese, Japanese
+   and Korean run about a token a character, so a flat four-to-one count would
+   send a Japanese document four times over the line. The most one message
+   can carry is unchanged. */
+const LONG_MSG_DIRECT_TOKENS = 400000;
+const LONG_MSG_PART   = 600000;   /* characters per part: ~150k tokens of prose, ~600k at most in CJK */
+const LONG_MSG_MAX_PARTS = 12;    /* ~7 million characters in one message, as before */
+function _tokScript(s){
+  const t = String(s || ''); let wide = 0;
+  for(let i = 0; i < t.length; i++){ const c = t.charCodeAt(i);
+    if((c >= 0x3040 && c <= 0x30ff) || (c >= 0x3400 && c <= 0x9fff) || (c >= 0xac00 && c <= 0xd7af) || (c >= 0xf900 && c <= 0xfaff)) wide++; }
+  return wide + Math.ceil((t.length - wide) / 4);
+}
 const LONG_MSG_SHOWN  = 20000;    /* what stays on screen and in the saved chat */
 
 function _longParts(text){
@@ -8819,7 +8836,7 @@ async function sendMsg(_opts) {
     }
   }
 
-  if(!_opts._continueTools && typeof apiContent==='string' && apiContent.length>LONG_MSG_DIRECT){
+  if(!_opts._continueTools && typeof apiContent==='string' && _tokScript(apiContent)>LONG_MSG_DIRECT_TOKENS){
     const read=await _readLongMessage(apiContent);
     if(!read){
       /* Not sent: nothing was read, so what they typed goes back in the box. */

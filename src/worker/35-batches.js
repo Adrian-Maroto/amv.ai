@@ -479,6 +479,15 @@ async function aiProxy(request, env, ctx, principal) {
                   code: 'team_policy', engine: key }, 403);
   }
 
+  /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,
+     so a request too long for its engine costs nothing and says what to do. */
+  const fit = _fitsContext(body, eng);
+  if (!fit.ok) {
+    return json({ error: 'That is more than ' + _engineTitle(key, eng) + ' can read in one request (about '
+      + Math.round(fit.tokens / 1000) + 'k tokens against ' + Math.round(fit.room / 1000) + 'k). Start a new chat for it, or attach it as files so AMV can read it in parts.',
+      code: 'too_long_for_engine', tokens: fit.tokens, room: fit.room }, 413);
+  }
+
   // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.
   //    A Durable Object serializes this op, so parallel requests can't race
   //    past the limit (the bug a plain KV read-then-write would have).

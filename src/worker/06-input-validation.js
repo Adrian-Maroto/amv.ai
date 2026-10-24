@@ -72,7 +72,13 @@ function _systemWithIdentity(clientSystem) {
 }
 
 const MAX_MESSAGES = 200;          // conversation turns per request
-const MAX_TOTAL_CHARS = 600000;    // ~150k tokens of input - generous but bounded
+/* An abuse bound on the request's size, not the measure of whether it fits:
+   that is each engine's own context, checked by token estimate in aiProxy
+   (_fitsContext). It was 600,000 characters - about 150,000 tokens - while
+   every engine reads a million, so a long document was split into notes the
+   engine never needed. 3.2 million characters is a million tokens of ordinary
+   prose with room to spare, and still a ceiling on what one request can carry. */
+const MAX_TOTAL_CHARS = 3200000;
 const MAX_SYSTEM_CHARS = 100000;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;

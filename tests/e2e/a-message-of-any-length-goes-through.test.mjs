@@ -64,28 +64,46 @@ section('A message too long for one request is read in parts, after asking');
 {
   await reset();
   const ASK = '\n\nQUESTION: which region grew, and by how much?';
-  const text = longText(700000, ASK);
+  const text = longText(1700000, ASK);
   const sending = send(text);
   const said = await answer(true);
   await settle(sending);
   const r = await page.evaluate(() => ({ parts: window.__parts, sent: window.__sent }));
-  ok(/700,000 characters/.test(said) && /parts/.test(said) && /messages of your allowance/.test(said),
+  ok(/1,700,000 characters/.test(said) && /parts/.test(said) && /messages of your allowance/.test(said),
      'it says how long it is, that it will read it in parts, and what that uses', said);
-  ok(r.parts.length >= 4 && r.parts.every(p => p.n === r.parts.length),
+  ok(r.parts.length >= 3 && r.parts.every(p => p.n === r.parts.length),
      'every part was read, each knowing how many there are', r.parts.map(p => p.k + '/' + p.n));
-  ok(r.parts.every(p => p.len < 200000), 'no single read is larger than an engine takes', r.parts.map(p => p.len));
+  ok(r.parts.every(p => p.len < 700000), 'no single read is larger than an engine takes', r.parts.map(p => p.len));
   const c = r.sent && typeof r.sent.c === 'string' ? r.sent.c : '';
-  ok(c.length > 0 && c.length < 600000, 'what is finally sent fits the server bound', c.length);
+  ok(c.length > 0 && c.length < 3200000, 'what is finally sent fits the server bound', c.length);
   ok(/read it in \d+ parts/.test(c) && /NOTES 1/.test(c) && c.endsWith(ASK),
      'it carries the notes and ends with the exact end of the message, question included', c.slice(-120));
   ok(r.sent && r.sent.d.length < 21000 && /more characters - read in \d+ parts/.test(r.sent.d),
      'and what is kept on screen is a readable head and a count, not megabytes', r.sent && r.sent.d.length);
 }
 
+section('Size is counted by script: Chinese past the bound is read in parts');
+{
+  /* Each Chinese character is about a token, so 450,000 of them is over the
+     bound that 1.7 million characters of English only just passes. */
+  await reset();
+  const zh = '北部地区的季度数据上升了百分之四，而南部门店保持稳定。'.repeat(17000).slice(0, 450000) + '\n\n哪个地区增长了？';
+  const sending = send(zh);
+  const said = await answer(true);
+  await settle(sending);
+  const r = await page.evaluate(() => ({ parts: window.__parts.length, sent: window.__sent }));
+  ok(/parts/.test(said) && r.parts >= 1, 'it asks, then reads it in parts', { said: said.slice(0, 80), parts: r.parts });
+  await reset();
+  const small = '北部地区的季度数据上升了百分之四。'.repeat(20000).slice(0, 300000);
+  await settle(send(small));
+  const r2 = await page.evaluate(() => ({ parts: window.__parts.length, c: window.__sent && window.__sent.c }));
+  ok(r2.parts === 0 && r2.c === small, 'while 300,000 Chinese characters fit and go whole', r2.parts);
+}
+
 section('Saying no sends nothing and gives the text back');
 {
   await reset();
-  const text = longText(500000, '\n\nWhat changed?');
+  const text = longText(1700000, '\n\nWhat changed?');
   const sending = send(text);
   await answer(false);
   await settle(sending);
@@ -97,13 +115,15 @@ section('Saying no sends nothing and gives the text back');
 
 section('A long message that fits is sent whole, with no question asked');
 {
+  /* 700,000 characters of prose is ~175,000 tokens: every engine reads a
+     million, so splitting it would only lose the connections between parts. */
   await reset();
-  const text = longText(150000, '\n\nSummarise it.');
+  const text = longText(700000, '\n\nSummarise it.');
   await settle(send(text));
   const r = await page.evaluate(() => ({ parts: window.__parts.length, c: window.__sent && window.__sent.c,
                                           modal: !!document.getElementById('modal-ok') }));
   ok(!r.modal && r.parts === 0, 'no confirmation and no reading in parts', r.parts);
-  ok(r.c === text, 'the message went exactly as typed, all 150,000 characters', r.c && r.c.length);
+  ok(r.c === text, 'the message went exactly as typed, all 700,000 characters', r.c && r.c.length);
 }
 
 section('An attached text file is sent whole, not its first 20,000 characters');
