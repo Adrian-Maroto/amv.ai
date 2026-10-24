@@ -338,6 +338,7 @@ function _confirmDeleteAccount(){
           return;
         }
         retained=d&&d.retained||null;
+        _accountErased=true;
       }catch(e){
         go.disabled=false; go.textContent='Delete account';
         if(typeof toast==='function') toast('Couldn\u2019t delete on the server. Please try again or contact support.','error');

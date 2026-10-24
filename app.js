@@ -31920,6 +31920,7 @@ function _confirmDeleteAccount(){
           return;
         }
         retained=d&&d.retained||null;
+        _accountErased=true;
       }catch(e){
         go.disabled=false; go.textContent='Delete account';
         if(typeof toast==='function') toast('Couldn\u2019t delete on the server. Please try again or contact support.','error');
@@ -33815,8 +33816,14 @@ function _sessionEndedSettle(){
   signOut();
   if(typeof toast === 'function') toast(T('Your sign-in had ended, so this device is now signed out. Sign in whenever you are ready.'), 'info', 6000);
 }
+/* Set the moment the server confirms this account was deleted. Every request
+   the page makes after that is told there is no session - and the question
+   below would open over the notice saying what AMV keeps, which is the last
+   thing it ever tells that person. There is no account to sign back in to. */
+var _accountErased = false;
 function _askToSignInAgain(then, explicit){
   try{
+    if(_accountErased) return;
     if(!(S.user && S.user.email)) return;
     const me = _askToSignInAgain;
     if(typeof then === 'function') me.then = { fn: then, email: S.user.email };

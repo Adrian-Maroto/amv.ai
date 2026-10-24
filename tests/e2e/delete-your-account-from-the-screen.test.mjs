@@ -84,6 +84,13 @@ section('A password account: asked for the password, and deleted with it');
      on a loaded machine this is slow; the claim is that it appears. */
   ok(await until(page, () => /payouts actually sent/i.test((document.getElementById('cfm-bg') || {}).textContent || ''), 30000),
      'it says what AMV keeps, and why, before the page goes', true);
+  /* Any request the page makes now is told there is no session - a sync, a
+     plan check - and the "sign in to continue" question used to open over
+     this notice and close it. On a slow machine one always lands in time. */
+  await page.evaluate(() => _askToSignInAgain());
+  await page.waitForTimeout(300);
+  ok(await page.evaluate(() => !!document.getElementById('cfm-bg') && !document.getElementById('auth-bg')),
+     'and a request learning the session is gone does not replace it with a sign-in question', true);
   await finishDelete(page);
   ok(!(await exists(EM)), 'the right password deletes the account on the server', true);
   ok(await until(page, () => !(window.AMV_API && AMV_API.token) && !localStorage.getItem('amv_user'), 15000), 'and this browser is signed out', true);
