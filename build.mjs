@@ -168,6 +168,8 @@ function emitSandbox() {
   writeFileSync('api-keys.js', readFileSync('src/api/api-keys.js'));
   /* The file library screen, fetched the first time it is opened. */
   writeFileSync('library.js', readFileSync('src/library/library.js'));
+  /* The usage screen, fetched the first time it is opened. */
+  writeFileSync('usage.js', readFileSync('src/usage/usage.js'));
   /* The Help center's questions, fetched when Help is opened. */
   writeFileSync('help-faqs.js', readFileSync('src/help/faqs.js'));
   writeFileSync('widget-form.js', readFileSync('src/settings/widget-form.js'));
@@ -1099,6 +1101,7 @@ const PUBLISH = [
   'team-projects.js',      // projects a team edits together: fetched by team members
   'api-keys.js',           // the API keys pane and its docs, fetched when it is opened
   'library.js',            // the file library screen, fetched when it is opened
+  'usage.js',              // the usage screen, fetched when it is opened
   'help-faqs.js',          // the Help center's questions, fetched when Help is opened
   'widget-form.js',        // the website widget's settings form, fetched when that pane is opened
   'live-voice.js',         // the live voice conversation, fetched when voice mode starts with server speech

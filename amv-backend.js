@@ -2324,6 +2324,27 @@ export class AMVCounter {
       await this.state.storage.delete('claim');
       return json({ released: true, wasHeld: true });
     }
+    /* LIFETIME TOTALS (docs/OWNER-DECISIONS.md #14): one record per person -
+       tokens and messages all time, by month (the last 36) and by engine,
+       and when counting began. Totals only, never what was asked. Kept with
+       no expiry, and taken away whole by 'clear' when the account is erased. */
+    if (op === 'tally') {
+      const t = (await this.state.storage.get('tally')) || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+      const tok = Math.max(0, Number(body.tokens) || 0), msg = Math.max(0, Number(body.msgs) || 0);
+      t.tok += tok; t.msg += msg;
+      const mo = String(body.month || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mo)) {
+        const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
+        const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
+      }
+      const e = String(body.engine || '').slice(0, 40);
+      if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+      await this.state.storage.put('tally', t);
+      await this.state.storage.deleteAlarm();
+      return json({ ok: true });
+    }
+    if (op === 'tallyGet') return json({ tally: (await this.state.storage.get('tally')) || null });
+    if (op === 'clear') { await this.state.storage.deleteAll(); await this.state.storage.deleteAlarm(); return json({ ok: true }); }
     /* A WINDOW THAT STARTS WHEN THE PERSON DOES (docs/OWNER-DECISIONS.md #13).
 
        The five-hour window was a fixed block on the server's clock, so it
@@ -2458,7 +2479,7 @@ async function counter(env, name, payload) {
        is never read from: paid for and never seen. The caller asks for that to
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session')) {
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session' || payload.op === 'clear')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
@@ -2508,6 +2529,21 @@ async function _counterKVFallback(env, name, payload) {
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
   }
+  if (op === 'tally' || op === 'tallyGet') {
+    let t = null; try { t = JSON.parse(await env.AMV_KV.get('tally:' + name) || 'null'); } catch (e) {}
+    if (op === 'tallyGet') return { tally: t };
+    t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+    const tok = Math.max(0, Number(payload.tokens) || 0), msg = Math.max(0, Number(payload.msgs) || 0);
+    t.tok += tok; t.msg += msg;
+    const mo = String(payload.month || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(mo)) { const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
+      const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()]; }
+    const e = String(payload.engine || '').slice(0, 40);
+    if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+    await env.AMV_KV.put('tally:' + name, JSON.stringify(t));
+    return { ok: true };
+  }
+  if (op === 'clear') { await env.AMV_KV.delete('tally:' + name); await env.AMV_KV.delete('ctr:' + name); await env.AMV_KV.delete('ses:' + name); return { ok: true }; }
   if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
     const now = Date.now();
     const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);
@@ -14520,6 +14556,9 @@ const BACKUP_NEVER = [
      bound (07-atomic-counters.js): five hours of state at most. Restoring one
      would reopen a window that has already closed. */
   'ses:',
+  /* Lifetime usage totals when no counter object is bound: aggregates that
+     rebuild from use, and erased with the account. */
+  'tally:',
   /* Where the automation safety net's sweep and the renewal pass are up to -
      positions, not data. Restoring one would resume a pass over records that
      are no longer the ones it was counting. */
@@ -18765,6 +18804,11 @@ async function authDeleteAccount(request, env) {
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
   } catch { _eraseFailed('waitlist entries'); }
+
+  /* Lifetime usage totals live in the counter, not in KV, and are kept with
+     no expiry - so they go explicitly, or they would outlive the account. */
+  try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
+  catch { _eraseFailed('lifetime usage totals'); }
 
   // Revoke all tokens so existing sessions die immediately.
   await _revokeOrSay(env, email, 'account_deleted');
@@ -23048,6 +23092,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     const dOwner = cost - (reservedAcctUSD || 0);
     if (dOwner !== 0) await counter(env, acctCostName, { op: 'incr', amount: dOwner, ttlMs: 86400000 * 70 });
   }
+  /* Lifetime totals for the person (op 'tally'): tokens, one message, the
+     month and the engine. Never allowed to fail the answer it is counting. */
+  if (user && user.email && total > 0) {
+    try { await counter(env, `life:${user.email}`, { op: 'tally', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
+  }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
   await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
@@ -23167,6 +23216,9 @@ async function usageReport(request, env) {
   const costPct = ceiling > 0 ? Math.min(100, Math.round((mCost / ceiling) * 100)) : null;
   const tokPct = limits.monthTokens > 0 ? Math.min(100, Math.round((mUsed / limits.monthTokens) * 100)) : 0;
   const dayStart = new Date(nowMs);
+  /* All time, for this person (not the team pool): totals only. */
+  let life = null;
+  try { const r = await counter(env, `life:${user.email}`, { op: 'tallyGet' }); life = r && r.tally; } catch (e) {}
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens,
@@ -23202,6 +23254,9 @@ async function usageReport(request, env) {
     /* Only when the counters really are pooled. Somebody on a team who kept
        their own better plan is NOT sharing, and telling them they are would
        have them chasing a teammate for usage that is entirely their own. */
+    lifetime: life ? { tokens: life.tok || 0, messages: life.msg || 0, since: life.since || null,
+      months: Object.keys(life.months || {}).sort().slice(-12).map(m => ({ month: m, tokens: life.months[m].tok || 0, messages: life.months[m].msg || 0 })),
+      engines: life.eng || {} } : { tokens: 0, messages: 0, since: null, months: [], engines: {} },
     shared: (user.billingSubject && user.billingSubject !== user.email)
       ? { team: true, note: 'This allowance is shared with your team.' } : null,
   });

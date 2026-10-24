@@ -30,7 +30,8 @@ import { sessionOp } from '../lib/session-op.mjs';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* The page, and the usage screen it fetches when Usage is opened. */
+const client = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'usage.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'allowance.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB, PLAN_LIMITS, todayKey, _periodKeyOf };\n');

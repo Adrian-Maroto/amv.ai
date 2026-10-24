@@ -152,6 +152,9 @@ const BACKUP_NEVER = [
      bound (07-atomic-counters.js): five hours of state at most. Restoring one
      would reopen a window that has already closed. */
   'ses:',
+  /* Lifetime usage totals when no counter object is bound: aggregates that
+     rebuild from use, and erased with the account. */
+  'tally:',
   /* Where the automation safety net's sweep and the renewal pass are up to -
      positions, not data. Restoring one would resume a pass over records that
      are no longer the ones it was counting. */

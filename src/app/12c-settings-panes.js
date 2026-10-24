@@ -1546,7 +1546,8 @@ function _renderSetPaneInner(only, into){
     pane.innerHTML=
       '<h2 class="set-title">Usage</h2>'+
       '<div class="set-sub">Your current usage this window, activity, and the impact AMV has had for you.</div>'+
-      _usageContentHTML();
+      '<div id="usage-body"></div>';
+    _usageFill($('usage-body'));
     /* The upgrade buttons in here need no wiring: data-stab is dispatched by
        the same document listener as everything else, and it sends you to the
        tab the button NAMES. This used to also bind each one directly to

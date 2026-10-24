@@ -16,7 +16,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'meter.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { aiProxy, effectiveLimits, PLAN_LIMITS, PLAN_RANK, ENGINES };' +
+  '\nexport { aiProxy, effectiveLimits, PLAN_LIMITS, PLAN_RANK, ENGINES, counter, usageReport };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n');
 const W = await import(harness + '?t=' + Date.now());
 
@@ -43,7 +43,24 @@ const env = {
 
 /* The real counter lives in a Durable Object. Emulate its semantics exactly:
    incr is atomic and returns the NEW total; rateCheck is test-and-increment. */
+/* Lifetime totals run in the REAL counter object, one per name, so what is
+   checked below is the tally the Worker actually keeps. */
+const realDOs = new Map();
+const realDO = (name) => {
+  if (!realDOs.has(name)) {
+    const store = new Map();
+    realDOs.set(name, new W.AMVCounter({ storage: {
+      async get(k) { return store.get(k); }, async put(k, v) { store.set(k, v); },
+      async delete(k) { store.delete(k); }, async deleteAll() { store.clear(); },
+      async setAlarm() {}, async deleteAlarm() {},
+    } }, {}));
+  }
+  return realDOs.get(name);
+};
 globalThis.__mockCounter = async (env_, name, opts) => {
+  if (/^(tally|tallyGet|clear)$/.test(opts.op || '')) {
+    return (await realDO(name).fetch(new Request('https://do/c', { method: 'POST', body: JSON.stringify(opts) }))).json();
+  }
   const cur = counters.get(name) || 0;
   { const so = sessionOp(counters, name, opts); if (so) return so; }   // the five-hour window
   if (opts.op === 'get')  return { value: cur };
@@ -336,6 +353,25 @@ ok(billed < 500,
    'reserving 40,000 then using 50 bills ~50 - the unused reservation is refunded', billed);
 
 globalThis.fetch = good;
+
+section('Every answer adds to the person\u2019s lifetime totals - totals only');
+{
+  /* docs/OWNER-DECISIONS.md #14. The tally is written where the answer is
+     settled, so it is checked through the real proxy, not by calling it. */
+  CURRENT = { email: 'life@test.com' };
+  await setPlan('life@test.com', 'pro');
+  const before = (await W.counter(env, 'life:life@test.com', { op: 'tallyGet' })).tally;
+  await W.aiProxy(msg(basePayload()), env, ctx); await settle();
+  await W.aiProxy(msg(basePayload()), env, ctx); await settle();
+  const t = (await W.counter(env, 'life:life@test.com', { op: 'tallyGet' })).tally;
+  ok(!before && t && t.msg === 2 && t.tok > 0, 'two answers: two messages and their tokens, all time', t && { msg: t.msg, tok: t.tok });
+  const month = new Date().toISOString().slice(0, 7);
+  ok(t && t.months[month] && t.months[month].msg === 2, 'counted in this month too', t && t.months);
+  ok(t && Object.keys(t.eng).length === 1 && Object.values(t.eng)[0] === t.tok, 'and under the engine that did the work', t && t.eng);
+  ok(t && !JSON.stringify(t).includes('xxxxxxxx'), 'with nothing of what was asked kept in it', JSON.stringify(t).length);
+  const u = await (await W.usageReport(new Request('https://api.amv.dev/v1/usage', { headers: { Authorization: 'Bearer tok' } }), env)).json();
+  ok(u.lifetime && u.lifetime.messages === 2 && u.lifetime.tokens === t.tok && u.lifetime.months.length === 1, 'the usage report hands them to the screen', u.lifetime);
+}
 
 report();
 done();

@@ -357,8 +357,9 @@ function renderUsageView(){
       '<span class="eyebrow">Your impact</span>'+
       '<h2>What AMV has done for you</h2>'+
       '<p class="vsub">A running tally of the work AMV has handled and the time it\u2019s saved you.</p>'+
-      _usageContentHTML()+
+      '<div id="usage-body"></div>'+
     '</div></div>';
+  _usageFill($('usage-body'));
 }
 
 

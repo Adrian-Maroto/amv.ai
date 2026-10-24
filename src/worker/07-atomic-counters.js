@@ -111,6 +111,27 @@ export class AMVCounter {
       await this.state.storage.delete('claim');
       return json({ released: true, wasHeld: true });
     }
+    /* LIFETIME TOTALS (docs/OWNER-DECISIONS.md #14): one record per person -
+       tokens and messages all time, by month (the last 36) and by engine,
+       and when counting began. Totals only, never what was asked. Kept with
+       no expiry, and taken away whole by 'clear' when the account is erased. */
+    if (op === 'tally') {
+      const t = (await this.state.storage.get('tally')) || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+      const tok = Math.max(0, Number(body.tokens) || 0), msg = Math.max(0, Number(body.msgs) || 0);
+      t.tok += tok; t.msg += msg;
+      const mo = String(body.month || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mo)) {
+        const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
+        const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
+      }
+      const e = String(body.engine || '').slice(0, 40);
+      if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+      await this.state.storage.put('tally', t);
+      await this.state.storage.deleteAlarm();
+      return json({ ok: true });
+    }
+    if (op === 'tallyGet') return json({ tally: (await this.state.storage.get('tally')) || null });
+    if (op === 'clear') { await this.state.storage.deleteAll(); await this.state.storage.deleteAlarm(); return json({ ok: true }); }
     /* A WINDOW THAT STARTS WHEN THE PERSON DOES (docs/OWNER-DECISIONS.md #13).
 
        The five-hour window was a fixed block on the server's clock, so it
@@ -245,7 +266,7 @@ async function counter(env, name, payload) {
        is never read from: paid for and never seen. The caller asks for that to
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session')) {
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session' || payload.op === 'clear')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
@@ -295,6 +316,21 @@ async function _counterKVFallback(env, name, payload) {
     await env.AMV_KV.put('ctr:' + name, String(next), payload.ttlMs ? { expirationTtl: Math.ceil(payload.ttlMs / 1000) } : undefined);
     return { allowed: true, value: next };
   }
+  if (op === 'tally' || op === 'tallyGet') {
+    let t = null; try { t = JSON.parse(await env.AMV_KV.get('tally:' + name) || 'null'); } catch (e) {}
+    if (op === 'tallyGet') return { tally: t };
+    t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+    const tok = Math.max(0, Number(payload.tokens) || 0), msg = Math.max(0, Number(payload.msgs) || 0);
+    t.tok += tok; t.msg += msg;
+    const mo = String(payload.month || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(mo)) { const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
+      const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()]; }
+    const e = String(payload.engine || '').slice(0, 40);
+    if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+    await env.AMV_KV.put('tally:' + name, JSON.stringify(t));
+    return { ok: true };
+  }
+  if (op === 'clear') { await env.AMV_KV.delete('tally:' + name); await env.AMV_KV.delete('ctr:' + name); await env.AMV_KV.delete('ses:' + name); return { ok: true }; }
   if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
     const now = Date.now();
     const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);

@@ -135,6 +135,18 @@ section('When the server refuses, the chat stops with the server’s reset time'
   ok(card === midnight, 'the out-of-usage card counts down to the server’s own reset, the next UTC midnight', [card, midnight]);
 }
 
+section('Opening Usage fetches its screen, and it draws the server\u2019s meters');
+{
+  /* The screen moved out of the page into usage.js (the page was at its weight
+     ceiling), so it must arrive when Usage is opened - not be assumed. */
+  const loadedBefore = await page.evaluate(() => typeof window._usageContentHTML === 'function');
+  await page.evaluate(() => { S.settingsPane = 'usage'; setTab('settings'); });
+  await page.waitForFunction(() => /This month/.test((document.getElementById('srv-usage') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  const r = await page.evaluate(() => ({ fetched: [...document.scripts].some(s => /usage\.js$/.test(s.src)), text: (document.getElementById('srv-usage') || {}).textContent || '' }));
+  ok(!loadedBefore || r.fetched, 'usage.js is fetched when Usage is opened', { loadedBefore, fetched: r.fetched });
+  ok(/This month/.test(r.text) && /5-hour window/.test(r.text), 'and the screen shows the server\u2019s meters', r.text.slice(0, 200));
+}
+
 section('The usage screen shows every meter and when each comes back');
 {
   await page.evaluate(() => { S.settingsPane = 'billing'; setTab('settings'); });

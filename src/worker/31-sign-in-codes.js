@@ -1697,6 +1697,11 @@ async function authDeleteAccount(request, env) {
     } while (cursor);
   } catch { _eraseFailed('waitlist entries'); }
 
+  /* Lifetime usage totals live in the counter, not in KV, and are kept with
+     no expiry - so they go explicitly, or they would outlive the account. */
+  try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
+  catch { _eraseFailed('lifetime usage totals'); }
+
   // Revoke all tokens so existing sessions die immediately.
   await _revokeOrSay(env, email, 'account_deleted');
 

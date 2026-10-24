@@ -17311,3 +17311,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .rsrc-chip.cited .rsrc-fav{ background:color-mix(in srgb,var(--accent) 22%,var(--s3)); color:var(--accent-txt); }
 /* LAYER A334 - a source's own icon over its initial (/v1/site-icon). */
 .rsrc-fav{ position:relative; overflow:hidden; }
+
+/* LAYER A335 - all-time usage under Details (_lifeHTML): a month per row,
+   its bar against the busiest month, and each engine's share. */
+.life-h{ font-size:var(--t-sm); font-weight:600; margin:var(--sp-3) 0 var(--sp-1); color:var(--tx); }
+.life-mo{ display:grid; grid-template-columns:4.5em 1fr auto; gap:var(--sp-2); align-items:center; font-size:var(--t-xs); color:var(--mu); margin-top:2px; }
+.life-bar{ height:6px; border-radius:var(--r-pill); background:var(--s3); overflow:hidden; }
+.life-bar > span{ display:block; height:100%; background:var(--accent); border-radius:inherit; }

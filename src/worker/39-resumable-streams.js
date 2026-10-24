@@ -283,6 +283,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     const dOwner = cost - (reservedAcctUSD || 0);
     if (dOwner !== 0) await counter(env, acctCostName, { op: 'incr', amount: dOwner, ttlMs: 86400000 * 70 });
   }
+  /* Lifetime totals for the person (op 'tally'): tokens, one message, the
+     month and the engine. Never allowed to fail the answer it is counting. */
+  if (user && user.email && total > 0) {
+    try { await counter(env, `life:${user.email}`, { op: 'tally', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
+  }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
   await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
@@ -402,6 +407,9 @@ async function usageReport(request, env) {
   const costPct = ceiling > 0 ? Math.min(100, Math.round((mCost / ceiling) * 100)) : null;
   const tokPct = limits.monthTokens > 0 ? Math.min(100, Math.round((mUsed / limits.monthTokens) * 100)) : 0;
   const dayStart = new Date(nowMs);
+  /* All time, for this person (not the team pool): totals only. */
+  let life = null;
+  try { const r = await counter(env, `life:${user.email}`, { op: 'tallyGet' }); life = r && r.tally; } catch (e) {}
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens,
@@ -437,6 +445,9 @@ async function usageReport(request, env) {
     /* Only when the counters really are pooled. Somebody on a team who kept
        their own better plan is NOT sharing, and telling them they are would
        have them chasing a teammate for usage that is entirely their own. */
+    lifetime: life ? { tokens: life.tok || 0, messages: life.msg || 0, since: life.since || null,
+      months: Object.keys(life.months || {}).sort().slice(-12).map(m => ({ month: m, tokens: life.months[m].tok || 0, messages: life.months[m].msg || 0 })),
+      engines: life.eng || {} } : { tokens: 0, messages: 0, since: null, months: [], engines: {} },
     shared: (user.billingSubject && user.billingSubject !== user.email)
       ? { team: true, note: 'This allowance is shared with your team.' } : null,
   });
