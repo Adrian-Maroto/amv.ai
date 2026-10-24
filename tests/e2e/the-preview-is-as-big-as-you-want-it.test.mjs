@@ -44,9 +44,14 @@ const geom = () => page.evaluate(() => {
 });
 async function dragBy(dx) {
   const box = await page.locator('#dev-split').boundingBox();
+  /* To the window's edge at most: a mouse cannot leave the screen, and
+     Firefox's automation drops the events of one that is told to - the
+     4000px drags below then never arrived, and read as the divider failing. */
+  const vw = page.viewportSize().width;
+  const to = Math.max(1, Math.min(vw - 2, box.x + box.width / 2 + dx));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2, { steps: 12 });
+  await page.mouse.move(to, box.y + box.height / 2, { steps: 12 });
   await page.mouse.up();
   await page.waitForTimeout(120);
 }

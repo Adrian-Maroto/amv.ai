@@ -128,8 +128,14 @@ function _lvEndTurn(){
   if(LV.state !== 'listening') return;
   LV.state = 'hearing';
   _voiceSetState('thinking', '');
-  const heldMs = Date.now() - LV.turnAt;
-  const seconds = Math.max(0.5, heldMs / 1000);
+  const seconds = Math.max(0.5, (Date.now() - LV.turnAt) / 1000);
+  /* How many timed slices the recorder had handed over BEFORE the turn
+     ended. Counted here, not afterwards: Firefox hands over one more on stop
+     even for a turn ended at once - the container's headers and no sound - so
+     a blob with a size is not proof anything was said. Sent, it is billed as
+     half a second, and silence can come back transcribed as words AMV would
+     then answer. A turn that produced no slice of its own recorded nothing. */
+  const slices = LV.chunks.length;
   const rec = LV.rec; LV.rec = null;
   const done = async () => {
     const blob = new Blob(LV.chunks, { type: (LV.mime || 'audio/webm').split(';')[0] });
@@ -137,12 +143,7 @@ function _lvEndTurn(){
     if(!LV.on) return;
     /* Nothing was recorded (the turn ended before the first slice): listen
        again quietly, rather than sending nothing to be refused. */
-    /* Firefox hands over one last slice on stop even for a turn ended at
-       once - the container's headers and no sound - so a blob with a size is
-       not proof anything was said. Sent, it is billed as half a second, and
-       silence can come back transcribed as words AMV would then answer.
-       Under 300ms nobody has said anything. */
-    if(!blob.size || heldMs < 300){ _lvListen(); return; }
+    if(!blob.size || !slices){ _lvListen(); return; }
     let d;
     try{ d = await AMV_API.transcribeAudio(blob, seconds, ''); }
     catch(e){
