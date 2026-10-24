@@ -103,5 +103,20 @@ section('It lets the page reach only what the page reaches');
   ok(!/pollinations/i.test(csp), 'and no image-generation host is allowed', true);
 }
 
+section('A script from another host is not asked for in a mode its host refuses');
+{
+  /* crossorigin fetches a script in CORS mode, and the browser runs it only if
+     the response carries Access-Control-Allow-Origin. Google's sign-in script
+     does not, so crossorigin="anonymous" on it meant no browser ran it: the
+     WebKit lane, on a real network, reported "Cross-origin script load denied"
+     on every page, and "Continue with Google" told everybody Google was
+     unreachable. The attribute is only needed for an integrity hash, so a
+     third-party script carries it only alongside one. */
+  const tags = [...head.matchAll(/<script\b[^>]*\bsrc="https?:\/\/[^"]+"[^>]*>/g)].map(m => m[0]);
+  ok(tags.some(t => /accounts\.google\.com\/gsi\/client/.test(t)), 'the head loads Google sign-in, so there is a tag to check', tags);
+  const bad = tags.filter(t => /\bcrossorigin\b/.test(t) && !/\bintegrity=/.test(t));
+  ok(bad.length === 0, 'none asks for CORS mode without an integrity hash that needs it', bad);
+}
+
 report();
 done();

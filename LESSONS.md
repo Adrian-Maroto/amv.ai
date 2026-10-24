@@ -15286,3 +15286,26 @@ nothing at small scale could have shown it.
 Still open: the invitations an account SENT are keyed by the recipient, so
 erasure still scans that kind; it is small (family invites, rate-limited),
 and a sender index would close it.
+
+## 604. A hardening attribute that its host never answers is an outage
+
+`crossorigin="anonymous"` went onto Google's sign-in script as hardening, next
+to a note explaining why it could not have an integrity hash. But crossorigin
+exists FOR the integrity hash: it fetches the script in CORS mode, and the
+browser runs it only if the response says Access-Control-Allow-Origin.
+Google's does not. So no browser ran it, and "Continue with Google" told
+every person on every network that Google could not be reached - the same
+message the page gives a school network that blocks Google, which is why it
+read as somebody else's problem.
+
+Chromium and Firefox log a refused script only to the console; WebKit raises
+it as a page error, and the first WebKit lane on a real network failed nearly
+every suite on it. The rule: an attribute that changes how a third party is
+fetched is a claim about that third party's server - read its response
+headers before shipping it. `the-page-head-tells-the-truth` now refuses
+crossorigin on a third-party script without an integrity hash.
+
+Found in the same lane: four of the five install hints (iPhone, Android, Mac
+Safari, Firefox) were never in any language pack, because the text is picked
+from a table inside `T(...)` rather than written as a literal, which is the
+shape the untranslated-strings stage looks for.

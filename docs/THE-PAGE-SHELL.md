@@ -93,8 +93,16 @@ deliberate stack rather than a browser default.
 ```text
 Google Identity Services. Google does not publish a stable SRI hash for
 gsi/client (it updates the file), so SRI can't be pinned here without
-breaking sign-in on every Google update. crossorigin + referrerpolicy
-applied; the CSP script-src allowlist restricts it to Google's origin.
+breaking sign-in on every Google update. referrerpolicy applied; the CSP
+script-src allowlist restricts it to Google's origin.
+
+NO crossorigin ATTRIBUTE. It used to carry crossorigin="anonymous", which
+asks the browser to fetch the script in CORS mode and run it only if the
+response says Access-Control-Allow-Origin. Google's does not, so every
+browser refused it: Safari reported "Cross-origin script load denied", the
+others only in the console, and "Continue with Google" said Google could not
+be reached on every network. crossorigin exists for SRI, and there is no
+SRI here to need it.
 ```
 
 ## Shell note 5 - Announced to screen readers. Off-screen rather than display:none, beca
