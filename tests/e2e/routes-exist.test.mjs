@@ -74,7 +74,11 @@ section('The scheduler the command bar uses is the one the cron runs');
   const ends = [worker.indexOf('\nasync function ', cronAt + 1), worker.indexOf('\nfunction ', cronAt + 1)].filter(i => i > 0);
   const cron = worker.slice(cronAt, Math.min(...ends));
   ok(ends.length > 0 && cron.length > 2000, 'the tick was located in full', cron.length);
-  ok(/(?:DB\.list|scan)\(\s*env,\s*'auto'/.test(cron),
+  /* The safety-net sweep now lives in _autoSweep and reads a page at a time
+     (DB.page), so the read is looked for there too - still by KIND. */
+  const swAt = worker.indexOf('async function _autoSweep');
+  const sweep = swAt > 0 ? worker.slice(swAt, worker.indexOf('\nasync function ', swAt + 1)) : '';
+  ok(/_autoSweep\(env\)/.test(cron) && /(?:DB\.list|DB\.page|scan)\(\s*env,\s*'auto'/.test(cron + sweep),
      'while the cron walks exactly the records /auto/create writes', true);
 }
 
