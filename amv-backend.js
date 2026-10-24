@@ -38833,18 +38833,30 @@ function _pkCoseToJwk(m){
 /* An ECDSA signature arrives DER-encoded (SEQUENCE of two INTEGERs);
    WebCrypto wants the two 32-byte numbers side by side. */
 function _pkDerToRaw(der){
+  /* READ STRICTLY. This skipped the SEQUENCE's length byte and ignored what
+     came after the two numbers, so a signature with a wrong length or extra
+     bytes appended verified as if it were clean - found by fuzzing (a-passkey-
+     survives-anything-sent-at-it). Not a forgery, since the numbers must still
+     verify, but a reader that accepts what the format forbids is a reader
+     whose next leniency nobody will notice. Short form only: a P-256
+     signature is at most 72 bytes, so a long-form length is itself wrong. */
   const d = der instanceof Uint8Array ? der : new Uint8Array(der);
-  if(d[0] !== 0x30) throw new Error('pk_bad_signature');
+  if(d.length < 8 || d.length > 72 || d[0] !== 0x30 || (d[1] & 0x80) || d[1] !== d.length - 2) throw new Error('pk_bad_signature');
   let i = 2;
-  if(d[1] & 0x80) i = 2 + (d[1] & 0x7f);
   const part = () => {
-    if(d[i++] !== 0x02) throw new Error('pk_bad_signature');
-    const n = d[i++]; let v = d.slice(i, i + n); i += n;
-    while(v.length > 32 && v[0] === 0) v = v.slice(1);
+    if(i + 2 > d.length || d[i] !== 0x02) throw new Error('pk_bad_signature');
+    const n = d[i + 1]; i += 2;
+    if(n < 1 || n > 33 || i + n > d.length) throw new Error('pk_bad_signature');
+    let v = d.slice(i, i + n); i += n;
+    /* DER: no leading zero unless the next byte would read as negative. */
+    if(v.length > 1 && v[0] === 0 && !(v[1] & 0x80)) throw new Error('pk_bad_signature');
+    if(v[0] & 0x80) throw new Error('pk_bad_signature');
+    if(v[0] === 0) v = v.slice(1);
     if(v.length > 32) throw new Error('pk_bad_signature');
     const out = new Uint8Array(32); out.set(v, 32 - v.length); return out;
   };
   const r = part(), s = part();
+  if(i !== d.length) throw new Error('pk_bad_signature');
   const raw = new Uint8Array(64); raw.set(r, 0); raw.set(s, 32); return raw;
 }
 

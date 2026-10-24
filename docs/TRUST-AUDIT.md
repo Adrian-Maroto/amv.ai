@@ -2127,3 +2127,18 @@ That rested on one list, so it is now enforced at the door as well:
 records the refusal (tests/worker/nothing-unattended-writes-for-you). When
 unattended writes are built they need their own door with the evidence
 check, not this one widened.
+
+## 24 October: the passkey layer, fuzzed
+
+The audit asked for the hand-written WebAuthn layer to be fuzzed before scale.
+tests/worker/a-passkey-survives-anything-sent-at-it registers and uses a real
+P-256 credential, then mutates every field of the sign-in 1,500 times each
+(bit flips, bytes, truncation, extension, noise, swaps) and feeds the CBOR
+reader 4,000 malformed inputs and length/depth bombs. Required: nothing
+altered is accepted, every refusal is a named passkey refusal (no parser
+crash), nothing takes over 50ms. It found one defect: the DER signature
+reader skipped the SEQUENCE length and ignored trailing bytes, so a signature
+with a wrong length or extra bytes still verified. Not a forgery - the
+numbers still had to verify - but a reader accepting what the format forbids.
+It now reads strictly (lengths, no trailing bytes, minimal integers). An
+independent review of this layer is still recommended before large scale.
