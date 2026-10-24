@@ -110,7 +110,10 @@ section('AMV_API: a cancel during the backoff is not retried');
     catch (e) { name = e.name; }
     const ms = Date.now() - t0;
     await new Promise(res => setTimeout(res, 3500)); // long enough for any retry to have gone out
-    return { name, ms, calls: window.__calls.length };
+    /* Only the request that was cancelled. The page makes its own requests in
+       those 3.5 seconds (WebKit's background checks landed there), and counting
+       them read as the cancelled one being sent again. */
+    return { name, ms, calls: window.__calls.filter(c => /\/sync\/pull/.test(c.url)).length };
   });
   ok(r.name === 'AbortError', 'the caller is told it was cancelled', r);
   ok(r.ms < 1500, 'when the cancel happens, not when the backoff would have ended', r.ms);
