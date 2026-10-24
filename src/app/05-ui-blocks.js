@@ -3853,7 +3853,13 @@ function _planPitch(key){
   free: {
     anchor: t('Everything you need to explore'),
     feats: [
-      [1,t('<b>{n} messages a month</b>, no card',{n:_msgMonthLabel('free')})],
+      /* NO MONTHLY MESSAGE COUNT ON ANY CARD. The server does enforce one, but
+         it is an anti-abuse ceiling the month's token and cost allowance runs
+         out long before - Pro's 100,000 is roughly a hundred times what its
+         allowance funds. A number nobody can reach is not something to sell.
+         The window and the weekly top-engine count are the ones that bind,
+         and the month is shown as what is left, in Usage. */
+      [1,t('<b>A daily allowance</b> to try everything, no card')],
       [1,t('Up to <b>{n} every {h} hours</b>, so it comes back the same day',{n:_msg5hLabel('free'),h:H})],
       [1,t('Chat, code &amp; interactive 3D models')],
       [1,t('File analysis - PDF, images, code')],
@@ -3872,7 +3878,7 @@ function _planPitch(key){
          different cost. What is actually better about paying is WHICH ENGINE
          runs, and the cheapest paid plan is where it starts. */
       [1,t('<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan')],
-      [1,t('<b>{n} messages a month</b>',{n:_msgMonthLabel('pro')})],
+      [1,t('<b>Monthly usage</b> that renews on your billing date - Usage shows exactly what is left')],
       [1,t('<b>{n} every {h} hours</b>, not one monthly cliff',{n:_msg5hLabel('pro'),h:H})],
       /* Forge only: Apex starts at Elite (PLAN_TIERS, and the server's minPlan),
          so naming it here sold Pro something Pro cannot use. */
@@ -3888,7 +3894,7 @@ function _planPitch(key){
     feats: [
       [1,t('<b>Everything in Pro</b>, plus:')],
       [1,t('<b>AMV Apex</b> - the flagship engine')],
-      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('elite'),m:_msg5hLabel('elite'),h:H})],
+      [1,t('<b>{m} messages every {h} hours</b>, and monthly usage that renews on your billing date',{m:_msg5hLabel('elite'),h:H})],
       [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('elite')})],
       [1,t('<b>Full-stack app builder</b> + one-click deploy')],
       [1,t('Multi-file projects, code review &amp; auto-debug')],
@@ -3900,7 +3906,7 @@ function _planPitch(key){
     anchor: t('For serious operators'),
     feats: [
       [1,t('<b>Everything in Elite</b>, plus:')],
-      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('ultra'),m:_msg5hLabel('ultra'),h:H})],
+      [1,t('<b>{m} messages every {h} hours</b>, and monthly usage that renews on your billing date',{m:_msg5hLabel('ultra'),h:H})],
       [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('ultra')})],
       [1,t('<b>Highest throughput</b> - {rpm} requests a minute',{rpm:_rpmForPlan('ultra')})],
       [1,t('<b>{n} scheduled &amp; background jobs</b> running for you',{n:_autoMaxForPlan('ultra')})],

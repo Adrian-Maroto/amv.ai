@@ -32,13 +32,13 @@ function _upnPoints(to){
   const n = (x) => Number(x).toLocaleString();
   if(to === 'pro') return [
     'AMV Forge - built for hard coding and long, careful work',
-    n(PLAN_MONTH_MESSAGES.pro) + ' messages a month, up from ' + n(PLAN_MONTH_MESSAGES.free),
+    n(PLAN_MESSAGES_5H.pro) + ' messages every 5 hours, up from ' + n(PLAN_MESSAGES_5H.free),
     'Up to ' + AUTO_MAX_BY_PLAN.pro + ' Crew jobs running on a schedule',
     'Autonomous agents and the app sandbox',
   ];
   return [
     'AMV Apex - the most capable engine AMV has',
-    n(PLAN_MONTH_MESSAGES.elite) + ' messages a month, up from ' + n(PLAN_MONTH_MESSAGES.pro),
+    n(PLAN_MESSAGES_5H.elite) + ' messages every 5 hours, up from ' + n(PLAN_MESSAGES_5H.pro),
     'Up to ' + AUTO_MAX_BY_PLAN.elite + ' Crew jobs running on a schedule',
     'Ship real apps to a live address',
   ];

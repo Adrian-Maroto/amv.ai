@@ -11817,7 +11817,13 @@ function _planPitch(key){
   free: {
     anchor: t('Everything you need to explore'),
     feats: [
-      [1,t('<b>{n} messages a month</b>, no card',{n:_msgMonthLabel('free')})],
+      /* NO MONTHLY MESSAGE COUNT ON ANY CARD. The server does enforce one, but
+         it is an anti-abuse ceiling the month's token and cost allowance runs
+         out long before - Pro's 100,000 is roughly a hundred times what its
+         allowance funds. A number nobody can reach is not something to sell.
+         The window and the weekly top-engine count are the ones that bind,
+         and the month is shown as what is left, in Usage. */
+      [1,t('<b>A daily allowance</b> to try everything, no card')],
       [1,t('Up to <b>{n} every {h} hours</b>, so it comes back the same day',{n:_msg5hLabel('free'),h:H})],
       [1,t('Chat, code &amp; interactive 3D models')],
       [1,t('File analysis - PDF, images, code')],
@@ -11836,7 +11842,7 @@ function _planPitch(key){
          different cost. What is actually better about paying is WHICH ENGINE
          runs, and the cheapest paid plan is where it starts. */
       [1,t('<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan')],
-      [1,t('<b>{n} messages a month</b>',{n:_msgMonthLabel('pro')})],
+      [1,t('<b>Monthly usage</b> that renews on your billing date - Usage shows exactly what is left')],
       [1,t('<b>{n} every {h} hours</b>, not one monthly cliff',{n:_msg5hLabel('pro'),h:H})],
       /* Forge only: Apex starts at Elite (PLAN_TIERS, and the server's minPlan),
          so naming it here sold Pro something Pro cannot use. */
@@ -11852,7 +11858,7 @@ function _planPitch(key){
     feats: [
       [1,t('<b>Everything in Pro</b>, plus:')],
       [1,t('<b>AMV Apex</b> - the flagship engine')],
-      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('elite'),m:_msg5hLabel('elite'),h:H})],
+      [1,t('<b>{m} messages every {h} hours</b>, and monthly usage that renews on your billing date',{m:_msg5hLabel('elite'),h:H})],
       [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('elite')})],
       [1,t('<b>Full-stack app builder</b> + one-click deploy')],
       [1,t('Multi-file projects, code review &amp; auto-debug')],
@@ -11864,7 +11870,7 @@ function _planPitch(key){
     anchor: t('For serious operators'),
     feats: [
       [1,t('<b>Everything in Elite</b>, plus:')],
-      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('ultra'),m:_msg5hLabel('ultra'),h:H})],
+      [1,t('<b>{m} messages every {h} hours</b>, and monthly usage that renews on your billing date',{m:_msg5hLabel('ultra'),h:H})],
       [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('ultra')})],
       [1,t('<b>Highest throughput</b> - {rpm} requests a minute',{rpm:_rpmForPlan('ultra')})],
       [1,t('<b>{n} scheduled &amp; background jobs</b> running for you',{n:_autoMaxForPlan('ultra')})],
@@ -17178,12 +17184,16 @@ function renderBillingView(targetEl){
              it stays; it is just no longer the headline, and it is no longer
              the only thing here. */
           (plan!=='custom'
-            ? _bfact('Usage', escH(_msgMonthLabel(plan)) + ' messages a month \u00b7 '
-                + escH(_msg5hLabel(plan)) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
+            /* The same figures as the plan cards: the window that binds a
+               burst, and the month as an allowance - never the 100,000-a-month
+               anti-abuse ceiling, which the token and cost allowance runs out
+               long before. That allowance is what a month actually is, so it
+               is not called secondary. */
+            ? _bfact('Usage', escH(_msg5hLabel(plan)) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours')
               + (_planMsgNum(PLAN_TOP_WEEK, plan)
                   ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
                   : '')
-              + (P.allowance ? _bfact('Token allowance', escH(P.allowance) + ' a month, the secondary cap') : '')
+              + (P.allowance ? _bfact('Monthly allowance', escH(P.allowance) + ' tokens, renewing on your billing date - Usage shows what is left') : '')
             : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
           /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
 
@@ -17259,8 +17269,7 @@ function renderBillingView(targetEl){
            account needs here is what Free allows - the figures the server
            enforces - with the way up beside it, in Upgrade plan. */
         '<dl class="bill-facts">'+
-          _bfact('Usage', escH(_msgMonthLabel('free')) + ' messages a month \u00b7 '
-            + escH(_msg5hLabel('free')) + ' every ' + USAGE_WINDOW_HOURS + ' hours')+
+          _bfact('Usage', escH(_msg5hLabel('free')) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours, within a daily allowance')+
         '</dl>')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
@@ -17849,10 +17858,12 @@ function openPlanCompare(highlight){
        Worker enforces rather than typed in here. Tokens stay, last, because
        they are still the secondary guard and somebody comparing carefully will
        want them. */
-    ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
     ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
     ['Top-engine messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
-    ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
+    /* The month is the token allowance; the monthly MESSAGE ceiling is an
+       anti-abuse number that allowance runs out long before, so it is not a
+       row anybody should compare plans on. */
+    ['Monthly allowance (tokens)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],
@@ -19428,8 +19439,8 @@ function renderUpgradeView(){
             /* Messages, like Spending and Billing. This was the last screen
                still quoting the plan in tokens, and it is the one somebody
                reads immediately before paying. */
-            + '<div class="upg-fig"><b>' + escH(_msgMonthLabel(key)) + '</b><span>'
-                + escH(T('messages a month')) + '</span></div>'
+            + '<div class="upg-fig"><b>' + escH(_msg5hLabel(key)) + '</b><span>'
+                + escH(T('messages every 5 hours')) + '</span></div>'
             + (_planMsgNum(PLAN_TOP_WEEK, key)
                 ? '<div class="upg-fig"><b>' + escH(_topWeekLabel(key)) + '</b><span>'
                     + escH(T('top-engine messages a week')) + '</span></div>' : '')
@@ -51856,13 +51867,13 @@ function _upnPoints(to){
   const n = (x) => Number(x).toLocaleString();
   if(to === 'pro') return [
     'AMV Forge - built for hard coding and long, careful work',
-    n(PLAN_MONTH_MESSAGES.pro) + ' messages a month, up from ' + n(PLAN_MONTH_MESSAGES.free),
+    n(PLAN_MESSAGES_5H.pro) + ' messages every 5 hours, up from ' + n(PLAN_MESSAGES_5H.free),
     'Up to ' + AUTO_MAX_BY_PLAN.pro + ' Crew jobs running on a schedule',
     'Autonomous agents and the app sandbox',
   ];
   return [
     'AMV Apex - the most capable engine AMV has',
-    n(PLAN_MONTH_MESSAGES.elite) + ' messages a month, up from ' + n(PLAN_MONTH_MESSAGES.pro),
+    n(PLAN_MESSAGES_5H.elite) + ' messages every 5 hours, up from ' + n(PLAN_MESSAGES_5H.pro),
     'Up to ' + AUTO_MAX_BY_PLAN.elite + ' Crew jobs running on a schedule',
     'Ship real apps to a live address',
   ];

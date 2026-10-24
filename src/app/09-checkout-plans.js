@@ -1429,8 +1429,8 @@ function renderUpgradeView(){
             /* Messages, like Spending and Billing. This was the last screen
                still quoting the plan in tokens, and it is the one somebody
                reads immediately before paying. */
-            + '<div class="upg-fig"><b>' + escH(_msgMonthLabel(key)) + '</b><span>'
-                + escH(T('messages a month')) + '</span></div>'
+            + '<div class="upg-fig"><b>' + escH(_msg5hLabel(key)) + '</b><span>'
+                + escH(T('messages every 5 hours')) + '</span></div>'
             + (_planMsgNum(PLAN_TOP_WEEK, key)
                 ? '<div class="upg-fig"><b>' + escH(_topWeekLabel(key)) + '</b><span>'
                     + escH(T('top-engine messages a week')) + '</span></div>' : '')

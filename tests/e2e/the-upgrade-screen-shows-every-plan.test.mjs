@@ -107,8 +107,8 @@ section('One centred thing to do, in the words it was asked for');
 section('And the plan is quoted in messages, on the screen before the payment');
 {
   const r = await open('free', 'elite');
-  ok(r.figs.some(f => /messages a month/i.test(f)),
-     'the headline figure is messages', r.figs);
+  ok(r.figs.some(f => /messages every 5 hours/i.test(f)) && !r.figs.some(f => /messages a month/i.test(f)),
+     'the headline figure is messages, in the window that binds - not an unreachable monthly count', r.figs);
   ok(!r.figs.some(f => /tokens/i.test(f)),
      'not tokens, which every other money screen has stopped saying', r.figs);
 }

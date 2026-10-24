@@ -585,12 +585,16 @@ function renderBillingView(targetEl){
              it stays; it is just no longer the headline, and it is no longer
              the only thing here. */
           (plan!=='custom'
-            ? _bfact('Usage', escH(_msgMonthLabel(plan)) + ' messages a month \u00b7 '
-                + escH(_msg5hLabel(plan)) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
+            /* The same figures as the plan cards: the window that binds a
+               burst, and the month as an allowance - never the 100,000-a-month
+               anti-abuse ceiling, which the token and cost allowance runs out
+               long before. That allowance is what a month actually is, so it
+               is not called secondary. */
+            ? _bfact('Usage', escH(_msg5hLabel(plan)) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours')
               + (_planMsgNum(PLAN_TOP_WEEK, plan)
                   ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
                   : '')
-              + (P.allowance ? _bfact('Token allowance', escH(P.allowance) + ' a month, the secondary cap') : '')
+              + (P.allowance ? _bfact('Monthly allowance', escH(P.allowance) + ' tokens, renewing on your billing date - Usage shows what is left') : '')
             : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
           /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
 
@@ -666,8 +670,7 @@ function renderBillingView(targetEl){
            account needs here is what Free allows - the figures the server
            enforces - with the way up beside it, in Upgrade plan. */
         '<dl class="bill-facts">'+
-          _bfact('Usage', escH(_msgMonthLabel('free')) + ' messages a month \u00b7 '
-            + escH(_msg5hLabel('free')) + ' every ' + USAGE_WINDOW_HOURS + ' hours')+
+          _bfact('Usage', escH(_msg5hLabel('free')) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours, within a daily allowance')+
         '</dl>')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
@@ -1256,10 +1259,12 @@ function openPlanCompare(highlight){
        Worker enforces rather than typed in here. Tokens stay, last, because
        they are still the secondary guard and somebody comparing carefully will
        want them. */
-    ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
     ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
     ['Top-engine messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
-    ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
+    /* The month is the token allowance; the monthly MESSAGE ceiling is an
+       anti-abuse number that allowance runs out long before, so it is not a
+       row anybody should compare plans on. */
+    ['Monthly allowance (tokens)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],

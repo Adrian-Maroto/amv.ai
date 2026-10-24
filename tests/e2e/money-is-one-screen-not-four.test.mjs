@@ -150,8 +150,8 @@ section('The numbers are for the plan you are on');
   }, p);
   const free = await bill('free'), ultra = await bill('ultra');
   ok(free && ultra && free !== ultra, 'they change with the plan rather than being decoration', { free: free.slice(0, 80), ultra: ultra.slice(0, 80) });
-  ok(/1,000,000/.test(ultra), 'Ultra shows its real monthly figure', ultra.slice(0, 120));
-  ok(/3,000/.test(free), 'and Free shows its own', free.slice(0, 120));
+  ok(/10,000 messages every 5 hours/.test(ultra), 'Ultra shows its real figure', ultra.slice(0, 120));
+  ok(/25 messages every 5 hours/.test(free), 'and Free shows its own', free.slice(0, 120));
   await page.evaluate(() => saveStr('amv_plan', 'free'));
 }
 
@@ -197,22 +197,22 @@ section('Billing quotes the same plan in the same unit');
   });
 
   for (const plan of ['pro', 'elite']) {
-    const line = pair[plan].spend.find(f => /messages a month/i.test(f)) || '';
-    const monthly = ((line.match(/([\d,]+)\s+messages a month/i) || [])[1] || '').replace(/,$/, '');
-    ok(monthly.length > 0, `[${plan}] Upgrade states a monthly message figure`, pair[plan].spend);
-    ok(pair[plan].bill.indexOf(monthly) >= 0,
-       `[${plan}] and Billing quotes that same figure, not a different unit`,
-       { monthly, billing: pair[plan].bill.slice(0, 160) });
-    ok(/messages a month/i.test(pair[plan].bill),
-       `[${plan}] in messages, which is what the server counts`,
-       pair[plan].bill.slice(0, 160));
+    /* The five-hour figure is the number both screens state; neither sells the
+       monthly message ceiling, which the allowance runs out long before. */
+    const line = pair[plan].spend.find(f => /every 5 hours/i.test(f)) || '';
+    const window5 = ((line.match(/([\d,]+)\s+(?:messages\s+)?every 5 hours/i) || [])[1] || '');
+    ok(window5.length > 0, `[${plan}] Upgrade states the five-hour message figure`, pair[plan].spend);
+    ok(pair[plan].bill.indexOf(window5 + ' messages every 5 hours') >= 0,
+       `[${plan}] and Billing quotes that same figure, in the same unit`,
+       { window5, billing: pair[plan].bill.slice(0, 200) });
+    ok(!pair[plan].spend.some(f => /messages a month/i.test(f)) && !/messages a month/i.test(pair[plan].bill),
+       `[${plan}] and neither sells a monthly message count nobody can reach`, { spend: pair[plan].spend, bill: pair[plan].bill.slice(0, 200) });
   }
-  /* The token cap is still real and still printed - it is the secondary guard,
-     so removing it would be its own kind of dishonesty. It is just no longer
-     the headline. */
-  ok(/token allowance/i.test(pair.pro.bill),
-     'with the token cap kept beside it as the secondary guard',
-     pair.pro.bill.slice(0, 200));
+  /* The token allowance is what a month actually is, and it is printed as
+     that - not as a "secondary cap". */
+  ok(/Monthly allowance/i.test(pair.pro.bill) && !/secondary cap/i.test(pair.pro.bill),
+     'the month is shown as the allowance it is',
+     pair.pro.bill.slice(0, 260));
 }
 
 ok(errors.length === 0, 'and nothing on the screen raised an error', errors);

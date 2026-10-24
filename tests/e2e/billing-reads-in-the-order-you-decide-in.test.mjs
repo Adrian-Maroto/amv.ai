@@ -52,7 +52,7 @@ section('The sections, in the order every billing screen people know uses');
   const free = await show('free');
   ok(free.change === 'Upgrade plan', 'on Free it is the way up instead', free.change);
   ok(!free.headings.includes('Cancellation'), 'and there is nothing to cancel', free.headings);
-  ok(/3,000 messages a month/.test(free.text), 'Free still says what it allows', free.text.slice(0, 200));
+  ok(/25 messages every 5 hours/.test(free.text) && !/messages a month/.test(free.text), 'Free still says what it allows - the window that binds, not an unreachable month', free.text.slice(0, 200));
 }
 
 section('Change plan opens the plans, where each plan says what it includes');

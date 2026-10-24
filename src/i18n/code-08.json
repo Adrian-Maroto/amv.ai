@@ -14115,5 +14115,24 @@
   "it": "Inizia con il tuo prossimo messaggio e dura 5 ore",
   "ko": "다음 메시지부터 시작해 5시간 동안 이어집니다",
   "ta": "உங்கள் அடுத்த செய்தியுடன் தொடங்கி 5 மணி நேரம் நீடிக்கும்"
+ },
+ "messages every 5 hours": {
+  "es": "mensajes cada 5 horas",
+  "zh": "条消息 / 每 5 小时",
+  "hi": "संदेश हर 5 घंटे में",
+  "ar": "رسالة كل 5 ساعات",
+  "pt": "mensagens a cada 5 horas",
+  "fr": "messages toutes les 5 heures",
+  "de": "Nachrichten alle 5 Stunden",
+  "ja": "件のメッセージ / 5 時間ごと",
+  "ru": "сообщений каждые 5 часов",
+  "id": "pesan setiap 5 jam",
+  "bn": "বার্তা প্রতি ৫ ঘণ্টায়",
+  "ur": "پیغامات ہر 5 گھنٹے میں",
+  "tr": "mesaj / her 5 saatte",
+  "vi": "tin nhắn mỗi 5 giờ",
+  "it": "messaggi ogni 5 ore",
+  "ko": "개 메시지 / 5시간마다",
+  "ta": "செய்திகள் ஒவ்வொரு 5 மணி நேரத்திற்கும்"
  }
 }
