@@ -116,6 +116,17 @@ section('A script from another host is not asked for in a mode its host refuses'
   ok(tags.some(t => /accounts\.google\.com\/gsi\/client/.test(t)), 'the head loads Google sign-in, so there is a tag to check', tags);
   const bad = tags.filter(t => /\bcrossorigin\b/.test(t) && !/\bintegrity=/.test(t));
   ok(bad.length === 0, 'none asks for CORS mode without an integrity hash that needs it', bad);
+
+  /* Once the library really loaded, it fetched its own stylesheet and the
+     policy refused it ("does not appear in the style-src directive" - the
+     WebKit lane, in the browser's words), so the sign-in button and prompt
+     drew unstyled. Google's own list for this library is a script, a frame,
+     a connection and this stylesheet; each is allowed. */
+  const csp = meta('http-equiv', 'Content-Security-Policy') || '';
+  const dir = (n) => ((csp.match(new RegExp('(?:^|[;\\s])' + n + '\\s+([^;]*)')) || [])[1] || '');
+  ok(/https:\/\/accounts\.google\.com(\/gsi\/style)?(\s|$)/.test(dir('style-src')), "style-src allows Google's sign-in stylesheet", dir('style-src'));
+  ok(/https:\/\/accounts\.google\.com/.test(dir('frame-src')) && /https:\/\/accounts\.google\.com/.test(dir('connect-src')),
+     'and its frame and its connection', { frame: dir('frame-src'), connect: dir('connect-src') });
 }
 
 report();
