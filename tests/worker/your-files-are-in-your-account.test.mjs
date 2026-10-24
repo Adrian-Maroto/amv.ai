@@ -193,5 +193,23 @@ section('Folders: checked on the server, and a move is read back');
   ok(anon.status === 401, 'signed out, nothing moves', anon.status);
 }
 
+section('An Office file is kept as the file itself, and only as one');
+{
+  const r2 = mkR2(), env = mkEnv(r2);
+  const tok = await signup(env, 'office@example.com');
+  const b64 = Buffer.from('PK\u0003\u0004 a word document').toString('base64');
+  const doc = { sig: 'office|r.docx|' + b64.length, kind: 'office', name: 'r (edited).docx', size: 20, format: 'docx',
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: b64 };
+  const d = await jsonOf(await req(env, '/v1/library/put', doc, tok));
+  ok(d.ok && d.verified === true && d.file && d.file.kind === 'office' && d.file.format === 'docx', 'a Word file is kept as an office entry', d);
+  const g = await jsonOf(await req(env, '/v1/library/get?id=' + encodeURIComponent(d.file.id), undefined, tok));
+  ok(g.body === b64, 'and opened again byte for byte, so another device has the file and not just its words', g.body && g.body.length);
+  const noFmt = await req(env, '/v1/library/put', Object.assign({}, doc, { sig: 'x1', format: 'exe' }), tok);
+  ok(noFmt.status === 400, 'an office entry that is not Word, Excel or PowerPoint is refused', noFmt.status);
+  const notB64 = await req(env, '/v1/library/put', Object.assign({}, doc, { sig: 'x2', body: '<script>alert(1)</script>' }), tok);
+  ok(notB64.status === 400, 'and so is one whose body is not base64', notB64.status);
+  ok(r2._m.size === 1, 'neither refusal stored a byte', r2._m.size);
+}
+
 if (report('your-files-are-in-your-account') > 0) process.exitCode = 1;
 done();

@@ -738,7 +738,7 @@ async function amvOfficeEditTool(input){
   const held = _officeHeld(String((input && input.file) || ''));
   if(!held){
     const open = [..._OFFICE_FILES.values()].map(h => '"' + h.name + '"');
-    return { text:'No file called "' + String((input && input.file) || '').slice(0, 80) + '" is open in this tab. ' + (open.length ? 'Open: ' + open.join(', ') + '.' : 'Ask the person to attach the file itself again - a copy from their library is text only.') + ' Nothing was changed.', render:null };
+    return { text:'No file called "' + String((input && input.file) || '').slice(0, 80) + '" is open in this tab. ' + (open.length ? 'Open: ' + open.join(', ') + '.' : 'Ask the person to attach the file itself again, from their device or from their files - a library copy can be edited only if it was saved with "Save to my files" on an edited file.') + ' Nothing was changed.', render:null };
   }
   const cur = held.versions[held.versions.length - 1];
   const r = await amvOfficeEdit(cur.buf, held.format, input || {});
@@ -765,7 +765,8 @@ async function amvOfficeEditTool(input){
       + '<ul class="oe-list">' + said.map((x, i) => '<li><label class="oe-pick"><input type="checkbox" checked data-oe-v="' + escH(v.id) + '" data-oe-i="' + i + '"> ' + escH(x) + '</label></li>').join('') + '</ul>'
       + '<p class="pj-note oe-say" data-oe-say="' + escH(v.id) + '">' + escH(T('Untick a change to leave it out of the file.')) + '</p>'
       + (r.refused.length ? '<p class="pj-note">' + escH(T('Not changed:')) + ' ' + escH(r.refused.map(x => x.why).join(' ')) + '</p>' : '')
-      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button></div>'
+      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button> '
+      + '<button type="button" class="btn mc-mini ghost" data-dact="amvOfficeToLibrary" data-darg="' + escH(v.id) + '">' + escH(T('Save to my files')) + '</button></div>'
   };
 }
 /* A change left out, or put back: the file is made again from the version
@@ -805,6 +806,42 @@ try{
   });
 }catch(e){}
 try{ window._oePickChanged = _oePickChanged; }catch(e){}
+
+/* SAVE TO MY FILES (docs/OWNER-DECISIONS.md #11): the edited file itself, as
+   the person has it now - only the changes still ticked - kept in their files
+   on this device and, where this AMV keeps files in the account, there too, so
+   attaching it on another device brings back the file and not just its words.
+   Each answer says where it actually went; "in your account" is said only
+   when the account said it has it. */
+const _OE_MIME = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+async function amvOfficeToLibraryNow(id){
+  let held = null, v = null;
+  for(const h of _OFFICE_FILES.values()){ const f = h.versions.find(x => x.id === id); if(f){ held = h; v = f; break; } }
+  if(!v){ toast(T('That edited file was made in an earlier visit and is not kept. Attach the file again and ask for the change.'), 'error', 8000); return false; }
+  if(!_libWho()){ toast(T('Sign in to keep your files.'), 'error', 6000); return false; }
+  try{ if(typeof _isTempChat === 'function' && _isTempChat()){ toast(T('This is a temporary chat, so nothing from it is kept. Download the file instead.'), 'info', 7000); return false; } }catch(e){}
+  const att = { kind: 'office', name: v.file || held.name, size: v.buf.byteLength, format: held.format,
+    mime: _OE_MIME[held.format] || '', b64: _frB64(new Uint8Array(v.buf)) };
+  if(!(await _libKeep(att, { cloud: false }))){
+    toast(T('This browser is not letting AMV keep files on this device (a private window can do that). Download the file instead.'), 'error', 8000);
+    return false;
+  }
+  const offHere = () => toast(T('Saved to your files on this device. Keeping files in your account is not switched on for this AMV yet.'), 'info', 8000);
+  if(!_libCloudOn()){ toast(T('Saved to your files on this device.'), 'success', 5000); return true; }
+  if(_libCloudState.configured === false){ offHere(); return true; }
+  let d = null, err = '';
+  try{ d = await _libCloudPut(Object.assign({ sig: _libSig(att) }, att)); }catch(e){ err = String((e && e.message) || ''); }
+  if(d && d.ok && d.configured !== false && d.file){
+    toast(T('Saved to your files. Open it from Your files on any device and AMV can go on editing it.'), 'success', 7000);
+    return true;
+  }
+  if(d && d.configured === false){ _libCloudState.configured = false; offHere(); return true; }
+  toast(T('Saved to your files on this device, but not in your account:') + ' ' + (err || T('That file could not be kept in your account.')), 'error', 9000);
+  return true;
+}
+try{ window.amvOfficeToLibraryNow = amvOfficeToLibraryNow; }catch(e){}
 /* ── From a message, to a download ──────────────────────────────────────── */
 function _exportName(text, ext){
   const first = (String(text || '').match(/^#{1,3}\s+(.+)$/m) || [])[1] || String(text || '').split('\n').find(l => l.trim()) || 'AMV';

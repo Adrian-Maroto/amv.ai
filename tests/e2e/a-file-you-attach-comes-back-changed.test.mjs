@@ -89,7 +89,16 @@ outbound.on(/model\.example/, (_u, opts) => {
                       { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 });
 const vals = new Map();
-const env = makeEnv({
+/* Object storage for the account's files, as R2 answers the calls AMV makes. */
+const r2m = new Map();
+const AMV_FILES = {
+  async put(k, v) { r2m.set(k, String(v)); return { key: k }; },
+  async get(k) { return r2m.has(k) ? { text: async () => r2m.get(k), size: Buffer.byteLength(r2m.get(k)) } : null; },
+  async head(k) { return r2m.has(k) ? { key: k, size: Buffer.byteLength(r2m.get(k)) } : null; },
+  async delete(k) { for (const x of [].concat(k)) r2m.delete(x); },
+  async list({ prefix } = {}) { return { objects: [...r2m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(key => ({ key })), truncated: false }; },
+};
+const env = makeEnv({ AMV_FILES,
   APP_URL: 'http://localhost:9187', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
   AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
@@ -290,6 +299,42 @@ section('Each change is the person\'s to keep or leave out, and the file holds e
     const olderSay = await page.locator('.oe-card').nth(-2).locator('.oe-say').innerText().catch(() => '');
     ok(/later change/i.test(olderSay) && await older.first().isChecked(), 'an earlier version says a later change was built on it, and stays as it was', olderSay);
   }
+}
+
+section('Saved to my files, the edited file opens on another device and can be edited again');
+{
+  /* docs/OWNER-DECISIONS.md #11, step two: the file itself is kept - in the
+     account where this AMV keeps files - so another device has the file and
+     not just its words. */
+  await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
+  await page.locator('.oe-card').last().locator('[data-dact="amvOfficeToLibrary"]').click({ timeout: 20000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.toast,[role="status"],[role="alert"]')].some(t => /Saved to your files/.test(t.textContent || '')), null, { timeout: 20000 }).catch(() => {});
+  const toastSaid = await page.evaluate(() => [...document.querySelectorAll('.toast,[role="status"],[role="alert"]')].map(t => t.textContent).join(' | '));
+  ok(/Open it from Your files on any device/.test(toastSaid), 'it says the file is in the account - because the account said so', toastSaid);
+  /* The attachments sent earlier are in the account too, as text; the file
+     itself is the one object that is a ZIP. */
+  const stored = [...r2m.values()].filter(v => Buffer.from(v, 'base64').subarray(0, 2).toString() === 'PK');
+  ok(stored.length === 1 && Buffer.from(stored[0], 'base64').equals(Buffer.from(await page.evaluate(() => { const h = _officeHeld('lease-docx.docx'); const v = h.versions[h.versions.length - 1]; return _frB64(new Uint8Array(v.buf)); }), 'base64')),
+     'the account holds the file exactly as the person kept it, ticks and all', stored.length);
+
+  /* Another device: nothing on it, nothing held in its tab. */
+  await page.evaluate(async () => { const all = await _libAll(); await _libRemove(all.map(f => f.id)); _OFFICE_FILES.clear(); S.att = null; });
+  await page.evaluate(() => openFileLibrary());
+  const row = page.locator('.shelf-row', { hasText: 'lease-docx (edited 3).docx' });
+  await row.waitFor({ timeout: 20000 });
+  ok(/Can be edited/.test(await row.innerText()), 'the library says this one can be edited', await row.innerText());
+  await row.locator('[data-lib-use]').click();
+  await page.waitForFunction(() => S.att && S.att.format === 'docx', null, { timeout: 20000 });
+  const back = await page.evaluate(() => ({ text: S.att.data, held: !!_officeHeld('lease-docx (edited 3).docx') }));
+  ok(/36 months/.test(back.text) && /Pets allowed/.test(back.text) && !/No pets/.test(back.text), 'it is read again as the file, with exactly the kept change', back.text.slice(0, 200));
+  ok(back.held, 'and the file itself is held in this tab, ready to edit');
+  nextTurns = [toolUse('office_edit', { file: 'lease-docx (edited 3).docx', changes: [{ find: '36 months', with: '48 months' }] }), text('Done.')];
+  await say('make it four years');
+  const said = lastToolResult();
+  ok(/checked it by opening the new file again/.test(said) && /"36 months" -> "48 months"/.test(said), 'and AMV edits it on this device as if it had never left', said.slice(0, 200));
+  const got = await download();
+  const doc = unzip(got.buf).get('word/document.xml').toString('utf8');
+  ok(/48 months/.test(doc) && /by the 1st/.test(doc) && /Late payments/.test(doc), 'the new file still has every earlier change in it', got.name);
 }
 
 section('A workbook: numbers stay numbers, a formula is a formula, Excel works it out again');

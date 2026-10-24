@@ -98,6 +98,14 @@ offered until it reopens). Step two: the same document open on two devices
 stays in step, through the sync AMV already has. Live multi-cursor editing
 between people comes last, and only on a Durable Object per document, because
 that is the only way two writers cannot silently overwrite each other.
+*Where it stands:* step one shipped (each change on the card is kept or left
+out, and the file is rebuilt and reopened). Step two's first half shipped:
+"Save to my files" keeps the edited file itself (kind `office` in the
+library), and opening it from Your files on another device brings back the
+file, so AMV can go on editing it there. That crosses devices only where
+account files are switched on (the `AMV_FILES` storage binding); without it
+the file is kept on the device that saved it, and the card says exactly
+that. Two open copies following each other without a save is still to come.
 
 ## What needs the owner's own hand
 

@@ -107,6 +107,7 @@ async function _renderFileLibrary(){
   }
   const day = ts => { try{ return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }); }catch(e){ return ''; } };
   const label = f => [f.format && _FR_LABEL[f.format] ? T(_FR_LABEL[f.format]) : (f.kind === 'img' ? T('Picture') : f.kind === 'pdf' ? 'PDF' : T('Text')),
+    f.kind === 'office' ? T('Can be edited') : '',
     folderOf(f) ? '\u{1F4C1} ' + folderOf(f) : '', f.summary || '', f.size ? fmtSize(f.size) : '', T('Used') + ' ' + day(f.used),
     cloud && cloud.configured ? (f.remote ? T('In your account') : cloudBySig.has(f.sig) ? '' : T('This device only')) : ''].filter(Boolean).join(' · ');
   body.innerHTML = (list.length
@@ -132,7 +133,10 @@ async function _renderFileLibrary(){
       catch(e){ b.disabled = false; toast(String((e && e.message) || T('That file could not be opened.')), 'error', 6000); return; }
     }
     if(_libOpts.pick){ _libOpts.pick(f); return; }
-    S.att = _libAsAtt(f);
+    let att;
+    try{ att = await _libOpenAtt(f); }catch(e){ att = null; }
+    if(!att || att.kind === 'refused'){ toast((att && att.reason) || T('That file could not be opened.'), 'error', 8000); return; }
+    S.att = att;
     closeOvr();
     try{ if(S.tab !== 'chat') setTab('chat'); }catch(e){}
     showAttChip();

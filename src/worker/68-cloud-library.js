@@ -42,7 +42,11 @@ const LIB_LIMITS = {
 /* One file. The chat reads at most this much of a document anyway, and a
    picture or PDF over it was never attachable in the first place. */
 const LIB_FILE_MAX = 30 * LIB_MB;
-const LIB_KINDS = new Set(['text', 'img', 'pdf']);
+/* 'office' is a Word, Excel or PowerPoint file itself, as base64 - kept when
+   somebody saves an edited file, so another device can go on editing it rather
+   than reading its words (docs/OWNER-DECISIONS.md #11). */
+const LIB_KINDS = new Set(['text', 'img', 'pdf', 'office']);
+const LIB_OFFICE_FORMATS = new Set(['docx', 'xlsx', 'pptx']);
 
 /* A FOLDER is a path of up to three names, each up to forty characters -
    "Taxes/2026". Plain text only: a name that is not one is refused rather than
@@ -114,6 +118,8 @@ async function libPut(request, env){
   const sig = String((b && b.sig) || '').slice(0, 200);
   if (!LIB_KINDS.has(kind) || !name || !sig || !body)
     return json({ error: 'bad_request', message: 'That was not a file AMV could keep.' }, 400);
+  if (kind === 'office' && !LIB_OFFICE_FORMATS.has(String(b.format || '')))
+    return json({ error: 'bad_request', message: 'That was not a Word, Excel or PowerPoint file.' }, 400);
   if (kind !== 'text' && !/^[A-Za-z0-9+/=\s]+$/.test(body.slice(0, 4096)))
     return json({ error: 'bad_request', message: 'That was not a file AMV could keep.' }, 400);
   if (body.length > LIB_FILE_MAX)

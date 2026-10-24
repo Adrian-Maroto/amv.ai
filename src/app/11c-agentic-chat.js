@@ -282,6 +282,13 @@ function amvOfficeSave(id){
   return false;
 }
 try{ window.amvOfficeSave = amvOfficeSave; }catch(e){}
+/* Into the person's files, so another device can go on editing it. The work
+   is in office.js (amvOfficeToLibraryNow). */
+async function amvOfficeToLibrary(id){
+  if(!(await _loadOffice()) || typeof window.amvOfficeToLibraryNow !== 'function'){ toast(T('That could not be loaded. Check your connection and try again.'), 'error', 6000); return false; }
+  return window.amvOfficeToLibraryNow(id);
+}
+try{ window.amvOfficeToLibrary = amvOfficeToLibrary; }catch(e){}
 
 /* Which tools a given surface gets. Chat gets everything; Dev and Lab get the
    ones that make sense where they are. Before this, ONLY chat had tools at all

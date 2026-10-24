@@ -12562,7 +12562,7 @@ function _libSig(a){
 
 /* Keep what was just sent. A combined attachment keeps each file separately,
    because that is how somebody will look for it again. */
-async function _libKeep(att){
+async function _libKeep(att, opts){
   if(!att || att.kind === 'refused') return false;
   try{ if(typeof _isTempChat === 'function' && _isTempChat()) return false; }catch(e){}
   const parts = Array.isArray(att.parts) && att.parts.length ? att.parts : [att];
@@ -12584,7 +12584,7 @@ async function _libKeep(att){
   /* The new ones go to the account as well, in the background - the chat
      never waits on it. A failure leaves the file on this device, which is
      what the library then says. */
-  put.filter(p => !bySig.has(p.sig)).forEach(p => { _libCloudPut(p).catch(() => {}); });
+  if(!(opts && opts.cloud === false)) put.filter(p => !bySig.has(p.sig)).forEach(p => { _libCloudPut(p).catch(() => {}); });
   /* Over the bounds, the files used longest ago leave first. */
   const ids = new Set(put.map(p => p.id));
   const keep = put.concat(all.filter(f => !ids.has(f.id)));
@@ -12651,6 +12651,18 @@ function _libAsAtt(f){
   return f.kind === 'text'
     ? { kind: 'text', name: f.name, size: f.size, data: f.data, format: f.format || undefined, summary: f.summary || undefined }
     : { kind: f.kind, name: f.name, size: f.size, b64: f.b64, mime: f.mime };
+}
+
+/* An 'office' entry is the Word, Excel or PowerPoint file itself, saved from
+   an edited file's card. It is read again exactly as if it had been attached
+   from the device, so the chat gets its text and this tab holds the file for
+   the next edit. Anything else is already in the shape the chat sends. */
+async function _libOpenAtt(f){
+  if(f.kind !== 'office') return _libAsAtt(f);
+  const bin = atob(String(f.b64 || ''));
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return amvReadFile(new File([bytes], f.name, { type: f.mime || '' }));
 }
 
 /* ── The paperclip: upload, or pick from what is already here ──────────── */
@@ -28433,6 +28445,13 @@ function amvOfficeSave(id){
   return false;
 }
 try{ window.amvOfficeSave = amvOfficeSave; }catch(e){}
+/* Into the person's files, so another device can go on editing it. The work
+   is in office.js (amvOfficeToLibraryNow). */
+async function amvOfficeToLibrary(id){
+  if(!(await _loadOffice()) || typeof window.amvOfficeToLibraryNow !== 'function'){ toast(T('That could not be loaded. Check your connection and try again.'), 'error', 6000); return false; }
+  return window.amvOfficeToLibraryNow(id);
+}
+try{ window.amvOfficeToLibrary = amvOfficeToLibrary; }catch(e){}
 
 /* Which tools a given surface gets. Chat gets everything; Dev and Lab get the
    ones that make sense where they are. Before this, ONLY chat had tools at all
