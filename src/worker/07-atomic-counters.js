@@ -14,11 +14,39 @@
      • {op:'session', windowMs, cap, amount} -> {allowed, value, start}
        a window that OPENS with the first use and lasts windowMs from then
      • {op:'sessionRelease', start, amount} / {op:'sessionGet', windowMs}
-     • {op:'lifeAdd', tokens, msgs, month, engine} / {op:'lifeGet'} / {op:'clear'}
+     • {op:'lifeAdd', tokens, msgs, month, engine, surface, project} / {op:'lifeGet'} / {op:'clear'}
 
    `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
    for a count that must never lapse - money somebody paid for.
    ===================================================================== */
+/* One lifetime add, shared by the Durable Object and its KV fallback so the
+   two can never count differently. Each month also keeps where its tokens
+   went: by surface (chat, Crew, Build, the API...) and by project, as opaque
+   ids the person's own device turns back into names. Bounded: a month keeps
+   at most LIFE_PROJECTS_MAX projects by name and folds the rest into one. */
+const LIFE_PROJECTS_MAX = 40;
+function _lifeApply(t, p) {
+  t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+  const tok = Math.max(0, Number(p.tokens) || 0), msg = Math.max(0, Number(p.msgs) || 0);
+  t.tok += tok; t.msg += msg;
+  const mo = String(p.month || '').slice(0, 7);
+  if (/^\d{4}-\d{2}$/.test(mo)) {
+    const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg;
+    const sf = /^[a-z]{1,16}$/.test(String(p.surface || '')) ? p.surface : '';
+    if (sf) { m.s = m.s || {}; m.s[sf] = (m.s[sf] || 0) + tok; }
+    const pj = /^[A-Za-z0-9_-]{1,40}$/.test(String(p.project || '')) ? p.project : '';
+    if (pj) {
+      m.p = m.p || {};
+      const k = (pj in m.p || Object.keys(m.p).filter(x => x !== '_other').length < LIFE_PROJECTS_MAX) ? pj : '_other';
+      m.p[k] = (m.p[k] || 0) + tok;
+    }
+    t.months[mo] = m;
+    const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
+  }
+  const e = String(p.engine || '').slice(0, 40);
+  if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+  return t;
+}
 export class AMVCounter {
   constructor(state, env) { this.state = state; this.env = env; }
   async fetch(request) {
@@ -117,17 +145,7 @@ export class AMVCounter {
        and when counting began. Totals only, never what was asked. Kept with
        no expiry, and taken away whole by 'clear' when the account is erased. */
     if (op === 'lifeAdd') {
-      const t = (await this.state.storage.get('life')) || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
-      const tok = Math.max(0, Number(body.tokens) || 0), msg = Math.max(0, Number(body.msgs) || 0);
-      t.tok += tok; t.msg += msg;
-      const mo = String(body.month || '').slice(0, 7);
-      if (/^\d{4}-\d{2}$/.test(mo)) {
-        const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
-        const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
-      }
-      const e = String(body.engine || '').slice(0, 40);
-      if (e) t.eng[e] = (t.eng[e] || 0) + tok;
-      await this.state.storage.put('life', t);
+      await this.state.storage.put('life', _lifeApply(await this.state.storage.get('life'), body));
       await this.state.storage.deleteAlarm();
       return json({ ok: true });
     }
@@ -320,14 +338,7 @@ async function _counterKVFallback(env, name, payload) {
   if (op === 'lifeAdd' || op === 'lifeGet') {
     let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) {}
     if (op === 'lifeGet') return { tally: t };
-    t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
-    const tok = Math.max(0, Number(payload.tokens) || 0), msg = Math.max(0, Number(payload.msgs) || 0);
-    t.tok += tok; t.msg += msg;
-    const mo = String(payload.month || '').slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(mo)) { const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
-      const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()]; }
-    const e = String(payload.engine || '').slice(0, 40);
-    if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+    t = _lifeApply(t, payload);
     await env.AMV_KV.put('life:' + name, JSON.stringify(t));
     return { ok: true };
   }

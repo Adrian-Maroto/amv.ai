@@ -2240,11 +2240,39 @@ function validateMessagesPayload(body) {
      • {op:'session', windowMs, cap, amount} -> {allowed, value, start}
        a window that OPENS with the first use and lasts windowMs from then
      • {op:'sessionRelease', start, amount} / {op:'sessionGet', windowMs}
-     • {op:'lifeAdd', tokens, msgs, month, engine} / {op:'lifeGet'} / {op:'clear'}
+     • {op:'lifeAdd', tokens, msgs, month, engine, surface, project} / {op:'lifeGet'} / {op:'clear'}
 
    `keep: true` (on incr, reserve or get) cancels any expiry the counter had:
    for a count that must never lapse - money somebody paid for.
    ===================================================================== */
+/* One lifetime add, shared by the Durable Object and its KV fallback so the
+   two can never count differently. Each month also keeps where its tokens
+   went: by surface (chat, Crew, Build, the API...) and by project, as opaque
+   ids the person's own device turns back into names. Bounded: a month keeps
+   at most LIFE_PROJECTS_MAX projects by name and folds the rest into one. */
+const LIFE_PROJECTS_MAX = 40;
+function _lifeApply(t, p) {
+  t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
+  const tok = Math.max(0, Number(p.tokens) || 0), msg = Math.max(0, Number(p.msgs) || 0);
+  t.tok += tok; t.msg += msg;
+  const mo = String(p.month || '').slice(0, 7);
+  if (/^\d{4}-\d{2}$/.test(mo)) {
+    const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg;
+    const sf = /^[a-z]{1,16}$/.test(String(p.surface || '')) ? p.surface : '';
+    if (sf) { m.s = m.s || {}; m.s[sf] = (m.s[sf] || 0) + tok; }
+    const pj = /^[A-Za-z0-9_-]{1,40}$/.test(String(p.project || '')) ? p.project : '';
+    if (pj) {
+      m.p = m.p || {};
+      const k = (pj in m.p || Object.keys(m.p).filter(x => x !== '_other').length < LIFE_PROJECTS_MAX) ? pj : '_other';
+      m.p[k] = (m.p[k] || 0) + tok;
+    }
+    t.months[mo] = m;
+    const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
+  }
+  const e = String(p.engine || '').slice(0, 40);
+  if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+  return t;
+}
 export class AMVCounter {
   constructor(state, env) { this.state = state; this.env = env; }
   async fetch(request) {
@@ -2343,17 +2371,7 @@ export class AMVCounter {
        and when counting began. Totals only, never what was asked. Kept with
        no expiry, and taken away whole by 'clear' when the account is erased. */
     if (op === 'lifeAdd') {
-      const t = (await this.state.storage.get('life')) || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
-      const tok = Math.max(0, Number(body.tokens) || 0), msg = Math.max(0, Number(body.msgs) || 0);
-      t.tok += tok; t.msg += msg;
-      const mo = String(body.month || '').slice(0, 7);
-      if (/^\d{4}-\d{2}$/.test(mo)) {
-        const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
-        const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()];
-      }
-      const e = String(body.engine || '').slice(0, 40);
-      if (e) t.eng[e] = (t.eng[e] || 0) + tok;
-      await this.state.storage.put('life', t);
+      await this.state.storage.put('life', _lifeApply(await this.state.storage.get('life'), body));
       await this.state.storage.deleteAlarm();
       return json({ ok: true });
     }
@@ -2546,14 +2564,7 @@ async function _counterKVFallback(env, name, payload) {
   if (op === 'lifeAdd' || op === 'lifeGet') {
     let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) {}
     if (op === 'lifeGet') return { tally: t };
-    t = t || { tok: 0, msg: 0, since: Date.now(), months: {}, eng: {} };
-    const tok = Math.max(0, Number(payload.tokens) || 0), msg = Math.max(0, Number(payload.msgs) || 0);
-    t.tok += tok; t.msg += msg;
-    const mo = String(payload.month || '').slice(0, 7);
-    if (/^\d{4}-\d{2}$/.test(mo)) { const m = t.months[mo] || { tok: 0, msg: 0 }; m.tok += tok; m.msg += msg; t.months[mo] = m;
-      const keys = Object.keys(t.months).sort(); while (keys.length > 36) delete t.months[keys.shift()]; }
-    const e = String(payload.engine || '').slice(0, 40);
-    if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+    t = _lifeApply(t, payload);
     await env.AMV_KV.put('life:' + name, JSON.stringify(t));
     return { ok: true };
   }
@@ -21181,6 +21192,7 @@ async function aiProxy(request, env, ctx, principal) {
 
   /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,
      so a request too long for its engine costs nothing and says what to do. */
+  const _tag = _usageTagOf(body, user, principal);
   const fit = _fitsContext(body, eng);
   if (!fit.ok) {
     return json({ error: 'That is more than ' + _engineTitle(key, eng) + ' can read in one request (about '
@@ -21744,7 +21756,7 @@ async function aiProxy(request, env, ctx, principal) {
      refused above has already given them back and the numbers here are what is
      genuinely still booked. */
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
-    reqMessages: body.messages || [], reserved: reserve,
+    reqMessages: body.messages || [], reserved: reserve, feature: _tag.surface, project: _tag.project,
     reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
     creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
 
@@ -22989,7 +23001,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -23152,10 +23164,12 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     const dOwner = cost - (reservedAcctUSD || 0);
     if (dOwner !== 0) await counter(env, acctCostName, { op: 'incr', amount: dOwner, ttlMs: 86400000 * 70 });
   }
-  /* Lifetime totals for the person (op 'tally'): tokens, one message, the
-     month and the engine. Never allowed to fail the answer it is counting. */
+  /* Lifetime totals for the person: tokens, one message, the month, the
+     engine, and where it was used (surface, project). Never allowed to fail
+     the answer it is counting. */
   if (user && user.email && total > 0) {
-    try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
+    try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '',
+      surface: feature || 'chat', project: project || '' }); } catch (e) {}
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
@@ -23233,6 +23247,22 @@ const ANSWER_FLOOR_TOKENS = 2048;
    against what the call really cost) and wrong for deciding whether it fits:
    a request the estimate called 300,000 tokens could be 1.2 million, and the
    provider would refuse it after AMV had already said yes. */
+/* WHERE A REQUEST WAS USED, for the person's own breakdown. The server names
+   what it can tell for itself - a batch, an API key - and only a request
+   made with the app's own sign-in may say which screen it came from, from a
+   fixed list. It changes no price and no limit: it only says where the
+   tokens went. The project is an opaque id the person's device names. */
+const USAGE_SURFACES_CLIENT = new Set(['chat', 'crew', 'build', 'code', 'voice', 'automation', 'other']);
+function _usageTagOf(body, user, principal) {
+  const a = (body && body.amv && typeof body.amv === 'object') ? body.amv : {};
+  let surface;
+  if (principal) surface = 'batch';
+  else if (user && user.via === 'apikey') surface = 'api';
+  else surface = USAGE_SURFACES_CLIENT.has(a.surface) ? a.surface : 'chat';
+  const project = (!principal && !(user && user.via === 'apikey') && typeof a.project === 'string'
+    && /^[A-Za-z0-9_-]{1,40}$/.test(a.project) && a.project !== '_other') ? a.project : '';
+  return { surface, project };
+}
 function _estimateTextTokens(s) {
   const t = String(s || '');
   let wide = 0;
@@ -23269,6 +23299,15 @@ function _estimateReserveInput(body) {
   const msgs = _estimateInputTokens((body && body.messages) || []);
   const sys = Math.ceil(String((body && body.system) || '').length / 4);
   return msgs + sys;
+}
+
+function _usageBreakdown(life) {
+  const months = (life && life.months) || {};
+  const now = monthKey();
+  const d = new Date(now + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1);
+  const prev = d.toISOString().slice(0, 7);
+  const one = (mo) => { const m = months[mo] || {}; return { month: mo, tokens: m.tok || 0, surfaces: m.s || {}, projects: m.p || {} }; };
+  return { current: one(now), previous: one(prev) };
 }
 
 async function usageReport(request, env) {
@@ -23357,6 +23396,9 @@ async function usageReport(request, env) {
     lifetime: life ? { tokens: life.tok || 0, messages: life.msg || 0, since: life.since || null,
       months: Object.keys(life.months || {}).sort().slice(-12).map(m => ({ month: m, tokens: life.months[m].tok || 0, messages: life.months[m].msg || 0 })),
       engines: life.eng || {} } : { tokens: 0, messages: 0, since: null, months: [], engines: {} },
+    /* Where this calendar month's tokens went, and last month's to compare:
+       by surface, and by project id (the device has the names). */
+    breakdown: _usageBreakdown(life),
     shared: (user.billingSubject && user.billingSubject !== user.email)
       ? { team: true, note: 'This allowance is shared with your team.' } : null,
   });
@@ -31124,7 +31166,7 @@ async function adminStats(request, env) {
   const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
 
   // Where the money went this month, and what caching saved.
-  const features = ['chat', 'automation', 'sms', 'widget'];
+  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
     const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;

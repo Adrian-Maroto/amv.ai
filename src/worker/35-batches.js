@@ -481,6 +481,7 @@ async function aiProxy(request, env, ctx, principal) {
 
   /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,
      so a request too long for its engine costs nothing and says what to do. */
+  const _tag = _usageTagOf(body, user, principal);
   const fit = _fitsContext(body, eng);
   if (!fit.ok) {
     return json({ error: 'That is more than ' + _engineTitle(key, eng) + ' can read in one request (about '
@@ -1044,7 +1045,7 @@ async function aiProxy(request, env, ctx, principal) {
      refused above has already given them back and the numbers here are what is
      genuinely still booked. */
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
-    reqMessages: body.messages || [], reserved: reserve,
+    reqMessages: body.messages || [], reserved: reserve, feature: _tag.surface, project: _tag.project,
     reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
     creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
 

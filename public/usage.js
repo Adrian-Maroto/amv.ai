@@ -86,6 +86,36 @@ function _usageContentHTML(){
 }
 window._usageContentHTML=_usageContentHTML;
 
+/* WHERE IT WENT: this calendar month's tokens by surface and by project, as
+   the server counted them. Projects come back as ids; this device names the
+   ones it has, says plainly when one lives on another device, and counts the
+   rest of the month as outside any project. */
+const _USAGE_SURFACE_LABEL = { chat:'Chat', crew:'Crew', build:'Build', code:'Code', voice:'Voice', automation:'Automations',
+  api:'API keys', batch:'Batches', widget:'Website widget', other:'Other' };
+function _whereHTML(B, n){
+  const cur = B && B.current;
+  if(!cur || !(cur.tokens > 0)) return '';
+  const rows = (pairs) => {
+    const top = Math.max(1, ...pairs.map(p => p[1]));
+    return pairs.map(([lbl, v]) => '<div class="life-mo"><span>'+escH(lbl)+'</span><span class="life-bar"><span style="width:'+Math.round(v / top * 100)+'%"></span></span><span>'+n(v)+'</span></div>').join('');
+  };
+  const surf = Object.entries(cur.surfaces || {}).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => [T(_USAGE_SURFACE_LABEL[k] || 'Other'), v]);
+  let inProj = 0;
+  const proj = Object.entries(cur.projects || {}).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).map(([id, v]) => {
+    inProj += v;
+    if(id === '_other') return [T('Other projects'), v];
+    let ws = null; try{ ws = _wsById(id); }catch(e){}
+    return [ws && ws.name ? ws.name : T('A project on another device'), v];
+  });
+  const outside = cur.tokens - inProj;
+  if(proj.length && outside > 0) proj.push([T('Not in a project'), outside]);
+  const prev = B.previous && B.previous.tokens > 0 ? '<div class="srv-when">'+escH(T('Last month: {0} tokens').replace('{0}', n(B.previous.tokens)))+'</div>' : '';
+  return '<h4 class="life-h">'+escH(T('Where it went this month'))+'</h4>'+
+    '<div class="srv-when">'+escH(T('Calendar month, UTC'))+'</div>'+
+    rows(surf)+prev+
+    (proj.length ? '<h4 class="life-h">'+escH(T('By project'))+'</h4>'+rows(proj) : '');
+}
 /* ALL TIME (docs/OWNER-DECISIONS.md #14): this person's totals since counting
    began, the last twelve months, and which engines did the work. Totals only -
    the server keeps nothing of what was asked to make these. */
@@ -140,6 +170,7 @@ function _paintServerUsage(){
       '<details class="srv-more"><summary>'+escH(T('Details'))+'</summary>'+
         '<div class="srv-lbl"><span>'+escH(T('Tokens this month'))+'</span><span>'+n(d.month.used)+' / '+n(d.month.limit)+'</span></div>'+
         '<div class="srv-lbl"><span>'+escH(T('Messages this month'))+'</span><span>'+n(d.messages && d.messages.used)+'</span></div>'+
+        _whereHTML(d.breakdown, n)+
         _lifeHTML(d.lifetime, n)+
       '</details>'+
       (bonus > 0
@@ -160,4 +191,4 @@ function _paintServerUsage(){
   });
 }
 try{ window._paintServerUsage=_paintServerUsage; }catch(e){}
-try{ window._usageContentHTML=_usageContentHTML; window._lifeHTML=_lifeHTML; }catch(e){}
+try{ window._usageContentHTML=_usageContentHTML; window._lifeHTML=_lifeHTML; window._whereHTML=_whereHTML; }catch(e){}

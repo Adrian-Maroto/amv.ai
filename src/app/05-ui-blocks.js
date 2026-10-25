@@ -1192,6 +1192,7 @@ async function _callAITurn(msgs, _opts) {
         max_tokens:mdl.tokens,
         system:sysPrompt + (_ctx.brief || ''),
         stream:true,
+        amv:_usageTag('chat', _conv),
         ...(tools?{tools}:{}),
         messages:(()=>{
           // Turn our internal messages into the wire format. Any turn where AMV

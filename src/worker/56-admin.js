@@ -269,7 +269,7 @@ async function adminStats(request, env) {
   const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
 
   // Where the money went this month, and what caching saved.
-  const features = ['chat', 'automation', 'sms', 'widget'];
+  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
     const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;

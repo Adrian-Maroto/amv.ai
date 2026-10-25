@@ -120,7 +120,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -283,10 +283,12 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     const dOwner = cost - (reservedAcctUSD || 0);
     if (dOwner !== 0) await counter(env, acctCostName, { op: 'incr', amount: dOwner, ttlMs: 86400000 * 70 });
   }
-  /* Lifetime totals for the person (op 'tally'): tokens, one message, the
-     month and the engine. Never allowed to fail the answer it is counting. */
+  /* Lifetime totals for the person: tokens, one message, the month, the
+     engine, and where it was used (surface, project). Never allowed to fail
+     the answer it is counting. */
   if (user && user.email && total > 0) {
-    try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
+    try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '',
+      surface: feature || 'chat', project: project || '' }); } catch (e) {}
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
@@ -364,6 +366,22 @@ const ANSWER_FLOOR_TOKENS = 2048;
    against what the call really cost) and wrong for deciding whether it fits:
    a request the estimate called 300,000 tokens could be 1.2 million, and the
    provider would refuse it after AMV had already said yes. */
+/* WHERE A REQUEST WAS USED, for the person's own breakdown. The server names
+   what it can tell for itself - a batch, an API key - and only a request
+   made with the app's own sign-in may say which screen it came from, from a
+   fixed list. It changes no price and no limit: it only says where the
+   tokens went. The project is an opaque id the person's device names. */
+const USAGE_SURFACES_CLIENT = new Set(['chat', 'crew', 'build', 'code', 'voice', 'automation', 'other']);
+function _usageTagOf(body, user, principal) {
+  const a = (body && body.amv && typeof body.amv === 'object') ? body.amv : {};
+  let surface;
+  if (principal) surface = 'batch';
+  else if (user && user.via === 'apikey') surface = 'api';
+  else surface = USAGE_SURFACES_CLIENT.has(a.surface) ? a.surface : 'chat';
+  const project = (!principal && !(user && user.via === 'apikey') && typeof a.project === 'string'
+    && /^[A-Za-z0-9_-]{1,40}$/.test(a.project) && a.project !== '_other') ? a.project : '';
+  return { surface, project };
+}
 function _estimateTextTokens(s) {
   const t = String(s || '');
   let wide = 0;
@@ -400,6 +418,15 @@ function _estimateReserveInput(body) {
   const msgs = _estimateInputTokens((body && body.messages) || []);
   const sys = Math.ceil(String((body && body.system) || '').length / 4);
   return msgs + sys;
+}
+
+function _usageBreakdown(life) {
+  const months = (life && life.months) || {};
+  const now = monthKey();
+  const d = new Date(now + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1);
+  const prev = d.toISOString().slice(0, 7);
+  const one = (mo) => { const m = months[mo] || {}; return { month: mo, tokens: m.tok || 0, surfaces: m.s || {}, projects: m.p || {} }; };
+  return { current: one(now), previous: one(prev) };
 }
 
 async function usageReport(request, env) {
@@ -488,6 +515,9 @@ async function usageReport(request, env) {
     lifetime: life ? { tokens: life.tok || 0, messages: life.msg || 0, since: life.since || null,
       months: Object.keys(life.months || {}).sort().slice(-12).map(m => ({ month: m, tokens: life.months[m].tok || 0, messages: life.months[m].msg || 0 })),
       engines: life.eng || {} } : { tokens: 0, messages: 0, since: null, months: [], engines: {} },
+    /* Where this calendar month's tokens went, and last month's to compare:
+       by surface, and by project id (the device has the names). */
+    breakdown: _usageBreakdown(life),
     shared: (user.billingSubject && user.billingSubject !== user.email)
       ? { team: true, note: 'This allowance is shared with your team.' } : null,
   });

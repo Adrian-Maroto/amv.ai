@@ -16,6 +16,24 @@ function _aiBase(){
   if(!_aiBackendReady()) throw new Error('AMV isn’t connected yet. The workspace owner needs to switch on the AMV engine in Settings.');
   return AMV_API.base.replace(/\/$/,'')+'/v1/messages';
 }
+/* WHERE A REQUEST WAS USED, for the Usage screen's breakdown. A caller may
+   name its surface (opts.surface); otherwise it is the screen the person is
+   on. The project is the current chat's, for chat requests only, by id -
+   the server stores ids, and
+   this device turns them back into names. It changes no price and no limit:
+   the server names batches and API keys itself and takes only these words. */
+const _USAGE_TAB_SURFACE = { chat:'chat', crew:'crew', tasks:'crew', build:'build', handoff:'build', automation:'automation' };
+function _usageTag(surface, conv){
+  let sf = surface;
+  if(!sf){ try{ sf = _USAGE_TAB_SURFACE[S.tab] || 'other'; }catch(e){ sf = 'other'; } }
+  /* Only a chat belongs to a project. A Crew or Build request made while a
+     project's chat is open is that screen's, not the project's. */
+  let project = '';
+  if(sf === 'chat') try{ const c = conv || (typeof getCurConv === 'function' ? getCurConv() : null);
+       if(c && typeof c.wsId === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(c.wsId)) project = c.wsId; }catch(e){}
+  return project ? { surface: sf, project } : { surface: sf };
+}
+
 function _aiHeaders(){
   return {'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token};
 }
@@ -267,7 +285,7 @@ async function aiCompleteLong(prompt, system, opts){
     let res, data, partial = '';
     try{
       res = await fetchDeadline(url, {method:'POST', headers: Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
-                                      body: JSON.stringify(body), signal: link.signal, stream:true}, 180000);
+                                      body: JSON.stringify(Object.assign(body, { amv: _usageTag(opts && opts.surface) })), signal: link.signal, stream:true}, 180000);
       if(!res.ok) throw await _aiError(res);
       try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
       data = await _aiReadStream(res, t => { partial += t; });
@@ -434,7 +452,7 @@ async function _aiAgentLoopRun(opts){
          paying for, an answer nobody is going to read. (AMV-AUD-014) */
       try{
         res = await fetchDeadline(url, {method:'POST', headers: Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
-                                        body: JSON.stringify(body), signal: link.signal, stream:true}, 180000);
+                                        body: JSON.stringify(Object.assign(body, { amv: _usageTag(opts && opts.surface) })), signal: link.signal, stream:true}, 180000);
       }catch(e){
         link.end();
         if(_isAbort(e)){ why = 'stopped'; break; }
@@ -561,7 +579,7 @@ async function aiComplete(prompt, system, opts){
   let res, data;
   try{
     res = await fetchDeadline(url,{method:'POST',headers:Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
-                                   body:JSON.stringify(body), signal: link.signal, stream:true}, 120000);
+                                   body:JSON.stringify(Object.assign(body, { amv: _usageTag(opts && opts.surface) })), signal: link.signal, stream:true}, 120000);
     if(!res.ok) throw await _aiError(res);
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
     data = await _aiReadStream(res);
