@@ -70,7 +70,13 @@ function _renderSkillsPane(pane){
   pane.innerHTML=
     '<h2 class="set-title">'+escH(T('Skills'))+'</h2>'+
     '<div class="set-sub">'+escH(T('Reusable instructions. Turn one on and AMV follows it in every chat - always, or only when a request is about what the skill is for. Every edit keeps the previous version.'))+'</div>'+
-    '<div class="ss2"><h3>'+escH(T('Your skills'))+' <button type="button" class="btn mc-mini ghost" id="sk-import">'+escH(T('Import'))+'</button></h3>'+
+    '<div class="ss2"><h3>'+escH(T('Your skills'))+' <button type="button" class="btn mc-mini ghost" id="sk-import">'+escH(T('Import'))+'</button>'
+      +' <button type="button" class="btn mc-mini ghost" id="sk-teach" aria-expanded="false" aria-controls="sk-teach-row">'+escH(T('Teach by showing'))+'</button></h3>'+
+      /* TEACH AMV (web-live.js): name the site, do the task once in AMV's
+         browser, and the steps become a skill you read before it is saved. */
+      '<div class="sk-teach" id="sk-teach-row" hidden><p class="set-sub">'+escH(T('Do a task once in AMV’s browser and it becomes a skill. Start on the site where the task begins.'))+'</p>'
+      +'<div class="sk-teach-go"><input class="fi" id="sk-teach-url" type="url" inputmode="url" placeholder="https://" aria-label="'+escH(T('Where the task begins'))+'">'
+      +'<button type="button" class="btn bp" id="sk-teach-start">'+escH(T('Start'))+'</button></div></div>'+
       '<input type="file" id="sk-file" accept=".json,application/json" hidden>'+
       (custom.length?'<div class="skill-list">'+custom.map(s=>row(s,true)).join('')+'</div>':'<div class="skill-empty">'+escH(T('No custom skills yet - create one below, or import a skill file.'))+'</div>')+
       '<div class="skill-create" id="sk-form">'+_skillFormHTML(null)+'</div>'+
@@ -83,6 +89,21 @@ function _renderSkillsPane(pane){
     '<div class="ss2" id="rl-host"></div>';
   _pluginsPane($('pl-host'));
   _rulesPane($('rl-host'));
+  on($('sk-teach'),'click',function(){
+    const row=$('sk-teach-row'); if(!row) return;
+    row.hidden=!row.hidden; this.setAttribute('aria-expanded', row.hidden?'false':'true');
+    if(!row.hidden){ const u=$('sk-teach-url'); if(u) u.focus(); }
+  });
+  on($('sk-teach-start'),'click',async function(){
+    let u=String(($('sk-teach-url')||{}).value||'').trim();
+    if(u && !/^https?:\/\//i.test(u)) u='https://'+u;
+    try{ new URL(u); }catch(e){ toast(T('Enter the address of the site where the task begins.'),'error',4000); return; }
+    /* Out of Settings, so the panel has the screen. */
+    try{ closeSettings(); }catch(e){}
+    const ok=await _webLiveLoad();
+    if(!ok || typeof window._webTeach!=='function'){ toast(T('AMV’s browser panel could not be loaded. Check your connection and try again.'),'error',6000); return; }
+    window._webTeach(u);
+  });
   pane.querySelectorAll('[data-sktoggle]').forEach(cb=>on(cb,'change',function(){
     const id=this.getAttribute('data-sktoggle');
     let a=_activeSkillIds();

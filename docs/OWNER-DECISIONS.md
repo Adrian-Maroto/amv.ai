@@ -184,6 +184,21 @@ about it), and pictures for sources the answer did not stand on (a search
 result is not an endorsement, and a gallery of them is decoration).
 Built: `75-source-previews.js`, `a-source-picture-is-fetched-by-amv`.
 
+**22. Teach AMV by showing it - YES, in AMV's hosted browser, reviewed before saved.**
+"Do it once and AMV learns it" (audit #34): from Skills, the person names a
+site, AMV's browser opens there and is handed to them (the takeover of #4),
+and each click and thing typed is listed as a step. The text typed into a
+password, one-time-code or card field is never part of a step, anywhere. On
+"Finish teaching" the browser is closed and the steps become a draft skill
+the person reads, edits and saves - or discards; nothing is saved without
+them. A taught skill runs through the browser tool with every check it has
+(isolation, spending gates, approvals), so teaching grants nothing. The time
+the browser is held is charged, as a handover is. Off the table: recording
+on the person's own computer (a recorder there sees everything on screen),
+and keeping recordings on AMV's servers (the steps live on the device and in
+the skill). Built: `browserTeach` in `72-web-takeover.js`, `_webTeach` in
+`web-live.js`, `teach-amv-by-showing-it` (worker and e2e).
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from
