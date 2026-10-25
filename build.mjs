@@ -150,7 +150,9 @@ function emitSandbox() {
   writeFileSync('office.js', readFileSync('src/office/office.js'));
   writeFileSync('sheet.js', readFileSync('src/sheet/sheet.js'));
   /* The Crew catalogue, fetched the first time Crew is opened. */
-  writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js'));
+  /* The catalogue, and after it Mission Control's screen: drawn only once the
+     catalogue has arrived, so it rides in the same request (audit #40). */
+  writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js', 'utf8') + '\n' + readFileSync('src/crew/mission-control.js', 'utf8'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));

@@ -8,7 +8,9 @@
    fetched once, the way the spreadsheet editor and the Office exporter are,
    and then cached by the service worker.
 
-   Pure data, no code: it sets one global and nothing else. The page reads it
+   This source is pure data: it sets one global and nothing else. The build
+   appends Mission Control's screen (src/crew/mission-control.js) to the file
+   it publishes, because that screen is only drawn after this has arrived. The page reads it
    through _cwCatalog() in 10-mission-control.js, and nothing there rebuilds a
    saved job list until this has arrived - a rebuild from an empty catalogue
    would delete every built-in job somebody had switched on.
