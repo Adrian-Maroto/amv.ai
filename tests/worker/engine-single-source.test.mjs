@@ -31,8 +31,14 @@ section('A model id appears only where the tiers are defined');
 {
   const lines = src.split('\n');
   const offenders = [];
+  /* Each line's offset, counted as the lines go by. It was recomputed by
+     re-joining every line before it, which is quadratic in the size of the
+     Worker - minutes per run, and long enough to time out under a loaded
+     gate as the Worker grew. */
+  let start = 0;
   lines.forEach((line, i) => {
-    const at = src.split('\n').slice(0, i).join('\n').length;
+    if (i) start += lines[i - 1].length + 1;
+    const at = i ? start - 1 : 0;   /* exactly what the old re-join measured */
     if (at >= enginesAt && at < aliasEnd) return;      // inside the allowed block
     if (/['"]claude-[a-z0-9.-]+['"]/.test(line)) offenders.push((i + 1) + ': ' + line.trim().slice(0, 90));
   });

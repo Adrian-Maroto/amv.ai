@@ -132,15 +132,19 @@ section('1.2 million Chinese characters is more than an engine reads, and says s
   ok(upstreamCalls === 0 && booked(env) === 0, 'and it cost nothing: nothing booked, nothing sent', { upstreamCalls, booked: booked(env) });
 }
 
-section('A picture counts by its encoded size');
+section('A picture counts by what it costs to read, not by its encoded size');
 {
+  /* It counted at a quarter of its base64 length - so a 400KB photo was a
+     100,000-token "message" - while the engine reads any picture for about
+     1,600 (LESSONS 617). The bound on how much may be SENT is
+     MAX_BINARY_CHARS, checked in validateMessagesPayload. */
   const eng = W.ENGINES['amv-core'];
   const img = { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'A'.repeat(4000000) } }] };
   const f = W._fitsContext({ messages: [img] }, eng);
-  ok(!f.ok && f.tokens === 1000000, 'four million encoded characters is a million tokens, over the room', f);
+  ok(f.ok && f.tokens === 1800, 'four million encoded characters of picture is one picture, ~1,800 tokens', f);
   const nested = { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'A'.repeat(4000000) } }] }] };
   const fn = W._fitsContext({ messages: [nested] }, eng);
-  ok(!fn.ok && fn.tokens === 1000000, 'and so does a picture inside a tool result, a screenshot', fn);
+  ok(fn.ok && fn.tokens === 1800, 'and so is a picture inside a tool result, a screenshot', fn);
   ok(W._fitsContext({ messages: [{ role: 'user', content: 'hi' }] }, {}).room === 200000 - 16000 - 8000,
      'an engine that does not say falls back to 200,000');
 }
