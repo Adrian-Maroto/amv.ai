@@ -15520,3 +15520,17 @@ round carries them. Its own description is kept under the server's 1,200
 character bound for the same reason. Rule: a list that grows with the
 customer is never sent whole into a fixed bound - and a bound that drops
 must be one nothing reaches in ordinary use.
+
+## 616. Two bounds on one payload, set by two people, are one bug waiting
+
+A project chat may carry up to 120,000 characters of the project's files in
+its instructions (PROJ_CTX_CHARS, client). The server refuses instructions
+over 100,000 characters (MAX_SYSTEM_CHARS). Each number was reasonable on its
+own and they had never met: every project past about 80,000 characters - the
+large projects the passage search was built for - was refused as "system
+prompt too large" before the engine saw a word. Every project suite passed,
+because each one read the prompt in the page and none sent it through the
+server. It surfaced only when a test for something else sent a large project
+the whole way. Rule: when the client sizes a payload, some suite sends the
+largest payload it will ever size through the real server - the edge, not a
+comfortable middle.

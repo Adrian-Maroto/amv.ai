@@ -352,6 +352,9 @@ const AMV_CLIENT_TOOLS = new Set([
   /* Their earlier conversations searched and read (project-search.js), in
      the browser, from the chats this device holds. */
   'chat_search', 'chat_read',
+  /* The open project's files searched again (project-search.js), when they
+     are larger than one message holds. */
+  'project_search',
   'tool_search',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 

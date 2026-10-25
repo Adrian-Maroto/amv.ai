@@ -1147,6 +1147,8 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
     /* Their file library, while they are signed in to have one. */
     try{ tools = tools.concat(libraryToolsOffered()); }catch(e){}
+    /* The open project's files, when they are too large to send whole. */
+    try{ tools = tools.concat(projectToolsOffered()); }catch(e){}
     /* And their earlier conversations, to find what was actually said. */
     try{ tools = tools.concat(chatToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one

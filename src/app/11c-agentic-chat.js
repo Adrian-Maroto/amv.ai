@@ -260,10 +260,29 @@ const LIBRARY_TOOLS = [{
   name:'library_search',
   description:'Search the documents the person has sent AMV before - their file library: documents, spreadsheets and notes as text - for passages about something. Use when they refer to a document of theirs that is not attached to this conversation ("my lease", "the report I sent last week", "what did the contract say about..."). Returns matching passages with file names; quote them and name the file. Never guess what a file says.',
   input_schema:{ type:'object', properties:{
-    query:{ type:'string', description:'The words they would expect to find in the document, in its language.' }
+    query:{ type:'string', description:'The words they would expect to find in the document, in its language.' },
+    also:{ type:'array', items:{ type:'string' }, description:'Up to six other ways the document could say it: synonyms, the formal or technical term, the same words in another language they use. Searched too, at a little less weight.' }
   }, required:['query'] }
 }];
 function libraryToolsOffered(){ return _libWho() ? LIBRARY_TOOLS : []; }
+/* THE OPEN PROJECT'S FILES (amvProjectFileSearch in project-search.js).
+   Each message already carries the passages that match it; this is for the
+   part it did not. Offered only while the files are larger than one message
+   holds - below that they are sent whole and there is nothing to find. */
+const PROJECT_TOOLS = [{
+  name:'project_search',
+  description:'Search the files of the project this conversation is in for passages about something. The files are larger than one message holds, so only the passages matching the latest message were sent; use this when the answer needs a part of them that is not in front of you. Returns matching passages with file names; quote them and name the file. Never guess what a file says.',
+  input_schema:{ type:'object', properties:{
+    query:{ type:'string', description:'The words the part you need would contain, in the files\u2019 language.' },
+    also:{ type:'array', items:{ type:'string' }, description:'Up to six other ways the document could say it: synonyms, the formal or technical term, the same words in another language they use. Searched too, at a little less weight.' }
+  }, required:['query'] }
+}];
+function projectToolsOffered(){
+  try{
+    const ws = _curProject();
+    return ws && _projFiles(ws.id).reduce((n, f) => n + String(f.text || '').length, 0) > PROJ_CTX_CHARS ? PROJECT_TOOLS : [];
+  }catch(e){ return []; }
+}
 /* THEIR PAST CHATS (amvChatSearch / amvChatRead in project-search.js). Memory
    keeps facts; these find the conversation itself and read its exact turns.
    Offered when the switch in Privacy is on, outside a temporary chat, and
@@ -272,7 +291,8 @@ const CHAT_HISTORY_TOOLS = [{
   name:'chat_search',
   description:'Search the person\u2019s earlier conversations with AMV for passages about something. Use when they refer to something discussed before that is not in this conversation ("the plan we worked out last week", "what did I say my budget was", "like we did before"), or when the exact earlier wording matters more than a remembered summary. Returns matching passages with each conversation\u2019s title, date and id. Quote what was said; never guess.',
   input_schema:{ type:'object', properties:{
-    query:{ type:'string', description:'Words that would have been used in that conversation, in its language.' }
+    query:{ type:'string', description:'Words that would have been used in that conversation, in its language.' },
+    also:{ type:'array', items:{ type:'string' }, description:'Up to six other ways it could have been said: synonyms, the formal or technical term, the same words in another language they use. Searched too, at a little less weight.' }
   }, required:['query'] }
 },{
   name:'chat_read',
@@ -913,6 +933,11 @@ async function _amvRunTool(name, input, onStatus){
       onStatus && onStatus(name==='chat_search' ? 'Searching your past chats\u2026' : 'Reading an earlier chat\u2026');
       if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await (name==='chat_search' ? window.amvChatSearch : window.amvChatRead)(input), render:null };
+    }
+    if(name==='project_search'){
+      onStatus && onStatus('Searching the project\u2026');
+      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      return { text: window.amvProjectFileSearch(input), render:null };
     }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');

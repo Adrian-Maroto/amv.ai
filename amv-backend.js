@@ -2160,7 +2160,13 @@ const MAX_MESSAGES = 200;          // conversation turns per request
    engine never needed. 3.2 million characters is a million tokens of ordinary
    prose with room to spare, and still a ceiling on what one request can carry. */
 const MAX_TOTAL_CHARS = 3200000;
-const MAX_SYSTEM_CHARS = 100000;
+/* Also an abuse bound, and it must stay above what AMV's own page sends. It
+   was 100,000 while a project chat carries up to PROJ_CTX_CHARS (120,000) of
+   the project's files on top of AMV's own instructions, so every project past
+   about 80,000 characters was refused as "system prompt too large" before
+   the engine saw it - found by sending one through this server, which no
+   suite had done. Whether it fits is _fitsContext's question, as above. */
+const MAX_SYSTEM_CHARS = 400000;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
 const WEB_SEARCH_COST_USD = 0.01;   // ~$10 / 1000 provider web-search requests (AMV-021)
@@ -20453,6 +20459,9 @@ const AMV_CLIENT_TOOLS = new Set([
   /* Their earlier conversations searched and read (project-search.js), in
      the browser, from the chats this device holds. */
   'chat_search', 'chat_read',
+  /* The open project's files searched again (project-search.js), when they
+     are larger than one message holds. */
+  'project_search',
   'tool_search',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 
