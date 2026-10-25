@@ -1168,6 +1168,8 @@ async function _callAITurn(msgs, _opts) {
 
        Built from the array actually sent, and never from the reply. See the
        same guard in `aiAgentLoop`, which is the other loop that dispatches. */
+    /* Only what is used all the time, plus tool_search for the rest (_toolsArrange). */
+    try{ tools = _toolsArrange(tools, (typeof getCurConv === 'function') ? getCurConv() : null); }catch(e){}
     const _offeredTools = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
     if(!tools.length) tools = undefined;
 
@@ -1583,7 +1585,11 @@ async function _callAITurn(msgs, _opts) {
            tool that does not exist in this turn is a dialog about nothing, and
            a "yes" to it would be consent pointing at a dispatcher lookup
            rather than at a known action. */
-        if(!_offeredTools.has(String(t.name || ''))){
+        if(!_offeredTools.has(String(t.name || '')) && _toolPool.has(String(t.name || ''))){
+          /* It exists, but is not switched on: the way to it is tool_search. */
+          out = { text:'"' + String(t.name || '').slice(0, 60) + '" is not switched on yet. Call tool_search with what you need to do; it switches the matching tools on, then call this again.', render:null };
+        }
+        else if(!_offeredTools.has(String(t.name || ''))){
           out = { text:'There is no tool called "' + String(t.name || '').slice(0, 60)
                   + '" available in this conversation right now. Available: '
                   + ([..._offeredTools].join(', ') || 'none')

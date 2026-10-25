@@ -15503,3 +15503,20 @@ fit, before anything is booked. The page sends up to ~400,000 estimated tokens
 whole and reads beyond that in parts. Rule: a size bound names the thing that
 imposes it and is measured in that thing's unit; a constant with no owner
 stays behind when the owner changes.
+
+## 615. A bound that drops silently turns growth into a missing feature
+
+The server forwards at most 128 tools (TOOLS_MAX) and stops at the limit
+without a word. Chat sent every connector tool a person had, so somebody with
+enough apps connected lost the last ones off the list - the model was never
+told they existed, and the person saw AMV say it could not do something their
+connector could. Nothing failed: the bound did what it said and nobody was
+told. Every tool was also read by the engine on every request, used or not.
+
+Fixed with tool search: past a dozen connector tools, chat sends AMV's own
+tools and one tool_search naming each connector and how many tools it has;
+searching switches the matching tools on for the conversation and the next
+round carries them. Its own description is kept under the server's 1,200
+character bound for the same reason. Rule: a list that grows with the
+customer is never sent whole into a fixed bound - and a bound that drops
+must be one nothing reaches in ordinary use.

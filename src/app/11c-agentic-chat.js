@@ -289,6 +289,78 @@ function chatToolsOffered(){
     return (S.convs || []).some(c => c && c.id !== (cur && cur.id) && !c.temp && (c.wsId || null) === ws && (c.msgs || []).length) ? CHAT_HISTORY_TOOLS : [];
   }catch(e){ return []; }
 }
+/* ── TOOL SEARCH (audit #19) ──────────────────────────────────────────────
+   Every tool offered is a description and a schema the engine reads on every
+   request. AMV's own tools are about 18,000 characters, cached with the rest
+   of the prefix, and its instructions name each of them - so they are always
+   sent. What grows without bound is a person's connectors and apps, which can
+   bring hundreds: past TOOL_CONNECTOR_WHOLE of them, the turn is offered one
+   tool, tool_search, that names what exists by connector. Searching turns the
+   matching tools on for the rest of this conversation, and the next round of
+   the same turn carries them.
+
+   Nothing about permission changes: a tool that was not offered still cannot
+   run (the dispatch checks the list actually sent), every connector call is
+   still asked for, and a found tool is offered exactly as it would have been. */
+const TOOL_CONNECTOR_WHOLE = 12;   /* this many connector tools or fewer are offered whole */
+const TOOL_ON_MAX = 40;            /* tools a conversation may have switched on */
+let _toolPool = new Map();         /* name -> tool, what tool_search may switch on this turn */
+function _toolGroupOf(t){
+  const m = /^\[([^\]]{1,60})\]/.exec(String((t && t.description) || ''));
+  return m ? m[1] : 'Connected tools';
+}
+/* Split what could be offered into what is sent and what can be found. */
+function _toolsArrange(all, conv){
+  const on = new Set((conv && Array.isArray(conv._toolsOn)) ? conv._toolsOn : []);
+  const isConn = (t) => /^mcp__/.test(String((t && t.name) || ''));
+  const conn = all.filter(isConn);
+  const deferConn = conn.length > TOOL_CONNECTOR_WHOLE;
+  const sent = [], pool = new Map();
+  for(const t of all){
+    const n = String((t && t.name) || '');
+    const defer = deferConn && isConn(t) && n && !on.has(n);
+    if(defer) pool.set(n, t); else sent.push(t);
+  }
+  _toolPool = pool;
+  if(!pool.size) return sent;
+  const groups = {};
+  for(const t of pool.values()){ const g = _toolGroupOf(t); groups[g] = (groups[g] || 0) + 1; }
+  /* The server drops a description over 1,200 characters (TOOL_DESC_MAX), and
+     with it this tool - so the list of groups is cut to fit, saying so. */
+  let list = Object.entries(groups).sort((a, b) => b[1] - a[1]).map(([g, c]) => g + ' (' + c + ')').join('; ');
+  if(list.length > 600) list = list.slice(0, 560).replace(/;[^;]*$/, '') + '; and more';
+  sent.push({ name:'tool_search',
+    description:'Find and switch on the person\u2019s connected tools. Not all of them are loaded; these exist and are found by searching: ' + list
+      + '. Search with a few words for what you need to do ("create a Notion page", "list open Salesforce deals"); the matching tools are switched on and you can call them straight after, in this same turn. Search before telling the person something cannot be done.',
+    input_schema:{ type:'object', properties:{ query:{ type:'string', description:'What you need to do, in a few words.' } }, required:['query'] } });
+  return sent;
+}
+/* Words in the query against each tool's name, group and description. */
+function _toolSearchRun(input){
+  const q = String((input && input.query) || '').toLowerCase().slice(0, 200);
+  const words = q.split(/[^a-z0-9\u00c0-\uffff]+/).filter(w => w.length > 2);
+  if(!words.length || !_toolPool.size) return { text: _toolPool.size ? 'Say what you need to do in a few words, then search again.' : 'There are no other tools to switch on.', render:null };
+  const scored = [];
+  for(const [n, t] of _toolPool){
+    const hay = (n.replace(/[_-]+/g, ' ') + ' ' + _toolGroupOf(t) + ' ' + String(t.description || '')).toLowerCase();
+    let s = 0;
+    for(const w of words){ if(hay.indexOf(w) >= 0) s += (n.toLowerCase().indexOf(w) >= 0 || _toolGroupOf(t).toLowerCase().indexOf(w) >= 0) ? 3 : 1; }
+    if(s > 0) scored.push([s, n, t]);
+  }
+  scored.sort((a, b) => b[0] - a[0]);
+  const hit = scored.slice(0, 8);
+  if(!hit.length) return { text:'Nothing matched "' + q + '". The groups that exist are listed in this tool\u2019s description - search with words from one of them, or tell the person this is not something AMV can do here.', render:null };
+  const conv = (typeof getCurConv === 'function') ? getCurConv() : null;
+  if(conv){
+    const on = Array.isArray(conv._toolsOn) ? conv._toolsOn.slice() : [];
+    for(const h of hit) if(on.indexOf(h[1]) < 0) on.push(h[1]);
+    conv._toolsOn = on.slice(-TOOL_ON_MAX);
+    try{ _autoSave(); }catch(e){}
+  }
+  return { text:'Switched on for this conversation - call them directly now:\n' + hit.map(h => '- ' + h[1] + ': ' + String(h[2].description || '').replace(/\s+/g, ' ').slice(0, 200)).join('\n'), render:null };
+}
+try{ window._toolsArrange = _toolsArrange; window._toolSearchRun = _toolSearchRun; }catch(e){}
+
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
 async function _officeEditTool(input){
@@ -851,6 +923,7 @@ async function _amvRunTool(name, input, onStatus){
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
 
+    if(name==='tool_search'){ onStatus && onStatus('Looking for the right tool\u2026'); return _toolSearchRun(input); }
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
     if(name==='chat_search' || name==='chat_read'){

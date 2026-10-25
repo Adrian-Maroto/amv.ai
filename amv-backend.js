@@ -20447,6 +20447,7 @@ const AMV_CLIENT_TOOLS = new Set([
   /* Their earlier conversations searched and read (project-search.js), in
      the browser, from the chats this device holds. */
   'chat_search', 'chat_read',
+  'tool_search',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 
      The bridge was built end to end - a daemon on somebody's machine, a
