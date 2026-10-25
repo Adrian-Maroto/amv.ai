@@ -274,6 +274,8 @@ async function teamSetRole(request, env){
       if(!mm) return { error:'member not found', status:404 };
       if(mm.role==='owner') return { error:'the owner’s role can’t be changed', status:400 };
       const was = mm.role; mm.role = newRole;
+      /* Set by a person in AMV: the directory's admin group no longer owns it (71-scim.js). */
+      delete mm.roleBy;
       team = fresh;
       return { prev: was, members: fresh.members };
     });

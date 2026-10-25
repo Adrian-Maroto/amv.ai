@@ -54,6 +54,7 @@ function _teamScimHTML(s, scim){
   if(!scim) return head + '<div><button class="btn bs" id="scim-on" type="button">'+escH(T('Turn on directory sync'))+'</button></div></div>';
   return head + '<dl class="team-sso-rec"><dt>'+escH(T('Address'))+'</dt><dd><code>'+escH(scim.baseUrl||'')+'</code></dd>'+
     '<dt>'+escH(T('Token'))+'</dt><dd>'+escH(T('ending {0}').replace('{0}', scim.tail||''))+'</dd></dl>'+
+    '<p class="team-sso-say">'+escH(T('Push a group named "AMV Admins" from your directory and its members are admins here. Admins you appoint in AMV stay admins either way.'))+'</p>'+
     '<div id="scim-token" aria-live="polite"></div>'+
     '<button class="btn bs" id="scim-new" type="button">'+escH(T('New token'))+'</button> '+
     '<button class="btn bs" id="scim-off" type="button">'+escH(T('Turn off directory sync'))+'</button></div>';

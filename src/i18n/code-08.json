@@ -15350,5 +15350,24 @@
   "it": "il tipo di sito, in base all’indirizzo",
   "ko": "주소로 판단한 사이트 종류",
   "ta": "முகவரியின்படி தளத்தின் வகை"
+ },
+ "Push a group named \"AMV Admins\" from your directory and its members are admins here. Admins you appoint in AMV stay admins either way.": {
+  "es": "Envía desde tu directorio un grupo llamado \"AMV Admins\" y sus miembros serán administradores aquí. Los administradores que nombres en AMV lo siguen siendo en cualquier caso.",
+  "zh": "从你的目录推送一个名为 \"AMV Admins\" 的组，其成员即成为这里的管理员。你在 AMV 中任命的管理员无论如何都保持管理员身份。",
+  "hi": "अपनी डायरेक्टरी से \"AMV Admins\" नाम का समूह भेजें, और उसके सदस्य यहाँ एडमिन होंगे। AMV में आपके नियुक्त एडमिन हर हाल में एडमिन बने रहते हैं।",
+  "ar": "أرسل من دليلك مجموعة باسم \"AMV Admins\" ليصبح أعضاؤها مسؤولين هنا. يبقى المسؤولون الذين تعيّنهم في AMV مسؤولين في كل الأحوال.",
+  "pt": "Envie do seu diretório um grupo chamado \"AMV Admins\" e os membros dele serão administradores aqui. Os administradores que você nomear no AMV continuam sendo administradores de qualquer forma.",
+  "fr": "Envoyez depuis votre annuaire un groupe nommé \"AMV Admins\" : ses membres seront administrateurs ici. Les administrateurs que vous nommez dans AMV le restent dans tous les cas.",
+  "de": "Übertragen Sie aus Ihrem Verzeichnis eine Gruppe namens \"AMV Admins\", und ihre Mitglieder sind hier Admins. Admins, die Sie in AMV ernennen, bleiben es in jedem Fall.",
+  "ja": "ディレクトリから \"AMV Admins\" という名前のグループを送ると、そのメンバーがここで管理者になります。AMV で任命した管理者はどちらの場合も管理者のままです。",
+  "ru": "Передайте из каталога группу \"AMV Admins\" — её участники станут здесь администраторами. Администраторы, назначенные вами в AMV, останутся ими в любом случае.",
+  "id": "Kirim grup bernama \"AMV Admins\" dari direktori Anda, dan anggotanya menjadi admin di sini. Admin yang Anda tunjuk di AMV tetap menjadi admin.",
+  "bn": "আপনার ডিরেক্টরি থেকে \"AMV Admins\" নামের একটি গ্রুপ পাঠান, তার সদস্যরা এখানে অ্যাডমিন হবেন। AMV-তে আপনার নিয়োগ করা অ্যাডমিনরা যেকোনো অবস্থায় অ্যাডমিন থাকেন।",
+  "ur": "اپنی ڈائریکٹری سے \"AMV Admins\" نام کا گروپ بھیجیں، اس کے ارکان یہاں ایڈمن ہوں گے۔ AMV میں آپ کے مقرر کردہ ایڈمن ہر صورت ایڈمن رہتے ہیں۔",
+  "tr": "Dizininizden \"AMV Admins\" adlı bir grup gönderin; üyeleri burada yönetici olur. AMV’de atadığınız yöneticiler her durumda yönetici kalır.",
+  "vi": "Đẩy một nhóm tên \"AMV Admins\" từ thư mục của bạn và các thành viên của nhóm sẽ là quản trị viên ở đây. Quản trị viên bạn chỉ định trong AMV vẫn là quản trị viên dù thế nào.",
+  "it": "Invia dalla tua directory un gruppo chiamato \"AMV Admins\" e i suoi membri saranno amministratori qui. Gli amministratori che nomini in AMV restano tali in ogni caso.",
+  "ko": "디렉터리에서 \"AMV Admins\"라는 그룹을 보내면 그 구성원이 여기서 관리자가 됩니다. AMV에서 지정한 관리자는 어떤 경우에도 관리자로 유지됩니다.",
+  "ta": "உங்கள் அடைவிலிருந்து \"AMV Admins\" என்ற குழுவை அனுப்பினால் அதன் உறுப்பினர்கள் இங்கே நிர்வாகிகள் ஆவார்கள். AMV-இல் நீங்கள் நியமிக்கும் நிர்வாகிகள் எப்படியும் நிர்வாகிகளாகவே இருப்பார்கள்."
  }
 }

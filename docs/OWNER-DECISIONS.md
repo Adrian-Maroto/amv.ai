@@ -20,7 +20,7 @@ remove them within minutes, and it is the first thing a security review asks.
 Scope as in DECISION-ENTERPRISE-IDENTITY.md: `/scim/v2/Users`, a per-team token
 shown once and stored only as a hash, deactivation that ends every session and
 removes the person from the team, every call in the team's audit log,
-rate-limited. Groups wait for roles.
+rate-limited. Groups followed as #20, mapped to the roles AMV already has.
 
 **2. SAML - OFF the table** until a paying customer names it as a requirement.
 Company sign-in over OpenID Connect already reaches Okta, Entra ID and Google
@@ -159,6 +159,18 @@ never AMV's background work - until the limit comes back; an API key cannot
 give it. Per person, so on a team each member decides for their own messages.
 A default of "ask" is off the table: people who bought a pack to keep going
 would be stopped mid-task by a question they already answered at checkout.
+
+**20. SCIM Groups - YES, mapped to the existing Admin role, no new roles.**
+A company decides who administers its tools in its directory; making it
+also do that by hand in AMV is how an ex-admin keeps admin rights. Groups are
+pushed and kept (at most 50 per team); members of the group named "AMV Admins"
+are admins and go back to member when they leave it. Only admins the
+DIRECTORY made are ever demoted by it - an admin the owner appointed in AMV,
+or whose role the owner has set since, stays one - and the owner is never
+touched, the same bounds as Users. A member the directory names that the team
+does not have is refused, a request with one bad operation changes nothing,
+and every role change is in the team's audit log. New roles (#3) stay off.
+Built: `71-scim.js`, `a-company-directory-decides-who-is-admin`.
 
 ## What needs the owner's own hand
 
