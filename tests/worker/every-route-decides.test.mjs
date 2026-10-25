@@ -121,6 +121,7 @@ const PUBLIC = {
      a hole somebody has to keep guarding. */
   '/v1/connector-logo':  'the logo beside a catalogue entry, read before anybody signs up',
   '/v1/site-icon':       'a research source\u2019s icon, loaded by an <img> that cannot carry a sign-in; public hostnames only, rate limited per IP',
+  '/v1/source-preview':  'the picture a cited research page names (og:image), loaded by an <img> that cannot carry a sign-in; https public hosts only, image bytes only, rate limited per IP',
   /* The catalogue itself, opened deliberately and with the owner's sign-off.
      The handler returns three constants and nothing else - the ten universal
      jobs, the five for the country asked about, and the country names for the
