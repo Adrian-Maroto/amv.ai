@@ -113,6 +113,7 @@ section('And every tool has been classified either way');
     account_status: 'reads their own plan and usage',
     library_search: 'reads their own kept files, on this device and in their account; nothing is changed or sent anywhere else',
     chat_search: 'reads their own earlier conversations held on this device, in the same project; nothing is changed or sent anywhere else',
+    project_search: 'reads the files of the project this conversation is in, held on this device; nothing is changed or sent anywhere else',
     chat_read: 'reads one of their own earlier conversations, by id, from the same project; nothing is changed or sent anywhere else',
     /* Pausing is the safe direction. A confirmation in front of "stop doing
        that" is the one place a dialog makes things worse. */
