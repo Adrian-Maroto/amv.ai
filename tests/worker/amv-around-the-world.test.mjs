@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { codeOnly, functionBody } from '../lib/source.mjs';
+import { codeOnly, functionBody, clientSource } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -217,7 +217,8 @@ section('A job says what it will need before the day it needs it');
   /* The server resolves this for every job on the list. If the badge is
      computed and never rendered, the whole pre-flight is a server round trip
      that changes nothing anybody sees. */
-  const app = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+  /* The whole client: the job rows are drawn by Mission Control's screen, which is fetched on demand. */
+  const app = codeOnly(clientSource());
   ok(/function _mcWillNeed\(item\)/.test(app), 'the badge exists', true);
   ok(/_mcWillNeed\(it\)/.test(app), 'and something actually calls it', true);
   ok(/\+ willNeed/.test(app), 'and puts the result on the job row', true);

@@ -339,6 +339,13 @@ export function pageScriptFiles() {
   if (out.length < 10) throw new Error('pageScriptFiles: read ' + out.length + ' files from build.mjs - the pattern no longer matches the build');
   return out;
 }
+/* THE WHOLE CLIENT: the page's bundle and every file it fetches on demand.
+   A check that something in the app calls X must read all of it - since the
+   screens began leaving the page, "app.js has no caller" stopped meaning
+   "nothing calls it". */
+export function clientSource() {
+  return [_rfs(_join(_ROOT, 'app.js'), 'utf8'), ...pageScriptFiles().map(f => _rfs(_join(_ROOT, f.published), 'utf8'))].join('\n');
+}
 export function appModule(file) {
   const m = String(file).match(/^(\d+)-/);
   if (!m) throw new Error('appModule: not an NN-name.js module: ' + file);
