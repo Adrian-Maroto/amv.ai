@@ -75,7 +75,7 @@ function _renderSkillsPane(pane){
       /* TEACH AMV (web-live.js): name the site, do the task once in AMV's
          browser, and the steps become a skill you read before it is saved. */
       '<div class="sk-teach" id="sk-teach-row" hidden><p class="set-sub">'+escH(T('Do a task once in AMV’s browser and it becomes a skill. Start on the site where the task begins.'))+'</p>'
-      +'<div class="sk-teach-go"><input class="fi" id="sk-teach-url" type="url" inputmode="url" placeholder="https://" aria-label="'+escH(T('Where the task begins'))+'">'
+      +'<div class="sk-teach-go"><input class="fi" id="sk-teach-url" type="url" inputmode="url" aria-label="'+escH(T('Where the task begins'))+'">'
       +'<button type="button" class="btn bp" id="sk-teach-start">'+escH(T('Start'))+'</button></div></div>'+
       '<input type="file" id="sk-file" accept=".json,application/json" hidden>'+
       (custom.length?'<div class="skill-list">'+custom.map(s=>row(s,true)).join('')+'</div>':'<div class="skill-empty">'+escH(T('No custom skills yet - create one below, or import a skill file.'))+'</div>')+
