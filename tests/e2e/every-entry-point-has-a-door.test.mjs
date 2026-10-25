@@ -33,11 +33,13 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { pageScriptFiles } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* The page, and the parts of it fetched when they are opened (the sell form,
-   a team owner's company sign-in): a door in one of those is still a door. */
-const bundle = ['app.js', 'market-sell.js', 'team-sso.js', 'credit.js', 'memory-io.js', 'skills.js', 'team-projects.js', 'api-keys.js', 'library.js', 'help-faqs.js', 'widget-form.js', 'live-voice.js', 'web-live.js', 'invest.js', 'project-search.js', 'dna-editor.js', 'security.js', 'spending.js', 'family.js', 'health.js', 'office.js', 'usage.js', 'crew-view.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
+   a team owner's company sign-in): a door in one of those is still a door.
+   The list is the build's own, so a file split out later is read here too. */
+const bundle = ['app.js', ...pageScriptFiles().map(f => f.published)].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 /* Deliberately on window, and deliberately not a door. Each says which it is,
    because "internal API" is the excuse this check would rot into if it were

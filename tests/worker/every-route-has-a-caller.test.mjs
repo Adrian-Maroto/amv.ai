@@ -25,6 +25,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { pageScriptFiles } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
@@ -32,9 +33,8 @@ const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
    console's calls live in admin.js since it left the page - and the
    command-line tool, which is the API's own first caller (token counting is
    asked for from there, not from a screen). */
-const client = ['app.js', 'src/admin/admin.js', 'src/sheet/sheet.js', 'src/office/office.js',
-                'src/billing/credit.js', 'src/market/sell.js', 'src/team/team-sso.js', 'src/memory/memory-io.js', 'src/skills/skills.js', 'src/team/team-projects.js', 'src/api/api-keys.js', 'src/settings/widget-form.js', 'src/voice/live-voice.js', 'src/web/web-live.js', 'src/finance/invest.js', 'src/project/project-search.js', 'src/design/dna-editor.js', 'src/security/security.js', 'src/finance/spending.js', 'src/finance/family.js', 'src/health/health.js', 'src/library/library.js', 'src/help/faqs.js', 'src/crew/mission-control.js',
-                'cli/amv-cli.mjs']
+/* The on-demand files are the build's own list (pageScriptFiles). */
+const client = ['app.js', ...pageScriptFiles().map(f => f.source), 'cli/amv-cli.mjs']
   .map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 /* Not called by the app, on purpose, each with the reason. */

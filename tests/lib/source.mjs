@@ -320,6 +320,25 @@ import { readFileSync as _rfs, readdirSync as _rds } from 'fs';
 import { join as _join, dirname as _dirname } from 'path';
 import { fileURLToPath as _f2p } from 'url';
 const _APP = _join(_dirname(_f2p(import.meta.url)), '..', '..', 'src', 'app');
+/* EVERY SCRIPT THE PAGE FETCHES ON DEMAND, READ FROM THE BUILD ITSELF.
+
+   Code that only some visitors use is moved out of the page into files of
+   its own (audit #40), and each suite that reads "the client" for a name or
+   a route kept its own hand-written list of those files. Five lists, and
+   every split broke the ones nobody remembered - a check that cannot see a
+   file reports what is in it as missing. build.mjs already pairs each
+   published file with its source, so that is the list: a new on-demand file
+   is read by every suite the moment the build publishes it.
+
+   Each entry: { published: 'crew-view.js', source: 'src/crew/mission-control.js' }. */
+const _ROOT = _join(_APP, '..', '..');
+export function pageScriptFiles() {
+  const build = _rfs(_join(_ROOT, 'build.mjs'), 'utf8');
+  const out = [...build.matchAll(/writeFileSync\('([a-z0-9-]+\.js)', readFileSync\('(src\/[^']+\.js)'/g)]
+    .map(m => ({ published: m[1], source: m[2] }));
+  if (out.length < 10) throw new Error('pageScriptFiles: read ' + out.length + ' files from build.mjs - the pattern no longer matches the build');
+  return out;
+}
 export function appModule(file) {
   const m = String(file).match(/^(\d+)-/);
   if (!m) throw new Error('appModule: not an NN-name.js module: ' + file);
