@@ -19,6 +19,7 @@
 import { chromium } from 'playwright';
 import { serveApp, LAUNCH } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { pageScriptFiles } from '../lib/source.mjs';
 
 const { url, server } = await serveApp({ apiBase: '' });
 const browser = await chromium.launch(LAUNCH);
@@ -73,10 +74,11 @@ try {
   await page.waitForTimeout(400);
   const now = await cached();
   const keys = [].concat(...Object.values(now));
-  /* crew-data.js and crew-view.js (Mission Control's screen) are published
-     files the page fetches once it is idle (see _crewPrefetch), so they are
-     in the cache by the time this looks. */
-  const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs', '/crew-data.js', '/crew-view.js']);
+  /* The parts of the app published for fetching on demand (the build's own
+     list) are public files too: some are fetched once the page is idle (see
+     _crewPrefetch), so they are in the cache by the time this looks. */
+  const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs',
+    ...pageScriptFiles().map(f => '/' + f.published)]);
   keys.filter(k => /^\/i18n\/[a-z]{2,3}\.json$/.test(k)).forEach(k => allowed.add(k));
   ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
   ok(keys.includes('/'), 'the page is stored, under the shell key', now);
