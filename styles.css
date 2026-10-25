@@ -17327,3 +17327,9 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cr-mode-opt input{ margin-top:3px; accent-color:var(--accent); }
 .cr-mode-opt > span{ display:flex; flex-direction:column; gap:2px; font-size:var(--t-sm); }
 .cr-mode-opt > span > span{ color:var(--mu); font-size:var(--t-xs); line-height:1.5; }
+
+/* LAYER A337 - what kind of site a research source is (_rsKind), a quiet tag
+   after its name. Told from the address only, so it stays understated:
+   it is a category, not a grade. Official and Academic take the accent. */
+.rsrc-kind{ margin-left:var(--sp-1); padding:0 6px; border-radius:var(--r-pill); font-size:var(--t-xs); line-height:1.6; color:var(--mu); background:var(--s3); white-space:nowrap; }
+.rsrc-kind-official, .rsrc-kind-academic{ color:var(--accent); background:var(--accent-soft); }

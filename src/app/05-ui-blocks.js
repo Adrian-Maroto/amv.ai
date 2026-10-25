@@ -2482,6 +2482,26 @@ function _citesHTML(m){
       + '</li>').join('') + '</ol></details>';
 }
 function _rsHost(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
+try{ window._rsKind=_rsKind; }catch(e){}
+/* WHAT KIND OF SITE IT IS (audit #28), told from its address and nothing
+   else - which is all AMV can honestly know without reading the page, so the
+   label says that ("by its address") rather than passing for a verdict on
+   the source. No label is better than a guess: an address that matches
+   nothing here gets none. */
+const _RS_NEWS = /(^|\.)(reuters\.com|apnews\.com|bbc\.(co\.uk|com)|nytimes\.com|washingtonpost\.com|theguardian\.com|ft\.com|wsj\.com|bloomberg\.com|cnn\.com|aljazeera\.com|economist\.com|npr\.org|cnbc\.com|nikkei\.com|lemonde\.fr|elpais\.com|spiegel\.de|nhk\.or\.jp|abc\.net\.au|cbc\.ca|axios\.com|politico\.(com|eu)|theverge\.com|techcrunch\.com|apnews\.org)$/;
+function _rsKind(h){
+  h = String(h || '').toLowerCase();
+  if(!h) return '';
+  /* Before Official: PubMed is a government address, but what is found there is published research. */
+  if(/(^|\.)(edu|ac\.[a-z]{2}|edu\.[a-z]{2})$|(^|\.)(arxiv\.org|doi\.org|ncbi\.nlm\.nih\.gov|nature\.com|sciencedirect\.com|springer\.com|link\.springer\.com|jstor\.org|ieee\.org|acm\.org|plos\.org|thelancet\.com|nejm\.org|science\.org|researchgate\.net|ssrn\.com)$/.test(h)) return 'academic';
+  if(/(^|\.)(gov|mil)(\.[a-z]{2})?$|(^|\.)(gob|gouv|gub|go)\.[a-z]{2}$|(^|\.)gc\.ca$|(^|\.)(europa\.eu|un\.org|who\.int|oecd\.org|imf\.org|worldbank\.org)$/.test(h)) return 'official';
+  if(/^(docs|developer|developers|devdocs|learn)\.|\.readthedocs\.io$|(^|\.)(developer\.mozilla\.org|learn\.microsoft\.com)$/.test(h)) return 'docs';
+  if(/(^|\.)(wikipedia\.org|britannica\.com|wikidata\.org)$/.test(h)) return 'reference';
+  if(/(^|\.)(reddit\.com|stackoverflow\.com|stackexchange\.com|quora\.com|news\.ycombinator\.com|x\.com|twitter\.com|facebook\.com|tripadvisor\.[a-z.]+|discord\.com|forum\.[a-z.]+)$|^forums?\./.test(h)) return 'community';
+  if(_RS_NEWS.test(h)) return 'news';
+  return '';
+}
+const _RS_KIND_LABEL = { official:'Official', academic:'Academic', docs:'Documentation', reference:'Reference', community:'Community', news:'News' };
 function _buildResearchPanel(state, finished){
   const n = state.sources.size;
   const searches = state.searches;
@@ -2501,9 +2521,10 @@ function _buildResearchPanel(state, finished){
     return src ? '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+escH(src)+'">' : '';
   };
   const chips = shown.map(s=>
-    '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+'">'+
+    (k => '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+(k?' · '+escH(T(_RS_KIND_LABEL[k]))+' ('+escH(T('the kind of site, by its address'))+')':'')+'">'+
       '<span class="rsrc-fav">'+escH((host(s.url)[0]||'').toUpperCase())+icon(s.url)+'</span>'+escH(host(s.url))+
-    '</a>'
+      (k?'<span class="rsrc-kind rsrc-kind-'+k+'">'+escH(T(_RS_KIND_LABEL[k]))+'</span>':'')+
+    '</a>')(_rsKind(_rsHost(s.url)))
   ).join('');
   /* Each search as it really ran: what was asked, and what came back. */
   const trail = (state.trail||[]).filter(t=>t.q || t.n!=null).map(t=>
