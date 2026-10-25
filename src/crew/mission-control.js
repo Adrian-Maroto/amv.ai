@@ -1,5 +1,6 @@
 /* ═════════════════════════════════════════════════
-   MISSION CONTROL'S SCREEN - shipped inside crew-data.js (see build.mjs).
+   MISSION CONTROL'S SCREEN - published as crew-view.js (see build.mjs), and
+   fetched beside the Crew catalogue the first time somebody opens Crew.
 
    Moved out of the page, unchanged, by following what the rest of the app
    calls (audit #40): everything here is reached only from the Crew screen
@@ -1466,3 +1467,6 @@ function cwDemo(){
 }
 
 window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwReject=cwReject;
+
+/* Here once: the loader in the page reads this before fetching again. */
+try{ window._crewViewHere = true; }catch(e){}

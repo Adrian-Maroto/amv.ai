@@ -19507,6 +19507,21 @@ function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
    delete the built-in ones they had switched on. Every rebuild waits for
    _loadCrewData(). */
 let _crewDataP = null;
+/* Mission Control's screen (crew-view.js), fetched once, beside the
+   catalogue - see the stand-in renderCrewView in 10b. */
+let _crewViewP = null;
+function _loadCrewView(){
+  if(window._crewViewHere) return Promise.resolve(true);
+  if(_crewViewP) return _crewViewP;
+  _crewViewP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'crew-view.js';
+    s.onload = () => res(!!window._crewViewHere);
+    s.onerror = () => { _crewViewP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _crewViewP;
+}
 function _cwCatalog(){ return (typeof window !== 'undefined' && window.AMV_CREW_DATA) || null; }
 function _loadCrewData(){
   if(_cwCatalog()) return Promise.resolve(true);
@@ -23770,10 +23785,9 @@ function cwReject(id){
 
 /* ── THE SCREEN ITSELF ARRIVES WITH THE CATALOGUE ─────────────────────────
    Mission Control's screen - its cards, its settings rows, its activity and
-   the handlers behind them - is in src/crew/mission-control.js, which the
-   build ships inside crew-data.js: it is only ever drawn after the catalogue
-   has arrived anyway, so it costs no extra request and nothing in the page
-   every visitor downloads (audit #40). What stays here is what other parts
+   the handlers behind them - is in src/crew/mission-control.js, published as
+   crew-view.js and fetched beside the catalogue the screen already waits
+   for, so it is in nothing every visitor downloads (audit #40). What stays here is what other parts
    of the app call without the screen open: scheduling, the command box,
    the job switches.
 
@@ -23784,9 +23798,9 @@ function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
   vc.innerHTML='<div class="sv fi crew-view"><div class="vi"><div class="cw-loading" role="status" aria-live="polite">'+escH(T('Loading your Crew\u2026'))+'</div></div></div>';
   const mine=renderCrewView;
-  _loadCrewData().then(ok=>{
+  Promise.all([_loadCrewData(), _loadCrewView()]).then(([data, view])=>{
     if(S.tab!=='crew' && S.tab!=='extensions') return;
-    if(ok && window.renderCrewView !== mine){ window.renderCrewView(); return; }
+    if(data && view && window.renderCrewView !== mine){ window.renderCrewView(); return; }
     const box=vc.querySelector('.cw-loading'); if(!box) return;
     box.innerHTML=escH(T('Crew could not load. Check your connection and try again.'))+' <button class="btn bs" type="button" id="cw-load-retry">'+escH(T('Try again'))+'</button>';
     on($('cw-load-retry'),'click',()=>renderCrewView());

@@ -150,9 +150,11 @@ function emitSandbox() {
   writeFileSync('office.js', readFileSync('src/office/office.js'));
   writeFileSync('sheet.js', readFileSync('src/sheet/sheet.js'));
   /* The Crew catalogue, fetched the first time Crew is opened. */
-  /* The catalogue, and after it Mission Control's screen: drawn only once the
-     catalogue has arrived, so it rides in the same request (audit #40). */
-  writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js', 'utf8') + '\n' + readFileSync('src/crew/mission-control.js', 'utf8'));
+  writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js'));
+  /* Mission Control's screen, fetched beside the catalogue when Crew opens
+     (audit #40). A file of its own, so fetching the catalogue again never
+     runs the screen's code twice. */
+  writeFileSync('crew-view.js', readFileSync('src/crew/mission-control.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
@@ -1094,6 +1096,7 @@ const PUBLISH = [
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
   'sheet.js',              // the spreadsheet editor, fetched the first time a table is opened
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
+  'crew-view.js',          // Mission Control's screen, fetched beside the catalogue
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

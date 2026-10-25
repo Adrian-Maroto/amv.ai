@@ -33,6 +33,21 @@ function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
    delete the built-in ones they had switched on. Every rebuild waits for
    _loadCrewData(). */
 let _crewDataP = null;
+/* Mission Control's screen (crew-view.js), fetched once, beside the
+   catalogue - see the stand-in renderCrewView in 10b. */
+let _crewViewP = null;
+function _loadCrewView(){
+  if(window._crewViewHere) return Promise.resolve(true);
+  if(_crewViewP) return _crewViewP;
+  _crewViewP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'crew-view.js';
+    s.onload = () => res(!!window._crewViewHere);
+    s.onerror = () => { _crewViewP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _crewViewP;
+}
 function _cwCatalog(){ return (typeof window !== 'undefined' && window.AMV_CREW_DATA) || null; }
 function _loadCrewData(){
   if(_cwCatalog()) return Promise.resolve(true);
