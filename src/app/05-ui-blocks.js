@@ -2528,6 +2528,17 @@ function _buildResearchPanel(state, finished){
       (k?'<span class="rsrc-kind rsrc-kind-'+k+'">'+escH(T(_RS_KIND_LABEL[k]))+'</span>':'')+
     '</a>')(_rsKind(_rsHost(s.url)))
   ).join('');
+  /* The picture each CITED page chose for itself (og:image), fetched by AMV's
+     server (/v1/source-preview) for the same reason as the icons. Only once
+     the answer is finished and only for what it stands on; a page with no
+     picture drops its card rather than showing an empty frame. */
+  if(finished && base) _rsWirePreviewFallback();
+  const cards = finished && base ? sources.filter(s => cited.has(s.url)).slice(0, RS_PREVIEWS).map(s => {
+    const src = safeMediaSrc(base + '/v1/source-preview?url=' + encodeURIComponent(s.url));
+    return src ? '<a class="rsrc-card" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer">'
+      + '<img class="rsrc-pic" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+escH(src)+'">'
+      + '<span class="rsrc-card-t">'+escH(s.title || host(s.url))+'</span><span class="rsrc-card-h">'+escH(host(s.url))+'</span></a>' : '';
+  }).join('') : '';
   /* Each search as it really ran: what was asked, and what came back. */
   const trail = (state.trail||[]).filter(t=>t.q || t.n!=null).map(t=>
     '<li class="rsrc-q"><span class="rsrc-qt">'+(t.q ? '“'+escH(t.q)+'”' : escH(T('A search')))+'</span> '+
@@ -2542,7 +2553,20 @@ function _buildResearchPanel(state, finished){
     '<div class="rsrc-head">'+head+(finished&&cited.size?' · '+escH(T('{0} cited').replace('{0}', cited.size)):'')+'</div>'+
     (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
     (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+(sources.length-12)+' more</span>':'')+'</div>':'')+
+    (cards?'<div class="rsrc-cards">'+cards+'</div>':'')+
   '</div>';
+}
+const RS_PREVIEWS = 4;
+let _rsPreviewWired = false;
+function _rsWirePreviewFallback(){
+  if(_rsPreviewWired) return;
+  _rsPreviewWired = true;
+  try{
+    document.addEventListener('error', (e) => {
+      const t = e && e.target;
+      if(t && t.classList && t.classList.contains('rsrc-pic')){ const c = t.closest('.rsrc-card'); if(c) c.remove(); }
+    }, true);
+  }catch(e){}
 }
 
 function _streamBubbleUpdate(streamIdx, text){

@@ -72,8 +72,9 @@ function _siteIconSniff(b) {
 }
 /* One GET through fetchGuarded - the outbound gate every address somebody
    else chose goes through, which re-checks each redirect hop - with the body
-   read only up to `max` bytes. Null on anything else. */
-async function _siteIconGet(url, accept, max) {
+   read only up to `max` bytes. Null on anything else - or, with `upTo`, the
+   first `max` bytes of something longer (a page's head is what is wanted). */
+async function _siteIconGet(url, accept, max, upTo) {
   let g;
   try { g = await fetchGuarded(url.href, { headers: { 'Accept': accept } }, SICON_TIMEOUT); }
   catch (e) { return null; }
@@ -86,8 +87,13 @@ async function _siteIconGet(url, accept, max) {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (n + value.byteLength > max) {
+        try { await reader.cancel(); } catch (e) {}
+        if (!upTo) return null;
+        parts.push(value.subarray(0, max - n)); n = max;
+        break;
+      }
       n += value.byteLength;
-      if (n > max) { try { await reader.cancel(); } catch (e) {} return null; }
       parts.push(value);
     }
   } catch (e) { return null; }

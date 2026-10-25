@@ -172,6 +172,18 @@ does not have is refused, a request with one bad operation changes nothing,
 and every role change is in the team's audit log. New roles (#3) stay off.
 Built: `71-scim.js`, `a-company-directory-decides-who-is-admin`.
 
+**21. Pictures of cited sources - YES, fetched by AMV, cited sources only.**
+A research answer shows the picture each cited page names for its link
+previews (og:image), up to four, once the answer is finished. AMV's server
+fetches it, never the person's browser, on the same terms as a site's icon:
+https public hosts only, every redirect re-checked, JPEG/PNG/GIF/WEBP by their
+bytes, at most 300KB, rate limited per IP, kept a week in a new CACHE kind
+(`sprev:` + a digest of the address - no person's data). Off the table:
+hotlinking the site's image from the page (it tells every site who read
+about it), and pictures for sources the answer did not stand on (a search
+result is not an endorsement, and a gallery of them is decoration).
+Built: `75-source-previews.js`, `a-source-picture-is-fetched-by-amv`.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

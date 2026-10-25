@@ -17333,3 +17333,14 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
    it is a category, not a grade. Official and Academic take the accent. */
 .rsrc-kind{ margin-left:var(--sp-1); padding:0 6px; border-radius:var(--r-pill); font-size:var(--t-xs); line-height:1.6; color:var(--mu); background:var(--s3); white-space:nowrap; }
 .rsrc-kind-official, .rsrc-kind-academic{ color:var(--accent); background:var(--accent-soft); }
+
+/* LAYER A338 - the picture each cited page chose for itself (/v1/source-preview),
+   a row of up to four cards under the source chips. Fixed ratio so nothing
+   jumps as they load; a card whose picture does not arrive is removed. */
+.rsrc-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:var(--sp-2); margin-top:var(--sp-2); }
+.rsrc-card{ display:flex; flex-direction:column; gap:2px; min-width:0; text-decoration:none; color:var(--tx); border:1px solid var(--bd); border-radius:var(--r-md); overflow:hidden; background:var(--s2); }
+.rsrc-card:hover{ border-color:var(--accent-txt); }
+.rsrc-card:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.rsrc-pic{ display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:var(--s3); }
+.rsrc-card-t{ padding:var(--sp-1) var(--sp-2) 0; color:var(--tx); font-size:var(--t-xs); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.rsrc-card-h{ padding:0 var(--sp-2) var(--sp-1); font-size:var(--t-xs); color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

@@ -609,6 +609,9 @@ async function _route(request, env, ctx) {
        fetched here so the person's browser never visits the sites in an
        answer. The host is checked to be a public name (74-site-icons.js). */
     '/v1/site-icon',
+    /* And the picture a cited page names for its link previews, on the same
+       terms; the address is checked the same way (75-source-previews.js). */
+    '/v1/source-preview',
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -905,6 +908,7 @@ async function _route(request, env, ctx) {
     case '/v1/connectors':      return connectorDirectory(request, env);
     case '/v1/connector-logo': return connectorLogo(request, env);
     case '/v1/site-icon':      return siteIcon(request, env);
+    case '/v1/source-preview': return sourcePreview(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);
