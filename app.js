@@ -3751,12 +3751,12 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
    Auto asks for the most any engine gives; the server clamps it to the one it
    picks. */
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:32000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:16000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
-  swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', tokens:32000, cost:3, rec:'pro' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:32000, cost:4, rec:'elite' },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
+  swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', ctx:1000000, tokens:32000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
      it out of the picker and kept it in the product's own idea of what it can
      do. Nothing reads it: MODEL_ORDER never listed it, and the only other
@@ -3779,9 +3779,14 @@ async function _loadPartnerEngines(){
     if(!d || !Array.isArray(d.engines)) return 0;
     let n = 0;
     for(const e of d.engines){
+      /* What each engine reads in one request, as the server says - so a
+         conversation's history is sized to the engine that will read it. */
+      const known = e && MODEL_ORDER.find(k => MODELS[k] && MODELS[k].model === e.key);
+      if(known && +e.context >= 8000) MODELS[known].ctx = +e.context;
       if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
       const label = String(e.label || e.key).slice(0, 40);
-      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key, tokens:16000, cost:2,
+      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key,
+                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost:2,
                         rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true };
       MODEL_ORDER.push(e.key);
       ENGINE_LABEL[e.key] = label;
@@ -9176,7 +9181,7 @@ async function _callAITurn(msgs, _opts) {
        brief that travels in the system prompt - so a long chat keeps going
        in place instead of being declared full. */
     const _conv = (typeof getCurConv === 'function') ? getCurConv() : null;
-    const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx) : { from: 0, brief: '' };
+    const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx, { mdl, system: sysPrompt, tools }) : { from: 0, brief: '' };
     let _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
@@ -28584,31 +28589,7 @@ function _toolsArrange(all, conv){
       + '. Search with a few words for what you need to do ("create a Notion page", "list open Salesforce deals"); the matching tools are switched on and you can call them straight after, in this same turn. Search before telling the person something cannot be done.' });
   return sent;
 }
-/* Words in the query against each tool's name, group and description. */
-function _toolSearchRun(input){
-  const q = String((input && input.query) || '').toLowerCase().slice(0, 200);
-  const words = q.split(/[^a-z0-9\u00c0-\uffff]+/).filter(w => w.length > 2);
-  if(!words.length || !_toolPool.size) return { text: _toolPool.size ? 'Say what you need to do in a few words, then search again.' : 'There are no other tools to switch on.', render:null };
-  const scored = [];
-  for(const [n, t] of _toolPool){
-    const hay = (n.replace(/[_-]+/g, ' ') + ' ' + _toolGroupOf(t) + ' ' + String(t.description || '')).toLowerCase();
-    let s = 0;
-    for(const w of words){ if(hay.indexOf(w) >= 0) s += (n.toLowerCase().indexOf(w) >= 0 || _toolGroupOf(t).toLowerCase().indexOf(w) >= 0) ? 3 : 1; }
-    if(s > 0) scored.push([s, n, t]);
-  }
-  scored.sort((a, b) => b[0] - a[0]);
-  const hit = scored.slice(0, 8);
-  if(!hit.length) return { text:'Nothing matched "' + q + '". The groups that exist are listed in this tool\u2019s description - search with words from one of them, or tell the person this is not something AMV can do here.', render:null };
-  const conv = (typeof getCurConv === 'function') ? getCurConv() : null;
-  if(conv){
-    const on = Array.isArray(conv._toolsOn) ? conv._toolsOn.slice() : [];
-    for(const h of hit) if(on.indexOf(h[1]) < 0) on.push(h[1]);
-    conv._toolsOn = on.slice(-TOOL_ON_MAX);
-    try{ _autoSave(); }catch(e){}
-  }
-  return { text:'Switched on for this conversation - call them directly now:\n' + hit.map(h => '- ' + h[1] + ': ' + String(h[2].description || '').replace(/\s+/g, ' ').slice(0, 200)).join('\n'), render:null };
-}
-try{ window._toolsArrange = _toolsArrange; window._toolSearchRun = _toolSearchRun; }catch(e){}
+try{ window._toolsArrange = _toolsArrange; }catch(e){}
 
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
@@ -29172,7 +29153,12 @@ async function _amvRunTool(name, input, onStatus){
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
 
-    if(name==='tool_search'){ onStatus && onStatus('Looking for the right tool\u2026'); return _toolSearchRun(input); }
+    /* The search itself is in project-search.js, fetched the first time. */
+    if(name==='tool_search'){
+      onStatus && onStatus('Looking for the right tool\u2026');
+      if(!(await _projSearchReady())) return { text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
+      return window.amvToolSearch(input);
+    }
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
     if(name==='chat_search' || name==='chat_read'){
@@ -48077,6 +48063,29 @@ const CTX_KEEP_MIN_TURNS = 6;
    A few are kept in hand for the turn being sent. */
 const CTX_MAX_WIRE = 190;
 
+/* THE CONTEXT ASSEMBLER (audit #16): how much history THIS request may carry.
+
+   Everything in a request is read from one window: the engine's context,
+   less the longest answer it may write, the instructions, the tools, and the
+   margin the server keeps when it checks the same request (_fitsContext in
+   the Worker). What is left is the room for history - and history never
+   takes more than CTX_HISTORY_BUDGET even when the room is far larger,
+   because every token of history is also a token of the person's allowance,
+   sent again with every message. A million-token engine does not mean a
+   million tokens a message. A smaller engine, or a project whose
+   instructions are large, gets a smaller history instead of a refusal. */
+const CTX_MARGIN_TOKENS = 8000;
+function _ctxRoom(opts){
+  const o = opts || {};
+  const mdl = o.mdl || null;
+  const ctx = +(mdl && mdl.ctx) || 200000;
+  const out = +(mdl && mdl.tokens) || 16000;
+  let tools = 0; try{ tools = Math.ceil(JSON.stringify(o.tools || []).length / 4); }catch(e){}
+  const room = ctx - out - _tokScript(o.system || '') - tools - CTX_MARGIN_TOKENS;
+  return { room, budget: Math.max(0, Math.min(CTX_HISTORY_BUDGET, room)), ctx, out, tools };
+}
+try{ window._ctxRoom=_ctxRoom; }catch(e){}
+
 /* Where the split falls: the index of the oldest turn that still goes
    verbatim. Everything before it is the brief's job.
 
@@ -48088,7 +48097,11 @@ function _ctxSplit(msgs, budget){
   const n = msgs.length;
   let used = 0, wire = 0, i = n - 1;
   for(; i >= 0; i--){
-    const t = _tok(msgs[i].c || msgs[i].text || '');
+    /* By script, as the server measures it (_estimateTextTokens): a Chinese,
+       Japanese or Korean character is about a token, not a quarter of one -
+       counted as four characters a token, a chat in those languages sent four
+       times the history it was meant to, against the person's allowance. */
+    const t = _tokScript(msgs[i].c || msgs[i].text || '');
     const w = (msgs[i]._toolContent && msgs[i]._toolResults) ? 2 : 1;
     /* The count is never exceeded - the server would refuse the turn. */
     if(wire + w > CTX_MAX_WIRE) break;
@@ -48182,13 +48195,15 @@ try{ window._ctxDegraded=_ctxDegraded; }catch(e){}
    Returns synchronously usable numbers; the compaction itself is awaited,
    because sending a request that has silently lost the middle of the
    conversation is the bug this replaces. */
-async function _ctxPrepare(conv, upto){
+async function _ctxPrepare(conv, upto, opts){
   const all = (conv && conv.msgs) || [];
   /* Bounded to what has actually been said. The chat appends a placeholder for
      the answer being streamed before it sends, and folding that into the
      history would send an empty assistant turn and shift every index by one. */
   const msgs = (upto == null) ? all : all.slice(0, upto);
-  const split = _ctxSplit(msgs);
+  /* Sized to the request being built when the caller says what is in it;
+     otherwise the standing budget, as before. */
+  const split = _ctxSplit(msgs, opts ? (_ctxRoom(opts).budget || 1) : undefined);
   if(split.from > 0){
     const prev = conv.compact;
     const coveredTo = prev && !prev.degraded ? (prev.upto || 0) : 0;

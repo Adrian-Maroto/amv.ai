@@ -666,8 +666,11 @@ async function reconcilePayments(env) {
    partner's own model id never leaves the server. Public - it says what the
    product offers, nothing about who is asking. */
 async function enginesList(request, env) {
-  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
-  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
+  /* With what each reads in one request and the most it writes, so the page
+     sizes a conversation's history to the engine that will read it. */
+  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000 }));
+  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true,
+    context: d.context || 200000, maxOut: d.maxOut || 16000 }));
   return json({ ok: true, engines: primary.concat(partners) });
 }
 

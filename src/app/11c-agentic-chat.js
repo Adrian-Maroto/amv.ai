@@ -337,31 +337,7 @@ function _toolsArrange(all, conv){
       + '. Search with a few words for what you need to do ("create a Notion page", "list open Salesforce deals"); the matching tools are switched on and you can call them straight after, in this same turn. Search before telling the person something cannot be done.' });
   return sent;
 }
-/* Words in the query against each tool's name, group and description. */
-function _toolSearchRun(input){
-  const q = String((input && input.query) || '').toLowerCase().slice(0, 200);
-  const words = q.split(/[^a-z0-9\u00c0-\uffff]+/).filter(w => w.length > 2);
-  if(!words.length || !_toolPool.size) return { text: _toolPool.size ? 'Say what you need to do in a few words, then search again.' : 'There are no other tools to switch on.', render:null };
-  const scored = [];
-  for(const [n, t] of _toolPool){
-    const hay = (n.replace(/[_-]+/g, ' ') + ' ' + _toolGroupOf(t) + ' ' + String(t.description || '')).toLowerCase();
-    let s = 0;
-    for(const w of words){ if(hay.indexOf(w) >= 0) s += (n.toLowerCase().indexOf(w) >= 0 || _toolGroupOf(t).toLowerCase().indexOf(w) >= 0) ? 3 : 1; }
-    if(s > 0) scored.push([s, n, t]);
-  }
-  scored.sort((a, b) => b[0] - a[0]);
-  const hit = scored.slice(0, 8);
-  if(!hit.length) return { text:'Nothing matched "' + q + '". The groups that exist are listed in this tool\u2019s description - search with words from one of them, or tell the person this is not something AMV can do here.', render:null };
-  const conv = (typeof getCurConv === 'function') ? getCurConv() : null;
-  if(conv){
-    const on = Array.isArray(conv._toolsOn) ? conv._toolsOn.slice() : [];
-    for(const h of hit) if(on.indexOf(h[1]) < 0) on.push(h[1]);
-    conv._toolsOn = on.slice(-TOOL_ON_MAX);
-    try{ _autoSave(); }catch(e){}
-  }
-  return { text:'Switched on for this conversation - call them directly now:\n' + hit.map(h => '- ' + h[1] + ': ' + String(h[2].description || '').replace(/\s+/g, ' ').slice(0, 200)).join('\n'), render:null };
-}
-try{ window._toolsArrange = _toolsArrange; window._toolSearchRun = _toolSearchRun; }catch(e){}
+try{ window._toolsArrange = _toolsArrange; }catch(e){}
 
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
@@ -925,7 +901,12 @@ async function _amvRunTool(name, input, onStatus){
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
 
-    if(name==='tool_search'){ onStatus && onStatus('Looking for the right tool\u2026'); return _toolSearchRun(input); }
+    /* The search itself is in project-search.js, fetched the first time. */
+    if(name==='tool_search'){
+      onStatus && onStatus('Looking for the right tool\u2026');
+      if(!(await _projSearchReady())) return { text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
+      return window.amvToolSearch(input);
+    }
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
     if(name==='chat_search' || name==='chat_read'){

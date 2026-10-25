@@ -235,7 +235,9 @@ const FAST_MODE_BETA = 'fast-mode-2026-02-01';
      AMV_PARTNER_KEY      its key - read here and nowhere else
      AMV_PARTNER_ENGINES  JSON: the engines AMV sells on it, each
                           { key, model, label, minPlan, inCost, outCost,
-                            maxOut, tokenParam?, reasoning?, vision?, tools? }
+                            maxOut, context?, tokenParam?, reasoning?, vision?, tools? }
+                          context: tokens the model reads in one request
+                          (8,000 to 2,000,000); 200,000 when not given.
 
    AN ENGINE EXISTS ONLY WHEN THE PARTNER SAYS ITS MODEL DOES. The partner's
    own model list is read (cached for six hours) and an engine whose model id
@@ -299,8 +301,10 @@ function _partnerEngineDefs(env){
     if(!(inCost > 0) || !(outCost > 0) || !(maxOut >= 256 && maxOut <= 128000)) continue;
     if(!/^[\w./:-]{1,120}$/.test(String(d.model || ''))) continue;
     if(!PLAN_RANK.hasOwnProperty(d.minPlan || 'pro')) continue;
+    const ctx = Math.floor(+d.context);
+    const context = (ctx >= 8000 && ctx <= 2000000) ? ctx : 200000;
     out.push({ key: d.key, provider: 'partner', model: String(d.model), label: String(d.label || d.key).slice(0, 40),
-               minPlan: d.minPlan || 'pro', inCost, outCost, maxOut,
+               minPlan: d.minPlan || 'pro', inCost, outCost, maxOut, context,
                tokenParam: d.tokenParam === 'max_tokens' ? 'max_tokens' : 'max_completion_tokens',
                reasoning: !!d.reasoning, vision: !!d.vision, tools: d.tools !== false,
                thinking: false, effort: null, cacheMin: 0 });
@@ -20761,8 +20765,11 @@ async function reconcilePayments(env) {
    partner's own model id never leaves the server. Public - it says what the
    product offers, nothing about who is asking. */
 async function enginesList(request, env) {
-  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
-  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
+  /* With what each reads in one request and the most it writes, so the page
+     sizes a conversation's history to the engine that will read it. */
+  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000 }));
+  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true,
+    context: d.context || 200000, maxOut: d.maxOut || 16000 }));
   return json({ ok: true, engines: primary.concat(partners) });
 }
 

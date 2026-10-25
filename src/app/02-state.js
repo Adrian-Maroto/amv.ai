@@ -812,12 +812,12 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
    Auto asks for the most any engine gives; the server clamps it to the one it
    picks. */
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:32000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:16000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
-  swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', tokens:32000, cost:3, rec:'pro' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
-  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:32000, cost:4, rec:'elite' },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
+  swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', ctx:1000000, tokens:32000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
      it out of the picker and kept it in the product's own idea of what it can
      do. Nothing reads it: MODEL_ORDER never listed it, and the only other
@@ -840,9 +840,14 @@ async function _loadPartnerEngines(){
     if(!d || !Array.isArray(d.engines)) return 0;
     let n = 0;
     for(const e of d.engines){
+      /* What each engine reads in one request, as the server says - so a
+         conversation's history is sized to the engine that will read it. */
+      const known = e && MODEL_ORDER.find(k => MODELS[k] && MODELS[k].model === e.key);
+      if(known && +e.context >= 8000) MODELS[known].ctx = +e.context;
       if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
       const label = String(e.label || e.key).slice(0, 40);
-      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key, tokens:16000, cost:2,
+      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key,
+                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost:2,
                         rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true };
       MODEL_ORDER.push(e.key);
       ENGINE_LABEL[e.key] = label;

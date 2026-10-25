@@ -48,6 +48,29 @@ const CTX_KEEP_MIN_TURNS = 6;
    A few are kept in hand for the turn being sent. */
 const CTX_MAX_WIRE = 190;
 
+/* THE CONTEXT ASSEMBLER (audit #16): how much history THIS request may carry.
+
+   Everything in a request is read from one window: the engine's context,
+   less the longest answer it may write, the instructions, the tools, and the
+   margin the server keeps when it checks the same request (_fitsContext in
+   the Worker). What is left is the room for history - and history never
+   takes more than CTX_HISTORY_BUDGET even when the room is far larger,
+   because every token of history is also a token of the person's allowance,
+   sent again with every message. A million-token engine does not mean a
+   million tokens a message. A smaller engine, or a project whose
+   instructions are large, gets a smaller history instead of a refusal. */
+const CTX_MARGIN_TOKENS = 8000;
+function _ctxRoom(opts){
+  const o = opts || {};
+  const mdl = o.mdl || null;
+  const ctx = +(mdl && mdl.ctx) || 200000;
+  const out = +(mdl && mdl.tokens) || 16000;
+  let tools = 0; try{ tools = Math.ceil(JSON.stringify(o.tools || []).length / 4); }catch(e){}
+  const room = ctx - out - _tokScript(o.system || '') - tools - CTX_MARGIN_TOKENS;
+  return { room, budget: Math.max(0, Math.min(CTX_HISTORY_BUDGET, room)), ctx, out, tools };
+}
+try{ window._ctxRoom=_ctxRoom; }catch(e){}
+
 /* Where the split falls: the index of the oldest turn that still goes
    verbatim. Everything before it is the brief's job.
 
@@ -59,7 +82,11 @@ function _ctxSplit(msgs, budget){
   const n = msgs.length;
   let used = 0, wire = 0, i = n - 1;
   for(; i >= 0; i--){
-    const t = _tok(msgs[i].c || msgs[i].text || '');
+    /* By script, as the server measures it (_estimateTextTokens): a Chinese,
+       Japanese or Korean character is about a token, not a quarter of one -
+       counted as four characters a token, a chat in those languages sent four
+       times the history it was meant to, against the person's allowance. */
+    const t = _tokScript(msgs[i].c || msgs[i].text || '');
     const w = (msgs[i]._toolContent && msgs[i]._toolResults) ? 2 : 1;
     /* The count is never exceeded - the server would refuse the turn. */
     if(wire + w > CTX_MAX_WIRE) break;
@@ -153,13 +180,15 @@ try{ window._ctxDegraded=_ctxDegraded; }catch(e){}
    Returns synchronously usable numbers; the compaction itself is awaited,
    because sending a request that has silently lost the middle of the
    conversation is the bug this replaces. */
-async function _ctxPrepare(conv, upto){
+async function _ctxPrepare(conv, upto, opts){
   const all = (conv && conv.msgs) || [];
   /* Bounded to what has actually been said. The chat appends a placeholder for
      the answer being streamed before it sends, and folding that into the
      history would send an empty assistant turn and shift every index by one. */
   const msgs = (upto == null) ? all : all.slice(0, upto);
-  const split = _ctxSplit(msgs);
+  /* Sized to the request being built when the caller says what is in it;
+     otherwise the standing budget, as before. */
+  const split = _ctxSplit(msgs, opts ? (_ctxRoom(opts).budget || 1) : undefined);
   if(split.from > 0){
     const prev = conv.compact;
     const coveredTo = prev && !prev.degraded ? (prev.upto || 0) : 0;

@@ -31,7 +31,7 @@ const W = await import(harness + '?t=' + Date.now());
 
 const PARTNER = 'https://partner.example/v1';
 const ENGINES_CFG = JSON.stringify([
-  { key: 'amv-vega', model: 'vendor-large-2', label: 'AMV Vega', minPlan: 'pro', inCost: 3, outCost: 12, maxOut: 16000, tools: true },
+  { key: 'amv-vega', model: 'vendor-large-2', label: 'AMV Vega', minPlan: 'pro', inCost: 3, outCost: 12, maxOut: 16000, context: 128000, tools: true },
   { key: 'amv-lyra', model: 'vendor-not-listed', label: 'AMV Lyra', minPlan: 'pro', inCost: 1, outCost: 4, maxOut: 8000 },
   { key: 'amv-bad', model: 'vendor-x', label: 'No price', minPlan: 'pro', maxOut: 8000 },
 ]);
@@ -115,6 +115,20 @@ section('Configured: only engines whose model the partner lists are offered');
   const vega = list.engines.find(e => e.key === 'amv-vega');
   ok(vega.label === 'AMV Vega' && !JSON.stringify(list).includes('vendor-'), 'listed by its AMV name; the partner’s model id never leaves the server', vega);
   ok(W._partnerEngineDefs(env).every(d => d.key !== 'amv-bad'), 'an entry with no price is dropped, not guessed at');
+}
+
+section('Each engine says how much it reads, so the page sizes history to it');
+{
+  const env = mkEnv(true);
+  const a = await account(env, 'pro');
+  const list = await (await req(env, '/v1/engines', null, a.tok, 'GET')).json();
+  const by = Object.fromEntries(list.engines.map(e => [e.key, e]));
+  ok(by['amv-vega'] && by['amv-vega'].context === 128000 && by['amv-vega'].maxOut === 16000, 'a partner engine reports the context it was configured with', by['amv-vega']);
+  ok(by['amv-core'] && by['amv-core'].context === 1000000, 'AMV’s own engines report theirs', by['amv-core']);
+  const odd = W._partnerEngineDefs(Object.assign({}, env, { AMV_PARTNER_ENGINES: JSON.stringify([
+    { key: 'amv-odd', model: 'vendor-large-2', label: 'Odd', minPlan: 'pro', inCost: 1, outCost: 1, maxOut: 4000, context: 5 },
+    { key: 'amv-none', model: 'vendor-large-2', label: 'None', minPlan: 'pro', inCost: 1, outCost: 1, maxOut: 4000 }]) }));
+  ok(odd.length === 2 && odd.every(d => d.context === 200000), 'a context that is missing or not believable is 200,000, not taken on trust', odd.map(d => d.context));
 }
 
 section('A turn is translated there and back, and settled at the engine’s prices');

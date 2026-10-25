@@ -1188,7 +1188,7 @@ async function _callAITurn(msgs, _opts) {
        brief that travels in the system prompt - so a long chat keeps going
        in place instead of being declared full. */
     const _conv = (typeof getCurConv === 'function') ? getCurConv() : null;
-    const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx) : { from: 0, brief: '' };
+    const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx, { mdl, system: sysPrompt, tools }) : { from: 0, brief: '' };
     let _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
