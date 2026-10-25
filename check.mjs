@@ -1480,7 +1480,16 @@ step('Page weight is under control', () => {
      Crew row counts how many of them are done (~0.2KB gzipped; the page was
      20 bytes under the old ceiling). The tool's schema is sent with every
      chat request, so it cannot be fetched later. */
-  const CEILING = 612 * 1024;   // gzipped, which is what actually crosses the network
+  /* 612 -> 596, 2026-10-25, DOWN: three screens that only some visitors open
+     - Mission Control, the code workspace, and Tasks / Integrations /
+     Automation - left the page for files fetched on demand (crew-view.js,
+     code-view.js, integrations-view.js), found by following what the rest of
+     the app calls (audit #40). The page went from 20 bytes under 612 to
+     ~581KB. The ceiling follows it most of the way down so the room cannot be
+     quietly spent, and keeps ~15KB of it for work that has to be in the page:
+     the audit called 6KB of headroom an emergency, and it was - every change
+     for a day fought it. */
+  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
