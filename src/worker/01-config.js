@@ -87,12 +87,12 @@ function _mountCookies(response, mounted) {
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
 });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
   'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why',

@@ -744,6 +744,9 @@ const AMV_API = {
     const o = opts||{};
     if(!o.credentials && /^\/auth\//.test(path)) o.credentials = _authCreds();
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
+    /* The language the page is in, so what the server writes for a person -
+       the sign-in and reset emails first - is in it too (76-email-words.js). */
+    try{ const _l=_lang(); if(_l && _l!=='auto') o.headers['X-AMV-Lang']=_l; }catch(e){}
     // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
     const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
     const _boundOrigin = (loadStr('amv_api_token_origin')||'');

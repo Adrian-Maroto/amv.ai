@@ -1000,11 +1000,13 @@ function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').
 /* Shared branded email shell. body is trusted HTML; cta is {label,url} or null;
    extra is trusted HTML after the CTA; footnote is plain text.
    Inline styles only (clients strip <style>); table layout for compatibility. */
-function _emailShell(heading, body, cta, extra, footnote) {
+function _emailShell(heading, body, cta, extra, footnote, lang) {
+  const dir = (typeof EMAIL_RTL !== 'undefined' && EMAIL_RTL.has(lang)) ? ' dir="rtl"' : '';
+  const htmlLang = lang ? ' lang="' + String(lang).replace(/[^a-z-]/g, '') + '"' : '';
   const ctaHtml = cta ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px"><tr><td style="border-radius:10px;background:#7c6cff">
     <a href="${cta.url}" style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;border-radius:10px">${_escHtml(cta.label)}</a>
   </td></tr></table>` : '';
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  return `<!doctype html><html${htmlLang}${dir}><body${dir} style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 0">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">

@@ -103,7 +103,7 @@ async function authResetCode(request, env) {
     await env.AMV_KV.put('resetcode:' + email,
       JSON.stringify({ code, attempts: 0, at: Date.now() }),
       { expirationTtl: RESET_CODE_TTL });
-    try { delivered = await sendResetCodeEmail(env, email, code); } catch (e) { delivered = false; }
+    try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request)); } catch (e) { delivered = false; }
     if (!delivered) {
       /* The one thing the caller is no longer told, said loudly to the person
          who can fix it. A provider outage now looks identical to a stranger's
@@ -205,20 +205,21 @@ async function authResetVerify(request, env) {
   return json({ ok: true, token });
 }
 
-async function sendResetCodeEmail(env, to, code) {
+async function sendResetCodeEmail(env, to, code, lang) {
+  const L = lang || 'en';
   const bigCode =
-    '<div style="margin:0 0 22px;padding:18px;background:#f6f7f9;border:1px solid #e6e8ec;border-radius:12px;text-align:center">' +
+    '<div dir="ltr" style="margin:0 0 22px;padding:18px;background:#f6f7f9;border:1px solid #e6e8ec;border-radius:12px;text-align:center">' +
       '<span style="font-family:ui-monospace,Menlo,monospace;font-size:32px;font-weight:700;letter-spacing:9px;color:#111">' + code + '</span>' +
     '</div>';
-  return _sendEmail_security(env, to, 'Your AMV password reset code',
-    _emailShell('Your reset code',
-      '<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555">Enter this code in AMV to set a new password. It expires in <b>15 minutes</b>.</p>' + bigCode,
+  return _sendEmail_security(env, to, _ew(L, 'reset.subject'),
+    _emailShell(_ew(L, 'reset.title'),
+      '<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#555">' + _escHtml(_ew(L, 'reset.line')) + '</p>' + bigCode,
       null,
-      '<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">If you didn\u2019t request this, you can ignore this email - your password won\u2019t change.</p>',
-      'This is an automated security email.'),
-    'Your AMV password reset code: ' + code +
-    '\n\nEnter it in AMV to set a new password. It expires in 15 minutes.' +
-    '\n\nIf you didn\u2019t request this, you can ignore this email.\n\n- The AMV team');
+      '<hr style="border:none;border-top:1px solid #eee;margin:0 0 18px"><p style="margin:0;font-size:12px;line-height:1.6;color:#999">' + _escHtml(_ew(L, 'reset.ignore')) + '</p>',
+      _ew(L, 'reset.footnote'), L),
+    _ew(L, 'reset.subject') + ': ' + code +
+    '\n\n' + _ew(L, 'reset.line') +
+    '\n\n' + _ew(L, 'reset.ignore') + '\n\n- AMV');
 }
 
 /* Owner escape hatch: set a password directly with the ADMIN_TOKEN.

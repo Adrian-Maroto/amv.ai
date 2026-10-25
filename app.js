@@ -744,6 +744,9 @@ const AMV_API = {
     const o = opts||{};
     if(!o.credentials && /^\/auth\//.test(path)) o.credentials = _authCreds();
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
+    /* The language the page is in, so what the server writes for a person -
+       the sign-in and reset emails first - is in it too (76-email-words.js). */
+    try{ const _l=_lang(); if(_l && _l!=='auto') o.headers['X-AMV-Lang']=_l; }catch(e){}
     // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
     const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
     const _boundOrigin = (loadStr('amv_api_token_origin')||'');
@@ -9712,6 +9715,18 @@ async function _callAITurn(msgs, _opts) {
         : T('The engine stopped with an error before answering. Retry - and if it keeps happening, pick another engine.')));
       _stalled=true;
     }
+    /* WHY THE ENGINE STOPPED. It says, in the last message_delta, and this
+       was read and never used - so an answer that ran into the length of one
+       reply ended mid-sentence looking finished, a request the engine
+       declined read "(no response)", and research the engine paused partway
+       ended silently. Each now says so; the first and last offer Continue. */
+    if(!_userStopped && !_recovered && !_engineErr){
+      if(_stopReason==='refusal'){
+        if(!fullText) throw _saidPlainly(new Error(T('AMV can’t help with that request.')));
+        fullText += '\n\n_' + T('AMV stopped here - it can’t go on with this request.') + '_';
+      }
+    }
+    const _more = (!_userStopped && !_recovered && fullText && (_stopReason==='max_tokens' || _stopReason==='pause_turn')) ? _stopReason : '';
     if(!_sawEnd && fullText && !_userStopped && !_recovered) _stalled=true;
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
@@ -9722,6 +9737,7 @@ async function _callAITurn(msgs, _opts) {
     if(_cites.length) _base.cites=_cites;
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
     if(_recovered) _base._recovered=true;   // complete, just not delivered live
+    if(_more) _base._more=_more;
     msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:_engineErr ? 'engine' : true}) : _base;
     _recordUsageOnce();
     // Auto-title chat
@@ -9825,6 +9841,15 @@ async function _recoverAnswer(turnId){
 try{ window._recoverAnswer=_recoverAnswer; }catch(e){}
 
 /* Retry the last AI turn after a failure. */
+/* Continue an answer that stopped at the length of one reply: a new turn
+   asking for the rest, in the person's language, sent the ordinary way. */
+function continueLastAI(){
+  if(S.busy) return;
+  const ta=$('mta'); if(!ta) return;
+  ta.value=T('Continue exactly where you stopped, without repeating anything.');
+  sendMsg();
+}
+window.continueLastAI=continueLastAI;
 function retryLastAI(){
   const msgs=getMsgs();
   while(msgs.length && msgs[msgs.length-1].r==='a') msgs.pop();
@@ -10268,6 +10293,7 @@ function bindChatEvents() {
     else if(action==='branch') branchConv(idx);
     else if(action==='export') _exportOpen(idx, btn);
     else if(action==='retry-ai') retryLastAI();
+    else if(action==='continue-ai') continueLastAI();
     else if(action==='speak') speakMessage(idx);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
        that plan - being sent to a row of four after pressing a button with a
@@ -10854,6 +10880,7 @@ function renderChatMsgs() {
       content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
+        (m._more && !m._interrupted && i===msgs.length-1?'<div class="ai-cut"><span>'+escH(m._more==='pause_turn' ? T('AMV paused partway through this one.') : T('This answer reached the most AMV writes in one reply.'))+'</span><button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button></div>':'')+
         (m._interrupted?'<div class="ai-cut"><span>'+escH(m._interrupted==='engine' ? T('The engine stopped partway through. What you see above is what it wrote.') : T('The connection dropped partway through. What you see above is what arrived.'))+'</span><button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button></div>':'')+
         // A complete answer that simply could not be delivered live.
         (m._recovered?'<div class="ai-recovered"><span>Your connection dropped, so AMV recovered this answer rather than making you wait for it again.</span></div>':''));

@@ -104,31 +104,31 @@ function _maskEmail(email) {
   if (!d) return '';
   return (u.length <= 2 ? u[0] + '\u2022' : u[0] + '\u2022'.repeat(Math.min(6, u.length - 2)) + u[u.length - 1]) + '@' + d;
 }
-async function _sendSignInCodeEmail(env, email, code, why) {
+async function _sendSignInCodeEmail(env, email, code, why, lang) {
   const signup = why === 'signup' || why === 'claim';
-  const subject = 'Your AMV code: ' + code;
-  const line = signup
-    ? 'Enter this code to finish creating your AMV account.'
-    : 'Enter this code to finish signing in to AMV on a new device.';
-  const html = _emailShell(signup ? 'Confirm your email' : 'Your sign-in code',
+  const L = lang || 'en';
+  const subject = _ew(L, 'code.subject', { code });
+  const line = _ew(L, signup ? 'code.line.signup' : 'code.line.signin');
+  const html = _emailShell(_ew(L, signup ? 'code.title.signup' : 'code.title.signin'),
     '<p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#333">' + _escHtml(line) + '</p>'
-    + '<div style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:8px;color:#15131f;text-align:center">' + _escHtml(code) + '</div>'
-    + '<p style="margin:0;font-size:13px;line-height:1.6;color:#777">It expires in 10 minutes and works once. '
-    + (signup ? 'If you did not try to create an account, you can ignore this email - nothing happens without the code.'
-              : 'If this was not you, somebody knows your password: change it now, and nothing happens without this code.') + '</p>',
-    null, null, 'Never share this code. AMV will never ask you for it.');
-  const text = line + '\n\n' + code + '\n\nIt expires in 10 minutes and works once. Never share this code.';
+    + '<div dir="ltr" style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:8px;color:#15131f;text-align:center">' + _escHtml(code) + '</div>'
+    + '<p style="margin:0;font-size:13px;line-height:1.6;color:#777">' + _escHtml(_ew(L, 'code.expires')) + ' '
+    + _escHtml(_ew(L, signup ? 'code.ignore.signup' : 'code.ignore.signin')) + '</p>',
+    null, null, _ew(L, 'code.never'), L);
+  const text = line + '\n\n' + code + '\n\n' + _ew(L, 'code.expires') + ' ' + _ew(L, 'code.never');
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
 async function _startSignInCode(env, request, email, name, why, pending, reason) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
+  /* Kept with the code, so a resend is in the same language as the first. */
+  const lang = _emailLang(request);
   await env.AMV_KV.put('signincode:' + id,
-    JSON.stringify({ email, name: name || '', why, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
+    JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
                      ...(pending ? { pending } : {}) }),
     { expirationTtl: SIGNIN_CODE_TTL_S });
-  const sent = await _sendSignInCodeEmail(env, email, code, why);
+  const sent = await _sendSignInCodeEmail(env, email, code, why, lang);
   if (!sent) {
     audit(env, 'signin_code_not_sent', { email, why });
     try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
@@ -254,7 +254,7 @@ async function authLoginResend(request, env) {
       if ((+r.resends || 0) >= SIGNIN_CODE_RESENDS) return { capped: true };
       if (Date.now() - (+r.sentAt || +r.at || 0) < 30000) return { tooSoon: true };
       r.hash = hash; r.resends = (+r.resends || 0) + 1; r.sentAt = Date.now();
-      return { ok: true, email: r.email, why: r.why };
+      return { ok: true, email: r.email, why: r.why, lang: r.lang };
     }, null);
   } catch (e) {
     return json({ error: 'AMV could not send a new code just now. Try again in a moment.' }, 503);
@@ -262,7 +262,7 @@ async function authLoginResend(request, env) {
   if (!rec || rec.gone) return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
   if (rec.capped) return json({ error: 'That is as many codes as one sign-in gets. Sign in again to start over.', code: 'resend_capped' }, 429);
   if (rec.tooSoon) return json({ error: 'A code was just sent. Give it 30 seconds, and check spam.', code: 'resend_soon' }, 429);
-  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why);
+  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why, rec.lang || _emailLang(request));
   if (!sent) return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   return json({ ok: true, sent: true });
 }

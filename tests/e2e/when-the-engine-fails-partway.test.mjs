@@ -12,6 +12,9 @@
      Retry;
    - overloaded partway: the part is kept and marked as cut off by the
      engine, not by the connection;
+   - an answer that ran to the length of one reply says so, with Continue;
+     a declined request says so; a paused turn says so - each was read off
+     the stream and dropped (the stop reason was captured and never used);
    - in Spanish, the card and its button are in Spanish. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -117,6 +120,47 @@ section('Overloaded partway: the part is kept, and the engine is named as what s
   const r = await last();
   ok(/The first half of the answer/.test(r.text) && r.m.cut === 'engine', 'what arrived is kept, marked as cut off by the engine', r.m);
   ok(/The engine stopped partway through/.test(r.text) && !/connection dropped/.test(r.text), 'and the banner says the engine stopped, not the connection', r.text.slice(-200));
+}
+
+const ended = (txt, why) => start + ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+  + (txt ? ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: txt } }) : '')
+  + ev('content_block_stop', { type: 'content_block_stop', index: 0 })
+  + ev('message_delta', { type: 'message_delta', delta: { stop_reason: why }, usage: { output_tokens: 10 } })
+  + ev('message_stop', { type: 'message_stop' });
+
+section('An answer that reached the length of one reply says so, and Continue asks for the rest');
+{
+  nextTurns = [ended('Chapter one, chapter two, and chapter thr', 'max_tokens')];
+  await say('Write me a long story.');
+  const r = await last();
+  ok(/reached the most AMV writes in one reply/.test(r.text), 'the answer says it stopped at the length of one reply', r.text.slice(-160));
+  const btn = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-action="continue-ai"]')]; return b.map(x => x.textContent); });
+  ok(btn.length === 1 && btn[0] === 'Continue', 'with one Continue button', btn);
+  nextTurns = [text('ee, and the end.')];
+  const n = modelSaw.length;
+  await page.waitForTimeout(1200);
+  await page.click('[data-action="continue-ai"]');
+  for (let i = 0; i < 80 && modelSaw.length === n; i++) await page.waitForTimeout(100);
+  await page.waitForFunction(() => S.busy === false, null, { timeout: 30000 }).catch(() => {});
+  const asked = await page.evaluate(() => (getMsgs() || []).filter(m => m.r === 'u').slice(-1)[0].c);
+  ok(/Continue exactly where you stopped/.test(asked) && modelSaw.length > n, 'Continue sends a turn asking for the rest', asked);
+  ok(await page.evaluate(() => document.querySelectorAll('[data-action="continue-ai"]').length) === 0, 'and the button goes once it is answered', true);
+}
+
+section('A request the engine declines says so, instead of "(no response)"');
+{
+  nextTurns = [ended('', 'refusal')];
+  await say('Something the engine will not do.');
+  const r = await last();
+  ok(/can’t help with that request/.test(r.m.err || '') && r.m.c !== '(no response)', 'it says AMV can’t help', r.m);
+}
+
+section('A turn the engine paused partway says so, with Continue');
+{
+  nextTurns = [ended('I searched three sources so far and', 'pause_turn')];
+  await say('Research this deeply.');
+  const r = await last();
+  ok(/paused partway/.test(r.text) && (await page.evaluate(() => document.querySelectorAll('[data-action="continue-ai"]').length)) === 1, 'paused, said, and Continue offered', r.text.slice(-120));
 }
 
 section('In Spanish, the card and its button are in Spanish');
