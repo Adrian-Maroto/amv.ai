@@ -567,8 +567,6 @@ try{
     if(c) c.textContent = t.value.length + '/' + MC_STANDING_MAX;
   });
 }catch(e){}
-try{ window._cwSampleLine=_cwSampleLine; }catch(e){}
-try{ window.cwPeek = cwPeek; }catch(e){}
 
 /* A job the SERVER is running, shown with the controls that reach the server.
 
@@ -762,19 +760,8 @@ function _mcAutonSchedRow(j){
     <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>
   </div>`;
 }
-try{ window._myTimeZone=_myTimeZone; }catch(e){}
-try{ window._mcScheduleServer=_mcScheduleServer; window._mcWhereItRuns=_mcWhereItRuns; }catch(e){}
-try{ window._mcReview=_mcReview; }catch(e){}
-try{ window._mcNeedsFirst=_mcNeedsFirst; }catch(e){}
-try{ window._mcSchedule=_mcSchedule; }catch(e){}
-try{ window._mcCannot=_mcCannot; }catch(e){}
 /* A rotation rewraps the example. One listener for the page, finding the box
    each time, because the view is redrawn and a listener per draw would pile up. */
-try{ window.addEventListener('resize', () => { try{ _mcCmdFit(document.getElementById('mc-cmd-input')); }catch(e){} }, { passive:true }); }catch(e){}
-try{ window._mcCmdFit=_mcCmdFit; }catch(e){}
-try{ window._mcConnectIntent=_mcConnectIntent; }catch(e){}
-window.mcRunCommand=mcRunCommand;
-window._mcGoConnect=_mcGoConnect;
 function _mcDoneCard(t){
   const snip=t.result?String(t.result).replace(/\s+/g,' ').trim():'';
   return `<div class="mc-card done"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill ok">Done</span></div>${snip?`<div class="mc-card-sub">${escH(snip.slice(0,140))}${snip.length>140?'…':''}</div>`:''}</div>`;
@@ -971,7 +958,6 @@ async function mcNeverSave(){
   }
 }
 try{ window.mcNeverSave = mcNeverSave; }catch(e){}
-try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
 
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
@@ -1466,7 +1452,7 @@ function cwDemo(){
   toast('Example draft added - press Preview to see the full workspace','info',4000);
 }
 
-window.cwToggle=cwToggle;window.cwDemo=cwDemo;window.cwReject=cwReject;
+try{ window.cwDemo=cwDemo; }catch(e){}
 
 /* Here once: the loader in the page reads this before fetching again. */
 try{ window._crewViewHere = true; }catch(e){}

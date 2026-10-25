@@ -1215,3 +1215,23 @@ function renderCrewView(){
     on($('cw-load-retry'),'click',()=>renderCrewView());
   });
 }
+
+/* What the rest of the app reaches by name, kept with the functions it names
+   (the screen file exports only its own). And the command box's fit on
+   resize: 10a draws that box too, so it listens from the start, not from the
+   first time somebody opens Crew. */
+try{ window._cwSampleLine=_cwSampleLine; }catch(e){}
+try{ window.cwPeek=cwPeek; }catch(e){}
+try{ window._myTimeZone=_myTimeZone; }catch(e){}
+try{ window._mcScheduleServer=_mcScheduleServer; window._mcWhereItRuns=_mcWhereItRuns; }catch(e){}
+try{ window._mcReview=_mcReview; }catch(e){}
+try{ window._mcNeedsFirst=_mcNeedsFirst; }catch(e){}
+try{ window._mcSchedule=_mcSchedule; }catch(e){}
+try{ window._mcCannot=_mcCannot; }catch(e){}
+try{ window._mcCmdFit=_mcCmdFit; }catch(e){}
+try{ window._mcConnectIntent=_mcConnectIntent; }catch(e){}
+try{ window.mcRunCommand=mcRunCommand; }catch(e){}
+try{ window._mcGoConnect=_mcGoConnect; }catch(e){}
+try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
+try{ window.cwToggle=cwToggle; window.cwReject=cwReject; }catch(e){}
+try{ window.addEventListener('resize', () => { try{ _mcCmdFit(document.getElementById('mc-cmd-input')); }catch(e){} }, { passive:true }); }catch(e){}

@@ -1847,6 +1847,22 @@ function announce(msg){
 }
 try{ window.announce = announce; }catch(e){}
 
+/* ONE LOADER FOR THE PARTS OF THE APP FETCHED ON DEMAND (audit #40).
+   `here()` says whether the file has arrived - a function it declares, a
+   flag it sets - so a file is fetched once, a failed fetch can be tried
+   again, and a caller never runs code that is not there yet. */
+const _LAZY = {};
+function _lazyLoad(file, here){
+  try{ if(here()) return Promise.resolve(true); }catch(e){}
+  if(_LAZY[file]) return _LAZY[file];
+  return (_LAZY[file] = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = file;
+    s.onload = () => { let ok = false; try{ ok = !!here(); }catch(e){} if(!ok) delete _LAZY[file]; res(ok); };
+    s.onerror = () => { delete _LAZY[file]; s.remove(); res(false); };
+    document.head.appendChild(s);
+  }));
+}
 function toast(msg, type='info', dur=3000) {
   const wrap = $('toast-wrap');
   if (!wrap) return;

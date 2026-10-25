@@ -73,8 +73,10 @@ function _crewPrefetch(){
   /* And the country's own jobs with it, so opening Crew has nothing left to
      wait for. Sooner than it was (8s): somebody who opens Crew in the first
      few seconds should not meet "Loading your Crew". */
-  /* And Mission Control's screen (crew-view.js), for the same reason. */
-  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView(); }catch(e){} };
+  /* And the screens split out of the page (audit #40) - Mission Control's and
+     the code workspace's - for the same reason: opening one draws at once. */
+  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
+    _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function'); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }
