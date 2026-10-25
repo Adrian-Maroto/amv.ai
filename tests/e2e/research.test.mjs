@@ -85,7 +85,8 @@ const panel = await page.evaluate(() => {
   // contains each domain twice - once in the href, once as the visible label -
   // so a naive string count is misleading. What matters is that exactly the
   // sources we found are displayed, no more, no fewer.)
-  const chipHosts = [...done.matchAll(/<\/span>([a-z0-9.-]+)<\/a>/g)].map(m => m[1]);
+  /* The host, then (when the address says) the kind of site it is. */
+  const chipHosts = [...done.matchAll(/<\/span>([a-z0-9.-]+)(?:<span class="rsrc-kind[^"]*">[^<]*<\/span>)?<\/a>/g)].map(m => m[1]);
   return {
     liveShowsSpinner: live.includes('rsrc-spin'),
     liveCount: live.includes('3 source'),
