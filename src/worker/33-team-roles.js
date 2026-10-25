@@ -7,8 +7,8 @@
      • member - use the shared workspace, read members, leave
    ===================================================================== */
 const TEAM_PERMS = {
-  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','deleteTeam','rename','setPolicy']),
-  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','rename','setPolicy']),
+  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','deleteTeam','rename','setPolicy']),
+  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','rename','setPolicy']),
   member: new Set(['viewMembers']),
 };
 function _can(team, email, perm){
@@ -357,6 +357,39 @@ async function teamSetPolicy(request, env){
 }
 
 /* Read the team's action audit log (owner/admin only). */
+/* WHO USED HOW MUCH, for the people who pay for it. An owner or admin sees
+   each member's tokens and messages this calendar month and last, and which
+   surfaces they went to - totals only, never what anybody asked, and never a
+   project. Counted only from requests the TEAM paid for (tmuse:, written in
+   meterStream when the billing subject is the team), so a member's own
+   personal plan never shows up here. Members are told on their Usage screen. */
+async function teamUsage(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'You are not on a team.' }, 404);
+  if(!_can(team, user.email, 'viewUsage')) return json({ error:'Only the team’s owner and admins can see its usage.', code:'forbidden' }, 403);
+  const now = monthKey();
+  const d = new Date(now + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1);
+  const prev = d.toISOString().slice(0, 7);
+  const members = team.members || [];
+  const out = []; let unread = 0;
+  for (let i = 0; i < members.length; i += 20) {
+    const part = await Promise.all(members.slice(i, i + 20).map(async (m) => {
+      let t = null, ok = true;
+      try { const r = await counter(env, `tmuse:${team.id}:${m.email}`, { op: 'lifeGet' }); t = r && r.tally; } catch (e) { ok = false; }
+      if (!ok) unread++;
+      const mo = (t && t.months) || {};
+      const cur = mo[now] || {}, last = mo[prev] || {};
+      return { email: m.email, role: m.role || 'member', read: ok,
+        tokens: cur.tok || 0, messages: cur.msg || 0, surfaces: cur.s || {}, lastMonth: last.tok || 0 };
+    }));
+    out.push(...part);
+  }
+  out.sort((a, b) => b.tokens - a.tokens);
+  return json({ ok: true, month: now, previous: prev, members: out,
+    total: out.reduce((n, m) => n + m.tokens, 0), unread });
+}
 async function teamAuditLog(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);

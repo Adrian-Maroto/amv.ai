@@ -13437,6 +13437,9 @@ const AMVTeam = {
   /* The audit log is the team's security record. "No activity yet" because the
      read failed would tell an owner checking who removed a member that nobody
      did anything. */
+  /* Each member's usage this month, for owners and admins. Throws rather than
+     returning an empty list, so a failed read never looks like nobody used it. */
+  async usage(){ const r=await AMV_API._fetch('/team/usage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.members)) throw new Error((d&&d.error)||T('Team usage could not be loaded.')); return d; },
   async audit(){ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.log)) throw new Error((d&&d.error)||'Could not load the team activity log.'); return d.log; },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
   /* Throws rather than answering an empty board. "No tasks yet - assign the
@@ -38663,6 +38666,9 @@ function _aiBase(){
    the server stores ids, and
    this device turns them back into names. It changes no price and no limit:
    the server names batches and API keys itself and takes only these words. */
+/* What each surface is called on screen (Usage, and the Team page). */
+const _USAGE_SURFACE_LABEL = { chat:'Chat', crew:'Crew', build:'Build', code:'Code', voice:'Voice', automation:'Automations',
+  api:'API keys', batch:'Batches', widget:'Website widget', other:'Other' };
 const _USAGE_TAB_SURFACE = { chat:'chat', crew:'crew', tasks:'crew', build:'build', handoff:'build', automation:'automation' };
 function _usageTag(surface, conv){
   let sf = surface;

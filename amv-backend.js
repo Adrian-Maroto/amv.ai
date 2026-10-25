@@ -2271,6 +2271,10 @@ function _lifeApply(t, p) {
   }
   const e = String(p.engine || '').slice(0, 40);
   if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+  /* Which teams also counted this person (tmuse:<team>:<email>), so erasing
+     the account can find and erase those too - including teams since left. */
+  const tm = /^[A-Za-z0-9_-]{1,64}$/.test(String(p.team || '')) ? p.team : '';
+  if (tm) { t.teams = t.teams || []; if (t.teams.indexOf(tm) < 0 && t.teams.length < 50) t.teams.push(tm); }
   return t;
 }
 export class AMVCounter {
@@ -16418,6 +16422,7 @@ async function _route(request, env, ctx) {
     case '/team/leave':      return teamLeave(request, env);
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
+    case '/team/usage':      return teamUsage(request, env);
     case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/sso':        return teamSso(request, env);
     case '/team/data':       return teamData(request, env);
@@ -18851,6 +18856,17 @@ async function authDeleteAccount(request, env) {
 
   /* Lifetime usage totals live in the counter, not in KV, and are kept with
      no expiry - so they go explicitly, or they would outlive the account. */
+  /* And what any team counted for them: the lifetime record says which. */
+  try {
+    const lr = await counter(env, `life:${email}`, { op: 'lifeGet' });
+    const teams = (lr && lr.tally && Array.isArray(lr.tally.teams)) ? lr.tally.teams : [];
+    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch (e) {}
+    if (tid && teams.indexOf(tid) < 0) teams.push(tid);
+    for (const t of teams) {
+      const r = await counter(env, `tmuse:${t}:${email}`, { op: 'clear' });
+      if (!(r && r.ok)) _eraseFailed('team usage totals');
+    }
+  } catch { _eraseFailed('team usage totals'); }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
 
@@ -19186,8 +19202,8 @@ function _boundedJson(obj, maxBytes, maxDepth){
      • member - use the shared workspace, read members, leave
    ===================================================================== */
 const TEAM_PERMS = {
-  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','deleteTeam','rename','setPolicy']),
-  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','rename','setPolicy']),
+  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','deleteTeam','rename','setPolicy']),
+  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','rename','setPolicy']),
   member: new Set(['viewMembers']),
 };
 function _can(team, email, perm){
@@ -19536,6 +19552,39 @@ async function teamSetPolicy(request, env){
 }
 
 /* Read the team's action audit log (owner/admin only). */
+/* WHO USED HOW MUCH, for the people who pay for it. An owner or admin sees
+   each member's tokens and messages this calendar month and last, and which
+   surfaces they went to - totals only, never what anybody asked, and never a
+   project. Counted only from requests the TEAM paid for (tmuse:, written in
+   meterStream when the billing subject is the team), so a member's own
+   personal plan never shows up here. Members are told on their Usage screen. */
+async function teamUsage(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'You are not on a team.' }, 404);
+  if(!_can(team, user.email, 'viewUsage')) return json({ error:'Only the team’s owner and admins can see its usage.', code:'forbidden' }, 403);
+  const now = monthKey();
+  const d = new Date(now + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1);
+  const prev = d.toISOString().slice(0, 7);
+  const members = team.members || [];
+  const out = []; let unread = 0;
+  for (let i = 0; i < members.length; i += 20) {
+    const part = await Promise.all(members.slice(i, i + 20).map(async (m) => {
+      let t = null, ok = true;
+      try { const r = await counter(env, `tmuse:${team.id}:${m.email}`, { op: 'lifeGet' }); t = r && r.tally; } catch (e) { ok = false; }
+      if (!ok) unread++;
+      const mo = (t && t.months) || {};
+      const cur = mo[now] || {}, last = mo[prev] || {};
+      return { email: m.email, role: m.role || 'member', read: ok,
+        tokens: cur.tok || 0, messages: cur.msg || 0, surfaces: cur.s || {}, lastMonth: last.tok || 0 };
+    }));
+    out.push(...part);
+  }
+  out.sort((a, b) => b.tokens - a.tokens);
+  return json({ ok: true, month: now, previous: prev, members: out,
+    total: out.reduce((n, m) => n + m.tokens, 0), unread });
+}
 async function teamAuditLog(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -23169,7 +23218,13 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      the answer it is counting. */
   if (user && user.email && total > 0) {
     try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '',
-      surface: feature || 'chat', project: project || '' }); } catch (e) {}
+      surface: feature || 'chat', project: project || '',
+      team: String(user.billingSubject || '').startsWith('team:') ? user.billingSubject.slice(5) : '' }); } catch (e) {}
+    /* Paid for by a team: the same answer, counted for the team's owners and
+       admins to see (teamUsage) - totals and surfaces, never a project. */
+    if (String(user.billingSubject || '').startsWith('team:')) {
+      try { await counter(env, `tmuse:${user.billingSubject.slice(5)}:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), surface: feature || 'chat' }); } catch (e) {}
+    }
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */

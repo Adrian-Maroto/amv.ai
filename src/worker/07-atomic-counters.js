@@ -45,6 +45,10 @@ function _lifeApply(t, p) {
   }
   const e = String(p.engine || '').slice(0, 40);
   if (e) t.eng[e] = (t.eng[e] || 0) + tok;
+  /* Which teams also counted this person (tmuse:<team>:<email>), so erasing
+     the account can find and erase those too - including teams since left. */
+  const tm = /^[A-Za-z0-9_-]{1,64}$/.test(String(p.team || '')) ? p.team : '';
+  if (tm) { t.teams = t.teams || []; if (t.teams.indexOf(tm) < 0 && t.teams.length < 50) t.teams.push(tm); }
   return t;
 }
 export class AMVCounter {

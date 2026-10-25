@@ -90,8 +90,6 @@ window._usageContentHTML=_usageContentHTML;
    the server counted them. Projects come back as ids; this device names the
    ones it has, says plainly when one lives on another device, and counts the
    rest of the month as outside any project. */
-const _USAGE_SURFACE_LABEL = { chat:'Chat', crew:'Crew', build:'Build', code:'Code', voice:'Voice', automation:'Automations',
-  api:'API keys', batch:'Batches', widget:'Website widget', other:'Other' };
 function _whereHTML(B, n){
   const cur = B && B.current;
   if(!cur || !(cur.tokens > 0)) return '';
@@ -179,7 +177,8 @@ function _paintServerUsage(){
         : '')+
       (d.shared && d.shared.team
         ? '<div class="srv-bonus">These numbers are your <b>whole team</b>, not just you - one subscription is one allowance, '+
-          'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'
+          'however many people are on it. <a data-sp-team="1" style="color:var(--accent-txt);cursor:pointer">Open Team &rarr;</a></div>'+
+          '<div class="srv-when">'+escH(T('Your team\u2019s owner and admins can see how much you use on the team - totals only, never what you asked.'))+'</div>'
         : '')+
       '<p class="srv-note">Your plan is '+escH(String(d.plan||'free'))+'. '+escH(T('Each limit is separate: running out today does not spend your month. Times are in your time zone.'))+'</p>';
     const go = host.querySelector('[data-sp-go]');

@@ -1699,6 +1699,17 @@ async function authDeleteAccount(request, env) {
 
   /* Lifetime usage totals live in the counter, not in KV, and are kept with
      no expiry - so they go explicitly, or they would outlive the account. */
+  /* And what any team counted for them: the lifetime record says which. */
+  try {
+    const lr = await counter(env, `life:${email}`, { op: 'lifeGet' });
+    const teams = (lr && lr.tally && Array.isArray(lr.tally.teams)) ? lr.tally.teams : [];
+    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch (e) {}
+    if (tid && teams.indexOf(tid) < 0) teams.push(tid);
+    for (const t of teams) {
+      const r = await counter(env, `tmuse:${t}:${email}`, { op: 'clear' });
+      if (!(r && r.ok)) _eraseFailed('team usage totals');
+    }
+  } catch { _eraseFailed('team usage totals'); }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
 

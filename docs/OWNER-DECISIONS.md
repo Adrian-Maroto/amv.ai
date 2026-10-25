@@ -132,7 +132,7 @@ requests a minute and the five-hour window. Pooled for the team, sized by
 seats: the month, the top-engine week and extra credit. Admins see each
 member's share. *Shipped:* the limits are written out (they were left out,
 so a team had no weekly top-engine count at all) and the five-hour window is
-counted per person; the per-member breakdown for admins is still to come.
+counted per person; owners and admins see the per-member breakdown (#18).
 
 **16. A persistent cloud computer - YES: disposable compute, durable state.**
 Files, browser sign-ins and task state are saved before the container sleeps
@@ -141,6 +141,15 @@ and restored when it wakes. Needs object storage bound (below).
 **17. Long-running work as durable tasks - YES.** Checkpointed steps on the
 Durable Objects AMV already runs, resumable after any restart, so the same
 task can run for minutes or months.
+
+**18. A team's owner and admins see each member's usage - YES, totals only.**
+Tokens and messages per member this calendar month and last, and the
+surfaces they went to - never a project and never what anybody asked. Only
+what the TEAM paid for is counted, so a member on a better plan of their own
+stays private. Members are told on their own Usage screen, and erasing an
+account erases what any team counted for that person, including teams since
+left. A per-member breakdown by project or by message is off the table: the
+person paying for a seat does not thereby buy a view of the work.
 
 ## What needs the owner's own hand
 

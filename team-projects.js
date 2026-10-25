@@ -269,6 +269,9 @@ function _renderTeamManageNow(vc, team){
     '</div>'+
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
+    (canManage?'<div class="ss2"><h3>'+escH(T('Usage this month'))+'</h3>'+
+      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+escH(T('Totals only, never what anybody asked. Counted from what the team pays for, by calendar month (UTC).'))+'</p>'+
+      '<div id="team-usage"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">'+escH(T('Loading\u2026'))+'</div></div></div>':'')+
     _teamEnginesHTML(team, canManage)+
     _teamSsoHTML(isOwner)+
     '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
@@ -286,6 +289,7 @@ function _renderTeamManageNow(vc, team){
       '<button class="btn bs" id="team-leave" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Leave team</button></div>')+
     (canManage?'<div class="ss2"><h3>Activity log <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(who did what)</span></h3><div id="team-audit"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading\u2026</div></div></div>':'')+
   '</div></div>';
+  if(canManage) _teamUsageLoad();
   on($('team-invite-btn'),'click',async()=>{
     const email=$('team-invite-email')?.value.trim(); const r=$('team-invite-role')?.value||'member';
     if(!email){ toast('Enter an email','error'); return; }
@@ -416,5 +420,39 @@ function _renderTeamManageNow(vc, team){
 
   // load + wire the assigned-work board
   _loadTeamTasks(team, role, myEmail);
+}
+/* ── WHO USED HOW MUCH (owners and admins) ──────────────────────────────
+   One row per member, heaviest first: this month's tokens against the
+   heaviest member's, messages, the surfaces it went to, and last month's
+   figure to compare. A member whose count could not be read says so, and a
+   list that could not be read at all is never shown as nobody using it. */
+function _teamUsageLoad(){
+  const el = $('team-usage'); if(!el) return;
+  const n = v => (+v || 0).toLocaleString();
+  AMVTeam.usage().then(d => {
+    const host = $('team-usage'); if(!host) return;
+    if(!(d.total > 0) && !d.unread){ host.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">'+escH(T('Nobody on the team has used anything yet this month.'))+'</div>'; return; }
+    const top = Math.max(1, ...d.members.map(m => m.tokens));
+    host.innerHTML = '<div class="srv-lbl" style="margin-bottom:8px"><span>'+escH(T('Team total'))+'</span><span>'+escH(T('{0} tokens').replace('{0}', n(d.total)))+'</span></div>'+
+      d.members.map(m => {
+        const sum = Object.values(m.surfaces || {}).reduce((a, b) => a + (+b || 0), 0) || 1;
+        const where = Object.entries(m.surfaces || {}).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
+          .map(([k, v]) => T(_USAGE_SURFACE_LABEL[k] || 'Other') + ' ' + Math.round(v / sum * 100) + '%').join(' \u00b7 ');
+        return '<div class="tu-row" style="padding:8px 0;border-top:1px solid var(--bd)">'+
+          '<div class="srv-lbl"><span>'+escH(m.email)+'</span>'+
+          '<span>'+escH(!m.read ? T('Could not be read') : m.messages === 1 ? T('{0} tokens \u00b7 1 message').replace('{0}', n(m.tokens))
+            : T('{0} tokens \u00b7 {1} messages').replace('{0}', n(m.tokens)).replace('{1}', n(m.messages)))+'</span></div>'+
+          '<div class="life-bar" style="display:block;margin:6px 0"><span style="width:'+Math.round(m.tokens / top * 100)+'%"></span></div>'+
+          '<div class="srv-when">'+escH([where, m.lastMonth > 0 ? T('Last month: {0} tokens').replace('{0}', n(m.lastMonth)) : ''].filter(Boolean).join(' \u2014 '))+'</div>'+
+        '</div>';
+      }).join('')+
+      (d.unread ? '<div class="srv-why">'+escH(T('Some members\u2019 usage could not be read, so the total is lower than it should be.'))+'</div>' : '');
+  }).catch(err => {
+    const host = $('team-usage'); if(!host) return;
+    host.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0;line-height:1.6">'+
+      escH((err && err.message) || T('Team usage could not be loaded.'))+' '+escH(T('This is not a record of nothing being used.'))+
+      ' <button class="tt-mini" id="tu-retry">'+escH(T('Try again'))+'</button></div>';
+    on($('tu-retry'), 'click', _teamUsageLoad);
+  });
 }
 try{ window._renderTeamManageNow = _renderTeamManageNow; }catch(e){}

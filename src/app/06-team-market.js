@@ -28,6 +28,9 @@ const AMVTeam = {
   /* The audit log is the team's security record. "No activity yet" because the
      read failed would tell an owner checking who removed a member that nobody
      did anything. */
+  /* Each member's usage this month, for owners and admins. Throws rather than
+     returning an empty list, so a failed read never looks like nobody used it. */
+  async usage(){ const r=await AMV_API._fetch('/team/usage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.members)) throw new Error((d&&d.error)||T('Team usage could not be loaded.')); return d; },
   async audit(){ const r=await AMV_API._fetch('/team/audit',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.log)) throw new Error((d&&d.error)||'Could not load the team activity log.'); return d.log; },
   myRole(team){ if(!team||!S.user) return null; const m=(team.members||[]).find(x=>x.email===(S.user.email||'').toLowerCase()); return m?m.role:null; },
   /* Throws rather than answering an empty board. "No tasks yet - assign the

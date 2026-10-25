@@ -288,7 +288,13 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      the answer it is counting. */
   if (user && user.email && total > 0) {
     try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '',
-      surface: feature || 'chat', project: project || '' }); } catch (e) {}
+      surface: feature || 'chat', project: project || '',
+      team: String(user.billingSubject || '').startsWith('team:') ? user.billingSubject.slice(5) : '' }); } catch (e) {}
+    /* Paid for by a team: the same answer, counted for the team's owners and
+       admins to see (teamUsage) - totals and surfaces, never a project. */
+    if (String(user.billingSubject || '').startsWith('team:')) {
+      try { await counter(env, `tmuse:${user.billingSubject.slice(5)}:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), surface: feature || 'chat' }); } catch (e) {}
+    }
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */

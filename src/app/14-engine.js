@@ -22,6 +22,9 @@ function _aiBase(){
    the server stores ids, and
    this device turns them back into names. It changes no price and no limit:
    the server names batches and API keys itself and takes only these words. */
+/* What each surface is called on screen (Usage, and the Team page). */
+const _USAGE_SURFACE_LABEL = { chat:'Chat', crew:'Crew', build:'Build', code:'Code', voice:'Voice', automation:'Automations',
+  api:'API keys', batch:'Batches', widget:'Website widget', other:'Other' };
 const _USAGE_TAB_SURFACE = { chat:'chat', crew:'crew', tasks:'crew', build:'build', handoff:'build', automation:'automation' };
 function _usageTag(surface, conv){
   let sf = surface;

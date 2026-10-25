@@ -824,6 +824,7 @@ async function _route(request, env, ctx) {
     case '/team/leave':      return teamLeave(request, env);
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
+    case '/team/usage':      return teamUsage(request, env);
     case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/sso':        return teamSso(request, env);
     case '/team/data':       return teamData(request, env);
