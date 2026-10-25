@@ -7,16 +7,19 @@
    most of the world was a message in a language they may not read, carrying a
    code and a warning ("never share this code") they could not understand.
 
-   The language is the one the page is in (X-AMV-Lang, sent by AMV_API), else
-   the browser's own (Accept-Language), else English. Only these two emails
+   The language is the one the page is in (`lang` in the body of the sign-in
+   and reset requests), else the browser's own (Accept-Language), else
+   English. In the body, not a header: a custom header has to be allowed by
+   every server the page might reach, and a page newer than its server would
+   have failed every request. Only these two emails
    for now: they decide whether somebody gets in at all.
    ══════════════════════════════════════════════════════════════════════════ */
 const EMAIL_LANGS = new Set(['en', 'es', 'zh', 'hi', 'ar', 'pt', 'fr', 'de', 'ja', 'ru', 'id', 'bn', 'ur', 'tr', 'vi', 'it', 'ko', 'ta']);
 const EMAIL_RTL = new Set(['ar', 'ur']);
-function _emailLang(request) {
+function _emailLang(request, said) {
   try {
-    const said = String((request && request.headers.get('X-AMV-Lang')) || '').toLowerCase().trim();
-    if (EMAIL_LANGS.has(said)) return said;
+    const s = String(said || '').toLowerCase().trim();
+    if (EMAIL_LANGS.has(s)) return s;
     const al = String((request && request.headers.get('Accept-Language')) || '');
     for (const part of al.split(',')) {
       const tag = part.split(';')[0].trim().toLowerCase().split('-')[0];

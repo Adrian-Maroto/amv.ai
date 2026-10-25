@@ -560,6 +560,10 @@ async function aiProxy(request, env, ctx, principal) {
   const _outCap = Number(eng.maxOut) || 16000;
   let estOut = Math.max(1, Math.min(Number(body.max_tokens) || _outCap, _outCap));
   let reserve = estIn + estOut;
+  /* Set when the answer's length was lowered to fit what is left of the
+     allowance, and said to the page (X-AMV-Answer-Cap): an answer cut short
+     for that reason must not read as one that reached the most AMV writes. */
+  let _capByAllowance = false;
 
   /* FIT THE ANSWER TO WHAT IS LEFT, RATHER THAN REFUSE THE QUESTION.
 
@@ -580,7 +584,7 @@ async function aiProxy(request, env, ctx, principal) {
     const used = (await counter(env, name, { op: 'get' })).value || 0;
     const fit = Math.floor(cap - used - estIn);
     if (fit < ANSWER_FLOOR_TOKENS || fit >= estOut) return res;
-    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut;
+    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut; _capByAllowance = true;
     return await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
   };
 
@@ -1068,7 +1072,8 @@ async function aiProxy(request, env, ctx, principal) {
       'X-AMV-Engine': key,
       'X-AMV-Effort': _effort || '',
       'X-AMV-Speed': _speed,
-      'X-AMV-Engine-Why': routed ? routed.why : '' },
+      'X-AMV-Engine-Why': routed ? routed.why : '',
+      'X-AMV-Answer-Cap': _capByAllowance ? 'allowance' : '' },
   });
 }
 

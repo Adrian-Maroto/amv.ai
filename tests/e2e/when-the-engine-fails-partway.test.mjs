@@ -163,6 +163,16 @@ section('A turn the engine paused partway says so, with Continue');
   ok(/paused partway/.test(r.text) && (await page.evaluate(() => document.querySelectorAll('[data-action="continue-ai"]').length)) === 1, 'paused, said, and Continue offered', r.text.slice(-120));
 }
 
+section('An answer kept short for the day’s allowance says that, and offers plans - not Continue');
+{
+  const r = await page.evaluate(() => {
+    const m = getMsgs(); m.push({ r: 'u', c: 'q' }, { r: 'a', c: 'A short answer.', _more: 'allowance' }); setMsgs(m); renderChatMsgs();
+    const b = [...document.querySelectorAll('.mr:not(.u)')].slice(-1)[0];
+    return { text: b.innerText, cont: b.querySelectorAll('[data-action="continue-ai"]').length, plans: b.querySelectorAll('[data-action="quota-upgrade"]').length };
+  });
+  ok(/kept short because today’s usage is almost used up/.test(r.text) && r.cont === 0 && r.plans === 1, 'the reason is the allowance, and Continue - which would spend the rest of it - is not offered', r);
+}
+
 section('In Spanish, the card and its button are in Spanish');
 {
   await page.evaluate(async () => {

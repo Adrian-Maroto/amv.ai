@@ -87,15 +87,15 @@ function _mountCookies(response, mounted) {
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
 });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
-  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why',
+  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why, X-AMV-Answer-Cap',
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate
@@ -15342,7 +15342,7 @@ async function authResetCode(request, env) {
     await env.AMV_KV.put('resetcode:' + email,
       JSON.stringify({ code, attempts: 0, at: Date.now() }),
       { expirationTtl: RESET_CODE_TTL });
-    try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request)); } catch (e) { delivered = false; }
+    try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request, body.lang)); } catch (e) { delivered = false; }
     if (!delivered) {
       /* The one thing the caller is no longer told, said loudly to the person
          who can fix it. A provider outage now looks identical to a stranger's
@@ -17003,7 +17003,7 @@ async function authSignup(request, env){
        code can be sent nothing changes hands at all. */
     if (unconfirmed && _codesOn(env)) {
       const pending = { salt, pwHash, pwIter: PBKDF2_ITERATIONS, sipHash, name: safeName };
-      const c = await _startSignInCode(env, request, em, safeName, 'claim', pending);
+      const c = await _startSignInCode(env, request, em, safeName, 'claim', pending, undefined, body.lang);
       if (c) return c;
     }
     return json({ error:'account exists' }, 409);
@@ -17030,7 +17030,7 @@ async function authSignup(request, env){
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   /* No session until the address is proved: the code finishes the sign-up. */
-  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup'); if (c) return c; }
+  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup', undefined, undefined, body.lang); if (c) return c; }
   return _tokenResponse(env, await issueTokens(env, em, safeName, await _sessOpen(env, request, em)));
 }
 async function authLogin(request, env) {
@@ -17199,7 +17199,7 @@ async function authLogin(request, env) {
   let trust = null;
   if (_codesOn(env)) {
     trust = await _deviceTrustState(env, request, body, em);
-    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason); if (c) return c; }
+    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason, body.lang); if (c) return c; }
   }
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
@@ -17330,11 +17330,11 @@ async function _sendSignInCodeEmail(env, email, code, why, lang) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
-async function _startSignInCode(env, request, email, name, why, pending, reason) {
+async function _startSignInCode(env, request, email, name, why, pending, reason, said) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   /* Kept with the code, so a resend is in the same language as the first. */
-  const lang = _emailLang(request);
+  const lang = _emailLang(request, said);
   await env.AMV_KV.put('signincode:' + id,
     JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
                      ...(pending ? { pending } : {}) }),
@@ -17473,7 +17473,7 @@ async function authLoginResend(request, env) {
   if (!rec || rec.gone) return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
   if (rec.capped) return json({ error: 'That is as many codes as one sign-in gets. Sign in again to start over.', code: 'resend_capped' }, 429);
   if (rec.tooSoon) return json({ error: 'A code was just sent. Give it 30 seconds, and check spam.', code: 'resend_soon' }, 429);
-  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why, rec.lang || _emailLang(request));
+  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why, rec.lang || _emailLang(request, body.lang));
   if (!sent) return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   return json({ ok: true, sent: true });
 }
@@ -21385,6 +21385,10 @@ async function aiProxy(request, env, ctx, principal) {
   const _outCap = Number(eng.maxOut) || 16000;
   let estOut = Math.max(1, Math.min(Number(body.max_tokens) || _outCap, _outCap));
   let reserve = estIn + estOut;
+  /* Set when the answer's length was lowered to fit what is left of the
+     allowance, and said to the page (X-AMV-Answer-Cap): an answer cut short
+     for that reason must not read as one that reached the most AMV writes. */
+  let _capByAllowance = false;
 
   /* FIT THE ANSWER TO WHAT IS LEFT, RATHER THAN REFUSE THE QUESTION.
 
@@ -21405,7 +21409,7 @@ async function aiProxy(request, env, ctx, principal) {
     const used = (await counter(env, name, { op: 'get' })).value || 0;
     const fit = Math.floor(cap - used - estIn);
     if (fit < ANSWER_FLOOR_TOKENS || fit >= estOut) return res;
-    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut;
+    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut; _capByAllowance = true;
     return await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
   };
 
@@ -21893,7 +21897,8 @@ async function aiProxy(request, env, ctx, principal) {
       'X-AMV-Engine': key,
       'X-AMV-Effort': _effort || '',
       'X-AMV-Speed': _speed,
-      'X-AMV-Engine-Why': routed ? routed.why : '' },
+      'X-AMV-Engine-Why': routed ? routed.why : '',
+      'X-AMV-Answer-Cap': _capByAllowance ? 'allowance' : '' },
   });
 }
 
@@ -40144,16 +40149,19 @@ async function sourcePreview(request, env) {
    most of the world was a message in a language they may not read, carrying a
    code and a warning ("never share this code") they could not understand.
 
-   The language is the one the page is in (X-AMV-Lang, sent by AMV_API), else
-   the browser's own (Accept-Language), else English. Only these two emails
+   The language is the one the page is in (`lang` in the body of the sign-in
+   and reset requests), else the browser's own (Accept-Language), else
+   English. In the body, not a header: a custom header has to be allowed by
+   every server the page might reach, and a page newer than its server would
+   have failed every request. Only these two emails
    for now: they decide whether somebody gets in at all.
    ══════════════════════════════════════════════════════════════════════════ */
 const EMAIL_LANGS = new Set(['en', 'es', 'zh', 'hi', 'ar', 'pt', 'fr', 'de', 'ja', 'ru', 'id', 'bn', 'ur', 'tr', 'vi', 'it', 'ko', 'ta']);
 const EMAIL_RTL = new Set(['ar', 'ur']);
-function _emailLang(request) {
+function _emailLang(request, said) {
   try {
-    const said = String((request && request.headers.get('X-AMV-Lang')) || '').toLowerCase().trim();
-    if (EMAIL_LANGS.has(said)) return said;
+    const s = String(said || '').toLowerCase().trim();
+    if (EMAIL_LANGS.has(s)) return s;
     const al = String((request && request.headers.get('Accept-Language')) || '');
     for (const part of al.split(',')) {
       const tag = part.split(';')[0].trim().toLowerCase().split('-')[0];

@@ -123,6 +123,22 @@ section('A new free account with long instructions is answered, not refused');
   ok((env._peak.get(dayKey(email)) || 0) <= DAY, 'and the day was never booked past its cap', env._peak.get(dayKey(email)));
 }
 
+section('A shortened answer says why, so the page does not call it the longest reply');
+{
+  const env = mkEnv(); sent = [];
+  const { email, tok } = await freeAccount(env);
+  env._set(dayKey(email), DAY - 4000 - 5000);
+  const r = await ask(env, tok);
+  await ctx.settle();
+  ok(r.headers.get('X-AMV-Answer-Cap') === 'allowance', 'a lowered answer is marked as lowered for the allowance', r.headers.get('X-AMV-Answer-Cap'));
+  ok(/X-AMV-Answer-Cap/.test(r.headers.get('Access-Control-Expose-Headers') || ''), 'and the page is allowed to read that', r.headers.get('Access-Control-Expose-Headers'));
+  const env2 = mkEnv(); sent = [];
+  const b = await freeAccount(env2);
+  const r2 = await call(env2, '/v1/messages', { model: 'amv-core', stream: true, max_tokens: 1000, messages: [{ role: 'user', content: 'hi' }] }, { Authorization: 'Bearer ' + b.tok });
+  await ctx.settle();
+  ok(r2.status === 200 && r2.headers.get('X-AMV-Answer-Cap') === '', 'one that fits as asked is not', r2.headers.get('X-AMV-Answer-Cap'));
+}
+
 section('A day with a little left gets a little');
 {
   const env = mkEnv(); sent = [];

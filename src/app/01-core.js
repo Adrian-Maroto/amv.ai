@@ -248,6 +248,11 @@ function amvDownload(filename, content, type){
 }
 try{ window.amvDownload = amvDownload; }catch(e){}
 
+/* The language the page is in, for what the server writes to a person - the
+   sign-in and reset emails (76-email-words.js). Sent in the body of those
+   requests: a custom header would have to be allowed by every server this
+   page can reach, and a page newer than its server would fail every call. */
+function _amvLangTag(){ try{ const l=_lang(); return l && l!=='auto' ? l : ''; }catch(e){ return ''; } }
 // Detect a storage-quota failure across browsers (name varies by engine).
 function _isQuotaErr(e){
   return !!e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014);
@@ -744,9 +749,6 @@ const AMV_API = {
     const o = opts||{};
     if(!o.credentials && /^\/auth\//.test(path)) o.credentials = _authCreds();
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
-    /* The language the page is in, so what the server writes for a person -
-       the sign-in and reset emails first - is in it too (76-email-words.js). */
-    try{ const _l=_lang(); if(_l && _l!=='auto') o.headers['X-AMV-Lang']=_l; }catch(e){}
     // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
     const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
     const _boundOrigin = (loadStr('amv_api_token_origin')||'');
@@ -904,6 +906,7 @@ const AMV_API = {
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    body.lang = _amvLangTag();
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     /* A trusted sign-in hands back a renewed device token: kept, so trust runs
@@ -1178,6 +1181,7 @@ const AMV_API = {
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    body.lang = _amvLangTag();
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
@@ -1229,7 +1233,7 @@ const AMV_API = {
   },
   async resendCode(challenge){
     if(!this.live) return null;
-    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge})});
+    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge, lang:_amvLangTag()})});
     const d = await r.json().catch(()=>({}));
     if(d.ok) return d;
     { const e=new Error(d.error || 'Could not send a new code.'); if(d.code) e.code=d.code; throw e; }

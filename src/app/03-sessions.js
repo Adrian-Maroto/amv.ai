@@ -989,7 +989,7 @@ async function _forgotSend(isResend){
   if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
   _forgotMsg('');
   try{
-    const d = await _resetApi('/auth/reset/code', { email: em });
+    const d = await _resetApi('/auth/reset/code', { email: em, lang: _amvLangTag() });
     if(!d.emailConfigured){
       // Honest. Do NOT tell them to check an inbox that will stay empty.
       _forgotMsg('Password reset isn\u2019t set up on this workspace yet, so no email can be sent. Contact the workspace owner'+(_supportEmail()?' at '+_supportEmail():'')+'.','err');

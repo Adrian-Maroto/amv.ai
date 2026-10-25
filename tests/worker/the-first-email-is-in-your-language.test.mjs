@@ -5,7 +5,7 @@
    the first thing AMV ever said to most of the world, with a code and a
    "never share this" warning, in a language they may not read.
 
-   The page says its language (X-AMV-Lang); without it the browser's own
+   The page says its language (`lang` in the request); without it the browser's own
    (Accept-Language); without either, English. Run against the Worker, with
    every email captured:
    - a sign-up from a Spanish page gets the code in Spanish, and a resend of
@@ -43,12 +43,12 @@ let ip = 10;
 const call = (path, body, headers) => W.default.fetch(new Request('https://api.amv.test' + path, { method: 'POST',
   headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.' + (ip++) }, headers || {}), body: JSON.stringify(body || {}) }), env, ctx);
 const lastMail = () => { const s = sent[sent.length - 1]; try { return JSON.parse(s.body); } catch (e) { return { raw: s && s.body }; } };
-const signup = (email, headers) => call('/auth/signup', { email, name: 'N', password: 'A-real-Passw0rd!' }, headers);
+const signup = (email, headers, lang) => call('/auth/signup', Object.assign({ email, name: 'N', password: 'A-real-Passw0rd!' }, lang ? { lang } : {}), headers);
 
 section('A sign-up from a Spanish page gets its code in Spanish, and a resend stays Spanish');
 {
   sent = [];
-  const r = await signup('ana@example.com', { 'X-AMV-Lang': 'es', 'Accept-Language': 'en-US,en;q=0.9' });
+  const r = await signup('ana@example.com', { 'Accept-Language': 'en-US,en;q=0.9' }, 'es');
   const d = await r.json();
   const m = lastMail();
   ok(d.needsCode && /^Tu código de AMV: \d{6}$/.test(m.subject || ''), 'the subject is Spanish - the page’s language wins over the browser’s', m.subject);
@@ -57,7 +57,7 @@ section('A sign-up from a Spanish page gets its code in Spanish, and a resend st
   /* The resend waits 30 seconds after a send; the record is aged instead of waited out. */
   const key = 'signincode:' + d.challenge; const rec = JSON.parse(env.AMV_KV._map.get(key)); rec.at = rec.sentAt = Date.now() - 31000; env.AMV_KV._map.set(key, JSON.stringify(rec));
   sent = [];
-  const rr = await call('/auth/login/resend', { challenge: d.challenge }, { 'X-AMV-Lang': 'de' });
+  const rr = await call('/auth/login/resend', { challenge: d.challenge, lang: 'de' });
   ok(rr.status === 200 && /^Tu código de AMV/.test(lastMail().subject || ''), 'a resend is in the language the code was first sent in', [rr.status, lastMail().subject]);
 }
 
@@ -71,7 +71,7 @@ section('No language from the page: the browser’s');
 section('Arabic reads right to left; the code itself left to right');
 {
   sent = [];
-  await signup('sara@example.com', { 'X-AMV-Lang': 'ar' });
+  await signup('sara@example.com', {}, 'ar');
   const h = lastMail().html || '';
   ok(/<html lang="ar" dir="rtl">/.test(h) && /<body dir="rtl"/.test(h), 'the email is marked right to left', h.slice(0, 60));
   ok(/<div dir="ltr"[^>]*>\d{6}</.test(h), 'and the six digits stay in order', (h.match(/<div dir="ltr"[^>]*>\d{6}</) || [''])[0].slice(0, 40));
@@ -82,7 +82,7 @@ section('A reset code from a German page is German');
   sent = [];
   await signup('max@example.com');
   sent = [];
-  const r = await call('/auth/reset/code', { email: 'max@example.com' }, { 'X-AMV-Lang': 'de' });
+  const r = await call('/auth/reset/code', { email: 'max@example.com', lang: 'de' });
   const m = lastMail();
   ok(r.status === 200 && /Zurücksetzen des AMV-Passworts/.test(m.subject || ''), 'the reset subject is German', [r.status, m.subject]);
   ok(/neues Passwort festzulegen/.test(m.html || ''), 'and its body', (m.html || '').slice(0, 60));
@@ -90,8 +90,8 @@ section('A reset code from a German page is German');
 
 section('A language AMV does not speak, or none, is English');
 {
-  const lang = (h) => W._emailLang(new Request('https://x.test', { headers: h }));
-  ok(lang({}) === 'en' && lang({ 'X-AMV-Lang': 'xx', 'Accept-Language': 'sw-KE' }) === 'en', 'unknown and missing fall back to English', [lang({}), lang({ 'X-AMV-Lang': 'xx' })]);
+  const lang = (h, said) => W._emailLang(new Request('https://x.test', { headers: h }), said);
+  ok(lang({}) === 'en' && lang({ 'Accept-Language': 'sw-KE' }, 'xx') === 'en', 'unknown and missing fall back to English', [lang({}), lang({}, 'xx')]);
   ok(lang({ 'Accept-Language': 'pt-BR,pt;q=0.9' }) === 'pt' && lang({ 'Accept-Language': 'sw, fr;q=0.8' }) === 'fr', 'a regional tag is its language, and the first one AMV speaks is taken', [lang({ 'Accept-Language': 'pt-BR' }), lang({ 'Accept-Language': 'sw, fr;q=0.8' })]);
   sent = [];
   await signup('nobody@example.com');

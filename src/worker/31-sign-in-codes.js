@@ -119,11 +119,11 @@ async function _sendSignInCodeEmail(env, email, code, why, lang) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
-async function _startSignInCode(env, request, email, name, why, pending, reason) {
+async function _startSignInCode(env, request, email, name, why, pending, reason, said) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   /* Kept with the code, so a resend is in the same language as the first. */
-  const lang = _emailLang(request);
+  const lang = _emailLang(request, said);
   await env.AMV_KV.put('signincode:' + id,
     JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
                      ...(pending ? { pending } : {}) }),
@@ -262,7 +262,7 @@ async function authLoginResend(request, env) {
   if (!rec || rec.gone) return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
   if (rec.capped) return json({ error: 'That is as many codes as one sign-in gets. Sign in again to start over.', code: 'resend_capped' }, 429);
   if (rec.tooSoon) return json({ error: 'A code was just sent. Give it 30 seconds, and check spam.', code: 'resend_soon' }, 429);
-  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why, rec.lang || _emailLang(request));
+  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why, rec.lang || _emailLang(request, body.lang));
   if (!sent) return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   return json({ ok: true, sent: true });
 }

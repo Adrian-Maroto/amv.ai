@@ -408,7 +408,7 @@ async function authSignup(request, env){
        code can be sent nothing changes hands at all. */
     if (unconfirmed && _codesOn(env)) {
       const pending = { salt, pwHash, pwIter: PBKDF2_ITERATIONS, sipHash, name: safeName };
-      const c = await _startSignInCode(env, request, em, safeName, 'claim', pending);
+      const c = await _startSignInCode(env, request, em, safeName, 'claim', pending, undefined, body.lang);
       if (c) return c;
     }
     return json({ error:'account exists' }, 409);
@@ -435,7 +435,7 @@ async function authSignup(request, env){
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   /* No session until the address is proved: the code finishes the sign-up. */
-  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup'); if (c) return c; }
+  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup', undefined, undefined, body.lang); if (c) return c; }
   return _tokenResponse(env, await issueTokens(env, em, safeName, await _sessOpen(env, request, em)));
 }
 async function authLogin(request, env) {
@@ -604,7 +604,7 @@ async function authLogin(request, env) {
   let trust = null;
   if (_codesOn(env)) {
     trust = await _deviceTrustState(env, request, body, em);
-    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason); if (c) return c; }
+    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason, body.lang); if (c) return c; }
   }
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');

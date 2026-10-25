@@ -248,6 +248,11 @@ function amvDownload(filename, content, type){
 }
 try{ window.amvDownload = amvDownload; }catch(e){}
 
+/* The language the page is in, for what the server writes to a person - the
+   sign-in and reset emails (76-email-words.js). Sent in the body of those
+   requests: a custom header would have to be allowed by every server this
+   page can reach, and a page newer than its server would fail every call. */
+function _amvLangTag(){ try{ const l=_lang(); return l && l!=='auto' ? l : ''; }catch(e){ return ''; } }
 // Detect a storage-quota failure across browsers (name varies by engine).
 function _isQuotaErr(e){
   return !!e && (e.name==='QuotaExceededError' || e.name==='NS_ERROR_DOM_QUOTA_REACHED' || e.code===22 || e.code===1014);
@@ -744,9 +749,6 @@ const AMV_API = {
     const o = opts||{};
     if(!o.credentials && /^\/auth\//.test(path)) o.credentials = _authCreds();
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
-    /* The language the page is in, so what the server writes for a person -
-       the sign-in and reset emails first - is in it too (76-email-words.js). */
-    try{ const _l=_lang(); if(_l && _l!=='auto') o.headers['X-AMV-Lang']=_l; }catch(e){}
     // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
     const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
     const _boundOrigin = (loadStr('amv_api_token_origin')||'');
@@ -904,6 +906,7 @@ const AMV_API = {
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    body.lang = _amvLangTag();
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     /* A trusted sign-in hands back a renewed device token: kept, so trust runs
@@ -1178,6 +1181,7 @@ const AMV_API = {
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    body.lang = _amvLangTag();
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
@@ -1229,7 +1233,7 @@ const AMV_API = {
   },
   async resendCode(challenge){
     if(!this.live) return null;
-    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge})});
+    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge, lang:_amvLangTag()})});
     const d = await r.json().catch(()=>({}));
     if(d.ok) return d;
     { const e=new Error(d.error || 'Could not send a new code.'); if(d.code) e.code=d.code; throw e; }
@@ -5381,7 +5385,7 @@ async function _forgotSend(isResend){
   if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
   _forgotMsg('');
   try{
-    const d = await _resetApi('/auth/reset/code', { email: em });
+    const d = await _resetApi('/auth/reset/code', { email: em, lang: _amvLangTag() });
     if(!d.emailConfigured){
       // Honest. Do NOT tell them to check an inbox that will stay empty.
       _forgotMsg('Password reset isn\u2019t set up on this workspace yet, so no email can be sent. Contact the workspace owner'+(_supportEmail()?' at '+_supportEmail():'')+'.','err');
@@ -9409,9 +9413,10 @@ async function _callAITurn(msgs, _opts) {
     /* When the model is AMV Auto the server decides which engine runs, and says
        which one in a response header. Show THAT, not "Auto" - a label that
        names no engine tells the user nothing about what answered them. */
-    let _ranEngine='', _ranWhy='';
+    let _ranEngine='', _ranWhy='', _capWhy='';
     try{
       _ranEngine=res.headers.get('X-AMV-Engine')||'';
+      _capWhy=res.headers.get('X-AMV-Answer-Cap')||'';
       _ranWhy=res.headers.get('X-AMV-Engine-Why')||'';
     }catch(e){}
 
@@ -9726,7 +9731,11 @@ async function _callAITurn(msgs, _opts) {
         fullText += '\n\n_' + T('AMV stopped here - it can’t go on with this request.') + '_';
       }
     }
-    const _more = (!_userStopped && !_recovered && fullText && (_stopReason==='max_tokens' || _stopReason==='pause_turn')) ? _stopReason : '';
+    /* Cut at a length the server lowered to fit what is left of today's
+       allowance is a different thing from the most one reply holds, and says
+       so - Continue would only spend the rest of it. */
+    const _more = (!_userStopped && !_recovered && fullText && (_stopReason==='max_tokens' || _stopReason==='pause_turn'))
+      ? (_stopReason==='max_tokens' && _capWhy==='allowance' ? 'allowance' : _stopReason) : '';
     if(!_sawEnd && fullText && !_userStopped && !_recovered) _stalled=true;
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
@@ -10633,14 +10642,15 @@ function _buildResearchPanel(state, finished){
     '<span class="rsrc-qn">'+escH(t.n==null ? T('searching…') : t.n ? T('{0} results').replace('{0}', t.n)+(t.hosts.length?' · '+t.hosts.slice(0,3).join(', '):'') : T('nothing found'))+'</span></li>'
   ).join('');
 
+  const _cnt = escH((n===1 ? T('1 source') : T('{0} sources').replace('{0}', n)) + ' \u00b7 ' + (searches===1 ? T('1 search') : T('{0} searches').replace('{0}', searches)));
   const head = finished
-    ? '<span class="rsrc-check">\u2713</span> Researched '+n+' source'+(n===1?'':'s')+' across '+searches+' search'+(searches===1?'':'es')
-    : '<span class="rsrc-spin"></span> Researching\u2026 '+searches+' search'+(searches===1?'':'es')+', '+n+' source'+(n===1?'':'s')+' so far';
+    ? '<span class="rsrc-check">\u2713</span> '+escH(T('Researched'))+' \u00b7 '+_cnt
+    : '<span class="rsrc-spin"></span> '+escH(T('Researching…'))+' \u00b7 '+_cnt;
 
   return '<div class="rsrc-panel'+(finished?' done':'')+'">'+
     '<div class="rsrc-head">'+head+(finished&&cited.size?' · '+escH(T('{0} cited').replace('{0}', cited.size)):'')+'</div>'+
     (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
-    (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+(sources.length-12)+' more</span>':'')+'</div>':'')+
+    (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+escH(T('{0} more').replace('{0}', sources.length-12))+'</span>':'')+'</div>':'')+
     (cards?'<div class="rsrc-cards">'+cards+'</div>':'')+
   '</div>';
 }
@@ -10837,7 +10847,7 @@ function renderChatMsgs() {
         ? 'Your usage resets in <b class="quota-reset-live">' + escH(_fmtResetIn(when - Date.now())) + '</b>. '
         : (m._quotaMsg ? escH(m._quotaMsg) + ' ' : '');
       content='<div class="quota-card"><div class="quota-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
-        '<div class="quota-body"><b>You\u2019re out of usage for now.</b>'+
+        '<div class="quota-body"><b>'+escH(T('You’re out of usage for now.'))+'</b>'+
         (isFamily
           ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
             '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
@@ -10880,7 +10890,7 @@ function renderChatMsgs() {
       content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
-        (m._more && !m._interrupted && i===msgs.length-1?'<div class="ai-cut"><span>'+escH(m._more==='pause_turn' ? T('AMV paused partway through this one.') : T('This answer reached the most AMV writes in one reply.'))+'</span><button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button></div>':'')+
+        (m._more && !m._interrupted && i===msgs.length-1?'<div class="ai-cut"><span>'+escH(m._more==='allowance' ? T('This answer was kept short because today’s usage is almost used up.') : m._more==='pause_turn' ? T('AMV paused partway through this one.') : T('This answer reached the most AMV writes in one reply.'))+'</span>'+(m._more==='allowance' ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">'+escH(T('See plans'))+'</button>' : '<button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button>')+'</div>':'')+
         (m._interrupted?'<div class="ai-cut"><span>'+escH(m._interrupted==='engine' ? T('The engine stopped partway through. What you see above is what it wrote.') : T('The connection dropped partway through. What you see above is what arrived.'))+'</span><button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button></div>':'')+
         // A complete answer that simply could not be delivered live.
         (m._recovered?'<div class="ai-recovered"><span>Your connection dropped, so AMV recovered this answer rather than making you wait for it again.</span></div>':''));
@@ -10912,14 +10922,14 @@ function renderChatMsgs() {
         _verSwitchHTML(m, i)+
       '</div>':
       '<div class="macts mact-bar">'+
-        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="Good response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
-        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="Bad response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="'+escH(T('Good response'))+'" aria-label="'+escH(T('Good response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
-        '<button class="mact" data-action="speak" data-idx="'+i+'" title="Read aloud"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
+        '<button class="mact" data-action="speak" data-idx="'+i+'" title="'+escH(T('Read aloud'))+'" aria-label="'+escH(T('Read aloud'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
         '<button class="mact" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
         '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
-        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
-        (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        (i===msgs.length-1?'<button class="mact" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
       _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+

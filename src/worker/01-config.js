@@ -87,15 +87,15 @@ function _mountCookies(response, mounted) {
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
 });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, X-AMV-Lang',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
-  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why',
+  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why, X-AMV-Answer-Cap',
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate

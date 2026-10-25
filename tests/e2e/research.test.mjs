@@ -91,7 +91,7 @@ const panel = await page.evaluate(() => {
     liveShowsSpinner: live.includes('rsrc-spin'),
     liveCount: live.includes('3 source'),
     doneShowsCheck: done.includes('rsrc-check'),
-    doneText: /Researched 3 sources across 4 searches/.test(done),
+    doneText: /Researched · 3 sources · 4 searches/.test(done),
     hasRealHosts: done.includes('reddit.com') && done.includes('bloomberg.com') && done.includes('reuters.com'),
     // exactly the three real sources are shown as chips - nothing invented
     honestCount: chipHosts.length === 3 &&
@@ -101,7 +101,7 @@ const panel = await page.evaluate(() => {
 ok(panel.liveShowsSpinner, 'while researching, a live spinner shows');
 ok(panel.liveCount, 'with the running source count');
 ok(panel.doneShowsCheck, 'when done, a checkmark shows');
-ok(panel.doneText, 'with the exact real counts ("Researched N sources across M searches")');
+ok(panel.doneText, 'with the exact real counts ("Researched · N sources · M searches")');
 ok(panel.hasRealHosts, 'and the actual source domains as clickable chips');
 ok(panel.honestCount, 'the displayed sources match what was really found - nothing faked');
 

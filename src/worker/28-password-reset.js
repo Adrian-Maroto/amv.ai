@@ -103,7 +103,7 @@ async function authResetCode(request, env) {
     await env.AMV_KV.put('resetcode:' + email,
       JSON.stringify({ code, attempts: 0, at: Date.now() }),
       { expirationTtl: RESET_CODE_TTL });
-    try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request)); } catch (e) { delivered = false; }
+    try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request, body.lang)); } catch (e) { delivered = false; }
     if (!delivered) {
       /* The one thing the caller is no longer told, said loudly to the person
          who can fix it. A provider outage now looks identical to a stranger's
