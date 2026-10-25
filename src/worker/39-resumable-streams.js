@@ -66,6 +66,20 @@ async function resumeAnswer(request, env) {
    behaviour, not something worse. Checked only on disconnect, never per chunk,
    so an answer that runs to completion costs nothing extra. */
 const AI_STOP_TTL_S = 300;
+/* A LONG SILENCE IS NOT A DEAD CONNECTION - SO SAY SO, EVERY FEW SECONDS.
+
+   The newest engines think before they answer and, by default, send nothing
+   while they do: a hard question on Forge or Apex can be thirty seconds or more
+   of silence before the first word. The page gives up on a stream that is
+   silent for 30 seconds (it has to - a dropped phone connection looks the
+   same), and it told the person "the connection stalled, please retry" about
+   an answer the engine was still writing and the person would be billed for,
+   then billed again for the retry. So while the engine is silent the browser
+   is sent an SSE comment every AI_KEEPALIVE_MS - a line beginning ':', which
+   every reader of this stream already skips (it reads only 'data:' lines).
+   Only to the browser: the meter reads the engine's bytes alone. */
+const AI_KEEPALIVE_MS = 10000;
+const _KEEPALIVE = new TextEncoder().encode(': keepalive\n\n');
 function _aiStopKey(email, reqId) { return 'aistop:' + String(email || '').toLowerCase() + ':' + reqId; }
 function _stopAwareStream(source, env, email, reqId, ctx) {
   const reader = source.getReader();
@@ -85,18 +99,24 @@ function _stopAwareStream(source, env, email, reqId, ctx) {
       try { await reader.cancel('stopped by the person'); } catch (e) {}
     },
   });
+  let lastSent = Date.now();
+  const beat = setInterval(() => {
+    if (state.clientGone || Date.now() - lastSent < AI_KEEPALIVE_MS) return;
+    try { ctrl.enqueue(_KEEPALIVE); lastSent = Date.now(); } catch (e) { state.clientGone = true; }
+  }, Math.max(1000, Math.floor(AI_KEEPALIVE_MS / 2)));
   const pump = (async () => {
     try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (!state.clientGone) { try { ctrl.enqueue(value); } catch (e) { state.clientGone = true; } }
+        if (!state.clientGone) { try { ctrl.enqueue(value); lastSent = Date.now(); } catch (e) { state.clientGone = true; } }
         await mw.write(value);
       }
       if (!state.clientGone) { try { ctrl.close(); } catch (e) {} }
     } catch (e) {
       if (!state.clientGone) { try { ctrl.error(e); } catch (_) {} }
     } finally {
+      clearInterval(beat);
       try { await mw.close(); } catch (e) {}
     }
   })();

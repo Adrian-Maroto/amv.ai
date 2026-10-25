@@ -249,7 +249,11 @@ export default {
    and they are listed rather than implied so a new route is small by default
    and a large one is somebody's decision. */
 const BODY_MAX_BYTES = 1024 * 1024;
-const BODY_MAX_BY_PATH = {
+/* A function, not a table read at load: the limits it names are defined by
+   the modules that own them, several of which come after this one in the
+   bundle - read at load, they would not exist yet. */
+let _bodyMaxTable = null;
+const _bodyMaxByPath = () => _bodyMaxTable || (_bodyMaxTable = {
   '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
   '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
   '/v1/messages/batches': 8 * 1024 * 1024,   // up to a hundred requests at once
@@ -260,11 +264,18 @@ const BODY_MAX_BY_PATH = {
      byte was read, and no suite saw it: the test harness never declared a
      length (LESSONS 617). Sized to the message bounds it fronts. */
   '/v1/messages': MESSAGES_BODY_MAX_BYTES,
-};
+  /* The other routes that take a file, each sized to what its own handler
+     accepts - a handler limit the router undercuts is a limit nobody can
+     reach, and its careful refusal is never read (LESSONS 618). Room is left
+     for the JSON around a body, and for UTF-8 and escaping in a page. */
+  '/v1/library/put': Math.ceil(LIB_FILE_MAX * 1.5) + 256 * 1024,
+  '/v1/audio/transcribe': SPEECH_LISTEN_MAX_BYTES + 64 * 1024,
+  '/deploy': SITE_MAX_BYTES * 3 + 64 * 1024,
+});
 
 function _bodyMaxFor(path) {
-  return Object.prototype.hasOwnProperty.call(BODY_MAX_BY_PATH, path)
-    ? BODY_MAX_BY_PATH[path] : BODY_MAX_BYTES;
+  const t = _bodyMaxByPath();
+  return Object.prototype.hasOwnProperty.call(t, path) ? t[path] : BODY_MAX_BYTES;
 }
 
 /* Refuse on the DECLARED length, before a byte of the body is read.

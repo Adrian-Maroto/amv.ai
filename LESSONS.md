@@ -15552,3 +15552,15 @@ bound apart from text, pictures and PDFs are booked by what they cost to
 read, and the page sends a photo at the size the engine reads. Rule: when a
 harness rebuilds a request, it carries every header the server decides on -
 and a check that has never once fired in a suite is not known to work.
+
+## 618. A limit a gatekeeper undercuts is a limit nobody can reach
+
+After 617 the same shape turned up three more times. The file library kept
+files up to 30MB, transcription listened to recordings up to 25MB, and a site
+could be 2MB - and the router in front of all three refused any body over a
+megabyte before their handlers ran. So each handler's limit, and the careful
+sentence it says at that limit, could never be reached; people met the
+router's generic refusal instead, on a one-minute recording or a 900KB file.
+Rule: a limit that a later stage enforces is checked against every earlier
+stage that can refuse first - and the check is a test that SENDS a request
+at the later limit through the whole path, not two numbers read side by side.

@@ -33,7 +33,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'verbs.harness.mjs');
-writeFileSync(harness, src + '\nexport { BODY_MAX_BYTES, BODY_MAX_BY_PATH, _bodyMaxFor, DB, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { BODY_MAX_BYTES, _bodyMaxByPath, _bodyMaxFor, DB, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -245,15 +245,17 @@ section('And an ordinary body goes through untouched');
   ok(noLength.status === 200, 'and a request that declares no length is not refused for it', noLength.status);
 }
 
-section('The two routes that really are bigger say so, and are still bounded');
+section('The routes that really are bigger say so, and are still bounded');
 {
   ok(W._bodyMaxFor('/admin/backup/import') > W.BODY_MAX_BYTES,
      'restoring a whole namespace is allowed to be large', W._bodyMaxFor('/admin/backup/import'));
   ok(W._bodyMaxFor('/sync/push') > W.BODY_MAX_BYTES,
      'and so is one device handing over everything it has', W._bodyMaxFor('/sync/push'));
-  ok(Object.keys(W.BODY_MAX_BY_PATH).length <= 4,
-     'and there are only a handful of them', Object.keys(W.BODY_MAX_BY_PATH));
-  for (const [p, n] of Object.entries(W.BODY_MAX_BY_PATH)) {
+  /* Each is a route that takes a file - a conversation with its pictures, a
+     file for the library, a recording, a site - sized to its own handler. */
+  ok(Object.keys(W._bodyMaxByPath()).length <= 8,
+     'and there are only a handful of them', Object.keys(W._bodyMaxByPath()));
+  for (const [p, n] of Object.entries(W._bodyMaxByPath())) {
     ok(n > 0 && n <= 128 * 1024 * 1024, p + ' is still a real ceiling rather than none', n);
   }
   ok(W._bodyMaxFor('/v1/anything/else') === W.BODY_MAX_BYTES,

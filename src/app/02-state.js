@@ -1184,14 +1184,14 @@ function aegisErrorMessage(status, raw){
    Keeps real actionable info (usage, sign-in, plan) but never dumps stack traces. */
 function _aiFriendly(msg){
   const m=String(msg||'').toLowerCase();
-  if(/isn.t connected|engine|switch on/.test(m)) return 'AMV isn’t connected yet. Turn on the AMV engine in Settings to start.';
+  if(/isn.t connected|engine|switch on/.test(m)) return T('AMV isn’t connected yet. Turn on the AMV engine in Settings to start.');
   if(/out of usage|usage limit|daily|window/.test(m)) return msg;   // already friendly + actionable
-  if(/rate|429|too many/.test(m)) return 'Too many requests right now. Give it a few seconds and try again.';
-  if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return 'AMV couldn’t reach the network. Check your connection and try again.';
-  if(/401|auth|sign in|session/.test(m)) return 'Your sign-in on this device has ended - sign in again to continue.';
-  if(/413|too long|too large|context/.test(m)) return 'This is a bit too long to process at once. Try trimming it and running again.';
-  if(/5\d\d|529|temporary|capacity/.test(m)) return 'AMV had a brief hiccup. Please try again in a moment.';
-  return 'AMV hit a snag. Please try again.';
+  if(/rate|429|too many/.test(m)) return T('Too many requests right now. Give it a few seconds and try again.');
+  if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return T('AMV couldn’t reach the network. Check your connection and try again.');
+  if(/401|auth|sign in|session/.test(m)) return T('Your sign-in on this device has ended - sign in again to continue.');
+  if(/413|too long|too large|context/.test(m)) return T('This is a bit too long to process at once. Try trimming it and running again.');
+  if(/5\d\d|529|temporary|capacity/.test(m)) return T('AMV had a brief hiccup. Please try again in a moment.');
+  return T('AMV hit a snag. Please try again.');
 }
 
 /* THE GUESSER IS FOR ERRORS NOBODY WROTE.

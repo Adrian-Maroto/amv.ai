@@ -39,9 +39,13 @@ const LIB_LIMITS = {
   elite: { files: 10000, bytes: 20 * 1024 * LIB_MB },
   ultra: { files: 25000, bytes: 50 * 1024 * LIB_MB },
 };
-/* One file. The chat reads at most this much of a document anyway, and a
-   picture or PDF over it was never attachable in the first place. */
-const LIB_FILE_MAX = 30 * LIB_MB;
+/* One file, as the characters of its body (text, or base64). It was 30MB,
+   which nothing could ever send: the router refused any body over its default
+   megabyte first, so every file over about 750KB failed to reach the account
+   with the router's sentence instead of this one (LESSONS 618). Now 12MB -
+   more than any attachment the page sends (a PDF is held to 6MB, about 8MB
+   as base64) - and the router lets exactly this much through. */
+const LIB_FILE_MAX = 12 * LIB_MB;
 /* 'office' is a Word, Excel or PowerPoint file itself, as base64 - kept when
    somebody saves an edited file, so another device can go on editing it rather
    than reading its words (docs/OWNER-DECISIONS.md #11). */

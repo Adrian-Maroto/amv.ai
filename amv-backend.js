@@ -15877,7 +15877,11 @@ export default {
    and they are listed rather than implied so a new route is small by default
    and a large one is somebody's decision. */
 const BODY_MAX_BYTES = 1024 * 1024;
-const BODY_MAX_BY_PATH = {
+/* A function, not a table read at load: the limits it names are defined by
+   the modules that own them, several of which come after this one in the
+   bundle - read at load, they would not exist yet. */
+let _bodyMaxTable = null;
+const _bodyMaxByPath = () => _bodyMaxTable || (_bodyMaxTable = {
   '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
   '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
   '/v1/messages/batches': 8 * 1024 * 1024,   // up to a hundred requests at once
@@ -15888,11 +15892,18 @@ const BODY_MAX_BY_PATH = {
      byte was read, and no suite saw it: the test harness never declared a
      length (LESSONS 617). Sized to the message bounds it fronts. */
   '/v1/messages': MESSAGES_BODY_MAX_BYTES,
-};
+  /* The other routes that take a file, each sized to what its own handler
+     accepts - a handler limit the router undercuts is a limit nobody can
+     reach, and its careful refusal is never read (LESSONS 618). Room is left
+     for the JSON around a body, and for UTF-8 and escaping in a page. */
+  '/v1/library/put': Math.ceil(LIB_FILE_MAX * 1.5) + 256 * 1024,
+  '/v1/audio/transcribe': SPEECH_LISTEN_MAX_BYTES + 64 * 1024,
+  '/deploy': SITE_MAX_BYTES * 3 + 64 * 1024,
+});
 
 function _bodyMaxFor(path) {
-  return Object.prototype.hasOwnProperty.call(BODY_MAX_BY_PATH, path)
-    ? BODY_MAX_BY_PATH[path] : BODY_MAX_BYTES;
+  const t = _bodyMaxByPath();
+  return Object.prototype.hasOwnProperty.call(t, path) ? t[path] : BODY_MAX_BYTES;
 }
 
 /* Refuse on the DECLARED length, before a byte of the body is read.
@@ -23060,6 +23071,20 @@ async function resumeAnswer(request, env) {
    behaviour, not something worse. Checked only on disconnect, never per chunk,
    so an answer that runs to completion costs nothing extra. */
 const AI_STOP_TTL_S = 300;
+/* A LONG SILENCE IS NOT A DEAD CONNECTION - SO SAY SO, EVERY FEW SECONDS.
+
+   The newest engines think before they answer and, by default, send nothing
+   while they do: a hard question on Forge or Apex can be thirty seconds or more
+   of silence before the first word. The page gives up on a stream that is
+   silent for 30 seconds (it has to - a dropped phone connection looks the
+   same), and it told the person "the connection stalled, please retry" about
+   an answer the engine was still writing and the person would be billed for,
+   then billed again for the retry. So while the engine is silent the browser
+   is sent an SSE comment every AI_KEEPALIVE_MS - a line beginning ':', which
+   every reader of this stream already skips (it reads only 'data:' lines).
+   Only to the browser: the meter reads the engine's bytes alone. */
+const AI_KEEPALIVE_MS = 10000;
+const _KEEPALIVE = new TextEncoder().encode(': keepalive\n\n');
 function _aiStopKey(email, reqId) { return 'aistop:' + String(email || '').toLowerCase() + ':' + reqId; }
 function _stopAwareStream(source, env, email, reqId, ctx) {
   const reader = source.getReader();
@@ -23079,18 +23104,24 @@ function _stopAwareStream(source, env, email, reqId, ctx) {
       try { await reader.cancel('stopped by the person'); } catch (e) {}
     },
   });
+  let lastSent = Date.now();
+  const beat = setInterval(() => {
+    if (state.clientGone || Date.now() - lastSent < AI_KEEPALIVE_MS) return;
+    try { ctrl.enqueue(_KEEPALIVE); lastSent = Date.now(); } catch (e) { state.clientGone = true; }
+  }, Math.max(1000, Math.floor(AI_KEEPALIVE_MS / 2)));
   const pump = (async () => {
     try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (!state.clientGone) { try { ctrl.enqueue(value); } catch (e) { state.clientGone = true; } }
+        if (!state.clientGone) { try { ctrl.enqueue(value); lastSent = Date.now(); } catch (e) { state.clientGone = true; } }
         await mw.write(value);
       }
       if (!state.clientGone) { try { ctrl.close(); } catch (e) {} }
     } catch (e) {
       if (!state.clientGone) { try { ctrl.error(e); } catch (_) {} }
     } finally {
+      clearInterval(beat);
       try { await mw.close(); } catch (e) {}
     }
   })();
@@ -37862,9 +37893,13 @@ const LIB_LIMITS = {
   elite: { files: 10000, bytes: 20 * 1024 * LIB_MB },
   ultra: { files: 25000, bytes: 50 * 1024 * LIB_MB },
 };
-/* One file. The chat reads at most this much of a document anyway, and a
-   picture or PDF over it was never attachable in the first place. */
-const LIB_FILE_MAX = 30 * LIB_MB;
+/* One file, as the characters of its body (text, or base64). It was 30MB,
+   which nothing could ever send: the router refused any body over its default
+   megabyte first, so every file over about 750KB failed to reach the account
+   with the router's sentence instead of this one (LESSONS 618). Now 12MB -
+   more than any attachment the page sends (a PDF is held to 6MB, about 8MB
+   as base64) - and the router lets exactly this much through. */
+const LIB_FILE_MAX = 12 * LIB_MB;
 /* 'office' is a Word, Excel or PowerPoint file itself, as base64 - kept when
    somebody saves an edited file, so another device can go on editing it rather
    than reading its words (docs/OWNER-DECISIONS.md #11). */

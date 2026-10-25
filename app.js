@@ -4155,14 +4155,14 @@ function aegisErrorMessage(status, raw){
    Keeps real actionable info (usage, sign-in, plan) but never dumps stack traces. */
 function _aiFriendly(msg){
   const m=String(msg||'').toLowerCase();
-  if(/isn.t connected|engine|switch on/.test(m)) return 'AMV isn’t connected yet. Turn on the AMV engine in Settings to start.';
+  if(/isn.t connected|engine|switch on/.test(m)) return T('AMV isn’t connected yet. Turn on the AMV engine in Settings to start.');
   if(/out of usage|usage limit|daily|window/.test(m)) return msg;   // already friendly + actionable
-  if(/rate|429|too many/.test(m)) return 'Too many requests right now. Give it a few seconds and try again.';
-  if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return 'AMV couldn’t reach the network. Check your connection and try again.';
-  if(/401|auth|sign in|session/.test(m)) return 'Your sign-in on this device has ended - sign in again to continue.';
-  if(/413|too long|too large|context/.test(m)) return 'This is a bit too long to process at once. Try trimming it and running again.';
-  if(/5\d\d|529|temporary|capacity/.test(m)) return 'AMV had a brief hiccup. Please try again in a moment.';
-  return 'AMV hit a snag. Please try again.';
+  if(/rate|429|too many/.test(m)) return T('Too many requests right now. Give it a few seconds and try again.');
+  if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return T('AMV couldn’t reach the network. Check your connection and try again.');
+  if(/401|auth|sign in|session/.test(m)) return T('Your sign-in on this device has ended - sign in again to continue.');
+  if(/413|too long|too large|context/.test(m)) return T('This is a bit too long to process at once. Try trimming it and running again.');
+  if(/5\d\d|529|temporary|capacity/.test(m)) return T('AMV had a brief hiccup. Please try again in a moment.');
+  return T('AMV hit a snag. Please try again.');
 }
 
 /* THE GUESSER IS FOR ERRORS NOBODY WROTE.
@@ -9167,7 +9167,7 @@ async function _callAITurn(msgs, _opts) {
      schedule is a guess wearing the clothes of a fact. The timer now says only
      that AMV is thinking; everything about searching comes from the search
      itself (server_tool_use and its results, below), with the real query. */
-  const _statusPhases=['Thinking…','Working through it…','Still working on it…'];
+  const _statusPhases=[T('Thinking…'),T('Working through it…'),T('Still working on it…')];
   let _phaseIdx=0;
   const _statusTimer=setInterval(()=>{
     _phaseIdx++;
@@ -9267,7 +9267,7 @@ async function _callAITurn(msgs, _opts) {
       });
     // offline guard
     if(typeof navigator!=='undefined' && navigator.onLine===false){
-      throw _saidPlainly(new Error('You appear to be offline. Check your connection and retry.'));
+      throw _saidPlainly(new Error(T('You appear to be offline. Check your connection and retry.')));
     }
     // fetch with timeout + automatic retry on transient failures (429/5xx/network)
     let res, _attempt=0, _maxRetries=2;
@@ -9440,7 +9440,7 @@ async function _callAITurn(msgs, _opts) {
     // window.__amvStreamIdleMs exists so the stall path can be exercised in a
     // test without a 30-second wait. Nothing in the product sets it.
     const IDLE_MS=(typeof window!=='undefined'&&window.__amvStreamIdleMs)||30000;
-    let _stalled=false, _recovered=false;
+    let _stalled=false, _recovered=false, _engineErr=null;
     /* DID THE OTHER END SAY IT WAS FINISHED, OR DID IT JUST STOP TALKING?
 
        `_stalled` was set only when the reader TIMED OUT - silence for IDLE_MS
@@ -9481,8 +9481,8 @@ async function _callAITurn(msgs, _opts) {
         if(_saved && _saved.length > fullText.length){ fullText = _saved; _recovered = true; break; }
         if(fullText){ _stalled=true; break; }
         throw _saidPlainly(new Error(navigator.onLine===false
-          ? 'You went offline before AMV could answer. Reconnect and retry.'
-          : 'The connection stalled before AMV could answer. Please retry.'));
+          ? T('You went offline before AMV could answer. Reconnect and retry.')
+          : T('The connection stalled before AMV could answer. Please retry.')));
       }
       const {done,value}=_chunk;
       if(done) break;
@@ -9576,6 +9576,10 @@ async function _callAITurn(msgs, _opts) {
           }
           if(evt.type==='message_delta' && evt.delta?.stop_reason){ _stopReason=evt.delta.stop_reason; _sawEnd=true; }
           if(evt.type==='message_stop'){ _sawEnd=true; }
+          /* The engine saying it failed - most often overloaded - inside a
+             stream that had already started. Read, so the person is told
+             that, rather than "(no response)" or a dropped connection. */
+          if(evt.type==='error'){ _engineErr=evt.error||{ type:'error' }; }
           if(evt.type==='content_block_delta'&&evt.delta?.type==='text_delta'){
             _clearStatus();
             fullText+=evt.delta.text;
@@ -9700,6 +9704,14 @@ async function _callAITurn(msgs, _opts) {
     /* Cut off, not concluded. Not for a stop the person pressed, and not when
        the answer was recovered from the server afterwards - in both of those
        the text on screen is the whole of what there is to say. */
+    /* An engine that failed mid-stream: with nothing written, an error with a
+       Retry; with part of an answer, the part, marked as cut off by the engine. */
+    if(_engineErr && !_userStopped && !_recovered){
+      if(!fullText) throw _saidPlainly(new Error(_engineErr.type==='overloaded_error'
+        ? T('AMV’s engines are very busy right now, so this one stopped before answering. Retry in a moment.')
+        : T('The engine stopped with an error before answering. Retry - and if it keeps happening, pick another engine.')));
+      _stalled=true;
+    }
     if(!_sawEnd && fullText && !_userStopped && !_recovered) _stalled=true;
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
@@ -9710,7 +9722,7 @@ async function _callAITurn(msgs, _opts) {
     if(_cites.length) _base.cites=_cites;
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
     if(_recovered) _base._recovered=true;   // complete, just not delivered live
-    msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:true}) : _base;
+    msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:_engineErr ? 'engine' : true}) : _base;
     _recordUsageOnce();
     // Auto-title chat
     const cv=getCurConv();
@@ -10808,24 +10820,24 @@ function renderChatMsgs() {
               +(topPlan?'Add extra usage to keep going right now.':paidPlan?'Upgrade to '+nextPlan+' for much higher limits, or add extra usage, and keep going right now.':'Upgrade to '+nextPlan+' for much higher limits and keep going right now.')+'</span>'+
             '<div class="quota-actions">'+(topPlan?'':'<button class="quota-upgrade" data-action="quota-upgrade" data-plan="'+escH(nextKey)+'" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>')+
             (m._creditHeld==='ask'?'<button class="quota-upgrade quota-credit" data-action="credit-use" data-idx="'+i+'">'+escH(T('Use extra usage'))+'</button>'
-              :paidPlan?'<button class="quota-upgrade quota-credit" data-action="credit-buy" data-idx="'+i+'">Add extra usage</button>':'')+
-            '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
+              :paidPlan?'<button class="quota-upgrade quota-credit" data-action="credit-buy" data-idx="'+i+'">'+escH(T('Add extra usage'))+'</button>':'')+
+            '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+escH(T(when>Date.now()?'I’ll wait':'Got it'))+'</button></div>')+
         '</div></div>';
     } else if(!isU && m._error){
       /* Retry is the right offer for a hiccup and the wrong one for a
          decision. A refusal a plan lifts gets the plan instead. */
       const _route=_refusalRoute(m._errCode);
       const _act=_route==='plans'
-        ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">See plans</button>'
+        ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">'+escH(T('See plans'))+'</button>'
         : _route==='team'
-          ? '<button class="ai-snag-retry" data-action="seats-upgrade" type="button">Manage seats</button>'
-          : '<button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button>';
+          ? '<button class="ai-snag-retry" data-action="seats-upgrade" type="button">'+escH(T('Manage seats'))+'</button>'
+          : '<button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button>';
       content='<div class="ai-snag'+(_route?' ai-snag-tier':'')+'"><div class="ai-snag-row"><span class="ai-snag-ic">'+
         (_route
           ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 9l7 .5-5.5 4.6L18.5 21 12 17.3 5.5 21l1.9-6.9L2 9.5 9 9z"/></svg>'
           : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>')+
         '</span>'+
-        '<span class="ai-snag-msg">'+escH(m._errPlain ? m._error : _aiFriendly(m._error))+'</span></div>'+
+        '<span class="ai-snag-msg">'+escH(m._errPlain ? T(m._error) : _aiFriendly(m._error))+'</span></div>'+
         _act+'</div>';
     } else if(!isU && m._retrying){
       content='<div class="ai-retrying"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>'+escH(m._retrying)+'</span></div>';
@@ -10842,7 +10854,7 @@ function renderChatMsgs() {
       content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
-        (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':'')+
+        (m._interrupted?'<div class="ai-cut"><span>'+escH(m._interrupted==='engine' ? T('The engine stopped partway through. What you see above is what it wrote.') : T('The connection dropped partway through. What you see above is what arrived.'))+'</span><button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button></div>':'')+
         // A complete answer that simply could not be delivered live.
         (m._recovered?'<div class="ai-recovered"><span>Your connection dropped, so AMV recovered this answer rather than making you wait for it again.</span></div>':''));
     }
