@@ -239,9 +239,14 @@ export async function bootLive(opts = {}) {
        an uploaded recording or file into something else on the way through,
        and a binary test would then pass or fail for the wrong reason. */
     try { body = req.postDataBuffer(); } catch (e) {}
+    /* The length a browser declares with every body. Playwright's headers
+       leave it out, and the Worker refuses an oversized request on exactly
+       that header - so without it, no suite here ever met the 1MB bound that
+       real browsers were meeting on every photo (LESSONS 617). */
+    const withLength = (h, b) => (b && b.length != null) ? Object.assign({}, h, { 'content-length': String(b.length) }) : h;
     const wreq = new Request(url, {
       method: req.method(),
-      headers: req.headers(),
+      headers: withLength(req.headers(), body),
       body: (req.method() === 'GET' || req.method() === 'HEAD') ? undefined : body,
     });
     let res;
@@ -305,7 +310,7 @@ export async function bootLive(opts = {}) {
       const toWorker2 = async (route) => {
         const req = route.request();
         let b = null; try { b = req.postDataBuffer(); } catch (e) {}
-        const wr = new Request(req.url(), { method: req.method(), headers: req.headers(),
+        const wr = new Request(req.url(), { method: req.method(), headers: (b && b.length != null) ? Object.assign({}, req.headers(), { 'content-length': String(b.length) }) : req.headers(),
           body: (req.method() === 'GET' || req.method() === 'HEAD') ? undefined : b });
         const rs = await worker.fetch(wr, env, { waitUntil: (p) => { pending.push(Promise.resolve(p).catch(() => {})); },
                                                  passThroughOnException() {} });

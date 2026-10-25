@@ -253,6 +253,13 @@ const BODY_MAX_BY_PATH = {
   '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
   '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
   '/v1/messages/batches': 8 * 1024 * 1024,   // up to a hundred requests at once
+  /* A conversation with its pictures and PDFs. It was held to the default
+     megabyte while validateMessagesPayload allows 3.2 million characters of
+     text and AMV's page sent every photo as it was, so in production a phone
+     photo - three megabytes, four once encoded - was refused here before a
+     byte was read, and no suite saw it: the test harness never declared a
+     length (LESSONS 617). Sized to the message bounds it fronts. */
+  '/v1/messages': MESSAGES_BODY_MAX_BYTES,
 };
 
 function _bodyMaxFor(path) {

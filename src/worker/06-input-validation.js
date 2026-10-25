@@ -86,6 +86,18 @@ const MAX_TOTAL_CHARS = 3200000;
    the engine saw it - found by sending one through this server, which no
    suite had done. Whether it fits is _fitsContext's question, as above. */
 const MAX_SYSTEM_CHARS = 400000;
+/* Pictures and PDFs, counted apart from text. Base64 counted as text made a
+   conversation with a few photos "too large" while holding a fraction of the
+   text it may carry, and binary is bounded by bytes, not by reading. About
+   7.5MB of files in one request: a PDF of a few hundred pages, or a dozen
+   photos as the page sends them (downscaled to what the engine reads). */
+const MAX_BINARY_CHARS = 10000000;
+/* The body that carries both: text at up to three bytes a character, the
+   files, the instructions, and room for the JSON around them - held to what
+   a Worker can parse beside its neighbours, so a request at every bound at
+   once (Chinese text to the limit AND files to the limit) is refused whole,
+   with a reason, rather than read. */
+const MESSAGES_BODY_MAX_BYTES = 16 * 1024 * 1024;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
 const WEB_SEARCH_COST_USD = 0.01;   // ~$10 / 1000 provider web-search requests (AMV-021)
@@ -97,7 +109,7 @@ function validateMessagesPayload(body) {
   if (msgs.length === 0) return 'messages cannot be empty';
   if (msgs.length > MAX_MESSAGES) return `too many messages (max ${MAX_MESSAGES})`;
 
-  let totalChars = 0;
+  let totalChars = 0, binaryChars = 0;
   for (const m of msgs) {
     if (!m || typeof m !== 'object') return 'each message must be an object';
     if (!VALID_ROLES.has(m.role)) return `invalid message role: ${String(m.role).slice(0, 20)}`;
@@ -115,7 +127,10 @@ function validateMessagesPayload(body) {
         // tool_result content toward the size bound so a request can't smuggle
         // megabytes of unmetered payload past the limit (AMV-019)
         const data = block.source && block.source.data;
-        if (typeof data === 'string') totalChars += data.length;
+        if (typeof data === 'string') {
+          /* A document of plain text is text; base64 is a file. */
+          if (block.source.type === 'base64') binaryChars += data.length; else totalChars += data.length;
+        }
         if (typeof block.content === 'string') totalChars += block.content.length;
         /* A tool result can carry its own blocks - a screenshot is a picture
            inside one. Those count too, or a picture nested one level down
@@ -127,7 +142,7 @@ function validateMessagesPayload(body) {
             if (inner.type && inner.type !== 'text' && inner.type !== 'image') return `unknown tool result block type: ${String(inner.type).slice(0, 24)}`;
             if (typeof inner.text === 'string') totalChars += inner.text.length;
             const d2 = inner.source && inner.source.data;
-            if (typeof d2 === 'string') totalChars += d2.length;
+            if (typeof d2 === 'string') binaryChars += d2.length;
           }
         }
       }
@@ -135,6 +150,7 @@ function validateMessagesPayload(body) {
       return 'message content must be a string or array';
     }
     if (totalChars > MAX_TOTAL_CHARS) return 'request too large - please shorten the conversation';
+    if (binaryChars > MAX_BINARY_CHARS) return 'too many or too large pictures and files in one request - start a new chat, or attach fewer';
   }
   if (body.system != null) {
     if (typeof body.system !== 'string') return 'system must be a string';

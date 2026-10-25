@@ -53,6 +53,8 @@ function _frReason(code, name, extra){
     case 'image':     return n + ' ' + T('is a picture AMV can’t read. Save it as JPEG or PNG and attach that.');
     case 'not_image': return n + ' ' + T('is named like a picture, but it isn’t one. Nothing was attached.');
     case 'not_pdf':   return n + ' ' + T('is named like a PDF, but it isn’t one. Nothing was attached.');
+    case 'pdf_big':   return n + ' ' + T('is a PDF larger than AMV reads in one message (6 MB). Save just the pages you need as a new PDF, or split it into parts, and attach those.');
+    case 'image_big': return n + ' ' + T('is a picture too large to send from this browser. Save a smaller copy (under 4 MB) and attach that.');
     case 'old_browser': return T('This browser can’t unpack') + ' ' + n + '. ' + T('Update it, or use a current Chrome, Safari, Edge or Firefox.');
     case 'damaged':   return n + ' ' + T('looks damaged, so AMV couldn’t read it. Open it, save a fresh copy, and attach that.');
     case 'health_empty': return n + ' ' + T('is an Apple Health export with no steps, sleep, heart rate, weight or workouts in it that AMV reads.');
@@ -575,20 +577,49 @@ function _frDecodeText(bytes){
 
 /* A picture the engine cannot take (HEIC from an iPhone, BMP, TIFF) is redrawn
    as JPEG when this browser can decode it - Safari decodes HEIC - and refused
-   by name when it cannot, instead of being sent as a type the engine rejects. */
+   by name when it cannot, instead of being sent as a type the engine rejects.
+
+   AND A PHOTO IS SENT AT THE SIZE THE ENGINE READS. It was sent as it was,
+   up to fifty megabytes: a phone photo is three to five, so the server refused
+   it outright and the engine would have shrunk it to ~1,568 pixels anyway. Now
+   anything larger than FR_IMG_SIDE on its long edge, or heavier than
+   FR_IMG_KEEP_BYTES, is redrawn to FR_IMG_SIDE as JPEG on white (a transparent
+   PNG would otherwise turn black) - what the engine sees is unchanged, and the
+   request is a tenth of the size. */
+const FR_IMG_SIDE = 1568;
+const FR_IMG_KEEP_BYTES = 1024 * 1024;
 async function _frReencodeImage(file){
   if(typeof createImageBitmap !== 'function') return null;
   try{
     const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    const scale = Math.min(1, FR_IMG_SIDE / Math.max(bmp.width, bmp.height));
     const cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(bmp.width * scale)); cv.height = Math.max(1, Math.round(bmp.height * scale));
-    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+    const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+    g.drawImage(bmp, 0, 0, cv.width, cv.height);
     try{ bmp.close(); }catch(e){}
-    const url = cv.toDataURL('image/jpeg', 0.9);
+    const url = cv.toDataURL('image/jpeg', 0.85);
     return url.indexOf('data:image/jpeg;base64,') === 0 ? url.split(',')[1] : null;
   }catch(e){ return null; }
 }
+/* Whether a picture the engine can take needs redrawing first: too heavy, or
+   larger than the engine reads. Measured, not guessed from the file size - a
+   small PNG can be 8,000 pixels wide. */
+async function _frNeedsFit(file, size){
+  if(size > FR_IMG_KEEP_BYTES) return true;
+  if(typeof createImageBitmap !== 'function') return false;
+  try{
+    const bmp = await createImageBitmap(file);
+    const big = Math.max(bmp.width, bmp.height) > FR_IMG_SIDE;
+    try{ bmp.close(); }catch(e){}
+    return big;
+  }catch(e){ return false; }
+}
+/* A PDF goes to the engine as the file, which is read page by page; the
+   server takes about 7.5MB of files in one request, so a PDF is held to
+   FR_PDF_MAX and a larger one is refused by name, with what to do instead. */
+const FR_PDF_MAX = 6 * 1024 * 1024;
 
 const _frB64 = (bytes) => {
   let s = ''; const CH = 0x8000;
@@ -642,14 +673,24 @@ async function amvReadFile(file){
     const sig = _frSniff(bytes);
     const namedImage = (mime.startsWith('image/') && !/svg/.test(mime)) || /^(jpe?g|png|gif|webp|bmp|heic|heif|tiff?|avif)$/.test(ext);
 
-    if(sig === 'png' || sig === 'jpeg' || sig === 'gif' || sig === 'webp')
+    if(sig === 'png' || sig === 'jpeg' || sig === 'gif' || sig === 'webp'){
+      if(await _frNeedsFit(file, bytes.length)){
+        const b64 = await _frReencodeImage(file);
+        if(b64) return { kind: 'img', name, size, b64, mime: 'image/jpeg' };
+        /* Cannot be redrawn here and too heavy to send as it is. */
+        if(bytes.length > FR_IMG_KEEP_BYTES * 4) return refuse('image_big');
+      }
       return { kind: 'img', name, size, b64: _frB64(bytes), mime: 'image/' + sig };
+    }
     if(sig === 'otherimage' || (namedImage && !sig)){
       const b64 = await _frReencodeImage(file);
       if(b64) return { kind: 'img', name, size, b64, mime: 'image/jpeg' };
       return refuse(sig === 'otherimage' ? 'image' : 'not_image');
     }
-    if(sig === 'pdf') return { kind: 'pdf', name, size, b64: _frB64(bytes), mime: 'application/pdf' };
+    if(sig === 'pdf'){
+      if(bytes.length > FR_PDF_MAX) return refuse('pdf_big');
+      return { kind: 'pdf', name, size, b64: _frB64(bytes), mime: 'application/pdf' };
+    }
     if(ext === 'pdf' || mime === 'application/pdf') return refuse('not_pdf');
     if(sig === 'zip'){
       const r = await _readOoxml(buf, name);

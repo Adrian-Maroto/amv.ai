@@ -657,6 +657,31 @@ try{ window._sendPendingMessage=_sendPendingMessage; }catch(e){}
    hitting it cannot drift apart. */
 const _TOOL_ROUND_MAX = 4;
 let _toolRound = 0;
+/* THE FILES IN A CONVERSATION, WITHIN WHAT ONE REQUEST CARRIES.
+
+   Every turn sends the whole conversation, pictures and PDFs included, and
+   the server takes about 7.5MB of files in one request (MAX_BINARY_CHARS).
+   So a long chat with many photos would one day be refused whole. The newest
+   files are kept, to WIRE_FILES_CHARS of them; an older one is replaced by a
+   line saying what it was and that it is no longer attached - so the engine
+   says so instead of answering about a picture it cannot see. */
+const WIRE_FILES_CHARS = 8000000;
+function _wireFilesWithin(out){
+  let room = WIRE_FILES_CHARS;
+  for(let i = out.length - 1; i >= 0; i--){
+    const c = out[i] && out[i].content;
+    if(!Array.isArray(c)) continue;
+    out[i] = Object.assign({}, out[i], { content: c.map(b => {
+      const d = b && b.source && b.source.type === 'base64' && typeof b.source.data === 'string' ? b.source.data : null;
+      if(d == null) return b;
+      if(d.length <= room){ room -= d.length; return b; }
+      room = 0;
+      return { type:'text', text:'[' + (b.type === 'image' ? 'A picture' : 'A PDF') + ' shared earlier in this conversation is no longer attached - the conversation holds more files than one request carries. If it is needed, ask them to attach it again.]' };
+    }) });
+  }
+  return out;
+}
+
 /* ══════════════════════════════════════════════════════════════
    A MESSAGE OF ANY LENGTH GOES THROUGH.
 
@@ -1212,7 +1237,7 @@ async function _callAITurn(msgs, _opts) {
           });
           // The conversation has to start with a user turn.
           while(out.length && out[0].role!=='user') out.shift();
-          return out;
+          return _wireFilesWithin(out);
         })()
       });
     // offline guard

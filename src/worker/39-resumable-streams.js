@@ -345,15 +345,53 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
 
 /* Rough token estimate from request messages (~4 chars/token), used only as a
    billing floor when the upstream stream gave us no usage numbers at all. */
+/* WHAT A PICTURE OR A PDF COSTS TO READ, NOT WHAT IT WEIGHS.
+
+   These were counted at a quarter of their base64 length, as if they were
+   prose. A photo the page sends is about 400KB encoded - booked as 100,000
+   tokens, five times a free account's whole day, so a free account could not
+   send a photo at all and a paid one ran out after a few; the engine reads
+   that photo for about 1,600. The booking is settled against what the call
+   really used, so this only ever decided REFUSALS, and it refused wrongly.
+
+   A picture: the engine scales anything larger down to about 1.15 megapixels
+   before reading it, which is ~1,600 tokens whatever was sent; IMAGE_TOKENS
+   books a little over that. A PDF: every page is read as its text and as a
+   picture of the page, so ~PDF_PAGE_TOKENS a page, the pages counted in the
+   file itself; a file whose pages cannot be counted falls back to its size,
+   which over-counts rather than under. */
+const IMAGE_TOKENS = 1800;
+const PDF_PAGE_TOKENS = 3000;
+function _pdfPages(b64) {
+  try {
+    const head = String(b64 || '');
+    if (head.length > 16 * 1024 * 1024) return 0;
+    const bin = atob(head);
+    const n = (bin.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
+    return n;
+  } catch (e) { return 0; }
+}
+function _blockTokens(b) {
+  const src = b && b.source;
+  if (!src || typeof src.data !== 'string') return 0;
+  if (src.type !== 'base64') return _estimateTextTokens(src.data);
+  if (b.type === 'image') return IMAGE_TOKENS;
+  const pages = /pdf/i.test(String(src.media_type || '')) ? _pdfPages(src.data) : 0;
+  return pages ? pages * PDF_PAGE_TOKENS : Math.ceil(src.data.length / 4);
+}
 function _estimateInputTokens(messages) {
   try {
     if (!Array.isArray(messages)) return 500;
-    let chars = 0;
+    let chars = 0, files = 0;
     for (const m of messages) {
       if (typeof m.content === 'string') chars += m.content.length;
-      else if (Array.isArray(m.content)) for (const b of m.content) chars += (b.text || '').length + ((b.source && typeof b.source.data === 'string') ? b.source.data.length : 0);
+      else if (Array.isArray(m.content)) for (const b of m.content) {
+        chars += (b.text || '').length + (typeof b.content === 'string' ? b.content.length : 0);
+        files += _blockTokens(b);
+        if (Array.isArray(b.content)) for (const x of b.content) { if (x) { chars += (x.text || '').length; files += _blockTokens(x); } }
+      }
     }
-    return Math.max(200, Math.ceil(chars / 4));
+    return Math.max(200, Math.ceil(chars / 4) + files);
   } catch { return 500; }
 }
 /* Reservation estimate for a full request - includes the client-supplied system
@@ -398,7 +436,7 @@ function _estimateTextTokens(s) {
   return wide + Math.ceil((t.length - wide) / 4);
 }
 /* Does this request fit the engine it is going to? Text by script; a picture
-   or document by its encoded size, which over-counts rather than under. */
+   or a PDF by what it costs to read (_blockTokens). */
 function _fitsContext(body, eng) {
   let tok = _estimateTextTokens(body && body.system);
   for (const m of ((body && body.messages) || [])) {
@@ -407,12 +445,12 @@ function _fitsContext(body, eng) {
     for (const b of m.content) {
       if (typeof b.text === 'string') tok += _estimateTextTokens(b.text);
       if (typeof b.content === 'string') tok += _estimateTextTokens(b.content);
-      if (b.source && typeof b.source.data === 'string') tok += Math.ceil(b.source.data.length / 4);
+      tok += _blockTokens(b);
       /* A tool result carries blocks of its own - a screenshot is a picture
          inside one - and they are read like any other. */
       if (Array.isArray(b.content)) for (const x of b.content) {
         if (x && typeof x.text === 'string') tok += _estimateTextTokens(x.text);
-        if (x && x.source && typeof x.source.data === 'string') tok += Math.ceil(x.source.data.length / 4);
+        if (x) tok += _blockTokens(x);
       }
     }
   }

@@ -15369,5 +15369,43 @@
   "it": "Invia dalla tua directory un gruppo chiamato \"AMV Admins\" e i suoi membri saranno amministratori qui. Gli amministratori che nomini in AMV restano tali in ogni caso.",
   "ko": "디렉터리에서 \"AMV Admins\"라는 그룹을 보내면 그 구성원이 여기서 관리자가 됩니다. AMV에서 지정한 관리자는 어떤 경우에도 관리자로 유지됩니다.",
   "ta": "உங்கள் அடைவிலிருந்து \"AMV Admins\" என்ற குழுவை அனுப்பினால் அதன் உறுப்பினர்கள் இங்கே நிர்வாகிகள் ஆவார்கள். AMV-இல் நீங்கள் நியமிக்கும் நிர்வாகிகள் எப்படியும் நிர்வாகிகளாகவே இருப்பார்கள்."
+ },
+ "is a PDF larger than AMV reads in one message (6 MB). Save just the pages you need as a new PDF, or split it into parts, and attach those.": {
+  "es": "es un PDF más grande de lo que AMV lee en un mensaje (6 MB). Guarda solo las páginas que necesitas como un PDF nuevo, o divídelo en partes, y adjúntalas.",
+  "zh": "是一个超出 AMV 单条消息可读取大小（6 MB）的 PDF。请只把需要的页面另存为新的 PDF，或将其拆分成几部分，然后附加这些文件。",
+  "hi": "एक PDF है जो AMV के एक संदेश में पढ़ने की सीमा (6 MB) से बड़ी है। केवल ज़रूरी पेज नई PDF के रूप में सहेजें, या इसे हिस्सों में बाँटें, और वे संलग्न करें।",
+  "ar": "ملف PDF أكبر مما يقرأه AMV في رسالة واحدة (6 ميغابايت). احفظ الصفحات التي تحتاجها فقط في ملف PDF جديد، أو قسّمه إلى أجزاء، وأرفقها.",
+  "pt": "é um PDF maior do que o AMV lê numa mensagem (6 MB). Guarde só as páginas de que precisa num novo PDF, ou divida-o em partes, e anexe-as.",
+  "fr": "est un PDF plus volumineux que ce qu’AMV lit en un message (6 Mo). Enregistrez seulement les pages utiles dans un nouveau PDF, ou découpez-le en parties, et joignez-les.",
+  "de": "ist ein PDF, das größer ist, als AMV in einer Nachricht liest (6 MB). Speichere nur die benötigten Seiten als neues PDF oder teile es auf und hänge diese Teile an.",
+  "ja": "は AMV が1つのメッセージで読み取れるサイズ（6 MB）を超える PDF です。必要なページだけを新しい PDF として保存するか、分割してから添付してください。",
+  "ru": "— это PDF больше, чем AMV читает за одно сообщение (6 МБ). Сохраните только нужные страницы в новый PDF или разделите его на части и прикрепите их.",
+  "id": "adalah PDF yang lebih besar dari yang dibaca AMV dalam satu pesan (6 MB). Simpan hanya halaman yang Anda perlukan sebagai PDF baru, atau bagi menjadi beberapa bagian, lalu lampirkan.",
+  "bn": "একটি PDF যা AMV এক বার্তায় যতটা পড়ে (6 MB) তার চেয়ে বড়। শুধু দরকারি পাতাগুলো নতুন PDF হিসেবে সংরক্ষণ করুন, বা এটি ভাগ করুন, তারপর সেগুলো সংযুক্ত করুন।",
+  "ur": "ایک PDF ہے جو AMV کے ایک پیغام میں پڑھنے کی حد (6 MB) سے بڑی ہے۔ صرف ضروری صفحات نئی PDF کے طور پر محفوظ کریں، یا اسے حصوں میں تقسیم کریں، اور وہ منسلک کریں۔",
+  "tr": "AMV’nin tek mesajda okuduğundan (6 MB) büyük bir PDF. Yalnızca gereken sayfaları yeni bir PDF olarak kaydedin ya da parçalara bölün ve onları ekleyin.",
+  "vi": "là tệp PDF lớn hơn mức AMV đọc trong một tin nhắn (6 MB). Hãy lưu riêng các trang bạn cần thành PDF mới, hoặc chia nhỏ tệp, rồi đính kèm chúng.",
+  "it": "è un PDF più grande di quanto AMV legge in un messaggio (6 MB). Salva solo le pagine che ti servono in un nuovo PDF, o dividilo in parti, e allega quelle.",
+  "ko": "은(는) AMV가 한 메시지에서 읽을 수 있는 크기(6MB)보다 큰 PDF입니다. 필요한 페이지만 새 PDF로 저장하거나 여러 부분으로 나눈 뒤 첨부하세요.",
+  "ta": "AMV ஒரு செய்தியில் படிக்கும் அளவை (6 MB) விடப் பெரிய PDF. தேவையான பக்கங்களை மட்டும் புதிய PDF ஆகச் சேமிக்கவும், அல்லது பகுதிகளாகப் பிரித்து, அவற்றை இணைக்கவும்."
+ },
+ "is a picture too large to send from this browser. Save a smaller copy (under 4 MB) and attach that.": {
+  "es": "es una imagen demasiado grande para enviarla desde este navegador. Guarda una copia más pequeña (menos de 4 MB) y adjúntala.",
+  "zh": "这张图片太大，无法从此浏览器发送。请保存一个较小的副本（小于 4 MB）后再附加。",
+  "hi": "एक तस्वीर है जो इस ब्राउज़र से भेजने के लिए बहुत बड़ी है। एक छोटी प्रति (4 MB से कम) सहेजें और उसे संलग्न करें।",
+  "ar": "صورة أكبر من أن تُرسل من هذا المتصفح. احفظ نسخة أصغر (أقل من 4 ميغابايت) وأرفقها.",
+  "pt": "é uma imagem grande demais para enviar a partir deste navegador. Guarde uma cópia menor (menos de 4 MB) e anexe-a.",
+  "fr": "est une image trop lourde pour être envoyée depuis ce navigateur. Enregistrez une copie plus petite (moins de 4 Mo) et joignez-la.",
+  "de": "ist ein Bild, das zu groß ist, um es aus diesem Browser zu senden. Speichere eine kleinere Kopie (unter 4 MB) und hänge diese an.",
+  "ja": "はこのブラウザから送るには大きすぎる画像です。小さいコピー（4 MB 未満）を保存して添付してください。",
+  "ru": "— изображение слишком большое для отправки из этого браузера. Сохраните копию поменьше (до 4 МБ) и прикрепите её.",
+  "id": "adalah gambar yang terlalu besar untuk dikirim dari browser ini. Simpan salinan yang lebih kecil (di bawah 4 MB) lalu lampirkan.",
+  "bn": "একটি ছবি যা এই ব্রাউজার থেকে পাঠানোর জন্য খুব বড়। একটি ছোট কপি (4 MB-এর কম) সংরক্ষণ করে সংযুক্ত করুন।",
+  "ur": "ایک تصویر ہے جو اس براؤزر سے بھیجنے کے لیے بہت بڑی ہے۔ ایک چھوٹی کاپی (4 MB سے کم) محفوظ کریں اور اسے منسلک کریں۔",
+  "tr": "bu tarayıcıdan gönderilemeyecek kadar büyük bir resim. Daha küçük bir kopyasını (4 MB altı) kaydedip onu ekleyin.",
+  "vi": "là ảnh quá lớn để gửi từ trình duyệt này. Hãy lưu một bản nhỏ hơn (dưới 4 MB) rồi đính kèm.",
+  "it": "è un’immagine troppo grande da inviare da questo browser. Salvane una copia più piccola (sotto i 4 MB) e allegala.",
+  "ko": "은(는) 이 브라우저에서 보내기에는 너무 큰 이미지입니다. 더 작은 사본(4MB 미만)을 저장해 첨부하세요.",
+  "ta": "இந்த உலாவியிலிருந்து அனுப்ப மிகப் பெரிய படம். சிறிய நகலை (4 MB-க்குக் குறைவாக) சேமித்து இணைக்கவும்."
  }
 }

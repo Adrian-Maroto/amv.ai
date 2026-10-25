@@ -2167,6 +2167,18 @@ const MAX_TOTAL_CHARS = 3200000;
    the engine saw it - found by sending one through this server, which no
    suite had done. Whether it fits is _fitsContext's question, as above. */
 const MAX_SYSTEM_CHARS = 400000;
+/* Pictures and PDFs, counted apart from text. Base64 counted as text made a
+   conversation with a few photos "too large" while holding a fraction of the
+   text it may carry, and binary is bounded by bytes, not by reading. About
+   7.5MB of files in one request: a PDF of a few hundred pages, or a dozen
+   photos as the page sends them (downscaled to what the engine reads). */
+const MAX_BINARY_CHARS = 10000000;
+/* The body that carries both: text at up to three bytes a character, the
+   files, the instructions, and room for the JSON around them - held to what
+   a Worker can parse beside its neighbours, so a request at every bound at
+   once (Chinese text to the limit AND files to the limit) is refused whole,
+   with a reason, rather than read. */
+const MESSAGES_BODY_MAX_BYTES = 16 * 1024 * 1024;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
 const WEB_SEARCH_COST_USD = 0.01;   // ~$10 / 1000 provider web-search requests (AMV-021)
@@ -2178,7 +2190,7 @@ function validateMessagesPayload(body) {
   if (msgs.length === 0) return 'messages cannot be empty';
   if (msgs.length > MAX_MESSAGES) return `too many messages (max ${MAX_MESSAGES})`;
 
-  let totalChars = 0;
+  let totalChars = 0, binaryChars = 0;
   for (const m of msgs) {
     if (!m || typeof m !== 'object') return 'each message must be an object';
     if (!VALID_ROLES.has(m.role)) return `invalid message role: ${String(m.role).slice(0, 20)}`;
@@ -2196,7 +2208,10 @@ function validateMessagesPayload(body) {
         // tool_result content toward the size bound so a request can't smuggle
         // megabytes of unmetered payload past the limit (AMV-019)
         const data = block.source && block.source.data;
-        if (typeof data === 'string') totalChars += data.length;
+        if (typeof data === 'string') {
+          /* A document of plain text is text; base64 is a file. */
+          if (block.source.type === 'base64') binaryChars += data.length; else totalChars += data.length;
+        }
         if (typeof block.content === 'string') totalChars += block.content.length;
         /* A tool result can carry its own blocks - a screenshot is a picture
            inside one. Those count too, or a picture nested one level down
@@ -2208,7 +2223,7 @@ function validateMessagesPayload(body) {
             if (inner.type && inner.type !== 'text' && inner.type !== 'image') return `unknown tool result block type: ${String(inner.type).slice(0, 24)}`;
             if (typeof inner.text === 'string') totalChars += inner.text.length;
             const d2 = inner.source && inner.source.data;
-            if (typeof d2 === 'string') totalChars += d2.length;
+            if (typeof d2 === 'string') binaryChars += d2.length;
           }
         }
       }
@@ -2216,6 +2231,7 @@ function validateMessagesPayload(body) {
       return 'message content must be a string or array';
     }
     if (totalChars > MAX_TOTAL_CHARS) return 'request too large - please shorten the conversation';
+    if (binaryChars > MAX_BINARY_CHARS) return 'too many or too large pictures and files in one request - start a new chat, or attach fewer';
   }
   if (body.system != null) {
     if (typeof body.system !== 'string') return 'system must be a string';
@@ -15865,6 +15881,13 @@ const BODY_MAX_BY_PATH = {
   '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
   '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
   '/v1/messages/batches': 8 * 1024 * 1024,   // up to a hundred requests at once
+  /* A conversation with its pictures and PDFs. It was held to the default
+     megabyte while validateMessagesPayload allows 3.2 million characters of
+     text and AMV's page sent every photo as it was, so in production a phone
+     photo - three megabytes, four once encoded - was refused here before a
+     byte was read, and no suite saw it: the test harness never declared a
+     length (LESSONS 617). Sized to the message bounds it fronts. */
+  '/v1/messages': MESSAGES_BODY_MAX_BYTES,
 };
 
 function _bodyMaxFor(path) {
@@ -23316,15 +23339,53 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
 
 /* Rough token estimate from request messages (~4 chars/token), used only as a
    billing floor when the upstream stream gave us no usage numbers at all. */
+/* WHAT A PICTURE OR A PDF COSTS TO READ, NOT WHAT IT WEIGHS.
+
+   These were counted at a quarter of their base64 length, as if they were
+   prose. A photo the page sends is about 400KB encoded - booked as 100,000
+   tokens, five times a free account's whole day, so a free account could not
+   send a photo at all and a paid one ran out after a few; the engine reads
+   that photo for about 1,600. The booking is settled against what the call
+   really used, so this only ever decided REFUSALS, and it refused wrongly.
+
+   A picture: the engine scales anything larger down to about 1.15 megapixels
+   before reading it, which is ~1,600 tokens whatever was sent; IMAGE_TOKENS
+   books a little over that. A PDF: every page is read as its text and as a
+   picture of the page, so ~PDF_PAGE_TOKENS a page, the pages counted in the
+   file itself; a file whose pages cannot be counted falls back to its size,
+   which over-counts rather than under. */
+const IMAGE_TOKENS = 1800;
+const PDF_PAGE_TOKENS = 3000;
+function _pdfPages(b64) {
+  try {
+    const head = String(b64 || '');
+    if (head.length > 16 * 1024 * 1024) return 0;
+    const bin = atob(head);
+    const n = (bin.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
+    return n;
+  } catch (e) { return 0; }
+}
+function _blockTokens(b) {
+  const src = b && b.source;
+  if (!src || typeof src.data !== 'string') return 0;
+  if (src.type !== 'base64') return _estimateTextTokens(src.data);
+  if (b.type === 'image') return IMAGE_TOKENS;
+  const pages = /pdf/i.test(String(src.media_type || '')) ? _pdfPages(src.data) : 0;
+  return pages ? pages * PDF_PAGE_TOKENS : Math.ceil(src.data.length / 4);
+}
 function _estimateInputTokens(messages) {
   try {
     if (!Array.isArray(messages)) return 500;
-    let chars = 0;
+    let chars = 0, files = 0;
     for (const m of messages) {
       if (typeof m.content === 'string') chars += m.content.length;
-      else if (Array.isArray(m.content)) for (const b of m.content) chars += (b.text || '').length + ((b.source && typeof b.source.data === 'string') ? b.source.data.length : 0);
+      else if (Array.isArray(m.content)) for (const b of m.content) {
+        chars += (b.text || '').length + (typeof b.content === 'string' ? b.content.length : 0);
+        files += _blockTokens(b);
+        if (Array.isArray(b.content)) for (const x of b.content) { if (x) { chars += (x.text || '').length; files += _blockTokens(x); } }
+      }
     }
-    return Math.max(200, Math.ceil(chars / 4));
+    return Math.max(200, Math.ceil(chars / 4) + files);
   } catch { return 500; }
 }
 /* Reservation estimate for a full request - includes the client-supplied system
@@ -23369,7 +23430,7 @@ function _estimateTextTokens(s) {
   return wide + Math.ceil((t.length - wide) / 4);
 }
 /* Does this request fit the engine it is going to? Text by script; a picture
-   or document by its encoded size, which over-counts rather than under. */
+   or a PDF by what it costs to read (_blockTokens). */
 function _fitsContext(body, eng) {
   let tok = _estimateTextTokens(body && body.system);
   for (const m of ((body && body.messages) || [])) {
@@ -23378,12 +23439,12 @@ function _fitsContext(body, eng) {
     for (const b of m.content) {
       if (typeof b.text === 'string') tok += _estimateTextTokens(b.text);
       if (typeof b.content === 'string') tok += _estimateTextTokens(b.content);
-      if (b.source && typeof b.source.data === 'string') tok += Math.ceil(b.source.data.length / 4);
+      tok += _blockTokens(b);
       /* A tool result carries blocks of its own - a screenshot is a picture
          inside one - and they are read like any other. */
       if (Array.isArray(b.content)) for (const x of b.content) {
         if (x && typeof x.text === 'string') tok += _estimateTextTokens(x.text);
-        if (x && x.source && typeof x.source.data === 'string') tok += Math.ceil(x.source.data.length / 4);
+        if (x) tok += _blockTokens(x);
       }
     }
   }

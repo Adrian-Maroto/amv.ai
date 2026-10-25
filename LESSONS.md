@@ -15534,3 +15534,21 @@ server. It surfaced only when a test for something else sent a large project
 the whole way. Rule: when the client sizes a payload, some suite sends the
 largest payload it will ever size through the real server - the edge, not a
 comfortable middle.
+
+## 617. A harness that leaves out a header leaves out every check on it
+
+Attaching a photo failed in production and passed in every suite. The page
+sent pictures as they were - three to five megabytes from a phone - and the
+Worker refuses a body over its bound on the declared Content-Length, which
+for /v1/messages was the default megabyte. Real browsers always declare the
+length; the live harness built its requests from Playwright's headers, which
+leave it out, so the check never ran in a single test. Behind it was a second
+fault no test could have reached either: the usage booking counted a picture
+at a quarter of its base64 length, so a 400KB photo was booked as 100,000
+tokens - five times a free account's day - when the engine reads it for
+about 1,600. Fixed together: the harness declares the length, the bound on
+/v1/messages is sized to the message bounds it fronts, files have their own
+bound apart from text, pictures and PDFs are booked by what they cost to
+read, and the page sends a photo at the size the engine reads. Rule: when a
+harness rebuilds a request, it carries every header the server decides on -
+and a check that has never once fired in a suite is not known to work.
