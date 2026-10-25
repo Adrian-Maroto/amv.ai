@@ -28551,6 +28551,9 @@ function chatToolsOffered(){
    still asked for, and a found tool is offered exactly as it would have been. */
 const TOOL_CONNECTOR_WHOLE = 12;   /* this many connector tools or fewer are offered whole */
 const TOOL_ON_MAX = 40;            /* tools a conversation may have switched on */
+/* Its description names what can be found, so it is written per turn. */
+const TOOL_SEARCH_TOOLS = [{ name:'tool_search', description:'',
+  input_schema:{ type:'object', properties:{ query:{ type:'string', description:'What you need to do, in a few words.' } }, required:['query'] } }];
 let _toolPool = new Map();         /* name -> tool, what tool_search may switch on this turn */
 function _toolGroupOf(t){
   const m = /^\[([^\]]{1,60})\]/.exec(String((t && t.description) || ''));
@@ -28576,10 +28579,9 @@ function _toolsArrange(all, conv){
      with it this tool - so the list of groups is cut to fit, saying so. */
   let list = Object.entries(groups).sort((a, b) => b[1] - a[1]).map(([g, c]) => g + ' (' + c + ')').join('; ');
   if(list.length > 600) list = list.slice(0, 560).replace(/;[^;]*$/, '') + '; and more';
-  sent.push({ name:'tool_search',
+  sent.push({ name: TOOL_SEARCH_TOOLS[0].name, input_schema: TOOL_SEARCH_TOOLS[0].input_schema,
     description:'Find and switch on the person\u2019s connected tools. Not all of them are loaded; these exist and are found by searching: ' + list
-      + '. Search with a few words for what you need to do ("create a Notion page", "list open Salesforce deals"); the matching tools are switched on and you can call them straight after, in this same turn. Search before telling the person something cannot be done.',
-    input_schema:{ type:'object', properties:{ query:{ type:'string', description:'What you need to do, in a few words.' } }, required:['query'] } });
+      + '. Search with a few words for what you need to do ("create a Notion page", "list open Salesforce deals"); the matching tools are switched on and you can call them straight after, in this same turn. Search before telling the person something cannot be done.' });
   return sent;
 }
 /* Words in the query against each tool's name, group and description. */
