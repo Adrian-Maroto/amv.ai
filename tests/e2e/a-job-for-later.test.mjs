@@ -9,6 +9,9 @@ import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, hasTouch: true });
+/* Mission Control's screen ships beside the page (crew-view.js); these cases
+   call its functions directly, so it is here before they start. */
+await app.page.evaluate(() => _loadCrewView());
 const { page, errors } = app;
 
 await page.evaluate(() => {

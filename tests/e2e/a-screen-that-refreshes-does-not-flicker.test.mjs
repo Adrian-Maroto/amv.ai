@@ -27,6 +27,9 @@ import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat' });
+/* Mission Control's screen ships beside the page (crew-view.js); these cases
+   call its functions directly, so it is here before they start. */
+await app.page.evaluate(() => _loadCrewView());
 const page = app.page;
 /* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
    for here so a busy test machine cannot open Crew before it has. */

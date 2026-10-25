@@ -19547,7 +19547,8 @@ function _crewPrefetch(){
   /* And the country's own jobs with it, so opening Crew has nothing left to
      wait for. Sooner than it was (8s): somebody who opens Crew in the first
      few seconds should not meet "Loading your Crew". */
-  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); }catch(e){} };
+  /* And Mission Control's screen (crew-view.js), for the same reason. */
+  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView(); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }

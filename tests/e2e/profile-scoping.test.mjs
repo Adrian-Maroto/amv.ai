@@ -18,6 +18,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
+/* Mission Control's screen ships beside the page (crew-view.js); these cases
+   call its functions directly, so it is here before they start. */
+await app.page.evaluate(() => _loadCrewView());
 const { page, errors } = app;
 
 section('What one account writes, another cannot read');
