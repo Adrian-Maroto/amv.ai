@@ -1187,12 +1187,12 @@ async function _callAITurn(msgs, _opts) {
        in place instead of being declared full. */
     const _conv = (typeof getCurConv === 'function') ? getCurConv() : null;
     const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx) : { from: 0, brief: '' };
-    const _payload = JSON.stringify({
+    let _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
         system:sysPrompt + (_ctx.brief || ''),
         stream:true,
-        amv:_usageTag('chat', _conv),
+        amv:Object.assign(_usageTag('chat', _conv), _creditConsentNow() ? { useCredit:true } : {}),
         ...(tools?{tools}:{}),
         messages:(()=>{
           // Turn our internal messages into the wire format. Any turn where AMV
@@ -1267,12 +1267,22 @@ async function _callAITurn(msgs, _opts) {
              So there is no fallback now. A reset time the server did not send
              is a reset time nobody knows, and the card says what it does know
              - the server's sentence - instead of a number it made up. */
+          /* Credit is waiting and the person asked to be asked: ask, and on a
+             yes send the same request again, carrying their consent. */
+          if(err.credit && err.credit.held==='ask' && !_opts?._creditAsked){
+            if(await _creditAsk(err)){
+              try{ const p=JSON.parse(_payload); p.amv=Object.assign({}, p.amv||{}, { useCredit:true }); _payload=JSON.stringify(p); }catch(e){}
+              _opts = Object.assign({}, _opts||{}, { _creditAsked:true });
+              continue;
+            }
+          }
           const resetAt = +err.resetAt || 0;
           /* The best engine's week is not the account's: everything else still
              works, so the composer is not locked for it. */
           if(srvCode!=='quota_top_week') quotaLock(resetAt, srvMsg);
           msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt,
-                           _quotaCode:srvCode,_quotaMsg:srvMsg,_creditShort:!!(err.credit&&err.credit.short)};
+                           _quotaCode:srvCode,_quotaMsg:srvMsg,_creditShort:!!(err.credit&&err.credit.short),
+                           _creditHeld:(err.credit&&err.credit.held)||''};
           setMsgs(msgs); S.busy=false; renderChatMsgs();
           _recordUsageOnce();
           return;
@@ -2201,6 +2211,11 @@ function bindChatEvents() {
     else if(action==='ver-prev'){ switchVersion(idx, -1); }
     else if(action==='ver-next'){ switchVersion(idx, 1); }
     else if(action==='credit-buy'){ _creditOpen(); }
+    /* Extra usage was waiting and the person said "not now" - this is them
+       changing their mind: the same yes the question gives, then the same
+       message again. */
+    else if(action==='credit-use'){ const m2=getMsgs(); const q=m2[idx];
+      if(q&&q._quota){ _creditConsentGive(q._resetAt); try{ quotaUnlock(); }catch(e){} retryLastAI(); } }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
   on($('att-btn'),'click',function(){ _attachMenu(this); });
@@ -2686,9 +2701,11 @@ function renderChatMsgs() {
           ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
             '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
           : '<span>'+whenTxt+(m._creditShort?'Your extra usage balance does not cover this message. ':'')
+              +(m._creditHeld==='stop'?escH(T('You have extra usage, but it is set never to be used. You can change that in Plan & billing.'))+' ':'')
               +(topPlan?'Add extra usage to keep going right now.':paidPlan?'Upgrade to '+nextPlan+' for much higher limits, or add extra usage, and keep going right now.':'Upgrade to '+nextPlan+' for much higher limits and keep going right now.')+'</span>'+
             '<div class="quota-actions">'+(topPlan?'':'<button class="quota-upgrade" data-action="quota-upgrade" data-plan="'+escH(nextKey)+'" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>')+
-            (paidPlan?'<button class="quota-upgrade quota-credit" data-action="credit-buy" data-idx="'+i+'">Add extra usage</button>':'')+
+            (m._creditHeld==='ask'?'<button class="quota-upgrade quota-credit" data-action="credit-use" data-idx="'+i+'">'+escH(T('Use extra usage'))+'</button>'
+              :paidPlan?'<button class="quota-upgrade quota-credit" data-action="credit-buy" data-idx="'+i+'">Add extra usage</button>':'')+
             '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
         '</div></div>';
     } else if(!isU && m._error){

@@ -151,6 +151,15 @@ account erases what any team counted for that person, including teams since
 left. A per-member breakdown by project or by message is off the table: the
 person paying for a seat does not thereby buy a view of the work.
 
+**19. What extra usage does when the plan runs out - the person chooses.**
+Keep going automatically (the default, which is what buying a pack has
+always meant), ask first, or never use it. "Ask" spends nothing until the
+person says yes in the app, and the yes covers only the messages they send -
+never AMV's background work - until the limit comes back; an API key cannot
+give it. Per person, so on a team each member decides for their own messages.
+A default of "ask" is off the table: people who bought a pack to keep going
+would be stopped mid-task by a question they already answered at checkout.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

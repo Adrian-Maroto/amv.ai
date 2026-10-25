@@ -108,13 +108,39 @@ async function _creditReverse(env, ref, why, refundedUSD){
   return true;
 }
 
-/* GET /v1/credit - the balance, and whether packs can be bought here. */
+/* WHEN THE PLAN RUNS OUT, WHAT CREDIT DOES - the person's choice.
+     auto - it carries on, on credit (what buying a pack has always meant);
+     ask  - each time, the app asks first; nothing is spent until they say so;
+     stop - credit is never spent: the plan's limit is the limit.
+   Per person, not per subject: on a team, each member decides whether their
+   own messages may spend it. An API key cannot answer a question, so for a
+   key "ask" means stop. */
+const CREDIT_MODES = ['auto', 'ask', 'stop'];
+async function _creditModeOf(env, email){
+  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
+  catch (e) { return 'auto'; }
+}
+/* POST /v1/credit/mode {mode} */
+async function creditSetMode(request, env){
+  const user = await requireUser(request, env);
+  if(!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const mode = body && body.mode;
+  if (CREDIT_MODES.indexOf(mode) < 0) return json({ error: 'Choose auto, ask or stop.', code: 'bad_mode' }, 400);
+  await DB.put(env, 'creditpref', user.email, { mode, at: Date.now() });
+  const back = await _creditModeOf(env, user.email);
+  if (back !== mode) return json({ error: 'That setting could not be saved. Nothing changed - try again.', code: 'not_saved' }, 503);
+  return json({ ok: true, mode: back });
+}
+
+/* GET /v1/credit - the balance, whether packs can be bought here, and what
+   happens when the plan runs out. */
 async function creditInfo(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error: 'unauthorized' }, 401);
   const subject = user.billingSubject || user.email;
   const st = await _creditState(env, subject);
-  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user),
+  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email),
                 available: !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET), packs: CREDIT_PACKS_USD,
                 max: CREDIT_MAX_USD });
 }

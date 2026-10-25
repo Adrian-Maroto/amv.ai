@@ -859,6 +859,7 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);
     case '/v1/credit/checkout': return creditCheckout(request, env);
+    case '/v1/credit/mode':     return creditSetMode(request, env);
     /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
        ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
        plan: the capture granted an entitlement with no renewal to expire

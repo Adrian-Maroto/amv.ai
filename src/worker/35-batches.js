@@ -534,12 +534,23 @@ async function aiProxy(request, env, ctx, principal) {
      goes ahead on it - booked against the credit before the model runs and
      settled after, at CREDIT_MARKUP - and `overflowWhy` keeps the refusal it
      replaced, so a credit too small to cover it gives the plan's own answer. */
-  let overflowWhy = null, credit = null;
+  let overflowWhy = null, credit = null, creditHeld = null, creditMode = null;
   const creditCovers = async () => {
     if (!_creditEligible(user)) return false;
     credit = credit || await _creditState(env, subject);
-    return credit.left > 0;
+    if (!(credit.left > 0)) return false;
+    /* The person's choice (_creditModeOf). "ask" goes ahead only when the
+       app's own sign-in says they agreed to it for this message. */
+    creditMode = creditMode || await _creditModeOf(env, user.email);
+    if (creditMode === 'auto') return true;
+    const a = body && body.amv;
+    if (creditMode === 'ask' && !principal && user.via !== 'apikey' && a && a.useCredit === true) return true;
+    creditHeld = { balance: credit.balance, held: creditMode === 'ask' && !principal && user.via !== 'apikey' ? 'ask' : 'stop' };
+    return false;
   };
+  /* A refusal says when there was credit that the person's setting kept back,
+     so the app can offer it instead of a dead end. */
+  const _held = (why) => creditHeld ? Object.assign({}, why, { credit: creditHeld }) : why;
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
@@ -578,7 +589,7 @@ async function aiProxy(request, env, ctx, principal) {
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
     const why = { error: 'Daily usage limit reached.', code: 'quota_day', resetAt };
-    if (!(await creditCovers())) return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    if (!(await creditCovers())) return json(_held(why), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
     /* Booked past the cap, so the settlement after the call lands on a counter
        that holds what was really used. */
     await counter(env, dName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 35 });
@@ -599,7 +610,7 @@ async function aiProxy(request, env, ctx, principal) {
     if (!(await creditCovers())) {
       // give back the daily reservation we just took - this call isn't happening
       await counter(env, dName, { op: 'incr', amount: -dayBooked, ttlMs: 86400000 * 35 });
-      return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+      return json(_held(why), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
     }
     await counter(env, mName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 70 });
     overflowWhy = overflowWhy || why;
@@ -669,7 +680,7 @@ async function aiProxy(request, env, ctx, principal) {
     await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
     await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
     await unbook();
-    return json({ error: message, code, resetAt }, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    return json(_held({ error: message, code, resetAt }), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
   };
   /* A window that is full is a refusal - unless prepaid credit carries it. */
   const windowOrCredit = async (message, code, resetAt) => {
@@ -829,8 +840,8 @@ async function aiProxy(request, env, ctx, principal) {
         return json(hitFamilyCap
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap', resetAt: capResetAt }
-        : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month', resetAt: capResetAt }, 429,
+        : _held({ error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
+            code: 'quota_month', resetAt: capResetAt }), 429,
                 { 'Retry-After': _retryAfterUntil(capResetAt) });
       }
     }

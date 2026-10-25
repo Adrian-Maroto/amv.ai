@@ -712,6 +712,8 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      right: they have no account of their own to keep it under. */
   'gameown',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
+  /* What prepaid credit does when the plan runs out (auto, ask or stop). */
+  'creditpref',
   /* The two convenience indexes: which listings somebody published and which
      conversations they are in. They name a person and point at their things,
      so they go with the account like everything else - and the records they

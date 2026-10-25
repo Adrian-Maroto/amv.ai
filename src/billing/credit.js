@@ -27,11 +27,13 @@ async function _creditPicker(){
     return;
   }
   body.innerHTML = bal
+    + _creditModeHTML(d.mode)
     + '<div class="cr-packs" role="group" aria-label="Packs">'
     + (d.packs || []).map(p => '<button type="button" class="cr-pack" data-cr-usd="' + escH(String(+p || 0)) + '"><b>$' + escH(String(+p || 0)) + '</b><span>one time</span></button>').join('')
     + '</div>'
     + '<p class="cr-say">Paid securely by card on the next page. Messages past your plan come off this balance at what they cost to run, plus AMV’s margin - the same terms as your plan.</p>'
     + '<p class="cr-say" id="cr-msg" role="status" aria-live="polite"></p>';
+  _creditModeWire(body);
   body.querySelectorAll('[data-cr-usd]').forEach(b => on(b, 'click', async () => {
     const say = (t) => { const m = $('cr-msg'); if(m) m.textContent = t; };
     body.querySelectorAll('[data-cr-usd]').forEach(x => { x.disabled = true; });
@@ -46,6 +48,42 @@ async function _creditPicker(){
       say(e.message || 'The payment page could not be opened.');
       body.querySelectorAll('[data-cr-usd]').forEach(x => { x.disabled = false; });
     }
+  }));
+}
+/* WHEN THE PLAN RUNS OUT: keep going on credit, ask first, or never. Saved
+   on the server and shown as the server read it back, so the choice on
+   screen is the one that applies. */
+const _CREDIT_MODE_TXT = {
+  auto: ['Keep going automatically', 'Messages past your plan come off your balance without asking.'],
+  ask:  ['Ask me first', 'AMV asks before the first message paid from your balance, each time your plan runs out.'],
+  stop: ['Never use it', 'Your plan\u2019s limit is the limit. Your balance stays untouched until you change this.'],
+};
+function _creditModeHTML(mode){
+  const cur = _CREDIT_MODE_TXT[mode] ? mode : 'auto';
+  return '<fieldset class="cr-mode"><legend>' + escH(T('When your plan runs out')) + '</legend>'
+    + Object.keys(_CREDIT_MODE_TXT).map(k => '<label class="cr-mode-opt"><input type="radio" name="cr-mode" value="' + k + '"' + (k === cur ? ' checked' : '') + '>'
+      + '<span><b>' + escH(T(_CREDIT_MODE_TXT[k][0])) + '</b><span>' + escH(T(_CREDIT_MODE_TXT[k][1])) + '</span></span></label>').join('')
+    + '<p class="cr-say" id="cr-mode-msg" role="status" aria-live="polite"></p></fieldset>';
+}
+function _creditModeWire(body){
+  body.querySelectorAll('input[name="cr-mode"]').forEach(inp => on(inp, 'change', async () => {
+    const say = (t) => { const m = $('cr-mode-msg'); if(m) m.textContent = t; };
+    const all = body.querySelectorAll('input[name="cr-mode"]');
+    all.forEach(x => { x.disabled = true; });
+    say(T('Saving\u2026'));
+    let back = null;
+    try{
+      const res = await AMV_API._fetch('/v1/credit/mode', { method: 'POST', body: JSON.stringify({ mode: inp.value }) });
+      const out = await res.json().catch(() => ({}));
+      if(!res.ok || !out.ok) throw new Error(out.error || T('That setting could not be saved. Nothing changed - try again.'));
+      back = out.mode;
+      say(T('Saved.'));
+    }catch(e){ say(e.message); }
+    /* Whatever the server holds is what is checked - a failed save puts the
+       old choice back rather than showing one that does not apply. */
+    if(back){ all.forEach(x => { x.checked = x.value === back; }); }
+    else { try{ const r = await AMV_API._fetch('/v1/credit', { method: 'GET', timeout: 10000 }); const d = await r.json(); all.forEach(x => { x.checked = x.value === (d.mode || 'auto'); }); }catch(e){} }
+    all.forEach(x => { x.disabled = false; });
   }));
 }
 window._creditPicker = _creditPicker;

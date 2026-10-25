@@ -16457,6 +16457,7 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);
     case '/v1/credit/checkout': return creditCheckout(request, env);
+    case '/v1/credit/mode':     return creditSetMode(request, env);
     /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
        ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
        plan: the capture granted an entitlement with no renewal to expire
@@ -17869,6 +17870,8 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      right: they have no account of their own to keep it under. */
   'gameown',
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
+  /* What prepaid credit does when the plan runs out (auto, ask or stop). */
+  'creditpref',
   /* The two convenience indexes: which listings somebody published and which
      conversations they are in. They name a person and point at their things,
      so they go with the account like everything else - and the records they
@@ -21294,12 +21297,23 @@ async function aiProxy(request, env, ctx, principal) {
      goes ahead on it - booked against the credit before the model runs and
      settled after, at CREDIT_MARKUP - and `overflowWhy` keeps the refusal it
      replaced, so a credit too small to cover it gives the plan's own answer. */
-  let overflowWhy = null, credit = null;
+  let overflowWhy = null, credit = null, creditHeld = null, creditMode = null;
   const creditCovers = async () => {
     if (!_creditEligible(user)) return false;
     credit = credit || await _creditState(env, subject);
-    return credit.left > 0;
+    if (!(credit.left > 0)) return false;
+    /* The person's choice (_creditModeOf). "ask" goes ahead only when the
+       app's own sign-in says they agreed to it for this message. */
+    creditMode = creditMode || await _creditModeOf(env, user.email);
+    if (creditMode === 'auto') return true;
+    const a = body && body.amv;
+    if (creditMode === 'ask' && !principal && user.via !== 'apikey' && a && a.useCredit === true) return true;
+    creditHeld = { balance: credit.balance, held: creditMode === 'ask' && !principal && user.via !== 'apikey' ? 'ask' : 'stop' };
+    return false;
   };
+  /* A refusal says when there was credit that the person's setting kept back,
+     so the app can offer it instead of a dead end. */
+  const _held = (why) => creditHeld ? Object.assign({}, why, { credit: creditHeld }) : why;
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
@@ -21338,7 +21352,7 @@ async function aiProxy(request, env, ctx, principal) {
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
     const why = { error: 'Daily usage limit reached.', code: 'quota_day', resetAt };
-    if (!(await creditCovers())) return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    if (!(await creditCovers())) return json(_held(why), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
     /* Booked past the cap, so the settlement after the call lands on a counter
        that holds what was really used. */
     await counter(env, dName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 35 });
@@ -21359,7 +21373,7 @@ async function aiProxy(request, env, ctx, principal) {
     if (!(await creditCovers())) {
       // give back the daily reservation we just took - this call isn't happening
       await counter(env, dName, { op: 'incr', amount: -dayBooked, ttlMs: 86400000 * 35 });
-      return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+      return json(_held(why), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
     }
     await counter(env, mName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 70 });
     overflowWhy = overflowWhy || why;
@@ -21429,7 +21443,7 @@ async function aiProxy(request, env, ctx, principal) {
     await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
     await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
     await unbook();
-    return json({ error: message, code, resetAt }, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    return json(_held({ error: message, code, resetAt }), 429, { 'Retry-After': _retryAfterUntil(resetAt) });
   };
   /* A window that is full is a refusal - unless prepaid credit carries it. */
   const windowOrCredit = async (message, code, resetAt) => {
@@ -21589,8 +21603,8 @@ async function aiProxy(request, env, ctx, principal) {
         return json(hitFamilyCap
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap', resetAt: capResetAt }
-        : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month', resetAt: capResetAt }, 429,
+        : _held({ error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
+            code: 'quota_month', resetAt: capResetAt }), 429,
                 { 'Retry-After': _retryAfterUntil(capResetAt) });
       }
     }
@@ -27247,13 +27261,39 @@ async function _creditReverse(env, ref, why, refundedUSD){
   return true;
 }
 
-/* GET /v1/credit - the balance, and whether packs can be bought here. */
+/* WHEN THE PLAN RUNS OUT, WHAT CREDIT DOES - the person's choice.
+     auto - it carries on, on credit (what buying a pack has always meant);
+     ask  - each time, the app asks first; nothing is spent until they say so;
+     stop - credit is never spent: the plan's limit is the limit.
+   Per person, not per subject: on a team, each member decides whether their
+   own messages may spend it. An API key cannot answer a question, so for a
+   key "ask" means stop. */
+const CREDIT_MODES = ['auto', 'ask', 'stop'];
+async function _creditModeOf(env, email){
+  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
+  catch (e) { return 'auto'; }
+}
+/* POST /v1/credit/mode {mode} */
+async function creditSetMode(request, env){
+  const user = await requireUser(request, env);
+  if(!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const mode = body && body.mode;
+  if (CREDIT_MODES.indexOf(mode) < 0) return json({ error: 'Choose auto, ask or stop.', code: 'bad_mode' }, 400);
+  await DB.put(env, 'creditpref', user.email, { mode, at: Date.now() });
+  const back = await _creditModeOf(env, user.email);
+  if (back !== mode) return json({ error: 'That setting could not be saved. Nothing changed - try again.', code: 'not_saved' }, 503);
+  return json({ ok: true, mode: back });
+}
+
+/* GET /v1/credit - the balance, whether packs can be bought here, and what
+   happens when the plan runs out. */
 async function creditInfo(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error: 'unauthorized' }, 401);
   const subject = user.billingSubject || user.email;
   const st = await _creditState(env, subject);
-  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user),
+  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email),
                 available: !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET), packs: CREDIT_PACKS_USD,
                 max: CREDIT_MAX_USD });
 }

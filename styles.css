@@ -17318,3 +17318,12 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .life-mo{ display:grid; grid-template-columns:4.5em 1fr auto; gap:var(--sp-2); align-items:center; font-size:var(--t-xs); color:var(--mu); margin-top:2px; }
 .life-bar{ height:6px; border-radius:var(--r-pill); background:var(--s3); overflow:hidden; }
 .life-bar > span{ display:block; height:100%; background:var(--accent); border-radius:inherit; }
+
+/* LAYER A336 - what extra usage does when the plan runs out (credit.js):
+   three choices, each a whole-row target with what it means beneath. */
+.cr-mode{ border:1px solid var(--bd); border-radius:var(--r-md); padding:var(--sp-2) var(--sp-3); margin:var(--sp-2) 0 var(--sp-3); }
+.cr-mode legend{ font-size:var(--t-sm); font-weight:600; padding:0 var(--sp-1); color:var(--tx); }
+.cr-mode-opt{ display:flex; gap:var(--sp-2); align-items:flex-start; min-height:44px; padding:var(--sp-2) 0; cursor:pointer; }
+.cr-mode-opt input{ margin-top:3px; accent-color:var(--accent); }
+.cr-mode-opt > span{ display:flex; flex-direction:column; gap:2px; font-size:var(--t-sm); }
+.cr-mode-opt > span > span{ color:var(--mu); font-size:var(--t-xs); line-height:1.5; }

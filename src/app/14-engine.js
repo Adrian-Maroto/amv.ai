@@ -36,6 +36,27 @@ function _usageTag(surface, conv){
        if(c && typeof c.wsId === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(c.wsId)) project = c.wsId; }catch(e){}
   return project ? { surface: sf, project } : { surface: sf };
 }
+/* "ASK BEFORE USING CREDIT": the person's yes, held in this tab only, until
+   the limit that ran out comes back. The server spends credit under that
+   setting only on a request that carries it. */
+let _creditConsent = null;
+/* Carried by the person's own chat messages only (_callAI) - never by the
+   titles, summaries and other work AMV does in the background, which the
+   question promised would not be paid from it. */
+function _creditConsentNow(){ return !!(_creditConsent && Date.now() < _creditConsent.until); }
+function _creditConsentGive(resetAt){
+  const until = (+resetAt > Date.now()) ? +resetAt : Date.now() + 5 * 3600000;
+  _creditConsent = { until };
+}
+/* Asked once, when the server says the plan is out and credit is waiting. */
+async function _creditAsk(err){
+  const bal = (err && err.credit && +err.credit.balance) || 0;
+  const body = T('Your plan\u2019s allowance is used up for now. You have ${0} of extra usage - use it to keep going?').replace('{0}', bal.toFixed(2)) +
+    '\n\n' + T('Only messages you send are paid from it, until your allowance comes back. You can change this in Plan & billing.');
+  const yes = await _showModalAsync({ title: T('Use extra usage?'), body, okText: T('Use it'), cancelText: T('Not now') });
+  if(yes) _creditConsentGive(err && err.resetAt);
+  return !!yes;
+}
 
 function _aiHeaders(){
   return {'Content-Type':'application/json','Authorization':'Bearer '+AMV_API.token};

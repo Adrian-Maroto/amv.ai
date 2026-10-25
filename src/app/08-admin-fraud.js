@@ -792,7 +792,8 @@ function renderBillingView(targetEl){
      the screen saying exactly what it said before, which is the truth. */
   if($('bill-credit') && window.AMV_API && AMV_API.live){
     AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
-      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance');
+      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance')
+        +(d.mode==='ask'?' \u00b7 '+T('asks first'):d.mode==='stop'?' \u00b7 '+T('set never to be used'):'');
     }).catch(()=>{ const el=$('bill-credit'); if(el) el.textContent=T('Could not load the balance.'); });
   } else if($('bill-credit')){
     $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
