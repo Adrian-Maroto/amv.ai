@@ -35,8 +35,12 @@ let heardText = 'What should I pack for Lisbon?';
 const outbound = makeOutbound();
 outbound.on(/speech\.example\/v1\/audio\/transcriptions/, () => ({ text: heardText, duration: 2.1, segments: [] }));
 outbound.on(/speech\.example\/v1\/audio\/speech/, (_u, opts) => {
-  try { spoken.push(JSON.parse(String(opts.body)).input); } catch (e) {}
-  return new Response(new Uint8Array([73, 68, 51, 4, 0, 0, 0, 0]), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
+  let said = '';
+  try { said = JSON.parse(String(opts.body)).input; spoken.push(said); } catch (e) {}
+  /* An audio header, then the sentence itself - so the speaker below can say
+     which sentence each clip it plays was. */
+  return new Response(Buffer.concat([Buffer.from([73, 68, 51, 4, 0, 0, 0, 0]), Buffer.from(String(said), 'utf8')]),
+                      { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
 });
 outbound.on(/model\.example/, (_u, opts) => {
   let body = {}; try { body = JSON.parse(String(opts.body || '{}')); } catch (e) {}
@@ -77,7 +81,15 @@ await page.evaluate(() => {
     const s = dest.stream; s.getTracks().forEach(t => { const st = t.stop.bind(t); t.stop = () => { window.__trackStopped++; st(); }; });
     return s;
   };
-  window.Audio = class { constructor(src) { this.src = src; window.__played.push(src); }
+  /* Each clip is read as it is handed to the speaker, so the order the
+     sentences were PLAYED is measured - not the order their audio was fetched,
+     which runs a few ahead in parallel and may arrive in any order. */
+  window.__heard = [];
+  const blobs = new Map(), mk = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = (b) => { const u = mk(b); blobs.set(u, b); return u; };
+  window.Audio = class { constructor(src) { this.src = src; const i = window.__played.length; window.__played.push(src);
+      const b = blobs.get(src);
+      if (b) b.arrayBuffer().then(x => { window.__heard[i] = new TextDecoder().decode(new Uint8Array(x).slice(8)); }).catch(() => {}); }
     play() { this._t = setTimeout(() => this.onended && this.onended(), 120); return Promise.resolve(); }
     pause() { clearTimeout(this._t); window.__paused++; } };
 });
@@ -128,7 +140,11 @@ section('A turn is heard on the server, sent, and answered aloud sentence by sen
   const msgs = await page.evaluate(() => getMsgs().map(m => [m.r, typeof m.c === 'string' ? m.c : '']));
   ok(msgs.some(([r, c]) => r === 'u' && c === 'What should I pack for Lisbon?'), 'what was heard was sent as the message', msgs.slice(-2));
   ok(L.hit(/\/v1\/audio\/transcribe/).length === 1, 'heard once, on the server', L.hit(/\/v1\/audio\/transcribe/).length);
-  ok(JSON.stringify(spoken) === JSON.stringify(['Pack light layers.', 'Bring good shoes.', 'Lisbon is hilly.']), 'each sentence spoken on its own, in order', spoken);
+  const order = ['Pack light layers.', 'Bring good shoes.', 'Lisbon is hilly.'];
+  ok(spoken.length === 3 && order.every(x => spoken.includes(x)), 'each sentence asked for on its own', spoken);
+  await page.waitForFunction(() => window.__heard.filter(Boolean).length >= 3, null, { timeout: 5000 }).catch(() => {});
+  const heard = await page.evaluate(() => window.__heard.slice(0, 3));
+  ok(JSON.stringify(heard) === JSON.stringify(order), 'and played in order, whatever order its audio arrived in', heard);
   ok(await page.evaluate(() => window.__played.length === 3 && _lvDrive.state() === 'listening'), 'all three played, then it listens again', await page.evaluate(() => [window.__played.length, _lvDrive.state()]));
 }
 
