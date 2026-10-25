@@ -14580,7 +14580,11 @@ const BACKUP_PREFIXES = [
      recoverable - but the rebuild is the expensive scan they exist to avoid,
      and a restore is exactly when nobody wants every seller's first page load
      to walk the whole catalogue. */
-  'mktmine:', 'mktinbox:', 'wdopen:'
+  'mktmine:', 'mktinbox:', 'wdopen:',
+  /* What somebody chose extra usage does when their plan runs out. A choice
+     about their money: a restore that forgot it would start spending a
+     balance somebody had set never to be used. */
+  'creditpref:'
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
