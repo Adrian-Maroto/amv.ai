@@ -76,7 +76,8 @@ function _crewPrefetch(){
   /* And the screens split out of the page (audit #40) - Mission Control's and
      the code workspace's - for the same reason: opening one draws at once. */
   const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
-    _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function'); }catch(e){} };
+    _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
+    _lazyLoad('integrations-view.js', () => window._intViewHere === true); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }

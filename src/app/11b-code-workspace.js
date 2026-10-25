@@ -1057,14 +1057,4 @@ async function _devSend(){
    the screen open: the project files, the log, the preview channel. This
    renderCodeView is the stand-in; the file declares the real one, which
    replaces it as it loads. */
-function renderCodeView(){
-  const vc=$('vc'); if(!vc) return;
-  const mine=renderCodeView;
-  vc.innerHTML='<div class="lab-placeholder" data-lazy="code" role="status" aria-live="polite">'+escH(T('Loading\u2026'))+'</div>';
-  _lazyLoad('code-view.js', ()=>window.renderCodeView!==mine).then(ok=>{
-    const ph=vc.querySelector('[data-lazy="code"]'); if(!ph) return;
-    if(ok){ window.renderCodeView(); return; }
-    ph.innerHTML=escH(T('That could not be loaded. Check your connection and try again.'))+' <button class="btn bs" type="button" data-lazy-retry="code">'+escH(T('Try again'))+'</button>';
-    on(ph.querySelector('[data-lazy-retry]'),'click',()=>renderCodeView());
-  });
-}
+function renderCodeView(){ _lazyScreen('code-view.js', renderCodeView, 'renderCodeView'); }

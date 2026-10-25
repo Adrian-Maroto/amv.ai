@@ -157,6 +157,8 @@ function emitSandbox() {
   writeFileSync('crew-view.js', readFileSync('src/crew/mission-control.js'));
   /* The code workspace's screen, fetched when it is drawn (audit #40). */
   writeFileSync('code-view.js', readFileSync('src/code/code-view.js'));
+  /* Tasks, Integrations and Automation's screens (audit #40). */
+  writeFileSync('integrations-view.js', readFileSync('src/integrations/integrations-view.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
@@ -1100,6 +1102,7 @@ const PUBLISH = [
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
   'crew-view.js',          // Mission Control's screen, fetched beside the catalogue
   'code-view.js',          // the code workspace's screen, fetched when it is drawn
+  'integrations-view.js',  // Tasks, Integrations and Automation, fetched when drawn
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

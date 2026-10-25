@@ -1863,6 +1863,22 @@ function _lazyLoad(file, here){
     document.head.appendChild(s);
   }));
 }
+/* A SCREEN THAT LIVES IN ONE OF THOSE FILES. Its renderer in the page is a
+   stand-in that calls this with itself: the screen says it is loading, the
+   file is fetched, and the file's real renderer - which replaces the
+   stand-in as it loads - draws it. A failed fetch says so, with a way to try
+   again; a screen left meanwhile is not drawn over. */
+function _lazyScreen(file, standIn, name){
+  const vc = $('vc'); if(!vc) return;
+  const tag = 'lz' + Math.random().toString(36).slice(2, 8);
+  vc.innerHTML = '<div class="lab-placeholder" data-lazy="' + tag + '" role="status" aria-live="polite">' + escH(T('Loading\u2026')) + '</div>';
+  _lazyLoad(file, () => window[name] !== standIn).then(ok => {
+    const ph = vc.querySelector('[data-lazy="' + tag + '"]'); if(!ph) return;
+    if(ok){ window[name](); return; }
+    ph.innerHTML = escH(T('That could not be loaded. Check your connection and try again.')) + ' <button class="btn bs" type="button" data-lazy-retry="1">' + escH(T('Try again')) + '</button>';
+    on(ph.querySelector('[data-lazy-retry]'), 'click', () => window[name]());
+  });
+}
 function toast(msg, type='info', dur=3000) {
   const wrap = $('toast-wrap');
   if (!wrap) return;
