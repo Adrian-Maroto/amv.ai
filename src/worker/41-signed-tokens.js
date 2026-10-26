@@ -60,8 +60,63 @@ async function _hmacKey(secret) {
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
   );
 }
-// Per-user token epoch: incrementing it in KV revokes all that user's tokens.
-async function _tokenEpoch(env, email) {
+// Per-user token epoch: raising it revokes all that user's tokens.
+/* WHERE IT IS HELD. With the Durable Object bound (every real deployment),
+   the per-account object 'auth:<email>' is the authority - see authGet in
+   07-atomic-counters.js for why KV was not enough. KV is still written, so a
+   backup carries the number and a deployment without the object still works,
+   and it is read once per account to seed the object. Every failure throws:
+   the caller refuses, it never guesses. */
+const _authName = (email) => 'auth:' + String(email).toLowerCase();
+/* AND WHEN THE OBJECT CANNOT BE ASKED, SIGN-IN STAYS UP.
+
+   Failing closed there would turn an outage of one Durable Object into every
+   person signed out of AMV at once. So an object that throws or answers
+   nonsense falls back to the KV epoch - revocation within about a minute,
+   which is how it always worked - with the operator alerted. KV failing is
+   still a refusal, as it always was: no number at all is never read as zero.
+   The floor is max(object, KV), so the object can only make it stricter. */
+/* Both are read, in parallel, every time, and the higher wins. Reading the
+   object alone was the first version, and its own test found the hole: a
+   revocation made while the object was down lands in KV only, and when the
+   object came back it still held the lower number - so the revoked session
+   worked again. KV ahead of the object raises the object (authSeed), and the
+   KV read costs what verifyToken already paid before the object existed. */
+async function _authState(env, email, sid) {
+  if (!env.AMV_COUNTER) return { epoch: await _tokenEpochKV(env, email), ended: false };
+  const kvP = _tokenEpochKV(env, email);           // throws on failure, as always
+  let s = null, why = '';
+  try {
+    s = await counter(env, _authName(email), { op: 'authGet', sid: sid || '', strict: true });
+    if (!s || typeof s.epoch !== 'number') { why = 'the revocation object answered without an epoch'; s = null; }
+  } catch (e) { why = String((e && e.message) || e); s = null; }
+  const kv = await kvP;
+  if (!s) {
+    try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch (_) {}
+    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) {}
+    return { epoch: kv, ended: false };
+  }
+  if (!s.seeded || kv > s.epoch) {
+    try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch (e) {}
+  }
+  return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
+}
+async function _tokenEpoch(env, email) { return (await _authState(env, email)).epoch; }
+/* One sign-in ended, from the device list, by signing out, or because its
+   renewal token was reused. The record goes from KV (the device list) and the
+   session is marked ended in the object, which is what verifyToken asks.
+   The object failing is said, not swallowed: the KV delete still ends it
+   within about a minute, which is how it worked before. */
+async function _sessEnd(env, email, sid) {
+  if (!email || !sid) return;
+  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) {}
+  if (env.AMV_COUNTER) {
+    try {
+      await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
+    } catch (e) { audit(env, 'session_end_slow', { email, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
+}
+async function _tokenEpochKV(env, email) {
   /* A READ THAT FAILED IS NOT THE ANSWER ZERO.
 
      This used to catch any storage error and return 0. verifyToken compares
@@ -97,8 +152,25 @@ async function _revokeOrSay(env, email, where) {
 }
 
 async function revokeUserTokens(env, email) {
-  const cur = await _tokenEpoch(env, email);
-  await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
+  if (env.AMV_COUNTER) {
+    /* Raised in the object first - that is the moment it takes effect - then
+       copied to KV, which is what the fallback reads, so the two agree. If
+       the object cannot take it, KV alone is raised (the old behaviour) and
+       said - a revocation is never dropped because one store was down. */
+    const floor = await _tokenEpochKV(env, email);
+    let next = floor + 1;
+    try {
+      const r = await counter(env, _authName(email), { op: 'authRevokeAll', floor, strict: true });
+      if (!r || typeof r.epoch !== 'number') throw new Error('the revocation object answered without an epoch');
+      next = r.epoch;
+    } catch (e) {
+      audit(env, 'revocation_degraded', { email, where: 'revoke', error: String((e && e.message) || e).slice(0, 120) });
+    }
+    await env.AMV_KV.put(`tokepoch:${email}`, String(next));
+  } else {
+    const cur = await _tokenEpochKV(env, email);
+    await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
+  }
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
   try { await _sessDropAll(env, email); } catch (e) {}
@@ -114,8 +186,10 @@ async function revokeUserTokens(env, email) {
    KV is eventually consistent between locations, so a record written moments
    ago may not be visible everywhere yet. A token issued in the last two
    minutes is therefore not refused for a missing record: refusing it would sign
-   people out just after they signed in. Ending a session that is under two
-   minutes old takes effect when it is two minutes old.
+   people out just after they signed in. That window no longer delays an
+   ending: ending a sign-in also marks it in the account's revocation object
+   (_sessEnd), which verifyToken asks first and which every location sees at
+   once. The record check below is kept as the second way it ends.
 
    Never backed up (BACKUP_NEVER): restoring one would bring back a sign-in
    somebody ended. Exported and erased with the account's other records. */
@@ -331,8 +405,9 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     if (!Number.isFinite(data.nbf)) return null;
     if (nowSec < data.nbf - 60) return null;                       // not-yet-valid (60s skew)
     if (env && data.email) {                                       // revocation check
-      const epoch = await _tokenEpoch(env, data.email);
-      if ((data.epoch || 0) !== epoch) return null;
+      const st = await _authState(env, data.email, data.sid);
+      if ((data.epoch || 0) !== st.epoch) return null;
+      if (data.sid && st.ended) return null;                       // ended from the device list, at once
       /* A sign-in ended from the device list. Fresh tokens are spared while
          their record may still be on its way to this location (SESS_FRESH_S). */
       if (data.sid && nowSec - (data.iat || 0) > SESS_FRESH_S) {

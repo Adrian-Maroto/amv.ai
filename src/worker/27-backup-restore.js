@@ -670,6 +670,13 @@ async function backupImport(request, env){
       const merged = await _restoreMerge(env, key, val);
       if (merged.held) heldForward++;
       await env.AMV_KV.put(key, merged.value);
+      /* The epoch's authority is the account's revocation object now, so a
+         higher one from the snapshot is carried there too (it only ever
+         rises). Failing is said: the restore otherwise holds. */
+      if (key.startsWith('tokepoch:') && env.AMV_COUNTER) {
+        try { await counter(env, _authName(key.slice(9)), { op: 'authSeed', floor: parseInt(merged.value, 10) || 0, strict: true }); }
+        catch (e) { audit(env, 'restore_epoch_not_raised', { error: String((e && e.message) || e).slice(0, 120) }); }
+      }
       /* THE ONE WRITER THAT DOES NOT GO THROUGH DB.put.
 
          Every other write to a scanned namespace passes through DB.put or

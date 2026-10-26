@@ -187,6 +187,39 @@ export class AMVCounter {
       await this.state.storage.setAlarm(ses.start + windowMs + 60000);
       return json({ allowed: true, value: ses.count, start: ses.start });
     }
+    /* REVOKED MEANS REVOKED, EVERYWHERE, AT ONCE (scale audit, owner yes, Oct 26).
+
+       One object per account ('auth:<email>') holds the token epoch - which
+       "sign out everywhere" and a password change raise - and the sign-ins
+       ended one by one from the device list. They used to live in KV, which
+       another location may not see for a minute or more: for that minute a
+       stolen session somebody had just ended still worked somewhere. An
+       object is one place, read and written in order, so the next request
+       anywhere sees the change.
+
+       Seeded once from the KV epoch it replaces (`floor`), and raised to a
+       floor whenever one is given, so it can never go below a number a live
+       token was signed with. No alarm: this must outlive every token. */
+    if (op === 'authGet' || op === 'authSeed' || op === 'authRevokeAll' || op === 'authEndSession') {
+      let a = (await this.state.storage.get('auth')) || null;
+      const now = Date.now();
+      const floor = Math.max(0, Math.floor(Number(body.floor) || 0));
+      if (op === 'authGet') {
+        if (!a) return json({ seeded: false, epoch: 0, ended: false });
+        return json({ seeded: true, epoch: a.epoch, ended: !!(body.sid && (a.ended[body.sid] || 0) > now) });
+      }
+      if (!a) a = { epoch: floor, ended: {} };
+      else if (floor > a.epoch) a.epoch = floor;
+      if (op === 'authRevokeAll') { a.epoch += 1; a.ended = {}; }
+      if (op === 'authEndSession' && body.sid) {
+        for (const k of Object.keys(a.ended)) if (a.ended[k] <= now) delete a.ended[k];
+        const keys = Object.keys(a.ended);
+        if (keys.length >= 500) delete a.ended[keys.sort((x, y) => a.ended[x] - a.ended[y])[0]];
+        a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
+      }
+      await this.state.storage.put('auth', a);
+      return json({ seeded: true, epoch: a.epoch, ended: false });
+    }
     if (op === 'get') {
       if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: (await this.state.storage.get('v')) || 0 });

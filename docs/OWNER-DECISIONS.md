@@ -332,7 +332,10 @@ each holding a sixteenth, with the remainder moved between them when one runs
 dry; the per-account and per-plan ceilings, which are already per person,
 stay as they are. *Needs a yes: it is how money is counted.*
 
-**29. Revoked must mean revoked - MOVE REVOCATION OUT OF KV. Needs a yes (auth).**
+**29. Revoked must mean revoked - MOVE REVOCATION OUT OF KV. YES (owner, Oct 26) - DONE.**
+Built: one Durable Object per account holds the epoch and the sign-ins ended one by one; every check reads it and KV together and takes the higher, so neither a stale KV read nor an object that was down can bring a revoked session back. If the object cannot be reached, sign-in stays up on the KV epoch (the old minute) and the operator is alerted - an outage of one object never signs everybody out. `tests/worker/revoked-means-revoked-everywhere.test.mjs`, against the real class.
+
+The decision as it was put:
 "Sign out everywhere" and revoking an API key write to KV, which can take a
 minute or more to be seen by every location; for that minute a revoked token
 still works somewhere. Recommendation: hold the revocation epoch and revoked

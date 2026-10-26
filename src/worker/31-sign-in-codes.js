@@ -616,7 +616,7 @@ async function authLogout(request, env) {
     if (rt && rt.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
       await _retiredBySignOut(env, rt.jti);
-      if (rt.sid) { try { await env.AMV_KV.delete(_sessKey(rt.email, rt.sid)); } catch (e) {} }
+      if (rt.sid) await _sessEnd(env, rt.email, rt.sid);
       await _userEvent(env, request, rt.email, 'signed_out');
       return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
     }
@@ -655,7 +655,7 @@ async function authLogout(request, env) {
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
     return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
   }
-  if (data.sid) { try { await env.AMV_KV.delete(_sessKey(data.email, data.sid)); } catch (e) {} }
+  if (data.sid) await _sessEnd(env, data.email, data.sid);
   await _userEvent(env, request, data.email, 'signed_out');
   return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
 }
@@ -685,7 +685,7 @@ async function sessionsEnd(request, env) {
   let rec = null;
   try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) {}
   if (!rec) return json({ ok: true, already: true });
-  await env.AMV_KV.delete(key);
+  await _sessEnd(env, user.email, id);
   await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
   return json({ ok: true });
 }
