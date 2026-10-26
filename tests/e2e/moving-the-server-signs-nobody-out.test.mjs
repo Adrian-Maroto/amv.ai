@@ -71,7 +71,6 @@ const outbound = makeOutbound();
 outbound.on(/resend/, (u, o) => { mails.push(JSON.parse(o.body)); return { id: 'e' + mails.length }; });
 outbound.on(/./, () => ({ ok: true }));
 env = makeEnv({ APP_URL: SITE, ALLOWED_ORIGIN: SITE, EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.test>' });
-const codeIn = () => (/(\d{6})/.exec((mails.at(-1) || {}).subject || '') || [])[1];
 
 const browser = await chromium.launch(LAUNCH);
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -95,9 +94,8 @@ await page.goto(SITE, { waitUntil: 'load' }); await boot();
   await until(() => !!document.getElementById('a-name'));
   await fill('#a-name', 'Moved'); await fill('#a-email', 'moved@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
   await page.evaluate(() => document.getElementById('auth-submit').click());
-  ok(await until(() => !!document.getElementById('cv-code')), 'the code step opens');
-  await fill('#cv-code', codeIn());
-  ok(await until(() => !!(AMV_API.token && S.user && S.user.email) && !document.getElementById('cv-code')), 'and the account is signed in');
+  /* Sign-up sends no email and signs straight in (OWNER-DECISIONS #27). */
+  ok(await until(() => !!(AMV_API.token && S.user && S.user.email) && !document.getElementById('cv-code')), 'the account is signed in, with no code step');
   const jar = await context.cookies(OLD + '/auth/refresh');
   ok(jar.some(c => c.name === 'amv_rt'), 'the renewal cookie belongs to the old host', jar.map(c => c.name + '@' + c.domain));
 }

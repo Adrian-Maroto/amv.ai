@@ -73,16 +73,30 @@ await page.goto(SITE, { waitUntil: 'load' }); await boot();
 section('The page talks to the server at its own address');
 ok(await page.evaluate(() => AMV_API.base) === SITE + '/api', 'the API base is the site plus /api', await page.evaluate(() => AMV_API.base));
 
-section('Sign up with the emailed code');
+section('Sign up, signed straight in');
 {
   await page.evaluate(() => openAuth('signup'));
   await until(() => !!document.getElementById('a-name'));
   await fill('#a-name', 'Mount'); await fill('#a-email', 'mount@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
   await page.evaluate(() => document.getElementById('auth-submit').click());
+  /* Sign-up sends no email and signs straight in (OWNER-DECISIONS #27). */
+  const fin = await until(() => !!(AMV_API.token && S.user && S.user.email) && !document.getElementById('cv-code'));
+  ok(fin, 'the new account is signed in, with no code step', fin || await page.evaluate(() => ({ tok: !!AMV_API.token, user: S.user, cv: !!document.getElementById('cv-code'), err: (document.querySelector('.fp-modal') || {}).textContent })));
+}
+
+section('The first sign-in asks for the emailed code, once');
+{
+  /* Sign-up proves nothing about this browser, so the first sign-in after it
+     asks for the code; that is what makes the browser known. */
+  await page.evaluate(() => signOut());
+  await until(() => !(S.user && S.user.email));
+  await page.evaluate(() => openAuth('login'));
+  await until(() => !!document.getElementById('a-email'));
+  await fill('#a-email', 'mount@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
+  await page.evaluate(() => document.getElementById('auth-submit').click());
   ok(await until(() => !!document.getElementById('cv-code')), 'the code step opens');
   await fill('#cv-code', codeIn());
-  const fin = await until(() => !!(AMV_API.token && S.user && S.user.email) && !document.getElementById('cv-code'));
-  ok(fin, 'and the code signs the new account in', fin || await page.evaluate(() => ({ tok: !!AMV_API.token, user: S.user, cv: !!document.getElementById('cv-code'), err: (document.querySelector('.fp-modal') || {}).textContent })));
+  ok(await until(() => !!(AMV_API.token && S.user && S.user.email) && !document.getElementById('cv-code')), 'and the code signs in');
 }
 
 section('The cookies are the site’s own, scoped to the server’s path');

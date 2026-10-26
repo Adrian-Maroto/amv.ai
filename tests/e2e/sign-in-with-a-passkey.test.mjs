@@ -88,12 +88,12 @@ const openSecurity = async (page) => {
 const A = await device();
 await boot(A.page);
 
-section('Sign up: the password has to stand alone, so it is long');
+section('Sign up: the form says how long the password must be');
 {
   await A.page.evaluate(() => openAuth('signup'));
   await until(A.page, () => !!document.getElementById('a-pass'));
   const ph = await A.page.$eval('#a-pass', e => e.placeholder);
-  ok(/15/.test(ph), 'the form says how long', ph);
+  ok(/\b8\b/.test(ph), 'the form says how long', ph);
   await fill(A.page, '#a-name', 'Nadia'); await fill(A.page, '#a-email', EMAIL); await fill(A.page, '#a-pass', PW);
   await click(A.page, '#auth-submit');
   ok(await signedIn(A.page), 'a 20-character phrase makes the account', true);
