@@ -941,7 +941,7 @@ async function _amvRunTool(name, input, onStatus){
     if(name==='project_search'){
       onStatus && onStatus('Searching the project\u2026');
       if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
-      return { text: window.amvProjectFileSearch(input), render:null };
+      return { text: await window.amvProjectFileSearch(input), render:null };
     }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');

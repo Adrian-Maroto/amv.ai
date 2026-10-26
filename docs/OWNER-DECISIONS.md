@@ -247,6 +247,21 @@ A viewer still takes a seat: pricing a cheaper seat is a billing decision,
 which stays the owner's. Built: `TEAM_PERMS` in `33-team-roles.js`, the role
 picker on the team page; `a-viewer-reads-and-does-not-change`.
 
+**25. Searching by meaning - YES, stateless, behind one line in wrangler.toml.**
+The Oct 26 audit asked for hybrid retrieval. Searches over files and projects
+were by words plus the other phrasings the engine passes; words miss a
+passage in another language or with no word in common. `/v1/meaning` scores
+the passages the page is choosing between against the question with a
+multilingual embedding model (bge-m3) on Workers AI, and keeps nothing - no
+index of anybody's files, no vectors. The page blends the two rankings, so
+the exact words still win when they are there, a passage found by meaning
+alone must be close to count and is labelled as found by meaning, and a
+failure falls back to words. Off the table: storing an index of people's
+files (a second copy of everything they own, for a speed nobody has asked
+for). Built: `79-meaning.js`, `_psMeaningScores` in project-search.js;
+`a-search-can-find-it-by-meaning` (worker and e2e). Switched on by the
+owner's step below.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from
@@ -262,3 +277,11 @@ the repository.
    web app.
 4. **A speech supplier key**, when voice is worth the per-minute price -
    pasted into the deployment's settings; nothing else changes.
+5. **Searching by meaning**: uncomment the two `[ai]` lines in wrangler.toml
+   (Workers AI is on every Cloudflare account; about $0.012 per million
+   tokens). Searches find passages in other words and other languages.
+6. **Files in the account (Cloudflare R2)**: run
+   `npx wrangler r2 bucket create amv-files` once, then uncomment the three
+   `[[r2_buckets]]` lines in wrangler.toml. The file library then follows the
+   person to every device, and agents and the cloud workspace can keep work
+   between runs (about 1.5 US cents per GB a month).

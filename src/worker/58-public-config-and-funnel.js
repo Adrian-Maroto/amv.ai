@@ -122,6 +122,8 @@ async function publicConfig(request, env) {
      transcription and spoken answers only where they will work, and keeps the
      browser's own voice where they will not. Never the supplier or a price. */
   if (_speechListenOn(env) || _speechSpeakOn(env)) out.speech = { listen: _speechListenOn(env), speak: _speechSpeakOn(env) };
+  /* Whether searches can score passages by meaning too (79-meaning.js). */
+  if (_meaningOn(env)) out.meaning = true;
   /* Built directly rather than through json(), which takes only a body and a
      status - a third argument would have been silently ignored and the cache
      header would never have been sent. Five minutes is long enough to spare

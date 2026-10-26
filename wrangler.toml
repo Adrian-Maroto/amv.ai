@@ -148,6 +148,19 @@ new_sqlite_classes = ["AMVCounter"]
 # binding = "AMV_FILES"
 # bucket_name = "amv-files"
 
+# ── Searching by meaning (Workers AI) ──
+# Lets a search over somebody's files and projects find a passage that says
+# the same thing in other words or another language (src/worker/79-meaning.js,
+# the multilingual bge-m3 model). Nothing is stored: the page sends the
+# passages with the question and gets scores back. Workers AI is on every
+# Cloudflare account; bge-m3 costs about $0.012 per million tokens, so a full
+# search is well under a tenth of a cent, and it is metered like any spend.
+# Until this is uncommented, searches use words and the other phrasings the
+# engine passes - which is what they did before.
+#
+# [ai]
+# binding = "AI"
+
 # ── AMV's cloud computer (cloud/) ──
 # A computer of their own in AMV's cloud, for Pro plans and above. It runs in a
 # Worker of its own (cloud/wrangler.toml, needs Workers Paid with Containers);

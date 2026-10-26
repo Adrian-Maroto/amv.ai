@@ -931,6 +931,7 @@ async function _route(request, env, ctx) {
     case '/v1/site-icon':      return siteIcon(request, env);
     case '/v1/source-preview': return sourcePreview(request, env);
     case '/v1/browser/replay': return browserReplay(request, env, ctx);
+    case '/v1/meaning':        return meaningRank(request, env);
     case '/v1/agents':         return agentsList(request, env);
     case '/v1/agents/save':    return agentsSave(request, env);
     case '/v1/agents/delete':  return agentsDelete(request, env);

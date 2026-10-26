@@ -162,8 +162,8 @@ section('The same search with other phrasings finds the passage');
 
 section('The person’s own words still come first');
 {
-  const order = await page.evaluate(() => {
-    const out = window.amvProjectFileSearch({ query: 'sales growth', also: ['revenue expansion'] });
+  const order = await page.evaluate(async () => {
+    const out = await window.amvProjectFileSearch({ query: 'sales growth', also: ['revenue expansion'] });
     return [out.indexOf('sales growth as the first agenda item'), out.indexOf('revenue expansion reached')];
   });
   ok(order[0] > -1 && order[1] > -1, 'both passages are found', order);

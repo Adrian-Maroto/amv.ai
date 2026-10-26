@@ -487,6 +487,8 @@ let _YEARLY_PLANS = [];
 /* Server speech, as /v1/public-config describes it. Both false until it says
    otherwise, so nothing is offered that the server has not confirmed. */
 let _SPEECH = { listen: false, speak: false };
+/* Whether this deployment can score search passages by meaning (79-meaning.js). */
+let _MEANING = false;
 function _yearlyAvailable(plan){
   try{ return _YEARLY_PLANS.indexOf(String(plan)) >= 0; }catch(e){ return false; }
 }
@@ -563,6 +565,7 @@ async function _loadPublicConfigOnce(){
     /* Which halves of server speech this deployment has. In memory, like the
        yearly plans: a fact about the server, re-read on every load. */
     try{ _SPEECH = { listen: !!(d.speech && d.speech.listen), speak: !!(d.speech && d.speech.speak) }; }catch(e){}
+    _MEANING = d.meaning === true;
 
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
@@ -27685,7 +27688,7 @@ async function _amvRunTool(name, input, onStatus){
     if(name==='project_search'){
       onStatus && onStatus('Searching the project\u2026');
       if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
-      return { text: window.amvProjectFileSearch(input), render:null };
+      return { text: await window.amvProjectFileSearch(input), render:null };
     }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');
