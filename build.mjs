@@ -159,6 +159,8 @@ function emitSandbox() {
   writeFileSync('code-view.js', readFileSync('src/code/code-view.js'));
   /* Tasks, Integrations and Automation's screens (audit #40). */
   writeFileSync('integrations-view.js', readFileSync('src/integrations/integrations-view.js'));
+  /* What each Settings pane draws, fetched when Settings opens (code splitting). */
+  writeFileSync('settings-panes.js', readFileSync('src/settings/settings-panes.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
@@ -1103,6 +1105,7 @@ const PUBLISH = [
   'crew-view.js',          // Mission Control's screen, fetched beside the catalogue
   'code-view.js',          // the code workspace's screen, fetched when it is drawn
   'integrations-view.js',  // Tasks, Integrations and Automation, fetched when drawn
+  'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

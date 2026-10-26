@@ -348,6 +348,10 @@ export async function bootApp(opts = {}) {
     await page.route((u) => u.hostname === host, (r) => r.abort('connectionreset'));
   }
 
+  /* opts.beforeLoad(page): anything a suite has to arrange before the first
+     request - a file of the app's own that should fail to arrive, say. */
+  if (opts.beforeLoad) await opts.beforeLoad(page);
+
   /* opts.query lets a suite arrive at a URL the app is really sent to from
      outside - a provider's OAuth return being the one that matters, because the
      handler for it runs once at boot and cannot be reached any other way. */

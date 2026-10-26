@@ -77,7 +77,8 @@ function _crewPrefetch(){
      the code workspace's - for the same reason: opening one draws at once. */
   const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
-    _lazyLoad('integrations-view.js', () => window._intViewHere === true); }catch(e){} };
+    _lazyLoad('integrations-view.js', () => window._intViewHere === true);
+    _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function'); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }

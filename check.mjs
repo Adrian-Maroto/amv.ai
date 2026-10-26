@@ -1518,7 +1518,11 @@ step('Page weight is under control', () => {
      quietly spent, and keeps ~15KB of it for work that has to be in the page:
      the audit called 6KB of headroom an emergency, and it was - every change
      for a day fought it. */
-  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
+  /* 596 -> 586, 2026-10-26, DOWN: what each Settings pane draws left the
+     page for settings-panes.js, fetched when Settings opens and prefetched
+     once the page is idle (~14KB gzipped). The page went from ~585KB to
+     ~571KB, and the ceiling follows it, keeping the same ~15KB of room. */
+  const CEILING = 586 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
