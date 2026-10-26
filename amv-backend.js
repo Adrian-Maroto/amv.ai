@@ -1832,6 +1832,20 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
   }
 }
 
+
+/* A WRITE THAT MOVES MONEY OR PERMISSION FAILED, AND MUST NOT DO SO QUIETLY.
+
+   Best-effort is right for a statistic and wrong for a ledger: a refund that
+   did not land leaves somebody charged for nothing, a spend that was not
+   recorded lets them pass a limit they set, a revocation that did not happen
+   leaves old sessions open. These still do not fail the request around them -
+   the person's answer is not held hostage to bookkeeping - but each is
+   recorded and the operator told, so it can be put right. The gate's
+   "no money or permission write swallowed silently" stage keeps it that way. */
+async function _writeFailed(env, where, e) {
+  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
+  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) {}
+}
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
    Structured, security-relevant event logging. Goes to:
@@ -5534,7 +5548,7 @@ async function authSsoFinish(request, env){
   if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
   const acct = fed.acct, created = fed.created;
   if(created){
-    try{ await counter(env, 'popaccounts', { op:'incr', amount:1 }); }catch(e){}
+    try{ await counter(env, 'popaccounts', { op:'incr', amount:1 }); }catch(e){ /* best-effort: a public count of accounts */ }
     try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
   }
   /* Into the company's team, if there is a seat. No seat is a refusal, not a
@@ -10668,7 +10682,7 @@ async function runDueAutomations(env, atMs, opts){
           if(c>0) await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
           if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
           itemBooked = 0; itemGlobalBooked = 0;
-        }catch(e){}
+        }catch(e){ await _writeFailed(env, 'job_settle', e); }
         /* What happened to this result, decided here rather than guessed later.
            "It ran" and "it reached you" are different facts, and the second one
            is the one somebody is actually asking about when they look. */
@@ -11082,7 +11096,7 @@ async function serveSite(request, env, slug){
   // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
   // site record on every read - that was write-amplification on a read-heavy
   // public page AND a lost-update race between concurrent viewers.
-  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
+  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){ /* best-effort: a page-view count */ }
 
   return new Response(rec.html, {
     status: 200,
@@ -11401,7 +11415,7 @@ async function _spendRelease(env, email, amount){
 async function _spendRecord(env, email, amount){
   const amt = +amount || 0;
   if(!(amt > 0)) return;
-  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){}
+  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){ await _writeFailed(env, 'spend_record', e); }
 }
 
 const WEB_MAX_STEPS = 24;
@@ -17034,7 +17048,7 @@ async function authSignup(request, env){
 
      Counted here, at the one place an account comes into existence, so it is
      exact at any size and costs one increment. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
   /* `em`, not `email`. The raw body value is whatever was typed - case and
      surrounding whitespace included - and every other record this account
      touches is keyed on the normalised address. Marking the funnel under the
@@ -17462,7 +17476,7 @@ async function authLoginVerify(request, env) {
       });
     } catch (e) {}
     if (!applied) return json({ error: 'AMV could not finish that just now. Please sign up again.', code: 'claim_failed' }, 503);
-    try { await revokeUserTokens(env, em); } catch (e) {}
+    try { await revokeUserTokens(env, em); } catch (e) { await _writeFailed(env, 'claim_revoke', e); }
     audit(env, 'account_claimed', { email: em });
   }
   try { await _markActive(env, em); } catch (e) {}
@@ -17710,7 +17724,7 @@ async function authGoogle(request, env) {
 
          The population counter is incremented here too, which the password
          path did and this one did not - so the two providers now agree. */
-      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
+      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
       try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }
       catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
@@ -18386,7 +18400,7 @@ async function authDeleteAccount(request, env) {
        somebody loses money AMV was in the middle of sending them. */
     try { await alertOnce(env, 'delete_payout_check',
       'An account deletion could not be completed because the unsettled-payout check could not be read. '
-      + 'The account is intact and the person has been asked to try again.', 30); } catch (_) {}
+      + 'The account is intact and the person has been asked to try again.', 30); } catch(_) { /* best-effort: an alert about a deletion already refused; the refusal is what protects the money */ }
     return json({
       error: 'AMV could not confirm whether you have any payouts still being sent, so your account has not '
            + 'been deleted. Nothing has changed. Please try again in a few minutes - this is a temporary fault '
@@ -18848,7 +18862,7 @@ async function authDeleteAccount(request, env) {
   /* Uncounted, so the conversion denominator follows reality. A counter that
      only ever goes up would make the funnel look worse every time somebody
      leaves, which is its own kind of wrong number. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){}
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){ /* best-effort: a public count of accounts */ }
   /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
      both ways or the code would keep resolving to an account that no longer
      exists, and the activity log is a record OF this person - erasure means it
@@ -21530,7 +21544,7 @@ async function aiProxy(request, env, ctx, principal) {
       try {
         if (b.session) await counter(env, b.name, { op: 'sessionRelease', start: b.session, amount: b.amount });
         else await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs });
-      } catch (e) {}
+      } catch (e) { await _writeFailed(env, 'unbook', e); }
     }
   };
   const refuseWindow = async (message, code, resetAt) => {
@@ -23348,11 +23362,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   if (user && user.email && total > 0) {
     try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '',
       surface: feature || 'chat', project: project || '',
-      team: String(user.billingSubject || '').startsWith('team:') ? user.billingSubject.slice(5) : '' }); } catch (e) {}
+      team: String(user.billingSubject || '').startsWith('team:') ? user.billingSubject.slice(5) : '' }); } catch(e) { /* best-effort: the lifetime totals on Usage; the plan meters that bind are separate */ }
     /* Paid for by a team: the same answer, counted for the team's owners and
        admins to see (teamUsage) - totals and surfaces, never a project. */
     if (String(user.billingSubject || '').startsWith('team:')) {
-      try { await counter(env, `tmuse:${user.billingSubject.slice(5)}:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), surface: feature || 'chat' }); } catch (e) {}
+      try { await counter(env, `tmuse:${user.billingSubject.slice(5)}:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), surface: feature || 'chat' }); } catch(e) { /* best-effort: a team member's usage total for the team page; the plan meters that bind are separate */ }
     }
   }
   /* The same money, totalled once - so the dashboard can report spend without
@@ -23921,7 +23935,7 @@ async function widgetChat(request, env, ctx) {
      to give it back or a rejected request permanently costs the owner one. */
   const refundMsg = async () => {
     if (!msgCap) return;
-    try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+    try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
   };
 
   /* THE OWNER'S DOLLAR CEILING, which every other spending path consults.
@@ -24007,7 +24021,7 @@ async function widgetChat(request, env, ctx) {
   const oMonth = await counter(env, ownerMonthName, { op: 'reserve', amount: wReserve, cap: ownerLimits.monthTokens, ttlMs: 86400000 * 70 });
   if (!oMonth.allowed) {
     audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'month' });
-    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
     await refundMsg();
     await releaseWidgetUSD();
     return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
@@ -24015,8 +24029,8 @@ async function widgetChat(request, env, ctx) {
   }
   /* Every path from here that does not reach the model gives both back. */
   const refundOwner = async () => {
-    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
-    try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) {}
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
+    try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
     /* And the dollars. Every path that gives the tokens back has to give these
        back too, or a refused turn permanently consumes the owner's monthly
        budget for work that never ran. */
@@ -35255,7 +35269,7 @@ async function jobApply(request, env) {
                   code: 'apply_cap' }, 429);
   }
   const giveBack = async () => {
-    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) { /* best-effort: a daily application count, given back; a miss costs one application slot today */ }
   };
 
   const cfg = await _mailCfgFor(env, user.email);

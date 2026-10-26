@@ -427,7 +427,7 @@ async function authSignup(request, env){
 
      Counted here, at the one place an account comes into existence, so it is
      exact at any size and costs one increment. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
   /* `em`, not `email`. The raw body value is whatever was typed - case and
      surrounding whitespace included - and every other record this account
      touches is keyed on the normalised address. Marking the funnel under the

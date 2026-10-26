@@ -949,3 +949,17 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
   }
 }
 
+
+/* A WRITE THAT MOVES MONEY OR PERMISSION FAILED, AND MUST NOT DO SO QUIETLY.
+
+   Best-effort is right for a statistic and wrong for a ledger: a refund that
+   did not land leaves somebody charged for nothing, a spend that was not
+   recorded lets them pass a limit they set, a revocation that did not happen
+   leaves old sessions open. These still do not fail the request around them -
+   the person's answer is not held hostage to bookkeeping - but each is
+   recorded and the operator told, so it can be put right. The gate's
+   "no money or permission write swallowed silently" stage keeps it that way. */
+async function _writeFailed(env, where, e) {
+  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
+  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) {}
+}

@@ -1327,6 +1327,35 @@ step('No decision is read out of a store nothing writes', () => {
       + '. Take them out of ALLOWED, or the next real one hides behind a stale excuse.');
 });
 
+/* NO MONEY OR PERMISSION WRITE IS SWALLOWED SILENTLY (Oct 26 audit #37).
+
+   The Worker has a few hundred empty catches, and most are right: a page-view
+   count, a cleanup, a statistic. What must never sit in one is a write that
+   moves money or permission - a refund, a spend record, a cost settlement, a
+   revocation - because when it fails the person is charged for nothing, passes
+   a limit they set, or keeps a session that should have ended, and nothing
+   says so. Seventeen did; each now reports through _writeFailed, or carries a
+   "best-effort:" note saying why it may be quiet. A bare empty catch around
+   one of these writes fails here. */
+step('No money or permission write is swallowed silently', () => {
+  const CRIT = /(_recordSpend|_creditGrant|_creditRevoke|_releaseUSD|_reserveUSD|_spendRecord|_spendRelease|setEntitlement|revokeUserTokens|_payout|_ledger|DB\.put\(env,\s*'(acct|ent|credit|team|sub|payout|wallet)'|_withKV\(env,\s*'(acct|ent|credit|team|payout|wallet)'|op:\s*'(incr|reserve|lifeAdd)')/;
+  const TRY = /try\s*\{((?:[^{}]|\{[^{}]*\})*)\}\s*catch\s*(?:\([^)]*\))?\s*\{([^{}]*)\}/g;
+  const dir = R('src/worker');
+  let seen = 0; const bare = [];
+  for (const f of readdirSync(dir).filter(x => x.endsWith('.js'))) {
+    const s = readFileSync(join(dir, f), 'utf8');
+    for (const m of s.matchAll(TRY)) {
+      if (!CRIT.test(m[1])) continue;
+      seen++;
+      if (!m[2].trim()) bare.push(f + ':' + s.slice(0, m.index).split('\n').length);
+    }
+  }
+  /* The negative control: a scanner that matches nothing passes everything. */
+  if (seen < 15) throw new Error('the scan found only ' + seen + ' guarded money or permission writes, which cannot be right - the scanner is broken, not the code.');
+  if (bare.length) throw new Error(bare.length + ' money or permission write(s) are in an empty catch - report with _writeFailed(env, where, e), '
+    + 'or say why it may be quiet with a /* best-effort: ... */ note:\n    ' + bare.join('\n    '));
+});
+
 /* ── 4b. Page weight ──────────────────────────────────────────────────────
    index.html is one file and every visitor downloads all of it before the app
    exists. Nothing measured it, so it could only grow - and it had, to 2.3MB

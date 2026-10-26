@@ -293,7 +293,7 @@ async function widgetChat(request, env, ctx) {
      to give it back or a rejected request permanently costs the owner one. */
   const refundMsg = async () => {
     if (!msgCap) return;
-    try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+    try { await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
   };
 
   /* THE OWNER'S DOLLAR CEILING, which every other spending path consults.
@@ -379,7 +379,7 @@ async function widgetChat(request, env, ctx) {
   const oMonth = await counter(env, ownerMonthName, { op: 'reserve', amount: wReserve, cap: ownerLimits.monthTokens, ttlMs: 86400000 * 70 });
   if (!oMonth.allowed) {
     audit(env, 'widget_owner_quota', { key, owner: ownerEmail, scope: 'month' });
-    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
     await refundMsg();
     await releaseWidgetUSD();
     return new Response(JSON.stringify({ error: 'This assistant is unavailable right now. Please try again later.' }),
@@ -387,8 +387,8 @@ async function widgetChat(request, env, ctx) {
   }
   /* Every path from here that does not reach the model gives both back. */
   const refundOwner = async () => {
-    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) {}
-    try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) {}
+    try { await counter(env, ownerDayName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 35 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
+    try { await counter(env, ownerMonthName, { op: 'incr', amount: -wReserve, ttlMs: 86400000 * 70 }); } catch (e) { await _writeFailed(env, 'widget_refund', e); }
     /* And the dollars. Every path that gives the tokens back has to give these
        back too, or a refused turn permanently consumes the owner's monthly
        budget for work that never ran. */

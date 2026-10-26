@@ -677,7 +677,7 @@ async function aiProxy(request, env, ctx, principal) {
       try {
         if (b.session) await counter(env, b.name, { op: 'sessionRelease', start: b.session, amount: b.amount });
         else await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs });
-      } catch (e) {}
+      } catch (e) { await _writeFailed(env, 'unbook', e); }
     }
   };
   const refuseWindow = async (message, code, resetAt) => {

@@ -212,7 +212,7 @@ async function serveSite(request, env, slug){
   // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
   // site record on every read - that was write-amplification on a read-heavy
   // public page AND a lost-update race between concurrent viewers.
-  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
+  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){ /* best-effort: a page-view count */ }
 
   return new Response(rec.html, {
     status: 200,

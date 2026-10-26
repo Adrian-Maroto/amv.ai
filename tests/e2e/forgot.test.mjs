@@ -116,7 +116,7 @@ const short = await page.evaluate(async () => {
   await new Promise(r => setTimeout(r, 300));
   return document.getElementById('fp-msg')?.textContent || '';
 });
-ok(/8 characters/i.test(short), 'a too-short password is caught', short);
+ok(/at least 15 characters/i.test(short), 'a too-short password is caught - with the stricter minimum when the server has not said which applies', short);
 
 section('It signs you straight in (no retyping what you just set)');
 

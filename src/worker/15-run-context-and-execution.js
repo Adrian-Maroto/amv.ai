@@ -1941,7 +1941,7 @@ async function runDueAutomations(env, atMs, opts){
           if(c>0) await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
           if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
           itemBooked = 0; itemGlobalBooked = 0;
-        }catch(e){}
+        }catch(e){ await _writeFailed(env, 'job_settle', e); }
         /* What happened to this result, decided here rather than guessed later.
            "It ran" and "it reached you" are different facts, and the second one
            is the one somebody is actually asking about when they look. */

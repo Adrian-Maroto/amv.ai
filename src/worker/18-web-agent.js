@@ -240,7 +240,7 @@ async function _spendRelease(env, email, amount){
 async function _spendRecord(env, email, amount){
   const amt = +amount || 0;
   if(!(amt > 0)) return;
-  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){}
+  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){ await _writeFailed(env, 'spend_record', e); }
 }
 
 const WEB_MAX_STEPS = 24;

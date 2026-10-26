@@ -233,7 +233,7 @@ async function authLoginVerify(request, env) {
       });
     } catch (e) {}
     if (!applied) return json({ error: 'AMV could not finish that just now. Please sign up again.', code: 'claim_failed' }, 503);
-    try { await revokeUserTokens(env, em); } catch (e) {}
+    try { await revokeUserTokens(env, em); } catch (e) { await _writeFailed(env, 'claim_revoke', e); }
     audit(env, 'account_claimed', { email: em });
   }
   try { await _markActive(env, em); } catch (e) {}
@@ -481,7 +481,7 @@ async function authGoogle(request, env) {
 
          The population counter is incremented here too, which the password
          path did and this one did not - so the two providers now agree. */
-      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){}
+      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
       try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }
       catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
@@ -1157,7 +1157,7 @@ async function authDeleteAccount(request, env) {
        somebody loses money AMV was in the middle of sending them. */
     try { await alertOnce(env, 'delete_payout_check',
       'An account deletion could not be completed because the unsettled-payout check could not be read. '
-      + 'The account is intact and the person has been asked to try again.', 30); } catch (_) {}
+      + 'The account is intact and the person has been asked to try again.', 30); } catch(_) { /* best-effort: an alert about a deletion already refused; the refusal is what protects the money */ }
     return json({
       error: 'AMV could not confirm whether you have any payouts still being sent, so your account has not '
            + 'been deleted. Nothing has changed. Please try again in a few minutes - this is a temporary fault '
@@ -1619,7 +1619,7 @@ async function authDeleteAccount(request, env) {
   /* Uncounted, so the conversion denominator follows reality. A counter that
      only ever goes up would make the funnel look worse every time somebody
      leaves, which is its own kind of wrong number. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){}
+  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){ /* best-effort: a public count of accounts */ }
   /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
      both ways or the code would keep resolving to an account that no longer
      exists, and the activity log is a record OF this person - erasure means it

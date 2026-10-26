@@ -333,7 +333,7 @@ async function jobApply(request, env) {
                   code: 'apply_cap' }, 429);
   }
   const giveBack = async () => {
-    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) { /* best-effort: a daily application count, given back; a miss costs one application slot today */ }
   };
 
   const cfg = await _mailCfgFor(env, user.email);
