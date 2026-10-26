@@ -714,6 +714,9 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
   'approvals', 'handoff', 'abuse', 'seller', 'widget', 'wallet', 'wallet_tx',
   /* What prepaid credit does when the plan runs out (auto, ask or stop). */
   'creditpref',
+  /* Their named agents (77-agents.js): instructions they wrote, so they go
+     with the account. What an agent spent is a counter that expires. */
+  'agents',
   /* The two convenience indexes: which listings somebody published and which
      conversations they are in. They name a person and point at their things,
      so they go with the account like everything else - and the records they

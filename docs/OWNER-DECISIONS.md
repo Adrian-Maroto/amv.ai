@@ -205,6 +205,26 @@ and keeping recordings on AMV's servers (the steps live on the device and in
 the skill). Built: `browserTeach` in `72-web-takeover.js`, `_webTeach` in
 `web-live.js`, `teach-amv-by-showing-it` (worker and e2e).
 
+**23. Persistent named Agents - YES, built on background jobs, with a budget the server enforces.**
+The Oct 26 audit's first ask after storage. An agent is a name, a role,
+instructions, a monthly budget and a pause switch, kept as one new stored
+record per account (`agents`, erased with the account) - the one schema
+change this needed, decided here under the standing delegation. Its work is
+ordinary background jobs, so every limit those already have still applies
+(the plan's job count, the account's monthly ceiling, the day's ceiling,
+quiet hours, approval levels). What the agent adds is decided where the run
+happens: its instructions are placed after AMV's rules and can never widen
+what a run may do; a paused agent's jobs wait; its budget is reserved before
+each run and settled against the cost, exactly like the account's; deleting
+it stops its jobs and keeps their results. Pro and up, ten per account,
+created and changed only from a signed-in session, never with an API key.
+Off the table for now: a workspace or browser profile of its own (needs the
+R2 bucket, the owner's step - an agent with a computer that forgets is worse
+than none), and agents messaging each other (the step graph already joins
+work; agents become graph nodes after this half is proven). Built:
+`77-agents.js`, the run path in `15-run-context-and-execution.js`, Agents in
+Crew; `an-agent-works-within-what-it-was-given`, `an-agent-you-can-see-working`.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

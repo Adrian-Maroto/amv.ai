@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="ea08a2e6dc541860">
+<meta name="amv-build" content="9b5f5a874c830551">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10317,6 +10317,24 @@ font-size:9px; font-weight:700; color:var(--mu); line-height:1; }
 .rsrc-chip.read .rsrc-fav{ box-shadow:0 0 0 2px var(--grn); }
 .rsrc-read .rsrc-qt{ color:var(--grn); }
 .rsrc-read-failed .rsrc-qt{ color:var(--mu); }
+.mc-agents{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:var(--sp-3); }
+.mc-agent{ display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-4); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-md); min-width:0; }
+.mc-agent.paused{ opacity:.78; }
+.mc-agent-h{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
+.mc-agent-h h4{ margin:0; font-family:var(--fdisplay); font-size:var(--t-lg); color:var(--tx); overflow-wrap:anywhere; }
+.mc-agent-state{ flex:none; font-size:var(--t-xs); padding:2px var(--sp-2); border-radius:var(--r-pill); background:var(--s3); color:var(--mu); }
+.mc-agent-state.on{ color:var(--grn); }
+.mc-agent-role{ margin:0; color:var(--mu); font-size:var(--t-sm); }
+.mc-agent-money{ margin:0; font-size:var(--t-sm); color:var(--tx); }
+.mc-agent-money.over{ color:var(--gold); }
+.mc-agent-jobs{ margin:0; padding-left:var(--sp-4); font-size:var(--t-sm); color:var(--tx); display:flex; flex-direction:column; gap:var(--sp-1); }
+.mc-agent-err{ display:block; color:var(--gold); font-size:var(--t-xs); }
+.mc-agent-none{ margin:0; color:var(--mu); font-size:var(--t-sm); }
+.mc-agent-last{ border-top:1px solid var(--bd); padding-top:var(--sp-2); font-size:var(--t-sm); }
+.mc-agent-last span{ color:var(--mu); font-size:var(--t-xs); }
+.mc-agent-last p{ margin:var(--sp-1) 0 0; color:var(--tx); white-space:pre-wrap; overflow-wrap:anywhere; }
+.mc-agent-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:auto; }
+#mc-agents .mc-sec-link{ white-space:nowrap; }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

@@ -817,6 +817,15 @@ async function autoCreate(request, env){
     : []).slice(0, 4);
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > CREW_DETAIL_MAX) return _crewDetailTooLong();
+  /* WHICH OF THE CALLER'S AGENTS DOES THIS (77-agents.js), if any. Looked
+     up in the caller's own record, so another account's agent is not found
+     rather than refused - there is nothing to say about it. */
+  let agent = '';
+  if(body.agent != null && body.agent !== ''){
+    const a = await _agentFind(env, user.email, String(body.agent));
+    if(!a) return json({ error:'That agent does not exist.', code:'agent_unknown' }, 400);
+    agent = a.id;
+  }
   /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
 
      A job's detail is stored here and read by the model on every run for as
@@ -953,6 +962,7 @@ async function autoCreate(request, env){
        evidence and a missing `use` is a broken job. */
     boosts,
     country,
+    ...(agent ? { agent } : {}),
     tier: budget.free ? 'free' : 'paid',
     created: Date.now(), runs: 0, lastError: null, active: true
   };
