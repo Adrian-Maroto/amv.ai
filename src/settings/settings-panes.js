@@ -610,6 +610,7 @@ function _renderSetPaneInner(only, into){
             loadStats();
           }catch(e){ toast('The request did not reach the server, so nobody was emailed.','error',8000); b.disabled=false; b.textContent=T('It connects now - tell them'); }
         }));
+        _fdSwitches(base, tok);
         // wire kill switch
         const kbtn=$('fd-kill');
         /* THE PLATFORM KILL SWITCH, and its answer was thrown away.
@@ -990,3 +991,50 @@ function setFontSize(px){
   saveStr('amv_fs', px);
   try{ if(S.tab==='settings' && S.settingsPane==='appearance') renderSetPane(); }catch(e){}
 }
+
+/* SWITCH OFF ONE PART (owner console; 80-switches.js on the server).
+   The global pause stops everything; this stops one feature, engine,
+   connector or kind of write, and says what is off, since when and why.
+   Every flip is read back from the server's answer before the screen says
+   it happened - the same rule the global pause was fixed to follow. */
+async function _fdSwitches(base, tok){
+  const host = document.querySelector('#fd-switches .fd-sw-body'); if(!host) return;
+  const url = (p) => base.replace(/\/$/,'') + p;
+  const hdr = { 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' };
+  let d;
+  try{
+    const r = await fetchDeadline(url('/v1/admin/switches'), { headers: hdr }, 15000);
+    d = await r.json().catch(()=>({}));
+    if(!r.ok){ host.className='fd-sw-body fd-empty'; host.textContent = r.status===403 ? 'Invalid admin token.' : 'Could not load the switches ('+r.status+').'; return; }
+  }catch(e){ host.className='fd-sw-body fd-empty'; host.textContent='Could not reach the backend.'; return; }
+  const off = d.off || {};
+  const when = (t) => t ? new Date(t).toLocaleString() : '';
+  const row = (name, label) => {
+    const o = off[name];
+    return '<div class="fd-sw-row'+(o?' off':'')+'"><div><b>'+escH(label)+'</b>'+(o?'<span class="fd-sw-why">Off since '+escH(when(o.at))+(o.why?' - '+escH(o.why):'')+'</span>':'')+'</div>'
+      + '<button class="btn '+(o?'bp':'bs')+'" data-fd-sw="'+escH(name)+'" data-fd-sw-off="'+(o?'0':'1')+'">'+(o?'Turn back on':'Switch off')+'</button></div>';
+  };
+  const feats = Object.entries(d.features || {}).map(([k, label]) => row('feature:'+k, label)).join('');
+  const others = Object.keys(off).filter(n => !n.startsWith('feature:')).map(n => row(n, n)).join('');
+  host.className = 'fd-sw-body';
+  host.innerHTML = feats + others
+    + '<div class="fd-sw-add"><input class="fp-in" id="fd-sw-name" placeholder="model:amv-core, connector:gmail or write:gmail.send" aria-label="Switch to turn off" autocomplete="off">'
+    + '<input class="fp-in" id="fd-sw-why" placeholder="Why (kept with it)" aria-label="Why" maxlength="200" autocomplete="off">'
+    + '<button class="btn bs" data-fd-sw-new="1">Switch off</button></div>';
+  const flip = async (name, turnOff, btn) => {
+    const why = turnOff ? (String(($('fd-sw-why')||{}).value||'').trim()) : '';
+    if(turnOff && !await showConfirmAsync('Switch off '+name+'?\n\nPeople using it are told it is paused; everything else keeps working.')) return;
+    if(btn){ btn.disabled = true; btn.textContent = turnOff ? 'Switching off…' : 'Turning on…'; }
+    try{
+      const r = await fetchDeadline(url('/v1/admin/switch'), { method:'POST', headers: hdr, body: JSON.stringify({ name, off: turnOff, why }) }, 15000);
+      const x = await r.json().catch(()=>({}));
+      if(!r.ok || x.off !== turnOff){ toast((x.error || ('Nothing changed ('+r.status+').')) + ' ' + name + (turnOff ? ' is still ON.' : ' is still OFF.'), 'error', 9000); }
+      else toast(turnOff ? name+' is off. It reaches every server within about a minute.' : name+' is back on.', 'success', 6000);
+    }catch(e){ toast('Could not reach the backend, so nothing changed.', 'error', 8000); }
+    _fdSwitches(base, tok);
+  };
+  host.querySelectorAll('[data-fd-sw]').forEach(b => on(b, 'click', () => flip(b.dataset.fdSw, b.dataset.fdSwOff === '1', b)));
+  const add = host.querySelector('[data-fd-sw-new]');
+  if(add) on(add, 'click', () => { const n = String(($('fd-sw-name')||{}).value||'').trim().toLowerCase(); if(!n){ toast('Name the switch first.', 'info', 4000); return; } flip(n, true, add); });
+}
+

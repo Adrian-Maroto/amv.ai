@@ -4797,6 +4797,10 @@ async function connAct(request, env){
   /* An unknown name is not a 500 and not a silent empty answer. Both of those
      read to a caller as "there was nothing there". */
   if(!spec) return json({ error:'unknown_action', message:'AMV does not know that action.' }, 400);
+  /* The provider (the part before the dot) or this one write, switched off
+     from the console (80-switches.js). Before anything is called. */
+  { const off = await _switchedOff(env, 'connector:' + name.split('.')[0], spec.writes ? 'write:' + name : '');
+    if(off) return _switchRefusal(off, 'This action on your connected account'); }
 
   /* Bounded, because every one of these is an outbound call to somebody else's
      API on somebody else's quota. Writes are bounded harder: reading your
@@ -6300,6 +6304,8 @@ async function remoteCall(request, env){
   const slug = String(body.app || '');
   const app = Object.prototype.hasOwnProperty.call(REMOTE_APPS, slug) ? REMOTE_APPS[slug] : null;
   if (!app) return json({ error: 'unknown_app' }, 400);
+  { const off = await _switchedOff(env, 'connector:' + slug.toLowerCase());
+    if (off) return _switchRefusal(off, app.name); }
   const tool = String(body.tool || '');
   if (!tool || tool.length > 120) return json({ error: 'bad_tool' }, 400);
   const args = (body.args && typeof body.args === 'object' && !Array.isArray(body.args)) ? body.args : {};
@@ -10346,6 +10352,13 @@ async function runDueAutomations(env, atMs, opts){
   const now = +atMs || Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
+  /* Background jobs switched off from the console (80-switches.js): nothing
+     runs and nothing is lost - every job keeps its place and its next run,
+     and the first tick after the switch is back on picks them up. */
+  if (await _switchedOff(env, 'feature:automations')) {
+    try { audit(env, 'cron_paused', { by: 'feature:automations' }); } catch (e) {}
+    return { scanned: 0, ran: 0, failed: 0, queued: 0, processed: 0, deferred: 0, truncated: false, paused: true };
+  }
   // AMV-032: paginate the scan so users beyond the first KV page aren't silently
   // skipped (DB.list walks every page).
   /* THE CHEAP PATH, WITH THE OLD ONE UNDERNEATH IT.
@@ -16372,6 +16385,13 @@ async function _route(request, env, ctx) {
     }
     if (_killCache.val) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
   }
+  /* One part of AMV switched off from the console (80-switches.js). The
+     switch routes themselves are never covered, or a switch could only be
+     turned back on with wrangler. */
+  if (!path.startsWith('/v1/admin/')) {
+    const sw = await _switchGate(request, env, path);
+    if (sw) return sw;
+  }
 
   /* AMV-030: A ROUTE THAT ANSWERS ANY VERB ANSWERS THE WRONG ONES.
 
@@ -16473,7 +16493,7 @@ async function _route(request, env, ctx) {
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
-    '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support',
+    '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
        POST changes. Both must be reachable, and the handler decides which it
@@ -16718,6 +16738,8 @@ async function _route(request, env, ctx) {
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);
     case '/v1/admin/kill':      return adminKill(request, env);
+    case '/v1/admin/switch':    return adminSwitch(request, env);
+    case '/v1/admin/switches':  return adminSwitches(request, env);
     case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
@@ -21518,6 +21540,10 @@ async function aiProxy(request, env, ctx, principal) {
   // without re-deriving it from the model string.
   const eng = partnerEng ? Object.assign({}, partnerEng) : Object.assign({ key }, ENGINES[key]);
 
+  /* 0) ONE ENGINE SWITCHED OFF (80-switches.js). Refused, never quietly
+     swapped: the person picked this engine, and is told to pick another. */
+  { const off = await _switchedOff(env, 'model:' + String(key).toLowerCase());
+    if (off) return json({ error: _engineTitle(key, eng) + ' is paused right now. Choose another engine - everything else is working.', code: 'paused', switch: off.name, engine: key }, 503, { 'Retry-After': '300' }); }
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && _planRankOf(user.plan, user.customCfg) < PLAN_RANK[eng.minPlan]) {
     return json({ error: `${key} requires the ${eng.minPlan} plan. Upgrade to use it.`, code: 'plan_required', minPlan: eng.minPlan }, 402);
@@ -41305,4 +41331,127 @@ async function meaningRank(request, env){
     audit(env, 'meaning_failed', { email: user.email, error: String((e && e.message) || e).slice(0, 120) });
     return json({ error:'meaning_failed', message:'Searching by meaning did not work just now; the search used words alone.' }, 502);
   }
+}
+
+/* =====================================================================
+   SWITCHES - TURN ONE THING OFF, NOT EVERYTHING (scale audit #70, Oct 26)
+
+   GLOBAL_KILL stops everything that spends. That is the right tool when the
+   bill is running away and the wrong one when one supplier misbehaves: if a
+   mail provider starts returning wrong results, or one engine starts failing,
+   the owner should be able to stop exactly that - in seconds, from the
+   console, without a deploy - while everything else keeps working.
+
+   A switch is a name, and only these shapes exist:
+     feature:<name>     one area of the product (SWITCH_FEATURES below)
+     model:<engine>     one engine, by its AMV key
+     connector:<app>    one connected app or account provider
+     write:<action>     one kind of write on a connected account
+
+   Held in KV as one record, read at most every ten seconds per isolate, so a
+   flip reaches everybody within about a minute (KV's own spread) and costs
+   nothing on the hot path. A read that fails keeps the last answer this
+   isolate had, and is said: a switch that silently stops working is a switch
+   somebody trusted at 3am.
+
+   What a person sees is the truth without the internals: that this part of
+   AMV is paused, and to try again later - and the code `paused`, so the page
+   can say it in their language. Nothing that is off is quietly replaced by
+   something else.
+   ===================================================================== */
+const SWITCH_KEY = 'switches';
+const SWITCH_TTL_MS = 10000;
+const SWITCH_NAME_RE = /^(feature|model|connector|write):[a-z0-9][a-z0-9._-]{0,59}$/;
+/* Each feature, and the routes it covers. A route not listed here is covered
+   by GLOBAL_KILL only. */
+const SWITCH_FEATURES = {
+  browser:     { what: 'AMV’s browser',            prefixes: ['/v1/browser'] },
+  computer:    { what: 'The cloud computer',            prefixes: ['/v1/computer'] },
+  library:     { what: 'Files in your account',         prefixes: ['/v1/library'] },
+  widget:      { what: 'The website widget',            prefixes: ['/v1/widget/chat'] },
+  speech:      { what: 'Speech',                        prefixes: ['/v1/audio'] },
+  meaning:     { what: 'Searching by meaning',          prefixes: ['/v1/meaning'] },
+  marketplace: { what: 'Buying in the marketplace',     prefixes: ['/v1/market/buy'] },
+  finance:     { what: 'Bank connections',              prefixes: ['/v1/finance'] },
+  telegram:    { what: 'Telegram',                      prefixes: ['/v1/telegram'] },
+  sms:         { what: 'Text messages',                 prefixes: ['/sms/'] },
+  api:         { what: 'The AMV API (API keys)',        prefixes: [] },          // by credential, see _switchForRequest
+  automations: { what: 'Background jobs',               prefixes: ['/auto/create'] }, // and the scheduler itself
+};
+let _swCache = { at: 0, map: null };
+async function _switches(env) {
+  const now = Date.now();
+  if (_swCache.map && now - _swCache.at < SWITCH_TTL_MS) return _swCache.map;
+  try {
+    const raw = await env.AMV_KV.get(SWITCH_KEY);
+    const m = raw ? JSON.parse(raw) : {};
+    _swCache = { at: now, map: (m && typeof m === 'object') ? m : {} };
+  } catch (e) {
+    try { audit(env, 'switches_unread', { error: String((e && e.message) || e).slice(0, 120) }); } catch (_) {}
+    try { await alertOnce(env, 'switches_unread', 'The switches record could not be read; the last answer this server had is still in force.', 30); } catch (_) {}
+    _swCache = { at: now, map: _swCache.map || {} };
+  }
+  return _swCache.map;
+}
+/* The first of `names` that is switched off, with why; null when none is. */
+async function _switchedOff(env, ...names) {
+  const m = await _switches(env);
+  for (const n of names) if (n && m[n] && m[n].off) return { name: n, why: String(m[n].why || '') };
+  return null;
+}
+function _switchRefusal(hit, what) {
+  return json({ error: (what || 'This part of AMV') + ' is paused right now. Everything else is working. Try again a little later.',
+                code: 'paused', switch: hit.name }, 503, { 'Retry-After': '300' });
+}
+/* Which feature switch covers this request, if any. */
+function _switchForRequest(request, path) {
+  for (const [id, f] of Object.entries(SWITCH_FEATURES)) {
+    const hit = f.prefixes.some(p => p.endsWith('/') ? path.startsWith(p) : (path === p || path.startsWith(p + '/')));
+    if (hit) return { name: 'feature:' + id, what: f.what };
+  }
+  const auth = request.headers.get('Authorization') || '';
+  if (/^Bearer\s+amv_sk_/i.test(auth) || /^amv_sk_/.test(request.headers.get('X-AMV-Key') || '')) return { name: 'feature:api', what: SWITCH_FEATURES.api.what };
+  return null;
+}
+async function _switchGate(request, env, path) {
+  const f = _switchForRequest(request, path);
+  if (!f) return null;
+  const hit = await _switchedOff(env, f.name);
+  return hit ? _switchRefusal(hit, f.what) : null;
+}
+
+/* POST /v1/admin/switch {name, off, why}   - flip one
+   GET  /v1/admin/switches                  - what exists and what is off
+   Admin token only, rate limited by _adminGate, every flip audited and
+   alerted, and the record keeps who-when-why so a switch left off is found. */
+async function adminSwitch(request, env) {
+  { const g = await _adminGate(request, env, 'switch', 30, 500); if (g) return g; }
+  if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || '').toLowerCase().trim();
+  if (!SWITCH_NAME_RE.test(name)) return json({ error: 'A switch is feature:, model:, connector: or write: followed by a name.', code: 'bad_switch' }, 400);
+  if (name.startsWith('feature:') && !SWITCH_FEATURES[name.slice(8)])
+    return json({ error: 'There is no feature called ' + name.slice(8) + '.', code: 'bad_switch', features: Object.keys(SWITCH_FEATURES) }, 400);
+  const off = !!body.off;
+  const why = String(body.why || '').slice(0, 200);
+  let m = {};
+  try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {
+    return json({ error: 'The switches could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
+  }
+  if (off) m[name] = { off: true, why, at: Date.now() };
+  else delete m[name];
+  await env.AMV_KV.put(SWITCH_KEY, JSON.stringify(m));
+  _swCache = { at: Date.now(), map: m };          // this isolate knows at once
+  audit(env, 'switch_flipped', { name, off, why });
+  try { await alertOnce(env, 'switch:' + name + ':' + (off ? 'off' : 'on'), (off ? 'Switched OFF: ' : 'Switched back on: ') + name + (why ? ' - ' + why : ''), 1); } catch (e) {}
+  return json({ ok: true, name, off, switches: m });
+}
+async function adminSwitches(request, env) {
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  let m = {};
+  try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {}
+  return json({ ok: true, off: m,
+    features: Object.fromEntries(Object.entries(SWITCH_FEATURES).map(([k, f]) => [k, f.what])),
+    models: Object.keys(ENGINES),
+    shapes: ['feature:<name>', 'model:<engine>', 'connector:<app>', 'write:<action>'] });
 }

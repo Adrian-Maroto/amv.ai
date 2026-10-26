@@ -468,6 +468,10 @@ async function aiProxy(request, env, ctx, principal) {
   // without re-deriving it from the model string.
   const eng = partnerEng ? Object.assign({}, partnerEng) : Object.assign({ key }, ENGINES[key]);
 
+  /* 0) ONE ENGINE SWITCHED OFF (80-switches.js). Refused, never quietly
+     swapped: the person picked this engine, and is told to pick another. */
+  { const off = await _switchedOff(env, 'model:' + String(key).toLowerCase());
+    if (off) return json({ error: _engineTitle(key, eng) + ' is paused right now. Choose another engine - everything else is working.', code: 'paused', switch: off.name, engine: key }, 503, { 'Retry-After': '300' }); }
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && _planRankOf(user.plan, user.customCfg) < PLAN_RANK[eng.minPlan]) {
     return json({ error: `${key} requires the ${eng.minPlan} plan. Upgrade to use it.`, code: 'plan_required', minPlan: eng.minPlan }, 402);

@@ -29931,6 +29931,8 @@ function _founderDashHTML(d){
       '<div class="usage-meta"><span>'+money(sp.today)+' of '+money(sp.cap)+' ('+spendPct+'%)</span><span>'+(sp.killed?'\u26D4 Service PAUSED':'\u2705 Service live')+'</span></div>'+
       '<button class="btn '+(sp.killed?'bp':'bs')+'" id="fd-kill" style="margin-top:12px;font-size:var(--t-sm)">'+(sp.killed?'Resume service':'Pause service (kill switch)')+'</button>'+
     '</div>'+
+    // one part at a time (80-switches.js on the server; drawn by settings-panes.js)
+    '<div class="ss2" id="fd-switches"><h3>Switch off one part</h3><div class="fd-sw-body fd-loading">Loading\u2026</div></div>'+
     // plan breakdown
     '<div class="ss2"><h3>Users by plan</h3><div class="fd-plans">'+
       ['free','pro','elite','ultra','custom'].map(p=>'<div class="fd-plan"><div class="fd-plan-n">'+fmt(byPlan[p]||0)+'</div><div class="fd-plan-l">'+p+'</div></div>').join('')+

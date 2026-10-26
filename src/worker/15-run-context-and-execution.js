@@ -1470,6 +1470,13 @@ async function runDueAutomations(env, atMs, opts){
   const now = +atMs || Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
+  /* Background jobs switched off from the console (80-switches.js): nothing
+     runs and nothing is lost - every job keeps its place and its next run,
+     and the first tick after the switch is back on picks them up. */
+  if (await _switchedOff(env, 'feature:automations')) {
+    try { audit(env, 'cron_paused', { by: 'feature:automations' }); } catch (e) {}
+    return { scanned: 0, ran: 0, failed: 0, queued: 0, processed: 0, deferred: 0, truncated: false, paused: true };
+  }
   // AMV-032: paginate the scan so users beyond the first KV page aren't silently
   // skipped (DB.list walks every page).
   /* THE CHEAP PATH, WITH THE OLD ONE UNDERNEATH IT.

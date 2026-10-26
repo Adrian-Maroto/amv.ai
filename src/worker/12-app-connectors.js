@@ -527,6 +527,8 @@ async function remoteCall(request, env){
   const slug = String(body.app || '');
   const app = Object.prototype.hasOwnProperty.call(REMOTE_APPS, slug) ? REMOTE_APPS[slug] : null;
   if (!app) return json({ error: 'unknown_app' }, 400);
+  { const off = await _switchedOff(env, 'connector:' + slug.toLowerCase());
+    if (off) return _switchRefusal(off, app.name); }
   const tool = String(body.tool || '');
   if (!tool || tool.length > 120) return json({ error: 'bad_tool' }, 400);
   const args = (body.args && typeof body.args === 'object' && !Array.isArray(body.args)) ? body.args : {};

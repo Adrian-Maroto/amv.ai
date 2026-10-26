@@ -1645,6 +1645,10 @@ async function connAct(request, env){
   /* An unknown name is not a 500 and not a silent empty answer. Both of those
      read to a caller as "there was nothing there". */
   if(!spec) return json({ error:'unknown_action', message:'AMV does not know that action.' }, 400);
+  /* The provider (the part before the dot) or this one write, switched off
+     from the console (80-switches.js). Before anything is called. */
+  { const off = await _switchedOff(env, 'connector:' + name.split('.')[0], spec.writes ? 'write:' + name : '');
+    if(off) return _switchRefusal(off, 'This action on your connected account'); }
 
   /* Bounded, because every one of these is an outbound call to somebody else's
      API on somebody else's quota. Writes are bounded harder: reading your

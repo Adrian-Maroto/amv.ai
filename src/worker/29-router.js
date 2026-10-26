@@ -575,6 +575,13 @@ async function _route(request, env, ctx) {
     }
     if (_killCache.val) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
   }
+  /* One part of AMV switched off from the console (80-switches.js). The
+     switch routes themselves are never covered, or a switch could only be
+     turned back on with wrangler. */
+  if (!path.startsWith('/v1/admin/')) {
+    const sw = await _switchGate(request, env, path);
+    if (sw) return sw;
+  }
 
   /* AMV-030: A ROUTE THAT ANSWERS ANY VERB ANSWERS THE WRONG ONES.
 
@@ -676,7 +683,7 @@ async function _route(request, env, ctx) {
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
-    '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support',
+    '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
        POST changes. Both must be reachable, and the handler decides which it
@@ -921,6 +928,8 @@ async function _route(request, env, ctx) {
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);
     case '/v1/admin/kill':      return adminKill(request, env);
+    case '/v1/admin/switch':    return adminSwitch(request, env);
+    case '/v1/admin/switches':  return adminSwitches(request, env);
     case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
