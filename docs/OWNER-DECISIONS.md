@@ -321,6 +321,17 @@ setting to raise. Off the table: launching on the default, and removing it.
 The comfortable middle - raising it whenever it trips - is the trap: it
 teaches everyone the ceiling is not real. *Owner decides the number.*
 
+And how it is counted has a ceiling of its own. Every model call reserves
+and then settles against ONE counter for the whole day (`spend:<day>`, a
+single Durable Object), so every call in the world queues through one
+actor twice. One actor does roughly a thousand simple operations a second,
+which caps AMV near five hundred model calls a second however many servers
+there are - below the audit's estimate for a million daily users at peak.
+Recommendation: split the day's budget across 16 counters chosen by account,
+each holding a sixteenth, with the remainder moved between them when one runs
+dry; the per-account and per-plan ceilings, which are already per person,
+stay as they are. *Needs a yes: it is how money is counted.*
+
 **29. Revoked must mean revoked - MOVE REVOCATION OUT OF KV. Needs a yes (auth).**
 "Sign out everywhere" and revoking an API key write to KV, which can take a
 minute or more to be seen by every location; for that minute a revoked token
