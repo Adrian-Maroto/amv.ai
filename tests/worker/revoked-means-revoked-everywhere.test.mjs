@@ -29,7 +29,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'revoked-everywhere.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { issueTokens, verifyToken, revokeUserTokens, _sessEnd, _restoreMerge, _authName, counter };\n');
+  + '\nexport { issueTokens, verifyToken, revokeUserTokens, _sessEnd, _restoreMerge, _authName, counter, apiKeyCreate, apiKeyRevoke, _userFromApiKey, DB };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* The real Durable Object class, one instance per name, calls serialized. */
@@ -122,6 +122,25 @@ section('The object down: sign-in stays up, on the KV number');
   ok(!(await W.verifyToken(t.token, SECRET, A)), 'and a revocation made then still lands, in KV');
   DO.down = false;
   ok(!(await W.verifyToken(t.token, SECRET, A)), 'and stays revoked when the object is back (seeded from KV, never below it)');
+}
+
+section('An API key revoked at A stops working at B, now');
+{
+  const { kv, A, B } = mk();
+  await W.DB.put(A, 'acct', EMAIL, { email: EMAIL, name: 'Rui' });
+  await W.DB.put(A, 'ent', EMAIL, { plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+  const t = await W.issueTokens(A, EMAIL, 'Rui');
+  const req = (path, body) => new Request('https://api.amv.test' + path, { method: 'POST', headers: { Authorization: 'Bearer ' + t.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const made = await (await W.apiKeyCreate(req('/v1/keys/create', { name: 'ci' }), A)).json();
+  ok(!!made.key, 'a key is made', made.error || '');
+  const use = (env) => W._userFromApiKey(new Request('https://api.amv.test/v1/messages', { headers: { Authorization: 'Bearer ' + made.key } }), env);
+  ok(!!(await use(B)), 'before: it works at B');
+  const lookup = [...kv.live.keys()].find(k => k.startsWith('apikey:'));
+  kv.freeze();
+  const rv = await W.apiKeyRevoke(req('/v1/keys/revoke', { id: made.id || (made.item && made.item.id) }), A);
+  ok(rv.status === 200, 'revoked at A', rv.status);
+  ok(!!lookup && !!(await kv.B.get(lookup)) && !(await kv.A.get(lookup)), 'A deleted the lookup, and B\'s KV still holds it (the minute KV allows)', lookup);
+  ok(!(await use(B)), 'and B refuses the key anyway - its object says revoked');
 }
 
 section('KV failing is still a refusal, never zero');

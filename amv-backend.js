@@ -32044,6 +32044,15 @@ async function apiKeyRevoke(request, env) {
      it is what revocation really is. Marking the record without removing this
      would leave the key working. */
   if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
+  /* AND IN ONE PLACE EVERY LOCATION READS AT ONCE (scale audit, owner yes,
+     Oct 26). The KV delete above can take a minute or more to be seen
+     everywhere, and for that minute the key still worked somewhere. A key's
+     own object, raised once, is what _userFromApiKey asks first. Failing to
+     raise it is said, and the KV delete still ends the key within the minute. */
+  if (hash && env.AMV_COUNTER) {
+    try { await counter(env, 'apikeyrev:' + hash, { op: 'incr', amount: 1, keep: true, strict: true }); }
+    catch (e) { audit(env, 'apikey_revoke_slow', { email: user.email, id, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
   audit(env, 'apikey_revoked', { email: user.email, id });
   await _userEvent(env, request, user.email, 'api_key_revoked');
   return json({ ok: true, id, revoked: true });
@@ -32057,8 +32066,18 @@ async function _userFromApiKey(request, env) {
            || request.headers.get('X-AMV-Key') || '';
   if (!raw.startsWith(API_KEY_PREFIX)) return null;
   let ref = null;
-  try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${await _apiKeyHash(raw)}`) || 'null'); } catch (e) {}
+  const keyHash = await _apiKeyHash(raw);
+  try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${keyHash}`) || 'null'); } catch (e) {}
   if (!ref || !ref.email) return null;
+  /* Revoked anywhere is revoked here, now (see apiKeyRevoke). An object that
+     cannot be asked leaves the KV answer standing - an API outage over one
+     object is worse than the minute it covers - and is said. */
+  if (env.AMV_COUNTER) {
+    try {
+      const rv = await counter(env, 'apikeyrev:' + keyHash, { op: 'get', strict: true });
+      if (rv && +rv.value > 0) return null;
+    } catch (e) { audit(env, 'apikey_revocation_unread', { error: String((e && e.message) || e).slice(0, 120) }); }
+  }
 
   const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
   const item = (rec.items || []).find(k => k.id === ref.id);
