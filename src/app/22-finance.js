@@ -58,7 +58,7 @@ const AMVFinance = {
          deployment may link banks, and otherwise uses the network's country. */
       body: JSON.stringify({ country: (typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || '' }) });
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.url){ const e=new Error(d.error||'Could not start the link.'); e.code=d.code||'provider_error'; throw e; }
+    if(!r.ok || !d.url){ const e=new Error(_refusalText(d, 'Could not start the link.')); e.code=d.code||'provider_error'; throw e; }
     return d.url;
   },
 
@@ -82,7 +82,7 @@ const AMVFinance = {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
       body:'{}' });
     const d = await r.json().catch(()=>({}));
-    if(!r.ok){ const e=new Error(d.error||'Could not disconnect.'); e.code=d.code||'provider_error'; throw e; }
+    if(!r.ok){ const e=new Error(_refusalText(d, 'Could not disconnect.')); e.code=d.code||'provider_error'; throw e; }
     try{ saveStr('amv_fin_linked',''); }catch(e){}
     return true;
   },
@@ -104,7 +104,7 @@ const AMVFinance = {
     });
     const d = await r.json().catch(()=>({}));
     if(d && d.code){ const e=new Error(d.error||d.need||'Bank data unavailable.'); e.code=d.code; throw e; }
-    if(!r.ok) throw new Error(d.error || 'Could not reach your bank data.');
+    if(!r.ok) throw new Error(_refusalText(d, 'Could not reach your bank data.'));
     return d;
   },
 

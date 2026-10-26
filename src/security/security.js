@@ -12,7 +12,7 @@ const _secApi = {
   async call(path, body){
     const r = await AMV_API._fetch(path, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    if(!r.ok || d.error){ const e = new Error(d.error || T('That did not work. Try again.')); e.code = d.code; e.can = d.can; throw e; }
+    if(!r.ok || d.error){ const e = new Error(_refusalText(d, T('That did not work. Try again.'))); e.code = d.code; e.can = d.can; throw e; }
     return d;
   },
 };

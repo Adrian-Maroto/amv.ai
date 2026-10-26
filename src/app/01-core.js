@@ -923,7 +923,7 @@ const AMV_API = {
        separates "this deployment has no captcha" from "it has one and the
        browser could not produce a token". keyCreate already carries the code
        through for the same reason. */
-    { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'Login failed')); if(d.code) e.code=d.code; throw e; }
   },
   /* COMPANY SIGN-IN. Where to send somebody who typed their work address -
      {sso:false} when their company has not set it up - and then the code
@@ -932,7 +932,7 @@ const AMV_API = {
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/sso/start', {method:'POST', body:JSON.stringify({ email })});
     const d = await r.json().catch(()=>({}));
-    if(!r.ok){ const e=new Error(d.error || 'Company sign-in is not available right now.'); if(d.code) e.code=d.code; throw e; }
+    if(!r.ok){ const e=new Error(_refusalText(d, 'Company sign-in is not available right now.')); if(d.code) e.code=d.code; throw e; }
     return { sso: d.sso === true, url: String(d.url || ''), team: String(d.team || '') };
   },
   async ssoFinish(code, state){
@@ -940,7 +940,7 @@ const AMV_API = {
     const r = await this._fetch('/auth/sso/finish', {method:'POST', body:JSON.stringify({ code, state })});
     const d = await r.json().catch(()=>({}));
     if(r.ok && d.token){ this._setTokens(d); return d; }
-    { const e=new Error(d.error || 'Your company\u2019s sign-in did not finish. Nothing was signed in.'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'Your company\u2019s sign-in did not finish. Nothing was signed in.')); if(d.code) e.code=d.code; throw e; }
   },
   _setTokens(d){
     /* A session is in hand: whatever the server said about the last one is over. */
@@ -1186,7 +1186,7 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
     if(d.needsCode && d.challenge) return d;     // the emailed code finishes it
-    { const e=new Error(d.error || 'Signup failed'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'Signup failed')); if(d.code) e.code=d.code; throw e; }
   },
 
   /* The emailed code that finishes a sign-in or sign-up (/auth/login/verify).
@@ -1196,7 +1196,7 @@ const AMV_API = {
     const r = await this._fetch('/auth/login/verify', {method:'POST', body:JSON.stringify({challenge, code})});
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
-    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'That code did not work.')); if(d.code) e.code=d.code; throw e; }
   },
   /* The authenticator app's code, or a recovery code, that finishes a sign-in
      the password (or Google) started (/auth/login/mfa). */
@@ -1205,7 +1205,7 @@ const AMV_API = {
     const r = await this._fetch('/auth/login/mfa', {method:'POST', body:JSON.stringify(Object.assign({challenge}, answer))});
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
-    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'That code did not work.')); if(d.code) e.code=d.code; throw e; }
   },
   /* Sign in with a passkey: the server's challenge, the device's fingerprint
      or PIN, the server's check. No password and no email code. */
@@ -1216,7 +1216,7 @@ const AMV_API = {
     const b = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const x = atob(t + '='.repeat((4 - t.length % 4) % 4)); const u = new Uint8Array(x.length); for(let i = 0; i < x.length; i++) u[i] = x.charCodeAt(i); return u.buffer; };
     const e = (buf) => { let s = ''; for(const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
     const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify({purpose})})).json().catch(()=>({}));
-    if(!o.cid){ const er=new Error(o.error || 'Passkeys are not available right now.'); er.code=o.code; throw er; }
+    if(!o.cid){ const er=new Error(_refusalText(o, 'Passkeys are not available right now.')); er.code=o.code; throw er; }
     const pk = Object.assign({}, o.publicKey, { challenge: b(o.publicKey.challenge) });
     if(Array.isArray(o.publicKey.allowCredentials)) pk.allowCredentials = o.publicKey.allowCredentials.map(c => ({ type: c.type, id: b(c.id) }));
     const c = await navigator.credentials.get({ publicKey: pk });
@@ -1229,14 +1229,14 @@ const AMV_API = {
     const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify(await this.passkeyGet('signin'))});
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken && d.email) _devTokSet(d.email, d.deviceToken); this._setTokens(d); return d; }
-    { const er=new Error(d.error || 'That passkey did not sign you in.'); if(d.code) er.code=d.code; throw er; }
+    { const er=new Error(_refusalText(d, 'That passkey did not sign you in.')); if(d.code) er.code=d.code; throw er; }
   },
   async resendCode(challenge){
     if(!this.live) return null;
     const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge, lang:_amvLangTag()})});
     const d = await r.json().catch(()=>({}));
     if(d.ok) return d;
-    { const e=new Error(d.error || 'Could not send a new code.'); if(d.code) e.code=d.code; throw e; }
+    { const e=new Error(_refusalText(d, 'Could not send a new code.')); if(d.code) e.code=d.code; throw e; }
   },
 
   /* Programmatic access to this account. The key is returned exactly once, at
@@ -1464,12 +1464,12 @@ const AMV_API = {
     const r = await this._fetch('/v1/audio/transcribe' + q, { method:'POST', body: blob, noRetry: true,
       headers: { 'Content-Type': String(blob.type || 'audio/webm').split(';')[0] }, timeout: 180000, bodyTimeout: 60000 });
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || d.error){ const e = new Error(d.error || 'AMV could not hear that recording.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    if(!r.ok || d.error){ const e = new Error(_refusalText(d, 'AMV could not hear that recording.')); e.status = r.status; e.code = d.code || ''; throw e; }
     return d;
   },
   async speakText(text, signal){
     const r = await this._fetch('/v1/audio/speak', { method:'POST', body: JSON.stringify({ text }), noRetry: true, stream: true, signal, timeout: 30000 });
-    if(!r.ok){ const d = await r.json().catch(()=>({})); const e = new Error(d.error || 'AMV could not speak that.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    if(!r.ok){ const d = await r.json().catch(()=>({})); const e = new Error(_refusalText(d, 'AMV could not speak that.')); e.status = r.status; e.code = d.code || ''; throw e; }
     return r;
   },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
@@ -1503,7 +1503,7 @@ const AMV_API = {
       const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats,cycle})});
       const j=await r.json(); j._ok=r.ok; return j;
     });
-    if(!d._ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; }
+    if(!d._ok||!d.url){ const e=new Error(_refusalText(d, 'checkout failed')); e.code=d.code; throw e; }
     return d.url;
   },
   /* There is deliberately no paypalCreate/paypalCapture here. Those routes
@@ -1518,7 +1518,7 @@ const AMV_API = {
       const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})});
       const j=await r.json(); j._ok=r.ok; return j;
     });
-    if(!d._ok||!d.url) throw new Error(d.error||'subscribe failed');
+    if(!d._ok||!d.url) throw new Error(_refusalText(d, 'subscribe failed'));
     return d.url;
   },
   /* A bug report that reaches a person. Returns what really happened - `ok`
@@ -1529,7 +1529,7 @@ const AMV_API = {
     const r = await this._fetch('/v1/support', {method:'POST',
       body: JSON.stringify(Object.assign({ kind, text }, ctx||{}))});
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok) throw new Error(d.error || 'That could not be sent.');
+    if(!r.ok || !d.ok) throw new Error(_refusalText(d, 'That could not be sent.'));
     return d;
   },
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
@@ -1538,23 +1538,23 @@ const AMV_API = {
   /* "Email me when AMV is done". {probe:true} only asks whether this AMV can
      send email; {ok} reports how the work ended. The server picks the address
      and the words - see notifyDone. */
-  async notifyDone(body){ const r=await this._fetch('/v1/notify/done',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async notifyDone(body){ const r=await this._fetch('/v1/notify/done',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
   /* Joining a family. The invitation is a code emailed to the person being
      added; they find it on any device through familyPending and redeem it
      with familyAccept. There is no other kind of link any more. */
-  async familyInvite(email){ const r=await this._fetch('/v1/link/invite',{method:'POST',body:JSON.stringify({owner:email,scopes:['family']})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
-  async familyPending(){ const r=await this._fetch('/v1/family/pending',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async familyAccept(id,code){ const r=await this._fetch('/v1/link/accept',{method:'POST',body:JSON.stringify({id,code})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
-  async familyDecline(id){ const r=await this._fetch('/v1/family/decline',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
+  async familyInvite(email){ const r=await this._fetch('/v1/link/invite',{method:'POST',body:JSON.stringify({owner:email,scopes:['family']})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyPending(){ const r=await this._fetch('/v1/family/pending',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyAccept(id,code){ const r=await this._fetch('/v1/link/accept',{method:'POST',body:JSON.stringify({id,code})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async familyDecline(id){ const r=await this._fetch('/v1/family/decline',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(_refusalText(d)); return d; },
 
   /* Spending limits live on the server, because the browser copy is the
      editable one. These are the only way the screen should read or write them. */
-  async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async spendLimits(){ const r=await this._fetch('/v1/spend/limits',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
+  async spendSet(limits){ const r=await this._fetch('/v1/spend/set',{method:'POST',body:JSON.stringify({limits})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; },
 
   /* THE THINGS PEOPLE ALREADY DO, WHERE THEY LIVE.
      A GET, because the catalogue is public and the answer for a country is the
@@ -1563,8 +1563,8 @@ const AMV_API = {
      rather than five calls. */
   /* The country this visitor is in, as the network edge reports it - country
      level only, no prompt. Empty when the edge does not know. */
-  async where(){ const r=await this._fetch('/v1/where'); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not tell where you are.'); return { country:String(d.country||''), name:String(d.name||'') }; },
-  async everyday(country){ const r=await this._fetch('/v1/everyday?country='+encodeURIComponent(country||'')); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load these.'); return d; },
+  async where(){ const r=await this._fetch('/v1/where'); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(_refusalText(d, 'Could not tell where you are.')); return { country:String(d.country||''), name:String(d.name||'') }; },
+  async everyday(country){ const r=await this._fetch('/v1/everyday?country='+encodeURIComponent(country||'')); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(_refusalText(d, 'Could not load these.')); return d; },
   /* The public connector directory. The whole query is in the URL because the
      answer is a catalogue rather than anything of this account's - which is
      what lets the edge cache it and what makes it readable without an account
@@ -1580,46 +1580,46 @@ const AMV_API = {
        is not this server falling over, so the route answers 200 and says what
        happened. Both shapes are still refused here, because a caller that only
        checked the status would render "nothing matches" over an outage. */
-    if(!r.ok || (d && d.ok === false)) throw new Error(d.error||'The connector directory could not be reached.');
+    if(!r.ok || (d && d.ok === false)) throw new Error(_refusalText(d, 'The connector directory could not be reached.'));
     return d;
   },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
      registries the features use, so this can never claim more than exists. */
-  async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },
+  async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(_refusalText(d, 'Could not load coverage.')); return d; },
   async telegramStatus(){ const r=await this._fetch('/v1/telegram/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
-  async telegramConnect(b){ const r=await this._fetch('/v1/telegram/connect',{method:'POST',body:JSON.stringify(b)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async telegramConnect(b){ const r=await this._fetch('/v1/telegram/connect',{method:'POST',body:JSON.stringify(b)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not connect.')),{code:d.code}); return d; },
   async telegramDisconnect(){ const r=await this._fetch('/v1/telegram/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
-  async telegramSend(text){ const r=await this._fetch('/v1/telegram/send',{method:'POST',body:JSON.stringify({text})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
+  async telegramSend(text){ const r=await this._fetch('/v1/telegram/send',{method:'POST',body:JSON.stringify({text})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not send.')),{code:d.code}); return d; },
   /* GLOBAL JOB BOARDS. The apply call is the one that was missing entirely:
      the job hunt has always described an email application as something AMV
      submits end to end, and there was no route behind it. */
-  async jobBoards(){ const r=await this._fetch('/v1/jobs/boards',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load job boards.'); return d; },
-  async jobApply(body){ const r=await this._fetch('/v1/jobs/apply',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send the application.'),{code:d.code}); return d; },
+  async jobBoards(){ const r=await this._fetch('/v1/jobs/boards',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(_refusalText(d, 'Could not load job boards.')); return d; },
+  async jobApply(body){ const r=await this._fetch('/v1/jobs/apply',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not send the application.')),{code:d.code}); return d; },
   /* GLOBAL MAIL - the same shape as every other call here.
 
      `password` goes up and never comes back: the server encrypts it, stores
      the ciphertext and returns only what a person needs to see. Nothing in
      this file keeps a copy, so a person's mailbox password never sits in
      localStorage the way an integration token does. */
-  async mailProviders(){ const r=await this._fetch('/v1/mail/providers',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load providers.'); return d; },
+  async mailProviders(){ const r=await this._fetch('/v1/mail/providers',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(_refusalText(d, 'Could not load providers.')); return d; },
   async mailStatus(){ const r=await this._fetch('/v1/mail/status',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
-  async mailConnect(body){ const r=await this._fetch('/v1/mail/connect',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not connect.'),{code:d.code}); return d; },
+  async mailConnect(body){ const r=await this._fetch('/v1/mail/connect',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not connect.')),{code:d.code}); return d; },
   async mailDisconnect(){ const r=await this._fetch('/v1/mail/disconnect',{method:'POST',body:'{}'}); return await r.json().catch(()=>({})); },
-  async mailInbox(limit){ const r=await this._fetch('/v1/mail/inbox',{method:'POST',body:JSON.stringify({limit:limit||20})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read the mailbox.'),{code:d.code}); return d; },
-  async mailMessage(uid){ const r=await this._fetch('/v1/mail/message',{method:'POST',body:JSON.stringify({uid})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read that message.'),{code:d.code}); return d; },
-  async mailSend(body){ const r=await this._fetch('/v1/mail/send',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not send.'),{code:d.code}); return d; },
+  async mailInbox(limit){ const r=await this._fetch('/v1/mail/inbox',{method:'POST',body:JSON.stringify({limit:limit||20})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not read the mailbox.')),{code:d.code}); return d; },
+  async mailMessage(uid){ const r=await this._fetch('/v1/mail/message',{method:'POST',body:JSON.stringify({uid})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not read that message.')),{code:d.code}); return d; },
+  async mailSend(body){ const r=await this._fetch('/v1/mail/send',{method:'POST',body:JSON.stringify(body)}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not send.')),{code:d.code}); return d; },
   /* Turn auto-renew off, or back on. One boolean, and the server answers with
      what the subscription IS afterwards - not with what was asked - so the
      screen can only ever show a state that was read back. */
-  async autoRenew(on){ const r=await this._fetch('/v1/stripe/auto-renew',{method:'POST',body:JSON.stringify({on:!!on})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not change auto-renew.'),{code:d.code}); return d; },
+  async autoRenew(on){ const r=await this._fetch('/v1/stripe/auto-renew',{method:'POST',body:JSON.stringify({on:!!on})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not change auto-renew.')),{code:d.code}); return d; },
   /* Calendars that are not Google or Outlook - a subscription, not a login.
      The link is never returned by the server after it is stored, so nothing
      here ever holds one. */
-  async calFeeds(){ const r=await this._fetch('/v1/cal/feeds',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your calendars.'),{code:d.code}); return d; },
-  async calFeedAdd(url,label){ const r=await this._fetch('/v1/cal/feeds/add',{method:'POST',body:JSON.stringify({url,label})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not add that calendar.'),{code:d.code}); return d; },
-  async calFeedRemove(id){ const r=await this._fetch('/v1/cal/feeds/remove',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not remove that calendar.'),{code:d.code}); return d; },
-  async calEvents(days){ const r=await this._fetch('/v1/cal/events',{method:'POST',body:JSON.stringify({days:days||7})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your week.'),{code:d.code}); return d; },
-  async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
+  async calFeeds(){ const r=await this._fetch('/v1/cal/feeds',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not read your calendars.')),{code:d.code}); return d; },
+  async calFeedAdd(url,label){ const r=await this._fetch('/v1/cal/feeds/add',{method:'POST',body:JSON.stringify({url,label})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not add that calendar.')),{code:d.code}); return d; },
+  async calFeedRemove(id){ const r=await this._fetch('/v1/cal/feeds/remove',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not remove that calendar.')),{code:d.code}); return d; },
+  async calEvents(days){ const r=await this._fetch('/v1/cal/events',{method:'POST',body:JSON.stringify({days:days||7})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not read your week.')),{code:d.code}); return d; },
+  async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(_refusalText(d, 'Could not open billing.')); return d.url; },
 };
 window.AMV_API = AMV_API;
 
@@ -1853,6 +1853,36 @@ function announce(msg){
   }catch(e){}
 }
 try{ window.announce = announce; }catch(e){}
+
+/* WHAT A REFUSAL SAYS, IN WORDS.
+
+   The server answers a refusal two ways: a sentence in `error`, or a code in
+   `error` ("credentials_in_detail", "reconnect", "bad_folder") with the
+   sentence in `message`. Callers read `error`, so every refusal of the second
+   kind reached the person as its code. This picks the sentence: the message
+   when the error is only a code, a plain sentence for the codes that never
+   carry one, and the caller's own words when there is nothing better. */
+const _ERR_SAY = {
+  unauthorized: 'Your session has ended. Sign in again to carry on.',
+  forbidden: 'You do not have permission to do that.',
+  not_found: 'That could not be found. It may have been removed.',
+  busy: 'That is being changed somewhere else right now. Try again in a moment.',
+  too_large: 'That is larger than AMV accepts here.',
+  not_connected: 'That account is not connected. Connect it in Integrations.',
+  reconnect: 'That account needs signing in again. Reconnect it in Integrations.',
+  bad_request: 'AMV could not read that request. Try again.',
+  not_configured: 'That is not set up on this deployment yet.',
+};
+function _refusalText(d, fallback){
+  const e = d && d.error, m = d && d.message;
+  const code = typeof e === 'string' && /^[a-z][a-z0-9_]*$/.test(e);
+  if(code && typeof m === 'string' && m.trim()) return m;
+  if(code) return _ERR_SAY[e] ? T(_ERR_SAY[e]) : (fallback || T('That did not work. Try again.'));
+  if(typeof e === 'string' && e.trim()) return e;
+  if(typeof m === 'string' && m.trim()) return m;
+  return fallback || T('That did not work. Try again.');
+}
+try{ window._refusalText = _refusalText; }catch(e){}
 
 /* ONE LOADER FOR THE PARTS OF THE APP FETCHED ON DEMAND (audit #40).
    `here()` says whether the file has arrived - a function it declares, a

@@ -22,7 +22,7 @@ const AMVGames = {
     if(!(window.AMV_API && AMV_API.live)) throw new Error('AMV is not connected.');
     const r = await AMV_API._fetch(path, { method:'POST', body: JSON.stringify(body||{}) });
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || d.error){ const e=new Error(d.error||'That did not work.'); if(d.code) e.code=d.code; throw e; }
+    if(!r.ok || d.error){ const e=new Error(_refusalText(d, 'That did not work.')); if(d.code) e.code=d.code; throw e; }
     return d;
   },
   /* `prompts` is [{text, options?}]. The server refuses anything that asks for

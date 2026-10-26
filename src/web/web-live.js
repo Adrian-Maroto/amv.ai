@@ -408,7 +408,7 @@ async function _webReplay(id){
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
       body: JSON.stringify({ url: t.start, steps: t.steps, secrets, cookies: jar.length ? jar : undefined }) }, 240000);
     d = await r.json().catch(() => ({}));
-    if(!r.ok && !Array.isArray(d.results)) throw new Error(d.error || T('The taught task could not be run. Try again.'));
+    if(!r.ok && !Array.isArray(d.results)) throw new Error(_refusalText(d, T('The taught task could not be run. Try again.')));
   }catch(e){ view.close(); toast((e && e.message) || T('The taught task could not be run. Try again.'), 'error', 8000); return; }
   view.close();
   const rows = t.steps.map((s, i) => {

@@ -966,7 +966,7 @@ function _resetApi(path, body){
     body: JSON.stringify(body||{})
   }, 20000).then(async r=>{
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || d.error) throw new Error(d.error || 'Something went wrong. Try again.');
+    if(!r.ok || d.error) throw new Error(_refusalText(d, 'Something went wrong. Try again.'));
     return d;
   });
 }

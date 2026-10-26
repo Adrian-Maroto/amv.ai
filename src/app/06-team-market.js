@@ -10,21 +10,21 @@ const AMVTeam = {
   /* Throws rather than returning null on failure. A network error is NOT "you
      have no team" - answering it that way showed an existing team's owner a
      create-a-team form, and a member an upgrade wall, for a team that exists. */
-  async get(){ if(!this.enabled()) return null; const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
+  async get(){ if(!this.enabled()) return null; const r=await AMV_API._fetch('/team/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); this._cache=d.team; return d.team; },
   /* Returns { team, existing }. The server answers a second create with the
      team the account already owns rather than making another one, so the
      caller has to be able to tell the difference - "Team created!" over a team
      that was already there is a claim about something that did not happen. */
-  async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return { team:d.team, existing:!!d.existing }; },
-  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; e.seats=d.seats; throw e; } return d; },
-  async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
-  async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
-  async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
+  async create(name){ const r=await AMV_API._fetch('/team/create',{method:'POST',body:JSON.stringify({name})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); this._cache=d.team; return { team:d.team, existing:!!d.existing }; },
+  async invite(email,role){ const r=await AMV_API._fetch('/team/invite',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error){ const e=new Error(_refusalText(d)); e.code=d.code; e.seats=d.seats; throw e; } return d; },
+  async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); this._cache=d.team; return d.team; },
+  async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.members; },
+  async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(_refusalText(d)); e.code=d.code; throw e; } this._cache=null; return true; },
   /* engines: a list of engine ids, or null for everything the plan includes. */
-  async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||'Could not save the team\u2019s engines.'); return d.engines||null; },
+  async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s engines.')); return d.engines||null; },
   /* Company sign-in, for the owner: {action:'get'|'set'|'verify'|'require'|'remove', ...}. */
-  async sso(body){ const r=await AMV_API._fetch('/team/sso',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ const e=new Error(d.error||'That did not work.'); if(d.code) e.code=d.code; throw e; } return d; },
-  async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
+  async sso(body){ const r=await AMV_API._fetch('/team/sso',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ const e=new Error(_refusalText(d, 'That did not work.')); if(d.code) e.code=d.code; throw e; } return d; },
+  async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.members; },
   /* The audit log is the team's security record. "No activity yet" because the
      read failed would tell an owner checking who removed a member that nobody
      did anything. */
@@ -37,18 +37,18 @@ const AMVTeam = {
      first one above" to a team that HAS tasks is how two people end up doing
      the same piece of work. */
   async tasks(){ const r=await AMV_API._fetch('/team/tasks',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.tasks)) throw new Error((d&&d.error)||'Could not load the team board.'); return d; },
-  async taskCreate(title,assignee,notes,priority){ const r=await AMV_API._fetch('/team/task/create',{method:'POST',body:JSON.stringify({title,assignee,notes,priority})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
-  async taskUpdate(id,patch){ const r=await AMV_API._fetch('/team/task/update',{method:'POST',body:JSON.stringify(Object.assign({id},patch))}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.tasks; },
+  async taskCreate(title,assignee,notes,priority){ const r=await AMV_API._fetch('/team/task/create',{method:'POST',body:JSON.stringify({title,assignee,notes,priority})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.tasks; },
+  async taskUpdate(id,patch){ const r=await AMV_API._fetch('/team/task/update',{method:'POST',body:JSON.stringify(Object.assign({id},patch))}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.tasks; },
   // ── Shared library: push a project/prompt into the team's shared data ──
   async share(kind, item){
     const r=await AMV_API._fetch('/team/share',{method:'POST',body:JSON.stringify({kind,item})});
-    const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[];
+    const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.shared||[];
   },
   /* Throws, so the handler written for this failure can actually run. It used
      to swallow the error and return [], which made that handler unreachable and
      left the panel quietly claiming the team had shared nothing. */
   async shared(){ const r=await AMV_API._fetch('/team/shared',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>null); if(!d||d.error||!Array.isArray(d.shared)) throw new Error((d&&d.error)||'Could not load the shared library.'); return d.shared; },
-  async unshare(id){ const r=await AMV_API._fetch('/team/unshare',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.shared||[]; },
+  async unshare(id){ const r=await AMV_API._fetch('/team/unshare',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.shared||[]; },
   // ── Presence: lightweight heartbeat so teammates see who's active now ──
   /* null, not [] - an empty presence list renders as "everyone is offline", and
      the drawing code falls back to showing every member greyed out. A dropped
@@ -747,7 +747,7 @@ const AMVMarket = {
         r=await AMV_API._fetch('/v1/market/publish',{method:'POST',body:JSON.stringify(item)});
         d=await r.json();
       }
-      if(d.error) throw new Error(d.error); return d.item;
+      if(d.error) throw new Error(_refusalText(d)); return d.item;
     }
     // local mode: save on device (files travel as data URLs inside the listing)
     const clean={ ...item, id:'usr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
@@ -759,7 +759,7 @@ const AMVMarket = {
   // update a listing's status (active | sold | deactivated). Owner only, local mode.
   async setStatus(id, status){
     if(this._live()){
-      try{ const r=await AMV_API._fetch('/v1/market/status',{method:'POST',body:JSON.stringify({id,status})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; }catch(e){ throw e; }
+      try{ const r=await AMV_API._fetch('/v1/market/status',{method:'POST',body:JSON.stringify({id,status})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d; }catch(e){ throw e; }
     }
     const list=this._localListings(); const it=list.find(x=>x.id===id);
     if(!it) throw new Error('Listing not found'); if((it.authorEmail||'').toLowerCase()!==this._me()) throw new Error('Not your listing');
@@ -834,7 +834,7 @@ const AMVMarket = {
         r=await AMV_API._fetch('/v1/market/buy',{method:'POST',body:JSON.stringify({id})});
         d=await r.json();
       }
-      if(d.error) throw new Error(d.error); return d;   // {url} → external checkout
+      if(d.error) throw new Error(_refusalText(d)); return d;   // {url} → external checkout
     }
     // local/demo mode: complete the purchase on-device, credit the seller 80%
     const it=await this._resolve(id);
@@ -908,7 +908,7 @@ const AMVMarket = {
   },
   async unlist(id){
     if(this._live()){
-      const r=await AMV_API._fetch('/v1/market/unlist',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d;
+      const r=await AMV_API._fetch('/v1/market/unlist',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d;
     }
     this._saveLocalListings(this._localListings().filter(x=>x.id!==id)); return {ok:true};
   },
@@ -928,7 +928,7 @@ const AMVMarket = {
   },
   async withdraw(destination){
     if(this._live()){
-      const r=await AMV_API._fetch('/v1/market/withdraw',{method:'POST',body:JSON.stringify({destination})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d;
+      const r=await AMV_API._fetch('/v1/market/withdraw',{method:'POST',body:JSON.stringify({destination})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d;
     }
     const w=this._localWallet();
     if((w.balance||0)<10) throw new Error('Minimum withdrawal is $10. Your balance is $'+(w.balance||0).toFixed(2)+'.');

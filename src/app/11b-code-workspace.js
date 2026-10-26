@@ -336,7 +336,7 @@ async function openErrors(){
       body: JSON.stringify({})
     });
     data = await r.json();
-    if(data.error) throw new Error(data.error);
+    if(data.error) throw new Error(_refusalText(data));
   }catch(e){
     if(/unauthorized/i.test(e.message||'')){ try{ _clearAdminToken(); }catch(_){} _errAskToken('That admin token was rejected.'); return; }
     ovr.innerHTML='<div class="share-modal err-modal"><div class="share-title">Errors</div>'+

@@ -51,7 +51,7 @@ async function _creditPicker(){
       const res = await AMV_API._fetch('/v1/credit/checkout', { method: 'POST', body: JSON.stringify({ usd: +b.dataset.crUsd }) });
       const out = await res.json().catch(() => ({}));
       let u = null; try{ u = new URL(out.url); }catch(e){}
-      if(!res.ok || !u || u.protocol !== 'https:') throw new Error(out.error || 'The payment page could not be opened.');
+      if(!res.ok || !u || u.protocol !== 'https:') throw new Error(_refusalText(out, 'The payment page could not be opened.'));
       location.assign(u.toString());
     }catch(e){
       say(e.message || 'The payment page could not be opened.');
@@ -85,7 +85,7 @@ function _creditModeWire(body, saved){
     try{
       const res = await AMV_API._fetch('/v1/credit/mode', { method: 'POST', body: JSON.stringify({ mode: inp.value }) });
       const out = await res.json().catch(() => ({}));
-      if(!res.ok || !out.ok) throw new Error(out.error || T('That setting could not be saved. Nothing changed - try again.'));
+      if(!res.ok || !out.ok) throw new Error(_refusalText(out, T('That setting could not be saved. Nothing changed - try again.')));
       back = out.mode;
       say(T('Saved.'));
       if(typeof saved === 'function') saved(back);

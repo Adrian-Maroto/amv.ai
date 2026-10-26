@@ -173,7 +173,7 @@ function _renderInvestPaneNow(pane){
       const r=await AMV_API._fetch('/auto/update',{method:'POST',
         body:JSON.stringify({id:prev,action:'delete'})});
       const d=await r.json().catch(()=>({}));
-      if(!r.ok || d.error) throw new Error(d.error||'the server would not stop it');
+      if(!r.ok || d.error) throw new Error(_refusalText(d, 'the server would not stop it'));
       stillRunning=false;
       try{ saveStr('amv_inv_auto',''); }catch(e){}
     };

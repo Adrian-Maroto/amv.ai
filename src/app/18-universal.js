@@ -283,7 +283,7 @@ AMVConnectors.register({
           e.approvalTicket = d.approvalTicket || '';
           throw e;
         }
-        if(!okStatus || d.error) throw new Error(d.error || 'Web automation failed.');
+        if(!okStatus || d.error) throw new Error(_refusalText(d, 'Web automation failed.'));
         return d;
       }
     }
