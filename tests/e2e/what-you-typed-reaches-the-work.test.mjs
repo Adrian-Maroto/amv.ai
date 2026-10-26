@@ -113,6 +113,9 @@ section('The box is on the Crew screen, where the jobs it governs are');
   const r = await page.evaluate(async () => {
     setTab('crew');
     await new Promise(x => setTimeout(x, 900));
+    /* On Crew, one press on "Settings for background work" (folded since
+       Oct 26, when Crew became one box and its examples). */
+    document.querySelector('#mc-settings > summary').click();
     const box = document.getElementById('mc-standing-box');
     if (!box) return { found: false };
     const rect = box.getBoundingClientRect();

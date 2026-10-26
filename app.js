@@ -37299,32 +37299,6 @@ function _crewResultsHTML(){
 }
 function _crewRender(){ const el=$('crew-live'); if(el) el.innerHTML=_crewResultsHTML(); }
 
-/* THE FOUR QUICK CARDS ON THE CREW SCREEN.
-
-   Each card used to carry its own call as a string in an onclick attribute -
-   including `crewRun('gmail','Check Gmail')`, a two-argument call, which is why
-   the attribute form was reached for in the first place: the delegated
-   dispatcher passes one argument.
-
-   The card already knows which one it is, so the kind is the argument and the
-   title lives here beside the thing that uses it. An unknown kind does nothing
-   rather than calling crewRun with undefined and starting a run that reports a
-   failure the person did not cause. */
-const _CW_QUICK = {
-  trip: null,                              // its own screen, not a crew run
-  gmail: 'Check Gmail',
-  week:  'Plan my week',
-  auto:  null,                             // opens the cowork composer
-};
-function _cwQuick(kind){
-  if(kind==='trip'){ openTripPlanner(); return; }
-  if(kind==='auto'){ openCowork(); return; }
-  const title=_CW_QUICK[kind];
-  if(!title) return;
-  crewRun(kind, title);
-}
-try{ window._cwQuick=_cwQuick; }catch(e){}
-
 async function crewRun(kind, title, opts){
   opts=opts||{};
   /* A job really starting is what "you have been using Crew" is allowed to

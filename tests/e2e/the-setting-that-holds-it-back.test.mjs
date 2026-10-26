@@ -300,6 +300,8 @@ section('It works on a phone and without a mouse');
   const kb = await page.evaluate(async () => {
     setTab('crew');
     await new Promise(x => setTimeout(x, 900));
+    /* The settings fold away on Crew (Oct 26); somebody opens them first. */
+    document.getElementById('mc-settings').open = true;
     const opts = [...document.querySelectorAll('.mc-lv-opt')];
     const tabbable = opts.filter(o => o.getAttribute('tabindex') === '0');
     const selected = opts.filter(o => o.getAttribute('aria-checked') === 'true');

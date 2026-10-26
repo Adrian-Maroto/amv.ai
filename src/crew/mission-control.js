@@ -1293,7 +1293,6 @@ function renderCrewView(){
       </section>
     </div>
   </div></div>`;
-  try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
@@ -1339,46 +1338,5 @@ function _cwWireCmd(vc){
   }catch(e){}
 }
 try{ window._cwWireCmd=_cwWireCmd; }catch(e){}
-function cwDemo(){
-  const appr=_cwApprovals();
-  const now=Date.now(), me=(S.user&&S.user.name)||'You', first=me.split(' ')[0];
-  appr.unshift({
-    id:'a'+now, icon:'\uD83D\uDCE7',
-    title:'Weekly customer update - September',
-    project:'Growth', crewName:'Content Crew',
-    actionType:'send', resultType:'email', recipients:42,
-    destination:'42 customers (newsletter list)', account:'you@amv.dev',
-    requesting:'Send the finished monthly update to your customer list.',
-    autoApprove:false,
-    startedAt:now-26*6e4, readyAt:now-3*6e4,
-    warning:'Goes to 42 recipients. Double-check the subject line before approving.',
-    result:{ type:'email', from:'you@amv.dev', to:'42 customers (undisclosed recipients)',
-      subject:'What we shipped this month + what\u2019s next',
-      body:'Hi there,\n\nThis month we shipped three things you asked for: faster exports, a redesigned dashboard, and one-click sharing. Exports now finish in seconds, the dashboard puts your key numbers first, and sharing a report is now a single click.\n\nNext month we\u2019re focused on team workspaces - shared projects, roles, and a single bill. If you want early access, just reply to this email.\n\nThank you for building with us.\n\n- '+first },
-    timeline:[
-      {t:'9:02 AM', agent:'Planner', text:'Broke the update into research, draft, and review.'},
-      {t:'9:06 AM', agent:'Researcher', text:'Pulled this month\u2019s shipped features and the top 3 customer requests.'},
-      {t:'9:11 AM', agent:'Copywriter', text:'Wrote the subject line, intro, and the three highlights.'},
-      {t:'9:15 AM', agent:'Reviewer', text:'Tightened the copy and flagged the subject line for your eyes.'},
-      {t:'9:17 AM', agent:'AMV', text:'Ready for your approval.'}
-    ],
-    crew:[
-      {role:'Planner', resp:'Structured the work', status:'done'},
-      {role:'Researcher', resp:'Gathered the month\u2019s highlights', status:'done'},
-      {role:'Copywriter', resp:'Wrote the email', status:'done'},
-      {role:'Reviewer', resp:'Checked tone and accuracy', status:'done'}
-    ],
-    artifacts:[
-      {name:'highlights.md', from:'Researcher', to:'Copywriter', note:'the month\u2019s shipped features'},
-      {name:'draft-v1', from:'Copywriter', to:'Reviewer', note:'first email draft'},
-      {name:'final-email', from:'Reviewer', to:'AMV', note:'approved-for-review copy'}
-    ]
-  });
-  _cwSaveApprovals(appr); renderCrewView();
-  toast('Example draft added - press Preview to see the full workspace','info',4000);
-}
-
-try{ window.cwDemo=cwDemo; }catch(e){}
-
 /* Here once: the loader in the page reads this before fetching again. */
 try{ window._crewViewHere = true; }catch(e){}
