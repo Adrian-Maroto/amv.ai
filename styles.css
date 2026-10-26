@@ -17352,28 +17352,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .rsrc-read .rsrc-qt{ color:var(--grn); }
 .rsrc-read-failed .rsrc-qt{ color:var(--mu); }
 
-/* LAYER A340 - Agents in Crew (77-agents.js): one card per named worker -
-   its state, its month's spend against its own budget, its jobs, the latest
-   thing it produced, and what can be done with it. Same surfaces and tokens
-   as the running-job rows beside it; no new component family. */
-.mc-agents{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:var(--sp-3); }
-.mc-agent{ display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-4); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-md); min-width:0; }
-.mc-agent.paused{ opacity:.78; }
-.mc-agent-h{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
-.mc-agent-h h4{ margin:0; font-family:var(--fdisplay); font-size:var(--t-lg); color:var(--tx); overflow-wrap:anywhere; }
-.mc-agent-state{ flex:none; font-size:var(--t-xs); padding:2px var(--sp-2); border-radius:var(--r-pill); background:var(--s3); color:var(--mu); }
-.mc-agent-state.on{ color:var(--grn); }
-.mc-agent-role{ margin:0; color:var(--mu); font-size:var(--t-sm); }
-.mc-agent-money{ margin:0; font-size:var(--t-sm); color:var(--tx); }
-.mc-agent-money.over{ color:var(--gold); }
-.mc-agent-jobs{ margin:0; padding-left:var(--sp-4); font-size:var(--t-sm); color:var(--tx); display:flex; flex-direction:column; gap:var(--sp-1); }
-.mc-agent-err{ display:block; color:var(--gold); font-size:var(--t-xs); }
-.mc-agent-none{ margin:0; color:var(--mu); font-size:var(--t-sm); }
-.mc-agent-last{ border-top:1px solid var(--bd); padding-top:var(--sp-2); font-size:var(--t-sm); }
-.mc-agent-last span{ color:var(--mu); font-size:var(--t-xs); }
-.mc-agent-last p{ margin:var(--sp-1) 0 0; color:var(--tx); white-space:pre-wrap; overflow-wrap:anywhere; }
-.mc-agent-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:auto; }
-#mc-agents .mc-sec-link{ white-space:nowrap; }
 
 /* LAYER A341 - a taught task, replayed (78-teach-replay.js): each step with
    what happened to it, the reason under the one that stopped, and the page
@@ -17395,9 +17373,18 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .br2 > div:first-child{ min-width:0; }
 .br2 .opt-desc{ overflow-wrap:anywhere; }
 
-/* LAYER A343 - the offer to set up Companion, above the agents: one line of
-   what it does and the button, on the same surface as the agent cards. */
-.mc-companion{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-3); background:var(--s1); border:1px solid var(--accent-soft); border-radius:var(--r-md); }
-.mc-companion > div{ display:flex; flex-direction:column; gap:var(--sp-1); min-width:0; flex:1 1 240px; }
-.mc-companion b{ font-family:var(--fdisplay); font-size:var(--t-md); color:var(--tx); }
-.mc-companion span{ font-size:var(--t-sm); color:var(--mu); }
+/* LAYER A344 - Crew, simple (the owner, Oct 26): a title with the country
+   and pause controls beside it, one line, the box, what needs you, examples,
+   and the settings last. */
+.cw-simple-head{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; }
+.cw-simple-head h2{ margin:0; font-family:var(--fdisplay); }
+.cw-simple-head-r{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.cw-simple-sub{ margin:var(--sp-2) 0 var(--sp-4); max-width:60ch; }
+.cw-simple .crew-jobs-sec{ margin-top:var(--sp-6); }
+.cw-simple .cw-settings{ margin-top:var(--sp-6); }
+
+/* LAYER A345 - no always-on blur (Oct 26, "slow and laggy"). The sidebar and
+   the top bar were the only blurred surfaces on screen at rest, and nothing
+   scrolls behind either, so the blur drew nothing a person could see while
+   costing a full backdrop pass whenever anything near them repainted. */
+#sb,#anav{ backdrop-filter:none!important; -webkit-backdrop-filter:none!important; }

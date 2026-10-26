@@ -55,10 +55,6 @@ const BACKUP_PREFIXES = [
   /* Each pack of extra usage that was paid for - what a refund or a dispute
      is matched against, and what the bought total can be rebuilt from. */
   'creditpay:',
-  /* Each account's named agents (77-agents.js) - what the person wrote for
-     them. Their jobs are under auto:, so restoring one without the other
-     would leave jobs whose agent no longer exists, and they would stop. */
-  'agents:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',

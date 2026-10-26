@@ -1608,7 +1608,7 @@ async function _callAITurn(msgs, _opts) {
             if(!_streamBubbleUpdate(streamIdx, fullText)){
               setMsgs(msgs); renderChatMsgs();
             } else {
-              setMsgs(msgs);   // keep state in sync without a full DOM rebuild
+              _setMsgsStreaming(msgs);   // in memory now, saved every two seconds
             }
           }
         }catch{}

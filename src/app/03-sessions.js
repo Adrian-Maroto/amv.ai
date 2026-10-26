@@ -152,6 +152,7 @@ try{ window._sessFlushAll=_sessFlushAll; }catch(e){}
    collects what the save has just written. */
 function _flushEverything(){
   try{ _sessFlushAll(); }catch(e){}
+  try{ _streamSaveFlush(); }catch(e){}
   try{ if(typeof AMVSync !== 'undefined' && AMVSync.flush) AMVSync.flush(); }catch(e){}
 }
 try{ window._flushEverything=_flushEverything; }catch(e){}
@@ -2363,6 +2364,7 @@ function _autoTitle(c){
   }
 }
 function setMsgs(msgs){
+  if(_streamSaveT){ clearTimeout(_streamSaveT); _streamSaveT=0; _streamSaveConv=null; }
   const c=_ensureConv();
   c.msgs=msgs;
   /* Stamp every write. Without it the sync merge can only fall back to
@@ -2372,6 +2374,25 @@ function setMsgs(msgs){
   _autoTitle(c);
   _autoSave();
   renderHist();
+}
+/* WHILE AN ANSWER STREAMS, the chat is kept current in memory and saved at
+   most every two seconds. setMsgs on every token re-wrote every chat to
+   storage and redrew the whole Recents list: measured at 45ms a token with 60
+   chats on a phone-speed CPU, with tokens arriving faster than that - the
+   lag people felt while AMV answered. Every way a stream ends calls setMsgs,
+   and closing the page flushes, so nothing is saved less - only less often. */
+let _streamSaveT=0, _streamSaveConv=null;
+function _setMsgsStreaming(msgs){
+  const c=_ensureConv();
+  c.msgs=msgs; c.updated=Date.now();
+  _streamSaveConv=c;
+  if(!_streamSaveT) _streamSaveT=setTimeout(_streamSaveFlush, 2000);
+}
+function _streamSaveFlush(){
+  if(_streamSaveT){ clearTimeout(_streamSaveT); _streamSaveT=0; }
+  const c=_streamSaveConv; _streamSaveConv=null;
+  if(!c) return;
+  _autoTitle(c); _autoSave(); renderHist();
 }
 function _autoSave(){
   /* Conversations are read back by ONE path: loadUserConvs(email), keyed per

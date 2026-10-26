@@ -817,15 +817,6 @@ async function autoCreate(request, env){
     : []).slice(0, 4);
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > CREW_DETAIL_MAX) return _crewDetailTooLong();
-  /* WHICH OF THE CALLER'S AGENTS DOES THIS (77-agents.js), if any. Looked
-     up in the caller's own record, so another account's agent is not found
-     rather than refused - there is nothing to say about it. */
-  let agent = '';
-  if(body.agent != null && body.agent !== ''){
-    const a = await _agentFind(env, user.email, String(body.agent));
-    if(!a) return json({ error:'That agent does not exist.', code:'agent_unknown' }, 400);
-    agent = a.id;
-  }
   /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
 
      A job's detail is stored here and read by the model on every run for as
@@ -962,7 +953,6 @@ async function autoCreate(request, env){
        evidence and a missing `use` is a broken job. */
     boosts,
     country,
-    ...(agent ? { agent } : {}),
     tier: budget.free ? 'free' : 'paid',
     created: Date.now(), runs: 0, lastError: null, active: true
   };
@@ -1049,17 +1039,7 @@ async function _autoCreateSteps(request, env, user, body){
         if(!after.includes(a)) after.push(a);
       }
     }
-    /* WHO DOES THIS STEP: one of the caller's agents, or AMV itself. Each
-       step can be a different agent, so a task in steps is a graph of agents
-       - the researcher gathers, the writer drafts from what it gathered - each
-       with its own instructions, budget and pause applied at its own run. */
-    let agent = '';
-    if(s.agent != null && s.agent !== ''){
-      const a = await _agentFind(env, user.email, String(s.agent));
-      if(!a) return json({ error:'Step ' + (n + 1) + ' names an agent that does not exist.', code:'agent_unknown' }, 400);
-      agent = a.id;
-    }
-    steps.push({ detail, title, after, agent, kind: s.kind === 'research' ? 'research' : 'task' });
+    steps.push({ detail, title, after, kind: s.kind === 'research' ? 'research' : 'task' });
   }
   if(steps.every(s => s.after.length)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
 
@@ -1087,7 +1067,6 @@ async function _autoCreateSteps(request, env, user, body){
       uses: _autoUsesFromText(s.detail).slice(0, 4), boosts: [], country, tier: 'paid',
       created: now, runs: 0, lastError: null, active: true,
       group, step: { n: n + 1, of: steps.length, title: s.title },
-      ...(s.agent ? { agent: s.agent } : {}),
       /* One step: its id, as tasks have always been stored. Several: the
          list, and `got` collects each result as it arrives. */
       ...(waits ? { after: s.after.length === 1 ? ids[s.after[0]] : s.after.map(a => ids[a]), waiting: true } : {}),

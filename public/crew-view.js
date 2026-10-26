@@ -598,7 +598,7 @@ function _mcServerSchedRow(x){
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
-      <div class="mc-sched-meta">${x.agent && _mcAgentName(x.agent) ? escH(T('Agent: {0}').replace('{0}', _mcAgentName(x.agent))) + ' · ' : ''}${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
+      <div class="mc-sched-meta">${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
       <div class="mc-sched-mode-row">${(()=>{
         /* What this job will ACTUALLY do tonight - its own level capped by the
            account ceiling. Showing the job's own setting here would have it
@@ -959,221 +959,6 @@ async function mcNeverSave(){
 }
 try{ window.mcNeverSave = mcNeverSave; }catch(e){}
 
-/* AGENTS - named workers that stay (77-agents.js on the server).
-
-   An agent's jobs are ordinary running jobs: this section only names who does
-   them, shows what each agent has spent this month against its own budget and
-   what it produced last, and gives it work. Everything here is read from the
-   server on the way in and after every change, so a card never shows an
-   agent, a budget or a pause the server does not hold. */
-let _mcAgentsD = null, _mcAgentsErr = '', _mcAgentsAsked = false;
-function _mcAgentsLive(){ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }
-async function _mcAgentsLoad(){
-  _mcAgentsAsked = true;
-  try{
-    const r = await AMV_API._fetch('/v1/agents', { method:'GET', timeout:10000 });
-    const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
-    _mcAgentsD = d; _mcAgentsErr = '';
-  }catch(e){ _mcAgentsErr = (e && e.message) || T('the request failed'); }
-  /* In place: only this section changed, and rebuilding the whole of Crew
-     when one request lands is the flicker a-screen-that-refreshes-does-not-
-     flicker exists to stop. */
-  const box = document.getElementById('mc-agents');
-  if(box) box.outerHTML = _mcAgentsHTML();
-}
-async function mcAgentsReload(){
-  try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
-  await _mcAgentsLoad();
-  if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
-}
-function _mcAgentName(id){
-  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id);
-  return a ? a.name : '';
-}
-function _mcAgentCard(a){
-  const spent = a.spentUSD == null ? T('spend could not be read') : '$' + (+a.spentUSD).toFixed(2);
-  const money = a.budgetUSD > 0
-    ? T('{0} of its {1} monthly budget').replace('{0}', spent).replace('{1}', '$' + (+a.budgetUSD).toFixed(2))
-    : T('{0} this month · no budget of its own, your plan’s applies').replace('{0}', spent);
-  const over = a.budgetUSD > 0 && a.spentUSD != null && a.spentUSD >= a.budgetUSD;
-  const live = (a.jobs || []).filter(j => j.active);
-  const jobs = (a.jobs || []).length
-    ? '<ul class="mc-agent-jobs">' + a.jobs.slice(0, 4).map(j => '<li>' + escH(j.detail)
-        + (j.lastError ? ' <span class="mc-agent-err">' + escH(j.lastError) + '</span>' : '') + '</li>').join('') + '</ul>'
-    : '<p class="mc-agent-none">' + escH(T('No jobs yet. Give it one and it starts working on its own.')) + '</p>';
-  const last = (a.results || [])[0];
-  return '<article class="mc-agent' + (a.paused ? ' paused' : '') + '" aria-label="' + escH(a.name) + '">'
-    + '<div class="mc-agent-h"><h4>' + escH(a.name) + '</h4><span class="mc-agent-state' + (a.paused ? '' : ' on') + '">'
-    + escH(a.paused ? T('Paused') : live.length ? T('Working') : T('Idle')) + '</span></div>'
-    + (a.role ? '<p class="mc-agent-role">' + escH(a.role) + '</p>' : '')
-    + '<p class="mc-agent-money' + (over ? ' over' : '') + '">' + escH(money) + (over ? ' · ' + escH(T('budget reached, its jobs wait for next month')) : '') + '</p>'
-    + jobs
-    + (last ? '<div class="mc-agent-last"><span>' + escH(T('Latest result')) + ' · ' + escH(_dayLabel(last.at)) + '</span><p>' + escH(last.out.slice(0, 240)) + '</p></div>' : '')
-    + '<div class="mc-agent-acts">'
-    + '<button class="btn mc-mini bp" data-dact="mcAgentJob" data-darg="' + escH(a.id) + '"' + (a.paused ? ' disabled' : '') + '>' + escH(T('Give it a job')) + '</button>'
-    + '<button class="btn mc-mini ghost" data-dact="mcAgentEdit" data-darg="' + escH(a.id) + '">' + escH(T('Edit')) + '</button>'
-    + '<button class="btn mc-mini ghost" data-dact="mcAgentPause" data-darg="' + escH(a.id) + '|' + (a.paused ? 'resume' : 'pause') + '">' + escH(a.paused ? T('Resume') : T('Pause')) + '</button>'
-    + '<button class="btn mc-mini ghost" data-dact="mcAgentDelete" data-darg="' + escH(a.id) + '">' + escH(T('Delete')) + '</button>'
-    + '</div></article>';
-}
-function _mcAgentsHTML(){
-  if(!_mcAgentsLive()) return '';
-  if(!_mcAgentsAsked) setTimeout(_mcAgentsLoad, 0);
-  const d = _mcAgentsD;
-  const canAdd = d && d.allowed && (d.agents || []).length < d.max;
-  const head = '<div class="sec-head"><h3>' + escH(T('Agents')) + '</h3><span class="sec-sub">'
-    + escH(T('Named workers that keep going: each has its own instructions, its own monthly budget and its own jobs, and you can pause it at any time.'))
-    + '</span>' + (canAdd ? '<button class="mc-sec-link" data-dact="mcAgentEdit" data-darg="">' + escH(T('New agent')) + '</button>' : '') + '</div>';
-  let body;
-  if(!d && _mcAgentsErr) body = '<div class="mc-empty-row">' + escH(T('Your agents could not be loaded ({0}). Their jobs have not stopped.').replace('{0}', _mcAgentsErr))
-    + ' <button class="mc-sec-link" data-dact="mcAgentsReload">' + escH(T('Try again')) + '</button></div>';
-  else if(!d) body = '<div class="mc-empty-row" role="status">' + escH(T('Loading your agents…')) + '</div>';
-  else if(!d.allowed && !(d.agents || []).length) body = '<div class="mc-empty-row">' + escH(T('Agents work in the background, which is part of Pro.'))
-    + ' <button class="mc-sec-link" data-dact="setTab" data-darg="plans">' + escH(T('See plans')) + '</button></div>';
-  else if(!(d.agents || []).length) body = '<div class="mc-empty-row">' + escH(T('No agents yet. Make one for work you hand off again and again - a researcher who reads the news in your field every morning, an assistant who drafts the week’s replies.'))
-    + ' <button class="mc-sec-link" data-dact="mcAgentEdit" data-darg="">' + escH(T('New agent')) + '</button></div>';
-  else body = '<div class="mc-agents">' + d.agents.map(_mcAgentCard).join('') + '</div>';
-  return '<section id="mc-agents" class="mc-sec">' + head + _mcCompanionOfferHTML() + body + '</section>';
-}
-function _mcAgentDialog(title, inner, onSave){
-  const r = $('ovr'); if(!r) return;
-  r.innerHTML = '<div class="ov" id="ag-bg"><div class="ob" role="dialog" aria-modal="true" aria-labelledby="ag-t" style="max-width:560px">'
-    + '<button class="oc" id="ag-x" aria-label="' + escH(T('Close')) + '">×</button>'
-    + '<h2 id="ag-t">' + escH(title) + '</h2>' + inner
-    + '<p class="ob-sub" id="ag-msg" role="alert"></p>'
-    + '<div class="sec-row"><button class="btn bp" id="ag-save">' + escH(T('Save')) + '</button><button class="btn bs" id="ag-cancel">' + escH(T('Cancel')) + '</button></div>'
-    + '</div></div>';
-  r.classList.add('on');
-  on($('ag-x'), 'click', closeOvr); on($('ag-cancel'), 'click', closeOvr);
-  onBackdrop($('ag-bg'), closeOvr);
-  on($('ag-save'), 'click', async () => {
-    const b = $('ag-save'); b.disabled = true;
-    try{ await onSave(); closeOvr(); }
-    catch(e){ $('ag-msg').textContent = (e && e.message === 'not-connected') ? T('AMV is not connected to its engine, so nothing was saved.') : ((e && e.message) || T('That did not work. Nothing changed.')); b.disabled = false; }
-  });
-  const f = r.querySelector('input,textarea'); if(f) try{ f.focus(); }catch(e){}
-}
-function mcAgentEdit(id){
-  const a = id && _mcAgentsD ? (_mcAgentsD.agents || []).find(x => x.id === id) : null;
-  _mcAgentDialog(a ? T('Edit {0}').replace('{0}', a.name) : T('New agent'),
-    '<label class="ob-sub" for="ag-name">' + escH(T('Name')) + '</label><input id="ag-name" class="fp-in" maxlength="60" value="' + escH(a ? a.name : '') + '">'
-    + '<label class="ob-sub" for="ag-role">' + escH(T('Role, in a line')) + '</label><input id="ag-role" class="fp-in" maxlength="160" value="' + escH(a ? a.role : '') + '" placeholder="' + escH(T('e.g. Reads the news in my field and tells me what matters')) + '">'
-    + '<label class="ob-sub" for="ag-instr">' + escH(T('How it should work')) + '</label><textarea id="ag-instr" class="fp-in" rows="6" maxlength="4000">' + escH(a ? a.instructions : '') + '</textarea>'
-    + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(a ? a.budgetUSD : 0)) + '">'
-    + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>',
-    async () => {
-      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id } : {}, {
-        name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 }));
-      toast(a ? T('Saved.') : T('Agent created. Give it a job to start it working.'), 'success', 4000);
-      await mcAgentsReload();
-    });
-}
-function mcAgentJob(id){
-  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id); if(!a) return;
-  const every = [['daily', T('Every day')], ['weekly', T('Every week')], ['hourly', T('Every hour')]];
-  _mcAgentDialog(T('A job for {0}').replace('{0}', a.name),
-    '<label class="ob-sub" for="ag-job">' + escH(T('What should it do?')) + '</label><textarea id="ag-job" class="fp-in" rows="4" maxlength="2000"></textarea>'
-    + '<label class="ob-sub" for="ag-every">' + escH(T('How often')) + '</label><select id="ag-every" class="fp-in">' + every.map(e => '<option value="' + e[0] + '">' + escH(e[1]) + '</option>').join('') + '</select>'
-    + '<fieldset class="cr-mode"><legend>' + escH(T('When it has a result')) + '</legend>'
-    + '<label class="cr-mode-opt"><input type="radio" name="ag-appr" value="require" checked><span><b>' + escH(T('Ask first')) + '</b><span>' + escH(T('Each result waits for your approval.')) + '</span></span></label>'
-    + '<label class="cr-mode-opt"><input type="radio" name="ag-appr" value="auto"><span><b>' + escH(T('Autonomous')) + '</b><span>' + escH(T('Results are delivered for you.')) + '</span></span></label></fieldset>',
-    async () => {
-      const detail = $('ag-job').value.trim();
-      if(!detail) throw new Error(T('Say what the job is.'));
-      await _autoApi('/auto/create', { detail, repeat: $('ag-every').value, kind: 'task', notify: 'app', agent: a.id,
-        approval: (document.querySelector('input[name="ag-appr"]:checked') || {}).value === 'auto' ? 'auto' : 'require' });
-      toast(T('{0} has the job. It runs on AMV’s servers, whether or not this is open.').replace('{0}', a.name), 'success', 5000);
-      await mcAgentsReload();
-    });
-}
-async function mcAgentPause(arg){
-  const [id, act] = String(arg || '').split('|');
-  try{
-    await _autoApi('/v1/agents/save', { id, paused: act === 'pause' });
-    toast(act === 'pause' ? T('Paused. Its jobs will not run until you resume it.') : T('Resumed. Its jobs run at their next time.'), 'success', 4000);
-  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
-  await mcAgentsReload();
-}
-async function mcAgentDelete(id){
-  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id); if(!a) return;
-  if(!(await showConfirmAsync(T('Delete {0}? Its jobs stop running. What it already did stays in your results.').replace('{0}', a.name)))) return;
-  try{
-    const d = await _autoApi('/v1/agents/delete', { id });
-    toast(T('Deleted. {0} of its jobs stopped.').replace('{0}', String(d.stopped || 0)), 'success', 4000);
-  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
-  await mcAgentsReload();
-}
-try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, _mcAgentName }); }catch(e){}
-/* COMPANION - an agent that looks ahead for the person, built from the same
-   parts as every other agent: one agent (its instructions and budget), and a
-   brief each morning that is an ordinary background job reading only what
-   the person ticked. How far it goes is the level they choose, and the level
-   is the job's approval, enforced on the server like any job's:
-
-     Reactive  - no brief; it answers when asked, with its instructions.
-     Helpful   - the brief and any drafts wait for their approval.
-     Proactive - the brief is delivered to them each morning.
-
-   It never sends, books or buys anything on its own - an unattended run
-   cannot - and every draft says it has not been sent. */
-const _COMPANION_LEVELS = {
-  reactive:  ['Reactive', 'Only when you ask. Nothing runs on its own.'],
-  helpful:   ['Helpful', 'A brief each morning that waits for you to look at it, with any replies drafted, never sent.'],
-  proactive: ['Proactive', 'The brief is delivered to you each morning. Replies are still drafts, never sent.'],
-};
-const _COMPANION_READS = {
-  'mail.read':     ['Your email', 'Important threads, and who is waiting on a reply.'],
-  'calendar.read': ['Your calendar', 'Today’s meetings and anything that clashes.'],
-};
-function _mcCompanion(){ return _mcAgentsD && (_mcAgentsD.agents || []).find(a => a.name === 'Companion') || null; }
-function _mcCompanionOfferHTML(){
-  if(!_mcAgentsD || !_mcAgentsD.allowed || _mcCompanion()) return '';
-  return '<div class="mc-companion"><div><b>' + escH(T('Companion')) + '</b><span>'
-    + escH(T('An agent that looks ahead for you: before you wake up it reads your important email and today’s calendar, tells you what matters, and drafts the replies - never sending anything.'))
-    + '</span></div><button class="btn mc-mini bp" data-dact="mcCompanionSetup" data-darg="">' + escH(T('Set up Companion')) + '</button></div>';
-}
-function mcCompanionSetup(){
-  const hours = [6, 7, 8, 9];
-  _mcAgentDialog(T('Set up Companion'),
-    '<fieldset class="cr-mode"><legend>' + escH(T('How far it goes')) + '</legend>'
-    + Object.keys(_COMPANION_LEVELS).map(k => '<label class="cr-mode-opt"><input type="radio" name="cp-level" value="' + k + '"' + (k === 'helpful' ? ' checked' : '') + '><span><b>'
-      + escH(T(_COMPANION_LEVELS[k][0])) + '</b><span>' + escH(T(_COMPANION_LEVELS[k][1])) + '</span></span></label>').join('') + '</fieldset>'
-    + '<fieldset class="cr-mode"><legend>' + escH(T('What it may read')) + '</legend>'
-    + Object.keys(_COMPANION_READS).map(k => '<label class="cr-mode-opt"><input type="checkbox" name="cp-read" value="' + k + '" checked><span><b>'
-      + escH(T(_COMPANION_READS[k][0])) + '</b><span>' + escH(T(_COMPANION_READS[k][1])) + '</span></span></label>').join('') + '</fieldset>'
-    + '<label class="ob-sub" for="cp-hour">' + escH(T('Brief ready by')) + '</label><select id="cp-hour" class="fp-in">'
-    + hours.map(h => '<option value="' + h + '"' + (h === 7 ? ' selected' : '') + '>' + escH(new Date(2026, 0, 1, h).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) + '</option>').join('') + '</select>'
-    + '<p class="ob-sub">' + escH(T('It reads only what you tick, from the accounts you have connected. Change any of this, pause it or delete it from its card.')) + '</p>',
-    async () => {
-      const level = (document.querySelector('input[name="cp-level"]:checked') || {}).value || 'helpful';
-      const reads = [...document.querySelectorAll('input[name="cp-read"]:checked')].map(x => x.value);
-      if(level !== 'reactive' && !reads.length) throw new Error(T('Tick at least one thing it may read, or choose Reactive.'));
-      const hour = +($('cp-hour') || {}).value || 7;
-      const said = reads.map(r => r === 'mail.read' ? 'their email' : 'their calendar').join(' and ');
-      const made = await _autoApi('/v1/agents/save', { name: 'Companion', role: T('Looks ahead for you, and drafts - never sends'),
-        instructions: 'You are their Companion. Lead with what needs them today, most urgent first, in a few lines. '
-          + 'Name anyone waiting on a reply and how long they have waited. Flag clashes and anything they need to prepare for. '
-          + 'Draft replies only where one is clearly owed, each marked as a draft that has not been sent. '
-          + 'If nothing matters today, say so in one line rather than filling space.', budgetUSD: 0 });
-      if(level !== 'reactive'){
-        try{
-          await _autoApi('/auto/create', { detail: 'Prepare their morning brief from ' + said + ': what matters today, who is waiting on them, what to prepare, and drafted replies where one is owed.',
-            repeat: 'daily', sched: { cad: 'daily', hour, minute: 0 }, kind: 'task', notify: 'app', uses: reads,
-            approval: level === 'proactive' ? 'auto' : 'require', agent: made.agent.id });
-        }catch(e){
-          /* The agent exists; the brief did not start. Said, and the card
-             offers Give it a job - not a Companion that silently does nothing. */
-          toast(T('Companion was created, but its morning brief could not be set up:') + ' ' + ((e && e.message) || ''), 'error', 8000);
-          await mcAgentsReload(); return;
-        }
-      }
-      toast(level === 'reactive' ? T('Companion is ready. Ask it anything in chat.') : T('Companion is set up. Your first brief arrives tomorrow morning.'), 'success', 6000);
-      await mcAgentsReload();
-    });
-}
-try{ Object.assign(window, { mcCompanionSetup }); }catch(e){}
-
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
   /* THE CATALOGUE FIRST. Fetched the first time Crew opens (see
@@ -1401,60 +1186,31 @@ function renderCrewView(){
     try{ if(typeof _connLoad === 'function') _connLoad(false).then(_cwRedrawIfChanged); }catch(e){}
   }
   const paused=_autonomyPaused();
-  const tiles=[
-    ['appr','Needs approval',st.appr.length,'wait'],
-    ['fail','Action required',st.failed.length,'err'],
-    ['active','Active work',st.active.length,'active'],
-    ['sched','Running jobs',st.server.length+_mcLocalOnly(st).length+st.auton.length,'info'],
-    ['done','Completed',st.done.length,'muted']
-  ];
+  const running = st.server.length + _mcLocalOnly(st).length + st.auton.length;
 
-  vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page">
-    <header class="mc-head">
-      <div class="mc-head-l">
-        <div class="eyebrow">Crew · Autonomous work</div>
-        <h2>Mission Control</h2>
-        <p class="vsub">Crew is AMV working on its own. Tell it an outcome and it plans the steps, does the work across your connected apps, and stops for your approval before anything is sent. This page is where you watch it all - what needs you, what’s running, and what’s scheduled.</p>
-        <p class="cw-open-note-in">The jobs below are <b>examples</b>, not the menu. Describe what you want in your
-          own words and Crew takes it - the catalogue is here to show you the shape of a job, not the list of them.</p>
-      </div>
-      <div class="mc-head-r">
-        ${_cwWhereBtnHTML()}
-        ${(() => {
-          /* A SAFETY CONTROL FOR WORK THAT IS NOT HAPPENING.
+  /* ONE BOX, THEN WHAT NEEDS YOU, THEN EXAMPLES (the owner, Oct 26: "simple.
+     You type in the textbox something and AMV does it. It scans and then says
+     what it needs. Below that, examples for all different countries").
 
-             "Pause all autonomous" was the loudest thing in this header and it
-             was always there - including on an account with nothing running,
-             which is every account on its first visit. The first control
-             somebody meets on the Crew screen was an emergency brake for a
-             machine that had not been started, and it plants the idea that
-             something here needs stopping before they have turned anything on.
-
-             When work IS running, pause is exactly right and stays. When
-             nothing is, the useful thing to offer is the way in. Paused counts
-             as active state on purpose: if somebody has paused autonomy they
-             must always be able to resume it, whether or not a job is listed. */
-          const running = st.server.length + _mcLocalOnly(st).length + st.auton.length;
-          if (paused) {
-            return `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ Resume autonomy</button>`;
-          }
-          if (running > 0) {
-            return `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ Pause all autonomous</button>`;
-          }
-          return `<button class="mc-browse" data-dact="openCowork">Create an automation</button>`;
-        })()}
-      </div>
+     The box is the same one the free screen has, on the same run path: it
+     reviews what was asked, says what it needs (an account to connect, a
+     time), asks for it, and does it. Under it, only what is happening and
+     needs the person - approvals, problems, running jobs - and only when
+     there is any. Then the examples for the country chosen at the top. The
+     settings for background work come last; they are set once and rarely. */
+  vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page cw-simple">
+    <header class="cw-simple-head">
+      <h2>${escH(T('Crew'))}</h2>
+      <div class="cw-simple-head-r">${_cwWhereBtnHTML()}${paused
+        ? `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ ${escH(T('Resume autonomy'))}</button>`
+        : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
     </header>
-    ${(()=>{ const n=_crewJobAllowance(); const used=st.server.length+_mcLocalOnly(st).length+st.auton.length;
-      /* The number, before they hit it. A limit discovered by bumping into it
-         reads as a fault; the same limit stated up front reads as a plan. */
-      return n?`<div class="mc-allow">${used} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
+    <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
     <div class="mc-cmd mc-cmd-lg">
-      <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
         <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" aria-label="Tell AMV what to do" enterkeyhint="go" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off"></textarea>
-        <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
+        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go" placeholder="${escH(T('e.g. every morning at 8, summarize my unread email'))}" autocomplete="off"></textarea>
+        <button class="mc-cmd-go" id="mc-cmd-go">${escH(T('Run'))}</button>
       </div>
       <div class="mc-cmd-chips">${[
         'Email me a summary of my unread emails',
@@ -1464,20 +1220,13 @@ function renderCrewView(){
       ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
       <div id="mc-cmd-result" class="mc-cmd-result"></div>
     </div>
+    <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
-    ${_mcOfferHTML()}
-    ${_mcQuietRowHTML()}
-    ${_mcNeverRowHTML()}
-    <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
-    ${_mcCeilingHTML()}
-    ${_mcStandingHTML()}
-
-    <section id="mc-appr" class="mc-sec">
-      <div class="sec-head"><h3>Needs your approval ${appr.length?`<span class="cw-badge">${appr.length}</span>`:''}</h3><span class="sec-sub">One-off drafts waiting for you. Nothing here sends until you approve it. A running job that is set to "ask first" also drops a fresh draft here each time it runs.</span></div>
-      ${appr.length ? appr.map(apprCard).join('') :
-        `<div class="mc-empty"><span class="mc-empty-ic">✓</span><div>You are all caught up. When AMV drafts something that would send or change anything, it waits right here for your review - you can read it, edit every detail, then send or delete it.</div><button class="mc-empty-cta" data-dact="cwDemo">Show me an example</button></div>`}
-    </section>
+    ${appr.length?`<section id="mc-appr" class="mc-sec">
+      <div class="sec-head"><h3>Needs your approval <span class="cw-badge">${appr.length}</span></h3><span class="sec-sub">Nothing here sends until you approve it.</span></div>
+      ${appr.map(apprCard).join('')}
+    </section>`:''}
 
     ${st.failed.length?`<section id="mc-fail" class="mc-sec">
       <div class="sec-head"><h3>Action required <span class="cw-badge err">${st.failed.length}</span></h3><span class="sec-sub">Blocked or failed - these need you.</span></div>
@@ -1489,10 +1238,8 @@ function renderCrewView(){
       <div class="mc-grid">${st.active.map(_mcActiveCard).join('')}</div>
     </section>`:''}
 
-    ${_mcAgentsHTML()}
-
-    <section id="mc-sched" class="mc-sec">
-      <div class="sec-head"><h3>Running jobs</h3><span class="sec-sub">Recurring work AMV runs on a schedule. Each run creates fresh content (a new email, a new summary). For each one you choose: <b>Autonomous</b> sends it for you automatically, or <b>Ask first</b> drops a draft in "Needs your approval" every time so you review before it sends.</span><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
+    ${(running || st.serverError)?`<section id="mc-sched" class="mc-sec">
+      <div class="sec-head"><h3>Running jobs</h3>${(()=>{ const n=_crewJobAllowance(); return n?`<span class="sec-sub">${escH(T('{0} of {1} in use').replace('{0}', running).replace('{1}', n))}</span>`:''; })()}<button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
       ${(()=>{
         const local = _mcLocalOnly(st);
         const rows = st.server.map(_mcServerSchedRow).join('')
@@ -1500,74 +1247,14 @@ function renderCrewView(){
                    + local.slice(0,8).map(t=>_mcSchedRow(t,st)).join('');
         if(rows) return `<div class="mc-sched">${rows}</div>`
           + (local.length?`<div class="mc-sched-note">The ${local.length===1?'job':local.length+' jobs'} above without "runs on AMV's servers" could not be registered to run in the background, so ${local.length===1?'it runs':'they run'} only while AMV is open.</div>`:'');
-        /* A failed read is not an empty list. Saying "no running jobs" to
-           somebody whose jobs are running, because the request failed, invites
-           them to set everything up a second time. */
-        if(st.serverError)
-          return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
-        return `<div class="mc-empty-row">No running jobs yet. Start a task above and choose how often it should repeat - it will show up here. You can also just tell AMV in chat: "every morning, summarize my unread email".</div>`;
+        /* A failed read is not an empty list: the jobs have not stopped. */
+        return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
       })()}
-    </section>
-
-    ${_mcActivityHTML()}
-
-    ${st.done.length?`<section id="mc-done" class="mc-sec">
-      <div class="sec-head"><h3>Recently completed</h3></div>
-      <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
     </section>`:''}
 
-    <div class="crew-split-even">
-      <section class="crew-do">
-        <div class="sec-head"><h3>Run something now</h3><span class="sec-sub">AMV opens a workspace, asks what it needs, and actually does it.</span></div>
-        <div class="cw-quick">
-          ${[['\uD83D\uDDFA\uFE0F','Plan a trip','trip','openTripPlanner()'],
-             ['\uD83D\uDCE7','Check email','gmail','crewRun(\'gmail\',\'Check email\')'],
-             ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
-             ['\u2728','Autonomous task','auto','openCowork()']]
-            .map(q=>`<button class="cw-quick-card" data-dact="_cwQuick" data-darg="${escH(q[2])}"><span class="cw-quick-ic" aria-hidden="true">${q[0]}</span><span>${escH(q[1])}</span></button>`).join('')}
-        </div>
-        <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
-      </section>
-      <section>
-        <div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed. You see who has answered; nobody sees the answers until you reveal them.</span></div>
-        <div id="crew-games"></div>
-      </section>
-      <section>
-        <div class="sec-head"><h3>Recurring work</h3><span class="sec-sub">Pick one to set it on a schedule - or describe your own. Many can run at once.</span></div>
-        <div class="tpl-grid">
-          ${[
-            ['\uD83C\uDFAC','YouTube video','Produce a complete, production-ready YouTube video package about this week\'s stock market: a punchy title, a 0-3s hook, a full word-for-word voiceover script with timestamps, a scene-by-scene shot list, B-roll suggestions, on-screen text, an SEO description, 15 tags, and a thumbnail concept. I review before publishing.'],
-            ['\uD83D\uDCF8','Instagram post','Produce a ready-to-post Instagram package about the latest in my field: a scroll-stopping caption with line breaks, 20-30 ranked hashtags, a carousel outline, a detailed image/visual concept, and the best post time. I approve before posting.'],
-            ['\uD83D\uDC26','Social posts','Write 3 ready-to-publish posts for X and 2 for LinkedIn on what\'s trending in my industry today - each with the full copy, hooks, and hashtags. I approve before anything is published.'],
-            ['\uD83D\uDCC8','Market brief','Every morning, produce a tight briefing of overnight market moves: major indices, notable movers, and the 3 headlines that matter to me, each with a one-line why-it-matters.'],
-            /* Was "give a buy/hold view and prepare a $1 XRP order on Robinhood for
-               one-tap approval". AMV has no Robinhood connector and cannot place an
-               order anywhere, and a buy/hold view is the financial advice every
-               money job here refuses to give - a template that promises both is a
-               fake feature twice over. What it really does, said plainly. */
-            ['\uD83D\uDCB0','Watchlist check-in','Each Monday, check the stocks and coins on my watchlist on the live web: last week\u2019s move for each with the actual figure, the news behind it with a link, and any earnings or unlock dates coming up. Information only - never tell me what to buy, sell or hold.'],
-            ['\uD83C\uDFE6','Bank check-in','Every morning, check my linked bank account and report the balance, recent transactions, anything unusual, and my spend-vs-last-week. Prepare it as a clean daily report.'],
-            ['\uD83D\uDCF0','News digest','Daily, gather the top developments in AI and produce a sharp 5-bullet briefing, each bullet with a link-worthy summary and why it matters.'],
-            ['\u2709\uFE0F','Inbox triage','Each morning, read new emails, rank them by urgency with reasons, and draft a ready-to-send reply for each. I click send before anything goes out.']
-          ].map(t=>`<button class="tpl-card" data-dact="openCoworkWith" data-darg="${escH(t[2])}"><span class="tpl-ic" aria-hidden="true">${t[0]}</span><span class="tpl-t">${escH(t[1])}</span></button>`).join('')}
-        </div>
-      </section>
-    </div>
-    ${_mcBoughtCrewsHTML()}
-    ${/* NOTHING COMES AFTER THE CATALOGUE.
-
-           Asked for, and right: the list of what Crew can do is what somebody
-           came to this page to read, and it used to have three more sections
-           and a marketplace panel stacked under it - so browsing to the bottom
-           of a hundred jobs delivered you into "Recurring work", which is a
-           second list of the same kind of thing. What is happening NOW goes
-           above (it is state, and state is news), what Crew CAN do goes last
-           and ends the page. */ ''}
     <div class="crew-jobs-sec mc-start">
-      <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
+      <div class="sec-head"><h3>${escH(T('Examples'))}</h3><span class="sec-sub">${escH(T('For where you live - change the country at the top. Pick one, or say your own in the box.'))}</span></div>
       ${_cwNotHereHTML('above')}
-      ${/* Same order as the locked view, for the same reason: the standing
-            work first, the one-offs last. */ ''}
       ${_cwForYouHTML()}
       ${_cwMadeForHTML()}
       <div class="cw-filters">
@@ -1583,6 +1270,21 @@ function renderCrewView(){
       </section>
     </div>
 
+    ${st.done.length?`<section id="mc-done" class="mc-sec">
+      <div class="sec-head"><h3>Recently completed</h3></div>
+      <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
+    </section>`:''}
+    ${_mcActivityHTML()}
+    <section id="mc-settings" class="mc-sec cw-settings">
+      <div class="sec-head"><h3>${escH(T('Settings for background work'))}</h3><span class="sec-sub">${escH(T('How far AMV may go on its own, what it always follows, and when it stays quiet. Set once.'))}</span></div>
+      ${_mcOfferHTML()}
+      ${_mcCeilingHTML()}
+      ${_mcStandingHTML()}
+      ${_mcQuietRowHTML()}
+      ${_mcNeverRowHTML()}
+    </section>
+    <section class="mc-sec" id="crew-games-sec" hidden><div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed.</span></div><div id="crew-games"></div></section>
+    ${_mcBoughtCrewsHTML()}
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);

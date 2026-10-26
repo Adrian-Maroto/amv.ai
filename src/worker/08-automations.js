@@ -119,12 +119,7 @@ async function autoList(request, env){
     const n = _autoNeedsFor(it, _conn, it.discoveredNeeds);
     return _hookShown(n.ready ? it : Object.assign({}, it, { willNeed: n.missing }));
   });
-  /* Their agents, by id and name only: enough for the chat to say whose
-     job a row is and to hand new work to one by name. */
-  let _agents = [];
-  try { _agents = (await _agentsOf(env, user.email)).list.filter(a => a && !a.deleted)
-          .map(a => ({ id: a.id, name: a.name, paused: !!a.paused })); } catch (e) { _agents = []; }
-  return json({ ok:true, items: _items, agents: _agents, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
+  return json({ ok:true, items: _items, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
                 /* Read back what the account has told its background work to do,
                    so the screen and the chat show the same standing instruction
                    rather than each remembering its own. */

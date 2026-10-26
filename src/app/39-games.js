@@ -90,6 +90,9 @@ async function renderGames(){
   try{
     const d = await AMVGames.mine();
     el.innerHTML = _gamesHTML(d.games);
+    /* On Crew the section shows only when there are games: an empty panel on
+       a screen that is meant to be one box and examples is clutter. */
+    const sec = document.getElementById('crew-games-sec'); if(sec) sec.hidden = !(d.games && d.games.length);
   }catch(e){
     /* An empty panel and a silent failure look identical, and one of them is a
        bug. Say which. */

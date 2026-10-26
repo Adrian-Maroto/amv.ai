@@ -64,10 +64,11 @@ section('Crew leads with the way in, and with the brake only when it is needed (
     await page.evaluate(() => setTab('crew'));
     /* The header also holds the country control now (Not in X?, asked for at
        the top right); this is about the action control beside it. */
-    await page.waitForSelector('.mc-head-r button:not(.cw-where)', { timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('#mc-cmd-input', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(300);
     return page.evaluate(() => {
-      const b = document.querySelector('.mc-head-r button:not(.cw-where)');
-      return b ? { cls: b.className, act: b.dataset.dact, txt: b.textContent.trim() } : null;
+      const b = document.querySelector('.cw-simple-head-r button:not(.cw-where)');
+      return { box: !!document.getElementById('mc-cmd-input'), cls: b ? b.className : '', act: b ? b.dataset.dact : '', txt: b ? b.textContent.trim() : '' };
     });
   };
 
@@ -76,9 +77,9 @@ section('Crew leads with the way in, and with the brake only when it is needed (
      button" as a pass when the header was not on screen at all. */
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); saveStr('amv_autonomy_paused', '0'); _saveSched([]); });
   const idle = await head();
-  ok(!!idle, 'Mission Control renders for a plan that includes Crew', idle);
-  ok(idle.cls.includes('mc-browse'), 'with nothing running, the header offers a way to start work', idle.cls);
-  ok(idle.act === 'openCowork', 'and it points at the thing that creates one', idle.act);
+  /* The way in is the box itself, at the top of the screen (Crew made
+     simple, Oct 26): one place to say what to do. */
+  ok(idle.box, 'Crew renders for a plan that includes it, led by the box that starts work', idle);
   ok(!/pause/i.test(idle.txt), 'no pause control for work that is not happening', idle.txt);
 
   await page.evaluate(() => _saveSched([{ id: 'g1', title: 'Brief', prompt: 'x', every: 'day', active: true, next: Date.now() + 9e6 }]));

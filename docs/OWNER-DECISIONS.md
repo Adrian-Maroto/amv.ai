@@ -213,7 +213,7 @@ the first check the page fails, never clicking "somewhere near". A secret step
 asks for its value for that run only. `78-teach-replay.js`,
 `a-taught-task-replays-and-checks-itself`.
 
-**23. Persistent named Agents - YES, built on background jobs, with a budget the server enforces.**
+**23. Persistent named Agents - WITHDRAWN by the owner (Oct 26): Crew stays one box. Kept as a record.**
 The Oct 26 audit's first ask after storage. An agent is a name, a role,
 instructions, a monthly budget and a pause switch, kept as one new stored
 record per account (`agents`, erased with the account) - the one schema
@@ -262,7 +262,7 @@ for). Built: `79-meaning.js`, `_psMeaningScores` in project-search.js;
 `a-search-can-find-it-by-meaning` (worker and e2e). Switched on by the
 owner's step below.
 
-**26. Companion - YES, as an agent, not a separate system.**
+**26. Companion - WITHDRAWN with Agents (Oct 26). Kept as a record.**
 The audit's proactive assistant. Set up from Crew in one dialog, it is an
 agent named Companion and one daily background job, so everything an agent
 and a job already enforce applies to it. Three levels, each mapped onto the
