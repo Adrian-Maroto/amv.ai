@@ -824,11 +824,10 @@ async function _spendGate(env, user, what, usd, out, opts) {
   /* Two ceilings, two reservations, and the second one failing has to give the
      first one back - otherwise being refused by the day's ceiling would still
      consume the customer's own monthly allowance for work that never ran. */
-  const gName = `spend:${todayKey()}`;
   let res;
   try {
-    res = await _reserveUSD(env, gName, price, cap, 86400000 * 2);
-    if (res.allowed) { book.global = res.reserved; book.globalName = gName; }
+    res = await _reserveGlobalUSD(env, user.billingSubject || user.email, price, cap, 86400000 * 2);
+    if (res.allowed) { book.global = res.reserved; book.globalName = res.name; }
   }
   catch (e) {
     /* FAILING OPEN IS THE RIGHT CALL. FAILING OPEN QUIETLY IS NOT.
@@ -926,6 +925,85 @@ async function _releaseUSD(env, name, usd, ttlMs, keep) {
   catch (e) { audit(env, 'spend_release_failed', { name, usd: +usd }); }
 }
 
+/* THE DAY'S CEILING, COUNTED IN SIXTEEN PLACES (scale audit, owner yes, Oct 26).
+
+   Every model call reserved and then settled against ONE counter for the
+   whole platform, `spend:<day>`, and a counter is one actor doing one thing
+   at a time - so every call in the world queued through it twice, which caps
+   AMV near five hundred model calls a second however many servers run. Now
+   the day's ceiling is held as up to sixteen shares, `spend:<day>:s0..s15`,
+   each an equal part of it (_spendSharesFor says how many). An account books against its own share (chosen by a hash
+   of who pays), and if that share is full it tries two others before being
+   refused - so the total can never pass the ceiling, and one busy share does
+   not refuse people while others have room. What was booked is settled and
+   released on the SAME share, by name.
+
+   `spend:<day>` itself is still read by the totals (it holds whatever was
+   booked on it before this shipped), and nothing reserves against it now.
+   The one consequence, written down rather than discovered: on the day this
+   is deployed, spend booked earlier that day on the old counter is not held
+   against the new shares, so that one day's ceiling can be passed by at most
+   what had already been spent. */
+const SPEND_SHARDS = 16;
+/* How many shares a ceiling is split into: one per $20 of it, up to sixteen.
+   A share has to hold the largest single call AMV books (a long-context call
+   on the top engine books about $16), or that call could never run however
+   empty the day was - which is what the first version did to a small
+   ceiling. A small ceiling is a small deployment, which needs no splitting;
+   from $320 a day the full sixteen are in use. */
+const SPEND_SHARE_MIN_USD = 20;
+function _spendSharesFor(cap) {
+  if (cap == null || !Number.isFinite(+cap) || +cap <= 0) return SPEND_SHARDS;
+  return Math.max(1, Math.min(SPEND_SHARDS, Math.floor(+cap / SPEND_SHARE_MIN_USD)));
+}
+function _spendShardOf(who, n) {
+  let h = 2166136261;
+  const s = String(who || '');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % (n || SPEND_SHARDS);
+}
+const _spendShardName = (k, day) => `spend:${day || todayKey()}:s${k}`;
+const _envSpendCap = (env) => parseFloat((env && env.GLOBAL_DAILY_USD_CAP) || '500');
+const _spendNameFor = (who, env) => _spendShardName(_spendShardOf(who, _spendSharesFor(_envSpendCap(env))));
+const _spendTryOrder = (who, n) => {
+  const k = _spendShardOf(who, n);
+  return [...new Set([k, (k + 5) % n, (k + 11) % n])];
+};
+async function _reserveGlobalUSD(env, who, usd, cap, ttlMs) {
+  /* The split follows the deployment's ceiling, not this caller's share of
+     it (a free account books against 70% of the same shares). */
+  const n = _spendSharesFor(_envSpendCap(env));
+  const shareCap = (cap == null || !Number.isFinite(+cap)) ? cap : +cap / n;
+  let last = null;
+  for (const k of _spendTryOrder(who, n)) {
+    const name = _spendShardName(k);
+    const r = await _reserveUSD(env, name, usd, shareCap, ttlMs);
+    if (r.allowed) return Object.assign(r, { name });
+    last = Object.assign(r, { name });
+  }
+  return last;
+}
+/* A read, not a booking: is there room on any share this account may use. */
+async function _checkGlobalCap(env, who, cap) {
+  const n = _spendSharesFor(_envSpendCap(env));
+  let last = null;
+  for (const k of _spendTryOrder(who, n)) {
+    const r = await counter(env, _spendShardName(k), { op: 'checkCap', cap: +cap / n });
+    if (r && r.allowed) return r;
+    last = r;
+  }
+  return last;
+}
+/* The day's total, for the owner's screens and the alerts. Sixteen reads,
+   taken only where a person or an alert asks - never on a request's path. */
+async function _globalSpendToday(env, day) {
+  const d = day || todayKey();
+  const names = [`spend:${d}`];
+  for (let k = 0; k < SPEND_SHARDS; k++) names.push(_spendShardName(k, d));
+  const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
+  return vals.reduce((a, b) => a + b, 0);
+}
+
 /* What it cost, recorded where the ceiling and the owner's screens read it.
    Best-effort on purpose: losing the accounting must not lose the work somebody
    already paid a provider for - but it is audited, so a counter that stops
@@ -942,7 +1020,9 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
   if (!(amount > 0) && !(preGlobal > 0) && !(preAccount > 0)) return;
   try {
     const dGlobal = amount - preGlobal;
-    if (dGlobal !== 0) await counter(env, `spend:${todayKey()}`, { op: 'incr', amount: dGlobal, ttlMs: 86400000 * 2 });
+    /* Settled on the share it was booked on; with nothing booked, on the
+       payer's own share. */
+    if (dGlobal !== 0) await counter(env, (reserved && reserved.globalName) || _spendNameFor(subject, env), { op: 'incr', amount: dGlobal, ttlMs: 86400000 * 2 });
     /* The customer's own window, which is their billing period rather than the
        calendar month - see _periodKeyFor. The platform totals below stay on the
        calendar, because those are the owner's reporting and a month is what a

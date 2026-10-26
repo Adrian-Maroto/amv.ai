@@ -202,7 +202,7 @@ async function adminStats(request, env) {
 
   const today = todayKey(), month = monthKey();
   // global spend today (atomic counter) + cap
-  const gSpend = (await counter(env, `spend:${today}`, { op: 'get' })).value || 0;
+  const gSpend = await _globalSpendToday(env, today);
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
 

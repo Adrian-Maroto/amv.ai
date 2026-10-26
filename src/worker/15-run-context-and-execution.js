@@ -1655,7 +1655,7 @@ async function runDueAutomations(env, atMs, opts){
          against what that run actually cost. Reserving here would book one
          run's worth for however many items the account has due. */
       let gRes = null;
-      try { gRes = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap: capForThem }); }
+      try { gRes = await _checkGlobalCap(env, email, capForThem); }
       catch (e) {
         audit(env, 'spend_gate_blind', { what: 'automation', email, error: String((e && e.message) || e) });
       }
@@ -1736,7 +1736,7 @@ async function runDueAutomations(env, atMs, opts){
          keeps its reservation quietly eats the allowance of the jobs behind it
          in the same tick. */
       let itemBooked = 0, itemGlobalBooked = 0;
-      const gDayName = `spend:${todayKey()}`;
+      let gDayName = _spendNameFor(email, env);
       const releaseItem = async () => {
         if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
         if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
@@ -1758,7 +1758,8 @@ async function runDueAutomations(env, atMs, opts){
         const runMax = _autoRunMaxUSD(runFree, runResearch);
         /* The day's ceiling, booked for THIS run. Taken first so a refusal
            here costs nothing to unwind. */
-        const gNow = await _reserveUSD(env, gDayName, runMax, gCapAutoForRun, 86400000 * 2);
+        const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
+        gDayName = gNow.name || gDayName;
         itemGlobalBooked = gNow.reserved;
         if(!gNow.allowed){
           audit(env, 'auto_skipped_global_cap', { email, item: item.id, cap: gCapAutoForRun });

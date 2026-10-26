@@ -218,7 +218,7 @@ section('A turn refused AFTER the reservation gives it back');
   const day = new Date().toISOString().slice(0, 10);
   const dayKey = `usg:${OWNER}:${day}`;
   env._vals.set(dayKey, 500);
-  env._vals.set(`spend:${day}`, 5);            // already past the global cap
+  for (let k = 0; k < 16; k++) env._vals.set(`spend:${day}:s${k}`, 5);   // already past the global cap, on every share
 
   const r = await ask(env);
   ok(r.status === 503, 'the platform-wide cap turns it away', r.status);

@@ -273,7 +273,7 @@ section('Deferred work keeps its place');
   await W._autoBucketAdd(env, em, next);
   /* The day's ceiling, already spent. */
   env.GLOBAL_DAILY_USD_CAP = '10';
-  env._store.set('ctr:spend:' + new Date(NOW).toISOString().slice(0, 10), '9999');
+  for (let k = 0; k < 16; k++) env._store.set('ctr:spend:' + new Date(NOW).toISOString().slice(0, 10) + ':s' + k, '9999');
 
   const r = await W.runDueAutomations(env, NOW);
   ok(r.ran === 0, 'the job is skipped while the ceiling is full', { ran: r.ran });

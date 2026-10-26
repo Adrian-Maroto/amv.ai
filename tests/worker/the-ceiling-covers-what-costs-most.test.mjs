@@ -93,8 +93,13 @@ const call = (env, path, body, tok) => worker.fetch(new Request('https://api.amv
 const post = async (env, p, b, t) => { const r = await call(env, p, b, t); return { status: r.status, body: await r.json().catch(() => ({})) }; };
 const signup = async (env, email) => (await (await call(env, '/auth/signup', { email, name: 'N', password: PW })).json()).token;
 
-const spend = (env) => env._vals.get(`spend:${W.todayKey()}`) || 0;
-const spendToday = (env, usd) => env._vals.set(`spend:${W.todayKey()}`, usd);
+/* The day's ceiling is sixteen shares now (spend:<day>:s0..s15, owner yes,
+   Oct 26): "the day so far" is spread evenly across them, and read back as
+   their sum. */
+const spend = (env) => [...env._vals.entries()].filter(([k]) => k.startsWith(`spend:${W.todayKey()}`)).reduce((n, [, v]) => n + (+v || 0), 0);
+/* As many shares as this ceiling is split into - one per $20, up to 16. */
+const SHARES = Math.max(1, Math.min(16, Math.floor(CAP / 20)));
+const spendToday = (env, usd) => { for (let k = 0; k < SHARES; k++) env._vals.set(`spend:${W.todayKey()}:s${k}`, usd / SHARES); };
 /* The gate is asked directly. Driving it through a handler was how this suite
    read when image generation existed and had a fixed published price; SMS, the
    caller that replaced it, needs a linked phone and a signed Twilio webhook to

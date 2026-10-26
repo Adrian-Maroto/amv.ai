@@ -320,10 +320,13 @@ async function widgetChat(request, env, ctx) {
                 + (wMaxOut / 1e6) * eng.outCost;
   const ownerCostName = `cost:${ownerSubject}:${_periodKeyOf(ownerUser)}`;
   let bookedOwnerUSD = 0, bookedWidgetUSD = 0, bookedGlobalW = 0;
+  /* The owner pays, so the owner's share of the day's ceiling - until the
+     reservation below names the share that took it. */
+  let gNameW = _spendNameFor(ownerSubject, env);
   const releaseWidgetUSD = async () => {
     if (bookedOwnerUSD > 0) { await _releaseUSD(env, ownerCostName, bookedOwnerUSD, 86400000 * 70); bookedOwnerUSD = 0; }
     if (bookedWidgetUSD > 0) { await _releaseUSD(env, wSpendName, bookedWidgetUSD, 86400000 * 70); bookedWidgetUSD = 0; }
-    if (bookedGlobalW > 0) { await _releaseUSD(env, `spend:${todayKey()}`, bookedGlobalW, 86400000 * 2); bookedGlobalW = 0; }
+    if (bookedGlobalW > 0) { await _releaseUSD(env, gNameW, bookedGlobalW, 86400000 * 2); bookedGlobalW = 0; }
   };
   const wSpendName = `wspend:${key}:${todayKey()}`;
   if (ownerCeiling != null) {
@@ -396,9 +399,10 @@ async function widgetChat(request, env, ctx) {
   };
 
   // GLOBAL daily spend cap (shared safety net across the whole platform).
-  const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  const gRes = await _reserveUSD(env, gName, wEstUSD, gCap, 86400000 * 2);
+  const gRes = await _reserveGlobalUSD(env, ownerSubject, wEstUSD, gCap, 86400000 * 2);
+  gNameW = gRes.name || gNameW;
+  const gName = gNameW;
   bookedGlobalW = gRes.reserved;
   if (!gRes.allowed) {
     await refundMsg(); await refundOwner();

@@ -1707,11 +1707,10 @@ async function _spendGate(env, user, what, usd, out, opts) {
   /* Two ceilings, two reservations, and the second one failing has to give the
      first one back - otherwise being refused by the day's ceiling would still
      consume the customer's own monthly allowance for work that never ran. */
-  const gName = `spend:${todayKey()}`;
   let res;
   try {
-    res = await _reserveUSD(env, gName, price, cap, 86400000 * 2);
-    if (res.allowed) { book.global = res.reserved; book.globalName = gName; }
+    res = await _reserveGlobalUSD(env, user.billingSubject || user.email, price, cap, 86400000 * 2);
+    if (res.allowed) { book.global = res.reserved; book.globalName = res.name; }
   }
   catch (e) {
     /* FAILING OPEN IS THE RIGHT CALL. FAILING OPEN QUIETLY IS NOT.
@@ -1809,6 +1808,85 @@ async function _releaseUSD(env, name, usd, ttlMs, keep) {
   catch (e) { audit(env, 'spend_release_failed', { name, usd: +usd }); }
 }
 
+/* THE DAY'S CEILING, COUNTED IN SIXTEEN PLACES (scale audit, owner yes, Oct 26).
+
+   Every model call reserved and then settled against ONE counter for the
+   whole platform, `spend:<day>`, and a counter is one actor doing one thing
+   at a time - so every call in the world queued through it twice, which caps
+   AMV near five hundred model calls a second however many servers run. Now
+   the day's ceiling is held as up to sixteen shares, `spend:<day>:s0..s15`,
+   each an equal part of it (_spendSharesFor says how many). An account books against its own share (chosen by a hash
+   of who pays), and if that share is full it tries two others before being
+   refused - so the total can never pass the ceiling, and one busy share does
+   not refuse people while others have room. What was booked is settled and
+   released on the SAME share, by name.
+
+   `spend:<day>` itself is still read by the totals (it holds whatever was
+   booked on it before this shipped), and nothing reserves against it now.
+   The one consequence, written down rather than discovered: on the day this
+   is deployed, spend booked earlier that day on the old counter is not held
+   against the new shares, so that one day's ceiling can be passed by at most
+   what had already been spent. */
+const SPEND_SHARDS = 16;
+/* How many shares a ceiling is split into: one per $20 of it, up to sixteen.
+   A share has to hold the largest single call AMV books (a long-context call
+   on the top engine books about $16), or that call could never run however
+   empty the day was - which is what the first version did to a small
+   ceiling. A small ceiling is a small deployment, which needs no splitting;
+   from $320 a day the full sixteen are in use. */
+const SPEND_SHARE_MIN_USD = 20;
+function _spendSharesFor(cap) {
+  if (cap == null || !Number.isFinite(+cap) || +cap <= 0) return SPEND_SHARDS;
+  return Math.max(1, Math.min(SPEND_SHARDS, Math.floor(+cap / SPEND_SHARE_MIN_USD)));
+}
+function _spendShardOf(who, n) {
+  let h = 2166136261;
+  const s = String(who || '');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % (n || SPEND_SHARDS);
+}
+const _spendShardName = (k, day) => `spend:${day || todayKey()}:s${k}`;
+const _envSpendCap = (env) => parseFloat((env && env.GLOBAL_DAILY_USD_CAP) || '500');
+const _spendNameFor = (who, env) => _spendShardName(_spendShardOf(who, _spendSharesFor(_envSpendCap(env))));
+const _spendTryOrder = (who, n) => {
+  const k = _spendShardOf(who, n);
+  return [...new Set([k, (k + 5) % n, (k + 11) % n])];
+};
+async function _reserveGlobalUSD(env, who, usd, cap, ttlMs) {
+  /* The split follows the deployment's ceiling, not this caller's share of
+     it (a free account books against 70% of the same shares). */
+  const n = _spendSharesFor(_envSpendCap(env));
+  const shareCap = (cap == null || !Number.isFinite(+cap)) ? cap : +cap / n;
+  let last = null;
+  for (const k of _spendTryOrder(who, n)) {
+    const name = _spendShardName(k);
+    const r = await _reserveUSD(env, name, usd, shareCap, ttlMs);
+    if (r.allowed) return Object.assign(r, { name });
+    last = Object.assign(r, { name });
+  }
+  return last;
+}
+/* A read, not a booking: is there room on any share this account may use. */
+async function _checkGlobalCap(env, who, cap) {
+  const n = _spendSharesFor(_envSpendCap(env));
+  let last = null;
+  for (const k of _spendTryOrder(who, n)) {
+    const r = await counter(env, _spendShardName(k), { op: 'checkCap', cap: +cap / n });
+    if (r && r.allowed) return r;
+    last = r;
+  }
+  return last;
+}
+/* The day's total, for the owner's screens and the alerts. Sixteen reads,
+   taken only where a person or an alert asks - never on a request's path. */
+async function _globalSpendToday(env, day) {
+  const d = day || todayKey();
+  const names = [`spend:${d}`];
+  for (let k = 0; k < SPEND_SHARDS; k++) names.push(_spendShardName(k, d));
+  const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
+  return vals.reduce((a, b) => a + b, 0);
+}
+
 /* What it cost, recorded where the ceiling and the owner's screens read it.
    Best-effort on purpose: losing the accounting must not lose the work somebody
    already paid a provider for - but it is audited, so a counter that stops
@@ -1825,7 +1903,9 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
   if (!(amount > 0) && !(preGlobal > 0) && !(preAccount > 0)) return;
   try {
     const dGlobal = amount - preGlobal;
-    if (dGlobal !== 0) await counter(env, `spend:${todayKey()}`, { op: 'incr', amount: dGlobal, ttlMs: 86400000 * 2 });
+    /* Settled on the share it was booked on; with nothing booked, on the
+       payer's own share. */
+    if (dGlobal !== 0) await counter(env, (reserved && reserved.globalName) || _spendNameFor(subject, env), { op: 'incr', amount: dGlobal, ttlMs: 86400000 * 2 });
     /* The customer's own window, which is their billing period rather than the
        calendar month - see _periodKeyFor. The platform totals below stay on the
        calendar, because those are the owner's reporting and a month is what a
@@ -10451,7 +10531,7 @@ async function runDueAutomations(env, atMs, opts){
          against what that run actually cost. Reserving here would book one
          run's worth for however many items the account has due. */
       let gRes = null;
-      try { gRes = await counter(env, `spend:${todayKey()}`, { op: 'checkCap', cap: capForThem }); }
+      try { gRes = await _checkGlobalCap(env, email, capForThem); }
       catch (e) {
         audit(env, 'spend_gate_blind', { what: 'automation', email, error: String((e && e.message) || e) });
       }
@@ -10532,7 +10612,7 @@ async function runDueAutomations(env, atMs, opts){
          keeps its reservation quietly eats the allowance of the jobs behind it
          in the same tick. */
       let itemBooked = 0, itemGlobalBooked = 0;
-      const gDayName = `spend:${todayKey()}`;
+      let gDayName = _spendNameFor(email, env);
       const releaseItem = async () => {
         if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
         if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
@@ -10554,7 +10634,8 @@ async function runDueAutomations(env, atMs, opts){
         const runMax = _autoRunMaxUSD(runFree, runResearch);
         /* The day's ceiling, booked for THIS run. Taken first so a refusal
            here costs nothing to unwind. */
-        const gNow = await _reserveUSD(env, gDayName, runMax, gCapAutoForRun, 86400000 * 2);
+        const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
+        gDayName = gNow.name || gDayName;
         itemGlobalBooked = gNow.reserved;
         if(!gNow.allowed){
           audit(env, 'auto_skipped_global_cap', { email, item: item.id, cap: gCapAutoForRun });
@@ -21764,7 +21845,9 @@ async function aiProxy(request, env, ctx, principal) {
   /* The day's ceiling is named here rather than at the block that uses it, so
      the release closure below can reach it. Both dollar ceilings are booked
      before the model runs and both have to be givable back together. */
-  const gName = `spend:${todayKey()}`;
+  /* Which of the day's sixteen shares: this payer's own until the
+     reservation below says which one actually took it (_reserveGlobalUSD). */
+  let gName = _spendNameFor(subject, env);
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
   const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
@@ -21846,7 +21929,8 @@ async function aiProxy(request, env, ctx, principal) {
      it; paying accounts keep the whole thing. When the day is busy the free
      tier is what gets shed, which is the correct order - and the message says
      so honestly rather than implying AMV is broken. */
-  const gRes = await _reserveUSD(env, gName, estUSD, gCapForThem, 86400000 * 2);
+  const gRes = await _reserveGlobalUSD(env, subject, estUSD, gCapForThem, 86400000 * 2);
+  gName = gRes.name || gName;
   bookedGlobalUSD = gRes.reserved;
   if (!gRes.allowed && !_paying) {
     /* Free, and the day's free budget is spent. Paying accounts are unaffected
@@ -21858,7 +21942,7 @@ async function aiProxy(request, env, ctx, principal) {
                   code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   if (!gRes.allowed) {
-    audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(notify(env, `GLOBAL DAILY SPEND CAP HIT: $${(gRes.value||0).toFixed(2)} >= $${gCap}`));
+    audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(_globalSpendToday(env).then(t => notify(env, `GLOBAL DAILY SPEND CAP HIT: $${t.toFixed(2)} of $${gCap}`)).catch(() => {}));
     await refundReservation();   // the call never happened - don't eat their quota
     return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
                 { 'Retry-After': _retryAfterMidnight() });
@@ -23511,10 +23595,21 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   } catch (e) { /* reporting must never break metering */ }
 
   // alert threshold (80% of global cap)
+  /* gRes is one share of sixteen, so any share crossing 80% of itself is the
+     cue to add up the day; the owner is told once a day, when the DAY's
+     total is past 80%. */
   const gSpent = gRes.value || 0;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  if (gSpent >= gCap * 0.8 && gSpent - cost < gCap * 0.8) {
-    await notify(env, `Spend alert: today at $${gSpent.toFixed(2)} (80% of $${gCap} cap).`);
+  const shareCap = gCap / _spendSharesFor(gCap);
+  if (gSpent >= shareCap * 0.8 && gSpent - cost < shareCap * 0.8) {
+    try {
+      const total = await _globalSpendToday(env);
+      const flag = 'spend80:' + todayKey();
+      if (total >= gCap * 0.8 && !(await env.AMV_KV.get(flag))) {
+        await env.AMV_KV.put(flag, '1', { expirationTtl: 2 * 86400 });
+        await notify(env, `Spend alert: today at $${total.toFixed(2)} (80% of $${gCap} cap).`);
+      }
+    } catch (e) {}
   }
 }
 
@@ -24064,10 +24159,13 @@ async function widgetChat(request, env, ctx) {
                 + (wMaxOut / 1e6) * eng.outCost;
   const ownerCostName = `cost:${ownerSubject}:${_periodKeyOf(ownerUser)}`;
   let bookedOwnerUSD = 0, bookedWidgetUSD = 0, bookedGlobalW = 0;
+  /* The owner pays, so the owner's share of the day's ceiling - until the
+     reservation below names the share that took it. */
+  let gNameW = _spendNameFor(ownerSubject, env);
   const releaseWidgetUSD = async () => {
     if (bookedOwnerUSD > 0) { await _releaseUSD(env, ownerCostName, bookedOwnerUSD, 86400000 * 70); bookedOwnerUSD = 0; }
     if (bookedWidgetUSD > 0) { await _releaseUSD(env, wSpendName, bookedWidgetUSD, 86400000 * 70); bookedWidgetUSD = 0; }
-    if (bookedGlobalW > 0) { await _releaseUSD(env, `spend:${todayKey()}`, bookedGlobalW, 86400000 * 2); bookedGlobalW = 0; }
+    if (bookedGlobalW > 0) { await _releaseUSD(env, gNameW, bookedGlobalW, 86400000 * 2); bookedGlobalW = 0; }
   };
   const wSpendName = `wspend:${key}:${todayKey()}`;
   if (ownerCeiling != null) {
@@ -24140,9 +24238,10 @@ async function widgetChat(request, env, ctx) {
   };
 
   // GLOBAL daily spend cap (shared safety net across the whole platform).
-  const gName = `spend:${todayKey()}`;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  const gRes = await _reserveUSD(env, gName, wEstUSD, gCap, 86400000 * 2);
+  const gRes = await _reserveGlobalUSD(env, ownerSubject, wEstUSD, gCap, 86400000 * 2);
+  gNameW = gRes.name || gNameW;
+  const gName = gNameW;
   bookedGlobalW = gRes.reserved;
   if (!gRes.allowed) {
     await refundMsg(); await refundOwner();
@@ -31587,7 +31686,7 @@ async function adminStats(request, env) {
 
   const today = todayKey(), month = monthKey();
   // global spend today (atomic counter) + cap
-  const gSpend = (await counter(env, `spend:${today}`, { op: 'get' })).value || 0;
+  const gSpend = await _globalSpendToday(env, today);
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
 

@@ -356,10 +356,21 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   } catch (e) { /* reporting must never break metering */ }
 
   // alert threshold (80% of global cap)
+  /* gRes is one share of sixteen, so any share crossing 80% of itself is the
+     cue to add up the day; the owner is told once a day, when the DAY's
+     total is past 80%. */
   const gSpent = gRes.value || 0;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-  if (gSpent >= gCap * 0.8 && gSpent - cost < gCap * 0.8) {
-    await notify(env, `Spend alert: today at $${gSpent.toFixed(2)} (80% of $${gCap} cap).`);
+  const shareCap = gCap / _spendSharesFor(gCap);
+  if (gSpent >= shareCap * 0.8 && gSpent - cost < shareCap * 0.8) {
+    try {
+      const total = await _globalSpendToday(env);
+      const flag = 'spend80:' + todayKey();
+      if (total >= gCap * 0.8 && !(await env.AMV_KV.get(flag))) {
+        await env.AMV_KV.put(flag, '1', { expirationTtl: 2 * 86400 });
+        await notify(env, `Spend alert: today at $${total.toFixed(2)} (80% of $${gCap} cap).`);
+      }
+    } catch (e) {}
   }
 }
 

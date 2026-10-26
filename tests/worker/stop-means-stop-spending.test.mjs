@@ -190,7 +190,7 @@ section('AND the day\u2019s ceiling stops the cron, which it never used to');
     active: true, next: Date.now() - 60000, every: 'day',
   }] });
   /* The day is already spent. */
-  await W.counter(env, `spend:${W.todayKey()}`, { op: 'incr', amount: 25, ttlMs: 86400000 });
+  for (let k = 0; k < 16; k++) await W.counter(env, `spend:${W.todayKey()}:s${k}`, { op: 'incr', amount: 25, ttlMs: 86400000 });
 
   const c = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },
               passThroughOnException() {}, async settle() { await Promise.all(this._p || []); } };
@@ -255,7 +255,7 @@ section('The daily spend ceiling stops the model too');
   const env = mkEnv({ GLOBAL_DAILY_USD_CAP: '10' });
   const tok = await signedIn(env);
   const day = new Date().toISOString().slice(0, 10);
-  env._vals.set(`spend:${day}`, 25);          // already past the ceiling
+  for (let k = 0; k < 16; k++) env._vals.set(`spend:${day}:s${k}`, 25);   // already past the ceiling, on every share
   const r = await ask(env, tok);
   ok(r.status === 503 || r.status === 429, 'the turn is refused', r.status);
   ok(modelCalls.length === 0, 'and the model is not called', modelCalls.length);
@@ -268,7 +268,7 @@ section('A refusal from either says nothing about why, to a user');
      lever they are pulling on. */
   const env = mkEnv({ GLOBAL_DAILY_USD_CAP: '10' });
   const tok = await signedIn(env);
-  env._vals.set(`spend:${new Date().toISOString().slice(0, 10)}`, 25);
+  for (let k = 0; k < 16; k++) env._vals.set(`spend:${new Date().toISOString().slice(0, 10)}:s${k}`, 25);
   const d = await (await ask(env, tok)).json();
   /* Word boundaries, because "at capacity" contains "cap" and is exactly the
      right thing to say - it describes the service, not the finances. The

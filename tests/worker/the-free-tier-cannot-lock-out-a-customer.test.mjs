@@ -111,7 +111,11 @@ const ask = async (env, tok) => {
   return { status: r.status, body: await r.json().catch(() => ({})) };
 };
 /* Put the day's spend at a chosen point, the way a busy day would. */
-const spendToday = (env, usd) => env._vals.set(`spend:${W.todayKey()}`, usd);
+/* The day's ceiling is sixteen shares now (spend:<day>:s0..s15, owner yes,
+   Oct 26): "the day so far" is spread evenly across them, and read back as
+   their sum. */
+const SHARES = Math.max(1, Math.min(16, Math.floor(GLOBAL_CAP / 20)));
+const spendToday = (env, usd) => { for (let k = 0; k < SHARES; k++) env._vals.set(`spend:${W.todayKey()}:s${k}`, usd / SHARES); };
 
 section('On a quiet day everybody is served');
 {

@@ -795,7 +795,9 @@ async function aiProxy(request, env, ctx, principal) {
   /* The day's ceiling is named here rather than at the block that uses it, so
      the release closure below can reach it. Both dollar ceilings are booked
      before the model runs and both have to be givable back together. */
-  const gName = `spend:${todayKey()}`;
+  /* Which of the day's sixteen shares: this payer's own until the
+     reservation below says which one actually took it (_reserveGlobalUSD). */
+  let gName = _spendNameFor(subject, env);
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const _paying = _planPriceUSD(user.plan, user.customCfg) > 0;
   const gCapForThem = _paying ? gCap : +(gCap * FREE_TIER_CAP_SHARE).toFixed(2);
@@ -877,7 +879,8 @@ async function aiProxy(request, env, ctx, principal) {
      it; paying accounts keep the whole thing. When the day is busy the free
      tier is what gets shed, which is the correct order - and the message says
      so honestly rather than implying AMV is broken. */
-  const gRes = await _reserveUSD(env, gName, estUSD, gCapForThem, 86400000 * 2);
+  const gRes = await _reserveGlobalUSD(env, subject, estUSD, gCapForThem, 86400000 * 2);
+  gName = gRes.name || gName;
   bookedGlobalUSD = gRes.reserved;
   if (!gRes.allowed && !_paying) {
     /* Free, and the day's free budget is spent. Paying accounts are unaffected
@@ -889,7 +892,7 @@ async function aiProxy(request, env, ctx, principal) {
                   code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   if (!gRes.allowed) {
-    audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(notify(env, `GLOBAL DAILY SPEND CAP HIT: $${(gRes.value||0).toFixed(2)} >= $${gCap}`));
+    audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(_globalSpendToday(env).then(t => notify(env, `GLOBAL DAILY SPEND CAP HIT: $${t.toFixed(2)} of $${gCap}`)).catch(() => {}));
     await refundReservation();   // the call never happened - don't eat their quota
     return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
                 { 'Retry-After': _retryAfterMidnight() });

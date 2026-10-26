@@ -33,7 +33,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'atomicusd.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _reserveUSD, _releaseUSD, _recordSpend, ENGINES, todayKey };\n');
+writeFileSync(harness, src + '\nexport { DB, _reserveUSD, _releaseUSD, _recordSpend, ENGINES, todayKey, _spendNameFor };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -166,12 +166,15 @@ section('Settling does not charge twice');
      the ceiling would look like it was working unusually well. */
   const env = mkEnv();
   await W._reserveUSD(env, 'cost:z:m', 0.20, 100, 1000);
-  await W._reserveUSD(env, 'spend:' + W.todayKey(), 0.20, 100, 1000);
-  await W._recordSpend(env, 'z', 0.05, 'chat', 'm', { account: 0.20, global: 0.20 });
+  /* Booked and settled on the same one of the day's sixteen shares, by name -
+     which is what every caller now hands _recordSpend. */
+  const share = W._spendNameFor('z');
+  await W._reserveUSD(env, share, 0.20, 100, 1000);
+  await W._recordSpend(env, 'z', 0.05, 'chat', 'm', { account: 0.20, global: 0.20, globalName: share });
   ok(Math.abs(env._vals.get('cost:z:m') - 0.05) < 1e-9,
      'the account ledger holds what the work really cost', env._vals.get('cost:z:m'));
-  ok(Math.abs(env._vals.get('spend:' + W.todayKey()) - 0.05) < 1e-9,
-     'and so does the day’s', env._vals.get('spend:' + W.todayKey()));
+  ok(Math.abs(env._vals.get(share) - 0.05) < 1e-9,
+     'and so does the day’s', env._vals.get(share));
 
   /* The two reporting ledgers were never reserved against, so they take the
      full amount - settling them would leave the owner's numbers short by

@@ -55,7 +55,9 @@ const PW = 'A-real-Passw0rd!';
 
 /* Put the day's spend where the handler reads it. Without the Durable Object
    bound, `counter` falls back to KV under `ctr:` - the same number either way. */
-const spendToday = (usd) => env.AMV_KV.put(`ctr:spend:${today}`, String(usd));
+/* Sixteen shares of the day's ceiling now (owner yes, Oct 26), filled evenly. */
+const SHARES = Math.max(1, Math.min(16, Math.floor(CAP / 20)));
+const spendToday = async (usd) => { for (let k = 0; k < SHARES; k++) await env.AMV_KV.put(`ctr:spend:${today}:s${k}`, String(usd / SHARES)); };
 const setPlan = (plan) => env.AMV_KV.put('ent:' + EMAIL, JSON.stringify({
   plan, updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
 

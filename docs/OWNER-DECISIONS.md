@@ -330,7 +330,16 @@ there are - below the audit's estimate for a million daily users at peak.
 Recommendation: split the day's budget across 16 counters chosen by account,
 each holding a sixteenth, with the remainder moved between them when one runs
 dry; the per-account and per-plan ceilings, which are already per person,
-stay as they are. *Needs a yes: it is how money is counted.*
+stay as they are. *Needs a yes: it is how money is counted.* **YES (owner,
+Oct 26) - DONE.** Built as one share per $20 of the ceiling, up to sixteen
+(`spend:<day>:s0..s15`): an account books on its own share and spills to two
+others before it is refused, settles and releases on the share it booked, and
+the owner's total adds them all up with the old counter. A small ceiling
+stays one share, so the largest single call (about $16) always fits. On the
+day it ships, what was already booked on the old counter is not held against
+the shares - that one day's ceiling can be passed by at most that much.
+`tests/worker/the-days-ceiling-is-counted-in-sixteen-places.test.mjs`, against
+the real counter class.
 
 **29. Revoked must mean revoked - MOVE REVOCATION OUT OF KV. YES (owner, Oct 26) - DONE.**
 Built: one Durable Object per account holds the epoch and the sign-ins ended one by one; every check reads it and KV together and takes the higher, so neither a stale KV read nor an object that was down can bring a revoked session back. If the object cannot be reached, sign-in stays up on the KV epoch (the old minute) and the operator is alerted - an outage of one object never signs everybody out. `tests/worker/revoked-means-revoked-everywhere.test.mjs`, against the real class.
