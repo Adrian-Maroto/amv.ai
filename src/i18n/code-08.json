@@ -18846,5 +18846,24 @@
   "it": "Le riunioni di oggi e ciò che si sovrappone.",
   "ko": "오늘의 회의와 겹치는 일정.",
   "ta": "இன்றைய கூட்டங்களும் மோதும் எதுவும்."
+ },
+ "At least 8 characters": {
+  "es": "Al menos 8 caracteres",
+  "zh": "至少 8 个字符",
+  "hi": "कम से कम 8 अक्षर",
+  "ar": "8 أحرف على الأقل",
+  "pt": "Pelo menos 8 caracteres",
+  "fr": "Au moins 8 caractères",
+  "de": "Mindestens 8 Zeichen",
+  "ja": "8文字以上",
+  "ru": "Не менее 8 символов",
+  "id": "Minimal 8 karakter",
+  "bn": "কমপক্ষে ৮টি অক্ষর",
+  "ur": "کم از کم 8 حروف",
+  "tr": "En az 8 karakter",
+  "vi": "Ít nhất 8 ký tự",
+  "it": "Almeno 8 caratteri",
+  "ko": "8자 이상",
+  "ta": "குறைந்தது 8 எழுத்துகள்"
  }
 }

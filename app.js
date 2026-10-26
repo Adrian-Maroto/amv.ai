@@ -5322,7 +5322,7 @@ function _renderForgot(){
     ) : (
       '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>'+
       '<label class="fp-lbl" for="fp-pw">New password</label>'+
-      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least {0} characters').replace('{0}', _RESET.min || 15))+'">'+
+      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least {0} characters').replace('{0}', _RESET.min || 8))+'">'+
       '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
       '<input id="fp-pw2" class="fp-in" type="password" autocomplete="new-password" placeholder="Type it again">'+
       '<button class="btn bp fp-go" id="fp-save">Set new password</button>'
@@ -5456,7 +5456,7 @@ async function _forgotVerify(){
   _forgotMsg('');
   try{
     const d = await _resetApi('/auth/reset/verify', { email:_RESET.email, code });
-    _RESET.token = d.token; _RESET.min = +d.min || 15;
+    _RESET.token = d.token; _RESET.min = +d.min || 8;
     _RESET.step = 3;
     _renderForgot();
   }catch(e){
@@ -5469,9 +5469,9 @@ async function _forgotVerify(){
 async function _forgotSave(){
   const pw  = ($('fp-pw')?.value)||'';
   const pw2 = ($('fp-pw2')?.value)||'';
-  /* The server decides the rest: 15 for an account a password guards alone,
-     8 with a passkey or an authenticator app, and says which. */
-  const _min = +(_RESET && _RESET.min) || 15;
+  /* The server decides the rest (8, with the most-guessed passwords
+     refused) and says which. */
+  const _min = +(_RESET && _RESET.min) || 8;
   if(pw.length < _min){ _forgotMsg(T('Use at least {0} characters - a short phrase you will remember works well.').replace('{0}', _min)); return; }
   if(pw !== pw2){ _forgotMsg('Those passwords don\u2019t match.'); return; }
 
@@ -31555,7 +31555,7 @@ function openAuth(mode){
         '<div class="ord"><span>or</span></div>'+
         (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
         '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
-        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 15 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 8 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
         // Honeypot: hidden from humans, bots fill it → server rejects. Not display:none
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+

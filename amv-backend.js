@@ -16906,7 +16906,10 @@ function _passwordTooLong(password){
    of one used with a second factor. So 15 for an account with no passkey and
    no authenticator app - every new account - and 8 once it has one. Only where
    a password is SET; nobody is locked out of a password they already have. */
-const PASSWORD_MIN_ALONE = 15;
+/* 8, the owner's decision (Oct 26): the same as with a second factor. The
+   most-guessed passwords are still refused whatever their length
+   (_isCommonPassword), which is what a minimum is really standing in for. */
+const PASSWORD_MIN_ALONE = 8;
 /* The one place the minimum is decided, so every screen that states it - the
    reset page, the in-app reset, sign-up - says what the server will check
    (audit Oct 26 #36: the reset page said 8 to accounts that needed 15). */
@@ -16924,9 +16927,7 @@ function _passwordProblem(password, acct){
              code:'password_too_common' };
   const min = _passwordMinFor(acct);
   if(String(password == null ? '' : password).length < min)
-    return { error: min === PASSWORD_MIN_ALONE
-               ? 'Use at least ' + min + ' characters - a short phrase you will remember works well. (With a passkey or an authenticator app on the account, 8 is enough.)'
-               : 'Password must be at least ' + min + ' characters.', code:'password_too_short', min };
+    return { error: 'Use at least ' + min + ' characters - a short phrase you will remember works well.', code:'password_too_short', min };
   return null;
 }
 
@@ -17146,8 +17147,11 @@ async function authSignup(request, env){
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
-  /* No session until the address is proved: the code finishes the sign-up. */
-  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup', undefined, undefined, body.lang); if (c) return c; }
+  /* NO EMAIL ON SIGN-UP (the owner's decision, Oct 26): creating an account
+     signs the person straight in. The emailed code is for signing in on a
+     new device, which is where it protects somebody. The one email kept here
+     is above: an address that already has an account nobody confirmed gets a
+     code, so a stranger who signed up with it first cannot keep it. */
   return _tokenResponse(env, await issueTokens(env, em, safeName, await _sessOpen(env, request, em)));
 }
 async function authLogin(request, env) {
@@ -17543,8 +17547,12 @@ async function authLoginVerify(request, env) {
   const acct = await DB.get(env, 'acct', em);
   if (!acct || (verdict.at && acct.createdAt && acct.createdAt > verdict.at))
     return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
-  if (verdict.why === 'signup') {
-    try { await _withAcct(env, em, (a) => { if (a) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+  /* Any code from the inbox proves the address, not only a sign-up's: sign-up
+     no longer sends one (the owner's decision, Oct 26), so the first sign-in
+     code is now what confirms an account - and a confirmed account is one a
+     stranger signing up with the address can no longer claim. */
+  if (verdict.why === 'signup' || (verdict.why !== 'claim' && !acct.emailVerifiedAt)) {
+    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
   }
   /* The inbox answered a sign-up on an unconfirmed account: the password that
      waited in the challenge becomes the account's, and every session issued

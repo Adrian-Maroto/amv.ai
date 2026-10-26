@@ -397,7 +397,7 @@ function openAuth(mode){
         '<div class="ord"><span>or</span></div>'+
         (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
         '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
-        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 15 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 8 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
         // Honeypot: hidden from humans, bots fill it → server rejects. Not display:none
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+

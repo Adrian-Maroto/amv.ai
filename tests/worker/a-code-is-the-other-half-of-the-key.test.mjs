@@ -74,18 +74,27 @@ const call = async (env, path, body, opts = {}) => {
 };
 const cookieFrom = (res, name) => { const c = res.cookies.find(x => x.startsWith(name + '=')); return c ? c.split(';')[0] : ''; };
 
-section('Sign-up proves the address before there is any session');
+/* Sign-up signs straight in and sends no email (the owner's decision, Oct
+   26); the code belongs to signing in. This makes an account and then starts
+   a sign-in from a device that has not proved itself, which is where a code
+   is sent - so the sections below test the code where it now lives. */
+async function signedUp(env, body) {
+  await call(env, '/auth/signup', body);
+  return call(env, '/auth/login', { email: body.email, password: body.password });
+}
+
+section('Sign-up signs you straight in, and sends no email');
 {
   const env = mkEnv();
   mail.length = 0;
   const s = await call(env, '/auth/signup', { email: 'new@example.com', name: 'New', password: PW });
-  ok(s.d.needsCode === true && !s.d.token && !s.d.refreshToken, 'signing up returns a code step, not a session', s.d);
-  ok(s.d.to && !s.d.to.includes('new@') && /@example\.com$/.test(s.d.to), 'and names the address masked', s.d.to);
-  const code = codeFor('new@example.com');
-  ok(/^\d{6}$/.test(code), 'a six-digit code went to that address', code);
+  ok(!!s.d.token && !s.d.needsCode, 'signing up returns a session at once', s.d.needsCode);
+  ok(mail.length === 0, 'and no email is sent', mail.length);
   const login = await call(env, '/auth/login', { email: 'new@example.com', password: PW });
-  ok(!login.d.token && login.d.needsCode, 'and signing in instead, without the code, gets no session either', login.d);
-  const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code });
+  ok(!login.d.token && login.d.needsCode, 'signing in later from a device that has not proved itself needs the code', login.d);
+  const code = codeFor('new@example.com');
+  ok(/^\d{6}$/.test(code), 'and that is when a six-digit code goes to the address', code);
+  const v = await call(env, '/auth/login/verify', { challenge: login.d.challenge, code });
   ok(!!v.d.token, 'the right code finishes it', v.status);
   const acct = await W.DB.get(env, 'acct', 'new@example.com');
   ok(acct && acct.emailVerifiedAt > 0, 'and the address is recorded as verified', acct && acct.emailVerifiedAt);
@@ -94,7 +103,7 @@ section('Sign-up proves the address before there is any session');
 section('The right password is not enough on a new device');
 {
   const env = mkEnv();
-  const s = await call(env, '/auth/signup', { email: 'own@example.com', name: 'Own', password: PW });
+  const s = await signedUp(env, { email: 'own@example.com', name: 'Own', password: PW });
   await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('own@example.com') });
   mail.length = 0;
   const l = await call(env, '/auth/login', { email: 'own@example.com', password: PW });
@@ -109,7 +118,7 @@ section('A code only works for the sign-in it was sent for');
 {
   const env = mkEnv();
   for (const who of ['alice@example.com', 'mallory@example.com']) {
-    const s = await call(env, '/auth/signup', { email: who, name: who, password: PW });
+    const s = await signedUp(env, { email: who, name: who, password: PW });
     await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor(who) });
   }
   const a = await call(env, '/auth/login', { email: 'alice@example.com', password: PW });
@@ -126,7 +135,7 @@ section('A code only works for the sign-in it was sent for');
 section('Guessing is capped, in parallel too, and a code works once');
 {
   const env = mkEnv();
-  const s = await call(env, '/auth/signup', { email: 'guess@example.com', name: 'G', password: PW });
+  const s = await signedUp(env, { email: 'guess@example.com', name: 'G', password: PW });
   const real = codeFor('guess@example.com');
   const wrong = real === '000000' ? '111111' : '000000';
   const burst = await Promise.all(Array.from({ length: 12 }, () => call(env, '/auth/login/verify', { challenge: s.d.challenge, code: wrong })));
@@ -134,7 +143,7 @@ section('Guessing is capped, in parallel too, and a code works once');
   const after = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: real });
   ok(!after.d.token, 'and after them even the real code is refused - the attempts ran out', after.d);
 
-  const s2 = await call(env, '/auth/signup', { email: 'once@example.com', name: 'O', password: PW });
+  const s2 = await signedUp(env, { email: 'once@example.com', name: 'O', password: PW });
   const c2 = codeFor('once@example.com');
   const first = await call(env, '/auth/login/verify', { challenge: s2.d.challenge, code: c2 });
   const again = await call(env, '/auth/login/verify', { challenge: s2.d.challenge, code: c2 });
@@ -144,7 +153,7 @@ section('Guessing is capped, in parallel too, and a code works once');
 section('A device that entered a code is trusted - and only for that account');
 {
   const env = mkEnv({ ALLOWED_ORIGIN: 'https://amv.test' });   // cookie mode
-  const s = await call(env, '/auth/signup', { email: 'dev@example.com', name: 'D', password: PW });
+  const s = await signedUp(env, { email: 'dev@example.com', name: 'D', password: PW });
   const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('dev@example.com') });
   const dev = cookieFrom(v, 'amv_dev');
   ok(/^amv_dev=/.test(dev) && v.cookies.some(c => c.startsWith('amv_dev=') && /HttpOnly/.test(c) && /Secure/.test(c)), 'it gets an HttpOnly, Secure device cookie', v.cookies);
@@ -152,7 +161,7 @@ section('A device that entered a code is trusted - and only for that account');
   ok(!!back.d.token && !back.d.needsCode, 'so next time the password is enough on this device', back.d.needsCode);
   const wrongPw = await call(env, '/auth/login', { email: 'dev@example.com', password: 'Wrong-Passw0rd!1' }, { cookie: dev });
   ok(!wrongPw.d.token, 'but never without the password', wrongPw.status);
-  const s2 = await call(env, '/auth/signup', { email: 'other@example.com', name: 'X', password: PW });
+  const s2 = await signedUp(env, { email: 'other@example.com', name: 'X', password: PW });
   await call(env, '/auth/login/verify', { challenge: s2.d.challenge, code: codeFor('other@example.com') });
   const other = await call(env, '/auth/login', { email: 'other@example.com', password: PW }, { cookie: dev });
   ok(!other.d.token && other.d.needsCode, 'and the device cookie for one account does not skip the code for another', other.d);
@@ -163,7 +172,7 @@ section('A device that entered a code is trusted - and only for that account');
 section('Signing out everywhere un-trusts every device');
 {
   const env = mkEnv();   // body mode: the device token travels in the body
-  const s = await call(env, '/auth/signup', { email: 'out@example.com', name: 'O', password: PW });
+  const s = await signedUp(env, { email: 'out@example.com', name: 'O', password: PW });
   const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('out@example.com') });
   ok(!!v.d.deviceToken, 'without cookies, the device token comes back for the page to keep', !!v.d.deviceToken);
   const trusted = await call(env, '/auth/login', { email: 'out@example.com', password: PW, deviceToken: v.d.deviceToken });
@@ -177,7 +186,7 @@ section('Signing out everywhere un-trusts every device');
 section('"Sign out and erase this device" also forgets that the device was trusted');
 {
   const env = mkEnv({ ALLOWED_ORIGIN: 'https://amv.test' });
-  const s1 = await call(env, '/auth/signup', { email: 'erase@example.com', name: 'E', password: PW });
+  const s1 = await signedUp(env, { email: 'erase@example.com', name: 'E', password: PW });
   const v = await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('erase@example.com') });
   const plain = await call(env, '/auth/logout', {}, { token: v.d.token });
   ok(!plain.cookies.some(c => /^amv_dev=;/.test(c)), 'an ordinary sign-out keeps the device trusted - the next sign-in here needs no code', plain.cookies);
@@ -188,7 +197,7 @@ section('"Sign out and erase this device" also forgets that the device was trust
 section('Signing out ends the session even with no access token');
 {
   const env = mkEnv();
-  const s = await call(env, '/auth/signup', { email: 'rt@example.com', name: 'R', password: PW });
+  const s = await signedUp(env, { email: 'rt@example.com', name: 'R', password: PW });
   const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('rt@example.com') });
   const out = await call(env, '/auth/logout', { refreshToken: v.d.refreshToken });
   ok(out.d.ok && out.d.scope === 'device', 'the refresh token alone is enough to sign out', out.d);
@@ -202,7 +211,7 @@ section('A code sent before the account was deleted signs nobody in');
      inbox must not mint a session for an account that is gone - or for the
      next person to register the address. */
   const env = mkEnv();
-  const s = await call(env, '/auth/signup', { email: 'gone@example.com', name: 'G', password: PW });
+  const s = await signedUp(env, { email: 'gone@example.com', name: 'G', password: PW });
   const code = codeFor('gone@example.com');
   const { keys } = await env.AMV_KV.list({});
   for (const k of keys) if (/^acct:.*gone@example\.com/.test(k.name)) await env.AMV_KV.delete(k.name);
@@ -235,7 +244,7 @@ section('Signing up with somebody else\u2019s address does not keep it from them
 section('A confirmed account cannot be signed up over');
 {
   const env = mkEnv();
-  const s1 = await call(env, '/auth/signup', { email: 'held@example.com', name: 'H', password: PW });
+  const s1 = await signedUp(env, { email: 'held@example.com', name: 'H', password: PW });
   await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('held@example.com') });
   mail.length = 0;
   const over = await call(env, '/auth/signup', { email: 'held@example.com', name: 'X', password: 'Another-Passw0rd!' });
@@ -288,7 +297,7 @@ section('A send that merely failed is "try again", never "come in"');
   /* Passing through on ANY failure would hand a code-free sign-in to whoever
      can make one send fail. Only the provider's refusal of the sender counts. */
   const env = mkEnv();
-  const s = await call(env, '/auth/signup', { email: 'flaky@example.com', name: 'F', password: PW });
+  const s = await signedUp(env, { email: 'flaky@example.com', name: 'F', password: PW });
   await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('flaky@example.com') });
   provider = 'down';
   const l = await call(env, '/auth/login', { email: 'flaky@example.com', password: PW });
@@ -301,7 +310,7 @@ section('The day\u2019s allowance of codes, used up, is said as a daily limit');
   /* "Try again in a minute" was the answer after the tenth code of the day -
      and a minute changes nothing. */
   const env = mkEnv();
-  const s1 = await call(env, '/auth/signup', { email: 'many@example.com', name: 'M', password: PW });
+  const s1 = await signedUp(env, { email: 'many@example.com', name: 'M', password: PW });
   await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('many@example.com') });
   let last = null;
   for (let i = 0; i < 12; i++) last = await call(env, '/auth/login', { email: 'many@example.com', password: PW });
@@ -316,7 +325,7 @@ section('A trusted device stays trusted - and the code screen says why when it i
      in a cookie: a browser that dropped it, or a stale one beside a valid copy,
      made a known device look new. */
   const env = mkEnv({ ALLOWED_ORIGIN: 'https://amv.test' });
-  const s1 = await call(env, '/auth/signup', { email: 'known@example.com', name: 'K', password: PW });
+  const s1 = await signedUp(env, { email: 'known@example.com', name: 'K', password: PW });
   const v = await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('known@example.com') });
   ok(!!v.d.deviceToken && !!cookieFrom(v, 'amv_dev'), 'the code gives the device a copy for the page as well as the cookie', { body: !!v.d.deviceToken, cookie: !!cookieFrom(v, 'amv_dev') });
 

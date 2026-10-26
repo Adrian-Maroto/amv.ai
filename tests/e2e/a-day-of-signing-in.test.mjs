@@ -7,8 +7,8 @@
    the joins ("asked for a code on a device that isn't new", "every refresh logs
    me out"). So this walks the day as they do:
 
-     sign up with the emailed code -> reload -> sign out -> sign back in
-     (trusted: no code) -> sign out everywhere -> sign in (a code, saying why)
+     sign up (no email) -> reload -> sign out -> sign in with the emailed code
+     -> sign in again (trusted: no code) -> sign out everywhere -> sign in (a code, saying why)
 
    The Worker runs behind a real HTTP server on a second origin, so cookies,
    credentials and CORS are the browser's own rules, not a test's. */
@@ -80,14 +80,17 @@ const enterCode = async () => {
 
 await page.goto(SITE, { waitUntil: 'load' }); await boot();
 
-section('Sign up: the emailed code finishes it');
+section('Sign up: straight in, and no email');
 {
+  /* The owner's decision (Oct 26): creating an account sends nothing. */
+  const before = mails.length;
   await page.evaluate(() => openAuth('signup'));
   await until(() => !!document.getElementById('a-name'));
   await fill('#a-name', 'Day'); await fill('#a-email', 'day@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
   await page.evaluate(() => document.getElementById('auth-submit').click());
-  ok(await until(() => !!document.getElementById('cv-code')), 'the code step opens');
-  ok(await enterCode(), 'and the code from the email signs the new account in');
+  ok(await until(() => !!(AMV_API.token && S.user && S.user.email)), 'the new account is signed in at once');
+  ok(!(await page.evaluate(() => !!document.getElementById('cv-code'))), 'with no code step');
+  ok(mails.length === before, 'and no email was sent', mails.length - before);
 }
 
 section('A reload keeps you signed in');
@@ -97,13 +100,18 @@ section('A reload keeps you signed in');
   ok(!(await page.evaluate(() => !!document.getElementById('auth-bg'))), 'and nothing asks to sign in again');
 }
 
-section('Sign out, then back in on the same browser: no code');
+section('The first sign-in asks for the emailed code; after that, this browser is trusted');
 {
+  await page.evaluate(() => signOut());
+  await until(() => !(S.user && S.user.email));
+  const first = await signIn();
+  ok(first.asked, 'signing in is when the code is emailed - it proves the address', first);
+  ok(await enterCode(), 'and the code signs in');
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
   const before = mails.length;
   const r = await signIn();
-  ok(!r.asked, 'this browser confirmed itself earlier, so it is not asked again', r);
+  ok(!r.asked, 'this browser confirmed itself, so it is not asked again', r);
   ok(mails.length === before, 'and no code was emailed', mails.length - before);
 }
 

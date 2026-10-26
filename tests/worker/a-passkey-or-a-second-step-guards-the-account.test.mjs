@@ -55,10 +55,10 @@ const call = async (path, body, tok, headers) => {
 const PW = 'correct horse battery staple';
 const ME = 'rosa@example.com';
 
-section('A new password stands alone, so it must be long');
+section('A new password needs 8 characters (the owner\u2019s rule, Oct 26)');
 {
-  const short = await call('/auth/signup', { email: 'short@example.com', name: 'S', password: 'Tr0ub4dor&3x' });
-  ok(short.status === 400 && short.d.code === 'password_too_short' && short.d.min === 15, '12 characters is refused for an account with nothing else guarding it', [short.status, short.d.code, short.d.min]);
+  const short = await call('/auth/signup', { email: 'short@example.com', name: 'S', password: 'Tr0ub4!' });
+  ok(short.status === 400 && short.d.code === 'password_too_short' && short.d.min === 8, '7 characters is refused, and the answer says 8', [short.status, short.d.code, short.d.min]);
   const long = await call('/auth/signup', { email: ME, name: 'Rosa', password: PW });
   ok(long.status === 200 && !!long.d.token, 'a 28-character phrase is accepted', long.status);
 }
@@ -255,13 +255,15 @@ section('The last way into an account is never removed');
   ok(after.status === 401 && !after.d.token, 'and it signs nobody in', after.status);
 }
 
-section('A new password with a second factor on the account may be shorter');
+section('Every account needs 8, with a second factor or without');
 {
   env.ADMIN_TOKEN = 'admin-secret-for-this-suite-only-0123456789';
   const adm = { 'X-Admin-Token': env.ADMIN_TOKEN, Authorization: 'Bearer ' + env.ADMIN_TOKEN };
   await call('/auth/signup', { email: 'plain@example.com', name: 'Plain', password: 'a long enough passphrase' });
   const alone = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'Nine ch4rs!' }, null, adm);
-  ok(alone.status === 400 && alone.d.min === 15, 'an account with only a password needs 15', [alone.status, alone.d.code]);
+  const seven = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'Sev3n!x' }, null, adm);
+  ok(seven.status === 400 && seven.d.min === 8, 'an account with only a password needs 8', [seven.status, seven.d.code]);
+  ok(alone.status === 200, 'and 9 is enough for it', [alone.status, alone.d.error]);
   const guarded = await call('/auth/admin-reset', { email: ME, password: 'Nine ch4rs!' }, null, adm);
   ok(guarded.status === 200, 'one with an authenticator app may have 8 or more', [guarded.status, guarded.d.error]);
 }

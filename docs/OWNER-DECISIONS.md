@@ -275,6 +275,16 @@ cannot, and every draft says it was not sent. Off the table: a Companion that
 messages people on the person's behalf, which would need the Action Protocol
 and the person's say-so on each send - the trust that makes it worth having.
 
+**27. Sign-up sends no email; passwords need 8 characters - the owner's call (Oct 26).**
+Creating an account signs the person straight in. The emailed code is for
+signing in on a device that has not proved itself, and the first such code
+now also confirms the address (so a confirmed account cannot be claimed by a
+stranger signing up with it). One email stays at sign-up, on purpose: an
+address that already has an account nobody confirmed gets a code, so whoever
+signed up with somebody else's address first cannot keep it. Passwords need 8
+characters for every account (it was 15 for a password-only one); the most
+commonly guessed passwords are still refused whatever their length.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

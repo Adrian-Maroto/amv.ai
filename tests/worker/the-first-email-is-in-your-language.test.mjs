@@ -43,9 +43,16 @@ let ip = 10;
 const call = (path, body, headers) => W.default.fetch(new Request('https://api.amv.test' + path, { method: 'POST',
   headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.' + (ip++) }, headers || {}), body: JSON.stringify(body || {}) }), env, ctx);
 const lastMail = () => { const s = sent[sent.length - 1]; try { return JSON.parse(s.body); } catch (e) { return { raw: s && s.body }; } };
-const signup = (email, headers, lang) => call('/auth/signup', Object.assign({ email, name: 'N', password: 'A-real-Passw0rd!' }, lang ? { lang } : {}), headers);
+/* Sign-up sends no email (the owner's decision, Oct 26), so the first email
+   anybody gets is the code for signing in on a device that has not proved
+   itself: an account is made, then signed in to from a new device. */
+const signup = async (email, headers, lang) => {
+  await call('/auth/signup', { email, name: 'N', password: 'A-real-Passw0rd!' });
+  sent = [];
+  return call('/auth/login', Object.assign({ email, password: 'A-real-Passw0rd!' }, lang ? { lang } : {}), headers);
+};
 
-section('A sign-up from a Spanish page gets its code in Spanish, and a resend stays Spanish');
+section('A sign-in from a Spanish page gets its code in Spanish, and a resend stays Spanish');
 {
   sent = [];
   const r = await signup('ana@example.com', { 'Accept-Language': 'en-US,en;q=0.9' }, 'es');

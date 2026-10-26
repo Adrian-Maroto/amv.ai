@@ -215,8 +215,12 @@ async function authLoginVerify(request, env) {
   const acct = await DB.get(env, 'acct', em);
   if (!acct || (verdict.at && acct.createdAt && acct.createdAt > verdict.at))
     return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
-  if (verdict.why === 'signup') {
-    try { await _withAcct(env, em, (a) => { if (a) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+  /* Any code from the inbox proves the address, not only a sign-up's: sign-up
+     no longer sends one (the owner's decision, Oct 26), so the first sign-in
+     code is now what confirms an account - and a confirmed account is one a
+     stranger signing up with the address can no longer claim. */
+  if (verdict.why === 'signup' || (verdict.why !== 'claim' && !acct.emailVerifiedAt)) {
+    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
   }
   /* The inbox answered a sign-up on an unconfirmed account: the password that
      waited in the challenge becomes the account's, and every session issued
