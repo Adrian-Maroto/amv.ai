@@ -354,7 +354,10 @@ kept only as a cache of "not revoked". Off the table: shortening token life
 alone - it narrows the minute, it does not close it. *Owner says yes; it is
 an auth change.*
 
-**30. The data tier - ONE TRANSACTIONAL DATABASE FOR WHAT MUST BE TRUE.**
+**30. The data tier - ONE TRANSACTIONAL DATABASE FOR WHAT MUST BE TRUE. Postgres (owner, Oct 26) - SCHEMA BUILT, VENDOR TO CHOOSE.**
+The schema, its money guarantees run against a real Postgres, and the step-by-step migration are in `docs/DATA-TIER.md`. What remains is the owner's: pick the provider and create the Hyperdrive configuration; the Worker's reads and writes are built against it then, not before.
+
+The decision as it was put:
 KV is a cache that has been used as a database. Accounts, entitlements, the
 credit ledger, API keys, teams and memberships need transactions.
 Recommendation: managed Postgres reached through Cloudflare Hyperdrive for
