@@ -110,6 +110,23 @@ section('Deleting asks first, stops its job and takes the card away');
   ok(job && job.active === false && /agent was deleted/.test(job.lastError || ''), 'its job is stopped and says why', job);
 }
 
+section('Companion is offered, and set up from the same parts as any agent');
+{
+  await page.waitForSelector('#mc-agents [data-dact="mcCompanionSetup"]', { timeout: 15000 });
+  await page.click('#mc-agents [data-dact="mcCompanionSetup"]');
+  await page.waitForSelector('input[name="cp-level"]');
+  await page.check('input[name="cp-level"][value="helpful"]');
+  await page.selectOption('#cp-hour', '7');
+  await page.click('#ag-save');
+  await page.waitForFunction(() => [...document.querySelectorAll('#mc-agents .mc-agent h4')].some(h => h.textContent === 'Companion'), null, { timeout: 15000 });
+  const agent = (await agentsRec()).list.find(a => a.name === 'Companion' && !a.deleted);
+  const job = (await autoRec()).items.find(i => agent && i.agent === agent.id);
+  ok(agent && /never sent|has not been sent/.test(agent.instructions), 'a Companion agent exists, told its drafts are never sent', agent && agent.instructions.slice(0, 120));
+  ok(job && job.repeat === 'daily' && job.sched && job.sched.hour === 7, 'with a daily brief at the hour chosen', job && job.sched);
+  ok(job && job.approval === 'require' && job.uses.includes('mail.read') && job.uses.includes('calendar.read'), 'Helpful: the brief waits for approval, and reads only what was ticked', job && [job.approval, job.uses]);
+  ok(await page.evaluate(() => !document.querySelector('#mc-agents [data-dact="mcCompanionSetup"]')), 'and it is no longer offered once it exists');
+}
+
 section('No JavaScript errors');
 ok(L.errors.length === 0, 'zero uncaught page errors', L.errors.slice(0, 3));
 

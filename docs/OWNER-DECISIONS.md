@@ -262,6 +262,19 @@ for). Built: `79-meaning.js`, `_psMeaningScores` in project-search.js;
 `a-search-can-find-it-by-meaning` (worker and e2e). Switched on by the
 owner's step below.
 
+**26. Companion - YES, as an agent, not a separate system.**
+The audit's proactive assistant. Set up from Crew in one dialog, it is an
+agent named Companion and one daily background job, so everything an agent
+and a job already enforce applies to it. Three levels, each mapped onto the
+job's approval and enforced on the server: Reactive makes no job at all (it
+answers when asked); Helpful prepares a brief and drafted replies that wait
+for approval; Proactive delivers the brief. Per-category control is which
+reads it may use - email, calendar - and it uses only those, from accounts
+the person connected. It never sends, books or buys: an unattended run
+cannot, and every draft says it was not sent. Off the table: a Companion that
+messages people on the person's behalf, which would need the Action Protocol
+and the person's say-so on each send - the trust that makes it worth having.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

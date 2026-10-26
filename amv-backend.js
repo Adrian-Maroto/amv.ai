@@ -32628,9 +32628,14 @@ function _readinessReport(env, seen) {
     /* Bound rather than pasted, like the three above, which is why it sits
        here and not with the secrets. Without it the two surfaces that need a
        real browser refuse and say so; with it they render a page server-side. */
-    { id: 'render', name: 'Browser rendering', on: !!(env && env.BROWSER), blocking: false,
-      turnsOn: 'Turning a live page into a PDF or a screenshot on the server. Without it those two surfaces refuse rather than returning an empty file.',
-      how: 'Bind BROWSER (Cloudflare Browser Rendering) in wrangler.toml' },
+    { id: 'render', name: 'AMV\u2019s browser (Browser Rendering)', on: !!(env && env.BROWSER), blocking: false,
+      turnsOn: 'AMV doing tasks on websites in its own browser, handing it to the person for a sign-in or a check, Teach AMV and Run it now, and turning a live page into a PDF or a screenshot. Without it each of these says it is not switched on rather than pretending.',
+      how: 'Workers Paid ($5 a month), then uncomment the [browser] binding (BROWSER) in wrangler.toml' },
+    /* Bound, like the rows above. Off is a working state - searches use words
+       and the engine's other phrasings - so it never blocks. */
+    { id: 'meaning', name: 'Searching by meaning (Workers AI)', on: _meaningOn(env), blocking: false,
+      turnsOn: 'File and project searches that find a passage saying the same thing in other words or another language (bge-m3, nothing stored). Without it searches use words and the other phrasings the engine passes.',
+      how: 'Uncomment the [ai] binding (AI) in wrangler.toml - Workers AI is on every Cloudflare account' },
   ];
 
   /* GROUPING, BECAUSE THIRTY-SIX ROWS IN ONE COLUMN IS NOT A SCREEN.
@@ -32652,7 +32657,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

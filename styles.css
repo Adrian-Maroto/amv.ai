@@ -17394,3 +17394,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .br2{ gap:var(--sp-3); }
 .br2 > div:first-child{ min-width:0; }
 .br2 .opt-desc{ overflow-wrap:anywhere; }
+
+/* LAYER A343 - the offer to set up Companion, above the agents: one line of
+   what it does and the button, on the same surface as the agent cards. */
+.mc-companion{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-3); background:var(--s1); border:1px solid var(--accent-soft); border-radius:var(--r-md); }
+.mc-companion > div{ display:flex; flex-direction:column; gap:var(--sp-1); min-width:0; flex:1 1 240px; }
+.mc-companion b{ font-family:var(--fdisplay); font-size:var(--t-md); color:var(--tx); }
+.mc-companion span{ font-size:var(--t-sm); color:var(--mu); }

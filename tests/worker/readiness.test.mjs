@@ -123,7 +123,7 @@ section('It NEVER returns a secret, in any form');
     STRIPE_PRICE_ULTRA_YEAR: 'price_ultra_y', STRIPE_PRICE_TEAM_SEAT_YEAR: 'price_team_y',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
-    DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},
+    DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {}, AI: { run() {} },
     /* The cloud computer: its binding and a key of real length. */
     AMV_FILES: { put() {}, get() {} },
     AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',

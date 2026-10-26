@@ -1034,7 +1034,7 @@ function _mcAgentsHTML(){
   else if(!(d.agents || []).length) body = '<div class="mc-empty-row">' + escH(T('No agents yet. Make one for work you hand off again and again - a researcher who reads the news in your field every morning, an assistant who drafts the week’s replies.'))
     + ' <button class="mc-sec-link" data-dact="mcAgentEdit" data-darg="">' + escH(T('New agent')) + '</button></div>';
   else body = '<div class="mc-agents">' + d.agents.map(_mcAgentCard).join('') + '</div>';
-  return '<section id="mc-agents" class="mc-sec">' + head + body + '</section>';
+  return '<section id="mc-agents" class="mc-sec">' + head + _mcCompanionOfferHTML() + body + '</section>';
 }
 function _mcAgentDialog(title, inner, onSave){
   const r = $('ovr'); if(!r) return;
@@ -1105,6 +1105,74 @@ async function mcAgentDelete(id){
   await mcAgentsReload();
 }
 try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, _mcAgentName }); }catch(e){}
+/* COMPANION - an agent that looks ahead for the person, built from the same
+   parts as every other agent: one agent (its instructions and budget), and a
+   brief each morning that is an ordinary background job reading only what
+   the person ticked. How far it goes is the level they choose, and the level
+   is the job's approval, enforced on the server like any job's:
+
+     Reactive  - no brief; it answers when asked, with its instructions.
+     Helpful   - the brief and any drafts wait for their approval.
+     Proactive - the brief is delivered to them each morning.
+
+   It never sends, books or buys anything on its own - an unattended run
+   cannot - and every draft says it has not been sent. */
+const _COMPANION_LEVELS = {
+  reactive:  ['Reactive', 'Only when you ask. Nothing runs on its own.'],
+  helpful:   ['Helpful', 'A brief each morning that waits for you to look at it, with any replies drafted, never sent.'],
+  proactive: ['Proactive', 'The brief is delivered to you each morning. Replies are still drafts, never sent.'],
+};
+const _COMPANION_READS = {
+  'mail.read':     ['Your email', 'Important threads, and who is waiting on a reply.'],
+  'calendar.read': ['Your calendar', 'Today’s meetings and anything that clashes.'],
+};
+function _mcCompanion(){ return _mcAgentsD && (_mcAgentsD.agents || []).find(a => a.name === 'Companion') || null; }
+function _mcCompanionOfferHTML(){
+  if(!_mcAgentsD || !_mcAgentsD.allowed || _mcCompanion()) return '';
+  return '<div class="mc-companion"><div><b>' + escH(T('Companion')) + '</b><span>'
+    + escH(T('An agent that looks ahead for you: before you wake up it reads your important email and today’s calendar, tells you what matters, and drafts the replies - never sending anything.'))
+    + '</span></div><button class="btn mc-mini bp" data-dact="mcCompanionSetup" data-darg="">' + escH(T('Set up Companion')) + '</button></div>';
+}
+function mcCompanionSetup(){
+  const hours = [6, 7, 8, 9];
+  _mcAgentDialog(T('Set up Companion'),
+    '<fieldset class="cr-mode"><legend>' + escH(T('How far it goes')) + '</legend>'
+    + Object.keys(_COMPANION_LEVELS).map(k => '<label class="cr-mode-opt"><input type="radio" name="cp-level" value="' + k + '"' + (k === 'helpful' ? ' checked' : '') + '><span><b>'
+      + escH(T(_COMPANION_LEVELS[k][0])) + '</b><span>' + escH(T(_COMPANION_LEVELS[k][1])) + '</span></span></label>').join('') + '</fieldset>'
+    + '<fieldset class="cr-mode"><legend>' + escH(T('What it may read')) + '</legend>'
+    + Object.keys(_COMPANION_READS).map(k => '<label class="cr-mode-opt"><input type="checkbox" name="cp-read" value="' + k + '" checked><span><b>'
+      + escH(T(_COMPANION_READS[k][0])) + '</b><span>' + escH(T(_COMPANION_READS[k][1])) + '</span></span></label>').join('') + '</fieldset>'
+    + '<label class="ob-sub" for="cp-hour">' + escH(T('Brief ready by')) + '</label><select id="cp-hour" class="fp-in">'
+    + hours.map(h => '<option value="' + h + '"' + (h === 7 ? ' selected' : '') + '>' + escH(new Date(2026, 0, 1, h).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) + '</option>').join('') + '</select>'
+    + '<p class="ob-sub">' + escH(T('It reads only what you tick, from the accounts you have connected. Change any of this, pause it or delete it from its card.')) + '</p>',
+    async () => {
+      const level = (document.querySelector('input[name="cp-level"]:checked') || {}).value || 'helpful';
+      const reads = [...document.querySelectorAll('input[name="cp-read"]:checked')].map(x => x.value);
+      if(level !== 'reactive' && !reads.length) throw new Error(T('Tick at least one thing it may read, or choose Reactive.'));
+      const hour = +($('cp-hour') || {}).value || 7;
+      const said = reads.map(r => r === 'mail.read' ? 'their email' : 'their calendar').join(' and ');
+      const made = await _autoApi('/v1/agents/save', { name: 'Companion', role: T('Looks ahead for you, and drafts - never sends'),
+        instructions: 'You are their Companion. Lead with what needs them today, most urgent first, in a few lines. '
+          + 'Name anyone waiting on a reply and how long they have waited. Flag clashes and anything they need to prepare for. '
+          + 'Draft replies only where one is clearly owed, each marked as a draft that has not been sent. '
+          + 'If nothing matters today, say so in one line rather than filling space.', budgetUSD: 0 });
+      if(level !== 'reactive'){
+        try{
+          await _autoApi('/auto/create', { detail: 'Prepare their morning brief from ' + said + ': what matters today, who is waiting on them, what to prepare, and drafted replies where one is owed.',
+            repeat: 'daily', sched: { cad: 'daily', hour, minute: 0 }, kind: 'task', notify: 'app', uses: reads,
+            approval: level === 'proactive' ? 'auto' : 'require', agent: made.agent.id });
+        }catch(e){
+          /* The agent exists; the brief did not start. Said, and the card
+             offers Give it a job - not a Companion that silently does nothing. */
+          toast(T('Companion was created, but its morning brief could not be set up:') + ' ' + ((e && e.message) || ''), 'error', 8000);
+          await mcAgentsReload(); return;
+        }
+      }
+      toast(level === 'reactive' ? T('Companion is ready. Ask it anything in chat.') : T('Companion is set up. Your first brief arrives tomorrow morning.'), 'success', 6000);
+      await mcAgentsReload();
+    });
+}
+try{ Object.assign(window, { mcCompanionSetup }); }catch(e){}
 
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
