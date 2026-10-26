@@ -159,6 +159,12 @@ never AMV's background work - until the limit comes back; an API key cannot
 give it. Per person, so on a team each member decides for their own messages.
 A default of "ask" is off the table: people who bought a pack to keep going
 would be stopped mid-task by a question they already answered at checkout.
+*Corrected (Oct 26 audit #15):* "they already answered at checkout" was not
+true - the purchase screen showed the three choices with "keep going" already
+ticked, so a quick buyer never answered. Now nothing is ticked until the
+person has chosen once, and the packs stay shut until they do; after that
+their choice is shown and kept. "Auto" remains what an account that has never
+bought behaves as, because it holds no credit to spend.
 
 **20. SCIM Groups - YES, mapped to the existing Admin role, no new roles.**
 A company decides who administers its tools in its directory; making it

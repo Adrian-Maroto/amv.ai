@@ -26,14 +26,23 @@ async function _creditPicker(){
     const b = $('cr-plans'); if(b) on(b, 'click', () => { try{ closeOvr(); setTab('plans'); }catch(e){} });
     return;
   }
+  /* THE FIRST PACK WAITS FOR AN ANSWER. Until somebody has said what happens
+     when their plan runs out, nothing is ticked for them and the packs stay
+     shut: prepaid money spent on a setting nobody chose is the question
+     "why did my balance go down?" waiting to be asked. */
+  const unchosen = d.modeChosen === false;
   body.innerHTML = bal
-    + _creditModeHTML(d.mode)
+    + _creditModeHTML(unchosen ? '' : d.mode)
+    + (unchosen ? '<p class="cr-say cr-first" id="cr-first">' + escH(T('Choose what happens when your plan runs out, then pick a pack.')) + '</p>' : '')
     + '<div class="cr-packs" role="group" aria-label="Packs">'
-    + (d.packs || []).map(p => '<button type="button" class="cr-pack" data-cr-usd="' + escH(String(+p || 0)) + '"><b>$' + escH(String(+p || 0)) + '</b><span>one time</span></button>').join('')
+    + (d.packs || []).map(p => '<button type="button" class="cr-pack" data-cr-usd="' + escH(String(+p || 0)) + '"' + (unchosen ? ' disabled' : '') + '><b>$' + escH(String(+p || 0)) + '</b><span>one time</span></button>').join('')
     + '</div>'
     + '<p class="cr-say">Paid securely by card on the next page. Messages past your plan come off this balance at what they cost to run, plus AMV’s margin - the same terms as your plan.</p>'
     + '<p class="cr-say" id="cr-msg" role="status" aria-live="polite"></p>';
-  _creditModeWire(body);
+  _creditModeWire(body, () => {
+    body.querySelectorAll('[data-cr-usd]').forEach(x => { x.disabled = false; });
+    const f = $('cr-first'); if(f) f.remove();
+  });
   body.querySelectorAll('[data-cr-usd]').forEach(b => on(b, 'click', async () => {
     const say = (t) => { const m = $('cr-msg'); if(m) m.textContent = t; };
     body.querySelectorAll('[data-cr-usd]').forEach(x => { x.disabled = true; });
@@ -59,13 +68,14 @@ const _CREDIT_MODE_TXT = {
   stop: ['Never use it', 'Your plan\u2019s limit is the limit. Your balance stays untouched until you change this.'],
 };
 function _creditModeHTML(mode){
-  const cur = _CREDIT_MODE_TXT[mode] ? mode : 'auto';
+  /* '' is "not chosen yet": nothing is ticked. */
+  const cur = mode === '' ? '' : (_CREDIT_MODE_TXT[mode] ? mode : 'auto');
   return '<fieldset class="cr-mode"><legend>' + escH(T('When your plan runs out')) + '</legend>'
     + Object.keys(_CREDIT_MODE_TXT).map(k => '<label class="cr-mode-opt"><input type="radio" name="cr-mode" value="' + k + '"' + (k === cur ? ' checked' : '') + '>'
       + '<span><b>' + escH(T(_CREDIT_MODE_TXT[k][0])) + '</b><span>' + escH(T(_CREDIT_MODE_TXT[k][1])) + '</span></span></label>').join('')
     + '<p class="cr-say" id="cr-mode-msg" role="status" aria-live="polite"></p></fieldset>';
 }
-function _creditModeWire(body){
+function _creditModeWire(body, saved){
   body.querySelectorAll('input[name="cr-mode"]').forEach(inp => on(inp, 'change', async () => {
     const say = (t) => { const m = $('cr-mode-msg'); if(m) m.textContent = t; };
     const all = body.querySelectorAll('input[name="cr-mode"]');
@@ -78,6 +88,7 @@ function _creditModeWire(body){
       if(!res.ok || !out.ok) throw new Error(out.error || T('That setting could not be saved. Nothing changed - try again.'));
       back = out.mode;
       say(T('Saved.'));
+      if(typeof saved === 'function') saved(back);
     }catch(e){ say(e.message); }
     /* Whatever the server holds is what is checked - a failed save puts the
        old choice back rather than showing one that does not apply. */

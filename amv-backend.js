@@ -15441,7 +15441,10 @@ async function authResetVerify(request, env) {
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   await env.AMV_KV.put('reset:' + token, JSON.stringify({ email, at: Date.now() }), { expirationTtl: RESET_CODE_TTL });
   audit(env, 'reset_code_ok', { email });
-  return json({ ok: true, token });
+  /* What the new password must be, for THIS account, so the screen says it. */
+  let min = PASSWORD_MIN_ALONE;
+  try { min = _passwordMinFor(await DB.get(env, 'acct', email)); } catch (e) {}
+  return json({ ok: true, token, min });
 }
 
 async function sendResetCodeEmail(env, to, code, lang) {
@@ -15527,9 +15530,16 @@ async function authResetStatus(request, env){
    This serves a self-contained page that sets the new password. It's plain
    HTML with no dependencies so it works no matter where the app is hosted.
    ══════════════════════════════════════════════════════════════ */
-function resetPage(request, env){
+async function resetPage(request, env){
   const url = new URL(request.url);
   const token = (url.searchParams.get('token') || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 128);
+  /* The minimum for the account this link resets, from the same function the
+     server checks with. Unknown (no token, or an expired one): the stricter. */
+  let min = PASSWORD_MIN_ALONE;
+  try {
+    const t = token ? JSON.parse((await env.AMV_KV.get('reset:' + token)) || 'null') : null;
+    if (t && t.email) min = _passwordMinFor(await DB.get(env, 'acct', t.email));
+  } catch (e) {}
   const appUrl = (env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
 
   const html = `<!DOCTYPE html>
@@ -15571,7 +15581,7 @@ function resetPage(request, env){
     <div id="msg" class="msg"></div>
     <div id="form">
       <label for="pw">New password</label>
-      <input id="pw" type="password" placeholder="At least 8 characters" autocomplete="new-password">
+      <input id="pw" type="password" placeholder="At least ${min} characters" minlength="${min}" autocomplete="new-password">
       <label for="pw2">Confirm password</label>
       <input id="pw2" type="password" placeholder="Type it again" autocomplete="new-password">
       <button id="go">Set new password</button>
@@ -15580,6 +15590,7 @@ function resetPage(request, env){
   </div>
 <script>
   var TOKEN = ${JSON.stringify(token)};
+  var MIN   = ${min};
   var APP   = ${JSON.stringify(appUrl)};
   var msg = document.getElementById('msg');
   var form = document.getElementById('form');
@@ -15592,7 +15603,7 @@ function resetPage(request, env){
   btn.addEventListener('click', async function(){
     var pw = document.getElementById('pw').value;
     var pw2 = document.getElementById('pw2').value;
-    if (pw.length < 8) { show('Password must be at least 8 characters.', 'err'); return; }
+    if (pw.length < MIN) { show('Use at least ' + MIN + ' characters' + (MIN > 8 ? ' - a short phrase you will remember works well.' : '.'), 'err'); return; }
     if (pw !== pw2)    { show('Those passwords do not match.', 'err'); return; }
     btn.disabled = true; btn.textContent = 'Setting\u2026';
     try {
@@ -16134,7 +16145,7 @@ async function _route(request, env, ctx) {
   // The password-reset page must be public too - the whole point is that the
   // user cannot log in. This is what the reset email links to.
   if (request.method === 'GET' && path === '/reset') {
-    return resetPage(request, env);
+    return await resetPage(request, env);
   }
 
   if (request.method === 'OPTIONS') {
@@ -16797,6 +16808,13 @@ function _passwordTooLong(password){
    no authenticator app - every new account - and 8 once it has one. Only where
    a password is SET; nobody is locked out of a password they already have. */
 const PASSWORD_MIN_ALONE = 15;
+/* The one place the minimum is decided, so every screen that states it - the
+   reset page, the in-app reset, sign-up - says what the server will check
+   (audit Oct 26 #36: the reset page said 8 to accounts that needed 15). */
+function _passwordMinFor(acct){
+  const f = acct ? _acctFactors(acct) : null;
+  return f && (f.passkeys || f.totp) ? PASSWORD_MIN : PASSWORD_MIN_ALONE;
+}
 function _passwordProblem(password, acct){
   const tooLong = _passwordTooLong(password);
   if(tooLong) return tooLong;
@@ -16805,8 +16823,7 @@ function _passwordProblem(password, acct){
   if(_isCommonPassword(password))
     return { error:'That password is one of the most commonly guessed ones, so it would not protect the account. Please choose another.',
              code:'password_too_common' };
-  const f = acct ? _acctFactors(acct) : null;
-  const min = f && (f.passkeys || f.totp) ? PASSWORD_MIN : PASSWORD_MIN_ALONE;
+  const min = _passwordMinFor(acct);
   if(String(password == null ? '' : password).length < min)
     return { error: min === PASSWORD_MIN_ALONE
                ? 'Use at least ' + min + ' characters - a short phrase you will remember works well. (With a passkey or an authenticator app on the account, 8 is enough.)'
@@ -27399,6 +27416,12 @@ async function _creditModeOf(env, email){
   try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
   catch (e) { return 'auto'; }
 }
+/* Whether the person has ever said - the purchase screen asks before the first
+   pack rather than ticking "keep going" for them (audit Oct 26 #15). */
+async function _creditModeChosen(env, email){
+  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return !!(p && CREDIT_MODES.indexOf(p.mode) >= 0); }
+  catch (e) { return true; }
+}
 /* POST /v1/credit/mode {mode} */
 async function creditSetMode(request, env){
   const user = await requireUser(request, env);
@@ -27419,7 +27442,7 @@ async function creditInfo(request, env){
   if(!user) return json({ error: 'unauthorized' }, 401);
   const subject = user.billingSubject || user.email;
   const st = await _creditState(env, subject);
-  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email),
+  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email), modeChosen: await _creditModeChosen(env, user.email),
                 available: !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET), packs: CREDIT_PACKS_USD,
                 max: CREDIT_MAX_USD });
 }

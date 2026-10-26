@@ -33,6 +33,7 @@ await page.route(API + '/**', async (route) => {
   const reply = (status, d) => route.fulfill({ status, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(d) });
   if (path === '/v1/credit') return reply(200, info);
   if (path === '/v1/credit/checkout') { posted.push(body); return reply(200, { ok: true, url: PAY + '/pay/' + body.usd }); }
+  if (path === '/v1/credit/mode') { info = Object.assign({}, info, { mode: body.mode, modeChosen: true }); return reply(200, { ok: true, mode: body.mode }); }
   return reply(200, { ok: true });
 });
 await page.route(PAY + '/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Pay</title>' }));
@@ -84,6 +85,24 @@ section('Without card payments, it says so');
   await page.evaluate(() => { S.user = { name: 'Pat', email: 'pat@example.com', ini: 'P' }; goApp(); _creditOpen(); });
   await page.waitForFunction(() => /not switched on/.test((document.getElementById('cr-body') || {}).innerText || ''));
   ok((await page.$$('.cr-pack')).length === 0, 'no packs are offered');
+}
+
+section('Before the first pack, the person says what happens when the plan runs out');
+{
+  /* Audit Oct 26 #15: "keep going automatically" was ticked for them, so a
+     quick buyer never made the choice at all. */
+  await page.goto(appUrl);
+  await page.waitForTimeout(500);
+  info = Object.assign({}, info, { available: true, mode: 'auto', modeChosen: false });
+  await page.evaluate(() => { S.user = { name: 'Pat', email: 'pat@example.com', ini: 'P' }; goApp(); _creditOpen(); });
+  await page.waitForSelector('.cr-pack');
+  const first = await page.evaluate(() => ({ checked: [...document.querySelectorAll('input[name="cr-mode"]')].filter(x => x.checked).length,
+    shut: [...document.querySelectorAll('.cr-pack')].every(b => b.disabled), say: (document.getElementById('cr-first') || {}).textContent || '' }));
+  ok(first.checked === 0 && first.shut && /Choose what happens/.test(first.say), 'nothing is ticked for them, and the packs wait for an answer', first);
+  await page.click('input[name="cr-mode"][value="ask"]');
+  await page.waitForFunction(() => [...document.querySelectorAll('.cr-pack')].every(b => !b.disabled));
+  const after = await page.evaluate(() => ({ checked: (document.querySelector('input[name="cr-mode"]:checked') || {}).value, note: !!document.getElementById('cr-first') }));
+  ok(after.checked === 'ask' && !after.note, 'once they choose, it is saved and the packs open', after);
 }
 
 section('Back from paying: it says the credit is arriving');

@@ -120,6 +120,12 @@ async function _creditModeOf(env, email){
   try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
   catch (e) { return 'auto'; }
 }
+/* Whether the person has ever said - the purchase screen asks before the first
+   pack rather than ticking "keep going" for them (audit Oct 26 #15). */
+async function _creditModeChosen(env, email){
+  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return !!(p && CREDIT_MODES.indexOf(p.mode) >= 0); }
+  catch (e) { return true; }
+}
 /* POST /v1/credit/mode {mode} */
 async function creditSetMode(request, env){
   const user = await requireUser(request, env);
@@ -140,7 +146,7 @@ async function creditInfo(request, env){
   if(!user) return json({ error: 'unauthorized' }, 401);
   const subject = user.billingSubject || user.email;
   const st = await _creditState(env, subject);
-  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email),
+  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user), mode: await _creditModeOf(env, user.email), modeChosen: await _creditModeChosen(env, user.email),
                 available: !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET), packs: CREDIT_PACKS_USD,
                 max: CREDIT_MAX_USD });
 }

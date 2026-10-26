@@ -124,6 +124,7 @@ fill();
 section('Auto is the default, and carries on as it always did');
 {
   ok((await bal(env, tok)).mode === 'auto', 'a new account is on auto', (await bal(env, tok)).mode);
+  ok((await bal(env, tok)).modeChosen === false, 'and is said not to have chosen, so the purchase screen asks first', (await bal(env, tok)).modeChosen);
   const before = spentNow();
   const r = await ask(env, tok); await r.text(); await ctx.settle();
   ok(r.status === 200 && spentNow() > before, 'past the plan, the message is answered on credit', { status: r.status });
@@ -133,6 +134,7 @@ section('Ask: nothing is spent until the person says yes');
 {
   const s = await setMode(env, tok, 'ask');
   ok(s.status === 200 && s.d.mode === 'ask' && (await bal(env, tok)).mode === 'ask', 'the choice is saved and read back', s.d);
+  ok((await bal(env, tok)).modeChosen === true, 'and from then on it is a choice the person made', (await bal(env, tok)).modeChosen);
   const before = spentNow();
   const r = await j(await ask(env, tok));
   ok(r.status === 429 && r.d.code === 'quota_window', 'without a yes it is the plan’s own refusal', r.d.code);

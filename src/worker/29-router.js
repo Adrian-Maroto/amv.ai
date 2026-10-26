@@ -505,7 +505,7 @@ async function _route(request, env, ctx) {
   // The password-reset page must be public too - the whole point is that the
   // user cannot log in. This is what the reset email links to.
   if (request.method === 'GET' && path === '/reset') {
-    return resetPage(request, env);
+    return await resetPage(request, env);
   }
 
   if (request.method === 'OPTIONS') {

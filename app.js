@@ -5289,7 +5289,7 @@ function _renderForgot(){
     ) : (
       '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>'+
       '<label class="fp-lbl" for="fp-pw">New password</label>'+
-      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least 15 characters'))+'">'+
+      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least {0} characters').replace('{0}', _RESET.min || 15))+'">'+
       '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
       '<input id="fp-pw2" class="fp-in" type="password" autocomplete="new-password" placeholder="Type it again">'+
       '<button class="btn bp fp-go" id="fp-save">Set new password</button>'
@@ -5423,7 +5423,7 @@ async function _forgotVerify(){
   _forgotMsg('');
   try{
     const d = await _resetApi('/auth/reset/verify', { email:_RESET.email, code });
-    _RESET.token = d.token;
+    _RESET.token = d.token; _RESET.min = +d.min || 15;
     _RESET.step = 3;
     _renderForgot();
   }catch(e){
@@ -5438,7 +5438,8 @@ async function _forgotSave(){
   const pw2 = ($('fp-pw2')?.value)||'';
   /* The server decides the rest: 15 for an account a password guards alone,
      8 with a passkey or an authenticator app, and says which. */
-  if(pw.length < 8){ _forgotMsg(T('Password must be at least 8 characters.')); return; }
+  const _min = +(_RESET && _RESET.min) || 15;
+  if(pw.length < _min){ _forgotMsg(T('Use at least {0} characters - a short phrase you will remember works well.').replace('{0}', _min)); return; }
   if(pw !== pw2){ _forgotMsg('Those passwords don\u2019t match.'); return; }
 
   const btn = $('fp-save');

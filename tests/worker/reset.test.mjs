@@ -107,6 +107,20 @@ ok(pageResp.status === 200, 'GET /reset returns 200 - not a 404', pageResp.statu
 ok(/Set a new password/i.test(pageHtml), 'it serves a real "set a new password" page');
 ok(pageHtml.includes(token), 'the page carries the token through');
 ok(/\/auth\/reset\/confirm/.test(pageHtml), 'and posts to the confirm endpoint');
+/* The minimum it states is the server's for THIS account: it said 8 to every
+   account while the server refused anything under 15 for a password-only one
+   (audit Oct 26 #36). */
+ok(/placeholder="At least 15 characters"/.test(pageHtml) && /var MIN\s*=\s*15;/.test(pageHtml),
+   'a password-only account is told 15 - what the server will check', (pageHtml.match(/placeholder="[^"]*"/) || [''])[0]);
+{
+  const key = [...store.keys()].find(k => /acct.*amarotovaleria/.test(k));
+  const acct = JSON.parse(store.get(key)); acct.totp = { on: true }; store.set(key, JSON.stringify(acct));
+  const withApp = await (await W.resetPage(new Request(link), env)).text();
+  ok(/placeholder="At least 8 characters"/.test(withApp) && /var MIN\s*=\s*8;/.test(withApp), 'one with an authenticator app is told 8', (withApp.match(/placeholder="[^"]*"/) || [''])[0]);
+  delete acct.totp; store.set(key, JSON.stringify(acct));
+  const noToken = await (await W.resetPage(new Request('https://api.amv.dev/reset'), env)).text();
+  ok(/var MIN\s*=\s*15;/.test(noToken), 'and with no account to look at, the stricter rule is stated', true);
+}
 
 /* ── Completing the reset ──────────────────────────────────────────────── */
 section('Setting a new password, and it actually works');

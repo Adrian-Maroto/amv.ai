@@ -201,6 +201,13 @@ function _passwordTooLong(password){
    no authenticator app - every new account - and 8 once it has one. Only where
    a password is SET; nobody is locked out of a password they already have. */
 const PASSWORD_MIN_ALONE = 15;
+/* The one place the minimum is decided, so every screen that states it - the
+   reset page, the in-app reset, sign-up - says what the server will check
+   (audit Oct 26 #36: the reset page said 8 to accounts that needed 15). */
+function _passwordMinFor(acct){
+  const f = acct ? _acctFactors(acct) : null;
+  return f && (f.passkeys || f.totp) ? PASSWORD_MIN : PASSWORD_MIN_ALONE;
+}
 function _passwordProblem(password, acct){
   const tooLong = _passwordTooLong(password);
   if(tooLong) return tooLong;
@@ -209,8 +216,7 @@ function _passwordProblem(password, acct){
   if(_isCommonPassword(password))
     return { error:'That password is one of the most commonly guessed ones, so it would not protect the account. Please choose another.',
              code:'password_too_common' };
-  const f = acct ? _acctFactors(acct) : null;
-  const min = f && (f.passkeys || f.totp) ? PASSWORD_MIN : PASSWORD_MIN_ALONE;
+  const min = _passwordMinFor(acct);
   if(String(password == null ? '' : password).length < min)
     return { error: min === PASSWORD_MIN_ALONE
                ? 'Use at least ' + min + ' characters - a short phrase you will remember works well. (With a passkey or an authenticator app on the account, 8 is enough.)'
