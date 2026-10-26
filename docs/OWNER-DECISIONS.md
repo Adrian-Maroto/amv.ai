@@ -227,6 +227,18 @@ each run under its own agent's instructions, budget and pause. Built:
 `77-agents.js`, the run path in `15-run-context-and-execution.js`, Agents in
 Crew; `an-agent-works-within-what-it-was-given`, `an-agent-you-can-see-working`.
 
+**24. A read-only Viewer role on teams - YES; seats unchanged.**
+Teams had owner, admin and member. The role companies ask for next is the one
+that can see and not touch: a client, an auditor, a manager who reads. A
+viewer reads everything the team shares and its projects; every route that
+adds to or changes shared work (sharing, creating or saving a shared project,
+creating or updating a task) checks one permission, `contribute`, which a
+viewer lacks, and refuses with a sentence saying why. Work cannot be assigned
+to a viewer. Only the owner sets roles, and owner is never a role to give.
+A viewer still takes a seat: pricing a cheaper seat is a billing decision,
+which stays the owner's. Built: `TEAM_PERMS` in `33-team-roles.js`, the role
+picker on the team page; `a-viewer-reads-and-does-not-change`.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

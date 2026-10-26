@@ -27895,7 +27895,7 @@ try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 async function _crewAgentId(name){
   let d;
   try{ const r = await AMV_API._fetch('/v1/agents', { method:'GET', timeout:10000 }); d = await r.json(); }
-  catch(e){ return { error:'Their agents could not be read just now, so nothing was set up. Say so and offer to try again.' }; }
+  catch(e){ return { ok:false, error:'Their agents could not be read just now, so nothing was set up. Say so and offer to try again.' }; }
   const list = (d && Array.isArray(d.agents)) ? d.agents : [];
   const want = String(name || '').trim().toLowerCase();
   const a = list.find(x => x.id === name) || list.find(x => String(x.name).toLowerCase() === want);

@@ -193,7 +193,11 @@ function _renderTeamManageNow(vc, team){
   const role=AMVTeam.myRole(team);
   const canManage=role==='owner'||role==='admin';
   const isOwner=role==='owner';
+  /* A viewer reads; the server refuses anything else (`contribute`), and the
+     page does not offer what would be refused. */
+  const canWork=role!=='viewer';
   const myEmail=(S.user?.email||'').toLowerCase();
+  const roleName={ owner:T('Owner'), admin:T('Admin'), member:T('Member'), viewer:T('Viewer') };
   /* Seats come from the server, which is the only thing that knows what the
      plan currently pays for. A downgrade quietly stops covering whoever joined
      last, and the owner is the only person who can fix it - so it is named
@@ -246,28 +250,32 @@ function _renderTeamManageNow(vc, team){
   const memberRows=(team.members||[]).map(m=>
     '<div class="vrow"><span>'+escH(m.email)+(m.email===myEmail?' <span style="color:var(--mu)">(you)</span>':'')+
     (m.seated===false?' <span class="team-role" style="background:rgba(245,158,11,.14);color:var(--gold-txt)">no seat</span>':'')+'</span>'+
-    '<span style="display:flex;align-items:center;gap:10px"><span class="team-role team-role-'+m.role+'">'+m.role+'</span>'+
-    // owner can promote/demote anyone who isn't the owner
-    (isOwner&&m.role!=='owner'?'<button class="btn bs team-role-btn" data-team-setrole="'+escH(m.email)+'" data-team-newrole="'+(m.role==='admin'?'member':'admin')+'" style="font-size:var(--t-2xs);padding:3px 8px">'+(m.role==='admin'?'Make member':'Make admin')+'</button>':'')+
+    '<span style="display:flex;align-items:center;gap:10px">'+
+    // the owner sets anyone else's role; everybody else sees it
+    (isOwner&&m.role!=='owner'
+      ? '<select class="sel team-role-sel" data-team-setrole="'+escH(m.email)+'" aria-label="'+escH(T('Role for {0}').replace('{0}', m.email))+'">'
+        +['admin','member','viewer'].map(r=>'<option value="'+r+'"'+(r===m.role?' selected':'')+'>'+escH(roleName[r])+'</option>').join('')+'</select>'
+      : '<span class="team-role team-role-'+escH(m.role)+'">'+escH(roleName[m.role]||m.role)+'</span>')+
     (canManage&&m.role!=='owner'?'<button class="team-x" data-team-remove="'+escH(m.email)+'" title="Remove">\u00d7</button>':'')+'</span></div>'
   ).join('');
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Collaboration</span><h2>'+escH(team.name)+'</h2>'+
     '<p class="vsub">'+(team.members||[]).length+' member'+((team.members||[]).length===1?'':'s')+' \u00b7 you\u2019re '+(role==='owner'?'the owner':'a '+role)+'.</p>'+
+    (role==='viewer'?'<p class="vsub">'+escH(T('As a viewer you can read everything the team shares and its projects. Ask an owner or admin if you need to change them.'))+'</p>':'')+
     seatNote+
     overBanner+
     seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
     '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(projects &amp; prompts everyone can use)</span></h3>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+      (canWork?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
         '<button class="btn bs" id="team-share-project" style="font-size:var(--t-sm)">Share a project</button>'+
-        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>'+
+        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>':'')+
       '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
     '<div class="ss2"><h3>Projects you edit together <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(one copy, kept up to date for everyone)</span></h3>'+
       '<div id="team-projects"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
-    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
+    (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">'+escH(T('Member'))+'</option><option value="admin">'+escH(T('Admin'))+'</option><option value="viewer">'+escH(T('Viewer'))+'</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
     (canManage?'<div class="ss2"><h3>'+escH(T('Usage this month'))+'</h3>'+
       '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+escH(T('Totals only, never what anybody asked. Counted from what the team pays for, by calendar month (UTC).'))+'</p>'+
@@ -275,12 +283,12 @@ function _renderTeamManageNow(vc, team){
     _teamEnginesHTML(team, canManage)+
     _teamSsoHTML(isOwner)+
     '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
-      '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
+      (canWork?'<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
-        '<div><label class="lbl">Assign to</label><select id="tt-assignee" class="sel"><option value="">Unassigned</option>'+(team.members||[]).map(m=>'<option value="'+escH(m.email)+'">'+escH(m.email)+'</option>').join('')+'</select></div>'+
+        '<div><label class="lbl">Assign to</label><select id="tt-assignee" class="sel"><option value="">Unassigned</option>'+(team.members||[]).filter(m=>m.role!=='viewer').map(m=>'<option value="'+escH(m.email)+'">'+escH(m.email)+'</option>').join('')+'</select></div>'+
         '<div><label class="lbl">Priority</label><select id="tt-priority" class="sel"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>'+
         '<button class="btn bp" id="tt-add" style="font-size:var(--t-sm)">Assign</button>'+
-      '</div></div>'+
+      '</div></div>':'')+
       '<div id="tt-board"><div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">Loading tasks\u2026</div></div>'+
     '</div>'+
     (isOwner?'':'<div class="ss2"><h3>Leave this team</h3>'+
@@ -352,9 +360,9 @@ function _renderTeamManageNow(vc, team){
     try{ await AMVTeam.remove(b.dataset.teamRemove); toast('Member removed','info'); renderTeamView(); }
     catch(e){ toast(e.message||'Could not remove','error'); }
   }));
-  vc.querySelectorAll('[data-team-setrole]').forEach(b=>on(b,'click',async()=>{
-    try{ await AMVTeam.setRole(b.dataset.teamSetrole, b.dataset.teamNewrole); toast('Role updated','success'); renderTeamView(); }
-    catch(e){ toast(e.message||'Could not change role','error'); }
+  vc.querySelectorAll('[data-team-setrole]').forEach(b=>on(b,'change',async()=>{
+    try{ await AMVTeam.setRole(b.dataset.teamSetrole, b.value); toast(T('Role updated'),'success'); renderTeamView(); }
+    catch(e){ toast(e.message||T('Could not change role'),'error'); renderTeamView(); }
   }));
   // ── Presence: who's active now (heartbeat) ──
   const drawPresence=(present)=>{

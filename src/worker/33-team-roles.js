@@ -4,13 +4,25 @@
    defined in one place instead of scattered ad-hoc checks.
      • owner  - full control; only one; can't be removed; can delete team
      • admin  - manage members, change member/admin roles, edit team data
-     • member - use the shared workspace, read members, leave
+     • member - use the shared workspace: share, edit shared projects, assign
+                and update tasks; read members; leave
+     • viewer - read what the team shares and its projects, and nothing else:
+                a seat for somebody who should see the work and not change it
+                (a client, an auditor, a manager who only reads)
+   `contribute` is the one permission a viewer lacks and a member has. Every
+   route that adds to or changes the team's shared work checks it, so the
+   role is enforced here, not by which buttons the page draws.
    ===================================================================== */
+const TEAM_ROLES = ['owner', 'admin', 'member', 'viewer'];
 const TEAM_PERMS = {
-  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','deleteTeam','rename','setPolicy']),
-  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','viewUsage','rename','setPolicy']),
-  member: new Set(['viewMembers']),
+  owner:  new Set(['invite','remove','setRole','editData','contribute','viewMembers','viewAudit','viewUsage','deleteTeam','rename','setPolicy']),
+  admin:  new Set(['invite','remove','setRole','editData','contribute','viewMembers','viewAudit','viewUsage','rename','setPolicy']),
+  member: new Set(['contribute','viewMembers']),
+  viewer: new Set(['viewMembers']),
 };
+/* A role somebody may be given: never owner, which is the one there is. */
+function _teamGrantRole(role){ return role === 'admin' || role === 'viewer' ? role : 'member'; }
+const _viewerNo = () => json({ error:'You can see this team\u2019s work as a viewer, but not change it. Ask an owner or admin for a member\u2019s role.', code:'viewer' }, 403);
 function _can(team, email, perm){
   const r = _role(team, email);
   return !!(r && TEAM_PERMS[r] && TEAM_PERMS[r].has(perm));
@@ -45,8 +57,8 @@ async function teamInvite(request, env){
                          '. Upgrade to add more people, or remove someone first.',
                   code: 'seat_limit', seats: { used: team.members.length, limit } }, 402);
   }
-  // can't grant a role higher than allowed; only owner/admin roles are 'admin'/'member'
-  const inviteRole = (role==='admin') ? 'admin' : 'member';
+  // can't grant a role higher than allowed: admin, member or viewer, never owner
+  const inviteRole = _teamGrantRole(role);
   // create a high-entropy invite token (256 bits) bound to THIS recipient email
   const token = b64urlEncode(crypto.getRandomValues(new Uint8Array(32)));
   await env.AMV_KV.put(`invite:${token}`, JSON.stringify({ teamId:team.id, email:invitee, role:inviteRole, ts:Date.now() }), { expirationTtl: 7*86400 });
@@ -255,7 +267,7 @@ async function teamSetRole(request, env){
   if(!team) return json({ error:'no team' }, 404);
   if(!_can(team, user.email, 'setRole')) return json({ error:'you don\u2019t have permission to change roles' }, 403);
   const target = String(email||'').toLowerCase().trim();
-  const newRole = (role==='admin') ? 'admin' : 'member';
+  const newRole = _teamGrantRole(role);
   const m = team.members.find(x=>x.email===target);
   if(!m) return json({ error:'member not found' }, 404);
   if(m.role==='owner') return json({ error:'the owner\u2019s role can\u2019t be changed' }, 400);
@@ -467,6 +479,7 @@ async function teamShare(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'contribute')) return _viewerNo();
   const { kind, item } = await request.json().catch(()=>({}));
   if(!kind || !item) return json({ error:'kind and item required' }, 400);
   const tooBig = _boundedJson(item, 32*1024, 6);
@@ -604,6 +617,7 @@ async function teamProjectCreate(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'contribute')) return _viewerNo();
   const blocked = await guardAction(env, 'tproj:' + user.email, 10, 100, 'shared project changes');
   if(blocked) return blocked;
   const body = await request.json().catch(()=>({}));
@@ -635,6 +649,7 @@ async function teamProjectSave(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'contribute')) return _viewerNo();
   const blocked = await guardAction(env, 'tproj:' + user.email, 10, 100, 'shared project changes');
   if(blocked) return blocked;
   const body = await request.json().catch(()=>({}));
@@ -742,11 +757,15 @@ async function teamTaskCreate(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'contribute')) return _viewerNo();
   const { title, assignee, notes, priority } = await request.json().catch(()=>({}));
   if(!title || !String(title).trim()) return json({ error:'title required' }, 400);
   // assignee, if given, must be a real member of this team
   const asg = (assignee||'').toLowerCase().trim();
   if(asg && !(team.members||[]).some(m=>m.email===asg)) return json({ error:'assignee is not a team member' }, 400);
+  /* A viewer cannot change a task's status, so work given to one could never
+     be marked done. */
+  if(asg && _role(team, asg) === 'viewer') return json({ error:'A viewer cannot work on tasks. Give it to a member, or change their role first.', code:'assignee_viewer' }, 400);
   const task = {
     id: 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     title: String(title).trim().slice(0, 300),
@@ -809,6 +828,7 @@ async function teamTaskUpdate(request, env){
   if(!user) return json({ error:'unauthorized' }, 401);
   const team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'contribute')) return _viewerNo();
   const { id, status, assignee, del } = await request.json().catch(()=>({}));
   const tasks = await _teamTasks(env, team.id);
   const i = tasks.findIndex(t=>t.id===id);
@@ -844,6 +864,8 @@ async function teamTaskUpdate(request, env){
     if(!canManage && !isCreator) return json({ error:'only managers can reassign' }, 403);
     const asg = (assignee||'').toLowerCase().trim();
     if(asg && !(team.members||[]).some(m=>m.email===asg)) return json({ error:'assignee is not a team member' }, 400);
+    /* The same for reassigning. */
+    if(asg && _role(team, asg) === 'viewer') return json({ error:'A viewer cannot work on tasks. Give it to a member, or change their role first.', code:'assignee_viewer' }, 400);
     await _teamAudit(env, team, user.email, 'task_reassigned', { target: asg||'(unassigned)', title: tasks[i].title });
     if (asg && asg !== user.email) await _notifyAssignee(env, team, user, asg, tasks[i]);
   }
