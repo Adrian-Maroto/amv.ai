@@ -17387,3 +17387,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .wrp-steps li.skip{ color:var(--mu); }
 .wrp-why{ margin-top:var(--sp-1); color:var(--mu); font-size:var(--t-xs); }
 .wrp-shot{ display:block; width:100%; height:auto; border:1px solid var(--bd); border-radius:var(--r-sm); margin-bottom:var(--sp-3); }
+
+/* LAYER A342 - a settings row's description wraps anywhere, so a long email
+   address in "Reset your password" never runs under the button beside it on
+   a phone. The text column may shrink; the button keeps its size. */
+.br2{ gap:var(--sp-3); }
+.br2 > div:first-child{ min-width:0; }
+.br2 .opt-desc{ overflow-wrap:anywhere; }
