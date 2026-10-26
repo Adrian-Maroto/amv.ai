@@ -176,8 +176,11 @@ section('No preference is read from a key nothing writes');
   /* The property behind both of these. `amv_font_size` in the data export and
      `amv_mute_chime` here were each read forever from a key no code ever set -
      one exported null, the other made a mute switch that could not mute. */
-  const dir = join(ROOT, 'src', 'app');
-  const files = readdirSync(dir).filter(f => f.endsWith('.js'));
+  const dir = join(ROOT, 'src');
+  /* The page's modules, and the Settings panes fetched beside it - a
+     preference read in one and set in the other is still set. */
+  const files = readdirSync(join(dir, 'app')).filter(f => f.endsWith('.js')).map(f => join('app', f))
+    .concat(readdirSync(join(dir, 'settings')).filter(f => f.endsWith('.js')).map(f => join('settings', f)));
   /* Comments stripped first. The comment recording that a dead read was
      REMOVED quotes the call it removed, so a raw scan finds the phantom in the
      note explaining the phantom - the same way the shortcut sweep flagged its

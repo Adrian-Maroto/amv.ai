@@ -204,6 +204,14 @@ on the person's own computer (a recorder there sees everything on screen),
 and keeping recordings on AMV's servers (the steps live on the device and in
 the skill). Built: `browserTeach` in `72-web-takeover.js`, `_webTeach` in
 `web-live.js`, `teach-amv-by-showing-it` (worker and e2e).
+Upgraded (Oct 26 audit): each step also records how to find its element again
+(id, test id, name, label), the person can add checks ("the page shows Deal
+won") which are kept only if true at the time, and Run it now replays the
+recorded steps exactly in AMV's browser - no model choosing - finding each
+element by what was recorded, stopping at the first step it cannot find or
+the first check the page fails, never clicking "somewhere near". A secret step
+asks for its value for that run only. `78-teach-replay.js`,
+`a-taught-task-replays-and-checks-itself`.
 
 **23. Persistent named Agents - YES, built on background jobs, with a budget the server enforces.**
 The Oct 26 audit's first ask after storage. An agent is a name, a role,

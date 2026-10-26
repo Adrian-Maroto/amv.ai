@@ -17374,3 +17374,16 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .mc-agent-last p{ margin:var(--sp-1) 0 0; color:var(--tx); white-space:pre-wrap; overflow-wrap:anywhere; }
 .mc-agent-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:auto; }
 #mc-agents .mc-sec-link{ white-space:nowrap; }
+
+/* LAYER A341 - a taught task, replayed (78-teach-replay.js): each step with
+   what happened to it, the reason under the one that stopped, and the page
+   as the run left it. */
+.wrp-steps{ margin:var(--sp-3) 0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:var(--sp-2); font-size:var(--t-sm); }
+.wrp-steps li{ display:block; padding:var(--sp-2) var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-sm); background:var(--s1); color:var(--tx); overflow-wrap:anywhere; }
+.wrp-steps li > span{ display:inline-block; width:1.2em; font-weight:600; }
+.wrp-steps li.ok > span{ color:var(--grn); }
+.wrp-steps li.bad{ border-color:var(--red); }
+.wrp-steps li.bad > span{ color:var(--red); }
+.wrp-steps li.skip{ color:var(--mu); }
+.wrp-why{ margin-top:var(--sp-1); color:var(--mu); font-size:var(--t-xs); }
+.wrp-shot{ display:block; width:100%; height:auto; border:1px solid var(--bd); border-radius:var(--r-sm); margin-bottom:var(--sp-3); }

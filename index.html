@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="a7db90a2e546594e">
+<meta name="amv-build" content="813371ebc8c29e88">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10335,6 +10335,15 @@ font-size:9px; font-weight:700; color:var(--mu); line-height:1; }
 .mc-agent-last p{ margin:var(--sp-1) 0 0; color:var(--tx); white-space:pre-wrap; overflow-wrap:anywhere; }
 .mc-agent-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:auto; }
 #mc-agents .mc-sec-link{ white-space:nowrap; }
+.wrp-steps{ margin:var(--sp-3) 0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:var(--sp-2); font-size:var(--t-sm); }
+.wrp-steps li{ display:block; padding:var(--sp-2) var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-sm); background:var(--s1); color:var(--tx); overflow-wrap:anywhere; }
+.wrp-steps li > span{ display:inline-block; width:1.2em; font-weight:600; }
+.wrp-steps li.ok > span{ color:var(--grn); }
+.wrp-steps li.bad{ border-color:var(--red); }
+.wrp-steps li.bad > span{ color:var(--red); }
+.wrp-steps li.skip{ color:var(--mu); }
+.wrp-why{ margin-top:var(--sp-1); color:var(--mu); font-size:var(--t-xs); }
+.wrp-shot{ display:block; width:100%; height:auto; border:1px solid var(--bd); border-radius:var(--r-sm); margin-bottom:var(--sp-3); }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

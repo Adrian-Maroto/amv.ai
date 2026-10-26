@@ -369,6 +369,15 @@ export async function bootApp(opts = {}) {
   }, { user: opts.user === null ? null : (opts.user || undefined), tab: opts.tab || 'chat' });
 
   await page.waitForTimeout(250);
+  /* The Settings panes are fetched once the page is idle (_crewPrefetch), so a
+     visitor who opens Settings finds them there. A suite opens Settings
+     sooner than any person could, so it waits for that idle fetch rather
+     than racing it; settings-arrives-when-its-panes-do covers the case where
+     they have not arrived. */
+  if (!opts.beforeLoad) {
+    await page.evaluate(() => typeof _lazyLoad === 'function'
+      ? _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function') : null).catch(() => {});
+  }
 
   return {
     page, browser, errors,

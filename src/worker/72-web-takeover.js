@@ -54,6 +54,9 @@ function _webTakeAct(raw){
   if(a.kind === 'key') return WEB_TAKE_KEYS.includes(a.key) ? { kind: 'key', key: a.key } : null;
   if(a.kind === 'scroll'){ const dy = n(a.dy, -3000, 3000); return dy === null ? null : { kind: 'scroll', dy }; }
   if(a.kind === 'look' || a.kind === 'close') return { kind: a.kind };
+  /* While teaching: "the page shows this now", checked here and kept as a
+     step a replay must see again (78-teach-replay.js). */
+  if(a.kind === 'check'){ const t = typeof a.text === 'string' ? a.text.replace(/\s+/g, ' ').trim() : ''; return t && t.length <= 200 ? { kind: 'check', text: t } : null; }
   return null;
 }
 
@@ -92,6 +95,14 @@ async function browserTakeover(request, env, ctx){
        it; anything else typed is, because "set the status to Closed" is the
        step. Bounded, and only for a browser opened to be taught. */
     let step = null;
+    if(act.kind === 'check'){
+      if(h.k !== 'teach'){ await browser.disconnect().catch(() => {}); return json({ error:'Checks are added while teaching AMV.', code:'bad_action' }, 400); }
+      let shown = false;
+      try{ shown = !!(await page.evaluate(_replayShows(act.text))); }catch(e){ shown = false; }
+      let at = ''; try{ at = _webTeachWhere(await page.url()); }catch(e){}
+      await browser.disconnect().catch(() => {});
+      return json({ ok:true, check: { kind: 'check', text: act.text, shown, at } });
+    }
     if(h.k === 'teach' && (act.kind === 'click' || act.kind === 'type')){
       let el = null;
       try{ el = await page.evaluate(_webTeachDescribe(act.kind === 'click' ? 'document.elementFromPoint(' + act.x + ',' + act.y + ')' : 'document.activeElement')); }catch(e){ el = null; }
@@ -153,7 +164,8 @@ function _webTeachDescribe(sel){
     + ' if(!label && el.labels && el.labels[0]) label = el.labels[0].innerText;'
     + ' if(!label && el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") label = el.innerText;'
     + ' if(!label) label = a("name");'
-    + ' return { tag: t(el.tagName).toLowerCase(), type: t(a("type") || el.type).toLowerCase(), role: t(a("role")), label: t(label), ac: t(a("autocomplete")).toLowerCase() }; })()';
+    + ' return { tag: t(el.tagName).toLowerCase(), type: t(a("type") || el.type).toLowerCase(), role: t(a("role")), label: t(label), ac: t(a("autocomplete")).toLowerCase(),'
+    + ' find: { id: t(el.id), testid: t(a("data-testid")), name: t(a("name")), aria: t(a("aria-label")), ph: t(a("placeholder")) } }; })()';
 }
 /* A field whose contents must never be recorded. Judged from the field, not
    from what was typed into it. */
@@ -166,6 +178,14 @@ function _webTeachSecret(el){
 function _webTeachStep(act, el){
   const clip = (s, n) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
   const what = el ? { tag: clip(el.tag, 20), type: clip(el.type, 20), label: clip(el.label, WEB_TEACH_LABEL) } : { tag: '', type: '', label: '' };
+  /* How to find it again (78-teach-replay.js): the page's own handles for it,
+     bounded, alongside the label it was clicked by. */
+  if(el && el.find && typeof el.find === 'object'){
+    const f = {};
+    for(const k of ['id', 'testid', 'name', 'aria', 'ph']){ const v = clip(el.find[k], 120); if(v) f[k] = v; }
+    if(what.label) f.label = what.label;
+    if(Object.keys(f).length) what.find = f;
+  } else if(what.label) what.find = { label: what.label };
   if(act.kind === 'click') return Object.assign({ kind: 'click' }, what);
   if(_webTeachSecret(el)) return Object.assign({ kind: 'type', secret: true }, what);
   return Object.assign({ kind: 'type', text: clip(act.text, WEB_TEACH_TEXT) }, what);

@@ -85,7 +85,7 @@ section('The real handler is written the same way');
 {
   /* The case above drives a copy of the handler, because the manager needs a
      live share list to render. This is the shipped one. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8'));
   const at = src.indexOf("'/v1/share/revoke'");
   const around = src.slice(Math.max(0, at - 400), at + 700);
   ok(at > 0, 'the revoke call was located', at > 0);
@@ -98,7 +98,7 @@ section('Stopping a scheduled bank check-in checks that it stopped');
 {
   /* The Invest pane is fetched on demand (invest.js), so it is read from there
      as well as from the page. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'invest.js'), 'utf8');
+  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8')) + '\n' + readFileSync(join(ROOT, 'invest.js'), 'utf8');
   const at = src.indexOf('const dropPrev=async()=>{');
   /* Wide enough to contain the whole helper. A window that stops mid-statement
      makes an assertion fail for the wrong reason - or worse, pass. */
@@ -127,7 +127,7 @@ section('Sign out everywhere goes to the one implementation that works');
   ok(r.shared, 'the shared implementation exists', r.shared);
 
   /* It must reach the server. The old one wrote a localStorage timestamp. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8'));
   const at = src.indexOf("on($('signout-others'),'click'");
   const handler = src.slice(at, at + 600);
   ok(at > 0, 'the handler was located', at > 0);
@@ -181,7 +181,7 @@ section('A secret Stripe key is named as one');
 {
   /* The sk_ branch sat AFTER the "must start with pk_" branch, and an sk_ key
      is also not a pk_ key - so the one warning that matters was unreachable. */
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8'));
   const at = src.indexOf("on($('save-pk'),'click'");
   const handler = src.slice(at, at + 900);
   const skAt = handler.indexOf('/^sk_/');

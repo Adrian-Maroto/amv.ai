@@ -61,7 +61,8 @@ function _renderSkillsPane(pane){
       '<div class="skill-desc">'+escH(s.when||s.desc||'')+'</div>'+
       (isCustom?'<div class="skill-tools"><button type="button" class="skill-link" data-skedit="'+escH(s.id)+'">'+escH(T('Edit'))+'</button>'
         +((s.history||[]).length?'<button type="button" class="skill-link" data-skhist="'+escH(s.id)+'">'+escH(T('History'))+' ('+s.history.length+')</button>':'')
-        +'<button type="button" class="skill-link" data-skexp="'+escH(s.id)+'">'+escH(T('Export'))+'</button></div>':'')+
+        +'<button type="button" class="skill-link" data-skexp="'+escH(s.id)+'">'+escH(T('Export'))+'</button>'
+        +(s.taught&&Array.isArray(s.taught.steps)&&s.taught.steps.length?'<button type="button" class="skill-link" data-skrun="'+escH(s.id)+'">'+escH(T('Run it now'))+'</button>':'')+'</div>':'')+
       '</div><div class="skill-acts">'+
         (isCustom?'<button class="skill-del" data-skdel="'+escH(s.id)+'" title="'+escH(T('Delete'))+'" aria-label="'+escH(T('Delete')+' '+s.name)+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>':'')+
         '<label class="sw"><input type="checkbox" data-sktoggle="'+escH(s.id)+'" aria-label="'+escH(s.name)+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label>'+
@@ -119,6 +120,13 @@ function _renderSkillsPane(pane){
   }));
   pane.querySelectorAll('[data-skedit]').forEach(b=>on(b,'click',()=>{ const f=$('sk-form'); if(f){ f.innerHTML=_skillFormHTML(b.dataset.skedit); _wireSkillForm(pane, b.dataset.skedit); f.scrollIntoView({block:'nearest'}); const n=$('sk-instr'); if(n) n.focus(); } }));
   pane.querySelectorAll('[data-skexp]').forEach(b=>on(b,'click',()=>_skillExport(b.dataset.skexp)));
+  pane.querySelectorAll('[data-skrun]').forEach(b=>on(b,'click',async()=>{
+    const id=b.dataset.skrun;
+    try{ closeSettings(); }catch(e){}
+    const ok=await _webLiveLoad();
+    if(!ok || typeof window._webReplay!=='function'){ toast(T('AMV’s browser panel could not be loaded. Check your connection and try again.'),'error',6000); return; }
+    window._webReplay(id);
+  }));
   pane.querySelectorAll('[data-skhist]').forEach(b=>on(b,'click',()=>_skillHistory(pane, b.dataset.skhist)));
   on($('sk-import'),'click',()=>{ const i=$('sk-file'); if(i) i.click(); });
   on($('sk-file'),'change',async function(){

@@ -46,7 +46,7 @@ async function press({ key, meta = false, ctrl = false, shift = false }, probe) 
 
 section('The documented list is the only list');
 {
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8'));
   const shortAt = src.indexOf('function openShortcuts');
   const shortBody = src.slice(shortAt, shortAt + 300);
   ok(shortAt > 0 && /openShortcutSheet\(\)/.test(shortBody),

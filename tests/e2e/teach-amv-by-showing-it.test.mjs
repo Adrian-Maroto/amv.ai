@@ -19,11 +19,13 @@ await page.route('https://teach-test.workers.dev/**', async (route) => {
   const req = route.request(); const path = new URL(req.url()).pathname; let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch (e) {}
   calls.push({ path, body });
   const send = (o, status) => route.fulfill({ status: status || 200, contentType: 'application/json', body: JSON.stringify(o) });
+  if (path === '/v1/browser/replay') return send({ ok: true, ran: body.steps.length, of: body.steps.length, results: body.steps.map((_, i) => ({ i, kind: body.steps[i].kind, ok: true })), url: body.url, shot });
   if (path === '/v1/browser/teach') return send({ ok: true, handle: 'h-1', url: body.url, at: 'crm.example.com/deals', shot, forMs: 600000 });
   if (path === '/v1/browser/takeover') {
     const a = body.act || {};
     if (a.kind === 'close') return send({ ok: true, closed: true });
-    if (a.kind === 'click') return send({ ok: true, shot, step: { kind: 'click', tag: 'button', type: 'submit', label: 'Mark as won', at: 'crm.example.com/deals' } });
+    if (a.kind === 'click') return send({ ok: true, shot, step: { kind: 'click', tag: 'button', type: 'submit', label: 'Mark as won', at: 'crm.example.com/deals', find: { id: 'won', label: 'Mark as won' } } });
+    if (a.kind === 'check') return send({ ok: true, check: { kind: 'check', text: a.text, shown: a.text === 'Deal won', at: 'crm.example.com/deals' } });
     if (a.kind === 'type' && a.text === 'Hunter2!') return send({ ok: true, shot, step: { kind: 'type', secret: true, tag: 'input', type: 'password', label: 'Password', at: 'crm.example.com/login' } });
     if (a.kind === 'type') return send({ ok: true, shot, step: { kind: 'type', text: a.text, tag: 'input', type: 'text', label: 'Note', at: 'crm.example.com/deals' } });
     return send({ ok: true, shot });
@@ -63,6 +65,19 @@ section('Each tap and each thing typed is a step; a secret is listed as not reco
   ok(/not recorded/.test(steps[2]) && !/Hunter2/.test(steps.join(' ')), 'and the password is listed as not recorded, never shown', steps[2]);
 }
 
+section('A check is kept only when the page shows it now');
+{
+  await page.fill('#wlv-check', 'Order cancelled');
+  await page.click('[data-take="check"]');
+  await page.waitForFunction(() => /does not show that/.test(document.getElementById('wlv-now').textContent));
+  ok(await page.evaluate(() => document.querySelectorAll('#wlv-steps li').length === 3), 'text the page does not show is not added, and it says so');
+  await page.fill('#wlv-check', 'Deal won');
+  await page.click('[data-take="check"]');
+  await page.waitForFunction(() => document.querySelectorAll('#wlv-steps li').length === 4);
+  const last = await page.evaluate(() => [...document.querySelectorAll('#wlv-steps li')].pop().textContent);
+  ok(/Check the page shows “Deal won”/.test(last), 'text it does show becomes a step', last);
+}
+
 section('Finishing closes the browser and opens a review - nothing is saved yet');
 {
   await page.click('[data-take="resume"]');
@@ -82,6 +97,28 @@ section('Saving makes an active skill that does it in AMV’s browser');
   ok(s.k.name === 'Close a deal in the CRM' && s.k.mode === 'auto' && s.k.taught && s.k.taught.site === 'crm.example.com', 'saved as the person named it, used when it applies', s.k);
   ok(/web automation tool on https:\/\/crm\.example\.com\/deals/.test(s.k.instr) && /never typing a password/.test(s.k.instr), 'it tells the engine to use AMV’s browser there, and never to type a password', s.k.instr && s.k.instr.slice(0, 200));
   ok(s.active && /Close a deal in the CRM/.test(s.ctx), 'it is switched on, and chat is told about it', s.active);
+}
+
+section('Run it now replays exactly what was recorded, asking for the secret for this run only');
+{
+  const k = await page.evaluate(() => (load('amv_skills') || []).slice(-1)[0]);
+  ok(k.taught && k.taught.start === 'https://crm.example.com/deals' && k.taught.steps.length === 4, 'the recorded steps are kept with the skill', k.taught);
+  ok(k.taught.steps[0].find && k.taught.steps[0].find.id === 'won' && k.taught.steps[3].kind === 'check', 'with how to find each thing, and the check', k.taught.steps);
+  ok(!/Hunter2/.test(JSON.stringify(k)), 'and nothing secret is in it');
+  await page.evaluate(() => goSettings('skills'));
+  await page.waitForSelector('[data-skrun]', { timeout: 15000 });
+  await page.click('[data-skrun]');
+  await page.waitForSelector('[data-wrp-secret]', { timeout: 10000 });
+  await page.fill('[data-wrp-secret]', 'Hunter2!');
+  calls.length = 0;
+  await page.click('[data-wrp="go"]');
+  await page.waitForSelector('.wrp-steps', { timeout: 15000 });
+  const r = calls.find(c => c.path === '/v1/browser/replay');
+  ok(r && r.body.url === 'https://crm.example.com/deals' && r.body.steps.length === 4, 'the recorded steps are sent to be replayed where they began', r && r.body.url);
+  ok(r && r.body.secrets && r.body.secrets['2'] === 'Hunter2!', 'with the secret typed for this run, against its step', r && Object.keys(r.body.secrets || {}));
+  const shown = await page.evaluate(() => ({ h: document.getElementById('wrp-h').textContent, rows: [...document.querySelectorAll('.wrp-steps li')].map(l => l.className) }));
+  ok(/every step checked/.test(shown.h) && shown.rows.length === 4 && shown.rows.every(c => c === 'ok'), 'and every step is shown as done and checked', shown);
+  ok(await page.evaluate(() => !JSON.stringify(localStorage).includes('Hunter2')), 'the secret is kept nowhere on the device');
 }
 
 ok(app.errors.length === 0, 'no JavaScript errors', app.errors.slice(0, 3));

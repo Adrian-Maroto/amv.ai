@@ -85,7 +85,8 @@ section('The controls that went dead now ask the resolver');
   };
   const CONTROLS = [
     ['12-handoff.js', 'async function _loadReadiness', 'the go-live status panel'],
-    ['12-handoff.js', 'const loadStats=async()=>', "the founder dashboard's Load stats"],
+    /* Drawn by the Settings panes, which are fetched when Settings opens. */
+    ['../settings/settings-panes.js', 'const loadStats=async()=>', "the founder dashboard's Load stats"],
     ['../admin/admin.js', 'async function _admFetchStats', 'the admin stats surface'],
   ];
   for (const [file, needle, label] of CONTROLS) {

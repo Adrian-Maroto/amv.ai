@@ -121,7 +121,9 @@ function _webLiveOpen(goal){
       + '<button class="btn bs" type="button" data-take="type">' + escH(T('Type')) + '</button></div>'
       + '<div class="wlv-take-row"><button class="btn bs" type="button" data-take="Enter">Enter</button><button class="btn bs" type="button" data-take="Tab">Tab</button>'
       + '<button class="btn bs" type="button" data-take="Backspace">' + escH(T('Delete')) + '</button><button class="btn bs" type="button" data-take="scroll">' + escH(T('Scroll down')) + '</button></div>'
-      + (teach ? '<ol class="wlv-steps" id="wlv-steps" aria-label="' + escH(T('Steps so far')) + '"></ol>' : '')
+      + (teach ? '<div class="wlv-take-row"><input id="wlv-check" type="text" autocomplete="off" maxlength="200" aria-label="' + escH(T('Text the page should show at this point')) + '" placeholder="' + escH(T('Text the page should show now')) + '">'
+        + '<button class="btn bs" type="button" data-take="check">' + escH(T('Add a check')) + '</button></div>'
+        + '<ol class="wlv-steps" id="wlv-steps" aria-label="' + escH(T('Steps so far')) + '"></ol>' : '')
       + '<div class="wlv-take-row"><button class="btn bp" type="button" data-take="resume">' + escH(teach ? T('Finish teaching') : T('Carry on')) + '</button>'
       + '<button class="btn bs" type="button" data-take="close">' + escH(T('Close the browser')) + '</button></div>';
     el.appendChild(box);
@@ -133,10 +135,14 @@ function _webLiveOpen(goal){
       try{
         const d = await act(a);
         if(d && d.shot) setPic(d.shot, T('The page'));
-        if(teach && d && d.step){
-          teach.steps.push(d.step);
+        /* A check is kept only when the page shows the text NOW - a check
+           that fails while it is being taught would fail every replay. */
+        const kept = d && d.check ? (d.check.shown ? { kind: 'check', text: d.check.text } : null) : (d && d.step);
+        if(teach && d && d.check && !d.check.shown) now.textContent = T('The page does not show that right now, so the check was not added.');
+        if(teach && kept){
+          teach.steps.push(kept);
           const li = document.createElement('li');
-          li.textContent = _webTeachSay(d.step);
+          li.textContent = _webTeachSay(kept);
           box.querySelector('#wlv-steps').appendChild(li);
         }
         if(d && d.status === 410){ now.textContent = d.error || T('That browser has closed.'); finish('stop'); return; }
@@ -158,6 +164,7 @@ function _webLiveOpen(goal){
       const b = e.target.closest('[data-take]'); if(!b) return;
       const k = b.getAttribute('data-take');
       if(k === 'type') typeIt();
+      else if(k === 'check'){ const c = box.querySelector('#wlv-check'); const t = (c && c.value || '').trim(); if(c) c.value = ''; if(t) send({ kind: 'check', text: t.slice(0, 200) }); }
       else if(k === 'scroll') send({ kind: 'scroll', dy: 600 });
       else if(k === 'resume'){ now.textContent = T('Carrying on…'); finish('resume'); }
       else if(k === 'close'){ send({ kind: 'close' }).then(() => { now.textContent = T('Closed. Nothing more was done on the page.'); finish('stop'); }); }
@@ -254,6 +261,7 @@ function _webTeachSay(s){
   if(s.kind === 'type' && s.secret) return T('Type your secret into') + ' ' + what + ' ' + T('(not recorded)');
   if(s.kind === 'type') return T('Type') + ' “' + s.text + '” ' + T('into') + ' ' + what;
   if(s.kind === 'key') return T('Press') + ' ' + s.key;
+  if(s.kind === 'check') return T('Check the page shows') + ' “' + s.text + '”';
   return '';
 }
 /* The steps as a skill: written by an engine when one is connected, so "type
@@ -310,14 +318,14 @@ async function _webTeach(start){
   if(how !== 'resume') return;
   if(!teach.steps.length){ toast(T('No steps were recorded, so there is nothing to save.'), 'info', 5000); return; }
   const draft = await _webTeachDraft(d.url || start, teach.steps);
-  _webTeachReview(d.url || start, draft);
+  _webTeachReview(d.url || start, draft, teach.steps);
 }
 /* What the person reads before anything is saved: the name, when to use it,
    the steps (all editable), the site it acts on, and what teaching does not do. */
-function _webTeachReview(start, draft){
+function _webTeachReview(start, draft, recorded){
   const site = (() => { try{ return new URL(start).host; }catch(e){ return ''; } })();
   const ovr = document.getElementById('ovr');
-  if(!ovr){ _webTeachSave({ name: draft.name, when: draft.when, steps: draft.steps, start, site }); return; }
+  if(!ovr){ _webTeachSave({ name: draft.name, when: draft.when, steps: draft.steps, start, site, recorded }); return; }
   ovr.innerHTML = '<div class="ov" id="wlvt-bg"><div class="ob" role="dialog" aria-modal="true" aria-labelledby="wlvt-h">'
     + '<button class="oc" type="button" data-wlvt="discard" aria-label="' + escH(T('Close')) + '">&#215;</button>'
     + '<h2 id="wlvt-h">' + escH(T('Save what you showed AMV')) + '</h2>'
@@ -341,7 +349,7 @@ function _webTeachReview(start, draft){
     const when = ovr.querySelector('#wlvt-when').value.trim().slice(0, 200);
     const steps = ovr.querySelector('#wlvt-steps').value.trim().slice(0, 4000);
     if(!name || !steps){ toast(T('Give it a name and at least one step.'), 'error', 4000); return; }
-    _webTeachSave({ name, when, steps, start, site });
+    _webTeachSave({ name, when, steps, start, site, recorded });
     shut();
     toast(T('Saved. Ask for it in chat and AMV will do it in its browser.'), 'success', 6000);
   });
@@ -351,11 +359,75 @@ function _webTeachSave(t){
   const instr = 'This is a task the person taught AMV by doing it once on ' + t.site + '. When it applies, use the web automation tool on '
     + t.start + ' with these steps as the goal, asking the person for anything marked to ask for and never typing a password for them:\n' + t.steps;
   const list = _loadSkills();
-  list.push({ id, name: t.name, desc: T('Taught by showing, on') + ' ' + t.site, when: t.when || t.name, instr, mode: 'auto', taught: { site: t.site, at: Date.now() } });
+  /* The recorded steps are kept with it, as recorded: "Run it now" replays
+     exactly these (78-teach-replay.js), where the instructions above are what
+     the engine reads when it does the task its own way. Nothing secret is in
+     them - a secret step has no text. */
+  const recorded = Array.isArray(t.recorded) ? t.recorded.slice(0, 40).map(s => { const o = Object.assign({}, s); delete o.at; return o; }) : [];
+  list.push({ id, name: t.name, desc: T('Taught by showing, on') + ' ' + t.site, when: t.when || t.name, instr, mode: 'auto',
+    taught: { site: t.site, at: Date.now(), start: t.start, steps: recorded } });
   _saveSkills(list);
   try{ const on = _activeSkillIds(); if(on.indexOf(id) < 0){ on.push(id); store('amv_active_skills', on); } }catch(e){}
 }
-try{ window._webTeach = _webTeach; }catch(e){}
+/* RUN IT NOW: the recorded steps, replayed exactly in AMV's browser and
+   checked as they go (78-teach-replay.js). A secret step asks for its value
+   here, for this run only - it is sent once and kept nowhere. The result is
+   every step with what happened to it, and the page as the run left it. */
+async function _webReplay(id){
+  const sk = (typeof _loadSkills === 'function' ? _loadSkills() : []).find(x => x.id === id);
+  const t = sk && sk.taught;
+  if(!t || !Array.isArray(t.steps) || !t.steps.length || !t.start){ toast(T('This skill has no recorded steps to run. Teach it again to record them.'), 'info', 6000); return; }
+  const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || apiBase())) || '';
+  const tok = (window.AMV_API && AMV_API.token) || '';
+  if(!base || !tok){ toast(T('Sign in to run it - it uses AMV’s browser, which runs on AMV’s servers.'), 'info', 6000); return; }
+  const ovr = document.getElementById('ovr'); if(!ovr) return;
+  const secretAt = t.steps.map((s, i) => s && s.kind === 'type' && s.secret ? i : -1).filter(i => i >= 0);
+  const shut = () => { try{ closeOvr(); }catch(e){ ovr.classList.remove('on'); ovr.innerHTML = ''; } };
+  const secrets = await new Promise((resolve) => {
+    if(!secretAt.length){ resolve({}); return; }
+    ovr.innerHTML = '<div class="ov" id="wrp-bg"><div class="ob" role="dialog" aria-modal="true" aria-labelledby="wrp-h">'
+      + '<h2 id="wrp-h">' + escH(sk.name) + '</h2><p class="ob-sub">' + escH(T('This task types something secret. Type it here for this run - it is used once and not kept.')) + '</p>'
+      + secretAt.map(i => '<label class="wlvt-f">' + escH(T('Step') + ' ' + (i + 1) + ': ' + (t.steps[i].label || T('a secret'))) + '<input class="fi" type="password" autocomplete="off" data-wrp-secret="' + i + '"></label>').join('')
+      + '<div class="wlvt-act"><button class="btn bs" type="button" data-wrp="no">' + escH(T('Cancel')) + '</button><button class="btn bp" type="button" data-wrp="go">' + escH(T('Run it now')) + '</button></div></div></div>';
+    ovr.classList.add('on');
+    ovr.querySelector('#wrp-bg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-wrp]');
+      if(e.target === e.currentTarget || (b && b.dataset.wrp === 'no')){ shut(); resolve(null); return; }
+      if(!b) return;
+      const out = {}; ovr.querySelectorAll('[data-wrp-secret]').forEach(x => { out[x.dataset.wrpSecret] = x.value; x.value = ''; });
+      resolve(out);
+    });
+  });
+  if(secrets === null) return;
+  const view = _webLiveOpen(T('Running') + ' ' + sk.name);
+  let d = {};
+  try{
+    const site = _wjSite(t.start);
+    const jar = site ? await _webJarLoad(site) : [];
+    const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/replay', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+      body: JSON.stringify({ url: t.start, steps: t.steps, secrets, cookies: jar.length ? jar : undefined }) }, 240000);
+    d = await r.json().catch(() => ({}));
+    if(!r.ok && !Array.isArray(d.results)) throw new Error(d.error || T('The taught task could not be run. Try again.'));
+  }catch(e){ view.close(); toast((e && e.message) || T('The taught task could not be run. Try again.'), 'error', 8000); return; }
+  view.close();
+  const rows = t.steps.map((s, i) => {
+    const r = (d.results || []).find(x => x.i === i);
+    const mark = r ? (r.ok ? '✓' : '✕') : '–';
+    return '<li class="' + (r ? (r.ok ? 'ok' : 'bad') : 'skip') + '"><span aria-hidden="true">' + mark + '</span> ' + escH(_webTeachSay(s))
+      + (r && !r.ok ? '<div class="wrp-why">' + escH(r.why || '') + '</div>' : '') + '</li>';
+  }).join('');
+  ovr.innerHTML = '<div class="ov" id="wrp-bg"><div class="ob" role="dialog" aria-modal="true" aria-labelledby="wrp-h">'
+    + '<button class="oc" type="button" data-wrp="no" aria-label="' + escH(T('Close')) + '">&#215;</button>'
+    + '<h2 id="wrp-h">' + escH(d.ok ? T('Done, every step checked') : T('Stopped at step') + ' ' + ((d.failedAt || 0) + 1)) + '</h2>'
+    + '<p class="ob-sub">' + escH(d.ok ? T('Each step was found and done, and each check saw what it expected.') : T('Nothing after that step was done. The page is shown as the run left it.')) + '</p>'
+    + '<ol class="wrp-steps">' + rows + '</ol>'
+    + (d.shot ? '<img class="wrp-shot" alt="' + escH(T('The page when the run ended')) + '" src="data:image/jpeg;base64,' + d.shot + '">' : '')
+    + '<div class="wlvt-act"><button class="btn bp" type="button" data-wrp="no">' + escH(T('Close')) + '</button></div></div></div>';
+  ovr.classList.add('on');
+  ovr.querySelector('#wrp-bg').addEventListener('click', (e) => { const b = e.target.closest('[data-wrp]'); if(e.target === e.currentTarget || b) shut(); });
+}
+try{ window._webTeach = _webTeach; window._webReplay = _webReplay; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════
    STAYING SIGNED IN: THE SIGN-INS LIVE ON THIS DEVICE, ENCRYPTED.
