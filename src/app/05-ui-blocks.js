@@ -1157,6 +1157,10 @@ async function _callAITurn(msgs, _opts) {
     // Web search, decided above from the engine that actually runs this turn.
     let tools=[];
     if(_webSearchOn) tools.push({ type:'web_search_20250305', name:'web_search', max_uses:_webMaxUses });
+    /* And the ability to OPEN a page it found, so "read" in the research trail
+       is something that happened, not something assumed. Bounded in count and
+       in how much of each page is read; the server clamps both again. */
+    if(_webSearchOn) tools.push({ type:'web_fetch_20250910', name:'web_fetch', max_uses:Math.min(_webMaxUses, 10), max_content_tokens:12000 });
     // AMV's own tools - chat can actually DO the work, not just describe it.
     try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
     /* THE MACHINE'S TOOLS, ONLY WHILE THERE IS A MACHINE.
@@ -1396,8 +1400,10 @@ async function _callAITurn(msgs, _opts) {
 
     const _toolBlocks={}; let _stopReason='';
     // Live research tracking - real searches and real sources, surfaced as they happen.
-    const _research={ active:false, searches:0, sources:new Map(), done:false, trail:[] };
+    const _research={ active:false, searches:0, sources:new Map(), done:false, trail:[], read:new Set() };
     const _srvSearch={};   // stream index -> the search being started there, until its query is complete
+    const _srvFetch={};    // stream index -> a page being opened there, until its address is complete
+    const _fetchUrl={};    // tool_use id -> the address it opened: a failed result does not repeat it
     /* Which sentence each source backs: the engine attaches the passage it
        relied on to the text block that uses it. Kept, and shown under the
        answer (_citesHTML), so a claim can be checked against its source. */
@@ -1512,6 +1518,41 @@ async function _callAITurn(msgs, _opts) {
             const _s=_srvSearch[evt.index]; delete _srvSearch[evt.index];
             try{ const q=JSON.parse(_s.json||'{}').query; if(q) _s.q=String(q).slice(0,200); }catch(e){}
             if(_s.q && !(msgs[streamIdx]&&msgs[streamIdx].c)){ msgs[streamIdx]={...msgs[streamIdx], _status:T('Searching “{0}”…').replace('{0}', _s.q.slice(0,80))}; }
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          /* ── Opening a page (web_fetch): the step between FOUND and CITED.
+             A source is marked read only when the page's own content came
+             back - a failed fetch says so in the trail and marks nothing. ── */
+          if(evt.type==='content_block_start' && evt.content_block?.type==='server_tool_use'
+             && String(evt.content_block.name||'').startsWith('web_fetch')){
+            _research.active=true;
+            _srvFetch[evt.index]={ id:String(evt.content_block.id||''), json:'', url:String((evt.content_block.input&&evt.content_block.input.url)||'') };
+            _clearStatus();
+            msgs[streamIdx]={...msgs[streamIdx], _status:T('Opening a page…')};
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          if(evt.type==='content_block_delta' && evt.delta?.type==='input_json_delta' && _srvFetch[evt.index]){
+            _srvFetch[evt.index].json += (evt.delta.partial_json||'');
+          }
+          if(evt.type==='content_block_stop' && _srvFetch[evt.index]){
+            const _f=_srvFetch[evt.index]; delete _srvFetch[evt.index];
+            try{ const u=JSON.parse(_f.json||'{}').url; if(u) _f.url=String(u).slice(0,2000); }catch(e){}
+            if(_f.id) _fetchUrl[_f.id]=_f.url;
+            const _h=_rsHost(_f.url);
+            if(_h && !(msgs[streamIdx]&&msgs[streamIdx].c)) msgs[streamIdx]={...msgs[streamIdx], _status:T('Reading {0}…').replace('{0}', _h)};
+            _renderResearch(msgs, streamIdx, _research);
+          }
+          if(evt.type==='content_block_start' && evt.content_block?.type==='web_fetch_tool_result'){
+            const c = evt.content_block.content || {};
+            const url = String(c.url || _fetchUrl[evt.content_block.tool_use_id] || '').slice(0, 2000);
+            if(c.type==='web_fetch_result' && /^https?:\/\//i.test(url)){
+              _research.read.add(url);
+              const doc = c.content || {};
+              if(!_research.sources.has(url)) _research.sources.set(url, { url, title: String(doc.title || url).slice(0,120) });
+              _research.trail.push({ read:url });
+            } else {
+              _research.trail.push({ read:url, failed:String(c.error_code || 'unavailable') });
+            }
             _renderResearch(msgs, streamIdx, _research);
           }
           if(evt.type==='content_block_start' && evt.content_block?.type==='web_search_tool_result'){
@@ -2573,6 +2614,7 @@ function _buildResearchPanel(state, finished){
   const n = state.sources.size;
   const searches = state.searches;
   const cited = state.cited || new Set();
+  const read = state.read || new Set();   // opened by web_fetch: found -> READ -> cited
   /* Cited first: those are the ones the answer stands on. */
   const sources = [...state.sources.values()].sort((a, b) => (cited.has(b.url) ? 1 : 0) - (cited.has(a.url) ? 1 : 0));
   const host = (u)=>_rsHost(u) || u;
@@ -2588,7 +2630,7 @@ function _buildResearchPanel(state, finished){
     return src ? '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async" referrerpolicy="no-referrer" src="'+escH(src)+'">' : '';
   };
   const chips = shown.map(s=>
-    (k => '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+(k?' · '+escH(T(_RS_KIND_LABEL[k]))+' ('+escH(T('the kind of site, by its address'))+')':'')+'">'+
+    (k => '<a class="rsrc-chip'+(cited.has(s.url)?' cited':'')+(read.has(s.url)?' read':'')+'" href="'+escH(safeUrl(s.url))+'" target="_blank" rel="noopener noreferrer" title="'+escH(s.title)+(read.has(s.url)?' · '+escH(T('opened and read by AMV')):' · '+escH(T('found in search results')))+(cited.has(s.url)?' · '+escH(T('cited in the answer')):'')+(k?' · '+escH(T(_RS_KIND_LABEL[k]))+' ('+escH(T('the kind of site, by its address'))+')':'')+'">'+
       '<span class="rsrc-fav">'+escH((host(s.url)[0]||'').toUpperCase())+icon(s.url)+'</span>'+escH(host(s.url))+
       (k?'<span class="rsrc-kind rsrc-kind-'+k+'">'+escH(T(_RS_KIND_LABEL[k]))+'</span>':'')+
     '</a>')(_rsKind(_rsHost(s.url)))
@@ -2605,7 +2647,9 @@ function _buildResearchPanel(state, finished){
       + '<span class="rsrc-card-t">'+escH(s.title || host(s.url))+'</span><span class="rsrc-card-h">'+escH(host(s.url))+'</span></a>' : '';
   }).join('') : '';
   /* Each search as it really ran: what was asked, and what came back. */
-  const trail = (state.trail||[]).filter(t=>t.q || t.n!=null).map(t=>
+  const trail = (state.trail||[]).filter(t=>t.q || t.n!=null || t.read!=null).map(t=> t.read!=null ?
+    '<li class="rsrc-q rsrc-read'+(t.failed?' rsrc-read-failed':'')+'"><span class="rsrc-qt">'+escH(t.failed ? T('Could not open') : T('Read'))+'</span> '
+      +'<span class="rsrc-qn">'+escH(_rsHost(t.read) || T('a page'))+'</span></li>' :
     '<li class="rsrc-q"><span class="rsrc-qt">'+(t.q ? '“'+escH(t.q)+'”' : escH(T('A search')))+'</span> '+
     '<span class="rsrc-qn">'+escH(t.n==null ? T('searching…') : t.n ? T('{0} results').replace('{0}', t.n)+(t.hosts.length?' · '+t.hosts.slice(0,3).join(', '):'') : T('nothing found'))+'</span></li>'
   ).join('');
@@ -2616,7 +2660,7 @@ function _buildResearchPanel(state, finished){
     : '<span class="rsrc-spin"></span> '+escH(T('Researching…'))+' \u00b7 '+_cnt;
 
   return '<div class="rsrc-panel'+(finished?' done':'')+'">'+
-    '<div class="rsrc-head">'+head+(finished&&cited.size?' · '+escH(T('{0} cited').replace('{0}', cited.size)):'')+'</div>'+
+    '<div class="rsrc-head">'+head+(read.size?' · '+escH(T('{0} read').replace('{0}', read.size)):'')+(finished&&cited.size?' · '+escH(T('{0} cited').replace('{0}', cited.size)):'')+'</div>'+
     (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
     (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+escH(T('{0} more').replace('{0}', sources.length-12))+'</span>':'')+'</div>':'')+
     (cards?'<div class="rsrc-cards">'+cards+'</div>':'')+

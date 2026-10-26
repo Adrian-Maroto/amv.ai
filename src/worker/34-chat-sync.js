@@ -415,6 +415,16 @@ function _safeTools(list, { callerTools = false } = {}) {
       out.push(t.max_uses == null ? t : { ...t, max_uses: Math.max(1, Math.min(60, isNaN(n) ? 5 : n)) });
       continue;
     }
+    /* Opening a page the engine found (web_fetch, run on the provider's side,
+       so no request leaves AMV's network). Not billed per call, but every page
+       read is input tokens, so both how many and how much of each are
+       clamped - a tampered client cannot ask for fifty whole books. */
+    if (t.type === 'web_fetch_20250910') {
+      const n = parseInt(t.max_uses, 10), c = parseInt(t.max_content_tokens, 10);
+      out.push({ type: t.type, name: 'web_fetch', max_uses: Math.max(1, Math.min(20, isNaN(n) ? 5 : n)),
+                 max_content_tokens: Math.max(1000, Math.min(20000, isNaN(c) ? 12000 : c)) });
+      continue;
+    }
     if (t.type) continue;                         // an unknown server-side tool
     /* AMV's own tools. Allowed by name, and only in a bounded shape - the
        definition still comes from the client, so it is trimmed rather than

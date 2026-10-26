@@ -17344,3 +17344,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .rsrc-pic{ display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:var(--s3); }
 .rsrc-card-t{ padding:var(--sp-1) var(--sp-2) 0; color:var(--tx); font-size:var(--t-xs); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .rsrc-card-h{ padding:0 var(--sp-2) var(--sp-1); font-size:var(--t-xs); color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* LAYER A339 - a source AMV actually opened (web_fetch): found -> READ -> cited.
+   A small filled mark before the host; a page that could not be opened is
+   named in the trail in the muted colour, never as read. */
+.rsrc-chip.read .rsrc-fav{ box-shadow:0 0 0 2px var(--grn); }
+.rsrc-read .rsrc-qt{ color:var(--grn); }
+.rsrc-read-failed .rsrc-qt{ color:var(--mu); }

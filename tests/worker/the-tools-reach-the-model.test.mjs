@@ -193,5 +193,17 @@ section('Nothing here crashes on rubbish');
      'a missing schema becomes an empty one rather than breaking the call', true);
 }
 
+section('Opening a page is bounded by the server, whatever the page asks for');
+{
+  /* web_fetch (Oct 26 audit #10): not billed per call, but every page read is
+     input tokens - so a tampered client must not be able to ask for more. */
+  const got = W._safeTools([{ type: 'web_fetch_20250910', name: 'whatever', max_uses: 999, max_content_tokens: 9e9, allowed_callers: ['x'] },
+                            { type: 'web_fetch_29990101', name: 'web_fetch' }]);
+  const f = got.find(t => t.type === 'web_fetch_20250910');
+  ok(f && f.max_uses === 20 && f.max_content_tokens === 20000 && f.name === 'web_fetch' && !('allowed_callers' in f),
+     'count and size are clamped, the name is fixed, and nothing else is passed on', f);
+  ok(!got.some(t => t.type === 'web_fetch_29990101'), 'and a version AMV does not know is dropped', got.map(t => t.type));
+}
+
 if (report('the-tools-reach-the-model') > 0) process.exitCode = 1;
 done();
