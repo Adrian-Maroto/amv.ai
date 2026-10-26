@@ -489,11 +489,12 @@ function _mcActivityHTML(){
     /* An empty timeline and a timeline that could not be loaded are different
        facts, and only one of them means "nothing has happened". */
     const st = (typeof window._autoLoadState==='function') ? window._autoLoadState() : { loaded:true, error:'' };
+    /* Nothing yet, and nothing wrong: no section. Crew is one box and the
+       examples (Oct 26); an empty history is a box that says nothing. */
+    if(!(st && st.error)) return '';
     return `<section id="mc-activity" class="mc-sec">
       <div class="sec-head"><h3>What AMV did on its own</h3><span class="sec-sub">Every unattended run, what it cost, and what happened to it.</span></div>
-      <div class="mc-empty-row">${st && st.error
-        ? 'This could not be loaded (' + escH(st.error) + '). It does not mean nothing ran. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button>'
-        : 'Nothing has run on its own yet. Once a background job runs, every one of its runs is listed here - including the ones that failed.'}</div>
+      <div class="mc-empty-row">This could not be loaded (${escH(st.error)}). It does not mean nothing ran. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>
     </section>`;
   }
 
@@ -1188,7 +1189,7 @@ function renderCrewView(){
   const paused=_autonomyPaused();
   const running = st.server.length + _mcLocalOnly(st).length + st.auton.length;
 
-  /* ONE BOX, THEN WHAT NEEDS YOU, THEN EXAMPLES (the owner, Oct 26: "simple.
+  /* ONE BOX, THEN WHAT NEEDS YOU, THEN EXAMPLES - LAST (the owner, Oct 26: "simple.
      You type in the textbox something and AMV does it. It scans and then says
      what it needs. Below that, examples for all different countries").
 
@@ -1197,7 +1198,9 @@ function renderCrewView(){
      time), asks for it, and does it. Under it, only what is happening and
      needs the person - approvals, problems, running jobs - and only when
      there is any. Then the examples for the country chosen at the top. The
-     settings for background work come last; they are set once and rarely. */
+     settings for background work sit folded above the examples; they are set
+     once and rarely. The examples are the last thing on the page - an
+     earlier fault was work stacked under the catalogue, out of sight. */
   vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page cw-simple">
     <header class="cw-simple-head">
       <h2>${escH(T('Crew'))}</h2>
@@ -1206,6 +1209,10 @@ function renderCrewView(){
         : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
     </header>
     <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
+    ${(()=>{ const n=_crewJobAllowance();
+      /* The number, before they hit it. A limit discovered by bumping into it
+         reads as a fault; the same limit stated up front reads as a plan. */
+      return n?`<div class="mc-allow">${running} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
     <div class="mc-cmd mc-cmd-lg">
       <div class="mc-cmd-inner">
         <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
@@ -1239,7 +1246,7 @@ function renderCrewView(){
     </section>`:''}
 
     ${(running || st.serverError)?`<section id="mc-sched" class="mc-sec">
-      <div class="sec-head"><h3>Running jobs</h3>${(()=>{ const n=_crewJobAllowance(); return n?`<span class="sec-sub">${escH(T('{0} of {1} in use').replace('{0}', running).replace('{1}', n))}</span>`:''; })()}<button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
+      <div class="sec-head"><h3>Running jobs</h3><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
       ${(()=>{
         const local = _mcLocalOnly(st);
         const rows = st.server.map(_mcServerSchedRow).join('')
@@ -1251,6 +1258,22 @@ function renderCrewView(){
         return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
       })()}
     </section>`:''}
+
+    ${st.done.length?`<section id="mc-done" class="mc-sec">
+      <div class="sec-head"><h3>Recently completed</h3></div>
+      <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
+    </section>`:''}
+    ${_mcActivityHTML()}
+    <details id="mc-settings" class="mc-sec cw-settings">
+      <summary class="sec-head"><h3>${escH(T('Settings for background work'))}</h3><span class="sec-sub">${escH(T('How far AMV may go on its own, what it always follows, and when it stays quiet. Set once.'))}</span></summary>
+      ${_mcOfferHTML()}
+      ${_mcCeilingHTML()}
+      ${_mcStandingHTML()}
+      ${_mcQuietRowHTML()}
+      ${_mcNeverRowHTML()}
+    </details>
+    <section class="mc-sec" id="crew-games-sec" hidden><div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed.</span></div><div id="crew-games"></div></section>
+    ${_mcBoughtCrewsHTML()}
 
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>${escH(T('Examples'))}</h3><span class="sec-sub">${escH(T('For where you live - change the country at the top. Pick one, or say your own in the box.'))}</span></div>
@@ -1269,22 +1292,6 @@ function renderCrewView(){
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
     </div>
-
-    ${st.done.length?`<section id="mc-done" class="mc-sec">
-      <div class="sec-head"><h3>Recently completed</h3></div>
-      <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
-    </section>`:''}
-    ${_mcActivityHTML()}
-    <section id="mc-settings" class="mc-sec cw-settings">
-      <div class="sec-head"><h3>${escH(T('Settings for background work'))}</h3><span class="sec-sub">${escH(T('How far AMV may go on its own, what it always follows, and when it stays quiet. Set once.'))}</span></div>
-      ${_mcOfferHTML()}
-      ${_mcCeilingHTML()}
-      ${_mcStandingHTML()}
-      ${_mcQuietRowHTML()}
-      ${_mcNeverRowHTML()}
-    </section>
-    <section class="mc-sec" id="crew-games-sec" hidden><div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed.</span></div><div id="crew-games"></div></section>
-    ${_mcBoughtCrewsHTML()}
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);
