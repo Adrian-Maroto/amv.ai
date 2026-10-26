@@ -83,6 +83,10 @@ const PUBLIC = {
      it cannot be used to inventory secrets, and public-config.test.mjs asserts
      all of that against an env deliberately stuffed with twelve real secrets. */
   '/v1/public-config':   'the values a visitor needs before they can sign in',
+  /* Asked by uptime monitors and the deploy workflow, which hold no account.
+     Booleans about the deployment only - no account, no secret (asserted in
+     alive-is-not-ready) - and held ten seconds per isolate. */
+  '/v1/health/ready':    'readiness for monitors with no account; booleans only',
   /* The people this counts are, by definition, the ones with no account -
      requiring auth would measure only the group already counted everywhere
      else. It stores nothing but a daily integer: no id, no address, no

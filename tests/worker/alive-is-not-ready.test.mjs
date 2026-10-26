@@ -42,7 +42,8 @@ section('Healthy stores: ready');
   const r = await get(w, env); const d = await r.json();
   ok(r.status === 200 && d.ready === true, 'answers 200 and ready', { status: r.status, d });
   ok(d.checks.kv.ok && typeof d.checks.kv.ms === 'number' && d.checks.counter.ok, 'names each store it asked, with how long it took', d.checks);
-  ok(env.AMV_KV.writes === 1 && env.AMV_COUNTER.calls === 1, 'it really wrote to KV and really asked the Durable Object', { w: env.AMV_KV.writes, c: env.AMV_COUNTER.calls });
+  ok(env.AMV_KV.reads >= 1 && env.AMV_COUNTER.calls === 1, 'it really read KV and really asked the Durable Object', { r: env.AMV_KV.reads, c: env.AMV_COUNTER.calls });
+  ok(env.AMV_KV.writes === 0, 'and wrote nothing - it is a GET', env.AMV_KV.writes);
   ok(d.capabilities.model === true && d.capabilities.payments === true && d.capabilities.email === true && d.capabilities.browser === false && d.capabilities.library === false,
      'says what is switched on, as booleans', d.capabilities);
   ok(!JSON.stringify(d).includes(SECRET) && !JSON.stringify(d).includes('whsec'), 'and no secret appears anywhere in it');
@@ -82,7 +83,7 @@ section('Asked in a loop, it is held');
   const w = await load();
   const env = { AMV_KV: kv(), AMV_COUNTER: okCounter(), JWT_SECRET: 'j' };
   for (let i = 0; i < 50; i++) await get(w, env);
-  ok(env.AMV_COUNTER.calls === 1 && env.AMV_KV.writes === 1, 'fifty calls ask the stores once', { counter: env.AMV_COUNTER.calls, writes: env.AMV_KV.writes });
+  ok(env.AMV_COUNTER.calls === 1, 'fifty calls ask the Durable Object once', { counter: env.AMV_COUNTER.calls });
 }
 
 section('Liveness is unchanged');

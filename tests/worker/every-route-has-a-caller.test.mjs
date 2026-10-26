@@ -49,6 +49,7 @@ const EXEMPT = {
   '/admin/backup/export':'operator backup, admin token',
   '/admin/backup/import':'operator restore, admin token',
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
+  '/v1/health/ready':    'asked by the deploy workflow, preflight --live and uptime monitors, not the app',
   '/team/members':       'superseded by /team/get, which already returns the roster',
   '/team/data':          'superseded by /team/share and /team/shared',
   /* Called by the game page the WORKER serves at /g/<id>, not by this bundle -

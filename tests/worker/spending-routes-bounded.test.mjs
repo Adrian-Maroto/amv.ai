@@ -70,6 +70,10 @@ const EXEMPT = {
   authDeleteAccount:   'one call per account deletion, behind an explicit confirmation',
   adminFinance:        'admin only',
   adminEmailTest:      'admin token only, and _adminGate holds it to 3 a minute and 30 a day',
+  /* Its one outbound call is to AMV's own Durable Object, not a third party,
+     and the whole answer is held ten seconds per isolate: a loop of a
+     thousand calls asks it once (alive-is-not-ready). */
+  healthReady:         'asks AMV\'s own Durable Object, once per ten seconds per isolate',
 };
 
 const routes = [...src.matchAll(/case\s+'([^']+)'\s*:\s*return\s+([A-Za-z_$][\w$]*)\(/g)]

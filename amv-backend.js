@@ -32794,10 +32794,10 @@ async function adminReadiness(request, env) {
    deploy's own post-check could ask. A Worker whose store is unreachable is
    alive and cannot serve anybody, and nothing said so.
 
-   /v1/health/ready asks the two things every request depends on: KV (read,
-   and a write at most once a minute per isolate - KV allows one write a
-   second to a key, so a probe that wrote on every hit would make its own
-   outage), and the Durable Object that holds every usage ceiling, asked
+   /v1/health/ready asks the two things every request depends on: KV (a
+   read - this is a GET, and a GET writes nothing, which a-link-is-not-a-
+   command holds every safe route to), and the Durable Object that holds
+   every usage ceiling, asked
    directly rather than through counter(), whose fallback to KV is exactly
    the degradation this is meant to see. Then what this deployment has
    switched on, as booleans - the same facts the app already learns by
@@ -32806,8 +32806,8 @@ async function adminReadiness(request, env) {
    Unauthenticated, so the answer is held for ten seconds per isolate:
    hitting it in a loop costs AMV the same as hitting it once. 503 when not
    ready, so a monitor needs no parsing to page somebody. */
-let _readyMemo = { at: 0, body: null }, _readyWroteAt = 0;
-const READY_MEMO_MS = 10000, READY_WRITE_EVERY_MS = 60000, READY_STEP_MS = 3000;
+let _readyMemo = { at: 0, body: null };
+const READY_MEMO_MS = 10000, READY_STEP_MS = 3000;
 function _readyStep(promise) {
   return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after ' + READY_STEP_MS + 'ms')), READY_STEP_MS))]);
 }
@@ -32822,11 +32822,7 @@ async function healthReady(request, env) {
   };
   await probe('kv', async () => {
     if (!env.AMV_KV) throw new Error('not bound');
-    await env.AMV_KV.get('health:probe');
-    if (now - _readyWroteAt > READY_WRITE_EVERY_MS) {
-      await env.AMV_KV.put('health:probe', String(now), { expirationTtl: 300 });
-      _readyWroteAt = now;
-    }
+    await env.AMV_KV.get('GLOBAL_KILL');
   });
   if (env.AMV_COUNTER) {
     await probe('counter', async () => {

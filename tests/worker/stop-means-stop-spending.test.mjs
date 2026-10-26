@@ -341,7 +341,7 @@ section('The pause is a default, not a list of remembered routes');
   /* What is allowed through is the named few and nothing else. Asserted as a
      set equality, because a check that only counts would pass if one exception
      were swapped for another. */
-  const EXPECTED = ['/v1/health', '/v1/admin/kill', '/v1/stripe/webhook', '/v1/paypal/webhook'];
+  const EXPECTED = ['/v1/health', '/v1/health/ready', '/v1/admin/kill', '/v1/stripe/webhook', '/v1/paypal/webhook'];
   const unexpected = exempt.filter(p => !EXPECTED.includes(p) && !p.startsWith('/auth/'));
   ok(unexpected.length === 0,
      'every route that is not stopped is one of the named exceptions', unexpected);
