@@ -158,6 +158,8 @@ export default {
     _liveCtx = ctx;
     const mounted = _mountRequest(request, env);
     if (mounted) request = mounted;
+    /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
+    request = _cookiesFromAmvOnly(request, env);
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 

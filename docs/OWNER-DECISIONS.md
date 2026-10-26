@@ -402,7 +402,10 @@ Everything they stood on - jobs with budgets, approvals, steps that wait on
 each other - is still there, so they can return as a layer if the owner
 wants them.
 
-**38. Cross-site request checks on cookie routes - YES. Needs a yes (auth).**
+**38. Cross-site request checks on cookie routes - YES (owner, Oct 26) - DONE.**
+Built: a request to /auth/* that carries AMV's cookies from any page but AMV's own (Origin, or Sec-Fetch-Site when there is no Origin) has the cookies removed and goes on as if it had none - it can still sign in with a password and cannot use somebody's standing sign-in. Not a browser (neither header): unaffected. `tests/worker/a-strangers-page-cannot-use-your-sign-in.test.mjs`.
+
+The decision as it was put:
 The sign-in renewal cookie is sent automatically; the routes that take it
 should also check that the request came from AMV's own page (exact Origin and
 Sec-Fetch-Site), because CORS stops a page reading an answer, not sending a

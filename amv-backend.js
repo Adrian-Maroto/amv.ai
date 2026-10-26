@@ -15874,6 +15874,8 @@ export default {
     _liveCtx = ctx;
     const mounted = _mountRequest(request, env);
     if (mounted) request = mounted;
+    /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
+    request = _cookiesFromAmvOnly(request, env);
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 
@@ -24608,6 +24610,49 @@ function _refreshCookie(env, value, maxAgeS) {
   const bits = [`${REFRESH_COOKIE}=${value}`, 'HttpOnly', 'Secure', 'SameSite=None', 'Path=/auth'];
   bits.push('Max-Age=' + Math.max(0, Math.floor(maxAgeS)));
   return bits.join('; ');
+}
+/* AMV'S COOKIES COUNT ONLY WHEN AMV'S OWN PAGE SENT THEM (scale audit, owner
+   yes, Oct 26).
+
+   The renewal and trusted-device cookies are SameSite=None - they have to be,
+   because the API can live on a different site from the page - which means a
+   browser attaches them to a request ANY page makes. CORS stops that page
+   reading the answer; it does not stop the request doing its work. So a
+   stranger's page could sign somebody out of every device, or renew their
+   sign-in, just by being opened. No worse case was found, and this closes the
+   class.
+
+   The browser says who is asking: `Origin` on every cross-origin POST, and
+   `Sec-Fetch-Site` on every request from a current browser. A request with
+   cookies from anywhere but AMV's own page has the cookies removed and goes
+   on as if it had none - so it can still sign in with a password, and cannot
+   use somebody's standing sign-in. A request with neither header is not a
+   browser, and a forged request needs a browser. Only /auth/* is affected:
+   that is the only path the cookies are scoped to. Off while no origin is
+   configured (ALLOWED_ORIGIN / APP_URL), because there is then nothing to
+   compare against - and the cookie is not issued in that mode either. */
+function _cookieRequestFromAmv(request, env) {
+  const allowed = [_originOf(env && env.ALLOWED_ORIGIN), _originOf(env && env.APP_URL)].filter(o => o && o !== '*');
+  if (!allowed.length) return true;
+  try { allowed.push(new URL(request.url).origin); } catch (e) {}
+  const origin = request.headers.get('Origin');
+  if (origin) return allowed.includes(_originOf(origin));
+  const site = request.headers.get('Sec-Fetch-Site');
+  if (site) return site === 'same-origin' || site === 'same-site' || site === 'none';
+  return true;
+}
+function _cookiesFromAmvOnly(request, env) {
+  try {
+    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return request;
+    if (!request.headers.get('Cookie')) return request;
+    if (!new URL(request.url).pathname.startsWith('/auth/')) return request;
+    if (_cookieRequestFromAmv(request, env)) return request;
+    const h = new Headers(request.headers); h.delete('Cookie');
+    try { audit(env, 'cross_site_cookies_ignored', { path: new URL(request.url).pathname, origin: String(request.headers.get('Origin') || request.headers.get('Sec-Fetch-Site') || '').slice(0, 80) }); } catch (e) {}
+    const out = new Request(request, { headers: h });
+    if (_mountedAt.has(request)) _mountedAt.set(out, _mountedAt.get(request));
+    return out;
+  } catch (e) { return request; }
 }
 function _readRefreshCookie(request) {
   try {
