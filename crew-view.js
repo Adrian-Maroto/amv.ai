@@ -976,11 +976,16 @@ async function _mcAgentsLoad(){
     if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
     _mcAgentsD = d; _mcAgentsErr = '';
   }catch(e){ _mcAgentsErr = (e && e.message) || T('the request failed'); }
-  if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
+  /* In place: only this section changed, and rebuilding the whole of Crew
+     when one request lands is the flicker a-screen-that-refreshes-does-not-
+     flicker exists to stop. */
+  const box = document.getElementById('mc-agents');
+  if(box) box.outerHTML = _mcAgentsHTML();
 }
 async function mcAgentsReload(){
   try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
   await _mcAgentsLoad();
+  if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
 }
 function _mcAgentName(id){
   const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id);

@@ -51,10 +51,10 @@ const call = async (path, body, token = mine.token, method = 'POST') => {
 const rec = () => JSON.parse(store.get('auto:' + ME) || '{"items":[],"results":[]}');
 const put = (r) => store.set('auto:' + ME, JSON.stringify(r));
 
-let modelCalls = 0, lastSystem = '';
+let modelCalls = 0, lastSystem = '', systems = [];
 globalThis.fetch = async (u, init) => {
   modelCalls++;
-  try { const b = JSON.parse(String((init && init.body) || '{}')); lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); } catch (e) {}
+  try { const b = JSON.parse(String((init && init.body) || '{}')); lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); systems.push(lastSystem); } catch (e) {}
   return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Three things changed in solar policy this week.' }], stop_reason: 'end_turn',
     usage: { input_tokens: 2000, output_tokens: 800 } }), { status: 200 });
 };
@@ -147,6 +147,27 @@ section('Over its own budget, it waits for next month and says so');
   due(); modelCalls = 0;
   await W.runDueAutomations(env, Date.now() + 4);
   ok(modelCalls > 0, 'with no budget of its own, the plan’s ceiling is the only one', modelCalls);
+}
+
+section('A task in steps can hand each step to a different agent');
+{
+  const w = await call('/v1/agents/save', { name: 'Writer', instructions: 'Write in short plain sentences for a board.' });
+  const writer = w.d.agent.id;
+  const bad = await call('/auto/create', { steps: [{ title: 'Find', detail: 'Find the news' }, { title: 'Write', detail: 'Write it up', after: 0, agent: 'gnotarealone' }] });
+  ok(bad.status === 400 && bad.d.code === 'agent_unknown', 'a step naming an agent that does not exist is refused, and nothing is set up', bad.status + ' ' + bad.d.code);
+  const r = await call('/auto/create', { approval: 'auto', steps: [
+    { title: 'Gather', detail: 'Gather this week\u2019s solar policy news', agent: agentId },
+    { title: 'Brief', detail: 'Turn what was gathered into a board brief', after: 0, agent: writer } ] });
+  ok(r.status === 200 && r.d.items[0].agent === agentId && r.d.items[1].agent === writer, 'each step belongs to its own agent', r.status + ' ' + JSON.stringify(r.d).slice(0, 200));
+  const g = r.d.group;
+  const tick = async (t) => { const x = rec(); x.items.forEach(i => { if (i.group === g && i.active && !i.waiting) i.next = t - 1000; }); put(x); modelCalls = 0; lastSystem = ''; await W.runDueAutomations(env, t); };
+  systems = [];
+  await tick(Date.now() + 10);
+  if (systems.length < 2) await tick(Date.now() + 20);
+  ok(systems.length === 2, 'both steps run, the second once the first has finished', systems.length);
+  ok(/policy changes in Spain/.test(systems[0] || '') && !/plain sentences for a board/.test(systems[0] || ''), 'the first step runs as the first agent', (systems[0] || '').slice(-300));
+  ok(/plain sentences for a board/.test(systems[1] || '') && !/policy changes in Spain/.test(systems[1] || ''), 'and the step that builds on it runs as the second', (systems[1] || '').slice(-300));
+  await call('/v1/agents/delete', { id: writer });
 }
 
 section('An API key cannot hire or fire');

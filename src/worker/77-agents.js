@@ -138,7 +138,7 @@ async function agentsSave(request, env) {
   if (body.paused !== undefined) clean.paused = body.paused === true;
 
   let out = null, refused = null;
-  await _withKind(env, 'agents', email, async (rec) => {
+  await _withKind(env, 'agents', String(user.email).toLowerCase(), async (rec) => {
     rec.list = Array.isArray(rec.list) ? rec.list : [];
     if (id) {
       const a = rec.list.find(x => x && x.id === id && !x.deleted);
@@ -187,7 +187,7 @@ async function agentsDelete(request, env) {
       if (it && it.agent === id && it.active) { it.active = false; it.lastError = 'stopped - its agent was deleted'; stopped++; }
     }
   }, { items: [], results: [] });
-  await _withKind(env, 'agents', email, async (rec) => {
+  await _withKind(env, 'agents', String(user.email).toLowerCase(), async (rec) => {
     const a = (rec.list || []).find(x => x && x.id === id);
     /* Kept as a tombstone with nothing in it but the id and the name, so a
        stopped job's row can still say whose it was. */

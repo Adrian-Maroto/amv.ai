@@ -1983,7 +1983,10 @@ async function _autoApi(path, body){
     // Carry the machine-readable code across too. Callers need to tell "this
     // needs a paid plan" from "the network failed", and matching on prose is
     // how that goes wrong the first time the wording changes.
-    const err = new Error(d.error || ('request failed ('+r.status+')'));
+    /* `message` first: a refusal that carries a code in `error` and the
+       sentence in `message` (credentials_in_detail) used to reach the person
+       as the code. */
+    const err = new Error(d.message || d.error || ('request failed ('+r.status+')'));
     if(d.code) err.code = d.code;
     // And the plan that lifts it. Without this the caller knows a plan is
     // needed but cannot say WHICH, so the only honest thing it could offer

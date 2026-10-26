@@ -220,8 +220,10 @@ it stops its jobs and keeps their results. Pro and up, ten per account,
 created and changed only from a signed-in session, never with an API key.
 Off the table for now: a workspace or browser profile of its own (needs the
 R2 bucket, the owner's step - an agent with a computer that forgets is worse
-than none), and agents messaging each other (the step graph already joins
-work; agents become graph nodes after this half is proven). Built:
+than none). Agents work together through the step graph rather than by
+messaging each other: each step of a task in steps can be given to a
+different agent, and a step builds on what the steps it waits for produced,
+each run under its own agent's instructions, budget and pause. Built:
 `77-agents.js`, the run path in `15-run-context-and-execution.js`, Agents in
 Crew; `an-agent-works-within-what-it-was-given`, `an-agent-you-can-see-working`.
 

@@ -108,7 +108,8 @@ const AMV_TOOLS = [
       time:{type:'string', description:'For once, daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
       days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly jobs: which days. "weekdays" is mon-fri.'},
       day_of_month:{type:'integer', minimum:1, maximum:31, description:'For monthly jobs: which day (31 means the last day in shorter months).'},
-      approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
+      approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'},
+      agent:{type:'string', description:'Optional: the name of one of their agents (crew_list shows them) to do this job with its own instructions and budget. Leave out for AMV itself.'}
     }, required:['detail'] }
   },
   /* A TASK IN STEPS, ON THE SERVER. Each step is a one-time Crew job that
@@ -123,7 +124,8 @@ const AMV_TOOLS = [
         title:{type:'string', description:'A few words naming the step, shown to the person.'},
         detail:{type:'string', description:'Exactly what this step does, as an instruction to whoever runs it. It sees this and the result of the step it waits for, nothing else - include everything else it needs.'},
         after:{ anyOf:[ {type:'integer', minimum:0}, {type:'array', items:{type:'integer', minimum:0}, minItems:1, maxItems:4} ],
-                description:'Earlier step it waits for and builds on (0 is the first), or a list to wait for all of, e.g. [0,1,2]. Leave out to start straight away.'}
+                description:'Earlier step it waits for and builds on (0 is the first), or a list to wait for all of, e.g. [0,1,2]. Leave out to start straight away.'},
+        agent:{type:'string', description:'Optional: the name of one of their agents (crew_list shows them) to do this step with its own instructions and budget - different steps can go to different agents. Leave out for AMV itself.'}
       }, required:['title','detail'] } },
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }
@@ -800,6 +802,7 @@ async function _confirmModelTool(name, input){
                ? 'once, ' + (_crewOnceAt(input) ? new Date(_crewOnceAt(input)).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : 'at a time still to be given')
                : (_CREW_EVERY[String(input.repeat||'daily')] || 'every day')) + ':\n\n'
            + String(input.detail||'').slice(0,600)
+           + (input.agent ? '\n\nDone by your agent ' + String(input.agent).slice(0, 60) + ', with its own instructions and budget.' : '')
            + (String(input.approval||'require')==='auto'
                ? '\n\nResults go straight to you without review.'
                : '\n\nEach result waits for your approval before anything is sent.');
@@ -808,6 +811,7 @@ async function _confirmModelTool(name, input){
     detail = st.map((s, i) => (i + 1) + '. ' + String((s && s.title) || '').slice(0, 80)
                + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')'
                   : s && Array.isArray(s.after) && s.after.length ? ' (after steps ' + s.after.filter(Number.isInteger).map(a => a + 1).join(', ') + ')' : '')
+               + (s && s.agent ? ' - by your agent ' + String(s.agent).slice(0, 60) : '')
                + '\n   ' + String((s && s.detail) || '').slice(0, 300)).join('\n')
            + '\n\nIt starts within about a minute and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
            + (String(input.approval || 'require') === 'auto'

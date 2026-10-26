@@ -2904,7 +2904,12 @@ async function autoList(request, env){
     const n = _autoNeedsFor(it, _conn, it.discoveredNeeds);
     return _hookShown(n.ready ? it : Object.assign({}, it, { willNeed: n.missing }));
   });
-  return json({ ok:true, items: _items, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
+  /* Their agents, by id and name only: enough for the chat to say whose
+     job a row is and to hand new work to one by name. */
+  let _agents = [];
+  try { _agents = (await _agentsOf(env, user.email)).list.filter(a => a && !a.deleted)
+          .map(a => ({ id: a.id, name: a.name, paused: !!a.paused })); } catch (e) { _agents = []; }
+  return json({ ok:true, items: _items, agents: _agents, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
                 /* Read back what the account has told its background work to do,
                    so the screen and the chat show the same standing instruction
                    rather than each remembering its own. */
@@ -6687,7 +6692,17 @@ async function _autoCreateSteps(request, env, user, body){
         if(!after.includes(a)) after.push(a);
       }
     }
-    steps.push({ detail, title, after, kind: s.kind === 'research' ? 'research' : 'task' });
+    /* WHO DOES THIS STEP: one of the caller's agents, or AMV itself. Each
+       step can be a different agent, so a task in steps is a graph of agents
+       - the researcher gathers, the writer drafts from what it gathered - each
+       with its own instructions, budget and pause applied at its own run. */
+    let agent = '';
+    if(s.agent != null && s.agent !== ''){
+      const a = await _agentFind(env, user.email, String(s.agent));
+      if(!a) return json({ error:'Step ' + (n + 1) + ' names an agent that does not exist.', code:'agent_unknown' }, 400);
+      agent = a.id;
+    }
+    steps.push({ detail, title, after, agent, kind: s.kind === 'research' ? 'research' : 'task' });
   }
   if(steps.every(s => s.after.length)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
 
@@ -6715,6 +6730,7 @@ async function _autoCreateSteps(request, env, user, body){
       uses: _autoUsesFromText(s.detail).slice(0, 4), boosts: [], country, tier: 'paid',
       created: now, runs: 0, lastError: null, active: true,
       group, step: { n: n + 1, of: steps.length, title: s.title },
+      ...(s.agent ? { agent: s.agent } : {}),
       /* One step: its id, as tasks have always been stored. Several: the
          list, and `got` collects each result as it arrives. */
       ...(waits ? { after: s.after.length === 1 ? ids[s.after[0]] : s.after.map(a => ids[a]), waiting: true } : {}),
@@ -14605,6 +14621,10 @@ const BACKUP_PREFIXES = [
   /* Each pack of extra usage that was paid for - what a refund or a dispute
      is matched against, and what the bought total can be rebuilt from. */
   'creditpay:',
+  /* Each account's named agents (77-agents.js) - what the person wrote for
+     them. Their jobs are under auto:, so restoring one without the other
+     would leave jobs whose agent no longer exists, and they would stop. */
+  'agents:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
@@ -40831,7 +40851,7 @@ async function agentsSave(request, env) {
   if (body.paused !== undefined) clean.paused = body.paused === true;
 
   let out = null, refused = null;
-  await _withKind(env, 'agents', email, async (rec) => {
+  await _withKind(env, 'agents', String(user.email).toLowerCase(), async (rec) => {
     rec.list = Array.isArray(rec.list) ? rec.list : [];
     if (id) {
       const a = rec.list.find(x => x && x.id === id && !x.deleted);
@@ -40880,7 +40900,7 @@ async function agentsDelete(request, env) {
       if (it && it.agent === id && it.active) { it.active = false; it.lastError = 'stopped - its agent was deleted'; stopped++; }
     }
   }, { items: [], results: [] });
-  await _withKind(env, 'agents', email, async (rec) => {
+  await _withKind(env, 'agents', String(user.email).toLowerCase(), async (rec) => {
     const a = (rec.list || []).find(x => x && x.id === id);
     /* Kept as a tombstone with nothing in it but the id and the name, so a
        stopped job's row can still say whose it was. */
