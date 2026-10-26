@@ -123,7 +123,7 @@ section('It NEVER returns a secret, in any form');
     STRIPE_PRICE_ULTRA_YEAR: 'price_ultra_y', STRIPE_PRICE_TEAM_SEAT_YEAR: 'price_team_y',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
-    DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {}, AI: { run() {} },
+    DB: { prepare(){} }, DATA_STORE: 'd1', AMV_COUNTER: {}, BROWSER: {}, AI: { run() {} },
     /* The cloud computer: its binding and a key of real length. */
     AMV_FILES: { put() {}, get() {} },
     AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',
@@ -193,8 +193,13 @@ section('Storage bindings are reported, including what their absence costs');
   ok(/two devices/.test(find(none, 'd1').turnsOn), 'and says what that actually costs', find(none, 'd1').turnsOn);
   ok(find(none, 'counter').on === false, 'the atomic counter too');
 
-  const bound = await get(Object.assign(bare(), { DB: { prepare(){} }, AMV_COUNTER: {} }));
-  ok(find(bound, 'd1').on === true, 'a real D1 binding is detected', find(bound, 'd1').on);
+  /* Bound is not in use: reads switch only when DATA_STORE says so, after
+     the data is copied - so the screen says which of the two it is. */
+  const boundOnly = await get(Object.assign(bare(), { DB: { prepare(){} } }));
+  ok(find(boundOnly, 'd1').on === false, 'a D1 binding alone is not reported as the store', find(boundOnly, 'd1').on);
+  ok(/DATA_STORE/.test(find(boundOnly, 'd1').how) && /copied/.test(find(boundOnly, 'd1').how), 'and the screen says what switches it on, and what must come first', find(boundOnly, 'd1').how);
+  const bound = await get(Object.assign(bare(), { DB: { prepare(){} }, DATA_STORE: 'd1', AMV_COUNTER: {} }));
+  ok(find(bound, 'd1').on === true, 'bound and switched on is detected', find(bound, 'd1').on);
   ok(find(bound, 'counter').on === true, 'and so is the counter');
 }
 

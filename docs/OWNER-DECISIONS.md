@@ -285,6 +285,125 @@ signed up with somebody else's address first cannot keep it. Passwords need 8
 characters for every account (it was 15 for a password-only one); the most
 commonly guessed passwords are still refused whatever their length.
 
+## The scale audit (Oct 26): what was fixed, and what only the owner can decide
+
+The audit's question was the right one: if a million people tried AMV
+tomorrow, what breaks first? Three of its findings were checked against the
+code, found true, and fixed the same day, because they needed nobody's
+permission and each was a lie the deployment could tell about itself:
+
+- **A comment satisfied the deploy check.** preflight searched the raw
+  wrangler.toml, so a commented-out `binding = "BROWSER"` read as declared and
+  the answer was "Ready to deploy". It now reads the config the way wrangler
+  does, names every optional capability ON or OFF, and takes a launch profile
+  (`AMV_PROFILE=consumer_full`, `private_beta`, `team`, `enterprise`, `dev`): a
+  capability the profile needs that is OFF is an error, not a warning.
+  `--live=https://...` checks the deployed Worker the same way.
+- **Binding a database would have emptied every account.** Reads moved to D1
+  the moment `env.DB` existed. Now D1 is used only when `DATA_STORE = "d1"` is
+  also set, after a migration; and a record over D1's 2 MB row limit is
+  refused by name instead of failing inside the database.
+- **"Alive" was the only health there was.** `/v1/health/ready` asks KV and
+  the usage Durable Object (and D1 when in use), answers 503 when one fails
+  and says which, and lists what is switched on as booleans. The deploy now
+  waits for *ready*, not *alive*.
+
+The rest are the owner's - money, permissions, auth, the data model or
+infrastructure. Each is answered the way CLAUDE.md asks: one recommendation,
+what is off the table, and what only the owner decides.
+
+**28. The global daily spend ceiling - KEEP IT, SET IT ON PURPOSE.**
+It is the switch that stops a runaway bill, and at $500 a day it is also the
+switch that turns a good day into an outage for every paying person at once.
+Recommendation: before launch, set `GLOBAL_DAILY_USD_CAP` to about three times
+the busiest day you expect, and treat reaching it as an incident, not a
+setting to raise. Off the table: launching on the default, and removing it.
+The comfortable middle - raising it whenever it trips - is the trap: it
+teaches everyone the ceiling is not real. *Owner decides the number.*
+
+**29. Revoked must mean revoked - MOVE REVOCATION OUT OF KV. Needs a yes (auth).**
+"Sign out everywhere" and revoking an API key write to KV, which can take a
+minute or more to be seen by every location; for that minute a revoked token
+still works somewhere. Recommendation: hold the revocation epoch and revoked
+keys in the Durable Object that already holds every usage ceiling (strongly
+consistent, already deployed), read on each authenticated request, with KV
+kept only as a cache of "not revoked". Off the table: shortening token life
+alone - it narrows the minute, it does not close it. *Owner says yes; it is
+an auth change.*
+
+**30. The data tier - ONE TRANSACTIONAL DATABASE FOR WHAT MUST BE TRUE.**
+KV is a cache that has been used as a database. Accounts, entitlements, the
+credit ledger, API keys, teams and memberships need transactions.
+Recommendation: managed Postgres reached through Cloudflare Hyperdrive for
+that control plane; R2 for files; Durable Objects for hot counters; KV as a
+cache only. Off the table: one JSON record per person in D1 (the 2 MB row
+limit is below what a person's sync record may reach, and one database caps
+at 10 GB). The middle option - turning on the generic D1 table that exists
+today - is the trap: it is KV with SQL, and it moves the problem instead of
+solving it. The migration is copy, verify, shadow-read, switch per account,
+never a flip. *Owner decides the vendor and its monthly cost, and gives the
+go-ahead (it changes the storage schema).*
+
+**31. Queues and durable workflows - YES, IN THIS ORDER.** Email first (it is
+broken today, and a queue is where a failed send waits and is retried rather
+than lost), then file ingestion, then background jobs off the every-minute
+cron. Every message carries its own idempotency key, because a queue may
+deliver twice. *Needs Workers Paid (item 1 below).*
+
+**32. The cloud computer keeps its work - YES, ONCE R2 IS ON.** A container's
+disk is new after every sleep, so today nothing survives five idle minutes.
+The workspace is checkpointed to R2 and restored on wake; the container stays
+disposable. 50 machines is a beta number: the real one comes from what the
+owner will pay, and every plan needs its own limit and a queue in front of it.
+*Owner decides the capacity budget.*
+
+**33. Files go straight to R2 - YES, ONCE R2 IS ON.** The browser uploads to a
+signed, short-lived address instead of through the Worker as base64 (a third
+larger, and the Worker's memory). Scanned before it is usable.
+
+**34. Logs - KEEP EVERY ONE FOR NOW.** At this size a sampled log is the log
+that is missing when it is needed. When requests pass about a million a day,
+keep every error, security, billing and action failure, and sample ordinary
+successes. *Owner decides when the bill says so.*
+
+**35. Passwords - THE OWNER CHOSE 8 TODAY, AND IT STANDS. One correction.**
+The audit asks for 15 (NIST's figure for a password that is the only factor).
+AMV's password is not the only factor: a sign-in on a new device needs the
+emailed code. Except in one case, which is the correction: when the email
+provider refuses AMV's sender, sign-in carries on WITHOUT a code so nobody is
+locked out - and right now emails are not arriving. Until the sending domain
+is verified, an 8-character password may be standing alone. The fix is the
+email setup, not the length. Hashing: 100,000 rounds is the most the Worker
+runtime allows for this algorithm; a stronger one (Argon2id) means running it
+outside the Worker. *Owner decides whether to revisit either.*
+
+**36. Image generation - OFF, BY THE OWNER'S STANDING RULE. The audit asks for
+it back.** It is the owner's call alone. If it returns, it is metered as its
+own credits and never inside a subscription allowance: COSTS.md measured
+images at eight times a plan's price at full use, which is why it went.
+
+**37. Named agents and Companion - WITHDRAWN TODAY BY THE OWNER, AND THE AUDIT
+ASKS FOR THEM.** Not rebuilt against an instruction given the same day.
+Everything they stood on - jobs with budgets, approvals, steps that wait on
+each other - is still there, so they can return as a layer if the owner
+wants them.
+
+**38. Cross-site request checks on cookie routes - YES. Needs a yes (auth).**
+The sign-in renewal cookie is sent automatically; the routes that take it
+should also check that the request came from AMV's own page (exact Origin and
+Sec-Fetch-Site), because CORS stops a page reading an answer, not sending a
+request. No attack has been shown; this is hardening.
+
+**39. Outside review of sign-in - YES, before a public launch.** The passkey,
+authenticator-app and recovery-code code is hand-written and well tested, and
+tested by the people who wrote it. An outside security firm, with fuzzing of
+the passkey parser, is the owner's to commission.
+
+**40. Staging and gradual rollout - YES. Needs the owner's infrastructure.**
+Today a passing build goes to everybody at once. A staging Worker on its own
+address, then a share of traffic before all of it, needs a second Cloudflare
+environment and domain. *Owner provisions them.*
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

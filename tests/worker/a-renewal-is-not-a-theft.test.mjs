@@ -80,7 +80,7 @@ section('The lock store not answering is "try again", never "stolen"');
 section('A database that errors is not a database that says "already used"');
 {
   const env = mkEnv(null);
-  env.DB = { prepare: () => ({ bind: () => ({ run: async () => { throw new Error('D1_ERROR: network connection lost'); } }) }) };
+  env.DATA_STORE = 'd1'; env.DB = { prepare: () => ({ bind: () => ({ run: async () => { throw new Error('D1_ERROR: network connection lost'); } }) }) };
   const pair = await W.issueTokens(env, 'lee@example.com', 'Lee');
   const r = await W.authRefresh(req(pair.refreshToken), env);
   ok(r.status === 503, 'a lost connection is busy, not a replay', r.status);

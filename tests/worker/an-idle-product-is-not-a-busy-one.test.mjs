@@ -264,7 +264,7 @@ section('D1 deployments pay nothing for any of this');
   /* On D1 a namespace read is a SELECT with no daily ceiling, so a KV marker
      there would add an operation where there was none. */
   const env = mkEnv();
-  env.DB = { prepare: () => ({ bind: () => ({ run: async () => ({}), first: async () => null, all: async () => ({ results: [] }) }) }) };
+  env.DATA_STORE = 'd1'; env.DB = { prepare: () => ({ bind: () => ({ run: async () => ({}), first: async () => null, all: async () => ({ results: [] }) }) }) };
   zero(env);
   ok((await W._kindKnownEmpty(env, 'auto')) === false, 'the marker is never consulted on D1');
   await W._markKindEmpty(env, 'auto');

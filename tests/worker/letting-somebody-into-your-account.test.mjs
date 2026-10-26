@@ -257,7 +257,7 @@ section('And it stops serving on a D1 deployment too, which is where it did not'
       };
     },
   };
-  const env = Object.assign(mkEnv(), { DB: d1 });
+  const env = Object.assign(mkEnv(), { DB: d1, DATA_STORE: 'd1' });
   const owner = await signup(env, OWNER);
   await W.DB.put(env, 'site', 'd1page', { slug: 'd1page', owner: OWNER, html: '<h1>hi</h1>', createdAt: Date.now() });
   await W.DB.put(env, 'sites', OWNER, { slugs: ['d1page'] });

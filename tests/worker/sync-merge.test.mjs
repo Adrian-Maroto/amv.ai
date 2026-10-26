@@ -158,7 +158,7 @@ function makeD1Env(){
   let onRead = null;
   env._setOnRead = fn => { onRead = fn; };
   const key = (k, i) => k + '\u0000' + i;
-  env.DB = {
+  env.DATA_STORE = 'd1'; env.DB = {
     prepare(sql){
       return { bind(...a){ return {
         async first(){

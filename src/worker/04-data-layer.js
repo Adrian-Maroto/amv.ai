@@ -10,21 +10,35 @@
    dashboard can COUNT/WHERE instead of listing every key), and no 25MB/key
    ceiling. KV stays for what it's good at: counters and rate-limit windows.
 
-   DO NOT BIND D1 ON A DEPLOYMENT THAT ALREADY HAS DATA. get/put below go to
-   D1 alone once env.DB exists, with no read-through to KV, so every record
-   written before the binding - every account, plan and wallet - reads as
-   missing. A running deployment needs a migration first: copy KV into D1,
-   and read through to KV until the copy is verified.
+   BINDING D1 IS NOT ENOUGH TO USE IT - DATA_STORE = "d1" IS (scale audit,
+   Oct 26). get/put below go to D1 alone once it is in use, with no
+   read-through to KV, so on a deployment that already has data every record
+   written before - every account, plan and wallet - would read as missing.
+   That used to be a warning in this comment, and the switch was the binding
+   itself: somebody adding [[d1_databases]] to try it out would have emptied
+   every account at the next deploy. Now the binding alone changes nothing,
+   and the switch is a separate, deliberate setting, flipped only after a
+   migration (copy, verify counts and contents, shadow-read) has finished.
+
+   D1 also refuses a row over 2,000,000 bytes, and a person's synced data is
+   allowed to reach about 4 MB in one record. So put() refuses such a record
+   here, by name, instead of letting the database refuse it somewhere less
+   legible - and the migration is what has to split them first.
 
    To enable D1 on a NEW deployment with no data yet:
      wrangler d1 create amv
      wrangler d1 execute amv --command "CREATE TABLE IF NOT EXISTS kv (
        kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL,
        updated_at INTEGER, PRIMARY KEY (kind, id));"
-     # bind as [[d1_databases]] binding = "DB" in wrangler.toml
+     # bind as [[d1_databases]] binding = "DB" in wrangler.toml,
+     # and set DATA_STORE = "d1" under [vars]
    ===================================================================== */
+/* D1's own ceiling is 2,000,000 bytes a row; this leaves room for the other
+   columns rather than finding the edge exactly. */
+const D1_ROW_MAX_BYTES = 1900000;
 const DB = {
-  _hasD1(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
+  _d1Bound(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
+  _hasD1(env){ return this._d1Bound(env) && String(env.DATA_STORE || '').toLowerCase() === 'd1'; },
   /* A CORRUPT RECORD IS ONE BAD RECORD, NOT A BROKEN ACCOUNT.
 
      This parsed stored JSON with no guard, on the read that 135 call sites
@@ -114,6 +128,14 @@ const DB = {
   async put(env, kind, id, obj, kvOpts){
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
+      /* Characters are not bytes; only count bytes when it could matter. */
+      if(j.length * 3 > D1_ROW_MAX_BYTES){
+        const bytes = new TextEncoder().encode(j).length;
+        if(bytes > D1_ROW_MAX_BYTES){
+          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch (e) {}
+          throw new Error('The ' + kind + ' record is ' + bytes + ' bytes, over the database\'s ' + D1_ROW_MAX_BYTES + '-byte limit for one record. It has to be split before it can be stored here.');
+        }
+      }
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
       return;

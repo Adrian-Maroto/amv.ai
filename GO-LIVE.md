@@ -8,6 +8,14 @@ is the exact, ordered list of what to set and where.
 Run `node preflight.mjs` at any time - it checks all of this and tells you
 precisely what's missing. Green = ready to deploy.
 
+"Ready to deploy" is not "ready to launch". To check a launch, say what you
+are launching as - `AMV_PROFILE=consumer_full node preflight.mjs` (or
+`private_beta`, `team`, `enterprise`) - and every capability that launch
+needs and is still switched off becomes an error. Once deployed,
+`node preflight.mjs --live=https://api.your-domain --profile=consumer_full`
+asks the running Worker (`/v1/health/ready`) whether it can reach its stores
+and has those capabilities, which no file in this folder can tell you.
+
 ---
 
 ## FIRST: you do not need a terminal for any of this

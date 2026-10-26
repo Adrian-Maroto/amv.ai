@@ -1,5 +1,17 @@
 # Connected accounts: the plan, and the fork you need to decide
 
+> **HISTORICAL - superseded (scale audit, Oct 26).** This was the plan written
+> when Google was the only provider. It is kept as the record of why tokens
+> moved to the server. What is true now: fifteen providers sign in through
+> the same server-held grant (Google, Microsoft, GitHub, Slack, Dropbox, Box,
+> Zoom, HubSpot, Asana, Calendly, Discord, Pinterest, Reddit, Spotify,
+> Strava - `src/worker/09-connected-accounts.js` and
+> `src/worker/12-app-connectors.js`); third-party tools connect as MCP through
+> the bridge (`src/app/38-mcp.js`); and every write on a connected account
+> goes through the action protocol (`src/worker/09a-action-protocol.js`).
+> What is built, and what proves it, is `docs/capabilities.json` - read that,
+> not this, for the current state.
+
 Written against your explicit yes, scoped by the frame you named. Parts of that
 frame are a "no", and those are listed too - an approval that approves
 everything is not worth having.

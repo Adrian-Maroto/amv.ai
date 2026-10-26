@@ -362,7 +362,7 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
       }
     }catch(e){ /* fall through to the next strategy */ }
   }
-  if(env && env.DB && typeof env.DB.prepare === 'function'){
+  if(DB._hasD1(env)){
     try{
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
         .bind(kind, String(id), '1', Date.now()).run();
@@ -432,7 +432,7 @@ async function _releaseClaim(env, kind, id){
         }
       }catch(e){}
     }
-    if(env && env.DB && typeof env.DB.prepare === 'function'){
+    if(DB._hasD1(env)){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
     } else { await env.AMV_KV.delete(`${kind}:${id}`); }
   }catch(e){}

@@ -1,10 +1,18 @@
 # What a user actually costs, and what the plans can afford
 
+> **HISTORICAL - superseded (scale audit, Oct 26).** Image and video
+> generation were removed from AMV end to end after this was written, so
+> every figure below that involves images or video describes a product that
+> no longer exists. The text-cost reasoning and the point about the global
+> daily ceiling still stand; the ceiling's production setting is owner
+> decision 28 in `docs/OWNER-DECISIONS.md`. Current per-plan allowances are
+> in the Worker (`src/worker/01-config.js`), not here.
+
 You asked me to work out what a free user costs. The free tier turned out to be
 the least of it.
 
 **Assumptions, stated so you can correct them.** Engine prices are the ones in
-`ENGINES` (per million tokens: Haiku 1/5, Sonnet 3/15, Opus 5/25, Fable 10/50).
+`ENGINES` (per million tokens, input/output, for the four engine tiers: 1/5, 3/15, 5/25, 10/50).
 Image cost is `IMAGE_COST_USD`, default **$0.04**; video is `VIDEO_COST_USD`,
 default **$0.50**. Both are defaults in the worker, not quotes from a provider -
 if the real numbers differ, every figure below moves with them, and the video
@@ -19,8 +27,8 @@ once a conversation has any history.
 
 | | |
 |---|---|
-| 325,000 tokens on Haiku | **$0.65** |
-| the same tokens on Sonnet | **$1.95** |
+| 325,000 tokens on the lightest engine | **$0.65** |
+| the same tokens on the next engine up | **$1.95** |
 | 8 images a day for a month | **$9.60** |
 
 A free user who never touches images costs well under a pound. One who uses

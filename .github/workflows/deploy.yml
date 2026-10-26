@@ -102,22 +102,24 @@ jobs:
 
       # A deploy that reports success and a backend that answers are different
       # claims. This makes the second one, against the domain people actually
-      # use, so "it deployed" cannot stand in for "it works".
-      - name: Check the live backend answers
+      # use, so "it deployed" cannot stand in for "it works". It asks
+      # /v1/health/ready rather than /v1/health: a Worker that runs and
+      # cannot reach its store is alive and serves nobody (scale audit).
+      - name: Check the live backend is ready
         if: steps.creds.outputs.ready == 'yes'
         run: |
           for i in 1 2 3 4 5; do
-            body="$(curl -fsS --max-time 15 https://api.amv.homes/v1/health || true)"
+            body="$(curl -sS --max-time 15 https://api.amv.homes/v1/health/ready || true)"
             case "$body" in
-              *'"ok":true'*)
-                echo "Live backend healthy: $body"
+              *'"ready":true'*)
+                echo "Live backend ready: $body"
                 exit 0
                 ;;
             esac
-            echo "Not healthy yet (attempt $i), waiting for the rollout..."
+            echo "Not ready yet (attempt $i): $body"
             sleep 6
           done
-          echo "::error::The Worker deployed but https://api.amv.homes/v1/health did not report ok:true."
+          echo "::error::The Worker deployed but https://api.amv.homes/v1/health/ready did not report ready:true. Its body above says which store failed."
           exit 1
 
   # THE WEBSITE, READ BACK THE SAME WAY THE WORKER IS.

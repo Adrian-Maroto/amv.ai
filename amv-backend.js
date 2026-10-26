@@ -893,21 +893,35 @@ let _killCache = { val: false, ts: 0 };
    dashboard can COUNT/WHERE instead of listing every key), and no 25MB/key
    ceiling. KV stays for what it's good at: counters and rate-limit windows.
 
-   DO NOT BIND D1 ON A DEPLOYMENT THAT ALREADY HAS DATA. get/put below go to
-   D1 alone once env.DB exists, with no read-through to KV, so every record
-   written before the binding - every account, plan and wallet - reads as
-   missing. A running deployment needs a migration first: copy KV into D1,
-   and read through to KV until the copy is verified.
+   BINDING D1 IS NOT ENOUGH TO USE IT - DATA_STORE = "d1" IS (scale audit,
+   Oct 26). get/put below go to D1 alone once it is in use, with no
+   read-through to KV, so on a deployment that already has data every record
+   written before - every account, plan and wallet - would read as missing.
+   That used to be a warning in this comment, and the switch was the binding
+   itself: somebody adding [[d1_databases]] to try it out would have emptied
+   every account at the next deploy. Now the binding alone changes nothing,
+   and the switch is a separate, deliberate setting, flipped only after a
+   migration (copy, verify counts and contents, shadow-read) has finished.
+
+   D1 also refuses a row over 2,000,000 bytes, and a person's synced data is
+   allowed to reach about 4 MB in one record. So put() refuses such a record
+   here, by name, instead of letting the database refuse it somewhere less
+   legible - and the migration is what has to split them first.
 
    To enable D1 on a NEW deployment with no data yet:
      wrangler d1 create amv
      wrangler d1 execute amv --command "CREATE TABLE IF NOT EXISTS kv (
        kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL,
        updated_at INTEGER, PRIMARY KEY (kind, id));"
-     # bind as [[d1_databases]] binding = "DB" in wrangler.toml
+     # bind as [[d1_databases]] binding = "DB" in wrangler.toml,
+     # and set DATA_STORE = "d1" under [vars]
    ===================================================================== */
+/* D1's own ceiling is 2,000,000 bytes a row; this leaves room for the other
+   columns rather than finding the edge exactly. */
+const D1_ROW_MAX_BYTES = 1900000;
 const DB = {
-  _hasD1(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
+  _d1Bound(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
+  _hasD1(env){ return this._d1Bound(env) && String(env.DATA_STORE || '').toLowerCase() === 'd1'; },
   /* A CORRUPT RECORD IS ONE BAD RECORD, NOT A BROKEN ACCOUNT.
 
      This parsed stored JSON with no guard, on the read that 135 call sites
@@ -997,6 +1011,14 @@ const DB = {
   async put(env, kind, id, obj, kvOpts){
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
+      /* Characters are not bytes; only count bytes when it could matter. */
+      if(j.length * 3 > D1_ROW_MAX_BYTES){
+        const bytes = new TextEncoder().encode(j).length;
+        if(bytes > D1_ROW_MAX_BYTES){
+          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch (e) {}
+          throw new Error('The ' + kind + ' record is ' + bytes + ' bytes, over the database\'s ' + D1_ROW_MAX_BYTES + '-byte limit for one record. It has to be split before it can be stored here.');
+        }
+      }
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
       return;
@@ -16214,6 +16236,7 @@ async function _route(request, env, ctx) {
                      broke it, which is what the test is for. */
   const KILL_EXEMPT = (p) =>
     p === '/v1/health'                 // an outage must stay distinguishable from a pause
+    || p === '/v1/health/ready'        //   and so must "cannot reach its store"
     || p === '/v1/admin/kill'          // the switch itself, or it can only be lifted with wrangler
     || p === '/v1/stripe/webhook'      // billing truth: these report money already spent,
     || p === '/v1/paypal/webhook'      //   and a 503 for long enough loses paid subscriptions
@@ -16249,6 +16272,7 @@ async function _route(request, env, ctx) {
      who looked, and a new route is POST-only until it is. */
   const GET_SAFE = new Set([
     '/v1/health',               // liveness, reads nothing
+    '/v1/health/ready',         // readiness: probes the stores, booleans only, held 10s
     /* Two booleans about the deployment - is an email provider set, and is it
        still on the default sender - and nothing about any account. A GET so the
        owner can open it in a browser to check their email setup; as POST-only
@@ -16348,6 +16372,7 @@ async function _route(request, env, ctx) {
 
   switch (path) {
     case '/v1/health':       return json({ ok: true, ts: Date.now() });
+    case '/v1/health/ready': return healthReady(request, env);
     case '/v1/public-config': return publicConfig(request, env);
     case '/v1/visit':        return recordVisit(request, env);
     case '/auth/signup':     return authSignup(request, env);
@@ -27277,7 +27302,7 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
       }
     }catch(e){ /* fall through to the next strategy */ }
   }
-  if(env && env.DB && typeof env.DB.prepare === 'function'){
+  if(DB._hasD1(env)){
     try{
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
         .bind(kind, String(id), '1', Date.now()).run();
@@ -27347,7 +27372,7 @@ async function _releaseClaim(env, kind, id){
         }
       }catch(e){}
     }
-    if(env && env.DB && typeof env.DB.prepare === 'function'){
+    if(DB._hasD1(env)){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
     } else { await env.AMV_KV.delete(`${kind}:${id}`); }
   }catch(e){}
@@ -32525,9 +32550,11 @@ function _readinessReport(env, seen) {
     { id: 'cloudLibrary', name: 'Files in the account, on every device', on: libConfigured(env),
       turnsOn: 'The files people send in chat kept in their account, so the phone sees what the laptop uploaded. Limits per plan are enforced here: Free 100 files and 200 MB, Pro 2,000 and 5 GB, Elite 10,000 and 20 GB, Ultra 25,000 and 50 GB. Without it files stay on each device, and the library says so.',
       how: 'Create an R2 bucket named amv-files (Cloudflare dashboard > R2), then bind it as AMV_FILES in wrangler.toml', blocking: false },
-    { id: 'd1', name: 'D1 database', on: !!(env && env.DB && typeof env.DB.prepare === 'function'),
+    { id: 'd1', name: 'D1 database', on: DB._hasD1(env),
       turnsOn: 'Guaranteed sync writes: without it two devices saving at the same instant cannot be arbitrated, only merged.',
-      how: 'Bind DB in wrangler.toml', blocking: false },
+      how: DB._d1Bound(env)
+        ? 'DB is bound but not in use: it becomes the store only when DATA_STORE = "d1" is set, and only after the existing data has been copied into it and checked - otherwise every account would read as empty'
+        : 'Bind DB in wrangler.toml, copy the existing data into it, then set DATA_STORE = "d1"', blocking: false },
     /* BLOCKING once money is being taken, and only then - the same shape as
        the payment webhook above and for the same reason.
 
@@ -32759,6 +32786,77 @@ async function adminReadiness(request, env) {
   return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env, { senderRefused: await _emailSenderRefused(env) })));
 }
 
+
+/* READY, NOT JUST ALIVE (scale audit, Oct 26).
+
+   /v1/health answers "the Worker runs" and reads nothing, which is what
+   liveness should be - and all a load balancer, an uptime monitor or the
+   deploy's own post-check could ask. A Worker whose store is unreachable is
+   alive and cannot serve anybody, and nothing said so.
+
+   /v1/health/ready asks the two things every request depends on: KV (read,
+   and a write at most once a minute per isolate - KV allows one write a
+   second to a key, so a probe that wrote on every hit would make its own
+   outage), and the Durable Object that holds every usage ceiling, asked
+   directly rather than through counter(), whose fallback to KV is exactly
+   the degradation this is meant to see. Then what this deployment has
+   switched on, as booleans - the same facts the app already learns by
+   using each feature, nothing about any account and no secret.
+
+   Unauthenticated, so the answer is held for ten seconds per isolate:
+   hitting it in a loop costs AMV the same as hitting it once. 503 when not
+   ready, so a monitor needs no parsing to page somebody. */
+let _readyMemo = { at: 0, body: null }, _readyWroteAt = 0;
+const READY_MEMO_MS = 10000, READY_WRITE_EVERY_MS = 60000, READY_STEP_MS = 3000;
+function _readyStep(promise) {
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after ' + READY_STEP_MS + 'ms')), READY_STEP_MS))]);
+}
+async function healthReady(request, env) {
+  const now = Date.now();
+  if (_readyMemo.body && now - _readyMemo.at < READY_MEMO_MS) return json(_readyMemo.body, _readyMemo.body.ready ? 200 : 503);
+  const checks = {};
+  const probe = async (name, fn) => {
+    const t = Date.now();
+    try { await _readyStep(fn()); checks[name] = { ok: true, ms: Date.now() - t }; }
+    catch (e) { checks[name] = { ok: false, ms: Date.now() - t, why: String((e && e.message) || e).slice(0, 120) }; }
+  };
+  await probe('kv', async () => {
+    if (!env.AMV_KV) throw new Error('not bound');
+    await env.AMV_KV.get('health:probe');
+    if (now - _readyWroteAt > READY_WRITE_EVERY_MS) {
+      await env.AMV_KV.put('health:probe', String(now), { expirationTtl: 300 });
+      _readyWroteAt = now;
+    }
+  });
+  if (env.AMV_COUNTER) {
+    await probe('counter', async () => {
+      const stub = env.AMV_COUNTER.get(env.AMV_COUNTER.idFromName('health:probe'));
+      const r = await stub.fetch('https://do/counter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'get' }) });
+      if (!r.ok) throw new Error('answered ' + r.status);
+      await r.json();
+    });
+  } else {
+    /* Not a failure of this probe: preflight and the readiness screen say a
+       deployment without it has limits that are suggestions. */
+    checks.counter = { ok: true, skipped: 'not bound' };
+  }
+  if (DB._hasD1(env)) await probe('d1', async () => { await env.DB.prepare('SELECT 1').bind().first(); });
+  const ready = Object.values(checks).every(c => c.ok);
+  const body = {
+    ready, ts: now, checks,
+    capabilities: {
+      model: _has(env, 'AMV_MODEL_KEY'),
+      email: _has(env, 'EMAIL_API_KEY'),
+      payments: _has(env, 'STRIPE_SECRET_KEY') && _has(env, 'STRIPE_WEBHOOK_SECRET'),
+      browser: !!env.BROWSER,
+      library: libConfigured(env),
+      meaning: _meaningOn(env),
+      cloud_computer: _computerOn(env),
+    },
+  };
+  _readyMemo = { at: now, body };
+  return json(body, ready ? 200 : 503);
+}
 /* =====================================================================
    AMV-081  THE WEEKLY OWNER DIGEST
 

@@ -560,6 +560,7 @@ async function _route(request, env, ctx) {
                      broke it, which is what the test is for. */
   const KILL_EXEMPT = (p) =>
     p === '/v1/health'                 // an outage must stay distinguishable from a pause
+    || p === '/v1/health/ready'        //   and so must "cannot reach its store"
     || p === '/v1/admin/kill'          // the switch itself, or it can only be lifted with wrangler
     || p === '/v1/stripe/webhook'      // billing truth: these report money already spent,
     || p === '/v1/paypal/webhook'      //   and a 503 for long enough loses paid subscriptions
@@ -595,6 +596,7 @@ async function _route(request, env, ctx) {
      who looked, and a new route is POST-only until it is. */
   const GET_SAFE = new Set([
     '/v1/health',               // liveness, reads nothing
+    '/v1/health/ready',         // readiness: probes the stores, booleans only, held 10s
     /* Two booleans about the deployment - is an email provider set, and is it
        still on the default sender - and nothing about any account. A GET so the
        owner can open it in a browser to check their email setup; as POST-only
@@ -694,6 +696,7 @@ async function _route(request, env, ctx) {
 
   switch (path) {
     case '/v1/health':       return json({ ok: true, ts: Date.now() });
+    case '/v1/health/ready': return healthReady(request, env);
     case '/v1/public-config': return publicConfig(request, env);
     case '/v1/visit':        return recordVisit(request, env);
     case '/auth/signup':     return authSignup(request, env);

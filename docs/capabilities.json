@@ -1,6 +1,18 @@
 {
  "about": "What AMV can do, where it is built and what proves it. The gate (check.mjs, 'Every capability is built where this says, and no doc calls it next') fails when a built entry's code or test is missing, and when a doc lists a built capability under Next, Not yet or Still open. Entries with status next are not built; owner names the decision only the owner can make. Edit this file when a capability ships or a plan changes - not the prose first.",
  "capabilities": [
+  { "id": "ops.launch_gate", "status": "built", "name": "The deploy check reads the config as deployed, and a launch profile says what must be on",
+    "code": [["preflight.mjs", "stripTomlComments"], ["preflight.mjs", "LAUNCH_PROFILES"]],
+    "tests": ["tests/worker/a-comment-is-not-a-binding.test.mjs"],
+    "says": ["launch profile", "commented-out binding"] },
+  { "id": "ops.health_ready", "status": "built", "name": "A readiness check that asks the stores, separate from liveness",
+    "code": [["src/worker/60-readiness.js", "healthReady"]],
+    "tests": ["tests/worker/alive-is-not-ready.test.mjs"],
+    "says": ["/v1/health/ready", "readiness probe"] },
+  { "id": "data.d1_switch", "status": "built", "name": "A database is used only when switched on after a migration, and a record over its row limit is refused",
+    "code": [["src/worker/04-data-layer.js", "D1_ROW_MAX_BYTES"]],
+    "tests": ["tests/worker/binding-a-database-empties-nobody.test.mjs"],
+    "says": ["DATA_STORE", "D1 row limit"] },
   { "id": "voice.transcribe", "status": "built", "name": "Speech heard on the server, with the time of every line",
     "code": [["src/worker/69-speech.js", "speechTranscribe"]],
     "tests": ["tests/worker/what-amv-hears-and-says-is-paid-for.test.mjs", "tests/e2e/a-recording-becomes-a-transcript.test.mjs"],

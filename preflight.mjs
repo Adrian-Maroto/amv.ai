@@ -53,8 +53,33 @@ for (const f of ['amv-backend.js', 'wrangler.toml', 'index.html', 'build.mjs', '
 }
 
 const backend = read('amv-backend.js');
-const toml = read('wrangler.toml');
+const tomlText = read('wrangler.toml');
 const pkg = read('package.json');
+
+/* THE CONFIG AS WRANGLER READS IT - COMMENTS REMOVED.
+
+   Every check below used to search the raw file, and wrangler.toml documents
+   each optional binding as a commented-out block. So `[browser] binding =
+   "BROWSER"` with a # in front of both lines matched /"BROWSER"/, and this
+   said "BROWSER is used and declared" - then "Ready to deploy" - for a
+   deployment whose hosted browser was OFF. A deploy check that a comment can
+   satisfy checks the documentation, not the deployment (scale audit, Oct 26).
+
+   A # starts a comment unless it is inside a quoted string; this keeps the
+   strings and drops the rest of the line, which is the TOML rule. */
+function stripTomlComments(text){
+  return String(text).split('\n').map(line => {
+    let q = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === '\\' && q === '"') { i++; continue; } if (c === q) q = ''; continue; }
+      if (c === '"' || c === "'") { q = c; continue; }
+      if (c === '#') return line.slice(0, i);
+    }
+    return line;
+  }).join('\n');
+}
+const toml = tomlText == null ? null : stripTomlComments(tomlText);
 
 /* ── 2. The Worker parses as a MODULE (not just a script) ────────────────── */
 if (backend) {
@@ -180,8 +205,11 @@ if (backend && toml) {
      anybody sets with `wrangler secret put`. Listed as a secret it would be
      told to appear on the deploy checklist, which would send somebody looking
      for a value that does not exist. */
-  const bindingLike = ['AMV_KV', 'AMV_COUNTER', 'BROWSER'];
-  for (const b of bindingLike) {
+  /* Required bindings only. The optional ones (BROWSER, AMV_FILES, AI,
+     AMV_COMPUTER) are feature-detected by the Worker and reported ON or OFF
+     in section 10, where a launch profile can require them. */
+  const bindingLike = ['AMV_KV', 'AMV_COUNTER', 'BROWSER', 'AMV_FILES', 'AI', 'AMV_COMPUTER'];
+  for (const b of ['AMV_KV', 'AMV_COUNTER']) {
     if (used.has(b)) {
       if (new RegExp(`"${b}"`).test(toml)) ok(`${b} is used and declared`);
       else err(`${b} is used by the Worker but not declared in wrangler.toml`,
@@ -203,10 +231,8 @@ if (backend && toml) {
     'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
     'STRIPE_PRICE_PRO', 'STRIPE_PRICE_ELITE', 'STRIPE_PRICE_ULTRA',
-    // yearly prices (optional: a plan without one is sold monthly only), and
-    // the two prediction-market keys, which are the operator's own accounts
+    // yearly prices (optional: a plan without one is sold monthly only)
     'STRIPE_PRICE_PRO_YEAR', 'STRIPE_PRICE_ELITE_YEAR', 'STRIPE_PRICE_ULTRA_YEAR', 'STRIPE_PRICE_TEAM_SEAT_YEAR',
-    'KALSHI_API_KEY', 'POLYMARKET_API_KEY',
     'PAYPAL_CLIENT_ID', 'PAYPAL_SECRET', 'PAYPAL_MODE', 'PAYPAL_WEBHOOK_ID',
     'PAYPAL_PLAN_PRO', 'PAYPAL_PLAN_ELITE', 'PAYPAL_PLAN_ULTRA', 'TURNSTILE_SECRET',
     /* These were read by the Worker and missing from this list, so the deploy
@@ -216,6 +242,14 @@ if (backend && toml) {
        is the hardest kind of misconfiguration to diagnose, because everything
        up to the redirect works. */
     'GOOGLE_CLIENT_SECRET',
+    /* Read by the Worker and named nowhere here until the scale audit (Oct 26),
+       so they sat in the "unknown" warning that every run printed. The cloud
+       computer's shared key, the speech provider, the partner engines, the
+       Google picker, and where bank data is offered. */
+    'AMV_COMPUTER_KEY', 'AMV_PARTNER_URL', 'AMV_PARTNER_KEY', 'AMV_PARTNER_ENGINES',
+    'AMV_SPEECH_URL', 'AMV_SPEECH_KEY', 'AMV_SPEECH_LISTEN_MODEL', 'AMV_SPEECH_VOICE_MODEL', 'AMV_SPEECH_VOICE',
+    'AMV_SPEECH_LISTEN_USD_PER_MIN', 'AMV_SPEECH_VOICE_USD_PER_1K_CHARS',
+    'GOOGLE_PICKER_API_KEY', 'GOOGLE_PROJECT_NUMBER', 'FINANCE_COUNTRIES',
     'FINANCE_CLIENT_ID', 'FINANCE_SECRET', 'FINANCE_API_URL',
     'SENTRY_DSN', 'POSTHOG_KEY', 'POSTHOG_HOST', 'SUPPORT_EMAIL', 'BROWSER',
     /* AMV-060: four more the Worker reads and this list did not name, so they
@@ -382,7 +416,81 @@ try {
   }
 }
 
-/* ── 10. package.json has a deploy script ────────────────────────────────── */
+/* ── 10. WHAT THIS DEPLOYMENT HAS SWITCHED ON, AND WHAT IT IS LAUNCHING AS ──
+
+   "Can it deploy" and "is everything it advertises switched on" are two
+   different questions, and this file used to answer only the first while
+   sounding as if it answered both. So the capabilities that exist only when a
+   binding is declared are named here, ON or OFF, every run.
+
+   And a launch says what it is launching as: AMV_PROFILE (or --profile=NAME)
+   names a profile, and a profile lists the bindings it cannot go without. A
+   capability its profile requires that is OFF is an ERROR - not a warning
+   somebody reads past on launch day. With no profile, nothing is required
+   beyond what any deploy needs, and the list is information.
+
+   Secrets cannot be checked from here - they live in Cloudflare, not in a
+   file. The live half of this is /v1/health/ready on the deployed Worker,
+   which reports what it can really reach (`--live=https://...` reads it). */
+const BINDING_CAPS = [
+  { id: 'browser',        binding: 'BROWSER',      re: /^\s*\[browser\][\s\S]*?binding\s*=\s*"BROWSER"/m, what: 'AMV\'s hosted browser (web tasks on sites with no API)' },
+  { id: 'library',        binding: 'AMV_FILES',    re: /binding\s*=\s*"AMV_FILES"/,  what: 'the cloud Library (files kept in the account)' },
+  { id: 'meaning',        binding: 'AI',           re: /^\s*\[ai\][\s\S]*?binding\s*=\s*"AI"/m, what: 'searching by meaning (Workers AI)' },
+  { id: 'cloud_computer', binding: 'AMV_COMPUTER', re: /name\s*=\s*"AMV_COMPUTER"/, what: 'AMV\'s cloud computer' },
+];
+const LAUNCH_PROFILES = {
+  dev:           [],
+  private_beta:  [],
+  consumer_full: ['browser', 'library', 'meaning', 'cloud_computer'],
+  team:          ['library', 'meaning'],
+  enterprise:    ['browser', 'library', 'meaning', 'cloud_computer'],
+};
+const argOf = (name) => { const a = process.argv.find(x => x.startsWith('--' + name + '=')); return a ? a.slice(name.length + 3) : ''; };
+const PROFILE = argOf('profile') || process.env.AMV_PROFILE || '';
+if (toml) {
+  const on = {};
+  for (const c of BINDING_CAPS) {
+    on[c.id] = c.re.test(toml);
+    if (on[c.id]) ok(`ON: ${c.what} (${c.binding} is declared)`);
+  }
+  const off = BINDING_CAPS.filter(c => !on[c.id]);
+  if (PROFILE && !LAUNCH_PROFILES[PROFILE]) {
+    err(`AMV_PROFILE is "${PROFILE}", which is not a launch profile`,
+      'use one of: ' + Object.keys(LAUNCH_PROFILES).join(', '));
+  } else if (PROFILE) {
+    const need = LAUNCH_PROFILES[PROFILE];
+    for (const c of off) {
+      if (need.includes(c.id)) err(`the ${PROFILE} launch needs ${c.what}, and ${c.binding} is not declared (only commented out, or absent)`,
+        `uncomment its block in wrangler.toml - GO-LIVE.md says what it needs first`);
+    }
+    if (!need.some(id => off.find(c => c.id === id))) ok(`every binding the ${PROFILE} launch needs is declared`);
+  }
+  if (off.length && (!PROFILE || !LAUNCH_PROFILES[PROFILE] || off.some(c => !LAUNCH_PROFILES[PROFILE].includes(c.id))))
+    warn('OFF on this deployment: ' + off.filter(c => !(PROFILE && (LAUNCH_PROFILES[PROFILE] || []).includes(c.id))).map(c => c.what).join('; '),
+      'each degrades honestly ("not switched on here"). Do not advertise one that is OFF. '
+    + 'Set AMV_PROFILE=consumer_full to make every one of them a requirement.');
+}
+
+/* ── 10b. THE LIVE HALF: what the deployed Worker can actually reach ────── */
+const LIVE = argOf('live');
+if (LIVE) {
+  try {
+    const out = execSync(`node -e "fetch(process.argv[1]).then(r=>r.text()).then(t=>process.stdout.write(t)).catch(e=>{process.stderr.write(String(e));process.exit(2)})" ${JSON.stringify(LIVE.replace(/\/$/, '') + '/v1/health/ready')}`,
+      { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }).toString();
+    const d = JSON.parse(out);
+    if (d.ready) ok(`${LIVE} is ready: its stores answered`);
+    else err(`${LIVE} is NOT ready: ` + Object.entries(d.checks || {}).filter(([, v]) => !v.ok).map(([k, v]) => k + ' (' + (v.why || 'failed') + ')').join(', '),
+      'fix what failed - the Worker accepts traffic it cannot serve until then');
+    const need = (PROFILE && LAUNCH_PROFILES[PROFILE]) || [];
+    for (const id of need) if (!(d.capabilities || {})[id])
+      err(`the ${PROFILE} launch needs ${id}, and the deployed Worker reports it is not switched on`,
+        'the binding is declared but the Worker cannot use it - see /v1/health/ready and the readiness screen');
+  } catch (e) {
+    err(`could not read ${LIVE}/v1/health/ready`, 'check the address and that the Worker is deployed');
+  }
+}
+
+/* ── 11. package.json has a deploy script ────────────────────────────────── */
 if (pkg) {
   if (/"deploy"\s*:\s*"wrangler deploy"/.test(pkg)) ok('npm run deploy is wired to wrangler');
   else warn('no `deploy` script in package.json', 'add "deploy": "wrangler deploy" to scripts');

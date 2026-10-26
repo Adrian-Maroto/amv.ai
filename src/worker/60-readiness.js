@@ -419,9 +419,11 @@ function _readinessReport(env, seen) {
     { id: 'cloudLibrary', name: 'Files in the account, on every device', on: libConfigured(env),
       turnsOn: 'The files people send in chat kept in their account, so the phone sees what the laptop uploaded. Limits per plan are enforced here: Free 100 files and 200 MB, Pro 2,000 and 5 GB, Elite 10,000 and 20 GB, Ultra 25,000 and 50 GB. Without it files stay on each device, and the library says so.',
       how: 'Create an R2 bucket named amv-files (Cloudflare dashboard > R2), then bind it as AMV_FILES in wrangler.toml', blocking: false },
-    { id: 'd1', name: 'D1 database', on: !!(env && env.DB && typeof env.DB.prepare === 'function'),
+    { id: 'd1', name: 'D1 database', on: DB._hasD1(env),
       turnsOn: 'Guaranteed sync writes: without it two devices saving at the same instant cannot be arbitrated, only merged.',
-      how: 'Bind DB in wrangler.toml', blocking: false },
+      how: DB._d1Bound(env)
+        ? 'DB is bound but not in use: it becomes the store only when DATA_STORE = "d1" is set, and only after the existing data has been copied into it and checked - otherwise every account would read as empty'
+        : 'Bind DB in wrangler.toml, copy the existing data into it, then set DATA_STORE = "d1"', blocking: false },
     /* BLOCKING once money is being taken, and only then - the same shape as
        the payment webhook above and for the same reason.
 
@@ -653,3 +655,74 @@ async function adminReadiness(request, env) {
   return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env, { senderRefused: await _emailSenderRefused(env) })));
 }
 
+
+/* READY, NOT JUST ALIVE (scale audit, Oct 26).
+
+   /v1/health answers "the Worker runs" and reads nothing, which is what
+   liveness should be - and all a load balancer, an uptime monitor or the
+   deploy's own post-check could ask. A Worker whose store is unreachable is
+   alive and cannot serve anybody, and nothing said so.
+
+   /v1/health/ready asks the two things every request depends on: KV (read,
+   and a write at most once a minute per isolate - KV allows one write a
+   second to a key, so a probe that wrote on every hit would make its own
+   outage), and the Durable Object that holds every usage ceiling, asked
+   directly rather than through counter(), whose fallback to KV is exactly
+   the degradation this is meant to see. Then what this deployment has
+   switched on, as booleans - the same facts the app already learns by
+   using each feature, nothing about any account and no secret.
+
+   Unauthenticated, so the answer is held for ten seconds per isolate:
+   hitting it in a loop costs AMV the same as hitting it once. 503 when not
+   ready, so a monitor needs no parsing to page somebody. */
+let _readyMemo = { at: 0, body: null }, _readyWroteAt = 0;
+const READY_MEMO_MS = 10000, READY_WRITE_EVERY_MS = 60000, READY_STEP_MS = 3000;
+function _readyStep(promise) {
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timed out after ' + READY_STEP_MS + 'ms')), READY_STEP_MS))]);
+}
+async function healthReady(request, env) {
+  const now = Date.now();
+  if (_readyMemo.body && now - _readyMemo.at < READY_MEMO_MS) return json(_readyMemo.body, _readyMemo.body.ready ? 200 : 503);
+  const checks = {};
+  const probe = async (name, fn) => {
+    const t = Date.now();
+    try { await _readyStep(fn()); checks[name] = { ok: true, ms: Date.now() - t }; }
+    catch (e) { checks[name] = { ok: false, ms: Date.now() - t, why: String((e && e.message) || e).slice(0, 120) }; }
+  };
+  await probe('kv', async () => {
+    if (!env.AMV_KV) throw new Error('not bound');
+    await env.AMV_KV.get('health:probe');
+    if (now - _readyWroteAt > READY_WRITE_EVERY_MS) {
+      await env.AMV_KV.put('health:probe', String(now), { expirationTtl: 300 });
+      _readyWroteAt = now;
+    }
+  });
+  if (env.AMV_COUNTER) {
+    await probe('counter', async () => {
+      const stub = env.AMV_COUNTER.get(env.AMV_COUNTER.idFromName('health:probe'));
+      const r = await stub.fetch('https://do/counter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'get' }) });
+      if (!r.ok) throw new Error('answered ' + r.status);
+      await r.json();
+    });
+  } else {
+    /* Not a failure of this probe: preflight and the readiness screen say a
+       deployment without it has limits that are suggestions. */
+    checks.counter = { ok: true, skipped: 'not bound' };
+  }
+  if (DB._hasD1(env)) await probe('d1', async () => { await env.DB.prepare('SELECT 1').bind().first(); });
+  const ready = Object.values(checks).every(c => c.ok);
+  const body = {
+    ready, ts: now, checks,
+    capabilities: {
+      model: _has(env, 'AMV_MODEL_KEY'),
+      email: _has(env, 'EMAIL_API_KEY'),
+      payments: _has(env, 'STRIPE_SECRET_KEY') && _has(env, 'STRIPE_WEBHOOK_SECRET'),
+      browser: !!env.BROWSER,
+      library: libConfigured(env),
+      meaning: _meaningOn(env),
+      cloud_computer: _computerOn(env),
+    },
+  };
+  _readyMemo = { at: now, body };
+  return json(body, ready ? 200 : 503);
+}
