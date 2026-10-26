@@ -148,6 +148,13 @@ async function say(text, { approve = true } = {}) {
     window.__consent = { seen: 0, title: '', body: '' };
   }, approve);
 
+  /* Back to chat as its own step, settled before anything is typed: coming
+     from Crew the address changes, and on a loaded CI runner the page could
+     still be settling when the message was typed into it - which ended the
+     suite with "execution context was destroyed" rather than a finding. */
+  await page.evaluate(() => setTab('chat')).catch(() => {});
+  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  await page.waitForFunction(() => typeof setTab === 'function' && !!document.getElementById('mta'), null, { timeout: 15000 });
   await page.evaluate(async (t) => {
     setTab('chat');
     await new Promise(x => setTimeout(x, 300));
