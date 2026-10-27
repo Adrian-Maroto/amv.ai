@@ -71,6 +71,12 @@ export default {
           try{ await _workerError(env, 'cron', e); }catch(_){}
         }
       }
+      /* Mail the provider could not take when it was sent, retried on its own
+         schedule (_outboxDrain). Its own try, like everything here. */
+      try{
+        const ob = await _outboxDrain(env);
+        if(ob.sent || ob.gaveUp) console.log('[cron] outbox', JSON.stringify(ob));
+      }catch(e){ try{ await _workerError(env, 'cron.outbox', e); }catch(_){} }
       /* AMV-081: the weekly owner digest, in its own try. It is a report about
          the business; it must never be able to stop the tick that runs every
          customer's background work. Claimed once per week internally, so

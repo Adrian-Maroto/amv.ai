@@ -149,6 +149,9 @@ const BACKUP_NEVER = [
      with this deployment's key. Restoring any of them would put a spent or
      expired step back into circulation. */
   'pkchal:', 'mfachal:', 'totpset:',
+  /* Mail waiting to be retried (61-owner-digest.js, _outboxDrain): three
+     days at most, and restoring it would send an old message again. */
+  'outbox:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',

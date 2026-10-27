@@ -14790,6 +14790,9 @@ const BACKUP_NEVER = [
      with this deployment's key. Restoring any of them would put a spent or
      expired step back into circulation. */
   'pkchal:', 'mfachal:', 'totpset:',
+  /* Mail waiting to be retried (61-owner-digest.js, _outboxDrain): three
+     days at most, and restoring it would send an old message again. */
+  'outbox:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',
@@ -15881,6 +15884,12 @@ export default {
           try{ await _workerError(env, 'cron', e); }catch(_){}
         }
       }
+      /* Mail the provider could not take when it was sent, retried on its own
+         schedule (_outboxDrain). Its own try, like everything here. */
+      try{
+        const ob = await _outboxDrain(env);
+        if(ob.sent || ob.gaveUp) console.log('[cron] outbox', JSON.stringify(ob));
+      }catch(e){ try{ await _workerError(env, 'cron.outbox', e); }catch(_){} }
       /* AMV-081: the weekly owner digest, in its own try. It is a report about
          the business; it must never be able to stop the tick that runs every
          customer's background work. Claimed once per week internally, so
@@ -18298,7 +18307,7 @@ async function accountExport(request, env) {
   await add(`alog:${email}`, 'activity_log');
   await add(`refmine:${email}`, 'referral_code');
   await add(`refpend:${email}`, 'referral_pending');
-  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`]) {
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`, `outbox:${email}:`]) {
     try {
       let cursor;
       do {
@@ -19093,6 +19102,9 @@ async function authDeleteAccount(request, env) {
      buying, which is a record of what somebody was shopping for. All three are
      exactly what erasure is for. */
   for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`,
+                        /* Mail waiting to be retried (_outboxDrain): their address and
+                           what it said. A deleted person is sent nothing more. */
+                        `outbox:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,
@@ -34121,14 +34133,17 @@ function _emailReaches(env) { return !!(env.EMAIL_API_KEY && env.RESET_EMAIL_FRO
    is a promise of mail that never comes. */
 async function _emailReachesNow(env) { return _emailReaches(env) && !(await _emailSenderRefused(env)); }
 
-async function _sendEmail(env, to, subject, html, text, cls) {
-  if (!env.EMAIL_API_KEY) return false;
-  if (!(await _emailBudgetOk(env, cls || 'other', to))) return false;
-  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
+/* ONE SEND, TO THE PROVIDER, WITH THE ANSWER CLASSIFIED (scale audit, Oct 26).
+   ok: accepted. transient: the network, a rate limit or the provider's own
+   fault - worth trying again. Anything else is permanent: trying again
+   would get the same answer. The idempotency key makes a retry after an
+   unknown outcome (a timeout after the provider accepted it) one email, not
+   two. */
+async function _emailPost(env, from, to, subject, html, text, idem) {
   try {
     const resp = await fetchDeadline('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json', 'Idempotency-Key': idem },
       body: JSON.stringify({ from, to: [to], subject, html, text }),
     });
     /* A refusal of the SENDER (an unverified domain) is remembered, because it
@@ -34142,8 +34157,67 @@ async function _sendEmail(env, to, subject, html, text, cls) {
           await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said }), { expirationTtl: 86400 });
       }
     } catch (e) {}
-    return resp.ok;
-  } catch (e) { return false; }
+    if (resp.ok) return 'ok';
+    return (resp.status === 429 || resp.status >= 500) ? 'transient' : 'permanent';
+  } catch (e) { return 'transient'; }
+}
+/* Mail that can arrive late and still be right goes to the OUTBOX when the
+   provider cannot take it now: a job's result, "AMV is done", a message from
+   somebody, a task, the owner's own digest. A sign-in code or a password
+   reset does not: it expires in minutes, the person asks for a fresh one,
+   and a late copy of an old code is confusion, not help. */
+const EMAIL_OUTBOX_CLASSES = new Set(['auto', 'done', 'message', 'task', 'owner', 'waitlist', 'other']);
+const EMAIL_OUTBOX_BACKOFF_MS = [5, 15, 60, 180, 360].map(m => m * 60000);
+async function _sendEmail(env, to, subject, html, text, cls) {
+  if (!env.EMAIL_API_KEY) return false;
+  if (!(await _emailBudgetOk(env, cls || 'other', to))) return false;
+  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
+  const idem = 'amv-' + crypto.randomUUID();
+  let got = await _emailPost(env, from, to, subject, html, text, idem);
+  /* One quick second try, with the same key, before anybody is told no. */
+  if (got === 'transient') { await new Promise(r => setTimeout(r, 600)); got = await _emailPost(env, from, to, subject, html, text, idem); }
+  if (got === 'ok') return true;
+  if (got === 'transient' && EMAIL_OUTBOX_CLASSES.has(cls || 'other')) {
+    try {
+      const id = idem.slice(4);
+      await env.AMV_KV.put('outbox:' + String(to).toLowerCase().trim() + ':' + id, JSON.stringify({ id, idem, to, subject, html, text, cls: cls || 'other', from,
+        attempts: 2, next: Date.now() + EMAIL_OUTBOX_BACKOFF_MS[0], at: Date.now() }), { expirationTtl: 3 * 86400 });
+      audit(env, 'email_queued', { cls, to });
+    } catch (e) { audit(env, 'email_lost', { cls, to, error: String((e && e.message) || e).slice(0, 120) }); }
+  }
+  /* Still false: not delivered NOW. Queued mail arriving later is the outbox
+     keeping a promise, never a reason to tell somebody it already went. */
+  return false;
+}
+/* Sends what is waiting, from the five-minute tick. Bounded per tick; each
+   item is retried on its own schedule and given up on after the last step,
+   with the operator told - mail that was never delivered is never silently
+   dropped. */
+async function _outboxDrain(env, now) {
+  const t = now || Date.now();
+  let sent = 0, retried = 0, gaveUp = 0, seen = 0;
+  if (!env.EMAIL_API_KEY) return { sent, retried, gaveUp, seen };
+  const page = await env.AMV_KV.list({ prefix: 'outbox:', limit: 50 });
+  for (const k of page.keys) {
+    let it = null;
+    try { it = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); } catch (e) {}
+    if (!it) { try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+    seen++;
+    if (it.next > t) continue;
+    const got = await _emailPost(env, it.from || env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT, it.to, it.subject, it.html, it.text, it.idem);
+    if (got === 'ok') { await env.AMV_KV.delete(k.name); sent++; audit(env, 'email_outbox_sent', { cls: it.cls, attempts: it.attempts + 1 }); continue; }
+    const step = it.attempts - 1;                     // attempts 2 -> the first backoff already used
+    if (got === 'permanent' || step >= EMAIL_OUTBOX_BACKOFF_MS.length) {
+      await env.AMV_KV.delete(k.name); gaveUp++;
+      audit(env, 'email_outbox_gave_up', { cls: it.cls, to: it.to, attempts: it.attempts + 1, why: got });
+      try { await alertOnce(env, 'email_outbox_gave_up', 'An email could not be delivered after every retry (' + it.cls + '). Check the email provider on the readiness screen.', 60); } catch (e) {}
+      continue;
+    }
+    it.attempts += 1; it.next = t + EMAIL_OUTBOX_BACKOFF_MS[step];
+    await env.AMV_KV.put(k.name, JSON.stringify(it), { expirationTtl: 3 * 86400 });
+    retried++;
+  }
+  return { sent, retried, gaveUp, seen };
 }
 /* Whether the provider has said, in the last day, that it will not send from
    this deployment's sender at all. A day, so a fix at the provider is noticed

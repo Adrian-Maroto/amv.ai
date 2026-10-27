@@ -879,7 +879,7 @@ async function accountExport(request, env) {
   await add(`alog:${email}`, 'activity_log');
   await add(`refmine:${email}`, 'referral_code');
   await add(`refpend:${email}`, 'referral_pending');
-  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`]) {
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`, `outbox:${email}:`]) {
     try {
       let cursor;
       do {
@@ -1674,6 +1674,9 @@ async function authDeleteAccount(request, env) {
      buying, which is a record of what somebody was shopping for. All three are
      exactly what erasure is for. */
   for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`,
+                        /* Mail waiting to be retried (_outboxDrain): their address and
+                           what it said. A deleted person is sent nothing more. */
+                        `outbox:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,
