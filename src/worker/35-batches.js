@@ -937,8 +937,11 @@ async function aiProxy(request, env, ctx, principal) {
     if (safe.length) upstreamBody.tools = safe;
   }
 
-  /* stream:true - this response goes straight to the user, so it must never be
-     retried on another endpoint: words already delivered would be repeated. */
+  /* stream:true - this response goes straight to the user. _modelFetch moves
+     it to the second endpoint only when the first failed BEFORE answering (a
+     refused connection, a 5xx, a 429): then nothing has been said. A stream
+     that has started is never retried - words already delivered would be
+     repeated. */
   const _callUpstream = eng.provider === 'partner'
     /* A partner engine: the same turn, translated for the partner, answered
        in AMV's own event stream (see PARTNER ENGINES). */

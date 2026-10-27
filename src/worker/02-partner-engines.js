@@ -434,6 +434,20 @@ const SMS_EST_IN_TOK = 1200;
 const AI_INJECTED_INPUT_TOK = 4000;
 const AI_INPUT_SAFETY = 1.25;      // cache writes are billed at ~125% of input
 
+/* The primary endpoint's circuit, per server (see _modelFetch). */
+const MODEL_CB_WINDOW_MS = 60000, MODEL_CB_TRIP = 5, MODEL_CB_OPEN_MS = 30000;
+const _modelCb = { fails: [], openUntil: 0 };
+function _modelCircuitOpen(){ return Date.now() < _modelCb.openUntil; }
+function _modelCircuitOk(){ _modelCb.fails = []; _modelCb.openUntil = 0; }
+function _modelCircuitFail(env){
+  const now = Date.now();
+  _modelCb.fails = _modelCb.fails.filter(t => now - t < MODEL_CB_WINDOW_MS);
+  _modelCb.fails.push(now);
+  if(_modelCb.fails.length >= MODEL_CB_TRIP && !_modelCircuitOpen()){
+    _modelCb.openUntil = now + MODEL_CB_OPEN_MS;
+    try{ audit(env, 'model_circuit_open', { fails: _modelCb.fails.length }); }catch(e){}
+  }
+}
 async function _modelFetch(env, payload, opts){
   const o = opts || {};
   const init = {
@@ -458,13 +472,35 @@ async function _modelFetch(env, payload, opts){
   }
 
   const primary = _modelBase(env);
-  let r, err = null;
-  try{ r = await fetch(primary + '/v1/messages', init); }
-  catch(e){ err = e; }
-
-  const worthRetrying = err || (r && r.status >= 500);
   const alt = _modelBase(env, 'fallback');
-  if(worthRetrying && alt && alt !== primary && !o.stream){
+  const hasAlt = !!(alt && alt !== primary);
+  let r, err = null;
+  /* THE PRIMARY IS SKIPPED WHILE ITS CIRCUIT IS OPEN (scale audit #25):
+     five failures inside a minute on this server and, for the next thirty
+     seconds, requests go straight to the fallback instead of each one
+     waiting out a provider that is down. Then one request tries the primary
+     again; a success closes the circuit. Per server, held in memory - no
+     storage on the path, and every server learns on its own. */
+  const skipPrimary = hasAlt && _modelCircuitOpen();
+  if(!skipPrimary){
+    try{ r = await fetch(primary + '/v1/messages', init); }
+    catch(e){ err = e; }
+    if(err || (r && (r.status >= 500 || r.status === 429))) _modelCircuitFail(env);
+    else if(r && r.ok) _modelCircuitOk();
+  }
+
+  /* A STREAM FAILS OVER TOO - BEFORE ITS FIRST WORD.
+
+     Streams were never retried, on the reasoning that words already delivered
+     would be repeated. That is true once a stream has started, and false
+     before it: a refused connection, a 5xx or a 429 from the primary arrives
+     with no body, so nothing has been said and the second endpoint can answer
+     the whole turn. fetch() resolves at the response headers, so a failure
+     here is always one with nothing delivered. A stream that breaks after it
+     has started is not retried, and is not this. 429 counts: it is the
+     primary's own quota, which the fallback does not share. */
+  const worthRetrying = skipPrimary || err || (r && (r.status >= 500 || r.status === 429));
+  if(worthRetrying && hasAlt){
     try{
       /* A FRESH DEADLINE, OR THE FAILOVER CANNOT SURVIVE THE FAILURE IT EXISTS
          FOR.
@@ -495,8 +531,14 @@ async function _modelFetch(env, payload, opts){
           '\u26a0\ufe0f The primary model endpoint failed and AMV fell back to the secondary. Requests are being served, but check the primary.', 30); }catch(_){}
         return r2;
       }
-      if(!r) return r2;
+      if(!r && !skipPrimary) return r2;
     }catch(e2){ /* the fallback is a best effort; report the primary failure */ }
+  }
+  /* The circuit sent this straight to the fallback and the fallback failed
+     too: the primary is asked after all rather than nobody being asked. */
+  if(skipPrimary && !r && !err){
+    try{ r = await fetch(primary + '/v1/messages', init); if(r.ok) _modelCircuitOk(); }
+    catch(e){ err = e; }
   }
   if(err) throw err;
   return r;

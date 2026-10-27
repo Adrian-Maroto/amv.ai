@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'transport.harness.mjs');
 writeFileSync(harness, src + `
-export { _modelFetch, _modelBase, _modelHeaders, _modelKey, MODEL_API_DEFAULT, MODEL_API_VERSION };
+export { _modelFetch, _modelBase, _modelHeaders, _modelKey, MODEL_API_DEFAULT, MODEL_API_VERSION, _modelCb, _modelCircuitOpen };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -39,7 +39,9 @@ const spy = (plan) => {
   };
   return calls;
 };
-const env = (extra = {}) => ({ AMV_MODEL_KEY: 'k-secret', AMV_KV: {
+/* Each section is a fresh server as far as the primary's circuit goes - a
+   section that fails the primary five times must not change the next one. */
+const env = (extra = {}) => (W._modelCb.fails = [], W._modelCb.openUntil = 0, { AMV_MODEL_KEY: 'k-secret', AMV_KV: {
   async get() { return null; }, async put() {}, async delete() {},
   async list() { return { keys: [], list_complete: true }; } }, ...extra });
 
@@ -179,14 +181,27 @@ section('A request that is simply wrong is not sent twice');
   ok(r.status === 400, 'so the real error is returned', r.status);
 }
 
-section('A stream is NEVER retried, because the words are already gone');
+section('A stream fails over only before its first word');
 {
+  /* Scale audit #25. A primary that refuses a streamed turn (5xx, 429, or no
+     connection) has said nothing - fetch resolves at the headers - so the
+     second endpoint answers the whole turn. Once a stream has started it is
+     the caller's body to read, and nothing here can retry it. */
+  W._modelCb.fails = []; W._modelCb.openUntil = 0;
   const e = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test' });
   const calls = spy([500, 200]);
   const r = await W._modelFetch(e, { messages: [] }, { stream: true });
   globalThis.fetch = realFetch;
-  ok(calls.length === 1, 'one attempt only', calls.length);
-  ok(r.status === 500, 'and the failure is reported honestly rather than answered twice', r.status);
+  ok(calls.length === 2 && /backup\.test/.test(String(calls[1].url)), 'a 5xx before any word goes to the second endpoint', calls.map(c => String(c.url)));
+  ok(r.status === 200, 'and the person gets an answer', r.status);
+  const calls2 = spy([429, 200]);
+  await W._modelFetch(e, { messages: [] }, { stream: true });
+  globalThis.fetch = realFetch;
+  ok(calls2.length === 2, 'so does the primary\u2019s own rate limit, which the fallback does not share', calls2.length);
+  const calls3 = spy([400, 200]);
+  const r3 = await W._modelFetch(e, { messages: [] }, { stream: true });
+  globalThis.fetch = realFetch;
+  ok(calls3.length === 1 && r3.status === 400, 'a request that is simply wrong is still sent once', calls3.length);
 
   /* Both forms of the chat call - fast mode adds a header - are streaming. */
   const callUp = (src.match(/const _callUpstream = [\s\S]*?: \(payload\) => _modelFetch\(env, payload,[\s\S]*?\);/) || [''])[0].replace(/^[\s\S]*: \(payload\) => _modelFetch/, '_modelFetch');
@@ -194,6 +209,31 @@ section('A stream is NEVER retried, because the words are already gone');
      'the chat path marks itself as streaming, in both its forms', callUp);
   ok(/_modelFetch\(env, upstreamBody, \{ stream: true \}\)/.test(src),
      'and so does the embeddable widget');
+}
+
+section('Five failures in a minute: the primary is skipped for a while, then tried again');
+{
+  W._modelCb.fails = []; W._modelCb.openUntil = 0;
+  const e = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test' });
+  /* Five turns, each failing on the primary and rescued by the backup. */
+  let calls = spy([500, 200, 500, 200, 500, 200, 500, 200, 500, 200]);
+  for (let i = 0; i < 5; i++) await W._modelFetch(e, { messages: [] });
+  ok(calls.length === 10, 'each of the five tried the primary first', calls.length);
+  /* The sixth goes straight to the backup. */
+  calls = spy([200]);
+  await W._modelFetch(e, { messages: [] });
+  ok(calls.length === 1 && /backup\.test/.test(String(calls[0].url)), 'the next one does not wait on the primary at all', calls.map(c => String(c.url)));
+  /* The backup failing while the circuit is open: the primary is asked anyway. */
+  calls = spy([new Error('backup down'), 200]);
+  const r = await W._modelFetch(e, { messages: [] });
+  ok(calls.length === 2 && /primary\.test/.test(String(calls[1].url)) && r.status === 200, 'if the backup fails too, the primary is still asked', calls.map(c => String(c.url)));
+  ok(!W._modelCircuitOpen(), 'and its success closes the circuit');
+  /* Thirty seconds on, the primary is tried again. */
+  W._modelCb.openUntil = Date.now() - 1;
+  calls = spy([200]);
+  await W._modelFetch(e, { messages: [] });
+  globalThis.fetch = realFetch;
+  ok(/primary\.test/.test(String(calls[0].url)), 'after the open window, the primary is tried first again');
 }
 
 section('With nothing to fall back to, the primary failure is the answer');
