@@ -1688,11 +1688,13 @@ async function connAct(request, env){
     if(spec.writes){
       const v = result && typeof result === 'object' ? result.verified : undefined;
       if(v === undefined){
+        await _actCount(env, 'unverifiable', user.email);
         audit(env, 'conn_action_unverifiable', { by: user.email, action: name });
         return json({ error:'not_verifiable', action: name,
           message:'AMV has no way to check that, so it is not reporting it as done. Look in the account itself.' }, 500);
       }
       if(v === false){
+        await _actCount(env, 'not_confirmed', user.email);
         audit(env, 'conn_action_not_confirmed', { by: user.email, action: name });
         return json({ error:'not_confirmed', action: name, result: _actShown(result),
           message:'The account said yes, but when AMV checked, the change was not there. Look in the account before trying again, so it does not happen twice.' }, 502);
@@ -1700,6 +1702,7 @@ async function connAct(request, env){
     }
     if(!spec.writes) return json({ ok: true, action: name, result });
     const receipt = await _actReceipt(env, user.email, name, spec, body.args || {}, result);
+    await _actCount(env, receipt.status === 'done' ? 'verified' : 'unchecked', user.email);
     audit(env, 'action_receipt', { by: user.email, action: name, status: receipt.status, undo: !!receipt.undo });
     /* What only the server needed (an earlier copy of the cells, a full commit
        id) stays here; the receipt's ticket carries what the undo needs. */
@@ -1708,6 +1711,7 @@ async function connAct(request, env){
     /* The provider's own message is logged and NOT returned. It can carry a
        quota name, an internal id, or a hint about the account, and none of that
        belongs in an answer to a browser. */
+    if(spec.writes) await _actCount(env, 'failed', user.email);
     audit(env, 'conn_action_failed', { by: user.email, action: name,
       error: String((e && e.message) || e).slice(0, 120) });
     /* AMV's OWN refusals - raised before any request, or naming a file that

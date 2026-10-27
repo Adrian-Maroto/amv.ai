@@ -355,6 +355,8 @@ function _founderDashHTML(d){
       '<div class="fd-card"><div class="fd-n">'+fmt(us.paying)+'</div><div class="fd-l">Paying users</div><div class="fd-sub">'+fmt(us.total)+' total</div></div>'+
       '<div class="fd-card"><div class="fd-n">'+money(estProfit)+'</div><div class="fd-l">Est. gross profit / mo</div><div class="fd-sub">after AI cost '+money(mg.estMonthlyCost)+'</div></div>'+
       '<div class="fd-card"><div class="fd-n">'+money(sp.today)+'</div><div class="fd-l">AI spend today</div><div class="fd-sub">cap '+money(sp.cap)+'</div></div>'+
+      /* Work actually done: actions on people's accounts AMV checked were done. */
+      (d.outcomes?'<div class="fd-card"><div class="fd-n">'+fmt(d.outcomes.verified)+'</div><div class="fd-l">Actions confirmed done</div><div class="fd-sub">'+(d.outcomes.verifiedRatePct==null?'none yet this month':d.outcomes.verifiedRatePct+'% confirmed')+' \u00b7 '+fmt(d.outcomes.failed+d.outcomes.not_confirmed)+' failed \u00b7 '+fmt(d.outcomes.undone)+' undone</div></div>':'')+
     '</div>'+
     // spend bar + kill switch
     '<div class="ss2"><h3>Today\u2019s global spend</h3>'+

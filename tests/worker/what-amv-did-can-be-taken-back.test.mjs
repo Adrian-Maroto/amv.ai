@@ -18,7 +18,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const SRC = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 const harness = join(__dir, '.build', 'takeback.harness.mjs');
-writeFileSync(harness, SRC + '\nexport { CONN_ACTIONS, CONN_KV, DB, connSeal, revokeUserTokens, _actContractProblems };\n');
+writeFileSync(harness, SRC + '\nexport { CONN_ACTIONS, CONN_KV, DB, connSeal, revokeUserTokens, _actContractProblems, _actOutcomes, monthKey };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* ── The provider ─────────────────────────────────────────────────────── */
@@ -71,6 +71,7 @@ globalThis.fetch = async (url, init) => {
 };
 
 /* ── The account ──────────────────────────────────────────────────────── */
+const outcomes = new Map();
 function mkEnv() {
   const m = new Map();
   return {
@@ -80,7 +81,15 @@ function mkEnv() {
       async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+    /* Every other counter answers as before; the outcome tallies keep their
+       numbers, so the owner's figure can be read at the end. */
+    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+      if (String(n).startsWith('actout:')) {
+        const b = JSON.parse(init.body);
+        if (b.op === 'incr') outcomes.set(n, (outcomes.get(n) || 0) + (b.amount || 0));
+        return new Response(JSON.stringify({ value: outcomes.get(n) || 0 }));
+      }
+      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
   };
@@ -231,6 +240,18 @@ section('Signing out everywhere ends the tickets too');
   await W.revokeUserTokens(env, ME);
   const u = await undo(r.d.receipt.undo.token);
   ok(u.status !== 200 && events.has('e1'), 'a ticket from before is refused, and nothing is deleted', u.status);
+}
+
+section('The owner reads the same outcomes the person was told');
+{
+  /* Scale audit #50: work done is counted by what AMV could confirm, from the
+     same places that decide what the person sees. Everything above made
+     confirmed writes, writes the account accepted and did not do, and undos. */
+  const o = await W._actOutcomes(env, W.monthKey());
+  ok(o.verified >= 3, 'confirmed writes are counted', o);
+  ok(o.not_confirmed >= 1, 'a write the account accepted and did not do is counted as such, not as done', o.not_confirmed);
+  ok(o.undone >= 2 && o.undo_failed >= 1, 'undos are counted, and an undo that did not take is not an undo', [o.undone, o.undo_failed]);
+  ok(o.verifiedRatePct > 0 && o.verifiedRatePct < 100, 'and the rate is confirmed over everything attempted', o.verifiedRatePct);
 }
 
 if (report('what-amv-did-can-be-taken-back') > 0) process.exitCode = 1;

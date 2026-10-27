@@ -428,6 +428,9 @@ async function adminStats(request, env) {
     })(),
     quality,
     speed,
+    /* Actions on people's accounts this month, by what AMV could confirm -
+       the measure of work actually done, not of messages sent. */
+    outcomes: await _actOutcomes(env, month),
     topSpenders,
   });
 }

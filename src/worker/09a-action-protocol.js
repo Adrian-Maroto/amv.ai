@@ -49,6 +49,27 @@ function _actContractProblems(reg){
   return out;
 }
 
+/* WORK DONE, COUNTED THE WAY IT IS CLAIMED (scale audit #32, #50).
+
+   The number that says whether AMV is doing what it exists for is not how
+   many messages were sent; it is how many things it did on somebody's behalf
+   that it then CHECKED were done - and how many it could not confirm, failed,
+   or had to take back. Counted per month as tallies (no shared object), from
+   the same places that decide what the person is told, so the owner's figure
+   and the person's screen cannot disagree. Never fails the action. */
+const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 'failed', 'undone', 'undo_failed', 'undo_refused'];
+async function _actCount(env, outcome, who){
+  try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) {}
+}
+async function _actOutcomes(env, month){
+  const out = {};
+  await Promise.all(ACT_OUTCOMES.map(async o => { out[o] = await _tallyGet(env, 'actout:' + month + ':' + o).catch(() => 0); }));
+  const done = out.verified + out.unchecked;
+  out.verifiedRatePct = done + out.not_confirmed + out.unverifiable + out.failed > 0
+    ? +((out.verified / (done + out.not_confirmed + out.unverifiable + out.failed)) * 100).toFixed(1) : null;
+  return out;
+}
+
 /* The receipt for one write: what happened, as checked, and how to take it
    back. Never throws - a receipt that cannot be made leaves the action done
    and reported, without the offer. */
@@ -108,19 +129,23 @@ async function connUndo(request, env){
   let v;
   try { v = await spec.undo.run(got.token, t.ref || {}); }
   catch (e) {
+    await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_failed', { by: user.email, action: name, error: String((e && e.message) || e).slice(0, 120) });
     return json({ error: 'undo_failed', message: 'That could not be undone. Nothing else was changed.' }, 502);
   }
   /* Somebody (or something) changed it after AMV did. Putting AMV's "before"
      back now would throw their work away, so it is refused and said. */
   if (v === 'moved') {
+    await _actCount(env, 'undo_refused', user.email);
     audit(env, 'action_undo_refused', { by: user.email, action: name });
     return json({ error: 'changed_since', message: 'It has been changed since AMV did it, so AMV left it alone. Change it in the account itself.' }, 409);
   }
   if (v === false) {
+    await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_not_confirmed', { by: user.email, action: name });
     return json({ error: 'not_confirmed', message: 'The account said yes, but when AMV checked, it was still there. Look in the account.' }, 502);
   }
+  await _actCount(env, 'undone', user.email);
   audit(env, 'action_undone', { by: user.email, action: name, verified: v === true });
   return json({ ok: true, action: name, undone: true, verified: v === true ? true : null,
     message: v === true ? 'Undone.' : 'Asked to undo it, but AMV could not check afterwards. Look in the account.' });
