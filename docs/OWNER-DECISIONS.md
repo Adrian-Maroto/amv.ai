@@ -433,6 +433,15 @@ Today a passing build goes to everybody at once. A staging Worker on its own
 address, then a share of traffic before all of it, needs a second Cloudflare
 environment and domain. *Owner provisions them.*
 
+**41. Security scanning on GitHub - TWO SWITCHES IN THE REPOSITORY'S SETTINGS.**
+Dependabot is configured in the repository now (`.github/dependabot.yml`): a
+short weekly list of dependency and pinned-Action updates, each tested before
+it can merge. Two more are settings, not files, and only the owner can turn
+them on: *Settings > Code security > CodeQL analysis > Set up > Default* (it
+scans every push for security mistakes in the code), and *Secret scanning*
+with *Push protection* (it refuses a push that contains a key). Both are free
+for this repository and change nothing else.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

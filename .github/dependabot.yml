@@ -1,0 +1,46 @@
+# Dependency updates (scale audit #38).
+#
+# Dependabot opens a pull request when a dependency has a newer release or a
+# security fix; nothing merges itself. Every pull request runs the same tests
+# as everything else, so an update that breaks AMV is caught before main.
+#
+# GitHub Actions are pinned to exact commits in the workflows (a tag can be
+# moved, a commit cannot) - which also means nobody notices when a pinned
+# Action gets a security release. The github-actions entry is what keeps the
+# pins current without giving up the pinning.
+#
+# Weekly, grouped, and limited, so it is a short list to read on Monday rather
+# than a stream of pull requests that teaches everybody to ignore them.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      tooling:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+  - package-ecosystem: npm
+    directory: /cloud
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /vscode
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
