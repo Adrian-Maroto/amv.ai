@@ -1969,8 +1969,8 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
        low announces itself, a cost that is too low does not. Anything that
        spends books all three here, or it will be invisible in exactly the
        place somebody is reading to decide whether AMV makes money. */
-    await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
-    await counter(env, `featcost:${what || 'other'}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    await _tallyAdd(env, `costtotal:${monthKey()}`, subject, amount, 86400000 * 70);
+    await _tallyAdd(env, `featcost:${what || 'other'}:${monthKey()}`, subject, amount, 86400000 * 70);
   } catch (e) {
     audit(env, 'spend_not_recorded', { what, subject, usd: amount, error: String((e && e.message) || e) });
   }
@@ -2847,6 +2847,34 @@ async function _counterKVFallback(env, name, payload) {
    expected or somebody pushing on it, and both are things an operator should
    hear once rather than discover from a dead sign-up page. */
 const NONESSENTIAL_DAILY_WRITES = 150;
+
+/* A TALLY EVERY ACCOUNT ADDS TO IS SIXTEEN TALLIES (scale audit #40).
+
+   The load probe (tools/load-probe.mjs) found the platform's reporting
+   totals - cost this month, cost per feature, active accounts, the funnel,
+   accounts open - each held in ONE object that every account's request
+   added to: one actor, one at a time, for the whole platform, on the path
+   of every chat turn. A total is a sum, and a sum does not need one place.
+   Each is now sixteen objects, `<name>:s0..s15`, an account always adding
+   to the same one (so a decrement meets its increment), and a read adds
+   them up together with the old single object, so nothing counted before
+   this is lost. Reads are the owner's screens, never a request's path. */
+const TALLY_SHARDS = 16;
+function _tallyShardOf(who) {
+  let h = 2166136261;
+  const s = String(who == null ? Math.random() : who);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % TALLY_SHARDS;
+}
+async function _tallyAdd(env, name, who, amount, ttlMs) {
+  return counter(env, name + ':s' + _tallyShardOf(who), ttlMs ? { op: 'incr', amount, ttlMs } : { op: 'incr', amount });
+}
+async function _tallyGet(env, name) {
+  const names = [name];
+  for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
+  const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
+  return vals.reduce((a, b) => a + b, 0);
+}
 async function _nonEssentialWrite(env, what) {
   const cap = Math.max(1, parseInt(env.NONESSENTIAL_WRITE_CAP || '', 10) || NONESSENTIAL_DAILY_WRITES);
   const res = await counter(env, `noness:${todayKey()}`,
@@ -5729,8 +5757,8 @@ async function authSsoFinish(request, env){
   if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
   const acct = fed.acct, created = fed.created;
   if(created){
-    try{ await counter(env, 'popaccounts', { op:'incr', amount:1 }); }catch(e){ /* best-effort: a public count of accounts */ }
-    try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
+    try{ await _tallyAdd(env, 'popaccounts', email, 1); }catch(e){ /* best-effort: a public count of accounts */ }
+    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
   }
   /* Into the company's team, if there is a seat. No seat is a refusal, not a
      personal account: the company is paying for these, and somebody signing in
@@ -10870,7 +10898,7 @@ async function runDueAutomations(env, atMs, opts){
           const dAcct = c - itemBooked;
           const dGlobal = c - itemGlobalBooked;
           if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
-          if(c>0) await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
+          if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
           if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
           itemBooked = 0; itemGlobalBooked = 0;
         }catch(e){ await _writeFailed(env, 'job_settle', e); }
@@ -17272,7 +17300,7 @@ async function authSignup(request, env){
 
      Counted here, at the one place an account comes into existence, so it is
      exact at any size and costs one increment. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
+  try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
   /* `em`, not `email`. The raw body value is whatever was typed - case and
      surrounding whitespace included - and every other record this account
      touches is keyed on the normalised address. Marking the funnel under the
@@ -17281,7 +17309,7 @@ async function authSignup(request, env){
      and the conversion rate read low for ever. Sibling of AMV-SP-01: the same
      wrong variable at the same call, throwing in one path and silently
      miscounting in the other. */
-  try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }catch(e){}
+  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
@@ -17955,8 +17983,8 @@ async function authGoogle(request, env) {
 
          The population counter is incremented here too, which the password
          path did and this one did not - so the two providers now agree. */
-      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
-      try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }
+      try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
+      try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }
       catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
@@ -19096,7 +19124,7 @@ async function authDeleteAccount(request, env) {
   /* Uncounted, so the conversion denominator follows reality. A counter that
      only ever goes up would make the funnel look worse every time somebody
      leaves, which is its own kind of wrong number. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){ /* best-effort: a public count of accounts */ }
+  try{ await _tallyAdd(env, 'popaccounts', email, -1); }catch(e){ /* best-effort: a public count of accounts */ }
   /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
      both ways or the code would keep resolving to an account that no longer
      exists, and the activity log is a record OF this person - erasure means it
@@ -21879,11 +21907,11 @@ async function aiProxy(request, env, ctx, principal) {
     try {
       const period = _periodKeyOf(user);
       if (msgRes.value === 1) {
-        await counter(env, `cohort:active:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await _tallyAdd(env, `cohort:active:${period}`, subject, 1, 86400000 * 70);
       }
       const breakEven = _breakEvenMessages(user);
       if (breakEven > 0 && msgRes.value === breakEven) {
-        await counter(env, `cohort:heavy:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await _tallyAdd(env, `cohort:heavy:${period}`, subject, 1, 86400000 * 70);
         audit(env, 'cohort_heavy', { plan: user.plan, at: breakEven });
       }
     } catch (e) { /* never let a measurement refuse a message */ }
@@ -23640,7 +23668,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
-  await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+  await _tallyAdd(env, `costtotal:${monthKey()}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
 
   /* ACTIVATED, at the only moment that actually proves it: AMV finished writing
      something for this person. Not "opened the app", not "typed into the box" -
@@ -23658,9 +23686,10 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      which is a small price for being able to see the unit economics at all. */
   try {
     const mk = monthKey();
-    await counter(env, `featcost:${feature || 'chat'}:${mk}`, { op: 'incr', amount: cost, ttlMs: 86400000 * 70 });
+    await _tallyAdd(env, `featcost:${feature || 'chat'}:${mk}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
     const saved = (cacheRead / 1e6) * eng.inCost * 0.90;   // what a cache read did NOT cost
-    if (saved > 0) await counter(env, `cachesave:${mk}`, { op: 'incr', amount: saved, ttlMs: 86400000 * 70 });
+    const payer = user && (user.billingSubject || user.email);
+    if (saved > 0) await _tallyAdd(env, `cachesave:${mk}`, payer, saved, 86400000 * 70);
     /* Latency, as a histogram rather than a log. Buckets mean the owner can see
        "most answers start inside a second" without AMV keeping a record of who
        asked what and when - the shape is the useful part, the individual
@@ -23670,9 +23699,9 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
       if (ttfb > 0) {
         const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500'
                 : ttfb < 5000 ? 'p5000' : 'slow';
-        await counter(env, `ttfb:${eng.key || 'unknown'}:${b}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
-        await counter(env, `ttfbsum:${mk}`, { op: 'incr', amount: ttfb, ttlMs: 86400000 * 70 });
-        await counter(env, `ttfbn:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await _tallyAdd(env, `ttfb:${eng.key || 'unknown'}:${b}:${mk}`, payer, 1, 86400000 * 70);
+        await _tallyAdd(env, `ttfbsum:${mk}`, payer, ttfb, 86400000 * 70);
+        await _tallyAdd(env, `ttfbn:${mk}`, payer, 1, 86400000 * 70);
       }
     } catch (e) { /* a measurement must never break the response it measured */ }
   } catch (e) { /* reporting must never break metering */ }
@@ -26689,8 +26718,8 @@ const SWEEP_SCAN_LIMIT = 2000;
    something a cron job should be making at four in the morning. */
 async function runCohortCheck(env, now = Date.now()) {
   const period = new Date(now).toISOString().slice(0, 7);          // the calendar month
-  const active = (await counter(env, `cohort:active:${period}`, { op: 'get' })).value || 0;
-  const heavy  = (await counter(env, `cohort:heavy:${period}`,  { op: 'get' })).value || 0;
+  const active = await _tallyGet(env, `cohort:active:${period}`);
+  const heavy  = await _tallyGet(env, `cohort:heavy:${period}`);
 
   /* A share computed from a handful of accounts is noise. Three heavy out of
      five is sixty percent and means nothing at all, and an alarm that fires on
@@ -31589,9 +31618,7 @@ async function _markActive(env, email){
     const marker = `active:${email}:${day}`;
     if(await env.AMV_KV.get(marker)) return;              // already counted today
     await env.AMV_KV.put(marker, '1', { expirationTtl: 2 * 86400 });
-    const key = `grow:active:${day}`;
-    const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
+    await _growthAdd(env, 'active', day, email);
     /* Coming back is a SECOND distinct day, not a second session - somebody who
        opens AMV twice in one afternoon has not come back yet. The first active
        day is remembered for as long as the funnel counts, so this stays true
@@ -31607,7 +31634,7 @@ async function _markActive(env, email){
    just a snapshot. One KV key per day (grow:signup:YYYY-MM-DD). 60-day TTL keeps
    it bounded. This is what turns "you have 40 users" into "signups are up 3x
    week over week" - the number that actually tells you if it's working. ── */
-async function _recordGrowth(env, kind){
+async function _recordGrowth(env, kind, who){
   /* BEST-EFFORT ON FAILURE WAS NOT BEST-EFFORT ON BUDGET.
 
      This has always been wrapped so a growth stat can never fail a sign-up.
@@ -31635,13 +31662,25 @@ async function _recordGrowth(env, kind){
      referral - which is what actually amplifies. The funnel above is once per
      user per step, reads first, and is deliberately left alone: gating it
      measured WORSE (9 writes to 11) for a write that mostly never happens. */
-  if(!await _nonEssentialWrite(env, 'a growth stat')) return;
-  const day = todayKey();
+  try{ await _growthAdd(env, kind, todayKey(), who); }
+  catch(e){ /* growth stats are best-effort, never block signup */ }
+}
+/* WHERE A GROWTH COUNT GOES (scale audit #40).
+   With the counter object bound - every real deployment - a sharded tally:
+   no KV write at all, so it needs no place in the non-essential allowance,
+   and nothing caps it. That allowance had been capping it: the load probe
+   counted 150 of 200 sign-ups in a day and dropped the rest, so the owner's
+   growth line would have gone flat on the day growth arrived. And the KV
+   form below was a read then a write of ONE key, which loses a count when
+   two land together and is refused past about one write a second.
+   Without the object (a development machine) it stays in KV, behind the
+   allowance, as before. */
+async function _growthAdd(env, kind, day, who){
+  if(env.AMV_COUNTER){ await _tallyAdd(env, `grow:${kind}:${day}`, who, 1, 60 * 86400000); return; }
+  if(kind !== 'active' && !await _nonEssentialWrite(env, 'a growth stat')) return;
   const key = `grow:${kind}:${day}`;
-  try{
-    const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
-  }catch(e){ /* growth stats are best-effort, never block signup */ }
+  const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
+  await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
 }
 
 /* ── THE FUNNEL ────────────────────────────────────────────────────────────
@@ -31680,8 +31719,8 @@ async function _funnelMark(env, email, step){
        from 9 writes to 11. The per-event counter below is the one that needed
        it. */
     await env.AMV_KV.put(k, String(Date.now()), { expirationTtl: FUNNEL_TTL_S });
-    await counter(env, `funnel:${step}`, { op: 'incr', amount: 1 });
-    if(step !== 'signup') await _recordGrowth(env, step);
+    await _tallyAdd(env, `funnel:${step}`, em, 1);
+    if(step !== 'signup') await _recordGrowth(env, step, em);
     /* How long it took them to pay, accumulated rather than stored per user, so
        the average is available without reading every account. */
     if(step === 'paid'){
@@ -31699,7 +31738,7 @@ async function _funnelMark(env, email, step){
 async function _funnelReport(env){
   const out = {};
   for(const step of FUNNEL_STEPS){
-    try{ out[step] = Math.max(0, (await counter(env, `funnel:${step}`, { op: 'get' })).value || 0); }
+    try{ out[step] = Math.max(0, await _tallyGet(env, `funnel:${step}`)); }
     catch(e){ out[step] = 0; }
   }
   const n = out.signup || 0;
@@ -31730,8 +31769,10 @@ async function _growthSeries(env, kind, days){
   for(let i = days - 1; i >= 0; i--){
     const d = new Date(now.getTime() - i * 86400000);
     const key = `grow:${kind}:${d.toISOString().slice(0,10)}`;
-    const v = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    out.push({ date: d.toISOString().slice(0,10), count: v });
+    /* Both stores: the tally, and the KV count kept before it existed. */
+    const kv = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
+    const t = env.AMV_COUNTER ? await _tallyGet(env, key) : 0;
+    out.push({ date: d.toISOString().slice(0,10), count: kv + t });
   }
   return out;
 }
@@ -31839,10 +31880,10 @@ async function adminStats(request, env) {
   const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
-    const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;
+    const v = await _tallyGet(env, `featcost:${feat}:${month}`);
     if (v > 0) featureCost[feat] = +v.toFixed(2);
   }
-  const cacheSaved = +((await counter(env, `cachesave:${month}`, { op: 'get' })).value || 0).toFixed(2);
+  const cacheSaved = +(await _tallyGet(env, `cachesave:${month}`)).toFixed(2);
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
@@ -31856,16 +31897,13 @@ async function adminStats(request, env) {
   /* AMV-098: how long people waited. The average is the headline; the buckets
      are what tell you whether it is one bad engine or all of them. */
   const speed = await (async () => {
-    const sum = (await counter(env, `ttfbsum:${month}`, { op: 'get' })).value || 0;
-    const n = (await counter(env, `ttfbn:${month}`, { op: 'get' })).value || 0;
+    /* Read together, not one after another: each is a sum of shares. */
+    const [sum, n] = await Promise.all([_tallyGet(env, `ttfbsum:${month}`), _tallyGet(env, `ttfbn:${month}`)]);
     const buckets = {};
-    for (const b of ['p500', 'p1000', 'p2500', 'p5000', 'slow']) {
-      let total = 0;
-      for (const k of Object.keys(ENGINES)) {
-        total += (await counter(env, `ttfb:${k}:${b}:${month}`, { op: 'get' })).value || 0;
-      }
-      buckets[b] = total;
-    }
+    await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(async (b) => {
+      const per = await Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`)));
+      buckets[b] = per.reduce((a, c) => a + c, 0);
+    }));
     const fast = buckets.p500 + buckets.p1000;
     return { samples: n, avgFirstTokenMs: n ? Math.round(sum / n) : null, buckets,
              underOneSecondPct: n ? +((fast / n) * 100).toFixed(1) : null };
@@ -31882,7 +31920,7 @@ async function adminStats(request, env) {
     if (plan === 'team' || plan === 'custom') continue;
     popMrr += _planPriceUSD(plan) * n;
   }
-  const totalCost0 = (await counter(env, `costtotal:${month}`, { op: 'get' })).value || 0;
+  const totalCost0 = await _tallyGet(env, `costtotal:${month}`);
 
   if (truncated) {
     // The scan is a sample; take population and revenue from the counters.
@@ -31928,7 +31966,7 @@ async function adminStats(request, env) {
      a deployment that predates it, where the old wrong answer is still better
      than none - and `basis` says which one this is, because a number whose
      meaning changes silently is how the first version of this got believed. */
-  const popAccounts = (await counter(env, 'popaccounts', { op: 'get' })).value || 0;
+  const popAccounts = await _tallyGet(env, 'popaccounts');
   const countedAccounts = popAccounts > 0 ? popAccounts : entRows.length;
   const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
   const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;

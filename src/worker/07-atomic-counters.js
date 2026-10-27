@@ -437,6 +437,34 @@ async function _counterKVFallback(env, name, payload) {
    expected or somebody pushing on it, and both are things an operator should
    hear once rather than discover from a dead sign-up page. */
 const NONESSENTIAL_DAILY_WRITES = 150;
+
+/* A TALLY EVERY ACCOUNT ADDS TO IS SIXTEEN TALLIES (scale audit #40).
+
+   The load probe (tools/load-probe.mjs) found the platform's reporting
+   totals - cost this month, cost per feature, active accounts, the funnel,
+   accounts open - each held in ONE object that every account's request
+   added to: one actor, one at a time, for the whole platform, on the path
+   of every chat turn. A total is a sum, and a sum does not need one place.
+   Each is now sixteen objects, `<name>:s0..s15`, an account always adding
+   to the same one (so a decrement meets its increment), and a read adds
+   them up together with the old single object, so nothing counted before
+   this is lost. Reads are the owner's screens, never a request's path. */
+const TALLY_SHARDS = 16;
+function _tallyShardOf(who) {
+  let h = 2166136261;
+  const s = String(who == null ? Math.random() : who);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % TALLY_SHARDS;
+}
+async function _tallyAdd(env, name, who, amount, ttlMs) {
+  return counter(env, name + ':s' + _tallyShardOf(who), ttlMs ? { op: 'incr', amount, ttlMs } : { op: 'incr', amount });
+}
+async function _tallyGet(env, name) {
+  const names = [name];
+  for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
+  const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
+  return vals.reduce((a, b) => a + b, 0);
+}
 async function _nonEssentialWrite(env, what) {
   const cap = Math.max(1, parseInt(env.NONESSENTIAL_WRITE_CAP || '', 10) || NONESSENTIAL_DAILY_WRITES);
   const res = await counter(env, `noness:${todayKey()}`,

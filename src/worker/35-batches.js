@@ -753,11 +753,11 @@ async function aiProxy(request, env, ctx, principal) {
     try {
       const period = _periodKeyOf(user);
       if (msgRes.value === 1) {
-        await counter(env, `cohort:active:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await _tallyAdd(env, `cohort:active:${period}`, subject, 1, 86400000 * 70);
       }
       const breakEven = _breakEvenMessages(user);
       if (breakEven > 0 && msgRes.value === breakEven) {
-        await counter(env, `cohort:heavy:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        await _tallyAdd(env, `cohort:heavy:${period}`, subject, 1, 86400000 * 70);
         audit(env, 'cohort_heavy', { plan: user.plan, at: breakEven });
       }
     } catch (e) { /* never let a measurement refuse a message */ }

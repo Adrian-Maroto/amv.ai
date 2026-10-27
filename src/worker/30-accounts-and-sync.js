@@ -428,7 +428,7 @@ async function authSignup(request, env){
 
      Counted here, at the one place an account comes into existence, so it is
      exact at any size and costs one increment. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
+  try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
   /* `em`, not `email`. The raw body value is whatever was typed - case and
      surrounding whitespace included - and every other record this account
      touches is keyed on the normalised address. Marking the funnel under the
@@ -437,7 +437,7 @@ async function authSignup(request, env){
      and the conversion rate read low for ever. Sibling of AMV-SP-01: the same
      wrong variable at the same call, throwing in one path and silently
      miscounting in the other. */
-  try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }catch(e){}
+  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}

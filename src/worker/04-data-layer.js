@@ -1044,8 +1044,8 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
        low announces itself, a cost that is too low does not. Anything that
        spends books all three here, or it will be invisible in exactly the
        place somebody is reading to decide whether AMV makes money. */
-    await counter(env, `costtotal:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
-    await counter(env, `featcost:${what || 'other'}:${monthKey()}`, { op: 'incr', amount, ttlMs: 86400000 * 70 });
+    await _tallyAdd(env, `costtotal:${monthKey()}`, subject, amount, 86400000 * 70);
+    await _tallyAdd(env, `featcost:${what || 'other'}:${monthKey()}`, subject, amount, 86400000 * 70);
   } catch (e) {
     audit(env, 'spend_not_recorded', { what, subject, usd: amount, error: String((e && e.message) || e) });
   }

@@ -36,7 +36,12 @@ const worker = W.default;
 /* Read a maintained counter the way the product does. A module namespace is
    frozen, so this is a local helper rather than a property on it. */
 const countOf = async (env, name) => {
-  try { return (await W.counter(env, name, { op: 'get' })).value || 0; } catch (e) { return 0; }
+  /* A platform total is a sum of shares now (_tallyAdd). */
+  let n = 0;
+  for (const nm of [name, ...Array.from({ length: 16 }, (_, k) => name + ':s' + k)]) {
+    try { n += (await W.counter(env, nm, { op: 'get' })).value || 0; } catch (e) {}
+  }
+  return n;
 };
 
 const realFetch = globalThis.fetch;

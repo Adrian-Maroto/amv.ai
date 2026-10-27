@@ -153,8 +153,10 @@ section('It costs the same whether there are ten customers or ten million');
   ok(fn.length > 200, 'the check was found', fn.length);
   ok(!/scan\(/.test(fn), 'it does not scan the accounts', true);
   ok(!/DB\.get/.test(fn), 'and reads no account record', true);
-  const reads = (fn.match(/op: 'get'/g) || []).length;
-  ok(reads === 2, 'exactly two counter reads, whatever the size of the business', reads);
+  /* Two totals, each a fixed number of counter reads (a sum of shares - see
+     _tallyGet): a cost that does not grow with the customer list. */
+  const reads = (fn.match(/op: 'get'|_tallyGet\(/g) || []).length;
+  ok(reads === 2, 'exactly two totals read, whatever the size of the business', reads);
 }
 
 section('And it reports rather than acts');

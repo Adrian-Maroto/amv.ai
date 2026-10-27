@@ -485,8 +485,8 @@ async function authGoogle(request, env) {
 
          The population counter is incremented here too, which the password
          path did and this one did not - so the two providers now agree. */
-      try{ await counter(env, 'popaccounts', { op: 'incr', amount: 1 }); }catch(e){ /* best-effort: a public count of accounts */ }
-      try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, em, 'signup'); }
+      try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
+      try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }
       catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
@@ -1626,7 +1626,7 @@ async function authDeleteAccount(request, env) {
   /* Uncounted, so the conversion denominator follows reality. A counter that
      only ever goes up would make the funnel look worse every time somebody
      leaves, which is its own kind of wrong number. */
-  try{ await counter(env, 'popaccounts', { op: 'incr', amount: -1 }); }catch(e){ /* best-effort: a public count of accounts */ }
+  try{ await _tallyAdd(env, 'popaccounts', email, -1); }catch(e){ /* best-effort: a public count of accounts */ }
   /* Loose per-user keys that are not DB `kind` rows. The referral pair must go
      both ways or the code would keep resolving to an account that no longer
      exists, and the activity log is a record OF this person - erasure means it

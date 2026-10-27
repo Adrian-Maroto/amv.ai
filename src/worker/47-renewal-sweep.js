@@ -54,8 +54,8 @@ const SWEEP_SCAN_LIMIT = 2000;
    something a cron job should be making at four in the morning. */
 async function runCohortCheck(env, now = Date.now()) {
   const period = new Date(now).toISOString().slice(0, 7);          // the calendar month
-  const active = (await counter(env, `cohort:active:${period}`, { op: 'get' })).value || 0;
-  const heavy  = (await counter(env, `cohort:heavy:${period}`,  { op: 'get' })).value || 0;
+  const active = await _tallyGet(env, `cohort:active:${period}`);
+  const heavy  = await _tallyGet(env, `cohort:heavy:${period}`);
 
   /* A share computed from a handful of accounts is noise. Three heavy out of
      five is sixty percent and means nothing at all, and an alarm that fires on

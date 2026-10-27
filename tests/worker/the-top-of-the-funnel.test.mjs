@@ -72,9 +72,12 @@ section('An arrival is counted');
   const d = await r.json();
   ok(r.status === 200 && d.ok === true, 'the visit is accepted', d);
   ok(d.counted === true, 'and says it counted', d.counted);
-  const key = [...mkEnvRef.AMV_KV._map.keys()].find(k => /^grow:visit:/.test(k));
+  /* Counted in the counter object now, as one share of a tally (_growthAdd):
+     no KV write at all, so nothing caps it and nothing is shared by everyone. */
+  const key = [...counters.keys()].find(k => /^grow:visit:\d{4}-\d\d-\d\d:s\d+$/.test(k));
   ok(!!key, 'a daily visit counter exists', key);
-  ok(mkEnvRef.AMV_KV._map.get(key) === '1', 'holding one', mkEnvRef.AMV_KV._map.get(key));
+  ok(counters.get(key) === 1, 'holding one', counters.get(key));
+  ok(![...mkEnvRef.AMV_KV._map.keys()].some(k => /^grow:/.test(k)), 'and it cost no KV write');
 }
 
 section('It counts, and that is ALL it stores');

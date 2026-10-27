@@ -214,7 +214,9 @@ section('The person is charged for BOTH calls, because AMV pays for both');
   };
   const tokens = await sumByPrefix(`ctr:usg:${USER}:`);
   const spend  = await sumByPrefix(`ctr:cost:${USER}:`);
-  const house  = await num(`ctr:costtotal:${month}`);
+  /* AMV's own total is up to sixteen shares now (_tallyAdd), summed. */
+  let house = await num(`ctr:costtotal:${month}`);
+  for (let k = 0; k < 16; k++) house += await num(`ctr:costtotal:${month}:s${k}`);
 
   ok(tokens > 0, 'the account\u2019s token usage was written by the Worker', tokens);
   /* 120 and 260 input tokens were declared across the two turns. Billing one

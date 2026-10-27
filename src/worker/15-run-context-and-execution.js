@@ -1946,7 +1946,7 @@ async function runDueAutomations(env, atMs, opts){
           const dAcct = c - itemBooked;
           const dGlobal = c - itemGlobalBooked;
           if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
-          if(c>0) await counter(env, `costtotal:${monthKey()}`, { op:'incr', amount:c, ttlMs: 86400000*70 });
+          if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
           if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
           itemBooked = 0; itemGlobalBooked = 0;
         }catch(e){ await _writeFailed(env, 'job_settle', e); }

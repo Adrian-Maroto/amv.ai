@@ -356,8 +356,8 @@ async function authSsoFinish(request, env){
   if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
   const acct = fed.acct, created = fed.created;
   if(created){
-    try{ await counter(env, 'popaccounts', { op:'incr', amount:1 }); }catch(e){ /* best-effort: a public count of accounts */ }
-    try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
+    try{ await _tallyAdd(env, 'popaccounts', email, 1); }catch(e){ /* best-effort: a public count of accounts */ }
+    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
   }
   /* Into the company's team, if there is a seat. No seat is a refusal, not a
      personal account: the company is paying for these, and somebody signing in

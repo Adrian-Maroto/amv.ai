@@ -22,9 +22,7 @@ async function _markActive(env, email){
     const marker = `active:${email}:${day}`;
     if(await env.AMV_KV.get(marker)) return;              // already counted today
     await env.AMV_KV.put(marker, '1', { expirationTtl: 2 * 86400 });
-    const key = `grow:active:${day}`;
-    const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
+    await _growthAdd(env, 'active', day, email);
     /* Coming back is a SECOND distinct day, not a second session - somebody who
        opens AMV twice in one afternoon has not come back yet. The first active
        day is remembered for as long as the funnel counts, so this stays true
@@ -40,7 +38,7 @@ async function _markActive(env, email){
    just a snapshot. One KV key per day (grow:signup:YYYY-MM-DD). 60-day TTL keeps
    it bounded. This is what turns "you have 40 users" into "signups are up 3x
    week over week" - the number that actually tells you if it's working. ── */
-async function _recordGrowth(env, kind){
+async function _recordGrowth(env, kind, who){
   /* BEST-EFFORT ON FAILURE WAS NOT BEST-EFFORT ON BUDGET.
 
      This has always been wrapped so a growth stat can never fail a sign-up.
@@ -68,13 +66,25 @@ async function _recordGrowth(env, kind){
      referral - which is what actually amplifies. The funnel above is once per
      user per step, reads first, and is deliberately left alone: gating it
      measured WORSE (9 writes to 11) for a write that mostly never happens. */
-  if(!await _nonEssentialWrite(env, 'a growth stat')) return;
-  const day = todayKey();
+  try{ await _growthAdd(env, kind, todayKey(), who); }
+  catch(e){ /* growth stats are best-effort, never block signup */ }
+}
+/* WHERE A GROWTH COUNT GOES (scale audit #40).
+   With the counter object bound - every real deployment - a sharded tally:
+   no KV write at all, so it needs no place in the non-essential allowance,
+   and nothing caps it. That allowance had been capping it: the load probe
+   counted 150 of 200 sign-ups in a day and dropped the rest, so the owner's
+   growth line would have gone flat on the day growth arrived. And the KV
+   form below was a read then a write of ONE key, which loses a count when
+   two land together and is refused past about one write a second.
+   Without the object (a development machine) it stays in KV, behind the
+   allowance, as before. */
+async function _growthAdd(env, kind, day, who){
+  if(env.AMV_COUNTER){ await _tallyAdd(env, `grow:${kind}:${day}`, who, 1, 60 * 86400000); return; }
+  if(kind !== 'active' && !await _nonEssentialWrite(env, 'a growth stat')) return;
   const key = `grow:${kind}:${day}`;
-  try{
-    const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
-  }catch(e){ /* growth stats are best-effort, never block signup */ }
+  const cur = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
+  await env.AMV_KV.put(key, String(cur + 1), { expirationTtl: 60 * 86400 });
 }
 
 /* ── THE FUNNEL ────────────────────────────────────────────────────────────
@@ -113,8 +123,8 @@ async function _funnelMark(env, email, step){
        from 9 writes to 11. The per-event counter below is the one that needed
        it. */
     await env.AMV_KV.put(k, String(Date.now()), { expirationTtl: FUNNEL_TTL_S });
-    await counter(env, `funnel:${step}`, { op: 'incr', amount: 1 });
-    if(step !== 'signup') await _recordGrowth(env, step);
+    await _tallyAdd(env, `funnel:${step}`, em, 1);
+    if(step !== 'signup') await _recordGrowth(env, step, em);
     /* How long it took them to pay, accumulated rather than stored per user, so
        the average is available without reading every account. */
     if(step === 'paid'){
@@ -132,7 +142,7 @@ async function _funnelMark(env, email, step){
 async function _funnelReport(env){
   const out = {};
   for(const step of FUNNEL_STEPS){
-    try{ out[step] = Math.max(0, (await counter(env, `funnel:${step}`, { op: 'get' })).value || 0); }
+    try{ out[step] = Math.max(0, await _tallyGet(env, `funnel:${step}`)); }
     catch(e){ out[step] = 0; }
   }
   const n = out.signup || 0;
@@ -163,8 +173,10 @@ async function _growthSeries(env, kind, days){
   for(let i = days - 1; i >= 0; i--){
     const d = new Date(now.getTime() - i * 86400000);
     const key = `grow:${kind}:${d.toISOString().slice(0,10)}`;
-    const v = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
-    out.push({ date: d.toISOString().slice(0,10), count: v });
+    /* Both stores: the tally, and the KV count kept before it existed. */
+    const kv = parseInt(await env.AMV_KV.get(key) || '0', 10) || 0;
+    const t = env.AMV_COUNTER ? await _tallyGet(env, key) : 0;
+    out.push({ date: d.toISOString().slice(0,10), count: kv + t });
   }
   return out;
 }
@@ -272,10 +284,10 @@ async function adminStats(request, env) {
   const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
-    const v = (await counter(env, `featcost:${feat}:${month}`, { op: 'get' })).value || 0;
+    const v = await _tallyGet(env, `featcost:${feat}:${month}`);
     if (v > 0) featureCost[feat] = +v.toFixed(2);
   }
-  const cacheSaved = +((await counter(env, `cachesave:${month}`, { op: 'get' })).value || 0).toFixed(2);
+  const cacheSaved = +(await _tallyGet(env, `cachesave:${month}`)).toFixed(2);
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
@@ -289,16 +301,13 @@ async function adminStats(request, env) {
   /* AMV-098: how long people waited. The average is the headline; the buckets
      are what tell you whether it is one bad engine or all of them. */
   const speed = await (async () => {
-    const sum = (await counter(env, `ttfbsum:${month}`, { op: 'get' })).value || 0;
-    const n = (await counter(env, `ttfbn:${month}`, { op: 'get' })).value || 0;
+    /* Read together, not one after another: each is a sum of shares. */
+    const [sum, n] = await Promise.all([_tallyGet(env, `ttfbsum:${month}`), _tallyGet(env, `ttfbn:${month}`)]);
     const buckets = {};
-    for (const b of ['p500', 'p1000', 'p2500', 'p5000', 'slow']) {
-      let total = 0;
-      for (const k of Object.keys(ENGINES)) {
-        total += (await counter(env, `ttfb:${k}:${b}:${month}`, { op: 'get' })).value || 0;
-      }
-      buckets[b] = total;
-    }
+    await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(async (b) => {
+      const per = await Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`)));
+      buckets[b] = per.reduce((a, c) => a + c, 0);
+    }));
     const fast = buckets.p500 + buckets.p1000;
     return { samples: n, avgFirstTokenMs: n ? Math.round(sum / n) : null, buckets,
              underOneSecondPct: n ? +((fast / n) * 100).toFixed(1) : null };
@@ -315,7 +324,7 @@ async function adminStats(request, env) {
     if (plan === 'team' || plan === 'custom') continue;
     popMrr += _planPriceUSD(plan) * n;
   }
-  const totalCost0 = (await counter(env, `costtotal:${month}`, { op: 'get' })).value || 0;
+  const totalCost0 = await _tallyGet(env, `costtotal:${month}`);
 
   if (truncated) {
     // The scan is a sample; take population and revenue from the counters.
@@ -361,7 +370,7 @@ async function adminStats(request, env) {
      a deployment that predates it, where the old wrong answer is still better
      than none - and `basis` says which one this is, because a number whose
      meaning changes silently is how the first version of this got believed. */
-  const popAccounts = (await counter(env, 'popaccounts', { op: 'get' })).value || 0;
+  const popAccounts = await _tallyGet(env, 'popaccounts');
   const countedAccounts = popAccounts > 0 ? popAccounts : entRows.length;
   const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
   const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;

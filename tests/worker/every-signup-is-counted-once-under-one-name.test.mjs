@@ -103,8 +103,11 @@ globalThis.fetch = async (url) => {
 };
 const g = (env, email) => call(env, '/auth/google', { credential: idToken(email) });
 
-const pop = (env) => env._vals.get('popaccounts') || 0;
-const funnelSignups = (env) => env._vals.get('funnel:signup') || 0;
+/* A platform total is up to sixteen shares now (_tallyAdd), read as their
+   sum together with the old single counter. */
+const tally = (env, name) => [...env._vals.entries()].filter(([k]) => k === name || new RegExp('^' + name + ':s\\d+$').test(k)).reduce((a, [, v]) => a + (+v || 0), 0);
+const pop = (env) => tally(env, 'popaccounts');
+const funnelSignups = (env) => tally(env, 'funnel:signup');
 const funnelKeys = (env) => [...env.AMV_KV._map.keys()].filter(k => k.startsWith('fstep:'));
 
 section('The password path counts a signup, which is the standard to match');
@@ -222,7 +225,7 @@ section('Neither path reads a variable it does not define');
   ok(gbody.length > 400, 'the Google handler was read', gbody.length);
   ok(!/_funnelMark\(env, email\b/.test(gbody), 'the Google path does not name a variable it lacks', true);
   ok(/_funnelMark\(env, em\b/.test(gbody), 'it uses the address it actually has', true);
-  ok(/counter\(env, 'popaccounts'/.test(gbody), 'and counts the account, like the password path', true);
+  ok(/_tallyAdd\(env, 'popaccounts', em\b/.test(gbody), 'and counts the account, like the password path', true);
 
   const j = src.indexOf('async function authSignup');
   const sbody = src.slice(j, src.indexOf('async function authLogin'));
