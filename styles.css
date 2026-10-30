@@ -17403,11 +17403,3 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .fd-sw-add{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }
 .fd-sw-add .fp-in{ flex:1 1 220px; }
 
-/* LAYER A348 - the first-run question: what AMV is for, as six chips. */
-.fr-goal{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); margin:var(--sp-2) 0 var(--sp-3); }
-.fr-goal-q{ flex:1 0 100%; font-size:var(--t-sm); color:var(--mu); }
-.fr-goal-c{ min-height:36px; padding:0 var(--sp-3); border-radius:var(--r-pill); border:1px solid var(--bd); background:var(--s2); color:var(--tx); font:inherit; font-size:var(--t-sm); cursor:pointer; }
-.fr-goal-c:hover{ border-color:var(--accent); }
-.fr-goal-c.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--tx); }
-.fr-goal-c:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
-
