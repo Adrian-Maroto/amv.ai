@@ -15564,3 +15564,18 @@ router's generic refusal instead, on a one-minute recording or a 900KB file.
 Rule: a limit that a later stage enforces is checked against every earlier
 stage that can refuse first - and the check is a test that SENDS a request
 at the later limit through the whole path, not two numbers read side by side.
+
+## 619. A screen must be on the screen before it is improved
+
+Working through the scale audit's onboarding point, I gave the first-run card
+a question and six tailored sets of starts, translated into seventeen
+languages - and the card had not been on any screen for weeks. The owner had
+asked for the big boxes to go; a greeting with small chips replaced it, and
+`tests/e2e/firstrun.test.mjs` holds that nothing renders the card. The new
+code was dead on arrival, and the one live line it added (a redraw that
+called the card again) is what the test caught. It also cut across an owner
+decision that an audit recommendation does not overrule.
+Rule: before changing a screen, find what renders it (grep its callers in
+`src/app`) and read the test that names it. An audit's "do X" never outranks
+the owner's "do not X" - the conflict goes to the owner, as the password
+length, image generation and agents did (owner decisions 35-37).
