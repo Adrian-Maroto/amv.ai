@@ -41,6 +41,39 @@ const _FIRSTRUN_STARTS = [
     p:'Build me a small working web app I can actually use, run it, and show me the result. Ask me what it should do first.' },
 ];
 
+/* WHAT DO YOU WANT AMV FOR? (scale audit #48)
+
+   Three starts suit nobody in particular. One question, answered with a tap,
+   and the starts become two that show AMV doing real work in that part of
+   the person's life - each still a prompt that produces the thing it names.
+   The answer is kept on this device only; nothing about it is sent. */
+const FIRSTRUN_GOAL_KEY = 'amv_goal';
+const _FIRSTRUN_GOALS = {
+  everyday: { t:'Everyday life', starts: [
+    { t:'Plan a week of dinners', p:'Plan a week of dinners for my household on a budget, with one shopping list. Ask me how many people and anything we do not eat first.' },
+    { t:'Write a message for me', p:'Help me write a polite, firm message about a problem I need sorted out. Ask me who it is to and what happened first.' } ] },
+  work: { t:'Work', starts: [
+    { t:'Brief me every morning', p:'Every weekday morning, brief me on what changed in my industry, in five lines. Ask me which industry first.' },
+    { t:'Turn notes into a summary', p:'Turn my notes into a one-page summary with decisions and action items, each with an owner. Ask me to paste the notes first.' } ] },
+  school: { t:'School', starts: [
+    { t:'Explain it, then quiz me', p:'Explain a topic I am studying in plain words, then quiz me with five questions and mark my answers. Ask me the topic first.' },
+    { t:'Make me a study plan', p:'Make me a day-by-day study plan for my next exam. Ask me the subject, the exam date and how much time I have each day first.' } ] },
+  coding: { t:'Coding', starts: [
+    { t:'Build and run an app', p:'Build me a small working web app, run it, and show me the result. Ask me what it should do first.' },
+    { t:'Find the bugs in my code', p:'Review my code for bugs, explain each one, and give me the fixed version. Ask me to paste the code first.' } ] },
+  research: { t:'Research', starts: [
+    { t:'Research with sources', p:'Research a question for me and answer with sources I can check. Ask me the question first.' },
+    { t:'Compare and pick for me', p:'Compare the three best options for something I want to buy, on price and quality, and tell me which you would pick and why. Ask me what it is first.' } ] },
+  business: { t:'Business', starts: [
+    { t:'A one-page business plan', p:'Write a one-page business plan for my idea: the customer, the price, the first ten sales. Ask me about the idea first.' },
+    { t:'An email that gets replies', p:'Draft a short email to a potential customer and three follow-ups. Ask me what I sell and who to first.' } ] },
+};
+function _firstRunGoal(){ try{ const g = loadStr(FIRSTRUN_GOAL_KEY); return _FIRSTRUN_GOALS[g] ? g : ''; }catch(e){ return ''; } }
+function _firstRunStarts(){
+  const g = _firstRunGoal();
+  return g ? _FIRSTRUN_GOALS[g].starts.map(s => ({ t: T(s.t), d: T(s.p), p: T(s.p) })) : _FIRSTRUN_STARTS;
+}
+
 function _firstRunHTML(){
   try{
     if(_firstRunDone()) return '';
@@ -72,8 +105,13 @@ function _firstRunHTML(){
         '<div class="fr-h">AMV does the work, not just the talking</div>'+
         '<button class="fr-x" type="button" data-fr-skip="1" aria-label="Dismiss">&#215;</button>'+
       '</div>'+
+      '<div class="fr-goal" role="group" aria-label="'+escH(T('What do you want AMV to help with most?'))+'">'+
+        '<span class="fr-goal-q">'+escH(T('What do you want AMV to help with most?'))+'</span>'+
+        Object.keys(_FIRSTRUN_GOALS).map(k=>
+          '<button class="fr-goal-c'+(k===_firstRunGoal()?' on':'')+'" type="button" data-fr-goal="'+k+'" aria-pressed="'+(k===_firstRunGoal())+'">'+escH(T(_FIRSTRUN_GOALS[k].t))+'</button>').join('')+
+      '</div>'+
       '<div class="fr-list">'+
-        _FIRSTRUN_STARTS.map((s,i)=>
+        _firstRunStarts().map((s,i)=>
           '<button class="fr-item" type="button" data-fr-go="'+i+'"'+
             ' title="'+escH(s.d)+'" aria-label="'+escH(s.t+'. '+s.d)+'">'+
             '<span class="fr-t">'+escH(s.t)+'</span>'+
@@ -86,7 +124,7 @@ function _firstRunHTML(){
 function _wireFirstRun(root){
   const el = root || document;
   el.querySelectorAll('[data-fr-go]').forEach(b=>b.addEventListener('click',()=>{
-    const s = _FIRSTRUN_STARTS[+b.dataset.frGo]; if(!s) return;
+    const s = _firstRunStarts()[+b.dataset.frGo]; if(!s) return;
     /* Retired the moment it is used. It has done its job, and a welcome that
        comes back is not a welcome. */
     _firstRunFinish();
@@ -99,6 +137,17 @@ function _wireFirstRun(root){
       }
       const card = b.closest('.fr-card'); if(card) card.remove();
     }catch(e){}
+  }));
+  /* Choosing what it is for redraws the card in place with that goal's
+     starts; it is remembered here, so the card is the same if they come back
+     to it before starting. */
+  el.querySelectorAll('[data-fr-goal]').forEach(b=>b.addEventListener('click',()=>{
+    try{ saveStr(FIRSTRUN_GOAL_KEY, b.dataset.frGoal); }catch(e){}
+    const card = b.closest('.fr-card'); if(!card) return;
+    const tmp = document.createElement('div'); tmp.innerHTML = _firstRunHTML();
+    const fresh = tmp.firstElementChild; if(!fresh) return;
+    card.replaceWith(fresh); _wireFirstRun(fresh.parentNode);
+    const first = fresh.querySelector('[data-fr-go]'); if(first) first.focus();
   }));
   el.querySelectorAll('[data-fr-skip]').forEach(b=>b.addEventListener('click',()=>{
     _firstRunFinish();
