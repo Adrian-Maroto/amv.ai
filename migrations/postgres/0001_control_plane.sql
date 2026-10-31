@@ -62,7 +62,9 @@ CREATE TABLE organizations (
   kind             text NOT NULL DEFAULT 'company' CHECK (kind IN ('personal','company','family','school')),
   created_by       uuid NOT NULL REFERENCES accounts(id),
   created_at       timestamptz NOT NULL DEFAULT now(),
-  policy           jsonb NOT NULL DEFAULT '{}'::jsonb      -- engines allowed, spend ceilings, retention
+  policy           jsonb NOT NULL DEFAULT '{}'::jsonb,     -- engines allowed, spend ceilings, retention
+  legacy_id        text UNIQUE,                            -- the team's id in KV, while both are written
+  extra            jsonb NOT NULL DEFAULT '{}'::jsonb      -- fields not yet given a column
 );
 CREATE TABLE memberships (
   org_id           uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

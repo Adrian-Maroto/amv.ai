@@ -102,12 +102,13 @@ D1 guard refuses it (`binding-a-database-empties-nobody`).
 
 Built and tested: the schema, its money guarantees against real Postgres, the
 migration bookkeeping tables, and **step 2 for accounts and plans** (owner
-decision #47): with the `PG` binding, every write of an `acct`, `ent` or
-`apikeys` record also writes its rows (API keys by their hash alone), tested against a real Postgres
+decision #47): with the `PG` binding, every write of an `acct`, `ent`,
+`apikeys` or `team` record also writes its rows (API keys by their hash
+alone; a team as an organization with its memberships), tested against a real Postgres
 (`accounts-and-plans-are-written-to-postgres-too`) - including a database
 that is down (the request is unaffected; the write goes on the `pgrepair:`
 list) and erasure (a tombstone with nothing personal on it).
 
-Not built yet: step 2 for teams and the money ledgers; the backfill
+Not built yet: step 2 for the money ledgers; the backfill
 (step 3), which also works through the `pgrepair:` list; shadow reads (step
 4); and the switch (step 5).

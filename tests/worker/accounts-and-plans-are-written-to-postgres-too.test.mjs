@@ -110,6 +110,30 @@ section('API keys land one row each, by their hash alone; revoking one keeps its
      'the revoked key keeps its row, saying when');
 }
 
+section('A team is an organization with one membership per member; one with no account yet sends it for repair');
+{
+  await post('/auth/signup', { email: 'dee@example.com', name: 'Dee', password: PW });
+  await W._pgSettle();
+  const team = { id: 'team_abc123', name: 'Acme', ownerEmail: 'ana@example.com', createdAt: Date.now(), data: {}, planCache: 'team',
+    members: [{ email: 'ana@example.com', role: 'owner', joinedAt: Date.now() }, { email: 'dee@example.com', role: 'viewer', joinedAt: Date.now() },
+              { email: 'nobody-yet@example.com', role: 'member', joinedAt: Date.now() }] };
+  await W.DB.put(env, 'team', team.id, team);
+  await W._pgSettle();
+  const org = q("select name, kind, extra->>'planCache' from organizations where legacy_id='team_abc123'").split('|');
+  ok(org[0] === 'Acme' && org[1] === 'company' && org[2] === 'team', 'the team is an organization, its own fields kept', org);
+  const mem = q("select a.email||':'||m.role from memberships m join accounts a on a.id=m.account_id join organizations o on o.id=m.org_id where o.legacy_id='team_abc123' order by a.email").split('\n');
+  ok(mem.join() === 'ana@example.com:owner,dee@example.com:viewer', 'each member with an account has a membership, with their role', mem);
+  ok(store.has('pgrepair:team:team_abc123'), 'the member with no account row yet sends the team for repair, rather than being dropped');
+  team.members = team.members.filter(m => m.email !== 'dee@example.com' && m.email !== 'nobody-yet@example.com');
+  await W.DB.put(env, 'team', team.id, team);
+  await W._pgSettle();
+  ok(q("select count(*) from memberships m join organizations o on o.id=m.org_id where o.legacy_id='team_abc123'") === '1', 'a member who left is gone from it');
+  await W.DB.del(env, 'team', team.id);
+  await W._pgSettle();
+  ok(q("select count(*) from organizations where legacy_id='team_abc123'") === '0' && q("select count(*) from memberships m join accounts a on a.id=m.account_id where a.email='ana@example.com'") === '0',
+     'a deleted team is gone, memberships and all');
+}
+
 section('A plan before its account has a row is listed for repair, never invented');
 {
   let threw = '';

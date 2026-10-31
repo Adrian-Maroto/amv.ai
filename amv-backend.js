@@ -2019,7 +2019,7 @@ async function _writeFailed(env, where, e) {
        password, no extras - the id other rows point at, and when.
    Without PG, none of this runs. */
 
-const PG_MIRROR_KINDS = new Set(['acct', 'ent', 'apikeys']);
+const PG_MIRROR_KINDS = new Set(['acct', 'ent', 'apikeys', 'team']);
 const PG_REPAIR_TTL_S = 30 * 86400;
 const _pgInFlight = new Set();
 
@@ -2065,6 +2065,7 @@ async function _pgMirror(env, kind, email, obj){
            erasure deletes its records in, nothing is left pointing at a
            person - then a tombstone with nothing personal left on it. */
         await sql`DELETE FROM api_keys WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
+        await sql`DELETE FROM memberships WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
         await sql`DELETE FROM entitlements WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
         await sql`UPDATE accounts SET email = 'erased-' || id || '@erased.invalid', name = '', pw_hash = NULL, pw_salt = NULL,
                    pw_algo = NULL, pw_iter = NULL, extra = '{}'::jsonb, deleted_at = now(), updated_at = now()
@@ -2087,6 +2088,7 @@ async function _pgMirror(env, kind, email, obj){
                 ON CONFLICT (email) DO UPDATE SET account_id = EXCLUDED.account_id`;
       return;
     }
+    if (kind === 'team') return await _pgMirrorTeam(sql, email, obj);
     if (kind === 'ent' || kind === 'apikeys') {
       const acct = await sql`SELECT id FROM accounts WHERE email = ${email}`;
       /* Deleting what an account no longer has a row for is already done. */
@@ -2137,6 +2139,44 @@ async function _pgMirrorKeys(sql, accountId, obj){
           WHERE api_keys.account_id = EXCLUDED.account_id`;
     }
   });
+}
+
+/* A team: an organization of kind company, found by its KV id while both
+   are written, and one membership per member. A member whose account has no
+   row yet is not dropped: the whole team goes on the repair list, so the
+   backfill writes it again once that account's row exists. */
+async function _pgMirrorTeam(sql, teamId, obj){
+  if (!obj) { await sql`DELETE FROM organizations WHERE legacy_id = ${teamId}`; return; }
+  const { id: _id, name, ownerEmail, members, createdAt, policy, ...extra } = obj;
+  const owner = await sql`SELECT id FROM accounts WHERE email = ${String(ownerEmail || '').toLowerCase()}`;
+  if (!owner.length) throw new Error('no_account_row');
+  const list = Array.isArray(members) ? members.filter(m => m && m.email) : [];
+  const emails = list.map(m => String(m.email).toLowerCase());
+  const known = emails.length ? await sql`SELECT id, email FROM accounts WHERE email IN ${sql(emails)}` : [];
+  const idOf = new Map(known.map(r => [r.email, r.id]));
+  const ROLES = new Set(['owner', 'admin', 'member', 'viewer']);
+  await sql.begin(async (tx) => {
+    const org = await tx`
+      INSERT INTO organizations (name, kind, created_by, created_at, policy, legacy_id, extra)
+      VALUES (${String(name || 'Team')}, 'company', ${owner[0].id}, ${_pgTime(createdAt) || new Date()},
+              ${tx.json(policy && typeof policy === 'object' ? policy : {})}, ${teamId}, ${tx.json(extra)})
+      ON CONFLICT (legacy_id) DO UPDATE SET name = EXCLUDED.name, policy = EXCLUDED.policy, extra = EXCLUDED.extra
+      RETURNING id`;
+    const orgId = org[0].id;
+    const ids = list.map(m => idOf.get(String(m.email).toLowerCase())).filter(Boolean);
+    if (ids.length) await tx`DELETE FROM memberships WHERE org_id = ${orgId} AND account_id NOT IN ${tx(ids)}`;
+    else await tx`DELETE FROM memberships WHERE org_id = ${orgId}`;
+    for (const m of list) {
+      const aid = idOf.get(String(m.email).toLowerCase());
+      if (!aid) continue;
+      const role = ROLES.has(m.role) ? m.role : 'member';
+      await tx`
+        INSERT INTO memberships (org_id, account_id, role, source, monthly_cap, joined_at)
+        VALUES (${orgId}, ${aid}, ${role}, ${String(m.source || 'invite')}, ${m.monthlyCap != null ? Number(m.monthlyCap) : null}, ${_pgTime(m.joinedAt) || new Date()})
+        ON CONFLICT (org_id, account_id) DO UPDATE SET role = EXCLUDED.role, monthly_cap = EXCLUDED.monthly_cap`;
+    }
+  });
+  if (emails.some(e => !idOf.has(e))) throw new Error('member_without_account_row');
 }
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
