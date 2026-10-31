@@ -68,8 +68,21 @@ const boot = async (page) => {
   await until(page, () => typeof S !== 'undefined' && !!window.AMV_API && !!window._BUNDLE_READY, 30000);
   await page.evaluate(() => { try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {} document.getElementById('cookie-consent-banner')?.remove(); });
 };
-const fill = (page, sel, v) => page.evaluate(([s, v]) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, [sel, v]);
-const click = (page, sel) => page.evaluate((s) => document.querySelector(s).click(), sel);
+/* Each waits for its element first: on a loaded machine a prompt can arrive
+   a moment after the button that opens it, and acting at once read as
+   "Cannot set properties of null" with no hint which step. A prompt that
+   never comes still fails - after 20 seconds, naming the selector. */
+const present = async (page, sel) => {
+  let there = false;
+  for (const t = Date.now(); !there && Date.now() - t < 20000; ) {
+    there = await page.evaluate((s) => !!document.querySelector(s), sel).catch(() => false);
+    if (!there) await new Promise(r => setTimeout(r, 100));
+  }
+  if (!there)
+    throw new Error(sel + ' never appeared. On screen: ' + String(await page.evaluate(() => (document.querySelector('#set-pane, .set-pane, #ovr') || document.body).innerText).catch(() => '')).slice(0, 300));
+};
+const fill = async (page, sel, v) => { await present(page, sel); return page.evaluate(([s, v]) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, [sel, v]); };
+const click = async (page, sel) => { await present(page, sel); return page.evaluate((s) => document.querySelector(s).click(), sel); };
 const totp = (secret, ahead = 0) => {
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = 0, val = 0; const key = [];
   for (const ch of secret.replace(/\s/g, '')) { val = (val << 5) | A.indexOf(ch); bits += 5; if (bits >= 8) { key.push((val >>> (bits - 8)) & 255); bits -= 8; } }
