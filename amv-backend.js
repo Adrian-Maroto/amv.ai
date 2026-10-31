@@ -41924,7 +41924,7 @@ const AGENT_JAR_TTL_S = 30 * 86400;
    ("mybank", "bankofireland"); a brand matches only as itself. Erring towards
    refusing a harmless site is the right way round for a store of sign-ins. */
 const AGENT_MONEY_WORD = /bank|banco|banque|sparkasse|creditunion|credit-union|brokerage|crypto|wallet/i;
-const AGENT_MONEY_BRAND = /(^|[.-])(paypal|venmo|zelle|stripe|squareup|cash\.app|wise|revolut|monzo|n26|chime|klarna|afterpay|affirm|coinbase|binance|kraken|gemini|robinhood|schwab|fidelity|vanguard|etrade|ibkr|interactivebrokers|chase|wellsfargo|bankofamerica|citi|citibank|hsbc|barclays|santander|capitalone|amex|americanexpress|discover|visa|mastercard|usbank|pnc|truist|ally|sofi|plaid)([.-]|$)/i;
+const AGENT_MONEY_BRAND = /(^|[.-])(paypal|venmo|zelle|stripe|squareup|cash\.app|wise|revolut|monzo|n26|chime|klarna|afterpay|affirm|coinbase|binance|kraken|robinhood|schwab|fidelity|vanguard|etrade|ibkr|interactivebrokers|chase|wellsfargo|bankofamerica|citi|citibank|hsbc|barclays|santander|capitalone|amex|americanexpress|discover|visa|mastercard|usbank|pnc|truist|ally|sofi|plaid)([.-]|$)/i;
 const AGENT_MONEY_SITE = { test: (host) => AGENT_MONEY_WORD.test(String(host || '')) || AGENT_MONEY_BRAND.test(String(host || '')) };
 
 function _agentSiteClean(raw){
