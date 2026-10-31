@@ -3585,7 +3585,9 @@ function renderHist(){
   // star filter is active (sessions aren't starrable).
   let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
   if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
-  if(hdr) setHistHeader(!(!search&&!S.starFilter&&!convs.length&&!sessions.length));
+  /* The "Recent chats" heading heads the chats; with none yet and only builds
+     to show, the builds' own heading is the one that appears. */
+  if(hdr) setHistHeader(!!(search || S.starFilter || convs.length));
   if(!convs.length && !sessions.length){
     area.innerHTML = search
       ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
@@ -3598,17 +3600,15 @@ function renderHist(){
       : '';
     return;
   }
-  // Build a unified, recency-sorted list of rows.
+  /* CHATS, THEN A THIN LINE, THEN BUILDS (owner, Oct 31: "under recent chats
+     it should be actual chats and then below it a thin line and recent
+     builds"). One list mixing them put a Dev project between two chats, and
+     the place to find either depended on which was touched last. Each part
+     is newest first; chats with no timestamp keep their order. */
   const convTime=(c)=>c._t||c.updated||c.ts||0;
-  const rows=[];
-  convs.forEach(c=>rows.push({type:'conv', t:convTime(c), c}));
-  sessions.forEach(s=>rows.push({type:'sess', t:s.updated||0, s}));
-  // conversations without a timestamp keep their existing array order at the top;
-  // if no timestamps exist at all, preserve conv order then sessions.
-  const anyConvT=convs.some(c=>convTime(c)>0);
-  if(anyConvT || sessions.length){
-    rows.sort((a,b)=>(b.t||0)-(a.t||0));
-  }
+  const chatRows=convs.map(c=>({type:'conv', t:convTime(c), c}));
+  if(convs.some(c=>convTime(c)>0)) chatRows.sort((a,b)=>(b.t||0)-(a.t||0));
+  const buildRows=sessions.map(x=>({type:'sess', t:x.updated||0, s:x})).sort((a,b)=>(b.t||0)-(a.t||0));
 
   const sessItemHTML=(s)=>{
     const k=SESSION_KINDS[s.kind]||{label:'Session',icon:''};
@@ -3656,7 +3656,12 @@ function renderHist(){
   const sc=_shelfCounts();
   const shelf=(sc.archived||sc.trashed) && !search && !S.starFilter
     ? '<button type="button" class="hist-shelf" data-dact="openChatShelf">'+escH(T('Archived & Trash'))+' <span>'+(sc.archived+sc.trashed)+'</span></button>' : '';
-  area.innerHTML=rows.map(rowHTML).join('')+shelf;
+  const builds = buildRows.length
+    ? '<hr class="hist-split">'
+      + '<div class="sbl hist-builds-h">'+escH(T('Recent builds'))+'</div>'
+      + buildRows.map(rowHTML).join('')
+    : '';
+  area.innerHTML=chatRows.map(rowHTML).join('')+builds+shelf;
   bind();
 }
 

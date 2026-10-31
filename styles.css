@@ -17407,3 +17407,12 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 /* LAYER A348 - after a wrong password, the way back is pointed at for a moment. */
 #auth-forgot.af-pulse{ color:var(--accent) !important; text-decoration:underline; transition:color .2s var(--ease); }
 @media (prefers-reduced-motion: reduce){ #auth-forgot.af-pulse{ transition:none; } }
+
+/* LAYER A349 - Recents in two parts: chats, a hairline, then builds. */
+/* Scoped as #hist > to outrank the row reset (padding !important) every
+   child of the list gets - which drew the line as a 16px pill. */
+#hist > hr.hist-split{ display:block; height:1px; min-height:0; padding:0 !important; border:0; border-radius:0; background:var(--bd); margin:var(--sp-2) var(--sp-3) var(--sp-1); width:auto; cursor:default; }
+#hist > hr.hist-split:hover{ background:var(--bd); }
+#hist > .hist-builds-h{ cursor:default; }
+#hist > .hist-builds-h:hover{ background:none; color:var(--mu); }
+#hist .hist-builds-h{ padding-top:var(--sp-1); }

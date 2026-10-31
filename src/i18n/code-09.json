@@ -74,5 +74,43 @@
   "it": "Email o password errata. Riprova, oppure usa “Password dimenticata?” qui sotto.",
   "ko": "이메일 또는 비밀번호가 틀렸습니다. 다시 시도하거나 아래의 “비밀번호를 잊으셨나요?”를 사용하세요.",
   "ta": "மின்னஞ்சல் அல்லது கடவுச்சொல் தவறு. மீண்டும் முயலுங்கள், அல்லது கீழே உள்ள “கடவுச்சொல்லை மறந்துவிட்டீர்களா?” என்பதைப் பயன்படுத்துங்கள்."
+ },
+ "Recent chats": {
+  "es": "Chats recientes",
+  "zh": "最近的聊天",
+  "hi": "हाल की चैट",
+  "ar": "المحادثات الأخيرة",
+  "pt": "Conversas recentes",
+  "fr": "Discussions récentes",
+  "de": "Letzte Chats",
+  "ja": "最近のチャット",
+  "ru": "Недавние чаты",
+  "id": "Obrolan terbaru",
+  "bn": "সাম্প্রতিক চ্যাট",
+  "ur": "حالیہ چیٹس",
+  "tr": "Son sohbetler",
+  "vi": "Cuộc trò chuyện gần đây",
+  "it": "Chat recenti",
+  "ko": "최근 채팅",
+  "ta": "சமீபத்திய உரையாடல்கள்"
+ },
+ "Recent builds": {
+  "es": "Proyectos recientes",
+  "zh": "最近的构建",
+  "hi": "हाल के बिल्ड",
+  "ar": "المشاريع الأخيرة",
+  "pt": "Projetos recentes",
+  "fr": "Créations récentes",
+  "de": "Letzte Builds",
+  "ja": "最近のビルド",
+  "ru": "Недавние проекты",
+  "id": "Build terbaru",
+  "bn": "সাম্প্রতিক বিল্ড",
+  "ur": "حالیہ بلڈز",
+  "tr": "Son yapılanlar",
+  "vi": "Bản dựng gần đây",
+  "it": "Build recenti",
+  "ko": "최근 빌드",
+  "ta": "சமீபத்திய உருவாக்கங்கள்"
  }
 }
