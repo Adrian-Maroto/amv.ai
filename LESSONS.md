@@ -15596,3 +15596,8 @@ sentence, AMV's code, and a status chosen for what the CALLER should do next
 (retry, fix the request, wait for AMV). The supplier's text goes to the
 operator. And a fake's error responses are as much a part of a suite as its
 successes: test the 401 and the 400, not just the 500.
+The same held inside a stream: an `error` event half way through an answer
+reached the page, API callers and website visitors in the provider's words.
+It is rewritten on the way out, type kept. Because every answer now passes
+through that filter, it is tested by cutting a real stream at every byte -
+a filter on the money path is tested on the answers, not on the errors.

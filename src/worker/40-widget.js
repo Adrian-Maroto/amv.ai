@@ -477,7 +477,7 @@ async function widgetChat(request, env, ctx) {
     feature: 'widget',
   }));
 
-  return new Response(toClient, {
+  return new Response(_sseInOurWords(toClient), {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...wcors },
   });

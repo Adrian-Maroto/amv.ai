@@ -23487,7 +23487,53 @@ const AI_STOP_TTL_S = 300;
 const AI_KEEPALIVE_MS = 10000;
 const _KEEPALIVE = new TextEncoder().encode(': keepalive\n\n');
 function _aiStopKey(email, reqId) { return 'aistop:' + String(email || '').toLowerCase() + ':' + reqId; }
+/* AN ERROR INSIDE A STREAM IS SAID IN AMV'S WORDS TOO.
+
+   _modelErrorShown translates a refusal that arrives before the stream. One
+   that arrives inside it - the provider giving up half way, most often
+   overloaded - came through as the provider's own event, sentence and all,
+   to the page, to API callers and to visitors of somebody's website widget.
+   Only `error` events are touched: the line is parsed, its message replaced
+   by AMV's sentence for that kind, its `type` kept (the page and the agent
+   loop decide what to do from the type alone). Everything else passes
+   through as it arrived, a whole line at a time. */
+const _SSE_ERR_SAID = {
+  overloaded_error: 'The model is busy right now and stopped before finishing. Try again in a moment.',
+  rate_limit_error: 'The model is busy right now and stopped before finishing. Try again in a moment.',
+  api_error:        'The model had a problem and stopped before finishing. Try again in a moment.',
+};
+function _sseErrorScrubber() {
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  let held = '';
+  const fix = (line) => {
+    if (!/^data:/.test(line) || line.indexOf('"error"') < 0) return line;
+    let evt; try { evt = JSON.parse(line.slice(5)); } catch (e) { return line; }
+    if (!evt || evt.type !== 'error') return line;
+    const type = String((evt.error && evt.error.type) || 'error').slice(0, 60);
+    return 'data: ' + JSON.stringify({ type: 'error', error: { type,
+      message: _SSE_ERR_SAID[type] || 'The model stopped with an error before finishing. Try again, or pick another engine.' } });
+  };
+  return {
+    push(bytes) {
+      held += dec.decode(bytes, { stream: true });
+      const cut = held.lastIndexOf('\n');
+      if (cut < 0) return null;
+      const whole = held.slice(0, cut + 1); held = held.slice(cut + 1);
+      return enc.encode(whole.split('\n').map(fix).join('\n'));
+    },
+    flush() { const rest = held + dec.decode(); held = ''; return rest ? enc.encode(fix(rest)) : null; },
+  };
+}
+function _sseInOurWords(body) {
+  const s = _sseErrorScrubber();
+  return body.pipeThrough(new TransformStream({
+    transform(chunk, c) { const out = s.push(chunk); if (out && out.length) c.enqueue(out); },
+    flush(c) { const out = s.flush(); if (out && out.length) c.enqueue(out); },
+  }));
+}
+
 function _stopAwareStream(source, env, email, reqId, ctx) {
+  const scrub = _sseErrorScrubber();
   const reader = source.getReader();
   const meter = new TransformStream();
   const mw = meter.writable.getWriter();
@@ -23515,10 +23561,16 @@ function _stopAwareStream(source, env, email, reqId, ctx) {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (!state.clientGone) { try { ctrl.enqueue(value); lastSent = Date.now(); } catch (e) { state.clientGone = true; } }
+        if (!state.clientGone) {
+          const out = scrub.push(value);
+          if (out && out.length) { try { ctrl.enqueue(out); lastSent = Date.now(); } catch (e) { state.clientGone = true; } }
+        }
         await mw.write(value);
       }
-      if (!state.clientGone) { try { ctrl.close(); } catch (e) {} }
+      if (!state.clientGone) {
+        const rest = scrub.flush();
+        try { if (rest && rest.length) ctrl.enqueue(rest); ctrl.close(); } catch (e) {}
+      }
     } catch (e) {
       if (!state.clientGone) { try { ctrl.error(e); } catch (_) {} }
     } finally {
@@ -24484,7 +24536,7 @@ async function widgetChat(request, env, ctx) {
     feature: 'widget',
   }));
 
-  return new Response(toClient, {
+  return new Response(_sseInOurWords(toClient), {
     status: 200,
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...wcors },
   });

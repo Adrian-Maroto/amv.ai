@@ -33,7 +33,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'chaos.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, revokeUserTokens };\n');
+  + '\nexport { DB, revokeUserTokens, _sseErrorScrubber };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -48,7 +48,7 @@ function mulberry32(seed) {
 }
 
 /* The faults in force, and what happened during the current request. */
-const F = { kv: 0, doThrow: 0, doJunk: 0, model: 0, modelStatus: 0, rnd: Math.random };
+const F = { kv: 0, doThrow: 0, doJunk: 0, model: 0, midError: 0, modelStatus: 0, rnd: Math.random };
 const T = { reserves: 0, modelCalls: 0 };
 const fail = (p) => p > 0 && F.rnd() < p;
 
@@ -96,6 +96,14 @@ globalThis.fetch = async (url) => {
   if (/model\.example|fallback\.example/.test(String(url))) {
     T.modelCalls++;
     if (F.modelStatus) return new Response(JSON.stringify({ error: { type: 'x', message: MODEL_SECRET + ' status ' + F.modelStatus } }), { status: F.modelStatus });
+    /* The provider giving up half way: the answer has started, then an error
+       event in its own words. */
+    if (fail(F.midError)) {
+      return new Response('data: {"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}\n\n'
+        + 'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"par"}}\n\n'
+        + 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"' + MODEL_SECRET + ' overloaded mid-stream"}}\n\n',
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
     if (fail(F.model)) {
       if (F.rnd() < 0.5) throw new Error(MODEL_SECRET + ' reset');
       return new Response(JSON.stringify({ error: { message: MODEL_SECRET + ' overloaded' } }), { status: 529 });
@@ -147,6 +155,36 @@ const id = {
 await W.DB.put(env, 'ent', PRO, { plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
 await W.revokeUserTokens(env, GONE);
 
+/* An API key, and one that was revoked: the key is how an account is spent
+   with nobody watching, so a revoked one getting through is money. */
+async function newKey(tok) {
+  const r = await call('/v1/keys/create', { body: { name: 'chaos' }, tok });
+  const d = JSON.parse(r.text || '{}');
+  if (!d.key) throw new Error('key create failed: ' + r.status + ' ' + r.text.slice(0, 200));
+  return d;
+}
+id.key = (await newKey(id.pro)).key;
+{
+  const k = await newKey(id.pro);
+  const r = await call('/v1/keys/revoke', { body: { id: k.item.id }, tok: id.pro });
+  if (r.status !== 200) throw new Error('key revoke failed: ' + r.text);
+  id.revokedKey = k.key;
+}
+/* A website widget on the pro account's allowance, and one switched off.
+   A visitor has no token at all; the widget's key is the only credential. */
+async function seedWidget(key, owner, enabled) {
+  const w = { key, owner, enabled, model: 'amv-core', origins: [], dailyMsgCap: 0, dailySpendCapUSD: 0,
+              maxOut: 256, systemPrompt: 'be helpful', title: 'Chat', greeting: 'hi' };
+  await W.DB.put(env, 'widget', key, w);
+}
+let widgetKey = 'wk_chaos_live';
+await seedWidget(widgetKey, PRO, true);
+await seedWidget('wk_chaos_off', PRO, false);
+const widgetAsk = (key) => call('/v1/widget/chat', { body: { key, messages: [{ role: 'user', content: 'hello' }] } });
+/* Identities that are allowed to spend. Every other one reaching the model
+   is a door that opened. */
+const SPENDERS = new Set(['free', 'pro', 'key', 'widget']);
+
 const chat = { model: 'amv-core', max_tokens: 64, messages: [{ role: 'user', content: 'hello' }] };
 const ROUTES = {
   chat:        (t) => call('/v1/messages', { body: chat, tok: t }),
@@ -164,18 +202,28 @@ const LOGINS = {
 /* What each identity gets with everything healthy: the doors that are shut. */
 const shut = new Set();
 for (const [who, tok] of Object.entries(id)) {
-  if (who === 'free' || who === 'pro') continue;
+  if (SPENDERS.has(who)) continue;
   for (const [r, fn] of Object.entries(ROUTES)) {
     const x = await fn(tok);
     if (x.status === 401 || x.status === 403) shut.add(who + ' ' + r);
   }
 }
+/* The widget that is switched off: refused, whatever the status it uses. */
+{ const x = await widgetAsk('wk_chaos_off'); if (!(x.status >= 200 && x.status < 300)) shut.add('widgetOff widget'); }
 
 section('With everything healthy: the doors that must stay shut, are');
 {
   ok(shut.has('revoked usage') && shut.has('revoked syncPull') && shut.has('forged usage') && shut.has('none syncPull'),
      'a revoked token, a forged one and none are refused where an account is needed', [...shut]);
   ok(shut.has('revoked chat'), 'and a revoked token cannot chat', [...shut]);
+  ok(shut.has('revokedKey chat') && shut.has('revokedKey usage'), 'a revoked API key is refused', [...shut]);
+  ok(shut.has('widgetOff widget'), 'a switched-off widget answers no visitor', [...shut]);
+  T.modelCalls = 0; T.reserves = 0;
+  const k = await ROUTES.chat(id.key);
+  ok(k.status === 200 && T.modelCalls === 1 && T.reserves >= 1, 'a live API key is answered, after booking the spend', { status: k.status, body: k.text.slice(0, 160) });
+  T.modelCalls = 0; T.reserves = 0;
+  const w = await widgetAsk(widgetKey);
+  ok(w.status === 200 && T.modelCalls === 1 && T.reserves >= 1, 'a live widget answers a visitor, after booking the spend', { status: w.status, body: w.text.slice(0, 160) });
   T.modelCalls = 0; T.reserves = 0;
   const x = await ROUTES.chat(id.pro);
   ok(x.status === 200 && T.modelCalls === 1 && T.reserves >= 1, 'a healthy turn reaches the model once, after booking the spend',
@@ -184,7 +232,7 @@ section('With everything healthy: the doors that must stay shut, are');
 
 /* ── The chaos runs ───────────────────────────────────────────────────── */
 const problems = { spend: [], door: [], threw: [], leak: [] };
-const counts = { requests: 0, s2xx: 0, s5xx: 0, modelReached: 0 };
+const counts = { requests: 0, s2xx: 0, s5xx: 0, modelReached: 0, midErrors: 0, midErrorsByWidget: 0 };
 const LEAK = new RegExp([KV_SECRET, DO_SECRET, MODEL_SECRET, '\\n\\s+at ', '\\.js:\\d+:\\d+', 'TypeError', 'ReferenceError',
                          'Cannot read propert', 'is not a function', 'is not defined'].join('|'));
 
@@ -195,10 +243,11 @@ async function one(label, fn, who, route) {
   if (x.status >= 200 && x.status < 300) counts.s2xx++;
   if (x.status >= 500) counts.s5xx++;
   if (T.modelCalls > 0) counts.modelReached++;
+  if (/"type":"error"/.test(x.text) && x.status === 200) { counts.midErrors++; if (route === 'widget') counts.midErrorsByWidget++; }
   if (x.threw) problems.threw.push(label + ' threw: ' + String(x.threw && x.threw.stack || x.threw).slice(0, 300));
   if (T.modelCalls > 0 && T.reserves === 0) problems.spend.push(label + ' reached the model ' + T.modelCalls + 'x with no reservation');
   if (who && shut.has(who + ' ' + route) && x.status >= 200 && x.status < 300) problems.door.push(label + ' got ' + x.status + ': ' + x.text.slice(0, 160));
-  if (who && who !== 'free' && who !== 'pro' && T.modelCalls > 0) problems.door.push(label + ' (' + who + ') reached the model');
+  if (who && !SPENDERS.has(who) && T.modelCalls > 0) problems.door.push(label + ' (' + who + ') reached the model');
   if (route === 'login' && x.status >= 200 && x.status < 300) problems.door.push(label + ' signed in: ' + x.text.slice(0, 160));
   if (process.env.CHAOS_DEBUG && label.includes(process.env.CHAOS_DEBUG)) console.log("DBG", label, x.status, x.text.slice(0, 120));
   if (LEAK.test(x.text)) problems.leak.push(label + ' (' + x.status + '): ' + x.text.slice(0, 240));
@@ -208,7 +257,8 @@ const MIXES = [
   { name: 'KV flaky',            kv: 0.25, doThrow: 0,    doJunk: 0,    model: 0 },
   { name: 'counters flaky',      kv: 0,    doThrow: 0.3,  doJunk: 0.1,  model: 0 },
   { name: 'model flaky',         kv: 0,    doThrow: 0,    doJunk: 0,    model: 0.5 },
-  { name: 'everything flaky',    kv: 0.15, doThrow: 0.2,  doJunk: 0.1,  model: 0.3 },
+  { name: 'answers break mid-way', kv: 0,  doThrow: 0,    doJunk: 0,    model: 0,   midError: 0.6 },
+  { name: 'everything flaky',    kv: 0.15, doThrow: 0.2,  doJunk: 0.1,  model: 0.3, midError: 0.15 },
   { name: 'counters down',       kv: 0,    doThrow: 1,    doJunk: 0,    model: 0 },
   { name: 'counters talk junk',  kv: 0,    doThrow: 0,    doJunk: 1,    model: 0 },
   { name: 'KV down',             kv: 1,    doThrow: 0,    doJunk: 0,    model: 0 },
@@ -225,16 +275,24 @@ for (const mix of MIXES) {
     /* Fresh accounts each run, made while healthy: per-account rate limits
        are per minute, and a run reusing the last run's accounts would test
        the rate limiter instead of the failure. */
-    const tag = mix.name.replace(/\W+/g, '-') + '-' + seed;
+    const tag = mix.name.toLowerCase().replace(/\W+/g, '-') + '-' + seed;
     id.free = await signup('free-' + tag + '@chaos.test');
     id.pro = await signup('pro-' + tag + '@chaos.test');
     await W.DB.put(env, 'ent', 'pro-' + tag + '@chaos.test', { plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+    id.key = (await newKey(id.pro)).key;
+    widgetKey = 'wk_' + tag;
+    await seedWidget(widgetKey, 'pro-' + tag + '@chaos.test', true);
     const rnd = mulberry32(seed * 7919 + mix.name.length);
     for (let i = 0; i < PER_RUN; i++) {
       Object.assign(F, mix, { rnd });
       const before = counts.modelReached;
       const pick = rnd();
-      if (pick < 0.08) {
+      if (pick < 0.16) {
+        /* A visitor on somebody's website: the live widget or the one that is off. */
+        const off = rnd() < 0.4;
+        await one(`[${mix.name} seed ${seed} #${i}] visitor ${off ? 'widgetOff' : 'widget'}`,
+                  () => widgetAsk(off ? 'wk_chaos_off' : widgetKey), off ? 'widgetOff' : 'widget', 'widget');
+      } else if (pick < 0.24) {
         const [lname, lfn] = Object.entries(LOGINS)[(rnd() * 2) | 0];
         await one(`[${mix.name} seed ${seed} #${i}] login ${lname}`, lfn, null, 'login');
       } else {
@@ -246,7 +304,7 @@ for (const mix of MIXES) {
       perMix[mix.name].requests++;
       perMix[mix.name].modelReached += counts.modelReached - before;
     }
-    Object.assign(F, { kv: 0, doThrow: 0, doJunk: 0, model: 0 });
+    Object.assign(F, { kv: 0, doThrow: 0, doJunk: 0, model: 0, midError: 0 });
   }
 }
 
@@ -263,6 +321,7 @@ section('And the chaos was real - this is not a suite that passes by doing nothi
    bar is that the model WAS reached under every partial failure. */
 ok(perMix['model flaky'].modelReached > 40, 'with only the model flaky, turns still reached it', perMix['model flaky']);
 ok(counts.s2xx > 100 && counts.s5xx > 50, 'plenty succeeded and plenty failed', counts);
+ok(counts.midErrors > 20 && counts.midErrorsByWidget > 0, 'answers broke half way, in chat and in the widget - and each was said in AMV\'s words (the leak check above)', counts);
 
 section('The model refusing is told in AMV\'s words, and never as a sign-in that ended');
 {
@@ -280,6 +339,41 @@ section('The model refusing is told in AMV\'s words, and never as a sign-in that
     ok(x.status === code && d.code === name && !LEAK.test(x.text) && /Nothing was charged/.test(d.error || ''),
        'the model answering ' + st + ' reaches the caller as ' + code + ' ' + name + ', in AMV\'s own sentence', { status: x.status, body: x.text.slice(0, 200) });
   }
+}
+
+section('The filter every answer passes through changes nothing else, however the bytes arrive');
+{
+  /* Every chat answer now goes through _sseErrorScrubber on its way to the
+     caller, so a mistake in it would damage answers, not errors. A stream with
+     multi-byte text (accents, CJK, an emoji split across chunks) and an error
+     event at the end, cut at EVERY byte position, must come out exactly as
+     the whole stream fixed in one go. */
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const body = 'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":3}}}\n\n'
+    + 'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Olá, 世界 👋🏽 \\"error\\" is just a word"}}\n\n'
+    + ': keep-alive\n\n'
+    + 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"' + MODEL_SECRET + '"}}\n\n';
+  const run = (cuts) => {
+    const bytes = enc.encode(body), sc = W._sseErrorScrubber(), parts = [];
+    let at = 0;
+    for (const c of [...cuts, bytes.length]) { const o = sc.push(bytes.slice(at, c)); if (o) parts.push(o); at = c; }
+    const f = sc.flush(); if (f) parts.push(f);
+    return parts.map(p => dec.decode(p, { stream: true })).join('') + dec.decode();
+  };
+  const whole = run([]);
+  const expect = body.replace(/data: \{"type":"error".*\}\n/, () => 'data: ' + JSON.stringify({ type: 'error', error: { type: 'overloaded_error',
+    message: 'The model is busy right now and stopped before finishing. Try again in a moment.' } }) + '\n');
+  ok(whole === expect, 'in one piece: only the error event changed, keeping its type', whole.slice(-200));
+  let bad = null;
+  const n = enc.encode(body).length;
+  for (let i = 1; i < n && !bad; i++) { const out = run([i]); if (out !== whole) bad = { cut: i, out: out.slice(0, 200) }; }
+  for (let i = 1; i + 3 < n && !bad; i += 3) { const out = run([i, i + 1, i + 3]); if (out !== whole) bad = { cuts: [i, i + 1, i + 3] }; }
+  ok(!bad, 'cut at every byte (and in threes), the output is identical', bad);
+  ok(run([]).includes('👋🏽') && run([]).includes('\\"error\\" is just a word'), 'and the answer\'s own text - even the word "error" - is untouched');
+  /* A stream that ends without a final newline still delivers its last line. */
+  const sc = W._sseErrorScrubber();
+  const a = sc.push(enc.encode('data: {"type":"message_stop"}')), b = sc.flush();
+  ok(!a && dec.decode(b || new Uint8Array()) === 'data: {"type":"message_stop"}', 'a last line with no newline is still delivered, at the end');
 }
 
 section('Healthy again, it works again');
