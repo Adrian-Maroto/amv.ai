@@ -230,6 +230,9 @@ if (backend && toml) {
     /* DATA_STORE=d1 is the explicit switch that lets the Worker use a bound
        D1 database (docs/DATA-TIER.md); unset, KV holds everything. */
     'DATA_STORE',
+    /* Notifications on people's devices (81-web-push.js), made once with
+       tools/vapid-keys.mjs. VAPID_SUBJECT is optional. */
+    'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT',
     'ALLOWED_ORIGIN', 'APP_ORIGIN', 'OWNER_EMAIL', 'GOOGLE_CLIENT_ID',
     'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',

@@ -1753,6 +1753,9 @@ async function _autoRunAccount(env, email, rec, now, deadline){
      over their jobs, which is exactly the grain a person experiences as
      "this morning's email". */
   const mails = [];
+  /* What to tell this person's devices about at the end of the run, if they
+     turned notifications on (81-web-push.js). One notification per run. */
+  const pushes = [];
   /* This account's agents (77-agents.js), read once and only when a due job
      names one. Unreadable is not "none": a job whose agent cannot be read
      waits rather than running without the budget and the pause it has. */
@@ -2095,6 +2098,9 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       /* Read from the EFFECTIVE level, not from item.approval. Reading the
          job's own setting here is what a ceiling would have to get past, and
          the whole point of the ceiling is that it cannot be got past. */
+      /* A result unchanged since last time is not news (quietUnchanged);
+         one waiting for approval always is. */
+      if(level === 'require' || !sameAgain) pushes.push({ detail: String(item.detail || ''), waiting: level === 'require' });
       if(level === 'require'){
         try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
       } else if(item.notify === 'email' && env.EMAIL_API_KEY && !sameAgain){
@@ -2182,6 +2188,10 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       for(const m of mails) m.item.lastError = why;
     }
     changed = true;
+  }
+
+  if(pushes.length){
+    try{ await _pushSend(env, email, _pushNoteFor(pushes)); }catch(e){ /* the results are in the app either way */ }
   }
 
   /* AMV-205: the tick holds this record for the whole of a run, which can be

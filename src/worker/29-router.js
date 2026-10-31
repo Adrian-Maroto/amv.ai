@@ -667,6 +667,9 @@ async function _route(request, env, ctx) {
     '/v1/source-preview',
     /* The caller's own agents (77-agents.js). Reads only; signed in. */
     '/v1/agents',
+    /* Whether notifications exist here, and how many devices this account
+       has (81-web-push.js). Reads only; signed in. */
+    '/v1/push',
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -975,6 +978,10 @@ async function _route(request, env, ctx) {
     case '/v1/agents/save':    return agentsSave(request, env);
     case '/v1/agents/delete':  return agentsDelete(request, env);
     case '/v1/agents/signins/forget': return agentSignInsForget(request, env);
+    case '/v1/push':             return pushStatus(request, env);
+    case '/v1/push/subscribe':   return pushSubscribe(request, env);
+    case '/v1/push/unsubscribe': return pushUnsubscribe(request, env);
+    case '/v1/push/test':        return pushTest(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);

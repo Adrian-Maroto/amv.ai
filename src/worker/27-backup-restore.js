@@ -160,6 +160,9 @@ const BACKUP_NEVER = [
      credentials, sealed. A backup is a second copy of them in a second place,
      and restoring one would bring back a sign-in somebody forgot. */
   'agentjar:',
+  /* A browser's notification address and its keys: tied to that device,
+     and re-made by turning notifications on again. */
+  'push:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',

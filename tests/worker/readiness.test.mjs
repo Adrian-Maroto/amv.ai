@@ -128,6 +128,7 @@ section('It NEVER returns a secret, in any form');
     AMV_FILES: { put() {}, get() {} },
     AMV_JOBS: { sendBatch() {} },
     AMV_BACKUPS: { put() {}, list() {} },
+    VAPID_PUBLIC_KEY: 'B' + 'x'.repeat(86), VAPID_PRIVATE_KEY: 'y'.repeat(43),
     AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',
     /* Voice: a supplier, its key, and both halves with their prices. */
     AMV_SPEECH_URL: 'https://speech.example/v1', AMV_SPEECH_KEY: 'speech-key-SUPERSECRET-0123456789abcdef',

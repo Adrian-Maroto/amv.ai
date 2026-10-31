@@ -560,3 +560,10 @@ the repository.
    kept, with an alert when a night does not finish; the runbook (section 3)
    says how to restore one. Until then the only backup is the file an
    operator downloads from the console by hand.
+10. **Notifications on people's phones and computers (Web Push)**: free, no
+    account to open. On your own machine run `node tools/vapid-keys.mjs`, then
+    `npx wrangler secret put VAPID_PRIVATE_KEY` with the private value and set
+    `VAPID_PUBLIC_KEY` as a plain variable. People then turn it on in
+    Settings > Account > "Notify this device", and are told when a background
+    job has a result or is waiting for their OK - named, never what it found.
+    On an iPhone it works once AMV is added to the Home Screen.

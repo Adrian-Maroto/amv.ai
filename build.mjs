@@ -854,6 +854,36 @@ self.addEventListener('fetch', e => {
   })());
 });
 
+/* A NOTIFICATION FROM AMV (src/worker/81-web-push.js). Shown as it came:
+   the server already decided it names the job and never the result. A push
+   with nothing readable in it still shows something - a browser that is
+   sent a push and shows nothing may stop delivering them. */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = {}; }
+  const title = String(d.title || 'AMV').slice(0, 80);
+  e.waitUntil(self.registration.showNotification(title, {
+    body: String(d.body || 'Something in AMV needs you.').slice(0, 180),
+    tag: String(d.tag || 'amv'), renotify: true,
+    icon: '/icon-192.png', badge: '/icon-192.png',
+    data: { url: typeof d.url === 'string' && d.url.charAt(0) === '/' ? d.url : '/' },
+  }));
+});
+/* Pressed: an AMV tab already open is brought forward and sent there; if
+   none is, one opens. Only ever an address on AMV's own site. */
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const path = (e.notification.data && e.notification.data.url) || '/';
+  const to = new URL(path, self.location.origin).href;
+  e.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of tabs) {
+      if (new URL(c.url).origin === self.location.origin) { try { await c.navigate(to); } catch (err) {} return c.focus(); }
+    }
+    return self.clients.openWindow(to);
+  })());
+});
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;

@@ -42,7 +42,7 @@ const VERIFIERS = [...src.matchAll(/function\s+(verify[A-Za-z]*(?:Signature|Webh
    here as newly unauthenticated. Recognising a name is only safe if the name
    really does the check, so that is asserted below rather than assumed. */
 const AUTH = new RegExp(
-  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_adminGate\\(', '_mailRun\\(', '_libUser\\(', '_computerOpen\\(']
+  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_adminGate\\(', '_mailRun\\(', '_libUser\\(', '_computerOpen\\(', '_pushUser\\(']
     .concat(VERIFIERS.map(v => v + '\\(')).join('|'));
 
 /* Public on purpose, each with the reason it has to be. */
@@ -232,6 +232,13 @@ section('The cloud workspace\u2019s one door really is a door');
   const cc = codeOnly(bodyOf('_computerOpen'));
   ok(/requireUser\(/.test(cc) && /error:'unauthorized' \}, 401/.test(cc.replace(/\s+/g, ' ')), '_computerOpen authenticates and refuses nobody-there', cc.slice(0, 160));
   ok(cc.indexOf('requireUser(') < cc.indexOf('AMV_COMPUTER.get('), 'and does so before it reaches for a machine', true);
+}
+
+{
+  /* The notification routes (81-web-push.js) pass _pushUser first: a
+     session, refused when absent, and never an API key. */
+  const pu = codeOnly(bodyOf('_pushUser'));
+  ok(/requireUser\(/.test(pu) && /error: 'unauthorized' \}, 401/.test(pu.replace(/\s+/g, ' ')) && /apikey/.test(pu), '_pushUser authenticates, refuses nobody-there and API keys', pu.slice(0, 160));
 }
 
 section('Every route authenticates, or is listed as public with a reason');

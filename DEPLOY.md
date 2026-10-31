@@ -541,6 +541,17 @@ database, and only after reading docs/DATA-TIER.md - binding a database
 without the switch changes nothing, on purpose, so nobody's data moves by
 accident.
 
+## Notifications on people's phones and computers
+
+`VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` switch on Web Push: a device that
+said yes in Settings is told when a background job has a result or is waiting
+for approval. Make the pair once with `node tools/vapid-keys.mjs` on your own
+machine; put the private one in with `npx wrangler secret put VAPID_PRIVATE_KEY`
+and set the public one as a plain variable. `VAPID_SUBJECT` (a `mailto:` or
+`https:` address a push service can reach you at) is optional and defaults to
+APP_URL. Keep the pair - a new one means every device turns notifications on
+again. Nothing is paid for: the browsers' own push services carry them.
+
 ## Anti-abuse / refund-fraud protection
 
 AMV’s product is compute - model calls, agent runs, deep research - which costs real

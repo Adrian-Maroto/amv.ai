@@ -196,6 +196,9 @@ async function revokeUserTokens(env, email) {
   /* And every sign-in an agent was holding for this account (owner decision
      #46): "sign out everywhere" means the agents too. */
   try { await _agentJarForgetAll(env, email); } catch (e) {}
+  /* A phone that was lost is exactly why somebody signs out everywhere: it
+     stops being told about their work too. */
+  try { await _pushForgetAll(env, email); } catch (e) {}
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────

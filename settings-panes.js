@@ -63,6 +63,66 @@ async function _loadSignIns(){
   }));
 }
 try{ window._loadSignIns=_loadSignIns; }catch(e){}
+/* NOTIFICATIONS ON THIS DEVICE (src/worker/81-web-push.js). The switch is
+   this device's subscription: on means this browser holds one and AMV has
+   it; off means neither. Every refusal says what would change it - the
+   browser's own permission, an iPhone that needs AMV on its Home Screen
+   first, or a deployment that has not switched notifications on. */
+async function _pushApi(path, body){
+  const r = await AMV_API._fetch(path, body === undefined ? { method: 'GET' } : { method: 'POST', body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(_refusalText(d));
+  return d;
+}
+function _pushKeyBytes(b64){
+  const s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+async function _pushPrefInit(){
+  const box = $('acct-push'), msg = $('acct-push-msg');
+  if (!box) return;
+  const say = (t) => { if (msg) msg.textContent = t; };
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+  const installed = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    say(ios && !installed ? T('On an iPhone, add AMV to your Home Screen first (Share, then Add to Home Screen), open it from there, and turn this on.') : T('This browser cannot show notifications from a website.'));
+    return;
+  }
+  let st;
+  try { st = await _pushApi('/v1/push'); } catch (e) { say(T('AMV could not reach the server to check. Try again in a moment.')); return; }
+  if (!st.on) { say(T('Notifications are not switched on for this AMV yet.')); return; }
+  let reg = null, sub = null;
+  /* ready never settles when the browser would not register AMV's service
+     worker (some private windows do that): asked for five seconds, then said. */
+  try { reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 5000))]); if (reg) sub = await reg.pushManager.getSubscription(); } catch (e) {}
+  if (!reg) { say(T('This browser did not let AMV set up notifications here. Reload the page, or try outside a private window.')); return; }
+  box.checked = !!sub && Notification.permission === 'granted';
+  box.disabled = false;
+  if (Notification.permission === 'denied') say(T('Notifications for AMV are blocked in this browser’s settings. Allow them there, then turn this on.'));
+  on(box, 'change', async function(){
+    const want = box.checked; box.disabled = true;
+    try {
+      if (want) {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') { box.checked = false; say(T('The browser was not given permission, so nothing changed. You can allow notifications for AMV in its settings.')); return; }
+        sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _pushKeyBytes(st.key) });
+        await _pushApi('/v1/push/subscribe', { subscription: sub.toJSON(), label: (navigator.userAgentData && navigator.userAgentData.platform) || '', lang: (typeof _amvLangTag === 'function' ? _amvLangTag() : '') });
+        const t = await _pushApi('/v1/push/test', {}).catch(() => null);
+        say(t && t.sent ? T('On. A test notification is on its way to this device.') : T('On. AMV will notify this device when a job has a result or needs you.'));
+      } else {
+        const endpoint = sub && sub.endpoint;
+        if (sub) { try { await sub.unsubscribe(); } catch (e) {} }
+        sub = null;
+        if (endpoint) await _pushApi('/v1/push/unsubscribe', { endpoint });
+        say(T('Off. This device will not be notified.'));
+      }
+    } catch (e) {
+      box.checked = !want;
+      say(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''));
+    } finally { box.disabled = false; }
+  });
+}
+
 /* Passkeys, the authenticator app and recovery codes are managed by
    security.js, fetched when this pane opens - the page carries only this. */
 let _secP=null;
@@ -233,9 +293,15 @@ function _renderSetPaneInner(only, into){
             : escH(T('When an answer takes a while and you have gone to do something else, AMV emails your account address as soon as it is ready. Only then - never about something you watched finish.')))+'</div></div>'+
           '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
+        ((window.AMV_API && AMV_API.live && AMV_API.hasSession) ?
+        '<div class="prv-pref" style="margin-top:12px"><div><div class="prv-pref-t">'+escH(T('Notify this device'))+'</div>'+
+          '<div class="prv-pref-s">'+escH(T('When a background job has a result or is waiting for your OK, this phone or computer shows a notification - even with AMV closed. It names the job, never what it found.'))+'</div></div>'+
+          '<label class="sw"><input type="checkbox" id="acct-push" aria-label="'+escH(T('Notify this device'))+'" disabled><span class="sw-sl"></span></label></div>'+
+        '<div class="set-sub" id="acct-push-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>' : '')+
       '</div>'+
       ((window.AMV_API && AMV_API.live && AMV_API.hasSession) ? '<div id="sec-mfa" aria-live="polite"><div class="ss2"><h3>'+escH(T('Passkeys'))+'</h3><div class="set-sub">'+escH(T('Loading…'))+'</div></div></div>' : '')+
       _activeSessionsHTML();
+    _pushPrefInit();
     on($('acct-done-mail'),'change',async function(){
       const box=this, msg=$('acct-done-msg'), want=box.checked;
       box.disabled=true;
