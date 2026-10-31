@@ -49,6 +49,8 @@ const EXEMPT = {
   '/admin/backup/export':'operator backup, admin token',
   '/admin/backup/import':'operator restore, admin token',
   '/admin/backup/nights':'operator: the nightly backups there are to restore from, admin token (INCIDENT-RUNBOOK section 3)',
+  '/admin/pg/backfill':  'operator: starts and watches the Postgres backfill, admin token (docs/DATA-TIER.md step 3)',
+  '/admin/pg/shadow':    'operator: what the Postgres shadow reads found, admin token (docs/DATA-TIER.md step 4)',
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
   '/v1/health/ready':    'asked by the deploy workflow, preflight --live and uptime monitors, not the app',
   '/team/members':       'superseded by /team/get, which already returns the roster',

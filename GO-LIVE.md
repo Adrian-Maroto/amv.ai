@@ -250,6 +250,7 @@ one except the two in the first table.
 |---|---|---|
 | `GLOBAL_DAILY_USD_CAP` | `500` | The most AMV spends on model calls in a day, across every account, before it refuses. Your runaway-bill protection. |
 | `NONESSENTIAL_WRITE_CAP` | `150` | The daily write budget telemetry and the waitlist share, so they cannot starve sign-ups. |
+| `PG_SHADOW` | none | Step 4 of the move to Postgres: which accounts are also read from Postgres and compared in the background (addresses and/or a share, like `amv@amv.homes,5%`). KV still answers. Results at `GET /admin/pg/shadow`. |
 | `MODEL_API_URL` | built-in | Point at a proxy or a specific region. |
 | `MODEL_API_FALLBACK_URL` | none | A second endpoint tried when the primary cannot answer. |
 | `APP_ORIGIN` | none | Read only when `APP_URL` is unset. Set `APP_URL` and ignore this. |

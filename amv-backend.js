@@ -2333,7 +2333,9 @@ async function _pgAccountDiff(sql, email, kv, kinds){
     if (!kv.ent) { if (e.length) out.push('plan_not_removed'); }
     else if (!e.length) out.push('plan_missing');
     else {
-      if (String(e[0].plan) !== String(kv.ent.plan || 'free')) out.push('plan');
+      /* The plan as STORED, compared with the row it was copied to - not the
+       plan anybody is granted, which is _planOf's question and not this one. */
+    if (String(e[0].plan) !== _pgStoredPlan(kv.ent)) out.push('plan');
       if (!!e[0].blocked !== !!kv.ent.blocked) out.push('blocked');
     }
   }
@@ -2346,6 +2348,8 @@ async function _pgAccountDiff(sql, email, kv, kinds){
   }
   return out;
 }
+
+const _pgStoredPlan = (ent) => (ent && ent.plan ? String(ent.plan) : 'free');
 
 async function _pgBackfillCursor(sql, phase){
   const r = await sql`SELECT cursor, copied FROM migration_cursor WHERE kind = ${phase}`;
