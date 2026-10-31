@@ -15579,3 +15579,20 @@ Rule: before changing a screen, find what renders it (grep its callers in
 `src/app`) and read the test that names it. An audit's "do X" never outranks
 the owner's "do not X" - the conflict goes to the owner, as the password
 length, image generation and agents did (owner decisions 35-37).
+
+## 620. A status passed through is a decision made by somebody else
+
+The chaos suite (`when-everything-breaks-nothing-opens`) broke storage,
+counters and the model at random across 2,400 real requests. Money and sign-in
+held. What did not: when the model provider refused, `aiProxy` returned the
+provider's own sentence with the provider's own status. The sentence is
+somebody else's words in AMV's mouth. The status was worse - a provider
+refusing AMV's key answers 401, and the page reads 401 as "your sign-in
+ended", so an outage of AMV's key would have walked every person into a
+sign-in loop for something no sign-in could fix. Every single-failure suite
+had a fake model that only ever answered 200 or 500.
+Rule: an answer from a supplier is translated at the boundary - AMV's
+sentence, AMV's code, and a status chosen for what the CALLER should do next
+(retry, fix the request, wait for AMV). The supplier's text goes to the
+operator. And a fake's error responses are as much a part of a suite as its
+successes: test the 401 and the 400, not just the 500.

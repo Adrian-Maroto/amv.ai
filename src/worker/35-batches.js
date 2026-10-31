@@ -367,6 +367,30 @@ async function aiCountTokens(request, env){
 /* `principal` is given only by the batch runner (_batchItem), which resolves
    the batch's owner the same way requireUser would; every request from
    outside is authenticated here as always. */
+/* WHAT THE CALLER IS TOLD WHEN THE MODEL REFUSED.
+
+   This used to hand back the provider's own error text with the provider's
+   own status. Found by the chaos suite (when-everything-breaks-nothing-opens):
+   the provider's sentence is somebody else's words in AMV's mouth - it can
+   name a provider or a model AMV does not show - and it helps nobody decide
+   what to do. Worse, its STATUS was passed through: a provider refusing AMV's
+   own key answered 401, and the page reads 401 as "your sign-in ended", so an
+   outage of AMV's key would have sent every person into a sign-in loop.
+
+   So the caller gets AMV's sentence and a code, by kind; the provider's text
+   goes to the operator (_workerError, the alert). Busy and server errors keep
+   their status, because that is what the page and API clients retry on. */
+function _modelErrorShown(status) {
+  const nothing = ' Nothing was charged.';
+  if (status === 400) return json({ error: 'The model did not accept this request. Check the messages and parameters, then try again.' + nothing, code: 'invalid_request' }, 400);
+  if (status === 413) return json({ error: 'This request is too large for the model. Shorten it or start a new conversation.' + nothing, code: 'request_too_large' }, 413);
+  if (status === 401 || status === 403 || status === 404)
+    return json({ error: 'AMV’s model service is not available right now. It is not your account - try again later.' + nothing, code: 'model_unavailable' }, 503, { 'Retry-After': '60' });
+  if (status === 429 || status === 529 || status >= 500)
+    return json({ error: 'The model is busy right now. Try again in a moment.' + nothing, code: 'model_busy' }, status >= 500 ? status : 429, { 'Retry-After': '10' });
+  return json({ error: 'The model could not answer this request.' + nothing, code: 'model_error' }, 502);
+}
+
 async function aiProxy(request, env, ctx, principal) {
   const user = principal || await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
@@ -1051,7 +1075,7 @@ async function aiProxy(request, env, ctx, principal) {
     // otherwise an outage would quietly burn through everyone's daily quota.
     await refundReservation();
     const e = await upstream.json().catch(() => ({}));
-    try { await _workerError(env, 'aiProxy:upstream', new Error('upstream ' + upstream.status)); } catch (_) {}
+    try { await _workerError(env, 'aiProxy:upstream', new Error('upstream ' + upstream.status + ': ' + String(e?.error?.message || '').slice(0, 200))); } catch (_) {}
     // A 401/403 from the model means your API key is bad/expired/over-quota -
     // that breaks the ENTIRE product for everyone, so alert loudly and fast.
     if (upstream.status === 401 || upstream.status === 403) {
@@ -1059,7 +1083,7 @@ async function aiProxy(request, env, ctx, principal) {
     } else if (upstream.status >= 500) {
       ctx.waitUntil(alertOnce(env, 'model_5xx', `⚠️ Model API erroring (${upstream.status}). AI responses may be failing.`, 15));
     }
-    return json({ error: e?.error?.message || 'AI error', status: upstream.status }, upstream.status);
+    return _modelErrorShown(upstream.status);
   }
 
   // 7) pass the stream to the client AND tally tokens/cost as it flows

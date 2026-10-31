@@ -72,7 +72,13 @@ const env = {
     }),
   },
 };
-const ctx = { waitUntil(p) { /* metering runs out of band; not what is under test */ } };
+/* Metering runs out of band and is not what is under test - but it is
+   finished before a section resets the counters. Dropped on the floor, the
+   last section's metering landed in the NEXT section's fresh counters
+   whenever the request path happened to yield a little longer, and read as
+   the owner's allowance being used up. */
+const pending = [];
+const ctx = { waitUntil(p) { pending.push(Promise.resolve(p).catch(() => {})); } };
 
 const stream = () => new ReadableStream({ start(c) { c.close(); } });
 let upstreamOk = true;
@@ -96,12 +102,12 @@ const hit = () => W.widgetChat(new Request('https://api/v1/widget/chat', {
              'CF-Connecting-IP': '10.0.0.' + (++ipN % 250) },
   body: JSON.stringify({ key: 'wk1', messages: [{ role: 'user', content: 'hi' }] }),
 }), env, ctx);
-const reset = () => { counters.clear(); ipN = 0; upstreamOk = true; };
+const reset = async () => { await Promise.all(pending.splice(0)); counters.clear(); ipN = 0; upstreamOk = true; };
 const used = () => counters.get(`wmsg:wk1:${W.todayKey()}`) || 0;
 
 section('Under the cap, messages go through');
 {
-  reset(); await setWidget({ dailyMsgCap: 3 });
+  await reset(); await setWidget({ dailyMsgCap: 3 });
   const codes = [];
   for (let i = 0; i < 3; i++) codes.push((await hit()).status);
   ok(codes.every(c => c === 200), 'all three are answered', codes);
@@ -121,7 +127,7 @@ section('And a burst arriving together cannot slip past it');
 {
   /* The whole point. With a read-then-check, all ten of these read 0, all ten
      pass, and all ten are answered. */
-  reset(); await setWidget({ dailyMsgCap: 3 });
+  await reset(); await setWidget({ dailyMsgCap: 3 });
   const results = await Promise.all(Array.from({ length: 10 }, () => hit()));
   const answered = results.filter(r => r.status === 200).length;
   ok(answered === 3, 'exactly the cap is answered, not the whole burst', answered);
@@ -132,7 +138,7 @@ section('A request that never reaches the model gives its reservation back');
 {
   /* Reserving up front is what makes the cap hold; refunding is what stops a
      rejected request from permanently costing the owner one. */
-  reset(); await setWidget({ dailyMsgCap: 5 });
+  await reset(); await setWidget({ dailyMsgCap: 5 });
   upstreamOk = false;
   const r = await hit();
   ok(r.status === 502, 'the model was unreachable', r.status);
@@ -146,7 +152,7 @@ section('A request that never reaches the model gives its reservation back');
 
 section('A blocked origin is not charged either');
 {
-  reset(); await setWidget({ dailyMsgCap: 5 });
+  await reset(); await setWidget({ dailyMsgCap: 5 });
   const r = await W.widgetChat(new Request('https://api/v1/widget/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://elsewhere.example', 'CF-Connecting-IP': '10.1.1.1' },
@@ -160,7 +166,7 @@ section('No cap configured still means no cap');
 {
   /* A cap of 0 means unlimited. Reserving against a cap of zero would refuse
      every request, which is the obvious way to get this wrong. */
-  reset(); await setWidget({ dailyMsgCap: 0 });
+  await reset(); await setWidget({ dailyMsgCap: 0 });
   const codes = [];
   await withFrozenClock(async () => {
     for (let i = 0; i < 12; i++) codes.push((await hit()).status);

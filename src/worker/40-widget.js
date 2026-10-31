@@ -440,7 +440,11 @@ async function widgetChat(request, env, ctx) {
   if (!upstream.ok) {
     const e = await upstream.json().catch(() => ({}));
     await refundMsg(); await refundOwner();   // nothing was generated, so nothing was used
-    return new Response(JSON.stringify({ error: e?.error?.message || 'The assistant is unavailable.' }), { status: 502, headers: { 'Content-Type': 'application/json', ...wcors } });
+    /* The provider's own words stay with the operator: a visitor on somebody
+       else's website is the last person who should read them (see
+       _modelErrorShown). */
+    try { await _workerError(env, 'widgetChat:upstream', new Error('upstream ' + upstream.status + ': ' + String(e?.error?.message || '').slice(0, 200))); } catch (_) {}
+    return new Response(JSON.stringify({ error: 'The assistant is unavailable right now. Please try again in a moment.' }), { status: 502, headers: { 'Content-Type': 'application/json', ...wcors } });
   }
 
   // tee: stream to the visitor AND meter cost into this widget's + global counters
