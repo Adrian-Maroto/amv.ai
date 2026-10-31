@@ -159,7 +159,12 @@ function imapGreeting(host, port) {
        reported as SLOW and does not fail the run: a check that is red every
        day for a reason nobody can act on teaches people to ignore it. */
     s.on('timeout', () => finish({ ok: false, slow: true, why: host + ':' + port + ' timed out' }));
-    s.on('error', (e) => finish({ ok: false, slow: e.code === 'ETIMEDOUT', why: host + ':' + port + ' ' + (e.code || e.message) }));
+    /* ECONNRESET is the same story from the other side: the connection was
+       accepted and then dropped, which is what a filter or a rate limit
+       does - Spectrum's server did it one night in six. A server that
+       answers in plain text on the encrypted port (WRONG_VERSION_NUMBER)
+       still fails: that is what a moved or broken server looks like. */
+    s.on('error', (e) => finish({ ok: false, slow: e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET', why: host + ':' + port + ' ' + (e.code || e.message) }));
   });
 }
 
@@ -247,7 +252,7 @@ else {
   const on = results.filter(r => r.kind === 'live' && r.ok && !r.off && CONN_IDS.has(r.id)).map(r => r.name);
   if (results.some(r => r.kind === 'live')) console.log('\nSign-ins live on the deployment: ' + (on.length ? on.join(', ') : 'none yet'));
   console.log('\n' + (results.length - bad.length - slow.length) + ' of ' + results.length + ' connectors answered.');
-  if (slow.length) console.log('Timed out from here (may be region filtering, not failing the run): ' + slow.map(r => r.kind + ':' + r.id).join(', '));
+  if (slow.length) console.log('Timed out or dropped from here (may be region filtering, not failing the run): ' + slow.map(r => r.kind + ':' + r.id).join(', '));
   if (bad.length) console.log('Not answering: ' + bad.map(r => r.kind + ':' + r.id).join(', '));
 }
 process.exit(bad.length ? 1 : 0);

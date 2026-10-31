@@ -17,7 +17,13 @@ for (const [label, viewport, touch] of [['a small phone', { width: 360, height: 
   section('On ' + label);
   {
     await page.evaluate((p) => { window.__pick = _connScopePick(p); }, GOOGLE);
-    await page.waitForTimeout(350);
+    /* Measured where it comes to rest: on a phone the sheet slides up from
+       the bottom edge, and a fixed wait measured it mid-slide on a slower
+       engine (2px past the edge, nightly WebKit lane). */
+    await page.evaluate(async () => {
+      const d = document.querySelector('#conn-bg [role="dialog"]');
+      await Promise.all((d ? d.getAnimations() : []).map(a => a.finished.catch(() => {})));
+    });
     const m = await page.evaluate(() => {
       const d = document.querySelector('#conn-bg [role="dialog"]'), b = d.querySelector('.cpk-body');
       const go = document.getElementById('conn-go').getBoundingClientRect(), r = d.getBoundingClientRect();
