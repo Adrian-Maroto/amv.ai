@@ -252,7 +252,7 @@ section('Deferred work keeps its place');
      a loop over an empty list contains the call and does nothing. */
   const i = tick.indexOf('AUTO_TICK_BUDGET_MS');
   const window = tick.slice(i, i + 700).replace(/\s+/g, ' ');
-  ok(/for\s*\(\s*const rest of users\.slice\(/.test(window),
+  ok(/for\s*\(\s*const rest of (users|inline)\.slice\(/.test(window),
      'the accounts that did not get their turn are the ones put back', window.slice(0, 200));
   ok(/_autoBucketAdd\(env, rest\.id/.test(window),
      'and they go back into this hour', true);
