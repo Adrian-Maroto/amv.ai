@@ -223,7 +223,9 @@ section('An error that arrives after a 200 is still an error');
   mode = 'midstream-error';
   const r = await caught(() => complete({ max_tokens: 64 }));
   ok(r.ok === false, 'it throws rather than returning an empty success', r.ok);
-  ok(/overloaded/i.test(r.m || ''),
+  /* What the engine said, in AMV's words: the kind (busy) and that it stopped
+     part way - not a generic snag, and not the provider's own sentence. */
+  ok(/busy right now and stopped before finishing/i.test(r.m || ''),
      'and carries what the engine said, not a generic snag', r.m);
 }
 

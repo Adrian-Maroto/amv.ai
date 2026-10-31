@@ -180,7 +180,7 @@ section('The endpoint reserves rather than reads');
      read-then-check under a sequential runner, and the defect is about
      concurrency. */
   const at = src.indexOf('async function widgetChat');
-  const body = src.slice(at, src.indexOf('\n}', src.indexOf('return new Response(toClient', at)));
+  const body = src.slice(at, src.indexOf('\n}', src.indexOf('return new Response(_sseInOurWords(toClient)', at)));
   ok(/op: 'reserve'[^}]*cap: msgCap/.test(body.replace(/\n/g, ' ')),
      'the message cap is a reservation', true);
   ok(!/op: 'get' \}\)\)\.value \|\| 0;\s*if \(cfg\.dailyMsgCap/.test(body),
