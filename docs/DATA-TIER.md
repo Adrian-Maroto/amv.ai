@@ -112,6 +112,10 @@ list) and erasure (a tombstone with nothing personal on it).
 Credit packs bought, refunded and disputed are written to `credit_ledger`,
 one row per event keyed by the payment. Credit spent is a row per message at its settled cost. Every credit row notes
 whose credit it was (`subject:` - a person, or a team, until the ledger has an
-organization column). Not built yet: step 2 for seller earnings; the backfill
+organization column). A seller's money lines are written to `seller_ledger`:
+a sale (with when it can be withdrawn), its reversal, a payout requested and
+one returned, each keyed by the sale's reference and item or the
+withdrawal's id; a payout marked paid moves no money and writes no row.
+Step 2 is complete. Not built yet: the backfill
 (step 3), which also works through the `pgrepair:` list; shadow reads (step
 4); and the switch (step 5).

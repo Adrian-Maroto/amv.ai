@@ -47,7 +47,7 @@ function mkEnv() {
 section('The reader and the writer name the same record');
 {
   const risk = codeOnly(functionBody(src, '_payoutRisk'));
-  const push = codeOnly(functionBody(src, '_pushWalletTx'));
+  const push = codeOnly(functionBody(src, '_pushWalletTx') + '\n' + functionBody(src, '_pushWalletTxLine'));
 
   ok(/wallet_tx/.test(push), 'sales are written to wallet_tx', true);
   ok(/wallet_tx/.test(risk), 'and the concentration check reads wallet_tx', true);

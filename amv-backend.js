@@ -2192,6 +2192,14 @@ function _pgLedger(env, row){
     try {
       const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
       if (!acct.length) throw new Error('no_account_row');
+      if (row.table === 'seller') {
+        await sql`
+          INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
+          VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+                  ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
+          ON CONFLICT (idempotency_key) DO NOTHING`;
+        return;
+      }
       await sql`
         INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
         VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
@@ -2206,6 +2214,19 @@ function _pgLedger(env, row){
   }).finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
   try { _bg(p); } catch (e) {}
+}
+
+/* A seller's money line (_pushWalletTx), as a seller_ledger row. Only lines
+   that move money: a payout marked paid moves none (the money left when it
+   was requested). The key is what makes the line unique - the sale's
+   reference and item, or the withdrawal's id - so a retry is one row. */
+const PG_SELLER_REASON = { sale: 'sale', sale_reversed: 'reversal', withdrawal: 'payout', withdrawal_returned: 'correction' };
+function _pgSellerRow(env, email, tx){
+  if (!tx || !PG_SELLER_REASON[tx.type] || !(Math.abs(+tx.amount) > 0)) return;
+  const id = tx.ref ? tx.ref + ':' + (tx.item || '') : (tx.id || '');
+  if (!id) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch (e) {} return; }
+  _pgLedger(env, { table: 'seller', email, currency: tx.currency || 'USD', amount: +tx.amount, reason: PG_SELLER_REASON[tx.type],
+    key: 'seller:' + tx.type + ':' + id, at: tx.ts, holdUntil: tx.holdUntil });
 }
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
@@ -30470,6 +30491,13 @@ async function _walletTx(env, email) {
    and the key is passed through exactly as callers give it - lowercasing here
    and not in `_walletTx` would split reads from writes. */
 async function _pushWalletTx(env, email, tx) {
+  const added = await _pushWalletTxLine(env, email, tx);
+  /* A line that is new is money that moved: its Postgres ledger row too
+     (04a-control-plane.js), keyed by what makes the line itself unique. */
+  if (added) _pgSellerRow(env, email, tx);
+  return added;
+}
+async function _pushWalletTxLine(env, email, tx) {
   return await _withKV(env, 'wallet_tx', email, (list) => {
     if (tx && tx.ref && tx.item &&
         list.some((t) => t && t.ref === tx.ref && t.item === tx.item && t.type === tx.type)) {
@@ -30882,7 +30910,7 @@ async function _reverseSale(env, ref, reason) {
      bare claim. So it uses the same helper, which gives the claim back when the
      work throws and lets the retry finish it. */
   const _rev = await _onceOrRetry(env, 'salerev', ref, CLAIM_ONCE_TTL_S,
-    async () => { await _reverseSaleWork(env, rec, reason); return rec; });
+    async () => { await _reverseSaleWork(env, Object.assign({}, rec, { ref }), reason); return rec; });
   return _rev.claimed ? _rev.value : null;
 }
 
@@ -30936,8 +30964,11 @@ async function _reverseSaleWork(env, rec, reason) {
     w.holds = holds.filter(h => !drop.includes(h));
     _pruneMaturedHolds(w);
     });
+    /* The sale's own reference rides on the line: it is what makes this
+       reversal identifiable as this sale's, to the history's de-duplication
+       and to the Postgres ledger's key. */
     await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,
-      item: rec.itemId, buyer: rec.buyer, reason, ts: Date.now() });
+      item: rec.itemId, buyer: rec.buyer, reason, ref: rec.ref || '', ts: Date.now() });
   }
 
   // 3. A one-of-a-kind listing goes back on sale rather than staying "sold".

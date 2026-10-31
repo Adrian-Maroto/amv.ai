@@ -45,7 +45,10 @@ const W = await import(harness + '?t=' + Date.now());
 
 section('The history is written through the lock, by the only thing that writes it');
 {
-  const body = codeOnly(functionBody(src, '_pushWalletTx'));
+  /* `_pushWalletTx` is the entry point; the locked append itself lives in
+     `_pushWalletTxLine` so the entry point can mirror a line that was really
+     added (and only then) to the Postgres seller ledger. Both are read. */
+  const body = codeOnly(functionBody(src, '_pushWalletTx') + '\n' + functionBody(src, '_pushWalletTxLine'));
   ok(/_withKV\(env, 'wallet_tx'/.test(body),
      'the append goes through the shared locked helper', true);
   ok(!/AMV_KV\.put/.test(body),
@@ -80,7 +83,7 @@ section('Every writer of the history goes through that one function');
     for (const d of decls) { if (d.at <= m.index) owner = d.name; else break; }
     if (owner) owners.push(owner);
   }
-  const unexpected = [...new Set(owners)].filter(n => !['_walletTx', '_pushWalletTx'].includes(n));
+  const unexpected = [...new Set(owners)].filter(n => !['_walletTx', '_pushWalletTx', '_pushWalletTxLine'].includes(n));
   ok(unexpected.length === 0,
      'only the reader and the locked appender name that key at all', unexpected);
 }

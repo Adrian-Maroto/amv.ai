@@ -495,6 +495,13 @@ async function _walletTx(env, email) {
    and the key is passed through exactly as callers give it - lowercasing here
    and not in `_walletTx` would split reads from writes. */
 async function _pushWalletTx(env, email, tx) {
+  const added = await _pushWalletTxLine(env, email, tx);
+  /* A line that is new is money that moved: its Postgres ledger row too
+     (04a-control-plane.js), keyed by what makes the line itself unique. */
+  if (added) _pgSellerRow(env, email, tx);
+  return added;
+}
+async function _pushWalletTxLine(env, email, tx) {
   return await _withKV(env, 'wallet_tx', email, (list) => {
     if (tx && tx.ref && tx.item &&
         list.some((t) => t && t.ref === tx.ref && t.item === tx.item && t.type === tx.type)) {
@@ -907,7 +914,7 @@ async function _reverseSale(env, ref, reason) {
      bare claim. So it uses the same helper, which gives the claim back when the
      work throws and lets the retry finish it. */
   const _rev = await _onceOrRetry(env, 'salerev', ref, CLAIM_ONCE_TTL_S,
-    async () => { await _reverseSaleWork(env, rec, reason); return rec; });
+    async () => { await _reverseSaleWork(env, Object.assign({}, rec, { ref }), reason); return rec; });
   return _rev.claimed ? _rev.value : null;
 }
 
@@ -961,8 +968,11 @@ async function _reverseSaleWork(env, rec, reason) {
     w.holds = holds.filter(h => !drop.includes(h));
     _pruneMaturedHolds(w);
     });
+    /* The sale's own reference rides on the line: it is what makes this
+       reversal identifiable as this sale's, to the history's de-duplication
+       and to the Postgres ledger's key. */
     await _pushWalletTx(env, rec.seller, { type: 'sale_reversed', amount: -rec.sellerShare,
-      item: rec.itemId, buyer: rec.buyer, reason, ts: Date.now() });
+      item: rec.itemId, buyer: rec.buyer, reason, ref: rec.ref || '', ts: Date.now() });
   }
 
   // 3. A one-of-a-kind listing goes back on sale rather than staying "sold".

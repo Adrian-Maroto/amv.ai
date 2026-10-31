@@ -525,8 +525,9 @@ for repair (`pgrepair:`). Erasing an account leaves a tombstone with nothing
 personal on it. API keys are mirrored too (one row per key, its hash only), and teams (an
 organization each, one membership per member). Credit packs bought and taken
 back, and credit spent (one row per message, at what it cost), are rows in
-credit_ledger, each noting whose credit it was. Seller earnings are the
-next slice;
+credit_ledger, each noting whose credit it was. Seller earnings (sales,
+reversals, payouts, returned payouts) are rows in seller_ledger. Step 2 is
+complete;
 backfill, shadow reads and the gradual switch follow docs/DATA-TIER.md.
 
 ## What needs the owner's own hand

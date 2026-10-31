@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -183,6 +183,32 @@ section('Credit spent is a row per message, at what it cost; a request id sent t
   const rows = q("select amount::text||'|'||note from credit_ledger where reason='spend'").split('\n');
   ok(rows.length === 2 && rows.every(r => r.startsWith(want + '|')), 'two messages, two rows, each what it cost at the markup', { rows, want });
   ok(rows.every(r => /subject:ana@example\.com/.test(r) && /req:same-id-123/.test(r)), 'each says whose credit paid, and which request');
+}
+
+section('A seller’s money is a row per line that moved it; the same sale reported twice is one row, a payout marked paid is none');
+{
+  const day = 86400e3, sold = Date.UTC(2026, 9, 1);
+  const sale = { type: 'sale', amount: 7, gross: 10, item: 'itm_1', title: 'Deck', buyer: 'b@example.com', ref: 'pi_sale_1', ts: sold, holdUntil: sold + 14 * day };
+  ok(await W._pushWalletTx(env, 'ana@example.com', sale), 'a sale is a new line');
+  ok(!(await W._pushWalletTx(env, 'ana@example.com', Object.assign({}, sale))), 'the same sale again is not');
+  await W._pushWalletTx(env, 'ana@example.com', { type: 'sale_reversed', amount: -7, item: 'itm_1', buyer: 'b@example.com', reason: 'refund', ref: 'pi_sale_1', ts: sold + day });
+  await W._pushWalletTx(env, 'ana@example.com', { type: 'withdrawal', amount: -3, status: 'pending', id: 'wd_1', ts: sold + 2 * day });
+  await W._pushWalletTx(env, 'ana@example.com', { type: 'withdrawal_paid', amount: 0, status: 'paid', id: 'wd_1', ts: sold + 3 * day });
+  await W._pushWalletTx(env, 'ana@example.com', { type: 'withdrawal', amount: -2, status: 'pending', id: 'wd_2', ts: sold + 2 * day });
+  await W._pushWalletTx(env, 'ana@example.com', { type: 'withdrawal_returned', amount: 2, status: 'rejected', id: 'wd_2', ts: sold + 4 * day });
+  await W._pgSettle();
+  const rows = q("select idempotency_key||'|'||reason||'|'||amount::text from seller_ledger order by idempotency_key").split('\n');
+  ok(rows.join() === [
+    'seller:sale:pi_sale_1:itm_1|sale|7.000000',
+    'seller:sale_reversed:pi_sale_1:itm_1|reversal|-7.000000',
+    'seller:withdrawal:wd_1|payout|-3.000000',
+    'seller:withdrawal:wd_2|payout|-2.000000',
+    'seller:withdrawal_returned:wd_2|correction|2.000000'].join(), 'a sale, its reversal, two payouts and one returned - and nothing for the one marked paid', rows);
+  ok(q("select to_char(hold_until at time zone 'UTC','YYYY-MM-DD')||'|'||to_char(at at time zone 'UTC','YYYY-MM-DD') from seller_ledger where reason='sale'") === '2026-10-15|2026-10-01',
+     'the sale keeps when it happened and when it can be withdrawn');
+  ok(q("select sum(amount)::text from seller_ledger") === '-3.000000', 'and the rows add up to what left: the one payout that went');
+  const del = (() => { try { q("delete from seller_ledger"); return 'deleted'; } catch (e) { return String(e.stderr || e.message); } })();
+  ok(/append-only/.test(del), 'and none of it can be deleted', del.slice(0, 80));
 }
 
 section('A plan before its account has a row is listed for repair, never invented');
