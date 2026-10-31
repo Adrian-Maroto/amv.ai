@@ -25,3 +25,14 @@ class_name = "AMVComputer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AMVComputer"]
+
+# ── The workspace outlives the container (optional) ──
+# Without this, a person's files in /work last as long as their container -
+# a few idle minutes. With it, the workspace is saved here before the container
+# stops and put back when the next one starts (computer.mjs). Installed
+# packages and caches are left out; at most 512 MB per person. Create once:
+#   npx wrangler r2 bucket create amv-workspaces
+# then uncomment:
+# [[r2_buckets]]
+# binding = "WORKSPACES"
+# bucket_name = "amv-workspaces"

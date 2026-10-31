@@ -547,3 +547,9 @@ the repository.
    instead of every account in turn inside one 25-second tick, which starts
    running late past a few thousand busy accounts. Needs Workers Paid (item
    1); about 40 US cents per million operations. Until then nothing changes.
+8. **The cloud workspace keeps its files when it sleeps (Cloudflare R2)**: in
+   `cloud/`, run `npx wrangler r2 bucket create amv-workspaces`, uncomment the
+   `WORKSPACES` lines at the end of `cloud/wrangler.toml`, and deploy `cloud/`
+   again. Each person's workspace is then saved before their machine stops
+   and restored when it starts (packages and caches left out, 512 MB at most).
+   Until then the workspace lasts only as long as the machine is awake.

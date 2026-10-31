@@ -5178,6 +5178,17 @@ async function _computerName(email){
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
   return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
 }
+/* Erasing an account: the computer Worker deletes the saved workspace and
+   stops the machine (cloud/computer.mjs, /amv-workspace/forget). True when
+   it said so. */
+async function _computerForget(env, email){
+  const stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(email)));
+  const r = await stub.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST',
+    headers: { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) } }));
+  if (!r.ok) return false;
+  const d = await r.json().catch(() => null);
+  return !!(d && d.forgotten);
+}
 async function _computerUsedSeconds(env, email){
   return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
 }
@@ -19619,6 +19630,13 @@ async function authDeleteAccount(request, env) {
   } catch { _eraseFailed('team usage totals'); }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
+  /* The saved cloud workspace lives with AMV's computer Worker, not in this
+     store, so it is asked to forget it - and to stop the machine. Only when
+     the cloud computer exists on this deployment. */
+  if (_computerOn(env)) {
+    try { const r = await _computerForget(env, email); if (!r) _eraseFailed('saved cloud workspace'); }
+    catch { _eraseFailed('saved cloud workspace'); }
+  }
 
   // Revoke all tokens so existing sessions die immediately.
   await _revokeOrSay(env, email, 'account_deleted');

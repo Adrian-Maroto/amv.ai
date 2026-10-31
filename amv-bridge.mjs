@@ -62,7 +62,7 @@ import { spawn, spawnSync } from 'child_process';
 import { homedir, tmpdir } from 'os';
 import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSync, writeFileSync,
          mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync, openSync, closeSync, fstatSync,
-         mkdtempSync, rmSync, constants as FS } from 'fs';
+         mkdtempSync, rmSync, createReadStream, createWriteStream, constants as FS } from 'fs';
 import { resolve, join, dirname, relative, sep, basename } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { fileURLToPath } from 'url';
@@ -349,6 +349,11 @@ let pairedAt = 0;
    check and the idle expiry are for a bridge on somebody's own machine and
    do not apply here; the screen is never offered (a container has none). */
 const CLOUD = ARGS.includes('--cloud');
+/* What a workspace snapshot leaves out: what an install or a build makes
+   again. And the most it may be - past this the workspace is kept for the
+   session only, and the page is told so rather than losing it silently. */
+const SNAPSHOT_SKIP = ['./node_modules', '*/node_modules', './.venv', '*/.venv', '*/__pycache__', './.cache', '*/.cache', './.npm', '*/.npm'];
+const SNAPSHOT_MAX = 512 * 1024 * 1024;
 if (CLOUD) {
   const key = String(process.env.AMV_CLOUD_KEY || '');
   if (key.length < 32) {
@@ -1310,6 +1315,57 @@ const server = createServer(async (req, res) => {
   }
   if (!tokenOk(req.headers['x-amv-bridge-token'])) return json(res, 401, { error: 'not_paired' });
   lastUsed = Date.now();
+
+  /* ── THE CLOUD WORKSPACE OUTLIVES ITS CONTAINER ───────────────────────────
+
+     A cloud container is stopped after a few idle minutes and its disk goes
+     with it. AMV's computer Worker (cloud/computer.mjs) asks for a snapshot
+     of the workspace before it stops the container, keeps it in the account's
+     storage, and puts it back before the next request reaches a new one.
+
+     Cloud only, behind AMV's key like every route here. Both directions go
+     through a file in the temporary folder, never a half-written stream: a
+     snapshot over the cap, or a tar that fails, answers an error and leaves
+     nothing behind. What can be rebuilt is left out - installed packages and
+     caches - so a snapshot is the person's work, not their node_modules. */
+  if (CLOUD && path === '/amv-bridge/snapshot' && req.method === 'GET') {
+    const file = join(tmpdir(), 'amv-snapshot-' + randomBytes(6).toString('hex') + '.tgz');
+    const code = await new Promise((done) => {
+      const t = spawn('tar', ['-czf', file, ...SNAPSHOT_SKIP.flatMap(x => ['--exclude', x]), '-C', ROOT, '.'], { stdio: ['ignore', 'ignore', 'pipe'] });
+      t.on('error', () => done(-1)); t.on('close', (c) => done(c));
+    });
+    let size = 0; try { size = statSync(file).size; } catch (e) { size = 0; }
+    /* tar exits 1 when a file changed while it was read - the archive is
+       still whole, and a command running in the background is normal. */
+    if ((code !== 0 && code !== 1) || !size) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 500, { error: 'snapshot_failed' }); }
+    if (size > SNAPSHOT_MAX) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 413, { error: 'too_large', size, max: SNAPSHOT_MAX }); }
+    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size) });
+    const rs = createReadStream(file);
+    rs.on('close', () => { try { rmSync(file, { force: true }); } catch (e) {} });
+    rs.pipe(res);
+    return;
+  }
+  if (CLOUD && path === '/amv-bridge/restore' && req.method === 'PUT') {
+    const file = join(tmpdir(), 'amv-restore-' + randomBytes(6).toString('hex') + '.tgz');
+    const got = await new Promise((done) => {
+      let n = 0, over = false; const ws = createWriteStream(file);
+      req.on('data', (c) => { n += c.length; if (n > SNAPSHOT_MAX && !over) { over = true; req.unpipe(ws); ws.destroy(); } });
+      req.on('end', () => { if (over) return done({ over: true }); ws.end(() => done({ n })); });
+      req.on('error', () => done({ error: true }));
+      req.pipe(ws);
+    });
+    if (got.over || got.error || !got.n) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, got.over ? 413 : 400, { error: got.over ? 'too_large' : 'bad_body' }); }
+    /* GNU tar strips leading slashes and refuses names that climb with "..";
+       --no-same-owner keeps everything owned by the workspace's own user. */
+    const code = await new Promise((done) => {
+      const t = spawn('tar', ['-xzf', file, '--no-same-owner', '-C', ROOT], { stdio: ['ignore', 'ignore', 'pipe'] });
+      t.on('error', () => done(-1)); t.on('close', (c) => done(c));
+    });
+    try { rmSync(file, { force: true }); } catch (e) {}
+    if (code !== 0) return json(res, 500, { error: 'restore_failed' });
+    console.log('  ✓ workspace restored (' + Math.round(got.n / 1024) + ' KB)');
+    return json(res, 200, { restored: true, bytes: got.n });
+  }
 
   let body = {};
   if (req.method === 'POST') {

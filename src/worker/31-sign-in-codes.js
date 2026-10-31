@@ -1727,6 +1727,13 @@ async function authDeleteAccount(request, env) {
   } catch { _eraseFailed('team usage totals'); }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
+  /* The saved cloud workspace lives with AMV's computer Worker, not in this
+     store, so it is asked to forget it - and to stop the machine. Only when
+     the cloud computer exists on this deployment. */
+  if (_computerOn(env)) {
+    try { const r = await _computerForget(env, email); if (!r) _eraseFailed('saved cloud workspace'); }
+    catch { _eraseFailed('saved cloud workspace'); }
+  }
 
   // Revoke all tokens so existing sessions die immediately.
   await _revokeOrSay(env, email, 'account_deleted');

@@ -15,7 +15,7 @@ customer - is told AMV is "just waiting for API keys" when a stage needs more.
 | **Development preview** | KV + counter bound (done) | Live |
 | **Private beta** (invited people, watched closely) | `AMV_MODEL_KEY`, email domain verified, `GLOBAL_DAILY_USD_CAP` chosen, `MODEL_API_FALLBACK_URL` | **Config only** - the AI is off on production until the key is set |
 | **Paid beta** | the above + Stripe (secret, webhook secret, price ids), an alert destination (`ALERT_WEBHOOK`), an outside uptime monitor on `/v1/health/ready` | Config + the owner's accounts |
-| **Consumer production** (open sign-up, real scale) | the above, and engineering that keys cannot replace: the Postgres control plane live (schema built, Worker reads/writes not - docs/DATA-TIER.md), queues for email/webhooks/ingestion, a durable runtime for long tasks, a cloud computer that keeps its files when it sleeps, direct-to-storage uploads, paging and on-call, staging and gradual rollout | **Not yet** |
+| **Consumer production** (open sign-up, real scale) | the above, and engineering that keys cannot replace: the Postgres control plane live (schema built, Worker reads/writes not - docs/DATA-TIER.md), queues for email/webhooks/ingestion, a durable runtime for long tasks, direct-to-storage uploads, paging and on-call, staging and gradual rollout | **Not yet** |
 | **Enterprise production** | consumer production, plus an outside security review of sign-in, SOC 2 work, retention and residency controls | **Not yet** |
 
 At consumer production the deploy enforces the promise: set the repository
@@ -575,6 +575,21 @@ To switch it on (about ten minutes, once):
    npx wrangler secret put AMV_COMPUTER_KEY
    npx wrangler deploy
    ```
+
+5. Optional, and recommended: keep each person's workspace when their machine
+   sleeps. Without it, files in the cloud workspace last only as long as the
+   container - a few idle minutes. With it, the workspace is saved before the
+   container stops and put back when the next one starts (installed packages
+   and caches are left out; at most 512 MB per person; about 1.5 US cents per
+   GB a month). In `cloud/`:
+
+   ```
+   npx wrangler r2 bucket create amv-workspaces
+   ```
+
+   then uncomment the `WORKSPACES` lines at the end of `cloud/wrangler.toml`
+   and deploy `cloud/` again. A deleted account's saved workspace is deleted
+   with it.
 
 The readiness screen's row "AMV's cloud computer" turns green. If the two keys
 differ, people are told the cloud computer "is not set up correctly" and

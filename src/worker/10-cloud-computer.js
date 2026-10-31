@@ -30,6 +30,17 @@ async function _computerName(email){
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
   return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
 }
+/* Erasing an account: the computer Worker deletes the saved workspace and
+   stops the machine (cloud/computer.mjs, /amv-workspace/forget). True when
+   it said so. */
+async function _computerForget(env, email){
+  const stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(email)));
+  const r = await stub.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST',
+    headers: { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) } }));
+  if (!r.ok) return false;
+  const d = await r.json().catch(() => null);
+  return !!(d && d.forgotten);
+}
 async function _computerUsedSeconds(env, email){
   return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
 }
