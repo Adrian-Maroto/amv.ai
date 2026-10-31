@@ -527,8 +527,10 @@ organization each, one membership per member). Credit packs bought and taken
 back, and credit spent (one row per message, at what it cost), are rows in
 credit_ledger, each noting whose credit it was. Seller earnings (sales,
 reversals, payouts, returned payouts) are rows in seller_ledger. Step 2 is
-complete;
-backfill, shadow reads and the gradual switch follow docs/DATA-TIER.md.
+complete. The backfill (step 3) is built and waits for the owner: after a day
+of step 2 with no failed writes, start it with
+`POST /admin/pg/backfill {"action":"start"}`; it reads every account back
+and says whether step 4 can start. Shadow reads and the gradual switch follow docs/DATA-TIER.md.
 
 ## What needs the owner's own hand
 

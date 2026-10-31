@@ -116,6 +116,18 @@ organization column). A seller's money lines are written to `seller_ledger`:
 a sale (with when it can be withdrawn), its reversal, a payout requested and
 one returned, each keyed by the sale's reference and item or the
 withdrawal's id; a payout marked paid moves no money and writes no row.
-Step 2 is complete. Not built yet: the backfill
-(step 3), which also works through the `pgrepair:` list; shadow reads (step
-4); and the switch (step 5).
+Step 2 is complete.
+
+The backfill (step 3) is built (`src/worker/04b-pg-backfill.js`, tested by
+`what-was-there-before-is-copied-and-checked`) and starts only when the owner
+starts it: `POST /admin/pg/backfill {"action":"start"}` with the admin token,
+once step 2 has run a day with no failed writes. The five-minute cron then
+gives it about twenty seconds a tick, in phases: accounts (with plans and
+keys, skipping any whose digest has not changed), teams, sellers' money
+lines, the `pgrepair:` list, and a read-back of every account compared with
+KV (a difference is re-checked once, then counted on `migration_accounts`).
+`GET /admin/pg/backfill` shows each phase, the row counts, the accounts that
+differ and the repairs left; `stop` pauses it and `restart` runs it again
+from the start without copying anything twice. It does not copy credit packs
+bought before step 2, or seller lines older than the 500 a history keeps.
+Not built yet: shadow reads (step 4) and the switch (step 5).

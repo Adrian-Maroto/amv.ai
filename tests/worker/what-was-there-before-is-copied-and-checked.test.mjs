@@ -1,0 +1,220 @@
+/* WHAT WAS THERE BEFORE IS COPIED, AND THEN CHECKED.
+
+   Step 3 of docs/DATA-TIER.md, the backfill (src/worker/04b-pg-backfill.js),
+   against a REAL throwaway Postgres with the real schema and the real Worker:
+     - nothing happens until the owner starts it, and only with the admin token;
+     - records written before step 2 (no binding) are copied: accounts with
+       their plans and keys, teams, sellers' money lines;
+     - it stops between pages and goes on from where it was;
+     - the repair list is worked: a record copied as KV has it now, a money
+       row exactly as it was kept, each taken off once written; one it cannot
+       read stays and is counted;
+     - a team whose owner has no account is not invented: it is listed;
+     - every account is read back; a row changed behind its back is found;
+     - run again from the start it copies nothing twice. */
+import { execFileSync, execSync } from 'child_process';
+import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
+
+const NAME = 'what-was-there-before-is-copied-and-checked';
+const __dir = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dir, '..', '..');
+const SCHEMA = join(ROOT, 'migrations', 'postgres', '0001_control_plane.sql');
+const BIN = ['/usr/lib/postgresql/17/bin', '/usr/lib/postgresql/16/bin', '/usr/lib/postgresql/15/bin', '/usr/local/bin', '/opt/homebrew/bin']
+  .find(d => existsSync(join(d, 'initdb')));
+ok(!!BIN, 'a Postgres server is available (install postgresql to run this suite)', BIN);
+if (!BIN) { report(NAME); process.exitCode = 1; done(); process.exit(1); }
+
+const asRoot = process.getuid && process.getuid() === 0;
+const dir = mkdtempSync(join('/tmp', 'amv-pgbf-'));
+chmodSync(dir, 0o777);
+const PORT = 41000 + Math.floor(Math.random() * 8000);
+const sh = (cmd) => asRoot ? execSync(`su postgres -c ${JSON.stringify(cmd)}`, { stdio: 'pipe' }) : execSync(cmd, { stdio: 'pipe' });
+const user = asRoot ? 'postgres' : (process.env.USER || 'runner');
+sh(`${BIN}/initdb -D ${dir}/data -A trust -U ${user} >/dev/null`);
+sh(`${BIN}/pg_ctl -D ${dir}/data -o "-k ${dir} -p ${PORT} -c listen_addresses=127.0.0.1" -l ${dir}/log -w start >/dev/null`);
+process.on('exit', () => { try { sh(`${BIN}/pg_ctl -D ${dir}/data -m fast -w stop >/dev/null`); } catch (e) {} try { rmSync(dir, { recursive: true, force: true }); } catch (e) {} });
+const PSQL = existsSync(join(BIN, 'psql')) ? join(BIN, 'psql') : 'psql';
+const q = (sql) => execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At', '-q', '-c', sql], { stdio: 'pipe' }).toString().trim();
+execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-f', SCHEMA], { stdio: 'pipe' });
+
+mkdirSync(join(__dir, '.build'), { recursive: true });
+const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute };\n');
+const W = await import(harness + '?t=' + Date.now());
+
+const quiet = console.log; const audits = [];
+console.log = (...a) => { const s = a.join(' '); if (s.startsWith('AUDIT')) { try { audits.push(JSON.parse(s.slice(6))); } catch (e) {} return; } quiet(...a); };
+
+/* KV as Cloudflare's behaves where it matters here: keys in order, pages of
+   at most `limit`, and a cursor that says where the next page starts. */
+const store = new Map();
+const kv = {
+  async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
+  async list({ prefix, cursor, limit }){
+    const all = [...store.keys()].filter(k => k.startsWith(prefix)).sort();
+    const from = cursor ? all.findIndex(k => k > cursor) : 0;
+    const start = from < 0 ? all.length : from;
+    const keys = all.slice(start, start + (limit || 1000));
+    const complete = start + keys.length >= all.length;
+    return { keys: keys.map(name => ({ name })), list_complete: complete, cursor: complete ? undefined : keys[keys.length - 1] };
+  },
+};
+const PG = { connectionString: `postgres://${user}@127.0.0.1:${PORT}/postgres` };
+const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ADMIN_TOKEN: 'admin-token-for-the-test-0123456789',
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: () => ({ async fetch(){ return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
+  AMV_KV: kv };
+const admin = (method, body, token = env.ADMIN_TOKEN) => new Request('https://api.amv.test/admin/pg/backfill', { method,
+  headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, token ? { 'X-Admin-Token': token } : {}),
+  body: body ? JSON.stringify(body) : undefined });
+const status = async () => (await W.pgBackfillRoute(admin('GET'), env)).json();
+const runToEnd = async (sliceMs) => {
+  let calls = 0, last = null;
+  do { last = await W.runPgBackfill(env, { sliceMs }); calls++; } while (last.state === 'running' && calls < 200);
+  return { calls, last };
+};
+
+/* ── What was there before step 2: written with no binding ─────────────── */
+const N = 150;
+for (let i = 0; i < N; i++) {
+  const e = 'p' + String(i).padStart(3, '0') + '@example.com';
+  await W.DB.put(env, 'acct', e, { name: 'Person ' + i, provider: 'email', pwHash: 'h' + i, salt: 's' + i, createdAt: Date.UTC(2026, 0, 1) });
+  if (i % 3 === 0) await W.DB.put(env, 'ent', e, { plan: i % 2 ? 'pro' : 'max', source: 'stripe' });
+  if (i % 10 === 0) await W.DB.put(env, 'apikeys', e, { items: [{ id: 'k' + i, hash: 'hash' + i, name: 'CI', scopes: ['chat'], created: Date.UTC(2026, 1, 1) },
+    { id: 'k' + i + 'b', hash: 'hash' + i + 'b', created: Date.UTC(2026, 1, 1), revoked: Date.UTC(2026, 2, 1) }] });
+}
+await W.DB.put(env, 'team', 'team_one', { id: 'team_one', name: 'Studio', ownerEmail: 'p000@example.com',
+  members: [{ email: 'p000@example.com', role: 'owner' }, { email: 'p001@example.com', role: 'member' }] });
+await W.DB.put(env, 'team', 'team_orphan', { id: 'team_orphan', name: 'Nobody', ownerEmail: 'nobody@example.com', members: [] });
+store.set('wallet_tx:p002@example.com', JSON.stringify([
+  { type: 'withdrawal_paid', amount: 0, status: 'paid', id: 'wd_9', ts: Date.UTC(2026, 3, 3) },
+  { type: 'withdrawal', amount: -4, status: 'pending', id: 'wd_9', ts: Date.UTC(2026, 3, 2) },
+  { type: 'sale', amount: 9, item: 'itm_9', ref: 'pi_9', ts: Date.UTC(2026, 3, 1), holdUntil: Date.UTC(2026, 3, 15) },
+  { type: 'sale', amount: 3, item: 'itm_old', ref: '', ts: Date.UTC(2025, 0, 1) },
+]));
+/* Left by step 2: a money row it could not write, a plan it could not write
+   (which KV has since changed), and an entry nobody can read. */
+store.set('pgrepair:ledger:credit:pi_pack_7', JSON.stringify({ at: 1, why: 'timeout', row: { email: 'p003@example.com', currency: 'USD', amount: 20, reason: 'purchase', key: 'credit:pi_pack_7', at: Date.UTC(2026, 4, 1), note: 'subject:p003@example.com' } }));
+store.set('pgrepair:ent:p004@example.com', JSON.stringify({ at: 1, why: 'timeout' }));
+await W.DB.put(env, 'ent', 'p004@example.com', { plan: 'team', source: 'stripe' });
+store.set('pgrepair:ledger:mangled', '{not json');
+env.PG = PG;
+
+section('Nothing happens until the owner starts it, and only the owner can');
+{
+  const r = await W.runPgBackfill(env);
+  ok(r.on && r.state === 'not_started' && q('select count(*) from accounts') === '0', 'binding the database copies nothing on its own', r);
+  const denied = await W.pgBackfillRoute(admin('POST', { action: 'start' }, 'wrong-token'), env);
+  ok(denied.status === 403 && q("select count(*) from migration_cursor where kind='_run'") === '0', 'a wrong token starts nothing', denied.status);
+  const bad = await W.pgBackfillRoute(admin('POST', { action: 'go' }), env);
+  ok(bad.status === 400, 'an action it does not know is refused', bad.status);
+  const s = await (await W.pgBackfillRoute(admin('POST', { action: 'start' }), env)).json();
+  ok(s.state === 'running' && s.phases.length === 5 && s.phases.every(p => !p.done), 'started, every phase still to do', s.state);
+}
+
+section('It stops between pages and goes on from where it was');
+{
+  const { calls, last } = await runToEnd(1);
+  ok(calls >= 3, 'a short slice took several runs', calls);
+  ok(last.state === 'done', 'and it finished', last);
+  ok(q('select count(*) from accounts') === String(N), 'every account, once', q('select count(*) from accounts'));
+  ok(q('select count(*) from migration_accounts where kv_digest is not null and backfilled_at is not null') === String(N), 'each with what it was copied from');
+}
+
+section('Each account arrives with its plan and its keys');
+{
+  ok(q('select count(*) from entitlements') === String(N / 3 + 1), 'one plan row for each account that has a plan (every third, and p004’s)', q('select count(*) from entitlements'));
+  ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='p003@example.com'") === 'pro', 'the plan it has');
+  ok(q("select a.pw_hash||'|'||a.name from accounts a where a.email='p007@example.com'") === 'h7|Person 7', 'and its sign-in as it was');
+  ok(q('select count(*) from api_keys') === String(2 * N / 10) && q('select count(*) from api_keys where revoked_at is not null') === String(N / 10),
+     'every key by its hash, a revoked one with when', q('select count(*) from api_keys'));
+}
+
+section('Teams follow their members; one with no owner is listed, never invented');
+{
+  ok(q("select count(*) from memberships m join organizations o on o.id=m.org_id where o.legacy_id='team_one'") === '2', 'the team and both its members');
+  ok(q("select count(*) from organizations where legacy_id='team_orphan'") === '0' && store.has('pgrepair:team:team_orphan'),
+     'the one whose owner has no account is on the repair list instead', [...store.keys()].filter(k => k.startsWith('pgrepair:')));
+  ok(audits.some(a => a.event === 'pg_backfill_failed' && /team_orphan/.test(a.key)), 'and on the record');
+}
+
+section('A seller’s history becomes the rows the live writes would have made');
+{
+  const rows = q("select idempotency_key||'|'||reason||'|'||amount::text from seller_ledger order by idempotency_key").split('\n');
+  ok(rows.join() === 'seller:sale:pi_9:itm_9|sale|9.000000,seller:withdrawal:wd_9|payout|-4.000000', 'the sale and the payout; nothing for the paid mark; nothing for a line with no identity', rows);
+}
+
+section('The repair list is worked: as KV has it now, or the row exactly as kept');
+{
+  ok(q("select amount::text||'|'||reason||'|'||note from credit_ledger where idempotency_key='credit:pi_pack_7'") === '20.000000|purchase|subject:p003@example.com', 'the kept money row, as it was kept');
+  ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='p004@example.com'") === 'team', 'the plan as KV has it now, not as it was when the write failed');
+  ok(!store.has('pgrepair:ledger:credit:pi_pack_7') && !store.has('pgrepair:ent:p004@example.com'), 'each off the list once written');
+  ok(store.has('pgrepair:ledger:mangled'), 'one nobody can read stays for a person to look at');
+}
+
+section('Every account was read back, and they match');
+{
+  const s = await status();
+  ok(s.accountsDiffering === 0 && s.rows.accounts === N && s.phases.every(p => p.done), 'none differ, every phase done', s);
+  ok(s.repairsWaiting === 2 && /Credit packs bought before step 2/.test(s.notCopied), 'and it says what is left, and what it does not copy', s.repairsWaiting);
+}
+
+section('Run again from the start, it copies nothing twice and finds a row changed behind its back');
+{
+  q("update accounts set name='Somebody else' where email='p010@example.com'");
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  audits.length = 0;
+  const { last } = await runToEnd();
+  ok(last.state === 'done', 'it finished again', last);
+  ok(q('select count(*) from accounts') === String(N) && q('select count(*) from seller_ledger') === '2' && q('select count(*) from credit_ledger') === '1',
+     'the same rows, none twice');
+  ok(audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === 'p010@example.com' && a.fields === 'name'), 'the changed name is found by reading it back', audits.filter(a => a.event === 'pg_backfill_mismatch'));
+  ok(q("select mismatches||'|'||last_mismatch from migration_accounts where email='p010@example.com'") === '1|name', 'and counted against that account');
+  const s = await status();
+  ok(s.accountsDiffering === 1, 'the status says so', s.accountsDiffering);
+}
+
+section('Stopped, it stays stopped');
+{
+  await W.pgBackfillRoute(admin('POST', { action: 'stop' }), env);
+  const r = await W.runPgBackfill(env);
+  ok(r.state === 'stopped', 'the cron does nothing while it is stopped', r);
+}
+
+section('A change that lands while an account is being read back is not a difference');
+{
+  /* Only the read-back left to do. The first read of p020 sees KV with a new
+     name whose Postgres write has not landed yet; by the second it has - the
+     live dual write in flight, which is what the read-back must not report. */
+  q("update migration_cursor set cursor=null, copied=0 where kind='verify'");
+  await W.pgBackfillRoute(admin('POST', { action: 'start' }), env);
+  const key = 'acct:p020@example.com', get = kv.get; let reads = 0;
+  const renamed = () => JSON.stringify(Object.assign(JSON.parse(store.get(key)), { name: 'Renamed' }));
+  kv.get = async (k) => {
+    if (k !== key) return get(k);
+    reads++;
+    if (reads === 2) q("update accounts set name='Renamed' where email='p020@example.com'");
+    return renamed();
+  };
+  audits.length = 0;
+  const { last } = await runToEnd();
+  kv.get = get;
+  ok(last.state === 'done' && reads >= 2, 'read back again, and finished', { last, reads });
+  ok(!audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === 'p020@example.com') &&
+     q("select mismatches from migration_accounts where email='p020@example.com'") === '0', 'not reported as a difference');
+}
+
+section('Without the binding, nothing is tried');
+{
+  const saved = env.PG; delete env.PG;
+  ok((await W.runPgBackfill(env)).on === false && (await status()).on === false, 'the cron and the route both say it is off');
+  env.PG = saved;
+}
+
+console.log = quiet;
+if (report(NAME) > 0) process.exitCode = 1;
+done();
+process.exit(process.exitCode || 0);

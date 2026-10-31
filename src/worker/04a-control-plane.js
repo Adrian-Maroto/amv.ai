@@ -59,9 +59,11 @@ async function _pgSettle(){ while (_pgInFlight.size) await Promise.allSettled([.
 
 const _pgTime = (ms) => (Number(ms) > 0 ? new Date(Number(ms)) : null);
 
-async function _pgMirror(env, kind, email, obj){
+/* `sqlIn`: the backfill passes the client it already holds, so a page of
+   accounts is one connection, not three per account; it closes that itself. */
+async function _pgMirror(env, kind, email, obj, sqlIn){
   if (!email) return;
-  const sql = await _pgClient(env);
+  const sql = sqlIn || await _pgClient(env);
   try {
     if (kind === 'acct') {
       if (!obj) {
@@ -113,7 +115,7 @@ async function _pgMirror(env, kind, email, obj){
       return;
     }
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
   }
 }
 
@@ -193,23 +195,8 @@ function _pgLedger(env, row){
   if (!_pgOn(env) || !row || !row.key || !row.email || !(Math.abs(+row.amount) > 0)) return;
   const p = (async () => {
     const sql = await _pgClient(env);
-    try {
-      const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
-      if (!acct.length) throw new Error('no_account_row');
-      if (row.table === 'seller') {
-        await sql`
-          INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
-          VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
-                  ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
-          ON CONFLICT (idempotency_key) DO NOTHING`;
-        return;
-      }
-      await sql`
-        INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
-        VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
-                ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
-        ON CONFLICT (idempotency_key) DO NOTHING`;
-    } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    try { return await _pgLedgerInsert(sql, row); }
+    finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
     try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
@@ -220,15 +207,44 @@ function _pgLedger(env, row){
   try { _bg(p); } catch (e) {}
 }
 
+/* The one INSERT for a ledger row, live and in the backfill alike: a row
+   whose key is already there is the same event, and is left as it was. */
+async function _pgLedgerInsert(sql, row){
+  const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
+  if (!acct.length) throw new Error('no_account_row');
+  if (row.table === 'seller') {
+    await sql`
+      INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
+      VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+              ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
+      ON CONFLICT (idempotency_key) DO NOTHING`;
+    return;
+  }
+  await sql`
+    INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
+    VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+            ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
+    ON CONFLICT (idempotency_key) DO NOTHING`;
+}
+
 /* A seller's money line (_pushWalletTx), as a seller_ledger row. Only lines
    that move money: a payout marked paid moves none (the money left when it
    was requested). The key is what makes the line unique - the sale's
    reference and item, or the withdrawal's id - so a retry is one row. */
 const PG_SELLER_REASON = { sale: 'sale', sale_reversed: 'reversal', withdrawal: 'payout', withdrawal_returned: 'correction' };
-function _pgSellerRow(env, email, tx){
-  if (!tx || !PG_SELLER_REASON[tx.type] || !(Math.abs(+tx.amount) > 0)) return;
+/* The row a line becomes, or null for a line that moves no money; a line
+   that moves money but has no identity is `{ unkeyed: true }`, because a row
+   without a key could not be written once and only once. */
+function _pgSellerLedgerRow(email, tx){
+  if (!tx || !PG_SELLER_REASON[tx.type] || !(Math.abs(+tx.amount) > 0)) return null;
   const id = tx.ref ? tx.ref + ':' + (tx.item || '') : (tx.id || '');
-  if (!id) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch (e) {} return; }
-  _pgLedger(env, { table: 'seller', email, currency: tx.currency || 'USD', amount: +tx.amount, reason: PG_SELLER_REASON[tx.type],
-    key: 'seller:' + tx.type + ':' + id, at: tx.ts, holdUntil: tx.holdUntil });
+  if (!id) return { unkeyed: true };
+  return { table: 'seller', email, currency: tx.currency || 'USD', amount: +tx.amount, reason: PG_SELLER_REASON[tx.type],
+    key: 'seller:' + tx.type + ':' + id, at: tx.ts, holdUntil: tx.holdUntil };
+}
+function _pgSellerRow(env, email, tx){
+  const row = _pgSellerLedgerRow(email, tx);
+  if (!row) return;
+  if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch (e) {} return; }
+  _pgLedger(env, row);
 }

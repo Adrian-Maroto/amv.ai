@@ -124,6 +124,16 @@ export default {
         console.error('[cron] nightly backup failed', e && e.message);
         try{ await _workerError(env, 'cron.backup', e); }catch(_){}
       }
+      /* The Postgres backfill (04b-pg-backfill.js), only once the owner has
+         started it; a slice of about twenty seconds. Not skipped while paused:
+         it calls no model and spends nothing. Its own try. */
+      try{
+        const pb = await runPgBackfill(env);
+        if(pb && pb.state === 'running' || pb && pb.state === 'done' && pb.phase) console.log('[cron] pg backfill', JSON.stringify(pb));
+      }catch(e){
+        console.error('[cron] pg backfill failed', e && e.message);
+        try{ await _workerError(env, 'cron.pgbackfill', e); }catch(_){}
+      }
       /* Batches with work left get their slice of this tick. Its own try,
          like everything here: a batch fault must not take out the sweeps.
          Skipped while paused, like automations: every item is a call to the
@@ -711,7 +721,7 @@ async function _route(request, env, ctx) {
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
-    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights',
+    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
@@ -873,6 +883,7 @@ async function _route(request, env, ctx) {
     case '/admin/backup/export': return backupExport(request, env);
     case '/admin/backup/import': return backupImport(request, env);
     case '/admin/backup/nights': return backupNights(request, env);
+    case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
