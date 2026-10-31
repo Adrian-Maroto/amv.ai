@@ -43033,9 +43033,12 @@ async function _pushSend(env, email, note){
       const payload = JSON.stringify({ title: String(note.title || 'AMV').slice(0, 80), body: _pushWords(d.lang || 'en', note).slice(0, 180),
         url: String(note.url || '/'), tag: String(note.tag || 'amv').slice(0, 60) });
       const body = await _pushEncrypt(d.p256dh, d.auth, payload);
-      const r = await fetch(d.endpoint, { method: 'POST', body, headers: {
+      /* With a deadline (a push service that hangs must not hold a background
+         run), and never following a redirect: the address was checked to be a
+         push service, and a redirect is how it would stop being one. */
+      const r = await fetchDeadline(d.endpoint, { method: 'POST', body, redirect: 'manual', headers: {
         'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(PUSH_TTL_S),
-        Urgency: note.urgent ? 'high' : 'normal', Authorization: await _pushVapid(env, d.endpoint) } });
+        Urgency: note.urgent ? 'high' : 'normal', Authorization: await _pushVapid(env, d.endpoint) } }, 10000);
       if (r.status === 404 || r.status === 410) gone.push(d.endpoint);
       else if (r.ok) sent++;
       else audit(env, 'push_refused', { email, status: r.status, host: new URL(d.endpoint).hostname });
