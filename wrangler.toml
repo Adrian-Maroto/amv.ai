@@ -148,6 +148,17 @@ new_sqlite_classes = ["AMVCounter"]
 # binding = "AMV_FILES"
 # bucket_name = "amv-files"
 
+# ── The control plane in Postgres (Hyperdrive) ──
+# Accounts and plans are also written to Postgres once this exists - KV stays
+# the record until the later steps of docs/DATA-TIER.md move them, a few
+# accounts at a time. Create the database and its Hyperdrive config (the
+# connection string goes to Hyperdrive, never into this file), apply
+# migrations/postgres/0001_control_plane.sql, then uncomment with its id:
+#
+# [[hyperdrive]]
+# binding = "PG"
+# id = "<the id hyperdrive create printed>"
+
 # ── Nightly backups (object storage) ──
 # Every night the accounts, plans, chats, projects and jobs are copied into a
 # bucket of their own, a slice per five-minute tick, thirty nights kept

@@ -516,6 +516,15 @@ the model, every use in the account's activity. The outside security review
 (#39) is still owed before this is offered to the public - recorded here so
 it is not forgotten when the switch is on.
 
+**47. Postgres step 2, write to both - BUILD NOW (owner, Oct 31).** Every
+account and plan written to KV is also written to its Postgres row in the
+background (src/worker/04a-control-plane.js), through the `postgres` driver
+(3.4.9, its Cloudflare build), once the Hyperdrive binding `PG` exists. KV
+stays the record; a failed Postgres write never fails a request and is listed
+for repair (`pgrepair:`). Erasing an account leaves a tombstone with nothing
+personal on it. Teams, API keys and the money ledgers are the next slices;
+backfill, shadow reads and the gradual switch follow docs/DATA-TIER.md.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

@@ -138,15 +138,19 @@ const DB = {
       }
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
+      _pgAfter(env, kind, id, obj);
       return;
     }
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    /* The Postgres row too, once the store has it (04a-control-plane.js). */
+    _pgAfter(env, kind, id, obj);
     /* This namespace is demonstrably not empty any more. */
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
-    if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); return; }
+    if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
+    _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not
        "empty", and the marker means ALL of them are gone. Only a completed
        scan may claim that, so drop the claim and let one prove it. */

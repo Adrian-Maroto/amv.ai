@@ -101,7 +101,13 @@ D1 guard refuses it (`binding-a-database-empties-nobody`).
 ## What is built now, and what is not
 
 Built and tested: the schema, its money guarantees against real Postgres, the
-migration bookkeeping tables. Not built yet, and waiting on the provider: the
-Worker's Postgres reads and writes (step 2 onward). They need the Hyperdrive
-binding to exist before they can be run against anything real, and money code
-that has never touched its database is not shipped.
+migration bookkeeping tables, and **step 2 for accounts and plans** (owner
+decision #47): with the `PG` binding, every write of an `acct` or `ent`
+record also writes its row, tested against a real Postgres
+(`accounts-and-plans-are-written-to-postgres-too`) - including a database
+that is down (the request is unaffected; the write goes on the `pgrepair:`
+list) and erasure (a tombstone with nothing personal on it).
+
+Not built yet: step 2 for teams, API keys and the money ledgers; the backfill
+(step 3), which also works through the `pgrepair:` list; shadow reads (step
+4); and the switch (step 5).

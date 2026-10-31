@@ -1063,15 +1063,19 @@ const DB = {
       }
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
+      _pgAfter(env, kind, id, obj);
       return;
     }
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    /* The Postgres row too, once the store has it (04a-control-plane.js). */
+    _pgAfter(env, kind, id, obj);
     /* This namespace is demonstrably not empty any more. */
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
-    if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); return; }
+    if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
+    _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not
        "empty", and the marker means ALL of them are gone. Only a completed
        scan may claim that, so drop the claim and let one prove it. */
@@ -1989,6 +1993,116 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
 async function _writeFailed(env, where, e) {
   try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
   try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) {}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CONTROL PLANE IN POSTGRES: STEP 2, WRITE TO BOTH (owner decision #47,
+   Oct 31; docs/DATA-TIER.md).
+
+   With the Hyperdrive binding PG present, every write of an account or an
+   entitlement through DB.put / DB.del is also written to its Postgres row.
+   KV stays the source of truth: nothing reads these rows yet (that is step 4,
+   shadow reads), and a Postgres write that fails never fails the request - it
+   is put on the record and on a repair list (`pgrepair:<kind>:<id>`) the
+   backfill (step 3) works through. A day of zero failures, or every one
+   repaired, is the check before step 3 starts.
+
+   The rules it keeps:
+     - written after KV has the record, in the background of the same
+       request, so a slow database never slows a sign-in;
+     - one short-lived client per write: Hyperdrive pools the connections, and
+       a client kept across requests is one the Workers runtime refuses;
+     - an account is upserted by its email, an entitlement by its account's
+       row; an entitlement that arrives before its account has a row is
+       repaired later rather than invented;
+     - erasing an account leaves only a tombstone: no name, no address, no
+       password, no extras - the id other rows point at, and when.
+   Without PG, none of this runs. */
+
+const PG_MIRROR_KINDS = new Set(['acct', 'ent']);
+const PG_REPAIR_TTL_S = 30 * 86400;
+const _pgInFlight = new Set();
+
+function _pgOn(env){
+  return !!(env && env.PG && typeof env.PG.connectionString === 'string' && env.PG.connectionString.length > 10);
+}
+
+async function _pgClient(env){
+  const mod = await import('postgres');
+  const postgres = mod.default || mod;
+  return postgres(env.PG.connectionString, { max: 1, fetch_types: false, connect_timeout: 10, idle_timeout: 5, onnotice: () => {} });
+}
+
+/* Called by DB.put / DB.del after KV has the write. Never throws, never
+   blocks the caller: it runs in the background of the request. */
+function _pgAfter(env, kind, id, obj){
+  if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return;
+  const p = _pgMirror(env, kind, String(id || '').toLowerCase(), obj)
+    .catch(async (e) => {
+      const why = String((e && e.message) || e).slice(0, 160);
+      try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+      try { await alertOnce(env, 'pg_mirror_failed',
+        'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
+        + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}
+    })
+    .finally(() => _pgInFlight.delete(p));
+  _pgInFlight.add(p);
+  try { _bg(p); } catch (e) {}
+}
+/* For tests and for the backfill: wait for every mirror write in flight. */
+async function _pgSettle(){ while (_pgInFlight.size) await Promise.allSettled([..._pgInFlight]); }
+
+const _pgTime = (ms) => (Number(ms) > 0 ? new Date(Number(ms)) : null);
+
+async function _pgMirror(env, kind, email, obj){
+  if (!email) return;
+  const sql = await _pgClient(env);
+  try {
+    if (kind === 'acct') {
+      if (!obj) {
+        /* Erased: a tombstone with nothing personal left on it. */
+        await sql`UPDATE accounts SET email = 'erased-' || id || '@erased.invalid', name = '', pw_hash = NULL, pw_salt = NULL,
+                   pw_algo = NULL, pw_iter = NULL, extra = '{}'::jsonb, deleted_at = now(), updated_at = now()
+                  WHERE email = ${email}`;
+        await sql`DELETE FROM migration_accounts WHERE email = ${email}`;
+        return;
+      }
+      const { name, provider, pwHash, salt, pwIter, pwAlgo, createdAt, emailVerifiedAt, email: _e, ...extra } = obj;
+      const rows = await sql`
+        INSERT INTO accounts (email, name, provider, pw_hash, pw_salt, pw_algo, pw_iter, email_verified_at, created_at, extra, updated_at)
+        VALUES (${email}, ${String(name || '')}, ${String(provider || 'email')}, ${pwHash || null}, ${salt || null},
+                ${pwHash ? String(pwAlgo || 'pbkdf2-sha256') : null}, ${pwIter ? Number(pwIter) : null},
+                ${_pgTime(emailVerifiedAt)}, ${_pgTime(createdAt) || new Date()}, ${sql.json(extra)}, now())
+        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, provider = EXCLUDED.provider, pw_hash = EXCLUDED.pw_hash,
+          pw_salt = EXCLUDED.pw_salt, pw_algo = EXCLUDED.pw_algo, pw_iter = EXCLUDED.pw_iter,
+          email_verified_at = EXCLUDED.email_verified_at, extra = EXCLUDED.extra, updated_at = now()
+        RETURNING id`;
+      const accountId = rows[0].id;
+      await sql`INSERT INTO migration_accounts (email, account_id) VALUES (${email}, ${accountId})
+                ON CONFLICT (email) DO UPDATE SET account_id = EXCLUDED.account_id`;
+      return;
+    }
+    if (kind === 'ent') {
+      const acct = await sql`SELECT id FROM accounts WHERE email = ${email}`;
+      if (!acct.length) throw new Error('no_account_row');
+      const accountId = acct[0].id;
+      if (!obj) { await sql`DELETE FROM entitlements WHERE account_id = ${accountId}`; return; }
+      const { plan, source, renewedAt, periodEnd, lapsedAt, blocked, blockedReason, customCfg, seats, updatedAt, ...extra } = obj;
+      await sql`
+        INSERT INTO entitlements (account_id, plan, seats, source, period_start, period_end, lapsed_at, blocked, blocked_reason, custom_cfg, extra, updated_at)
+        VALUES (${accountId}, ${String(plan || 'free')}, ${seats ? Number(seats) : null}, ${String(source || 'none')},
+                ${_pgTime(renewedAt)}, ${_pgTime(periodEnd)}, ${_pgTime(lapsedAt)}, ${!!blocked}, ${blockedReason ? String(blockedReason) : null},
+                ${customCfg ? sql.json(customCfg) : null}, ${sql.json(extra)}, ${_pgTime(updatedAt) || new Date()})
+        ON CONFLICT (account_id) WHERE account_id IS NOT NULL DO UPDATE SET plan = EXCLUDED.plan, seats = EXCLUDED.seats,
+          source = EXCLUDED.source, period_start = EXCLUDED.period_start, period_end = EXCLUDED.period_end,
+          lapsed_at = EXCLUDED.lapsed_at, blocked = EXCLUDED.blocked, blocked_reason = EXCLUDED.blocked_reason,
+          custom_cfg = EXCLUDED.custom_cfg, extra = EXCLUDED.extra, updated_at = EXCLUDED.updated_at`;
+      return;
+    }
+  } finally {
+    try { await sql.end({ timeout: 5 }); } catch (e) {}
+  }
 }
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
@@ -33748,6 +33862,9 @@ function _readinessReport(env, seen) {
     { id: 'cloudLibrary', name: 'Files in the account, on every device', on: libConfigured(env),
       turnsOn: 'The files people send in chat kept in their account, so the phone sees what the laptop uploaded. Limits per plan are enforced here: Free 100 files and 200 MB, Pro 2,000 and 5 GB, Elite 10,000 and 20 GB, Ultra 25,000 and 50 GB. Without it files stay on each device, and the library says so.',
       how: 'Create an R2 bucket named amv-files (Cloudflare dashboard > R2), then bind it as AMV_FILES in wrangler.toml', blocking: false },
+    { id: 'controlPlane', name: 'Accounts and plans also written to Postgres', on: _pgOn(env),
+      turnsOn: 'Step 2 of the move to Postgres (docs/DATA-TIER.md): every account and plan written to KV is also written to its Postgres row, in the background. KV still decides everything; a Postgres write that fails is listed for repair and never fails the request. The next steps - backfill, shadow reads, switching accounts a few at a time - start from here.',
+      how: 'Create the Postgres database and its Hyperdrive connection (docs/DATA-TIER.md, "What the owner provides"), apply migrations/postgres/0001_control_plane.sql, then add the [[hyperdrive]] binding PG to wrangler.toml', blocking: false },
     { id: 'nightlyBackup', name: 'Nightly backups', on: _nightlyOn(env) || DB._hasD1(env),
       turnsOn: DB._hasD1(env)
         ? 'D1 is the store, so its own Time Travel keeps thirty days of every write; the nightly KV backup stands aside.'
@@ -33815,7 +33932,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

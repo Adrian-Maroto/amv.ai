@@ -423,6 +423,9 @@ function _readinessReport(env, seen) {
     { id: 'cloudLibrary', name: 'Files in the account, on every device', on: libConfigured(env),
       turnsOn: 'The files people send in chat kept in their account, so the phone sees what the laptop uploaded. Limits per plan are enforced here: Free 100 files and 200 MB, Pro 2,000 and 5 GB, Elite 10,000 and 20 GB, Ultra 25,000 and 50 GB. Without it files stay on each device, and the library says so.',
       how: 'Create an R2 bucket named amv-files (Cloudflare dashboard > R2), then bind it as AMV_FILES in wrangler.toml', blocking: false },
+    { id: 'controlPlane', name: 'Accounts and plans also written to Postgres', on: _pgOn(env),
+      turnsOn: 'Step 2 of the move to Postgres (docs/DATA-TIER.md): every account and plan written to KV is also written to its Postgres row, in the background. KV still decides everything; a Postgres write that fails is listed for repair and never fails the request. The next steps - backfill, shadow reads, switching accounts a few at a time - start from here.',
+      how: 'Create the Postgres database and its Hyperdrive connection (docs/DATA-TIER.md, "What the owner provides"), apply migrations/postgres/0001_control_plane.sql, then add the [[hyperdrive]] binding PG to wrangler.toml', blocking: false },
     { id: 'nightlyBackup', name: 'Nightly backups', on: _nightlyOn(env) || DB._hasD1(env),
       turnsOn: DB._hasD1(env)
         ? 'D1 is the store, so its own Time Travel keeps thirty days of every write; the nightly KV backup stands aside.'
@@ -490,7 +493,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

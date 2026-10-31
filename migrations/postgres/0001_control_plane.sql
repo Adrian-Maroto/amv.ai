@@ -118,6 +118,7 @@ CREATE TABLE entitlements (
   blocked          boolean NOT NULL DEFAULT false,
   blocked_reason   text,
   custom_cfg       jsonb,
+  extra            jsonb NOT NULL DEFAULT '{}'::jsonb,     -- fields not yet given a column (shadow reads compare them too)
   updated_at       timestamptz NOT NULL DEFAULT now(),
   CHECK ((account_id IS NULL) <> (org_id IS NULL))
 );
