@@ -535,6 +535,12 @@ top of amv-backend.js. GLOBAL_DAILY_USD_CAP is a secret (default $500). All limi
 enforced atomically via the AMVCounter Durable Object, so parallel requests can’t race
 past them. Covered by tests/worker/ratelimit.test.mjs and the automation cost-cap tests.
 
+`DATA_STORE` is the one switch for the database tier: leave it unset and KV
+holds everything (today's setup). Set it to `d1` only together with a bound D1
+database, and only after reading docs/DATA-TIER.md - binding a database
+without the switch changes nothing, on purpose, so nobody's data moves by
+accident.
+
 ## Anti-abuse / refund-fraud protection
 
 AMV’s product is compute - model calls, agent runs, deep research - which costs real
