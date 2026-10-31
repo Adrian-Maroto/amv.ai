@@ -9,7 +9,13 @@
    whoever signed up owned the address. Now, wherever email can reach people:
    sign-up ends in a code sent to the address, and sign-in on a device that has
    not proved itself needs the password AND a code. Every case here tries to
-   get a session WITHOUT the right code, and must fail. */
+   get a session WITHOUT the right code, and must fail.
+
+   Since Oct 31 (owner decision) the code is asked for only when the account
+   has had a run of wrong passwords - SIGNIN_CODE_AFTER_FAILS in the last hour.
+   So every section below runs as an account UNDER that run (mkEnv's
+   `attacked`, the default here), which is exactly where the code still has to
+   hold; the first section checks the everyday case, where it is not asked. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -40,7 +46,7 @@ globalThis.fetch = async (url, opts) => {
 };
 const codeFor = (to) => { const m = [...mail].reverse().find(x => (x.to || [])[0] === to); return m ? (/\b(\d{6})\b/.exec(m.subject) || [])[1] : ''; };
 
-function mkEnv(extra) {
+function mkEnv(extra, { attacked = true } = {}) {
   const m = new Map(); const vals = new Map();
   return Object.assign({
     AMV_KV: {
@@ -56,6 +62,14 @@ function mkEnv(extra) {
         vals.set(n, cur + Number(b.amount)); return new Response(JSON.stringify({ allowed: true, value: cur + Number(b.amount) }));
       }
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
+      /* An account under a guessing run: its wrong-password count stays at
+         the threshold however often a correct sign-in clears it, because the
+         run is still going on. */
+      if (attacked && /^signinfail:/.test(n)) {
+        if (b.op === 'clear') return new Response(JSON.stringify({ ok: true }));
+        return new Response(JSON.stringify({ value: Math.max(cur, 6) }));
+      }
+      if (b.op === 'clear') { vals.delete(n); return new Response(JSON.stringify({ ok: true })); }
       return new Response(JSON.stringify({ allowed: true, value: cur }));
     } }) },
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
@@ -81,6 +95,28 @@ const cookieFrom = (res, name) => { const c = res.cookies.find(x => x.startsWith
 async function signedUp(env, body) {
   await call(env, '/auth/signup', body);
   return call(env, '/auth/login', { email: body.email, password: body.password });
+}
+
+section('Everyday: the right password signs you in; the mailbox is for a run of wrong ones');
+{
+  const env = mkEnv(undefined, { attacked: false });
+  mail.length = 0;
+  await call(env, '/auth/signup', { email: 'day@example.com', name: 'Day', password: PW });
+  const a = await call(env, '/auth/login', { email: 'day@example.com', password: PW });
+  ok(!!a.d.token && !a.d.needsCode, 'a new device and the right password: signed in, no code', a.d);
+  ok(mail.length === 0, 'and no email', mail.length);
+  const w = await call(env, '/auth/login', { email: 'day@example.com', password: 'Wrong-Passw0rd!1' });
+  ok(w.status === 401 && w.d.code === 'bad_credentials', 'a wrong password says so', w.d);
+  for (let i = 0; i < 4; i++) await call(env, '/auth/login', { email: 'day@example.com', password: 'Wrong-Passw0rd!1' });
+  const five = await call(env, '/auth/login', { email: 'day@example.com', password: PW });
+  ok(!!five.d.token && mail.length === 0, 'five wrong, then right: still just signed in, no email', { d: five.d, mail: mail.length });
+  for (let i = 0; i < 6; i++) await call(env, '/auth/login', { email: 'day@example.com', password: 'Wrong-Passw0rd!1' });
+  const six = await call(env, '/auth/login', { email: 'day@example.com', password: PW });
+  ok(!six.d.token && six.d.needsCode && mail.length === 1, 'six wrong, then right: now the code is needed, and one email goes', { d: six.d, mail: mail.length });
+  const v = await call(env, '/auth/login/verify', { challenge: six.d.challenge, code: codeFor('day@example.com') });
+  ok(!!v.d.token, 'the code finishes it', v.status);
+  const after = await call(env, '/auth/login', { email: 'day@example.com', password: PW });
+  ok(!!after.d.token && mail.length === 1, 'and with the run over, the next sign-in is the password alone again', { d: after.d, mail: mail.length });
 }
 
 section('Sign-up signs you straight in, and sends no email');

@@ -129,14 +129,15 @@ r = await W.authResetConfirm(post('/auth/reset/confirm', { token, password: 'bra
 d = await r.json();
 ok(d.ok, 'the password is updated');
 /* The link came to the inbox, so this device has proved the address and
-   signs straight in; any other device is asked for an emailed code. */
+   signs straight in. Since Oct 31 (owner decision) another device does too:
+   the emailed code is only for an account under a run of wrong passwords. */
 const resetDevice = d.deviceToken;
 
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'brandNewPass456', deviceToken: resetDevice }), env);
 ok((await r.json()).token, 'you CAN log in with the new password');
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'brandNewPass456' }), env);
 d = await r.json();
-ok(d.needsCode && !d.token, 'and another device with it is asked for the emailed code', d);
+ok(d.token && !d.needsCode, 'and another device signs in with the new password too', d);
 
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'originalPass123' }), env);
 ok(!(await r.json()).token, 'the OLD password no longer works');

@@ -4984,7 +4984,11 @@ function _mountTurnstile(){
   }
   box.style.display='';
   box.setAttribute('data-sitekey', siteKey);
-  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ const wid = turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; if(wid != null) box.dataset.wid = String(wid); } }catch(e){} };
+  /* INVISIBLE UNLESS IT HAS TO ASK (owner, Oct 31: "auto click captcha like
+     every normal other website"). `interaction-only` keeps the box hidden
+     while Cloudflare checks in the background, and shows a checkbox only for
+     the rare browser it is not sure about. */
+  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ const wid = turnstile.render(box, { sitekey: siteKey, appearance: 'interaction-only' }); box.dataset.rendered='1'; if(wid != null) box.dataset.wid = String(wid); } }catch(e){} };
   /* Loaded but never drew: a filter that answers with something that is not the
      script leaves window.turnstile undefined, and a silent empty box again. */
   const watch = ()=>setTimeout(()=>{ if(!box.dataset.rendered) cannotLoad('timed out'); }, 8000);
@@ -5024,6 +5028,40 @@ function _authBotFields(){
   _resetTurnstile();
   return out;
 }
+/* WAIT FOR THE CHECK, RATHER THAN SEND WITHOUT IT.
+
+   The token is spent by every attempt and the widget starts a fresh check at
+   once (_authBotFields). Pressing Sign in again before that check finished
+   sent no token at all, and the server answered "complete the verification"
+   to somebody who had - which is what the owner kept seeing. So a send waits,
+   up to ten seconds, for the widget to have a token; with no widget on the
+   page there is nothing to wait for. */
+async function _captchaReady(btn, label){
+  try{
+    const box = document.getElementById('a-turnstile');
+    if(!window.turnstile || typeof turnstile.getResponse !== 'function' || !box || !box.dataset.rendered || box.style.display === 'none') return;
+    if(turnstile.getResponse(_turnstileId())) return;
+    if(btn) btn.textContent = T('Checking you\u2019re not a robot\u2026');
+    const until = Date.now() + 10000;
+    while(Date.now() < until){
+      await new Promise(r => setTimeout(r, 150));
+      if(turnstile.getResponse(_turnstileId())) break;
+    }
+    if(btn && label) btn.textContent = label;
+  }catch(e){}
+}
+/* One send, with the check in hand; if the server still asks for it (the
+   token expired while the person typed), the check is redone once, quietly,
+   instead of putting "complete the verification" in front of them. */
+async function _withCaptcha(btn, label, send){
+  await _captchaReady(btn, label);
+  try{ return await send(_authBotFields()); }
+  catch(e){
+    if(!(e && e.code === 'captcha_required') || _captchaUnusable()) throw e;
+    await _captchaReady(btn, label);
+    return await send(_authBotFields());
+  }
+}
 function _turnstileId(){
   try{ const box = document.getElementById('a-turnstile'); return (box && box.dataset.wid) || undefined; }catch(e){ return undefined; }
 }
@@ -5054,7 +5092,7 @@ async function doSignupForm() {
   // When a backend is connected, create a real SERVER account + session token.
   if(window.AMV_API && AMV_API.live){
     try{
-      let d=await AMV_API.signup(em, nm, pw, _authBotFields());
+      let d=await _withCaptcha(btn, T('Creating\u2026'), (bot)=>AMV_API.signup(em, nm, pw, bot));
       /* No session until the address is proved: the emailed code finishes it. */
       if(d&&d.needsCode){ d = await _askForCode(d, em, 'signup'); if(!d) return; }
       if(d&&d.token){
@@ -5545,7 +5583,7 @@ async function doLoginForm() {
   // When a backend is connected, authenticate against the SERVER for a real session.
   if(window.AMV_API && AMV_API.live){
     try{
-      let d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
+      let d=await _withCaptcha(btn, T('Signing in\u2026'), (bot)=>AMV_API.login(em, {password:pw, provider:'email', ...bot}));
       /* Right password, new device: the code emailed to the address finishes it. */
       if(d&&d.needsCode){ d = await _askForCode(d, em, 'signin'); if(!d) return; }
       if(d&&d.needsMfa){ d = await _askForMfa(d, em); if(!d) return; }
@@ -5574,8 +5612,13 @@ async function doLoginForm() {
         showAuthErr('No account found for '+em+'. Create one below.');
         return;
       }
-      const msg=/wrong password/i.test(e.message||'')?'Wrong password. Please try again.':(e.message||'Sign in failed.');
+      /* The server gives one answer for a wrong password and an unknown
+         address (so nobody can test which addresses have accounts). Said
+         plainly, with the way back right under it. */
+      const wrong = (e && e.code === 'bad_credentials') || /wrong password|do not match/i.test(e.message||'');
+      const msg = wrong ? T('Wrong email or password. Try again, or use \u201cForgot password?\u201d below.') : (e.message||'Sign in failed.');
       showAuthErr(msg, null, e && e.code); const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
+      if(wrong){ try{ const f=document.getElementById('auth-forgot'); if(f){ f.classList.add('af-pulse'); setTimeout(()=>f.classList.remove('af-pulse'), 1600); } }catch(_){} }
       return;
     }
   }

@@ -471,6 +471,22 @@ scans every push for security mistakes in the code), and *Secret scanning*
 with *Push protection* (it refuses a push that contains a key). Both are free
 for this repository and change nothing else.
 
+**42. Sign-in: the password signs you in; the emailed code only after a run of
+wrong passwords (owner, Oct 31) - DONE.** The owner asked for sign-in "like
+every normal other website": an automatic check, the password, "wrong" when it
+is wrong with Forgot password beside it, and no email unless something looks
+like an attack. Built: the code is now asked for only after SIGNIN_CODE_AFTER_FAILS
+(6) wrong passwords on the account in the last hour, counted across every
+network in the account's counter object; the verification widget is invisible
+unless Cloudflare needs a click, and the page waits for it instead of sending
+without a token. Said plainly, as the trade it is: a new device with the right
+password is no longer asked for the inbox, so a password leaked from another
+site now opens the account on the first try. What still stands between a
+leaked password and the account is the person's own authenticator app or
+passkey (Settings > Security), which AMV keeps asking for wherever one is on -
+the strongest thing to offer everybody, and the first thing a security review
+will ask about.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from

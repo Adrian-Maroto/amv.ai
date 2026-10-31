@@ -242,6 +242,7 @@ async function authLoginVerify(request, env) {
   }
   try { await _markActive(env, em); } catch (e) {}
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
+  await _signinFailsClear(env, em);   // the code proved it; the run of wrong guesses is over
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || '', await _sessOpen(env, request, em)));
 }
 

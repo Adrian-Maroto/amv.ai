@@ -127,10 +127,12 @@ section('The link works, and they can sign in with the new password');
   const good = await login(USER, NEW, deviceToken);
   ok(good.status === 200 && !!good.d.token, 'and they are back in', good.status);
 
-  /* Anybody else who now has the new password still needs the inbox. */
+  /* Another device with the new password signs in with it too: since Oct 31
+     (owner decision) the emailed code is asked for only after a run of wrong
+     passwords - a-code-is-the-other-half-of-the-key holds that case. */
   const elsewhere = await login(USER, NEW);
-  ok(elsewhere.status === 200 && elsewhere.d.needsCode && !elsewhere.d.token,
-     'while another device with the same password is asked for a code', elsewhere.d);
+  ok(elsewhere.status === 200 && !!elsewhere.d.token && !elsewhere.d.needsCode,
+     'and another device with the new password signs in with it, no code', elsewhere.d);
 
   const stale = await login(USER, OLD);
   ok(stale.status >= 400, 'while the old password no longer works', stale.status);

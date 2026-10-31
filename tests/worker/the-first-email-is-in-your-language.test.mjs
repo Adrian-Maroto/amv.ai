@@ -37,7 +37,10 @@ function makeKV() {
     async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } };
 }
 const env = { AMV_KV: makeKV(), JWT_SECRET: 'test-jwt-secret', APP_URL: 'https://amv.test', EMAIL_API_KEY: 'em-key', RESET_EMAIL_FROM: 'AMV <no-reply@amv.test>',
-  AMV_COUNTER: { idFromName: n => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0, claimed: true })); } }) } };
+  /* Every account here is under a run of wrong passwords (value 6 on its
+     sign-in failure count), which is when a sign-in code is sent at all since
+     Oct 31 - and the code's language is what this file is about. */
+  AMV_COUNTER: { idFromName: n => n, get: (n) => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: /^signinfail:/.test(n) ? 6 : 0, claimed: true })); } }) } };
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 let ip = 10;
 const call = (path, body, headers) => W.default.fetch(new Request('https://api.amv.test' + path, { method: 'POST',

@@ -448,6 +448,42 @@ async function authSignup(request, env){
      code, so a stranger who signed up with it first cannot keep it. */
   return _tokenResponse(env, await issueTokens(env, em, safeName, await _sessOpen(env, request, em)));
 }
+/* THE EMAILED CODE IS FOR AN ACCOUNT UNDER ATTACK, NOT FOR EVERY NEW DEVICE
+   (owner decision, Oct 31).
+
+   A code on every unfamiliar device made every sign-in a trip to the mailbox,
+   and on a phone that meant leaving the page, losing the form and coming back
+   to a session that was not there. The owner asked for what people expect
+   from a site: the right password signs you in, a wrong one says so, and the
+   mailbox is brought in only when something is wrong.
+
+   "Something is wrong" is counted per ACCOUNT, across every address and
+   network: six wrong passwords in the last hour (a guessing run, from however
+   many machines) and the next correct password also needs the code sent to
+   the account's address. The count is the account's counter object - atomic,
+   so a run of parallel guesses cannot undercount it - and it lapses an hour
+   after the last wrong guess. A correct sign-in clears it.
+
+   Unchanged: an authenticator app or passkey, where the person turned one on,
+   is still asked for (_mfaAsk); a count that cannot be read is treated as an
+   attack (the code is asked for) rather than as "no failures". */
+const SIGNIN_CODE_AFTER_FAILS = 6;
+const SIGNIN_FAIL_WINDOW_MS = 3600000;
+const _signinFailName = (em) => 'signinfail:' + String(em).toLowerCase();
+async function _signinFailAdd(env, em) {
+  try { await counter(env, _signinFailName(em), { op: 'incr', amount: 1, ttlMs: SIGNIN_FAIL_WINDOW_MS, strict: true }); }
+  catch (e) { audit(env, 'signin_fail_uncounted', { email: em, error: String((e && e.message) || e).slice(0, 120) }); }
+}
+async function _signinFails(env, em) {
+  try {
+    const r = await counter(env, _signinFailName(em), { op: 'get', strict: true });
+    return (r && typeof r.value === 'number') ? r.value : Infinity;
+  } catch (e) { return Infinity; }
+}
+async function _signinFailsClear(env, em) {
+  try { await counter(env, _signinFailName(em), { op: 'clear', strict: true }); } catch (e) {}
+}
+
 async function authLogin(request, env) {
   const body = await request.json().catch(()=>({}));
   const { email, name, password, provider } = body;
@@ -560,6 +596,7 @@ async function authLogin(request, env) {
   const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
   if(!ok){
     await _noteAuthFail(env, rlKey);
+    await _signinFailAdd(env, em);
     audit(env,'auth_fail',{email:em,reason:'bad_password'});
     /* Shown to the account owner: a run of these is how someone finds out their
        password is being guessed, which is the single most useful thing an
@@ -609,13 +646,16 @@ async function authLogin(request, env) {
      trusted the same way either way. */
   if (_acctFactors(acct).totp && !(await _deviceTrusted(env, request, body, em)))
     return _mfaAsk(env, em, acct.name || name || '');
-  /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
-     on, the other half is a code sent to the address - see _startSignInCode. */
+  /* THE PASSWORD IS ENOUGH - unless this account has just had a run of wrong
+     passwords (SIGNIN_CODE_AFTER_FAILS, above). Then, on a device it has not
+     proved itself on, the other half is a code sent to the address - see
+     _startSignInCode. */
   let trust = null;
-  if (_codesOn(env)) {
+  if (_codesOn(env) && (await _signinFails(env, em)) >= SIGNIN_CODE_AFTER_FAILS) {
     trust = await _deviceTrustState(env, request, body, em);
     if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason, body.lang); if (c) return c; }
   }
+  await _signinFailsClear(env, em);
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
   /* Trust is counted from the LAST sign-in, not the first code: somebody who

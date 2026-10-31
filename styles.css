@@ -17403,3 +17403,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .fd-sw-add{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }
 .fd-sw-add .fp-in{ flex:1 1 220px; }
 
+
+/* LAYER A348 - after a wrong password, the way back is pointed at for a moment. */
+#auth-forgot.af-pulse{ color:var(--accent) !important; text-decoration:underline; transition:color .2s var(--ease); }
+@media (prefers-reduced-motion: reduce){ #auth-forgot.af-pulse{ transition:none; } }
