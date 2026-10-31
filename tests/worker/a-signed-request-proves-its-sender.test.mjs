@@ -149,7 +149,10 @@ let stripeJob;
   const o = await send(j.url, old, head(old, nowS() - 301));
   ok(o.status === 401 && o.d.code === 'stale_signature', 'one signed five minutes and a second ago is refused', o.d);
   const fut = payload('st3');
-  ok((await send(j.url, fut, head(fut, nowS() + 301))).d.code === 'stale_signature', 'and so is one dated in the future', true);
+  /* Half a minute past the window, not one second: the clock can tick over
+     between dating the request here and the Worker reading it, which moves a
+     future date one second NEARER - a CI run once landed on exactly 300. */
+  ok((await send(j.url, fut, head(fut, nowS() + 330))).d.code === 'stale_signature', 'and so is one dated in the future', true);
   const moved = payload('st4'); const t = nowS();
   const m = await send(j.url, moved, { 'Stripe-Signature': 't=' + (t + 1) + ',v1=' + hmacHex(secret, t + '.' + moved) });
   ok(m.status === 401 && m.d.code === 'bad_signature', 'changing the time to dodge the window breaks the signature', m.d);
