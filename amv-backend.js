@@ -5257,6 +5257,19 @@ async function computerRoute(request, env, route){
     return json({ error: 'The cloud workspace did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
   }
   let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
+  /* EVERY MACHINE IS IN USE. The container library answers 503 with its own
+     sentence when the account has reached max_instances (cloud/wrangler.toml).
+     That is a capacity ceiling, not a fault: the person is told plainly and
+     asked to try in a few minutes, and the operator is told once an hour,
+     because the fix is theirs - raise the ceiling - and nobody else will
+     notice a queue of people being turned away. */
+  if(!d && r.status === 503 && /no Container instance available/i.test(text || '')){
+    audit(env, 'computer_capacity', { by: user.email, route });
+    try{ await alertOnce(env, 'computer_capacity',
+      'Every cloud computer is in use: people are being asked to try again in a few minutes. '
+      + 'Raise max_instances in cloud/wrangler.toml and deploy cloud/ again if this keeps happening.', 60); }catch(e){}
+    return json({ error: 'Every cloud workspace is busy right now. Try again in a few minutes - nothing ran.', code: 'computer_busy' }, 503, { 'Retry-After': '120' });
+  }
   if(!d || typeof d !== 'object') return json({ error: 'The cloud workspace answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
   /* The container refusing AMV's key means the two Workers hold different
      keys - a deployment fault, not the person's session. Passed through as a
@@ -11320,6 +11333,11 @@ async function _autoRunAccount(env, email, rec, now, deadline){
 const AUTO_QUEUE_BATCH = 100;          // the provider's sendBatch ceiling
 const AUTO_QUEUE_CLAIM_S = 5 * 60;     // one message per account per five minutes
 const AUTO_QUEUE_RETRY_S = 60;         // first retry after a minute, then longer
+/* How long one account's run may keep retrying a model call that failed
+   for a moment. The tick shares 25 seconds across every account; a consumer
+   runs one account and may run for minutes, so a provider hiccup gets the
+   retries it deserves instead of a failed job. */
+const AUTO_QUEUE_RUN_MS = 4 * 60 * 1000;
 
 function _jobQueueOn(env){
   return !!(env && env.AMV_JOBS && typeof env.AMV_JOBS.sendBatch === 'function');
@@ -11383,7 +11401,7 @@ async function _autoQueueConsume(batch, env){
       const rec = await DB.get(env, 'auto', email);
       if(!rec || rec.paused || !Array.isArray(rec.items) || !rec.items.length){ msg.ack(); continue; }
       const now = Date.now();
-      const r = await _autoRunAccount(env, email, rec, now, now + AUTO_TICK_BUDGET_MS);
+      const r = await _autoRunAccount(env, email, rec, now, now + AUTO_QUEUE_RUN_MS);
       if(r.ran || r.failed) console.log('[queue] automations', JSON.stringify({ email, ...r }));
       msg.ack();
     }catch(e){

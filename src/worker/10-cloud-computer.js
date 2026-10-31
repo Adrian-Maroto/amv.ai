@@ -109,6 +109,19 @@ async function computerRoute(request, env, route){
     return json({ error: 'The cloud workspace did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
   }
   let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
+  /* EVERY MACHINE IS IN USE. The container library answers 503 with its own
+     sentence when the account has reached max_instances (cloud/wrangler.toml).
+     That is a capacity ceiling, not a fault: the person is told plainly and
+     asked to try in a few minutes, and the operator is told once an hour,
+     because the fix is theirs - raise the ceiling - and nobody else will
+     notice a queue of people being turned away. */
+  if(!d && r.status === 503 && /no Container instance available/i.test(text || '')){
+    audit(env, 'computer_capacity', { by: user.email, route });
+    try{ await alertOnce(env, 'computer_capacity',
+      'Every cloud computer is in use: people are being asked to try again in a few minutes. '
+      + 'Raise max_instances in cloud/wrangler.toml and deploy cloud/ again if this keeps happening.', 60); }catch(e){}
+    return json({ error: 'Every cloud workspace is busy right now. Try again in a few minutes - nothing ran.', code: 'computer_busy' }, 503, { 'Retry-After': '120' });
+  }
   if(!d || typeof d !== 'object') return json({ error: 'The cloud workspace answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
   /* The container refusing AMV's key means the two Workers hold different
      keys - a deployment fault, not the person's session. Passed through as a

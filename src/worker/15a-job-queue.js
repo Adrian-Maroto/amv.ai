@@ -23,6 +23,11 @@
 const AUTO_QUEUE_BATCH = 100;          // the provider's sendBatch ceiling
 const AUTO_QUEUE_CLAIM_S = 5 * 60;     // one message per account per five minutes
 const AUTO_QUEUE_RETRY_S = 60;         // first retry after a minute, then longer
+/* How long one account's run may keep retrying a model call that failed
+   for a moment. The tick shares 25 seconds across every account; a consumer
+   runs one account and may run for minutes, so a provider hiccup gets the
+   retries it deserves instead of a failed job. */
+const AUTO_QUEUE_RUN_MS = 4 * 60 * 1000;
 
 function _jobQueueOn(env){
   return !!(env && env.AMV_JOBS && typeof env.AMV_JOBS.sendBatch === 'function');
@@ -86,7 +91,7 @@ async function _autoQueueConsume(batch, env){
       const rec = await DB.get(env, 'auto', email);
       if(!rec || rec.paused || !Array.isArray(rec.items) || !rec.items.length){ msg.ack(); continue; }
       const now = Date.now();
-      const r = await _autoRunAccount(env, email, rec, now, now + AUTO_TICK_BUDGET_MS);
+      const r = await _autoRunAccount(env, email, rec, now, now + AUTO_QUEUE_RUN_MS);
       if(r.ran || r.failed) console.log('[queue] automations', JSON.stringify({ email, ...r }));
       msg.ack();
     }catch(e){

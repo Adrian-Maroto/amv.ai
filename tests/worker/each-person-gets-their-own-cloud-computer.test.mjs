@@ -42,6 +42,7 @@ const freePort = () => new Promise(res => { const s = createServer(); s.listen(0
 /* One real cloud bridge per container name, started the first time it is asked for. */
 const machines = new Map(), asked = [];
 let failStart = false, commandTakes = 0;
+let allBusy = false;
 /* The clock the Worker reads, moved forward by a "long" command or a gap. */
 const realNow = Date.now.bind(Date); let skew = 0;
 Date.now = () => realNow() + skew;
@@ -67,6 +68,8 @@ const NS = {
   get: (id) => ({
     async fetch(req) {
       if (failStart) throw new Error('container failed to start');
+      /* What the container library answers when every machine is in use. */
+      if (allBusy) return new Response('There is no Container instance available at this time.\nThis is likely because you have reached your max concurrent instance count (set in wrangler config) or are you currently provisioning the Container.', { status: 503 });
       asked.push({ name: id.name, url: req.url, key: req.headers.get('X-AMV-Bridge-Token') });
       if (commandTakes) { skew += commandTakes; commandTakes = 0; }
       const m = await machine(id.name);
@@ -182,6 +185,15 @@ section('A container that will not start is said as that');
   const r = await jsonOf(await call(env, '/v1/computer/exec', { command: 'echo hi' }, sam));
   ok(r.status === 503 && r.d.code === 'computer_unavailable' && /did not start/.test(r.d.error), 'it says the cloud computer did not start', r);
   failStart = false;
+}
+
+section('Every machine in use is said as that, and the operator is told');
+{
+  allBusy = true;
+  const r = await jsonOf(await call(env, '/v1/computer/exec', { command: 'echo hi' }, sam));
+  allBusy = false;
+  ok(r.status === 503 && r.d.code === 'computer_busy' && /busy right now/.test(r.d.error) && /nothing ran/.test(r.d.error),
+     'the person is told every workspace is busy and nothing ran - not that AMV could not read an answer', r);
 }
 
 section('A container holding a different key is a deployment fault, never "signed out"');
