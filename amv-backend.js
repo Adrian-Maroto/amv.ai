@@ -992,8 +992,16 @@ const DB = {
     } else {
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
-    if(!raw) return null;
-    try { return JSON.parse(raw); }
+    /* Absent is an answer too, and compared like one: Postgres still having a
+       plan KV removed is exactly the difference step 4 is for. */
+    if(!raw){ _pgShadowRead(env, kind, id, 'null'); return null; }
+    try {
+      const value = JSON.parse(raw);
+      /* For the shadow cohort, the same read from Postgres, compared in the
+         background; this answer is the one used (04c-pg-shadow.js). */
+      _pgShadowRead(env, kind, id, raw);
+      return value;
+    }
     catch (e) {
       try {
         audit(env, 'record_unreadable', { kind, id, bytes: String(raw).length });
@@ -1037,8 +1045,8 @@ const DB = {
     } else {
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
-    if(raw == null) return null;                 // genuinely absent, which is a real answer
-    try { return JSON.parse(raw); }
+    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
+    try { const value = JSON.parse(raw); _pgShadowRead(env, kind, id, raw); return value; }
     catch (e) {
       try {
         audit(env, 'record_unreadable_strict', { kind, id, bytes: String(raw).length });
@@ -2302,28 +2310,40 @@ async function _pgAccountKV(env, email){
 }
 
 /* The differences between an account in KV and its rows, as short words
-   (never the values: they go to an audit line and a database column). */
-async function _pgAccountDiff(sql, email, kv){
+   (never the values: they go to an audit line and a database column).
+   `kinds` narrows it to the records named (the shadow read compares the one
+   it read); every kind by default. */
+async function _pgAccountDiff(sql, email, kv, kinds){
+  const want = new Set(kinds || ['acct', 'ent', 'apikeys']);
   const out = [];
   const a = await sql`SELECT id, name, provider, pw_hash FROM accounts WHERE email = ${email} AND deleted_at IS NULL`;
-  if (!kv.acct) { if (a.length) out.push('account_not_erased'); return out; }
-  if (!a.length) return ['account_missing'];
-  const row = a[0];
-  if (String(row.name || '') !== String(kv.acct.name || '')) out.push('name');
-  if (String(row.provider || '') !== String(kv.acct.provider || 'email')) out.push('provider');
-  if ((row.pw_hash || null) !== (kv.acct.pwHash || null)) out.push('password');
-  const e = await sql`SELECT plan, blocked FROM entitlements WHERE account_id = ${row.id}`;
-  if (!kv.ent) { if (e.length) out.push('plan_not_removed'); }
-  else if (!e.length) out.push('plan_missing');
-  else {
-    if (String(e[0].plan) !== String(kv.ent.plan || 'free')) out.push('plan');
-    if (!!e[0].blocked !== !!kv.ent.blocked) out.push('blocked');
+  if (want.has('acct')) {
+    if (!kv.acct) { if (a.length) out.push('account_not_erased'); return out; }
+    if (!a.length) return ['account_missing'];
+    const row = a[0];
+    if (String(row.name || '') !== String(kv.acct.name || '')) out.push('name');
+    if (String(row.provider || '') !== String(kv.acct.provider || 'email')) out.push('provider');
+    if ((row.pw_hash || null) !== (kv.acct.pwHash || null)) out.push('password');
+  } else if (!a.length) {
+    return ((want.has('ent') && kv.ent) || (want.has('apikeys') && kv.keys && (kv.keys.items || []).length)) ? ['account_missing'] : [];
   }
-  const want = ((kv.keys && Array.isArray(kv.keys.items)) ? kv.keys.items.filter(k => k && k.id && k.hash) : [])
-    .map(k => k.hash + (k.revoked ? ':r' : '')).sort().join(',');
-  const k = await sql`SELECT key_hash, revoked_at FROM api_keys WHERE account_id = ${row.id}`;
-  const have = k.map(r => r.key_hash + (r.revoked_at ? ':r' : '')).sort().join(',');
-  if (want !== have) out.push('api_keys');
+  const id = a[0].id;
+  if (want.has('ent')) {
+    const e = await sql`SELECT plan, blocked FROM entitlements WHERE account_id = ${id}`;
+    if (!kv.ent) { if (e.length) out.push('plan_not_removed'); }
+    else if (!e.length) out.push('plan_missing');
+    else {
+      if (String(e[0].plan) !== String(kv.ent.plan || 'free')) out.push('plan');
+      if (!!e[0].blocked !== !!kv.ent.blocked) out.push('blocked');
+    }
+  }
+  if (want.has('apikeys')) {
+    const wantKeys = ((kv.keys && Array.isArray(kv.keys.items)) ? kv.keys.items.filter(k => k && k.id && k.hash) : [])
+      .map(k => k.hash + (k.revoked ? ':r' : '')).sort().join(',');
+    const k = await sql`SELECT key_hash, revoked_at FROM api_keys WHERE account_id = ${id}`;
+    const have = k.map(r => r.key_hash + (r.revoked_at ? ':r' : '')).sort().join(',');
+    if (wantKeys !== have) out.push('api_keys');
+  }
   return out;
 }
 
@@ -2500,6 +2520,133 @@ async function pgBackfillRoute(request, env){
       repairsMoreThanShown: !left.list_complete,
       notCopied: 'Credit packs bought before step 2, and seller lines older than the 500 a history keeps.',
     });
+  } finally {
+    try { await sql.end({ timeout: 5 }); } catch (e) {}
+  }
+}
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CONTROL PLANE IN POSTGRES: STEP 4, SHADOW READS (docs/DATA-TIER.md).
+
+   For the accounts in the shadow cohort, a read of an account, a plan or a
+   set of API keys is answered from KV as always - and then, in the
+   background, the same thing is read from Postgres and compared. KV's answer
+   is the one used, every time: nothing here can change what anybody sees.
+   A difference is re-checked once a moment later (a write may have been on
+   its way to Postgres), then counted against the account (migration_accounts
+   mismatches, last_mismatch), audited and alerted.
+
+   The cohort is the `PG_SHADOW` variable, which only a deploy sets: a comma
+   list of addresses (staff first) and/or a share of everybody, like
+   `amv@amv.homes,5%`. Empty or unset, nothing is compared. The step's check -
+   a week of shadow reads with no unexplained difference - is read from
+   GET /admin/pg/shadow: reads compared and differing per day, and the
+   accounts that differ.
+
+   Its cost is bounded: an account's record is compared at most once a minute
+   per Worker instance, and the tallies are sharded like every other total. */
+
+const PG_SHADOW_KINDS = new Set(['acct', 'ent', 'apikeys']);
+const PG_SHADOW_EVERY_MS = 60000;
+const PG_SHADOW_RECHECK_MS = 1500;
+const _pgShadowSeen = new Map();
+let _pgShadowCohortCache = { raw: null, emails: new Set(), basisPoints: 0 };
+
+function _pgShadowCohort(env){
+  const raw = String((env && env.PG_SHADOW) || '');
+  if (_pgShadowCohortCache.raw === raw) return _pgShadowCohortCache;
+  const emails = new Set(); let basisPoints = 0;
+  for (const part of raw.split(',').map(x => x.trim()).filter(Boolean)) {
+    const pct = /^(\d+(?:\.\d+)?)%$/.exec(part);
+    if (pct) basisPoints = Math.max(0, Math.min(10000, Math.round(parseFloat(pct[1]) * 100)));
+    else if (part.includes('@')) emails.add(part.toLowerCase());
+  }
+  _pgShadowCohortCache = { raw, emails, basisPoints };
+  return _pgShadowCohortCache;
+}
+
+/* In the cohort: named, or in the share by a hash of the address - so the
+   same people are compared on every instance, and growing the share only
+   adds people. */
+async function _pgShadowIn(env, email){
+  const c = _pgShadowCohort(env);
+  if (c.emails.has(email)) return true;
+  if (!c.basisPoints) return false;
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email)));
+  return (((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0) % 10000 < c.basisPoints;
+}
+
+/* Called by DB.get / DB.getStrict with the text KV answered (not the object
+   the caller was handed, which it may change before this runs). Never
+   throws, never waits: the caller already has its answer. */
+function _pgShadowRead(env, kind, id, raw){
+  if (!env || !env.PG_SHADOW || !PG_SHADOW_KINDS.has(kind) || !_pgOn(env) || DB._hasD1(env)) return;
+  const email = String(id || '').toLowerCase();
+  if (!email.includes('@')) return;
+  const key = kind + ':' + email, now = Date.now();
+  if (now - (_pgShadowSeen.get(key) || 0) < PG_SHADOW_EVERY_MS) return;
+  if (_pgShadowSeen.size > 5000) _pgShadowSeen.clear();
+  _pgShadowSeen.set(key, now);
+  const p = _pgShadowCompare(env, kind, email, raw)
+    .catch((e) => { try { audit(env, 'pg_shadow_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+    .finally(() => _pgInFlight.delete(p));
+  _pgInFlight.add(p);
+  try { _bg(p); } catch (e) {}
+}
+
+const _pgShadowAs = (kind, value) => kind === 'acct' ? { acct: value } : kind === 'ent' ? { ent: value } : { keys: value };
+async function _pgShadowKV(env, kind, email){
+  try { return JSON.parse((await env.AMV_KV.get(kind + ':' + email)) || 'null'); } catch (e) { return null; }
+}
+
+async function _pgShadowCompare(env, kind, email, raw){
+  if (!(await _pgShadowIn(env, email))) return 'outside';
+  const value = JSON.parse(raw);
+  const sql = await _pgClient(env);
+  try {
+    let diff = await _pgAccountDiff(sql, email, _pgShadowAs(kind, value), [kind]);
+    if (diff.length) {
+      /* A write that had reached KV but not yet Postgres is not a difference:
+         a moment later, both are read again. */
+      await new Promise(r => setTimeout(r, PG_SHADOW_RECHECK_MS));
+      diff = await _pgAccountDiff(sql, email, _pgShadowAs(kind, await _pgShadowKV(env, kind, email)), [kind]);
+    }
+    const day = todayKey();
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) {}
+    if (!diff.length) return 'same';
+    const fields = kind + ':' + diff.join(',');
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) {}
+    await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${fields.slice(0, 200)} WHERE email = ${email}`;
+    try { audit(env, 'pg_shadow_mismatch', { kind, id: email, fields: diff.join(',') }); } catch (e) {}
+    try { await alertOnce(env, 'pg_shadow_mismatch',
+      'A shadow read found Postgres differing from KV (' + fields + '). Nobody saw it - KV answered - but step 5 must not start until '
+      + 'every difference is explained. GET /admin/pg/shadow lists them.', 60); } catch (e) {}
+    return 'differed';
+  } finally {
+    try { await sql.end({ timeout: 5 }); } catch (e) {}
+  }
+}
+
+/* GET /admin/pg/shadow: who is compared, how many reads a day, how many
+   differed, and the accounts that differ (most recent first, at most 50). */
+async function pgShadowRoute(request, env){
+  const gate = await _adminGate(request, env, 'pgshadow', 10, 200);
+  if (gate) return gate;
+  const c = _pgShadowCohort(env);
+  const cohort = { addresses: c.emails.size, percent: c.basisPoints / 100 };
+  if (!_pgOn(env)) return json({ on: false, cohort, note: 'The Postgres binding PG is not set.' });
+  if (!c.emails.size && !c.basisPoints) return json({ on: false, cohort, note: 'Nobody is in the shadow cohort: set PG_SHADOW (addresses and/or a share, like "5%").' });
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const [compared, differed] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed')]);
+    days.push({ day, compared, differed });
+  }
+  const sql = await _pgClient(env);
+  try {
+    const rows = await sql`SELECT email, mismatches, last_mismatch FROM migration_accounts WHERE mismatches > 0 ORDER BY mismatches DESC, email LIMIT 50`;
+    const n = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE mismatches > 0`;
+    return json({ on: true, cohort, days, accountsDiffering: n[0].n,
+      differing: rows.map(r => ({ email: r.email, mismatches: r.mismatches, last: r.last_mismatch })) });
   } finally {
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
@@ -17696,7 +17843,7 @@ async function _route(request, env, ctx) {
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
-    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill',
+    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill', '/admin/pg/shadow',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
@@ -17859,6 +18006,7 @@ async function _route(request, env, ctx) {
     case '/admin/backup/import': return backupImport(request, env);
     case '/admin/backup/nights': return backupNights(request, env);
     case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
+    case '/admin/pg/shadow':     return pgShadowRoute(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
@@ -34372,7 +34520,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -34395,6 +34543,8 @@ function _readinessReport(env, seen) {
      a secret, but a screen that prints one env var's value is a screen that
      will print the next one's. */
   const tuning = [
+    { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
+      effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),

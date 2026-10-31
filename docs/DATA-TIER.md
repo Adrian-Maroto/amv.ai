@@ -130,4 +130,17 @@ KV (a difference is re-checked once, then counted on `migration_accounts`).
 differ and the repairs left; `stop` pauses it and `restart` runs it again
 from the start without copying anything twice. It does not copy credit packs
 bought before step 2, or seller lines older than the 500 a history keeps.
-Not built yet: shadow reads (step 4) and the switch (step 5).
+Shadow reads (step 4) are built (`src/worker/04c-pg-shadow.js`, tested in
+the same suite) and start when the `PG_SHADOW` variable names a cohort:
+addresses and/or a share of everybody by a hash of the address
+(`amv@amv.homes,5%`). For those accounts every read of an account, a plan or
+API keys - an absent one included - is also read from Postgres in the
+background and compared; KV's answer is always the one used. A difference is
+re-checked once (a write may be on its way), then counted against the
+account, audited and alerted. At most one comparison per record per minute
+per Worker instance. `GET /admin/pg/shadow` shows reads compared and
+differing per day for a week, and the accounts that differ.
+
+Not built: the switch (step 5). It moves where sign-in, plans and keys are
+READ from, so it waits for the owner's approval and for step 4's week of
+zero unexplained differences.

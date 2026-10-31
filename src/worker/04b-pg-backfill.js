@@ -56,28 +56,40 @@ async function _pgAccountKV(env, email){
 }
 
 /* The differences between an account in KV and its rows, as short words
-   (never the values: they go to an audit line and a database column). */
-async function _pgAccountDiff(sql, email, kv){
+   (never the values: they go to an audit line and a database column).
+   `kinds` narrows it to the records named (the shadow read compares the one
+   it read); every kind by default. */
+async function _pgAccountDiff(sql, email, kv, kinds){
+  const want = new Set(kinds || ['acct', 'ent', 'apikeys']);
   const out = [];
   const a = await sql`SELECT id, name, provider, pw_hash FROM accounts WHERE email = ${email} AND deleted_at IS NULL`;
-  if (!kv.acct) { if (a.length) out.push('account_not_erased'); return out; }
-  if (!a.length) return ['account_missing'];
-  const row = a[0];
-  if (String(row.name || '') !== String(kv.acct.name || '')) out.push('name');
-  if (String(row.provider || '') !== String(kv.acct.provider || 'email')) out.push('provider');
-  if ((row.pw_hash || null) !== (kv.acct.pwHash || null)) out.push('password');
-  const e = await sql`SELECT plan, blocked FROM entitlements WHERE account_id = ${row.id}`;
-  if (!kv.ent) { if (e.length) out.push('plan_not_removed'); }
-  else if (!e.length) out.push('plan_missing');
-  else {
-    if (String(e[0].plan) !== String(kv.ent.plan || 'free')) out.push('plan');
-    if (!!e[0].blocked !== !!kv.ent.blocked) out.push('blocked');
+  if (want.has('acct')) {
+    if (!kv.acct) { if (a.length) out.push('account_not_erased'); return out; }
+    if (!a.length) return ['account_missing'];
+    const row = a[0];
+    if (String(row.name || '') !== String(kv.acct.name || '')) out.push('name');
+    if (String(row.provider || '') !== String(kv.acct.provider || 'email')) out.push('provider');
+    if ((row.pw_hash || null) !== (kv.acct.pwHash || null)) out.push('password');
+  } else if (!a.length) {
+    return ((want.has('ent') && kv.ent) || (want.has('apikeys') && kv.keys && (kv.keys.items || []).length)) ? ['account_missing'] : [];
   }
-  const want = ((kv.keys && Array.isArray(kv.keys.items)) ? kv.keys.items.filter(k => k && k.id && k.hash) : [])
-    .map(k => k.hash + (k.revoked ? ':r' : '')).sort().join(',');
-  const k = await sql`SELECT key_hash, revoked_at FROM api_keys WHERE account_id = ${row.id}`;
-  const have = k.map(r => r.key_hash + (r.revoked_at ? ':r' : '')).sort().join(',');
-  if (want !== have) out.push('api_keys');
+  const id = a[0].id;
+  if (want.has('ent')) {
+    const e = await sql`SELECT plan, blocked FROM entitlements WHERE account_id = ${id}`;
+    if (!kv.ent) { if (e.length) out.push('plan_not_removed'); }
+    else if (!e.length) out.push('plan_missing');
+    else {
+      if (String(e[0].plan) !== String(kv.ent.plan || 'free')) out.push('plan');
+      if (!!e[0].blocked !== !!kv.ent.blocked) out.push('blocked');
+    }
+  }
+  if (want.has('apikeys')) {
+    const wantKeys = ((kv.keys && Array.isArray(kv.keys.items)) ? kv.keys.items.filter(k => k && k.id && k.hash) : [])
+      .map(k => k.hash + (k.revoked ? ':r' : '')).sort().join(',');
+    const k = await sql`SELECT key_hash, revoked_at FROM api_keys WHERE account_id = ${id}`;
+    const have = k.map(r => r.key_hash + (r.revoked_at ? ':r' : '')).sort().join(',');
+    if (wantKeys !== have) out.push('api_keys');
+  }
   return out;
 }
 

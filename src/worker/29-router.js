@@ -721,7 +721,7 @@ async function _route(request, env, ctx) {
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
-    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill',
+    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill', '/admin/pg/shadow',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
@@ -884,6 +884,7 @@ async function _route(request, env, ctx) {
     case '/admin/backup/import': return backupImport(request, env);
     case '/admin/backup/nights': return backupNights(request, env);
     case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
+    case '/admin/pg/shadow':     return pgShadowRoute(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);

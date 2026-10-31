@@ -158,6 +158,12 @@ new_sqlite_classes = ["AMVCounter"]
 # [[hyperdrive]]
 # binding = "PG"
 # id = "<the id hyperdrive create printed>"
+#
+# Step 3, the backfill, is started by hand: POST /admin/pg/backfill
+# {"action":"start"} with the admin token. Step 4, shadow reads, is the
+# PG_SHADOW variable under [vars]: addresses and/or a share, compared in the
+# background while KV still answers - "amv@amv.homes" first, then "1%", "10%".
+# Results: GET /admin/pg/shadow.
 
 # ── Nightly backups (object storage) ──
 # Every night the accounts, plans, chats, projects and jobs are copied into a

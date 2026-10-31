@@ -67,8 +67,16 @@ const DB = {
     } else {
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
-    if(!raw) return null;
-    try { return JSON.parse(raw); }
+    /* Absent is an answer too, and compared like one: Postgres still having a
+       plan KV removed is exactly the difference step 4 is for. */
+    if(!raw){ _pgShadowRead(env, kind, id, 'null'); return null; }
+    try {
+      const value = JSON.parse(raw);
+      /* For the shadow cohort, the same read from Postgres, compared in the
+         background; this answer is the one used (04c-pg-shadow.js). */
+      _pgShadowRead(env, kind, id, raw);
+      return value;
+    }
     catch (e) {
       try {
         audit(env, 'record_unreadable', { kind, id, bytes: String(raw).length });
@@ -112,8 +120,8 @@ const DB = {
     } else {
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
-    if(raw == null) return null;                 // genuinely absent, which is a real answer
-    try { return JSON.parse(raw); }
+    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
+    try { const value = JSON.parse(raw); _pgShadowRead(env, kind, id, raw); return value; }
     catch (e) {
       try {
         audit(env, 'record_unreadable_strict', { kind, id, bytes: String(raw).length });

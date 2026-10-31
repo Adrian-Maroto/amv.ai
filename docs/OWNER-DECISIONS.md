@@ -530,7 +530,12 @@ reversals, payouts, returned payouts) are rows in seller_ledger. Step 2 is
 complete. The backfill (step 3) is built and waits for the owner: after a day
 of step 2 with no failed writes, start it with
 `POST /admin/pg/backfill {"action":"start"}`; it reads every account back
-and says whether step 4 can start. Shadow reads and the gradual switch follow docs/DATA-TIER.md.
+and says whether step 4 can start. Shadow reads (step 4) are built too and
+start when the `PG_SHADOW` variable names a cohort (staff first, then a
+share); KV still answers every read. The switch (step 5) is not built: it
+changes where sign-in and billing read from, so it waits for the owner's
+approval after a week of shadow reads with no unexplained difference
+(docs/DATA-TIER.md).
 
 ## What needs the owner's own hand
 

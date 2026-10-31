@@ -11,7 +11,10 @@
        read stays and is counted;
      - a team whose owner has no account is not invented: it is listed;
      - every account is read back; a row changed behind its back is found;
-     - run again from the start it copies nothing twice. */
+     - run again from the start it copies nothing twice.
+   And step 4, shadow reads (src/worker/04c-pg-shadow.js): only the cohort is
+   compared, at most once a minute a record, KV always answers, an absent
+   record is compared too, and a write on its way is not a difference. */
 import { execFileSync, execSync } from 'child_process';
 import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -43,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -63,9 +66,15 @@ const kv = {
     return { keys: keys.map(name => ({ name })), list_complete: complete, cursor: complete ? undefined : keys[keys.length - 1] };
   },
 };
+const counters = new Map();
 const PG = { connectionString: `postgres://${user}@127.0.0.1:${PORT}/postgres` };
 const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ADMIN_TOKEN: 'admin-token-for-the-test-0123456789',
-  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: () => ({ async fetch(){ return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
+  /* Counters that count, so the shadow tallies can be read back. */
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init){
+    const b = JSON.parse(init.body); const cur = counters.get(n) || 0;
+    if (b.op === 'incr') counters.set(n, cur + (b.amount || 0));
+    return new Response(JSON.stringify({ allowed: true, value: counters.get(n) || 0 }));
+  } }) }),
   AMV_KV: kv };
 const admin = (method, body, token = env.ADMIN_TOKEN) => new Request('https://api.amv.test/admin/pg/backfill', { method,
   headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, token ? { 'X-Admin-Token': token } : {}),
@@ -205,6 +214,93 @@ section('A change that lands while an account is being read back is not a differ
   ok(last.state === 'done' && reads >= 2, 'read back again, and finished', { last, reads });
   ok(!audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === 'p020@example.com') &&
      q("select mismatches from migration_accounts where email='p020@example.com'") === '0', 'not reported as a difference');
+}
+
+/* ── Step 4: shadow reads ───────────────────────────────────────────────── */
+const shadowAudits = (id) => audits.filter(a => (a.event === 'pg_shadow_mismatch' || a.event === 'pg_shadow_failed') && a.id === id);
+const compared = () => [...counters.entries()].filter(([k]) => /^pgshadow:.*:compared:s\d+$/.test(k)).reduce((t, [, v]) => t + v, 0);
+
+section('Shadow reads: with nobody in the cohort, nothing is compared');
+{
+  delete env.PG_SHADOW;
+  const before = compared();
+  const v = await W.DB.get(env, 'acct', 'p030@example.com');
+  await W._pgSettle();
+  ok(v && v.name === 'Person 30' && compared() === before, 'the read is answered and nothing else happens');
+  const st = await (await W.pgShadowRoute(admin('GET'), env)).json();
+  ok(st.on === false && /PG_SHADOW/.test(st.note), 'and the status says why', st);
+}
+
+section('Shadow reads: a named account is compared, and an account outside is not');
+{
+  env.PG_SHADOW = 'p030@example.com';
+  const before = compared();
+  await W.DB.get(env, 'acct', 'p030@example.com');
+  await W.DB.get(env, 'acct', 'p031@example.com');
+  await W._pgSettle();
+  ok(compared() === before + 1 && !shadowAudits('p030@example.com').length, 'one read compared, and it matches', compared() - before);
+  await W.DB.get(env, 'acct', 'p030@example.com');
+  await W._pgSettle();
+  ok(compared() === before + 1, 'read again within the minute, it is not compared again');
+}
+
+section('Shadow reads: a difference is found, counted - and KV still answers');
+{
+  env.PG_SHADOW = 'p033@example.com,p036@example.com';
+  q("update entitlements set plan='free' where account_id=(select id from accounts where email='p033@example.com')");
+  audits.length = 0;
+  const v = await W.DB.getStrict(env, 'ent', 'p033@example.com');
+  ok(v && v.plan === 'pro', 'the person is answered from KV: their real plan', v);
+  await W._pgSettle();
+  const m = shadowAudits('p033@example.com');
+  ok(m.length === 1 && m[0].event === 'pg_shadow_mismatch' && m[0].fields === 'plan' && m[0].kind === 'ent', 'the plan difference is on the record', m);
+  ok(q("select last_mismatch from migration_accounts where email='p033@example.com'") === 'ent:plan', 'and against the account');
+  const st = await (await W.pgShadowRoute(admin('GET'), env)).json();
+  ok(st.on && st.cohort.addresses === 2 && st.days[0].differed === 1 && st.differing.some(d => d.email === 'p033@example.com' && d.last === 'ent:plan'),
+     'the status shows the day’s count and the account', st);
+}
+
+section('Shadow reads: a record KV no longer has is compared too');
+{
+  env.PG_SHADOW = 'p039@example.com';
+  store.delete('ent:p039@example.com');
+  audits.length = 0;
+  ok((await W.DB.get(env, 'ent', 'p039@example.com')) === null, 'KV answers: no plan');
+  await W._pgSettle();
+  ok(shadowAudits('p039@example.com').some(a => a.fields === 'plan_not_removed'), 'and the plan Postgres still has is found', shadowAudits('p039@example.com'));
+}
+
+section('Shadow reads: a write on its way to Postgres is not a difference');
+{
+  /* KV already has the new plan; the Postgres write lands before the second
+     look (which is the second read of the key). */
+  env.PG_SHADOW = 'p036@example.com';
+  store.set('ent:p036@example.com', JSON.stringify({ plan: 'pro', source: 'stripe' }));
+  const get = kv.get; let reads = 0;
+  kv.get = async (k) => {
+    if (k === 'ent:p036@example.com' && ++reads === 2) q("update entitlements set plan='pro' where account_id=(select id from accounts where email='p036@example.com')");
+    return get(k);
+  };
+  audits.length = 0;
+  await W.DB.get(env, 'ent', 'p036@example.com');
+  await W._pgSettle();
+  kv.get = get;
+  ok(reads === 2, 'looked at twice', reads);
+  ok(!shadowAudits('p036@example.com').length && q("select mismatches from migration_accounts where email='p036@example.com'") === '0', 'read again, it matches, and nothing is reported');
+}
+
+section('Shadow reads: a share of everybody, by a hash of the address');
+{
+  env.PG_SHADOW = '100%';
+  const before = compared();
+  for (const e of ['p040@example.com', 'p041@example.com', 'p042@example.com']) await W.DB.get(env, 'apikeys', e);
+  await W._pgSettle();
+  ok(compared() === before + 3, 'at 100%, every read is compared', compared() - before);
+  env.PG_SHADOW = '0%';
+  await W.DB.get(env, 'acct', 'p043@example.com');
+  await W._pgSettle();
+  ok(compared() === before + 3, 'at 0%, none is');
+  delete env.PG_SHADOW;
 }
 
 section('Without the binding, nothing is tried');
