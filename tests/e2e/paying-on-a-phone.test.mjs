@@ -96,6 +96,10 @@ section('They can reach the button that starts an account');
 
 section('The fields are usable, not just present');
 {
+  /* Sign-up is passkey-first (OWNER-DECISIONS #43); this person chooses a
+     password, which is one press away. */
+  await page.click('#a-use-pw');
+  await page.waitForSelector('#a-pass', { state: 'visible' });
   const fields = [];
   for (const sel of ['#a-name', '#a-email', '#a-pass']) fields.push([sel, await reachable(sel)]);
   const bad = fields.filter(([, r]) => !r.found || !r.onScreen || r.covered);

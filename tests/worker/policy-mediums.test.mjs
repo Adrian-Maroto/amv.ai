@@ -27,8 +27,9 @@ section('AMV-051: stronger password policy at signup');
   ok((await signup(env, 'a@x.com', 'short12')).status === 400, 'a 7-character password is rejected');
   ok((await signup(env, 'b@x.com', 'password123')).status === 400, 'a common password is rejected');
   ok((await signup(env, 'c@x.com', 'aaaaaaaa')).status === 400, 'an all-same-character password is rejected');
-  /* 8 characters is the floor (OWNER-DECISIONS #27; NIST SP 800-63B's minimum). */
-  ok((await signup(env, 'e@x.com', 'Str0ngPass!88')).status === 200, 'a 13-character password is accepted');
+  /* A password ALONE needs 15 characters (OWNER-DECISIONS #43, passkey-first
+     sign-up; NIST SP 800-63B-4's floor for a single-factor password). */
+  ok((await signup(env, 'f@x.com', 'Str0ngPass!88')).status === 400, 'a 13-character password alone is refused');
   const good = await signup(env, 'd@x.com', 'Str0ngPass!88-long');
   ok(good.status < 400, 'a strong password is accepted', good.status);
 }

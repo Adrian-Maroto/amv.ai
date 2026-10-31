@@ -17416,3 +17416,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 #hist > .hist-builds-h{ cursor:default; }
 #hist > .hist-builds-h:hover{ background:none; color:var(--mu); }
 #hist .hist-builds-h{ padding-top:var(--sp-1); }
+
+/* LAYER A350 - "Use a password instead" on the sign-up sheet stands on its
+   own line, so it gets the 44px a thumb needs, not the height of its text. */
+#a-use-pw{ min-height:44px; padding:var(--sp-2) var(--sp-3); }

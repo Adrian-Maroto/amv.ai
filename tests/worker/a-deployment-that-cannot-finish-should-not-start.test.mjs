@@ -32,6 +32,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly } from '../lib/source.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -65,7 +66,7 @@ function mkEnv(opts = {}) {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -77,7 +78,7 @@ function mkEnv(opts = {}) {
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
   if (opts.configured) env.JWT_SECRET = 'a-real-signing-secret-for-the-test';
   return env;
@@ -140,13 +141,27 @@ section('Every route that must mint a token is covered, and no others');
      the first draft of this list and signs nothing. */
   const code = codeOnly(src);
   const signing = [];
-  for (const m of code.matchAll(/case '(\/auth\/[a-z/-]+)':\s*return (\w+)\(/g)) {
-    const fn = m[2];
+  /* A route signs when its handler does, or when a helper it calls does -
+     sign-up hands the new account to _accountCreated, shared with passkey
+     sign-up, and that is where the token is issued. One level is followed:
+     enough for a shared tail, and no deeper than a reader would check. */
+  const bodyOf = (fn) => {
     const at = code.search(new RegExp('(?:async\\s+)?function\\s+' + fn + '\\s*\\('));
-    if (at < 0) continue;
+    if (at < 0) return '';
     let end = code.indexOf('\n}\n', at);
     if (end < 0) end = at + 8000;
-    if (/issueTokens\(|signToken\(/.test(code.slice(at, end))) signing.push(m[1]);
+    return code.slice(at, end);
+  };
+  const signs = (body) => /issueTokens\(|signToken\(/.test(body);
+  for (const m of code.matchAll(/case '(\/auth\/[a-z/-]+)':\s*return (\w+)\(/g)) {
+    const body = bodyOf(m[2]);
+    if (!body) continue;
+    /* A helper called only behind `if (env.JWT_SECRET)` cannot throw halfway
+       on a deployment without one - reset's optional device token is that. */
+    const helpers = [...body.matchAll(/\b(_\w+)\(/g)]
+      .filter(h => !/if\s*\(\s*env\.JWT_SECRET\s*\)[^;]{0,40}$/.test(body.slice(Math.max(0, h.index - 60), h.index)))
+      .map(h => h[1]);
+    if (signs(body) || helpers.some(h => signs(bodyOf(h)))) signing.push(m[1]);
   }
   ok(signing.length >= 4, 'the routes that sign a token were found', signing);
 
