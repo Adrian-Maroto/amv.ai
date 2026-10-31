@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -166,6 +166,23 @@ section('Money is one row per event: a pack bought once is one row however often
      'and the ledger adds up to what is left: nothing');
   const upd = (() => { try { q("update credit_ledger set amount=999 where idempotency_key='credit:pi_pack_1'"); return 'changed'; } catch (e) { return String(e.stderr || e.message); } })();
   ok(/append-only/.test(upd), 'and a row, once written, cannot be changed', upd.slice(0, 80));
+}
+
+section('Credit spent is a row per message, at what it cost; a request id sent twice is two spends, not one');
+{
+  const sse = (inTok, outTok) => new Response([
+    'event: message_start\ndata: ' + JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: inTok, output_tokens: 0 } } }) + '\n\n',
+    'event: message_delta\ndata: ' + JSON.stringify({ type: 'message_delta', usage: { output_tokens: outTok } }) + '\n\n',
+    'event: message_stop\ndata: {"type":"message_stop"}\n\n'].join('')).body;
+  const run = () => W.meterStream(sse(1000, 1000), W.ENGINES['amv-core'], { dName: 'd:ana', mName: 'm:ana', gName: 'g:day', costName: 'cost:ana',
+    user: { email: 'ana@example.com', plan: 'pro' }, env, limits: { daily: 1e9, monthly: 1e9 }, reqMessages: [],
+    creditName: 'creditspent:ana@example.com', reservedCreditUSD: 0, reqId: 'same-id-123' });
+  await run(); await run();
+  await W._pgSettle();
+  const want = (-(1000 / 1e6 * 2 + 1000 / 1e6 * 10) * W.CREDIT_MARKUP).toFixed(6);
+  const rows = q("select amount::text||'|'||note from credit_ledger where reason='spend'").split('\n');
+  ok(rows.length === 2 && rows.every(r => r.startsWith(want + '|')), 'two messages, two rows, each what it cost at the markup', { rows, want });
+  ok(rows.every(r => /subject:ana@example\.com/.test(r) && /req:same-id-123/.test(r)), 'each says whose credit paid, and which request');
 }
 
 section('A plan before its account has a row is listed for repair, never invented');

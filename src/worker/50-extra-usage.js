@@ -74,7 +74,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!once.claimed) return false;
   /* The Postgres ledger's row for it (04a-control-plane.js), keyed by the
      payment, so a second delivery is the same row. */
-  _pgLedger(env, { email, currency: 'USD', amount: usd, reason: 'purchase', key: 'credit:' + ref, source: 'stripe:' + ref });
+  _pgLedger(env, { email, currency: 'USD', amount: usd, reason: 'purchase', key: 'credit:' + ref, source: 'stripe:' + ref, note: 'subject:' + subject });
   await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
   audit(env, 'credit_bought', { by: email, usd });
   return true;
@@ -108,7 +108,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
          back once it was done - so a partial refund then a full one are two
          rows, and the same event twice is one. */
       _pgLedger(env, { email: rec.email, currency: 'USD', amount: -take, reason: why === 'dispute' ? 'dispute' : 'refund',
-        key: 'creditrev:' + ref + ':' + rec.reversed.toFixed(2), source: 'stripe:' + ref });
+        key: 'creditrev:' + ref + ':' + rec.reversed.toFixed(2), source: 'stripe:' + ref, note: 'subject:' + rec.subject });
     }
   } finally { await _releaseClaim(env, 'crevlock', ref); }
   audit(env, 'credit_reversed', { by: rec.email, usd: take, why });

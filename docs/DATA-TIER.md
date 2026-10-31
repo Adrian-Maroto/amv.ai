@@ -110,7 +110,8 @@ that is down (the request is unaffected; the write goes on the `pgrepair:`
 list) and erasure (a tombstone with nothing personal on it).
 
 Credit packs bought, refunded and disputed are written to `credit_ledger`,
-one row per event keyed by the payment. Not built yet: step 2 for credit
-spent (a counter today, per message) and seller earnings; the backfill
+one row per event keyed by the payment. Credit spent is a row per message at its settled cost. Every credit row notes
+whose credit it was (`subject:` - a person, or a team, until the ledger has an
+organization column). Not built yet: step 2 for seller earnings; the backfill
 (step 3), which also works through the `pgrepair:` list; shadow reads (step
 4); and the switch (step 5).

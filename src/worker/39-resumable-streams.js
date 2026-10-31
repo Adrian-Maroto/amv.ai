@@ -336,6 +336,13 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   if (creditName) {
     const dCred = cost * CREDIT_MARKUP - (reservedCreditUSD || 0);
     if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, keep: true });
+    /* The Postgres ledger's row for what this message cost the credit, once,
+       keyed by the request (04a-control-plane.js). Whose credit paid is in
+       the note: on a team it is the team's, spent by this member. */
+    if (cost > 0) _pgLedger(env, { email: user && user.email, currency: 'USD', amount: -(cost * CREDIT_MARKUP), reason: 'spend',
+      /* The key is made here, never from the request id: that one is the
+         browser's to choose, and a reused one would swallow a real spend. */
+      key: 'spend:' + crypto.randomUUID(), note: 'subject:' + creditName.replace(/^creditspent:/, '') + (reqId ? ' req:' + reqId : '') });
   } else {
     const dAcct = cost - (reservedUSD || 0);
     if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });

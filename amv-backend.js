@@ -24607,6 +24607,13 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   if (creditName) {
     const dCred = cost * CREDIT_MARKUP - (reservedCreditUSD || 0);
     if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, keep: true });
+    /* The Postgres ledger's row for what this message cost the credit, once,
+       keyed by the request (04a-control-plane.js). Whose credit paid is in
+       the note: on a team it is the team's, spent by this member. */
+    if (cost > 0) _pgLedger(env, { email: user && user.email, currency: 'USD', amount: -(cost * CREDIT_MARKUP), reason: 'spend',
+      /* The key is made here, never from the request id: that one is the
+         browser's to choose, and a reused one would swallow a real spend. */
+      key: 'spend:' + crypto.randomUUID(), note: 'subject:' + creditName.replace(/^creditspent:/, '') + (reqId ? ' req:' + reqId : '') });
   } else {
     const dAcct = cost - (reservedUSD || 0);
     if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });
@@ -28836,7 +28843,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!once.claimed) return false;
   /* The Postgres ledger's row for it (04a-control-plane.js), keyed by the
      payment, so a second delivery is the same row. */
-  _pgLedger(env, { email, currency: 'USD', amount: usd, reason: 'purchase', key: 'credit:' + ref, source: 'stripe:' + ref });
+  _pgLedger(env, { email, currency: 'USD', amount: usd, reason: 'purchase', key: 'credit:' + ref, source: 'stripe:' + ref, note: 'subject:' + subject });
   await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
   audit(env, 'credit_bought', { by: email, usd });
   return true;
@@ -28870,7 +28877,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
          back once it was done - so a partial refund then a full one are two
          rows, and the same event twice is one. */
       _pgLedger(env, { email: rec.email, currency: 'USD', amount: -take, reason: why === 'dispute' ? 'dispute' : 'refund',
-        key: 'creditrev:' + ref + ':' + rec.reversed.toFixed(2), source: 'stripe:' + ref });
+        key: 'creditrev:' + ref + ':' + rec.reversed.toFixed(2), source: 'stripe:' + ref, note: 'subject:' + rec.subject });
     }
   } finally { await _releaseClaim(env, 'crevlock', ref); }
   audit(env, 'credit_reversed', { by: rec.email, usd: take, why });
