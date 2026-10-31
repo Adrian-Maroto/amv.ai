@@ -408,24 +408,30 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     } catch (e) { /* a measurement must never break the response it measured */ }
   } catch (e) { /* reporting must never break metering */ }
 
-  // alert threshold (80% of global cap)
-  /* gRes is one share of sixteen, so any share crossing 80% of itself is the
-     cue to add up the day; the owner is told once a day, when the DAY's
-     total is past 80%. */
+  /* THE DAY'S SPEND, SAID ON THE WAY UP (audit, Oct 31) - not only at 80%.
+     A ceiling announced once, near the top, is a ceiling found out about
+     when everybody's chat stops. Each of SPEND_ALERT_AT is said once a day
+     when the day's total passes it. gRes is one share of sixteen, so a share
+     crossing a threshold of itself is the cue to add the day up. */
   const gSpent = gRes.value || 0;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const shareCap = gCap / _spendSharesFor(gCap);
-  if (gSpent >= shareCap * 0.8 && gSpent - cost < shareCap * 0.8) {
+  const crossed = SPEND_ALERT_AT.filter(f => gSpent >= shareCap * f && gSpent - cost < shareCap * f);
+  if (crossed.length) {
     try {
       const total = await _globalSpendToday(env);
-      const flag = 'spend80:' + todayKey();
-      if (total >= gCap * 0.8 && !(await env.AMV_KV.get(flag))) {
+      for (const f of SPEND_ALERT_AT) {
+        if (total < gCap * f) continue;
+        const flag = 'spend' + Math.round(f * 100) + ':' + todayKey();
+        if (await env.AMV_KV.get(flag)) continue;
         await env.AMV_KV.put(flag, '1', { expirationTtl: 2 * 86400 });
-        await notify(env, `Spend alert: today at $${total.toFixed(2)} (80% of $${gCap} cap).`);
+        await notify(env, `Spend alert: today at $${total.toFixed(2)} (${Math.round(f * 100)}% of the $${gCap} daily ceiling).`
+          + (f >= 0.95 ? ' At 100% every paid model call stops until midnight UTC - raise GLOBAL_DAILY_USD_CAP now if this is real demand.' : ''));
       }
     } catch (e) {}
   }
 }
+const SPEND_ALERT_AT = [0.5, 0.7, 0.85, 0.95];
 
 /* Rough token estimate from request messages (~4 chars/token), used only as a
    billing floor when the upstream stream gave us no usage numbers at all. */

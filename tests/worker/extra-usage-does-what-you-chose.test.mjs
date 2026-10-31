@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { sessionOp } from '../lib/session-op.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +55,7 @@ function mkEnv(extra) {
     STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: WHSEC, _vals: vals,
     AMV_KV: { _map: m, async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ fetch(_u, init) { return serialise(async () => {
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: (n) => ({ fetch(_u, init) { return serialise(async () => {
       await Promise.resolve();
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
       const r = (o) => new Response(JSON.stringify(o));
@@ -73,7 +74,7 @@ function mkEnv(extra) {
       if (b.op === 'clear') { vals.delete(n); return r({ ok: true }); }
       if (b.op === 'get') return r({ value: cur });
       return r({ allowed: true, value: cur });
-    }); } }) },
+    }); } }) }),
   }, extra || {});
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

@@ -38,6 +38,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +73,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ fetch(_u, init) {
         return serialise(async () => {
@@ -88,7 +89,7 @@ function mkEnv() {
           return new Response(JSON.stringify({ allowed: true, value: cur }));
         });
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

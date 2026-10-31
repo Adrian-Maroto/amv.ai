@@ -29,6 +29,7 @@ import { dirname, join } from 'path';
 import { createServer } from 'http';
 import { spawn } from 'child_process';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { authObjectOp } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -67,6 +68,7 @@ const env = {
   },
   AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
+    { const a = authObjectOp(n, b); if (a) return a; }
     if (b.op === 'reserve') { if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return r({ allowed: true, value: cur + b.amount }); }
     if (b.op === 'incr') { vals.set(n, cur + b.amount); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });

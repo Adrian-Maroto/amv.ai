@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { authObjectOp } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +81,7 @@ function mkEnv() {
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        { const a = authObjectOp(n, b); if (a) return a; }
         if (b.op === 'reserve') {
           const amt = Number(b.amount);
           if (!Number.isFinite(amt) || amt < 0) return new Response(JSON.stringify({ allowed: false, value: cur }));

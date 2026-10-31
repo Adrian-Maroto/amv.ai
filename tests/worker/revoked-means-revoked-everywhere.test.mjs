@@ -143,6 +143,42 @@ section('An API key revoked at A stops working at B, now');
   ok(!(await use(B)), 'and B refuses the key anyway - its object says revoked');
 }
 
+section('The object down: reading is fine, changing how the account is protected is not (risk tiers)');
+{
+  /* Audit, Oct 31: availability over immediate revocation is defensible for
+     chat, not for the routes that change security, money, permissions or the
+     account itself - there KV's minute is a minute a revoked session could
+     use. Driven through the real router. */
+  const { DO, A } = mk();
+  Object.assign(A, { APP_URL: 'https://amv.test' });
+  await W.DB.put(A, 'acct', EMAIL, { email: EMAIL, name: 'Rui', provider: 'email' });
+  await W.DB.put(A, 'ent', EMAIL, { plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+  const t = await W.issueTokens(A, EMAIL, 'Rui');
+  const made = await (await W.apiKeyCreate(new Request('https://api.amv.test/v1/keys/create', { method: 'POST',
+    headers: { Authorization: 'Bearer ' + t.token, 'Content-Type': 'application/json' }, body: '{"name":"ci"}' }), A)).json();
+  const go = async (path, method, cred) => {
+    const r = await W.default.fetch(new Request('https://api.amv.test' + path, { method: method || 'GET',
+      headers: { Authorization: 'Bearer ' + (cred || t.token), 'Content-Type': 'application/json', 'CF-Connecting-IP': '7.7.7.7' },
+      body: method === 'POST' ? '{}' : undefined }), A, { waitUntil() {}, passThroughOnException() {} });
+    let d = {}; try { d = await r.json(); } catch (e) {}
+    return { status: r.status, d };
+  };
+  DO.down = true;
+  const sync = await go('/sync/pull', 'POST');
+  ok(sync.status === 200, 'with the object unreachable, reading your own chats still works', sync);
+  for (const [path, method] of [['/auth/security', 'POST'], ['/v1/keys/create', 'POST'], ['/auth/delete', 'POST'], ['/v1/spend/set', 'POST'], ['/team/invite', 'POST']]) {
+    const r = await go(path, method);
+    ok(r.status === 503 && r.d.code === 'auth_unconfirmed', path + ': refused while the revocation cannot be confirmed - a 503 that says so, not a 401', r);
+  }
+  const key = await go('/v1/usage', 'GET', made.key);
+  ok(key.status === 503 && key.d.code === 'auth_unconfirmed', 'and an API key fails closed: a credential nobody is watching', key);
+  DO.down = false;
+  const back = await go('/auth/security', 'POST');
+  ok(back.status === 200, 'with the object back, the same route works again', back.status);
+  const kb = await go('/v1/usage', 'GET', made.key);
+  ok(kb.status === 200, 'and so does the key', kb.status);
+}
+
 section('KV failing is still a refusal, never zero');
 {
   const { A } = mk();

@@ -15601,3 +15601,17 @@ reached the page, API callers and website visitors in the provider's words.
 It is rewritten on the way out, type kept. Because every answer now passes
 through that filter, it is tested by cutting a real stream at every byte -
 a filter on the money path is tested on the answers, not on the errors.
+
+## 621. A stand-in that answers everything says yes to the question it never heard
+
+Making security routes refuse when the account's revocation object cannot
+confirm a session failed twenty-six suites at once. None of them was about
+revocation: each had a hand-made counter stand-in that answered any operation
+it did not know with `{allowed:true, value:0}` - which, asked "what is this
+account's epoch?", is nonsense, and nonsense is correctly treated as "cannot
+confirm". The suites had been passing because the code used to carry on
+regardless. The stand-ins now answer the revocation operations faithfully
+(tests/lib/auth-object.mjs, `withAuthOps`).
+Rule: a stand-in answers what it knows and refuses or throws on what it does
+not. A default "yes" makes every new question the code asks pass silently,
+which is the opposite of what a test is for.

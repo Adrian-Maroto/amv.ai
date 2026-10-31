@@ -200,6 +200,24 @@ export class AMVCounter {
        Seeded once from the KV epoch it replaces (`floor`), and raised to a
        floor whenever one is given, so it can never go below a number a live
        token was signed with. No alarm: this must outlive every token. */
+    /* THE SWITCHBOARD (80-switches.js): one object holds which parts of AMV
+       are switched off, in order, with a version that only rises. KV keeps a
+       copy for the minute-old fallback; this is the answer that is current
+       everywhere at once. No alarm: a switch is off until somebody turns it on. */
+    if (op === 'swGet') {
+      const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
+      return json({ v: sb.v, map: sb.map });
+    }
+    if (op === 'swSet') {
+      const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
+      const name = String(body.name || '').slice(0, 80);
+      if (!name) return json({ error: 'name required' }, 400);
+      if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
+      else delete sb.map[name];
+      sb.v += 1;
+      await this.state.storage.put('sw', sb);
+      return json({ v: sb.v, map: sb.map });
+    }
     if (op === 'authGet' || op === 'authSeed' || op === 'authRevokeAll' || op === 'authEndSession') {
       let a = (await this.state.storage.get('auth')) || null;
       const now = Date.now();

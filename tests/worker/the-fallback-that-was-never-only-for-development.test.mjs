@@ -281,6 +281,7 @@ section('The deploy checklist does not name a secret nothing reads');
   const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
   const goLive = readFileSync(join(ROOT, 'GO-LIVE.md'), 'utf8');
   const deploy = readFileSync(join(ROOT, 'DEPLOY.md'), 'utf8');
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8');
 
   /* The section that documents the removal names them on purpose. */
   const removalNote = /removed[\s\S]{0,2000}?reads none of those names|Video and images - removed/i;
@@ -295,6 +296,9 @@ section('The deploy checklist does not name a secret nothing reads');
     for (const m of src.matchAll(/`([A-Z][A-Z0-9_]{4,})`/g)) {
       const n = m[1];
       if (exempt.has(n) || PLACEHOLDERS.has(n)) continue;
+      /* A repository variable the deploy workflow reads (AMV_LAUNCH_PROFILE)
+         is a setting too - it is dead only if the workflow does not read it. */
+      if (new RegExp('vars\\.' + n + '\\b').test(workflow)) continue;
       if (!worker.includes(n) && !dead.includes(n)) dead.push(n);
     }
   ok(dead.length === 0,

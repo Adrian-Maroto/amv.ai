@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -58,7 +59,7 @@ function mkEnv(readDelayMs = 12) {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = n.get(x) || 0;
@@ -68,7 +69,7 @@ function mkEnv(readDelayMs = 12) {
         if (b.op === 'rateCheck') { n.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
   return env0;
 }

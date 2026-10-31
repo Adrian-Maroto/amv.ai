@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createServer } from 'http';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -66,7 +67,7 @@ const env = {
     async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
     async list({ prefix, limit } = {}) { const keys = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })); return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true }; },
   },
-  AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
     if (b.op === 'reserve') { if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return r({ allowed: true, value: cur + b.amount }); }
     if (b.op === 'incr') { vals.set(n, cur + b.amount); return r({ value: vals.get(n) }); }
@@ -75,7 +76,7 @@ const env = {
     if (b.op === 'rateCheck') return r({ allowed: true });
     if (b.op === 'claim') return r({ claimed: true });
     return r({ allowed: true, value: cur });
-  } }) },
+  } }) }),
 };
 const ctx = { waitUntil(p) { if (p) Promise.resolve(p).catch(() => {}); }, passThroughOnException() {} };
 

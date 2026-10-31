@@ -15,7 +15,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'switches.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _killCache, counter, todayKey, _swCache, runDueAutomations };\n');
+writeFileSync(harness, src + '\nexport { DB, _killCache, counter, todayKey, _swCache, runDueAutomations, _switchedOff };\nexport function _swStrongReset() { _swStrong = { at: 0, map: null }; }\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -172,6 +172,50 @@ section('Only the owner can flip one, and only a real one');
   await flipSwitch(env, 'feature:widget', true);
   const kill = await call(env, '/v1/admin/switches', undefined, ADMIN);
   ok(kill.status === 200, 'and the switch routes are never themselves switched off', kill.status);
+}
+
+section('The switchboard: a flip reaches every server within seconds; unreachable, writes stop');
+{
+  /* Audit, Oct 31: "within about a minute" is fine for a glitchy feature and
+     not for a connector deleting people's data. The real counter class holds
+     the switchboard; two servers are modelled by two KV views - B's frozen at
+     what it last saw, the minute KV allows - sharing the one object. */
+  const objs = new Map(); let down = false;
+  const make = () => { const st = new Map(); return new W.AMVCounter({ storage: {
+    async get(k) { return st.has(k) ? st.get(k) : undefined; }, async put(k, v) { st.set(k, v); }, async delete(k) { st.delete(k); },
+    async deleteAll() { st.clear(); }, async setAlarm() {}, async deleteAlarm() {} } }, {}); };
+  const DO = { idFromName: n => n, get: (n) => ({ fetch: (u, init) => {
+    if (down) return Promise.reject(new Error('object unreachable'));
+    if (!objs.has(n)) objs.set(n, make());
+    return objs.get(n).fetch(new Request('https://do/c', init)); } }) };
+  const live = new Map(); let frozen = null;
+  const kvView = (stale) => ({ async get(k) { const m = stale && frozen ? frozen : live; return m.has(k) ? m.get(k) : null; },
+    async put(k, v) { live.set(k, String(v)); }, async delete(k) { live.delete(k); },
+    async list() { return { keys: [], list_complete: true }; } });
+  const A = { ADMIN_TOKEN: 'admin-secret', JWT_SECRET: 'j', APP_URL: 'https://amv.test', AMV_KV: kvView(false), AMV_COUNTER: DO };
+  const B = Object.assign({}, A, { AMV_KV: kvView(true) });
+  frozen = new Map(live);                                 // B's KV stops seeing new writes
+  const r = await call(A, '/v1/admin/switch', { name: 'write:gmail.send', off: true, why: 'sending duplicates' }, ADMIN);
+  const d = await r.json();
+  ok(r.status === 200 && /within seconds/.test(d.reaches || ''), 'flipped at A, and the answer says it reaches everybody within seconds', d);
+  W._swCache.at = 0; W._swStrongReset();                 // B is a server that has not looked yet
+  ok(!(await B.AMV_KV.get('switches')), 'B\'s KV copy has not caught up (the minute KV allows)');
+  const atB = await W._switchedOff(B, 'connector:gmail', 'write:gmail.send');
+  ok(atB && atB.name === 'write:gmail.send' && /duplicates/.test(atB.why), 'and B refuses the write anyway - the switchboard said so', atB);
+  ok(!(await W._switchedOff(B, 'write:gmail.draft')), 'a write nobody switched off still goes ahead', null);
+
+  down = true; W._swCache.at = 0; W._swStrongReset();
+  const w = await W._switchedOff(B, 'connector:slack', 'write:slack.post');
+  ok(w && w.name === 'write:slack.post', 'switchboard unreachable: a write on somebody\'s account is not made', w);
+  ok(!(await W._switchedOff(B, 'connector:slack')), 'while reading their account carries on, on the KV copy', null);
+  ok(!(await W._switchedOff(B, 'feature:library')), 'and so does every other part of AMV', null);
+  down = false; W._swStrongReset();
+  ok(!(await W._switchedOff(B, 'write:slack.post')), 'with the switchboard back, writes nobody switched off go ahead again', null);
+
+  W._swStrongReset();
+  await call(A, '/v1/admin/switch', { name: 'write:gmail.send', off: false }, ADMIN);
+  W._swCache.at = 0; W._swStrongReset();
+  ok(!(await W._switchedOff(B, 'write:gmail.send')), 'and switching it back on reaches B within seconds too', null);
 }
 
 if (report('one-part-of-amv-can-be-switched-off') > 0) process.exitCode = 1;

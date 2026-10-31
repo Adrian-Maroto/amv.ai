@@ -161,13 +161,15 @@ async function _userFromApiKey(request, env) {
   try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${keyHash}`) || 'null'); } catch (e) {}
   if (!ref || !ref.email) return null;
   /* Revoked anywhere is revoked here, now (see apiKeyRevoke). An object that
-     cannot be asked leaves the KV answer standing - an API outage over one
-     object is worse than the minute it covers - and is said. */
+     cannot be asked FAILS CLOSED for a key: a key is a credential nobody is
+     watching while it spends, and with the counter objects down every
+     metered call is refused anyway (`atomic_unavailable`), so standing on the
+     KV answer bought nothing but the minute a revoked key could still work. */
   if (env.AMV_COUNTER) {
-    try {
-      const rv = await counter(env, 'apikeyrev:' + keyHash, { op: 'get', strict: true });
-      if (rv && +rv.value > 0) return null;
-    } catch (e) { audit(env, 'apikey_revocation_unread', { error: String((e && e.message) || e).slice(0, 120) }); }
+    let rv;
+    try { rv = await counter(env, 'apikeyrev:' + keyHash, { op: 'get', strict: true }); }
+    catch (e) { audit(env, 'apikey_revocation_unread', { error: String((e && e.message) || e).slice(0, 120) }); throw _revocationRefusal(); }
+    if (rv && +rv.value > 0) return null;
   }
 
   const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };

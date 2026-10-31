@@ -209,6 +209,10 @@ export default {
 
       return _applyCors(request, env, _mountCookies(await _route(request, env, ctx), mounted));
     } catch (err) {
+      /* A refusal decided deep in a call - a sign-in that cannot be confirmed
+         on a route that must be sure (_revocationMustBeSure) - is an answer,
+         not a fault. */
+      if (err && err.amvRefusal) return _applyCors(request, env, json(err.amvRefusal.body, err.amvRefusal.status, { 'Retry-After': '30' }));
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
       // silently 500ing until a user complains. Never let logging mask the 500.

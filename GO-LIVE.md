@@ -1,9 +1,28 @@
 # AMV - Go Live Checklist
 
-Everything in the app is already wired to run the moment it's connected to a
-live backend. The AI key never touches the browser - it lives as a secret on
-your Cloudflare Worker, so usage, billing, and limits can't be bypassed. This
-is the exact, ordered list of what to set and where.
+This is the ordered list of what to set, and where, to switch on what AMV has
+built. The AI key never touches the browser - it lives as a secret on your
+Cloudflare Worker, so usage, billing and limits can't be bypassed.
+
+## Where AMV is, honestly (Oct 31)
+
+Keys switch on what is built. They do not build what is not. Each stage below
+says which is which, so nobody - the owner, an investor, an engineer or a
+customer - is told AMV is "just waiting for API keys" when a stage needs more.
+
+| Stage | What it takes | State |
+|---|---|---|
+| **Development preview** | KV + counter bound (done) | Live |
+| **Private beta** (invited people, watched closely) | `AMV_MODEL_KEY`, email domain verified, `GLOBAL_DAILY_USD_CAP` chosen, `MODEL_API_FALLBACK_URL` | **Config only** - the AI is off on production until the key is set |
+| **Paid beta** | the above + Stripe (secret, webhook secret, price ids), an alert destination (`ALERT_WEBHOOK`), an outside uptime monitor on `/v1/health/ready` | Config + the owner's accounts |
+| **Consumer production** (open sign-up, real scale) | the above, and engineering that keys cannot replace: the Postgres control plane live (schema built, Worker reads/writes not - docs/DATA-TIER.md), queues for email/webhooks/ingestion, a durable runtime for long tasks, a cloud computer that keeps its files when it sleeps, direct-to-storage uploads, paging and on-call, staging and gradual rollout | **Not yet** |
+| **Enterprise production** | consumer production, plus an outside security review of sign-in, SOC 2 work, retention and residency controls | **Not yet** |
+
+At consumer production the deploy enforces the promise: set the repository
+variable `AMV_LAUNCH_PROFILE` to `consumer_full`, and a deploy whose live
+server reports the AI, payments or email off fails instead of warning
+(.github/workflows/deploy.yml). Until then it warns, and every deploy run's
+summary shows what production can do.
 
 Run `node preflight.mjs` at any time - it checks all of this and tells you
 precisely what's missing. Green = ready to deploy.
@@ -121,14 +140,15 @@ customer's money and give them nothing.
 
 ## READ THIS BEFORE YOU LAUNCH
 
-**Everything AMV can do is already built and wired.** Nothing below is a stub,
-a mock or a screen with no code behind it. Each line is a capability that runs
-the moment its key exists, and refuses honestly - by name, saying what is
-missing - until then.
+**What is built is wired.** Nothing in the list below is a stub, a mock or a
+screen with no code behind it. Each line is a capability that runs the moment
+its key exists, and refuses honestly - by name, saying what is missing -
+until then.
 
-So the launch decision is not "what still needs building". It is **which of
-these you want switched on, and what each one costs you**. Section 2.0 is that
-list. Read it once, decide, and set only what you want.
+So for the stages up to paid beta, the decision is **which of these you want
+switched on, and what each one costs you**. Section 2.0 is that list. What a
+key cannot do - the consumer-production engineering in the table at the top -
+is not on it, and is not done.
 
 Three of them can take money from a customer and give them nothing back if
 they are only half configured. They are called out in their own tables and
@@ -281,7 +301,7 @@ Now step 1 will work.
 
 ---
 
-## 1. One-time: create your data store (the only hard blocker)
+## 1. One-time: create your data store (done on production)
 
 The Worker needs a KV namespace to persist accounts, jobs, and approvals.
 
@@ -675,7 +695,9 @@ In order, because each one catches a different way the day goes wrong:
 
 **What's already done for you:** every feature checks `AMV_API.live` and uses
 the real endpoints when connected, falling back to honest local/demo behavior
-when not. There is no code change needed to go live - only the config above.
+when not. For a private or paid beta, the config above is what remains; for
+consumer production, see the stage table at the top - that needs engineering
+as well as config.
 
 ## AMV for Chrome in the Chrome Web Store (optional, the owner's)
 

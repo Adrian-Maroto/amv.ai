@@ -59,10 +59,43 @@ async function _switches(env) {
   }
   return _swCache.map;
 }
+/* STRONG WHERE IT HAS TO BE (audit, Oct 31). "Within about a minute" is
+   fine for a feature that is glitchy and not for a connector that is
+   deleting people's data. With the counter objects bound, the switchboard
+   object is the authority: read at most every SWITCH_STRONG_TTL_MS per
+   server, so a flip reaches every server within seconds. If it cannot be
+   asked, the KV copy answers - except for `write:` switches, where not
+   knowing is treated as off: a write on somebody's account that might have
+   been stopped is not made. A switchboard that answers without a map (only a
+   stand-in does) is "no strong answer", and the KV copy is used. */
+const SWITCH_STRONG_TTL_MS = 5000;
+const SWITCHBOARD = 'switchboard';
+let _swStrong = { at: 0, map: null };
+async function _switchesStrong(env) {
+  const now = Date.now();
+  if (_swStrong.map && now - _swStrong.at < SWITCH_STRONG_TTL_MS) return _swStrong.map;
+  const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });   // throws when unreachable
+  const map = (r && r.map && typeof r.map === 'object') ? r.map : null;
+  if (map) _swStrong = { at: now, map };
+  return map;
+}
 /* The first of `names` that is switched off, with why; null when none is. */
 async function _switchedOff(env, ...names) {
-  const m = await _switches(env);
-  for (const n of names) if (n && m[n] && m[n].off) return { name: n, why: String(m[n].why || '') };
+  let m = null, unreachable = false;
+  if (env && env.AMV_COUNTER) {
+    try { m = await _switchesStrong(env); }
+    catch (e) {
+      unreachable = true;
+      try { audit(env, 'switchboard_unread', { error: String((e && e.message) || e).slice(0, 120) }); } catch (_) {}
+      try { await alertOnce(env, 'switchboard_unread', 'The switchboard object could not be read: writes on connected accounts are refused until it answers; other switches use the KV copy.', 15); } catch (_) {}
+    }
+  }
+  if (!m) m = await _switches(env);
+  for (const n of names) {
+    if (!n) continue;
+    if (m[n] && m[n].off) return { name: n, why: String(m[n].why || '') };
+    if (unreachable && n.startsWith('write:')) return { name: n, why: 'the switchboard could not be read' };
+  }
   return null;
 }
 function _switchRefusal(hit, what) {
@@ -104,13 +137,25 @@ async function adminSwitch(request, env) {
   try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {
     return json({ error: 'The switches could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
   }
+  /* The switchboard first: that is the moment the switch takes effect
+     everywhere. KV is the copy the fallback reads. A switchboard that cannot
+     take it is said - the KV copy still reaches everybody within a minute. */
+  let strong = !env.AMV_COUNTER ? 'none' : 'ok';
+  if (env.AMV_COUNTER) {
+    try {
+      const r = await counter(env, SWITCHBOARD, { op: 'swSet', name, off, why, strict: true });
+      if (r && r.map) { m = Object.assign({}, m, r.map); if (!off) delete m[name]; _swStrong = { at: Date.now(), map: r.map }; }
+      else strong = 'failed';
+    } catch (e) { strong = 'failed'; }
+  }
   if (off) m[name] = { off: true, why, at: Date.now() };
   else delete m[name];
   await env.AMV_KV.put(SWITCH_KEY, JSON.stringify(m));
   _swCache = { at: Date.now(), map: m };          // this isolate knows at once
   audit(env, 'switch_flipped', { name, off, why });
   try { await alertOnce(env, 'switch:' + name + ':' + (off ? 'off' : 'on'), (off ? 'Switched OFF: ' : 'Switched back on: ') + name + (why ? ' - ' + why : ''), 1); } catch (e) {}
-  return json({ ok: true, name, off, switches: m });
+  return json({ ok: true, name, off, switches: m,
+    reaches: strong === 'ok' ? 'every server within seconds' : 'every server within about a minute (the switchboard could not be written)' });
 }
 async function adminSwitches(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }

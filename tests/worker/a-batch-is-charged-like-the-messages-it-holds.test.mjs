@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { sessionOp } from '../lib/session-op.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -58,7 +59,7 @@ const env = {
       return { keys, list_complete: end >= all.length, cursor: end >= all.length ? undefined : String(end) };
     },
   },
-  AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
     { const so = sessionOp(vals, n, b); if (so) return r(so); }
       if (b.op === 'reserve') { if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return r({ allowed: true, value: cur + b.amount, reserved: b.amount }); }
@@ -69,7 +70,7 @@ const env = {
     if (b.op === 'claim') { if (vals.has('c:' + n)) return r({ claimed: false }); vals.set('c:' + n, 1); return r({ claimed: true, owner: 'o' }); }
     if (b.op === 'release') { vals.delete('c:' + n); return r({ ok: true }); }
     return r({ allowed: true, value: cur });
-  } }) },
+  } }) }),
 };
 const pending = [];
 const runCtx = { waitUntil(p) { if (p) pending.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };

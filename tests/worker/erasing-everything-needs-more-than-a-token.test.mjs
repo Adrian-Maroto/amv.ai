@@ -32,6 +32,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -69,7 +70,7 @@ function mkEnv() {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -90,7 +91,7 @@ function mkEnv() {
         }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
   return env;
 }

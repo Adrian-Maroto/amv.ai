@@ -223,6 +223,11 @@ async function requireUser(request, env) {
   }
   const data = await verifyToken(token, env.JWT_SECRET, env, 'access');
   if (!data) return null;
+  if (data._revUnconfirmed && _revocationMustBeSure(request)) {
+    audit(env, 'revocation_unconfirmed_refused', { email: data.email });
+    throw _revocationRefusal();
+  }
+  delete data._revUnconfirmed;
   /* The token's own claims survive - name, issued-at, whatever else it carries -
      with the account's current state resolved on top. Read fresh every request
      rather than trusted from the token, so a plan change, a block or a new

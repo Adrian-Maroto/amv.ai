@@ -94,13 +94,32 @@ async function _authState(env, email, sid) {
   if (!s) {
     try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch (_) {}
     try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) {}
-    return { epoch: kv, ended: false };
+    return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
     try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch (e) {}
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
+/* RISK TIERS FOR A REVOCATION THAT CANNOT BE CONFIRMED.
+
+   When the account's revocation object cannot be asked, sign-in stays up on
+   the KV epoch (above): an outage of one object must not sign everybody out of
+   their chats. But KV may be a minute behind, and in that minute a session
+   somebody just ended could still be used - which is acceptable for reading a
+   chat and not for changing how the account is protected, where it is spent,
+   who can act for it, or deleting it. Those routes refuse with a 503 that says
+   so, rather than a 401 that would send the page into a sign-in loop. */
+const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$)/;
+function _revocationRefusal() {
+  return Object.assign(new Error('revocation unconfirmed'), { amvRefusal: {
+    status: 503, body: { error: 'AMV could not confirm your sign-in is still current, so this change was not made. Nothing else is affected - try again in a minute.',
+                         code: 'auth_unconfirmed' } } });
+}
+function _revocationMustBeSure(request) {
+  try { return REVOCATION_MUST_BE_SURE.test(new URL(request.url).pathname); } catch (e) { return true; }
+}
+
 async function _tokenEpoch(env, email) { return (await _authState(env, email)).epoch; }
 /* One sign-in ended, from the device list, by signing out, or because its
    renewal token was reused. The record goes from KV (the device list) and the
@@ -450,6 +469,9 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     if (env && data.email) {                                       // revocation check
       const st = await _authState(env, data.email, data.sid);
       if ((data.epoch || 0) !== st.epoch) return null;
+      /* Answered from the KV epoch alone: good enough to chat, not to change
+         how the account is protected (_revocationMustBeSure). */
+      if (st.degraded) data._revUnconfirmed = true;
       if (data.sid && st.ended) return null;                       // ended from the device list, at once
       /* A sign-in ended from the device list. Fresh tokens are spared while
          their record may still be on its way to this location (SESS_FRESH_S). */

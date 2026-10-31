@@ -2610,6 +2610,24 @@ export class AMVCounter {
        Seeded once from the KV epoch it replaces (`floor`), and raised to a
        floor whenever one is given, so it can never go below a number a live
        token was signed with. No alarm: this must outlive every token. */
+    /* THE SWITCHBOARD (80-switches.js): one object holds which parts of AMV
+       are switched off, in order, with a version that only rises. KV keeps a
+       copy for the minute-old fallback; this is the answer that is current
+       everywhere at once. No alarm: a switch is off until somebody turns it on. */
+    if (op === 'swGet') {
+      const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
+      return json({ v: sb.v, map: sb.map });
+    }
+    if (op === 'swSet') {
+      const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
+      const name = String(body.name || '').slice(0, 80);
+      if (!name) return json({ error: 'name required' }, 400);
+      if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
+      else delete sb.map[name];
+      sb.v += 1;
+      await this.state.storage.put('sw', sb);
+      return json({ v: sb.v, map: sb.map });
+    }
     if (op === 'authGet' || op === 'authSeed' || op === 'authRevokeAll' || op === 'authEndSession') {
       let a = (await this.state.storage.get('auth')) || null;
       const now = Date.now();
@@ -16121,6 +16139,10 @@ export default {
 
       return _applyCors(request, env, _mountCookies(await _route(request, env, ctx), mounted));
     } catch (err) {
+      /* A refusal decided deep in a call - a sign-in that cannot be confirmed
+         on a route that must be sure (_revocationMustBeSure) - is an answer,
+         not a fault. */
+      if (err && err.amvRefusal) return _applyCors(request, env, json(err.amvRefusal.body, err.amvRefusal.status, { 'Retry-After': '30' }));
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
       // silently 500ing until a user complains. Never let logging mask the 500.
@@ -20758,6 +20780,11 @@ async function requireUser(request, env) {
   }
   const data = await verifyToken(token, env.JWT_SECRET, env, 'access');
   if (!data) return null;
+  if (data._revUnconfirmed && _revocationMustBeSure(request)) {
+    audit(env, 'revocation_unconfirmed_refused', { email: data.email });
+    throw _revocationRefusal();
+  }
+  delete data._revUnconfirmed;
   /* The token's own claims survive - name, issued-at, whatever else it carries -
      with the account's current state resolved on top. Read fresh every request
      rather than trusted from the token, so a plan change, a block or a new
@@ -23855,24 +23882,30 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     } catch (e) { /* a measurement must never break the response it measured */ }
   } catch (e) { /* reporting must never break metering */ }
 
-  // alert threshold (80% of global cap)
-  /* gRes is one share of sixteen, so any share crossing 80% of itself is the
-     cue to add up the day; the owner is told once a day, when the DAY's
-     total is past 80%. */
+  /* THE DAY'S SPEND, SAID ON THE WAY UP (audit, Oct 31) - not only at 80%.
+     A ceiling announced once, near the top, is a ceiling found out about
+     when everybody's chat stops. Each of SPEND_ALERT_AT is said once a day
+     when the day's total passes it. gRes is one share of sixteen, so a share
+     crossing a threshold of itself is the cue to add the day up. */
   const gSpent = gRes.value || 0;
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
   const shareCap = gCap / _spendSharesFor(gCap);
-  if (gSpent >= shareCap * 0.8 && gSpent - cost < shareCap * 0.8) {
+  const crossed = SPEND_ALERT_AT.filter(f => gSpent >= shareCap * f && gSpent - cost < shareCap * f);
+  if (crossed.length) {
     try {
       const total = await _globalSpendToday(env);
-      const flag = 'spend80:' + todayKey();
-      if (total >= gCap * 0.8 && !(await env.AMV_KV.get(flag))) {
+      for (const f of SPEND_ALERT_AT) {
+        if (total < gCap * f) continue;
+        const flag = 'spend' + Math.round(f * 100) + ':' + todayKey();
+        if (await env.AMV_KV.get(flag)) continue;
         await env.AMV_KV.put(flag, '1', { expirationTtl: 2 * 86400 });
-        await notify(env, `Spend alert: today at $${total.toFixed(2)} (80% of $${gCap} cap).`);
+        await notify(env, `Spend alert: today at $${total.toFixed(2)} (${Math.round(f * 100)}% of the $${gCap} daily ceiling).`
+          + (f >= 0.95 ? ' At 100% every paid model call stops until midnight UTC - raise GLOBAL_DAILY_USD_CAP now if this is real demand.' : ''));
       }
     } catch (e) {}
   }
 }
+const SPEND_ALERT_AT = [0.5, 0.7, 0.85, 0.95];
 
 /* Rough token estimate from request messages (~4 chars/token), used only as a
    billing floor when the upstream stream gave us no usage numbers at all. */
@@ -24773,13 +24806,32 @@ async function _authState(env, email, sid) {
   if (!s) {
     try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch (_) {}
     try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) {}
-    return { epoch: kv, ended: false };
+    return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
     try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch (e) {}
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
+/* RISK TIERS FOR A REVOCATION THAT CANNOT BE CONFIRMED.
+
+   When the account's revocation object cannot be asked, sign-in stays up on
+   the KV epoch (above): an outage of one object must not sign everybody out of
+   their chats. But KV may be a minute behind, and in that minute a session
+   somebody just ended could still be used - which is acceptable for reading a
+   chat and not for changing how the account is protected, where it is spent,
+   who can act for it, or deleting it. Those routes refuse with a 503 that says
+   so, rather than a 401 that would send the page into a sign-in loop. */
+const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$)/;
+function _revocationRefusal() {
+  return Object.assign(new Error('revocation unconfirmed'), { amvRefusal: {
+    status: 503, body: { error: 'AMV could not confirm your sign-in is still current, so this change was not made. Nothing else is affected - try again in a minute.',
+                         code: 'auth_unconfirmed' } } });
+}
+function _revocationMustBeSure(request) {
+  try { return REVOCATION_MUST_BE_SURE.test(new URL(request.url).pathname); } catch (e) { return true; }
+}
+
 async function _tokenEpoch(env, email) { return (await _authState(env, email)).epoch; }
 /* One sign-in ended, from the device list, by signing out, or because its
    renewal token was reused. The record goes from KV (the device list) and the
@@ -25129,6 +25181,9 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     if (env && data.email) {                                       // revocation check
       const st = await _authState(env, data.email, data.sid);
       if ((data.epoch || 0) !== st.epoch) return null;
+      /* Answered from the KV epoch alone: good enough to chat, not to change
+         how the account is protected (_revocationMustBeSure). */
+      if (st.degraded) data._revUnconfirmed = true;
       if (data.sid && st.ended) return null;                       // ended from the device list, at once
       /* A sign-in ended from the device list. Fresh tokens are spared while
          their record may still be on its way to this location (SESS_FRESH_S). */
@@ -32347,13 +32402,15 @@ async function _userFromApiKey(request, env) {
   try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${keyHash}`) || 'null'); } catch (e) {}
   if (!ref || !ref.email) return null;
   /* Revoked anywhere is revoked here, now (see apiKeyRevoke). An object that
-     cannot be asked leaves the KV answer standing - an API outage over one
-     object is worse than the minute it covers - and is said. */
+     cannot be asked FAILS CLOSED for a key: a key is a credential nobody is
+     watching while it spends, and with the counter objects down every
+     metered call is refused anyway (`atomic_unavailable`), so standing on the
+     KV answer bought nothing but the minute a revoked key could still work. */
   if (env.AMV_COUNTER) {
-    try {
-      const rv = await counter(env, 'apikeyrev:' + keyHash, { op: 'get', strict: true });
-      if (rv && +rv.value > 0) return null;
-    } catch (e) { audit(env, 'apikey_revocation_unread', { error: String((e && e.message) || e).slice(0, 120) }); }
+    let rv;
+    try { rv = await counter(env, 'apikeyrev:' + keyHash, { op: 'get', strict: true }); }
+    catch (e) { audit(env, 'apikey_revocation_unread', { error: String((e && e.message) || e).slice(0, 120) }); throw _revocationRefusal(); }
+    if (rv && +rv.value > 0) return null;
   }
 
   const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
@@ -41706,10 +41763,43 @@ async function _switches(env) {
   }
   return _swCache.map;
 }
+/* STRONG WHERE IT HAS TO BE (audit, Oct 31). "Within about a minute" is
+   fine for a feature that is glitchy and not for a connector that is
+   deleting people's data. With the counter objects bound, the switchboard
+   object is the authority: read at most every SWITCH_STRONG_TTL_MS per
+   server, so a flip reaches every server within seconds. If it cannot be
+   asked, the KV copy answers - except for `write:` switches, where not
+   knowing is treated as off: a write on somebody's account that might have
+   been stopped is not made. A switchboard that answers without a map (only a
+   stand-in does) is "no strong answer", and the KV copy is used. */
+const SWITCH_STRONG_TTL_MS = 5000;
+const SWITCHBOARD = 'switchboard';
+let _swStrong = { at: 0, map: null };
+async function _switchesStrong(env) {
+  const now = Date.now();
+  if (_swStrong.map && now - _swStrong.at < SWITCH_STRONG_TTL_MS) return _swStrong.map;
+  const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });   // throws when unreachable
+  const map = (r && r.map && typeof r.map === 'object') ? r.map : null;
+  if (map) _swStrong = { at: now, map };
+  return map;
+}
 /* The first of `names` that is switched off, with why; null when none is. */
 async function _switchedOff(env, ...names) {
-  const m = await _switches(env);
-  for (const n of names) if (n && m[n] && m[n].off) return { name: n, why: String(m[n].why || '') };
+  let m = null, unreachable = false;
+  if (env && env.AMV_COUNTER) {
+    try { m = await _switchesStrong(env); }
+    catch (e) {
+      unreachable = true;
+      try { audit(env, 'switchboard_unread', { error: String((e && e.message) || e).slice(0, 120) }); } catch (_) {}
+      try { await alertOnce(env, 'switchboard_unread', 'The switchboard object could not be read: writes on connected accounts are refused until it answers; other switches use the KV copy.', 15); } catch (_) {}
+    }
+  }
+  if (!m) m = await _switches(env);
+  for (const n of names) {
+    if (!n) continue;
+    if (m[n] && m[n].off) return { name: n, why: String(m[n].why || '') };
+    if (unreachable && n.startsWith('write:')) return { name: n, why: 'the switchboard could not be read' };
+  }
   return null;
 }
 function _switchRefusal(hit, what) {
@@ -41751,13 +41841,25 @@ async function adminSwitch(request, env) {
   try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {
     return json({ error: 'The switches could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
   }
+  /* The switchboard first: that is the moment the switch takes effect
+     everywhere. KV is the copy the fallback reads. A switchboard that cannot
+     take it is said - the KV copy still reaches everybody within a minute. */
+  let strong = !env.AMV_COUNTER ? 'none' : 'ok';
+  if (env.AMV_COUNTER) {
+    try {
+      const r = await counter(env, SWITCHBOARD, { op: 'swSet', name, off, why, strict: true });
+      if (r && r.map) { m = Object.assign({}, m, r.map); if (!off) delete m[name]; _swStrong = { at: Date.now(), map: r.map }; }
+      else strong = 'failed';
+    } catch (e) { strong = 'failed'; }
+  }
   if (off) m[name] = { off: true, why, at: Date.now() };
   else delete m[name];
   await env.AMV_KV.put(SWITCH_KEY, JSON.stringify(m));
   _swCache = { at: Date.now(), map: m };          // this isolate knows at once
   audit(env, 'switch_flipped', { name, off, why });
   try { await alertOnce(env, 'switch:' + name + ':' + (off ? 'off' : 'on'), (off ? 'Switched OFF: ' : 'Switched back on: ') + name + (why ? ' - ' + why : ''), 1); } catch (e) {}
-  return json({ ok: true, name, off, switches: m });
+  return json({ ok: true, name, off, switches: m,
+    reaches: strong === 'ok' ? 'every server within seconds' : 'every server within about a minute (the switchboard could not be written)' });
 }
 async function adminSwitches(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }

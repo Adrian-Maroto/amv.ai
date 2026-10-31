@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { makeAuthenticator } from '../lib/fake-authenticator.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,7 @@ const env = {
   JWT_SECRET: 'j'.repeat(40), APP_URL: ORIGIN, CONNECT_KEY: 'c'.repeat(44),
   AMV_KV: { async get(k){ return m.has(k) ? m.get(k) : null; }, async put(k, v){ m.set(k, v); }, async delete(k){ m.delete(k); },
     async list({ prefix } = {}){ return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-  AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init){
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init){
     const b = JSON.parse(init.body || '{}'); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
     if (b.op === 'clear') return new Response(JSON.stringify({ ok: true }));   // lifetime totals, erased with the account
     /* One object per name, as the Durable Object is: a claim is taken once. */
@@ -42,7 +43,7 @@ const env = {
     if (b.op === 'incr'){ vals.set(n, cur + Number(b.amount || 0)); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
     return r({ allowed: true, value: cur, count: 1 });
-  } }) },
+  } }) }),
 };
 const ctx = { waitUntil(){}, passThroughOnException(){} };
 let ip = 1;

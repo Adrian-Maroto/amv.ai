@@ -98,6 +98,15 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # THE LAUNCH PROFILE IS THE OWNER'S SWITCH (audit, Oct 31). Unset, the
+          # preflight warns about what is off and the deploy goes ahead - right
+          # while AMV is being set up. Set the repository variable
+          # AMV_LAUNCH_PROFILE (Settings > Secrets and variables > Actions >
+          # Variables) to consumer_full, team or enterprise on the day AMV is
+          # public, and a deploy that cannot serve that promise FAILS instead:
+          # here for a missing binding, and in the next step for a capability
+          # the live server reports off.
+          AMV_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
         run: npm run deploy
 
       # A deploy that reports success and a backend that answers are different
@@ -107,6 +116,8 @@ jobs:
       # cannot reach its store is alive and serves nobody (scale audit).
       - name: Check the live backend is ready
         if: steps.creds.outputs.ready == 'yes'
+        env:
+          LAUNCH_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
         run: |
           for i in 1 2 3 4 5; do
             body="$(curl -sS --max-time 15 https://api.amv.homes/v1/health/ready || true)"
@@ -144,6 +155,17 @@ jobs:
                 if [ "$(cap email)" != yes ]; then
                   echo "::warning title=Email is OFF on production::Sign-in codes and job results cannot be sent. Set EMAIL_API_KEY and RESET_EMAIL_FROM."
                 fi
+                # Once the owner has declared AMV public, what it promises is required.
+                case "$LAUNCH_PROFILE" in
+                  consumer_full|team|enterprise)
+                    missing=""
+                    for c in model email payments; do [ "$(cap $c)" = yes ] || missing="$missing $c"; done
+                    if [ -n "$missing" ]; then
+                      echo "::error title=Not fit for the $LAUNCH_PROFILE launch profile::Off on production:$missing. The launch profile requires them."
+                      exit 1
+                    fi
+                    ;;
+                esac
                 exit 0
                 ;;
             esac

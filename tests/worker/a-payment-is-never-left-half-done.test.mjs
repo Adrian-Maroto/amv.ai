@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -66,7 +67,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     STRIPE_SECRET_KEY: 'sk_test', PAYPAL_CLIENT_ID: 'c', PAYPAL_SECRET: 's',
     STRIPE_PRICE_PRO: 'price_pro', STRIPE_PRICE_ELITE: 'price_elite', STRIPE_PRICE_ULTRA: 'price_ultra',
