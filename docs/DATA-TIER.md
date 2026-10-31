@@ -15,6 +15,21 @@ permissions: a plan that was cancelled, a credit that was spent, a team member
 who was removed. The control plane needs one place that answers the same thing
 to everybody, and that can change two records together or not at all.
 
+## The shape, after the Oct 31 review
+
+Before anything was applied, the schema had a second pass:
+- **An account is an id.** Every row points at `accounts.id`; the email is a
+  field that can change without moving anybody's money, keys or memberships.
+- **Organizations, workspaces, memberships.** A person belongs to many
+  organizations (their personal one, their company, a client's), with a role
+  in each, and workspaces inside them. Plans attach to an account or to an
+  organization (seats), never both.
+- **Provider ids and currency.** Payment customers, subscriptions, invoices
+  and events are kept by the provider's own ids; every amount carries its
+  ISO currency, and a balance is per currency.
+- **Password algorithm on the record** (`pw_algo`), so moving from PBKDF2 to
+  Argon2id is a rehash at the next sign-in, not a migration.
+
 ## What goes where
 
 | Data | Where it lives | Why |
