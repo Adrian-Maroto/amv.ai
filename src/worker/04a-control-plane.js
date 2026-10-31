@@ -23,7 +23,7 @@
        password, no extras - the id other rows point at, and when.
    Without PG, none of this runs. */
 
-const PG_MIRROR_KINDS = new Set(['acct', 'ent']);
+const PG_MIRROR_KINDS = new Set(['acct', 'ent', 'apikeys']);
 const PG_REPAIR_TTL_S = 30 * 86400;
 const _pgInFlight = new Set();
 
@@ -65,7 +65,11 @@ async function _pgMirror(env, kind, email, obj){
   try {
     if (kind === 'acct') {
       if (!obj) {
-        /* Erased: a tombstone with nothing personal left on it. */
+        /* Erased: what hangs off the account goes first - whichever order the
+           erasure deletes its records in, nothing is left pointing at a
+           person - then a tombstone with nothing personal left on it. */
+        await sql`DELETE FROM api_keys WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
+        await sql`DELETE FROM entitlements WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
         await sql`UPDATE accounts SET email = 'erased-' || id || '@erased.invalid', name = '', pw_hash = NULL, pw_salt = NULL,
                    pw_algo = NULL, pw_iter = NULL, extra = '{}'::jsonb, deleted_at = now(), updated_at = now()
                   WHERE email = ${email}`;
@@ -87,10 +91,12 @@ async function _pgMirror(env, kind, email, obj){
                 ON CONFLICT (email) DO UPDATE SET account_id = EXCLUDED.account_id`;
       return;
     }
-    if (kind === 'ent') {
+    if (kind === 'ent' || kind === 'apikeys') {
       const acct = await sql`SELECT id FROM accounts WHERE email = ${email}`;
-      if (!acct.length) throw new Error('no_account_row');
+      /* Deleting what an account no longer has a row for is already done. */
+      if (!acct.length) { if (!obj) return; throw new Error('no_account_row'); }
       const accountId = acct[0].id;
+      if (kind === 'apikeys') return await _pgMirrorKeys(sql, accountId, obj);  // awaited: the finally below closes the client
       if (!obj) { await sql`DELETE FROM entitlements WHERE account_id = ${accountId}`; return; }
       const { plan, source, renewedAt, periodEnd, lapsedAt, blocked, blockedReason, customCfg, seats, updatedAt, ...extra } = obj;
       await sql`
@@ -107,4 +113,32 @@ async function _pgMirror(env, kind, email, obj){
   } finally {
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
+}
+
+/* A text[] as Postgres's own literal, every element quoted and escaped:
+   the client runs without its type lookup (Hyperdrive), so arrays are sent
+   as text and cast, never as a typed parameter it cannot resolve. */
+function _pgTextArray(list){
+  const xs = Array.isArray(list) ? list.map(v => String(v)) : [];
+  return '{' + xs.map(v => '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"').join(',') + '}';
+}
+/* An account's API keys: one row per key, the hash only (the key itself is
+   never stored anywhere). A revoked key keeps its row with when; a key gone
+   from the record is gone from the table. */
+async function _pgMirrorKeys(sql, accountId, obj){
+  const items = (obj && Array.isArray(obj.items)) ? obj.items.filter(k => k && k.id && k.hash) : [];
+  const ids = items.map(k => String(k.id));
+  await sql.begin(async (tx) => {
+    if (ids.length) await tx`DELETE FROM api_keys WHERE account_id = ${accountId} AND id NOT IN ${tx(ids)}`;
+    else await tx`DELETE FROM api_keys WHERE account_id = ${accountId}`;
+    for (const k of items) {
+      await tx`
+        INSERT INTO api_keys (id, account_id, key_hash, name, scopes, created_at, last_used_at, revoked_at)
+        VALUES (${String(k.id)}, ${accountId}, ${String(k.hash)}, ${String(k.name || 'API key')}, ${_pgTextArray(k.scopes)}::text[],
+                ${_pgTime(k.created) || new Date()}, ${_pgTime(k.lastUsed)}, ${_pgTime(k.revoked)})
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, scopes = EXCLUDED.scopes,
+          last_used_at = EXCLUDED.last_used_at, revoked_at = EXCLUDED.revoked_at
+          WHERE api_keys.account_id = EXCLUDED.account_id`;
+    }
+  });
 }

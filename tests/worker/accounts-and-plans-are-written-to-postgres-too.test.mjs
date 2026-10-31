@@ -94,6 +94,22 @@ section('A plan lands as one entitlement row, and KV is unchanged by it');
   ok(JSON.parse(store.get('ent:ana@example.com')).plan === 'ultra' && JSON.parse(store.get('ent:ana@example.com')).subId === 'sub_123', 'KV holds exactly what it was given');
 }
 
+section('API keys land one row each, by their hash alone; revoking one keeps its row with when');
+{
+  const a = await post('/v1/keys/create', { name: 'CI' }, tok);
+  const b = await post('/v1/keys/create', { name: 'Zapier' }, tok);
+  await W._pgSettle();
+  const rows = q("select k.id, k.name, k.key_hash, (k.revoked_at is null) from api_keys k join accounts a on a.id=k.account_id where a.email='ana@example.com' order by k.name").split('\n').map(r => r.split('|'));
+  const kv = JSON.parse(store.get('apikeys:ana@example.com')).items;
+  ok(a.status === 200 && b.status === 200 && rows.length === 2 && rows[0][1] === 'CI' && rows[1][1] === 'Zapier', 'two keys, two rows', rows);
+  ok(rows.every(r => kv.some(k => k.id === r[0] && k.hash === r[2])) && !q('select key_hash from api_keys').includes(a.d.key),
+     'each by its hash - the key itself is nowhere in the database');
+  await post('/v1/keys/revoke', { id: a.d.item.id }, tok);
+  await W._pgSettle();
+  ok(q(`select (revoked_at is not null) from api_keys where id='${a.d.item.id}'`) === 't' && q('select count(*) from api_keys') === '2',
+     'the revoked key keeps its row, saying when');
+}
+
 section('A plan before its account has a row is listed for repair, never invented');
 {
   let threw = '';
@@ -127,6 +143,8 @@ section('Deleting the account leaves a tombstone with nothing personal on it');
   const t = q("select name, coalesce(pw_hash,'none'), coalesce(pw_salt,'none'), extra::text, (deleted_at is not null) from accounts where email like 'erased-%'").split('|');
   ok(t[0] === '' && t[1] === 'none' && t[2] === 'none' && t[3] === '{}' && t[4] === 't', 'the tombstone has no name, no password and no extras', t);
   ok(q("select count(*) from migration_accounts where email='ana@example.com'") === '0', 'and the migration no longer names it');
+  ok(q("select count(*) from api_keys") === '0' && q("select count(*) from entitlements e join accounts a on a.id=e.account_id where a.deleted_at is not null") === '0',
+     'its keys and its plan are gone from the database too');
 }
 
 section('Without the binding, nothing is tried');

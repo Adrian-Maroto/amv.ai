@@ -163,6 +163,10 @@ const BACKUP_NEVER = [
   /* A browser's notification address and its keys: tied to that device,
      and re-made by turning notifications on again. */
   'push:',
+  /* Writes the Postgres mirror missed (04a-control-plane.js): a to-do list for
+     the backfill, which compares every account anyway, so losing it loses
+     nothing - and restoring an old one would repair what is already right. */
+  'pgrepair:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',
