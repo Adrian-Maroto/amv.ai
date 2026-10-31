@@ -272,7 +272,7 @@ section('A busy month in chat does not switch the check-in off');
      window here went stale the moment the tick grew a comment, and reported a
      correct implementation as broken - which is the failure mode that teaches
      people to ignore this suite. */
-  const at = src.indexOf('async function runDueAutomations');
+  const at = src.indexOf('async function _autoRunAccount');
   const ends = [src.indexOf('\nasync function ', at + 1), src.indexOf('\nfunction ', at + 1)].filter(i => i > 0);
   const loop = src.slice(at, Math.min(...ends));
   ok(ends.length > 0 && loop.length > 2000, 'the tick was located in full', loop.length);

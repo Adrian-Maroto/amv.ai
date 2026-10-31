@@ -148,6 +148,33 @@ new_sqlite_classes = ["AMVCounter"]
 # binding = "AMV_FILES"
 # bucket_name = "amv-files"
 
+# ── Background work through a queue (Cloudflare Queues) ──
+# Today the cron tick runs every account with work due one after another, in
+# one 25-second budget; past a few thousand busy accounts, jobs start arriving
+# late (the "AUTONOMOUS TICK IS OUT OF TIME" alert says when). With the queue,
+# the tick sends one message per due account and each runs on its own, in
+# parallel, retried with a growing delay; one that fails every retry goes to
+# the dead-letter queue, is alerted on and retried by the hourly sweep
+# (src/worker/15a-job-queue.js). Create both queues once, then uncomment:
+#   npx wrangler queues create amv-jobs
+#   npx wrangler queues create amv-jobs-dead
+# Queues are on Workers Paid: about 40 US cents per million operations.
+#
+# [[queues.producers]]
+# binding = "AMV_JOBS"
+# queue = "amv-jobs"
+#
+# [[queues.consumers]]
+# queue = "amv-jobs"
+# max_batch_size = 10
+# max_batch_timeout = 5
+# max_retries = 4
+# dead_letter_queue = "amv-jobs-dead"
+#
+# [[queues.consumers]]
+# queue = "amv-jobs-dead"
+# max_batch_size = 10
+
 # ── Searching by meaning (Workers AI) ──
 # Lets a search over somebody's files and projects find a passage that says
 # the same thing in other words or another language (src/worker/79-meaning.js,

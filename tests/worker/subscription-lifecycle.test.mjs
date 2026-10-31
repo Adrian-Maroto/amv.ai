@@ -239,7 +239,7 @@ section('Every read of the plan honours the lapse - not just some of them');
      comments, so this survives an argument being added - which it has been
      twice now, and each time these went red on correct code. What must hold is
      that neither path computes a budget of its own. */
-  const cron = codeOnly(functionBody(src, 'runDueAutomations'));
+  const cron = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   const create = codeOnly(functionBody(src, 'autoCreate'));
   ok(/_budgetFor\(env, user\)/.test(create) && /_autoBudget\(/.test(cron),
      'the cron that runs automations takes its budget from one place');

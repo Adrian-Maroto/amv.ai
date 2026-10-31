@@ -274,7 +274,7 @@ section('There is one resolution, not three');
 
   /* And the two non-request resolvers carry the family too, because a parent's
      limit has to reach a scheduled job and a widget as much as a browser. */
-  const cron = codeOnly(functionBody(src, 'runDueAutomations'));
+  const cron = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   ok(cron.length > 500, 'the scheduled runner was read', cron.length);
   ok(/_familyOf\(env/.test(cron),
      'the scheduled runner resolves the family limits', true);

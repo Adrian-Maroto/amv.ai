@@ -241,7 +241,7 @@ section('Every path that calls a paid provider goes through the one gate');
   /* Stated as a source rule, because the defect was not a wrong number - it was
      a path nobody had put inside the ceiling, and the next one added would be
      outside it for the same reason. */
-  const gated = ['aiProxy', 'widgetChat', 'smsIncoming', 'runDueAutomations'];
+  const gated = ['aiProxy', 'widgetChat', 'smsIncoming', '_autoRunAccount'];
   const missing = gated.filter(fn => {
     const m = src.match(new RegExp('async function ' + fn + '\\s*\\('));
     if (!m) return true;

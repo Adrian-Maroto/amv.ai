@@ -99,7 +99,7 @@ section('The paths that spend an account’s money were found');
   /* Named, because the whole defect was that four of these five were not
      considered. If the derivation narrows, it must not narrow back to the
      blind spot it was written for. */
-  ['_spendGate', 'aiProxy', 'widgetChat', 'smsIncoming', 'runDueAutomations'].forEach(fn => {
+  ['_spendGate', 'aiProxy', 'widgetChat', 'smsIncoming', '_autoRunAccount'].forEach(fn => {
     ok(SPENDERS.has(fn), fn + ' is counted as a path that spends', fn);
   });
 }
@@ -145,10 +145,12 @@ section('And each name accepted as "asks" actually refuses');
   /* The cron's is a `continue`, not a return, and it must come before the
      account's budget is worked out or it is doing the lookups it exists to
      avoid. */
-  const cron = codeOnly(functionBody(src, 'runDueAutomations'));
+  const cron = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   const bIdx = cron.indexOf('ent.blocked'), sIdx = cron.indexOf('_billingSubjectOf');
   ok(bIdx > 0 && sIdx > bIdx, 'the cron skips a held account before costing it', { bIdx, sIdx });
-  ok(/continue/.test(cron.slice(bIdx, bIdx + 220)), 'and moves on to the next account', true);
+  /* The account's work runs in _autoRunAccount, one call per account, so
+     "on to the next" is returning from it (or a `continue` in the tick). */
+  ok(/continue|return \{ scanned, ran, failed \}/.test(cron.slice(bIdx, bIdx + 220)), 'and moves on to the next account', cron.slice(bIdx, bIdx + 220));
 }
 
 section('The flag survives a plan change, which is the one thing they will do next');

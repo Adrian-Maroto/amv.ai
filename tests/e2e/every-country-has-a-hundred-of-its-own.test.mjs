@@ -87,7 +87,7 @@ async function catalogue(page, cc) {
     groups: [...document.querySelectorAll('#cw-jobs-body .cw-cat')].map(g => [...g.querySelectorAll('.cw-job-body')].map(b => b.getAttribute('data-darg'))),
     catOf: Object.fromEntries(_cwShowcase().map(j => [j.id, j.cat])),
     top: [...document.querySelectorAll('#cw-foryou [data-darg], #cw-madefor [data-darg]')].map(b => b.getAttribute('data-darg')),
-    cls: window.__cls,
+    cls: window.__cls, src: window.__clsSrc,
   }));
 }
 
@@ -133,7 +133,7 @@ for (const [cc, width] of [['ES', 1280], ['US', 1280], ['MN', 1280], ['CN', 390]
   ok(!pool.some(id => /^cc_[a-z]{2}_/.test(id) && !id.startsWith(low)), 'none written for another country', pool.filter(id => /^cc_[a-z]{2}_/.test(id) && !id.startsWith(low)).slice(0, 3));
   ok(!pool.some(id => top.has(id)), 'nothing already at the top of the page repeated below it', pool.filter(id => top.has(id)).slice(0, 3));
   ok(!r.titles.some(t => /\{[A-Za-z0-9]\}|undefined|null/.test(t)), 'no unfilled blanks in any title', r.titles.filter(t => /\{[A-Za-z0-9]\}|undefined|null/.test(t)).slice(0, 3));
-  ok(r.cls < 0.001, 'arriving without moving the page', +r.cls.toFixed(4));
+  ok(r.cls < 0.001, 'arriving without moving the page', { cls: +r.cls.toFixed(4), moved: r.src });
   await ctx.close();
 }
 

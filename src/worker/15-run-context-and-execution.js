@@ -1582,8 +1582,16 @@ async function runDueAutomations(env, atMs, opts){
   users.sort((a,b)=> a.soonest - b.soonest);
   const queued = users.length;
   let processed = 0;
+  /* With the AMV_JOBS queue bound (15a-job-queue.js), each due account goes
+     out as a message and runs in a consumer of its own; only what could not
+     be sent is run here, the way every account was before. */
+  let inline = users, enqueued = 0;
+  if (_jobQueueOn(env) && users.length) {
+    const q = await _autoEnqueue(env, users, now);
+    enqueued = q.sent; inline = q.unsent;
+  }
 
-  for(const u of users){
+  for(const u of inline){
     const email = u.id;
     const rec = u.value;
 
@@ -1592,607 +1600,20 @@ async function runDueAutomations(env, atMs, opts){
        nobody can see is how "my job stopped running" becomes a support ticket
        instead of a known state. */
     if(Date.now() - started > AUTO_TICK_BUDGET_MS){
-      deferred = queued - processed;
+      deferred = inline.length - processed;
       /* The rest have not run, so nothing re-set their due time and nothing
          re-booked them. Booked into the CURRENT hour, which is what the next
          tick reads - otherwise "the tick ran out of time" quietly becomes "the
          job did not run until the next sweep". */
-      for(const rest of users.slice(processed - 1)) {
+      for(const rest of inline.slice(processed - 1)) {
         try { await _autoBucketAdd(env, rest.id, Date.now()); } catch (e) {}
       }
       break;
     }
     processed++;
 
-    let changed = false;
-    /* Held until the results this account produced are durable. See the end of
-       this block: advancing "AMV has told them about this mail" before they can
-       read it is how a message gets silently skipped for ever. */
-    const ingestCommits = [];
-    // The plan's monthly cost ceiling - automations spend real money and must
-    // count against it, exactly like interactive use. Compute once per user.
-    /* One definition of the budget, shared with autoCreate - the cron used to
-       compute its own and they could drift. A free account now has a small real
-       ceiling rather than zero, which is what lets its one weekly job run. */
-    const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
-    /* AN ACCOUNT ON HOLD RUNS NOTHING WHILE NOBODY IS WATCHING.
-
-       Asked here rather than through _accountHold because there is no request
-       to refuse - the answer is to skip this account and go on to the next.
-       The entitlement was read a line ago, so it costs nothing.
-
-       This is the worst of the paths the hold did not reach: unattended,
-       recurring, and invisible until an invoice arrives. It is NOT re-booked
-       into the bucket, unlike the global-cap skip - that one waits for the day
-       to roll over, and this one waits for an operator to clear the block, so
-       booking it would be re-reading a held account every hour for ever. Its
-       `next` is untouched, so the moment the block is cleared the sweep in the
-       first five minutes of the hour picks it straight back up. */
-    if (ent.blocked) {
-      audit(env, 'auto_skipped_blocked', { email, reason: ent.blockedReason || '' });
-      continue;
-    }
-    /* AMV-100: the cron runs outside requireUser, so it resolves the same
-       subject by hand. Without this a team member's scheduled work would spend
-       against a private ceiling the team is not paying for - the seat would
-       come with its own second budget. */
-    const sub = await _billingSubjectOf(env, email, ent);
-    /* The cron runs outside requireUser, so the family is resolved by hand the
-       same way the plan is. Free when there is no family: _familyOf returns
-       immediately on an entitlement with no familyOf, so this is a read only
-       for accounts that actually belong to one. */
-    const fam = await _familyOf(env, email, ent);
-    /* What this person has connected, read once for the whole user rather than
-       once per job. The needs check below runs for every due item, so its cost
-       has to be flat in the number of jobs. */
-    let connected = {};
-    try { connected = await _autoConnected(env, email); } catch (e) { connected = {}; }
-    const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg }, fam);
-    const costCeiling = budget.ceiling;
-    const costName = `cost:${sub.subject}:${_periodKeyFor(sub.renewedAt, sub.plan, sub.customCfg)}`;
-
-    /* THE DAY'S CEILING, WHICH THIS PATH CONTRIBUTED TO AND NEVER CONSULTED.
-
-       Chat, the widget and SMS all check the global daily cap before
-       spending. This tick incremented it afterwards and never asked - so once
-       the ceiling was reached, every path a person can SEE refused, and the
-       unattended cron kept going. The one thing running while nobody is
-       watching was the one thing the ceiling did not stop, which is the worst
-       possible place for that hole to be.
-
-       Free accounts are shed first, exactly as they are everywhere else: on a
-       busy day the work that pays nothing is what stops. And a failure to read
-       the counter refuses rather than proceeds - unlike the interactive paths,
-       nobody is here to notice a runaway, so the safe answer is the quiet one. */
-    const gCapAuto = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
-    /* The share of the day's ceiling this account may reach, named once so the
-       coarse gate below and the per-run reservation further down cannot drift
-       apart into two different ceilings. Infinity when no ceiling is set, which
-       _reserveUSD treats as "book it, never refuse". */
-    const payingAuto = _planPriceUSD(sub.plan, sub.customCfg) > 0;
-    const gCapAutoForRun = gCapAuto > 0
-      ? (payingAuto ? gCapAuto : +(gCapAuto * FREE_TIER_CAP_SHARE).toFixed(2))
-      : null;
-    if (gCapAuto > 0) {
-      const capForThem = gCapAutoForRun;
-      /* A READ here on purpose. This is the coarse "is the day's budget gone,
-         skip this account entirely" gate, taken once before the item loop; the
-         binding reservation is taken per RUN below, where it can be settled
-         against what that run actually cost. Reserving here would book one
-         run's worth for however many items the account has due. */
-      let gRes = null;
-      try { gRes = await _checkGlobalCap(env, email, capForThem); }
-      catch (e) {
-        audit(env, 'spend_gate_blind', { what: 'automation', email, error: String((e && e.message) || e) });
-      }
-      if (!gRes || !gRes.allowed) {
-        audit(env, 'auto_skipped_global_cap', { email, paying: payingAuto, value: gRes && gRes.value, cap: capForThem });
-        /* Skipped, not done - it keeps its place so the next tick tries again
-           once the day's ceiling has room. */
-        try { await _autoBucketAdd(env, email, Date.now()); } catch (e) {}
-        try { await alertOnce(env, 'auto_global_cap',
-          'Scheduled work is being skipped because the daily spend ceiling is reached (or the counter is unreadable). '
-          + 'Automations resume on their own when the day rolls over.', 60); } catch (_) {}
-        continue;
-      }
-    }
-
-    /* The plan's JOB limit, honoured here and not only at the moment one is
-       created. Somebody on Elite with twenty-five running jobs who drops to Pro
-       used to keep all twenty-five: creation was gated, running never was, so
-       the only thing standing between them and five times the work they pay for
-       was the monthly spend ceiling.
-
-       The oldest active jobs win, which matches what the app says when the
-       limit is hit - remove one to add another - and is stable between ticks
-       rather than depending on which happened to come due first. Nothing is
-       deactivated: a downgrade is often temporary, and switching somebody's
-       work off permanently is not ours to do. */
-    const allowedIds = new Set(
-      (rec.items || []).filter(x => x.active).slice(0, budget.max).map(x => x.id));
-
-    /* What this tick will mail this account, gathered rather than sent as it
-       goes. Per ACCOUNT, inside the loop over accounts and outside the loop
-       over their jobs, which is exactly the grain a person experiences as
-       "this morning's email". */
-    const mails = [];
-    /* This account's agents (77-agents.js), read once and only when a due job
-       names one. Unreadable is not "none": a job whose agent cannot be read
-       waits rather than running without the budget and the pause it has. */
-    let agentsRec = null;
-    const agentOf = async (id) => {
-      if(!agentsRec){ try{ agentsRec = await _agentsOf(env, email); }catch(e){ agentsRec = { list: [], unreadable: true }; } }
-      if(agentsRec.unreadable) return { unreadable: true };
-      return agentsRec.list.find(a => a && a.id === id) || null;
-    };
-    /* Held for an hour, or to the job's next time: a paused agent's daily job
-       is looked at again tomorrow, not every ten minutes. */
-    const agentHold = (it) => (it.repeat === 'once' || _hookIsOn(it)) ? now + 3600e3 : _autoNextAfter(it, now, 'ran');
-    for(const item of rec.items){
-      if(item.active && !allowedIds.has(item.id)){
-        if(item.lastError !== 'above your plan\u2019s job limit'){
-          item.lastError = 'above your plan\u2019s job limit'; changed = true;
-        }
-        continue;
-      }
-      scanned++;
-      /* A step still waiting is never due. Past its window, the step it waits
-         for has had three days and not finished, so it is cancelled - with
-         everything after it - and says so, rather than waiting for ever. */
-      if(item.waiting){
-        if(item.next > now) continue;
-        item.waiting = false; item.active = false; item.done = true; item.doneAt = now; item.next = 0;
-        item.lastError = 'did not run - the step it waits for did not finish within three days';
-        rec.results = (rec.results||[]).concat({ id: _resultId(now), autoId: item.id, detail: item.detail, at: now,
-          read: false, kind: 'failed', approval: item.approval, outcome: 'failed', costUSD: 0,
-          out: 'This step did not run, so nothing was spent on it. The step it was waiting for did not finish within three days. Set the task up again to try once more.' });
-        _autoSettleSteps(rec, item, false, '', now, 'an earlier step did not finish');
-        changed = true;
-        continue;
-      }
-      if(!item.active || item.next > now) continue;
-      /* HELD, NOT SKIPPED. The job does not run and nothing is spent - and
-         `next` moves to the far side of the window rather than staying in the
-         past, so it goes at a reasonable hour instead of the moment the window
-         closes for every job at once. Nothing is lost: this is a deferral, and
-         the row says so rather than going quiet. */
-      if(_quietNow(rec && rec.quiet, now)){
-        item.next = _quietEndsAt(rec.quiet, now);
-        /* `heldUntil`, NOT `lastError`. The screen prefixes lastError with
-           "Last run:", and a held job did not have a run - describing a
-           deferral as the outcome of a run is the kind of small lie that makes
-           somebody distrust the whole row. It also would have overwritten a
-           real error from the last time the job actually ran. The row reads
-           this field and says "held until your quiet hours end" in its own
-           words. */
-        item.heldUntil = item.next;
-        changed = true;
-        continue;
-      }
-      /* What this item booked before it ran. Reset per item, and handed back by
-         every path below that decides not to run after all - a skipped job that
-         keeps its reservation quietly eats the allowance of the jobs behind it
-         in the same tick. */
-      let itemBooked = 0, itemGlobalBooked = 0, itemAgentBooked = 0;
-      let gDayName = _spendNameFor(email, env);
-      /* THE AGENT THIS JOB BELONGS TO, decided before anything is booked. A
-         deleted agent's job stops; a paused one's waits, and its row says
-         which. Neither spends anything. */
-      let agent = null, agentCost = '';
-      if(item.agent){
-        agent = await agentOf(item.agent);
-        if(!agent || agent.deleted){
-          item.active = false; item.lastError = 'stopped - its agent was deleted';
-          changed = true; continue;
-        }
-        if(agent.unreadable || agent.paused){
-          item.lastError = agent.paused ? 'not run - its agent is paused' : 'not run - its agent could not be read, so it will try again';
-          item.next = agentHold(item);
-          changed = true; continue;
-        }
-        agentCost = _agentCostKey(email, agent.id);
-      }
-      const releaseItem = async () => {
-        if (itemAgentBooked > 0) { await _releaseUSD(env, agentCost, itemAgentBooked, 86400000 * 70); itemAgentBooked = 0; }
-        if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
-        if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
-      };
-      // If this user is already at their monthly spend ceiling, skip the run
-      // (don't burn compute they've effectively used up). Free plan (ceiling 0)
-      // has no paid budget for automations, so they never execute a paid model
-      // call here - they degrade to nothing rather than costing us money.
-      /* An investing check-in makes no model call, so a spend ceiling has
-         nothing to protect against here. Blocking it would stop somebody's
-         savings check-in because they used AMV a lot in chat - two unrelated
-         things, and the one that gets switched off is the one about money. */
-      if(item.kind !== 'invest'){
-        /* The same two facts _autoExecute decides the call from, so the
-           reservation is for the run that is about to happen rather than for
-           the most expensive run the product can do. */
-        const runFree = !!(budget && budget.free) || item.tier === 'free';
-        const runResearch = item.kind === 'research' && !runFree;
-        const runMax = _autoRunMaxUSD(runFree, runResearch);
-        /* The day's ceiling, booked for THIS run. Taken first so a refusal
-           here costs nothing to unwind. */
-        const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
-        gDayName = gNow.name || gDayName;
-        itemGlobalBooked = gNow.reserved;
-        if(!gNow.allowed){
-          audit(env, 'auto_skipped_global_cap', { email, item: item.id, cap: gCapAutoForRun });
-          item.lastError = 'the day’s capacity is used up - this will run again tomorrow';
-          changed = true; await releaseItem(); continue;
-        }
-        const capNow = await _reserveUSD(env, costName, runMax, costCeiling, 86400000 * 70);
-        itemBooked = capNow.reserved;
-        if(!capNow.allowed){
-          /* Name the limit that actually stopped it. "Monthly allowance
-             reached" tells somebody on a family plan to upgrade, which will
-             not help and is not theirs to do - the number is their parent's,
-             and only their parent can move it. The interactive paths already
-             say so; this one said the wrong thing to the only person who could
-             not act on it. */
-          item.lastError = budget.familyCapped
-            ? 'monthly limit set for this account reached - whoever manages your family can raise it'
-            : 'monthly allowance reached';
-          changed = true; await releaseItem(); continue;
-        }
-        /* The agent's own budget, booked the same way: before the run, for
-           the most this run can cost, settled against what it did. */
-        if(agent && +agent.budgetUSD > 0){
-          const agNow = await _reserveUSD(env, agentCost, runMax, +agent.budgetUSD, 86400000 * 70);
-          itemAgentBooked = agNow.reserved;
-          if(!agNow.allowed){
-            item.lastError = 'not run - its agent reached its monthly budget of $' + (+agent.budgetUSD).toFixed(2);
-            item.next = agentHold(item);
-            changed = true; await releaseItem(); continue;
-          }
-        }
-      }
-      // AMV-032: LEASE this specific run slot so two overlapping/retried cron
-      // invocations can't both execute the same due job (duplicate model call or
-      // email). The key is unique to this item's scheduled time; atomic on D1.
-      if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) { await releaseItem(); continue; }
-
-      /* What this run may actually do: the job's level, capped by the account's
-         ceiling, decided HERE - at the point of spending and sending - so
-         nothing that edits a job elsewhere can get past it. */
-      const level = _autoEffective(item, rec);
-
-      /* SUGGEST ONLY: the runner is not called at all.
-
-         This is the level that has to cost nothing, or it is not a permission
-         level - it is a delivery preference with a different label. So the due
-         job produces a note that it is due and what it would do, spends no
-         tokens, sends nothing, and waits to be asked. */
-      /* A trigger set to suggest only would post "this is due" every ten
-         minutes, for ever. It stands down instead and its row says why - the
-         person changes the level, or the account's ceiling, to have it watch. */
-      if(level === 'suggest' && item.when){
-        item.lastError = 'not watching - set to suggest only, which never runs on its own';
-        item.next = _autoNextAfter(item, now, 'ran');
-        changed = true; await releaseItem(); continue;
-      }
-      if(level === 'suggest'){
-        rec.results = (rec.results||[]).concat({
-          id: _resultId(),
-          autoId: item.id, detail: item.detail, at: Date.now(), read: false,
-          /* Zero, stated rather than left absent. The timeline adds these up,
-             and a missing field reads as unknown where the whole point of this
-             level is that the answer is nothing. */
-          kind: 'suggestion', approval: 'suggest', outcome: 'suggested', costUSD: 0,
-          out: 'This job is due and is set to suggest only, so AMV has not run it.\n\n'
-             + 'What it would do:\n' + String(item.detail || '').slice(0, 1200)
-             + '\n\nNothing has been generated and nothing has been sent. Run it when you want it.'
-        }).slice(-AUTO_MAX_RESULTS);
-        item.runs = (item.runs||0) + 1;
-        item.lastLevel = 'suggest';
-        item.next = _autoNextAfter(item, now, 'ran');
-        if(item.done) _autoSettleSteps(rec, item, false, '', now, 'it was set to suggest only, so it produced nothing to build on');
-        ran++; changed = true;
-        /* Suggest-only: nothing was generated and no model was called, so the
-           money booked for it belongs back in the allowance. */
-        await releaseItem();
-        continue;
-      }
-
-      /* ASKED BEFORE ANYTHING IS SPENT.
-
-         Recomputed on every run, from this run's own instruction plus anything
-         a previous run of it discovered - so a job whose work changes from day
-         to day asks for what TODAY needs rather than what it needed when it
-         was created. A run stopped here is deliberately not counted as a
-         failure: five failures switch a job off, and somebody who has not
-         pasted a token yet has not broken anything. */
-      const needs = _autoNeedsFor(item, connected, item.discoveredNeeds);
-      if(!needs.ready){
-        const needsMsg = _autoNeedsMessage(item, needs.missing, now);
-        rec.results = (rec.results||[]).concat({
-          id: _resultId(),
-          autoId: item.id, detail: item.detail, at: now, read: false,
-          kind: 'needs_access', approval: level, outcome: 'needs_access', costUSD: 0,
-          /* Carried as data as well as prose so the interface can list them,
-             link each one to the place it is fixed, and stop showing it the
-             moment it is connected. */
-          needs: needs.missing,
-          out: needsMsg
-        }).slice(-AUTO_MAX_RESULTS);
-        audit(env, 'auto_needs_access', { email, item: item.id, missing: needs.missing.map(m=>m.id) });
-        item.runs = (item.runs||0) + 1;
-        /* TOLD ONCE, ON THE TRANSITION.
-
-           This branch returns before the notify branch, so a job waiting on a
-           connection told NOBODY. Somebody who set up "inbox digest, email me
-           daily" and has not connected a mailbox got silence every morning,
-           for ever - and silence reads as the product doing nothing, not as
-           the product waiting on them. It is the worst place in the whole tick
-           to be quiet, because it is the one failure the person can actually
-           fix in a minute.
-
-           Every tick would be a nag, and they already know by the second one.
-           So: only when the set of things it is waiting for has something new
-           in it, which includes the first time. `lastNeeds` is a carried key,
-           so the comparison survives the write-back. It joins the SAME batch as
-           that morning's real results rather than arriving as its own email -
-           a milestone about interruptions does not get to add one.
-
-           Nothing is written to lastError here. The job has not failed; it is
-           waiting, which the row says in its own words from `lastNeeds`. */
-        const wasWaitingFor = Array.isArray(item.lastNeeds) ? item.lastNeeds : [];
-        const nowWaitingFor = needs.missing.map(m=>m.id);
-        const newlyBlocked = nowWaitingFor.some(id => wasWaitingFor.indexOf(id) < 0);
-        item.lastNeeds = nowWaitingFor;
-        if(newlyBlocked && item.notify === 'email' && env.EMAIL_API_KEY)
-          mails.push({ item, out: needsMsg });
-        item.next = _autoNextAfter(item, now, 'waiting');
-        if(item.done) _autoSettleSteps(rec, item, false, '', now, 'it was waiting for access that was never connected');
-        ran++; changed = true;
-        /* Blocked on access it does not have, so no model call happened. */
-        await releaseItem();
-        continue;
-      }
-      /* Cleared, so a job that was blocked yesterday and is fine today does not
-         keep showing yesterday's request. */
-      if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
-
-      let runFailed = false, stepOut = '';
-      try{
-        /* Tried properly rather than once: a transient fault costs this run
-           a few seconds, where before it cost the whole day. The deadline is
-           the tick's own, so a retry that would eat into somebody else's
-           overdue job is not started. */
-        const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
-                                              _neverList(rec), started + AUTO_TICK_BUDGET_MS, agent);
-        const exec = tried.exec;
-        item.attempts = (Number(item.attempts) || 0) + tried.attempts;
-        if(exec && exec.quiet){
-          if(typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
-          item.lastCheckAt = now; item.lastCheckSaw = Number(exec.checked) || 0;
-          if(exec.watch) item.watch = exec.watch;
-          item.lastError = exec.blocked ? ('not watching - ' + exec.blocked) : (exec.note || null); item.runs = (item.runs || 0) + 1;
-          await releaseItem();
-          throw { __quiet: true };
-        }
-        const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
-        stepOut = out;
-        if(exec && exec.watch){ item.watch = exec.watch; item.lastCheckAt = now; }
-        /* DID THIS RUN SAY ANYTHING NEW.
-
-           Counted for every job, whether or not it is set to email, because the
-           count is what earns the offer and the offer is only worth making to
-           somebody who has actually been getting the same email repeatedly.
-           `sameAgain` is the narrower question: does this particular run get to
-           skip the inbox, which needs the person to have accepted. */
-        const digest = _runDigest(out);
-        if(digest && digest === item.lastDigest) item.sameRuns = (Number(item.sameRuns) || 0) + 1;
-        else { item.sameRuns = 0; item.lastDigest = digest; }
-        const sameAgain = !!item.quietUnchanged && (Number(item.sameRuns) || 0) > 0;
-        /* NOT SILENT. The run happened, it cost money, and the person agreed to
-           stop being emailed about repeats - not to stop being told. The row
-           reads this and says the answer has not changed since this date, so a
-           job that has quietly stopped working never looks the same as a job
-           that is working and has nothing new to report. */
-        item.quietSince = sameAgain ? (item.quietSince || now) : 0;
-        /* Held, not called. See the write-back below: what a run has told
-           somebody about is only true once the result is in the record they
-           read it from. */
-        if(exec && typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
-        // record the real cost of this run against the monthly cap
-        let runCost = 0;
-        /* SETTLED against the two reservations taken before the run, not added
-           on top of them - adding outright would charge every automation twice
-           and cut somebody off at half their allowance. The platform total is
-           never reserved against, so it takes the full amount. */
-        try{ const c = _autoCostUSD(exec && exec.usage || {}); runCost = c || 0;
-          const dAcct = c - itemBooked;
-          const dGlobal = c - itemGlobalBooked;
-          if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
-          if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
-          if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
-          /* What the agent spent, whether or not it has a budget of its own -
-             the screen shows it either way. */
-          const dAgent = c - itemAgentBooked;
-          if(agentCost && dAgent !== 0) await counter(env, agentCost, { op:'incr', amount:dAgent, ttlMs: 86400000*70 });
-          itemBooked = 0; itemGlobalBooked = 0; itemAgentBooked = 0;
-        }catch(e){ await _writeFailed(env, 'job_settle', e); }
-        /* What happened to this result, decided here rather than guessed later.
-           "It ran" and "it reached you" are different facts, and the second one
-           is the one somebody is actually asking about when they look. */
-        const outcome = (level === 'require') ? 'waiting'
-                      : (item.notify === 'email' && env.EMAIL_API_KEY) ? 'emailed'
-                      : 'in-app';
-        rec.results = (rec.results||[]).concat({
-          id: _resultId(),
-          autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task',
-          /* The level this run actually executed at, recorded rather than
-             inferred later from the job's current setting - which is the one
-             thing that will have changed by the time anybody reads it back. */
-          approval: level,
-          outcome,
-          costUSD: Math.round(runCost * 1e6) / 1e6,
-          /* WHAT THEY CAN ACT ON, not just read about.
-
-             Only ever cancellations AMV could address to a mailbox somebody
-             reads - `_cancelVerdict` decided that before any of these were
-             built - and only ever handed over, never sent. AMV has no path
-             from here to a stranger's inbox and is not getting one: the
-             owner's decision was their own mail client now, their own mailbox
-             later, never AMV's domain. Omitted entirely when there are none,
-             so an old result and a run that found nothing read the same. */
-          ...(exec && exec.drafts && exec.drafts.length ? { drafts: exec.drafts.slice(0, 10) } : {}),
-        }).slice(-AUTO_MAX_RESULTS);
-        item.runs = (item.runs||0) + 1;
-        item.lastLevel = level;
-        /* It ran, so it is not being held any more. A stale hold would leave
-           the row saying "held until your quiet hours end" about a job that
-           has since gone out. */
-        item.heldUntil = 0;
-        /* A soft failure ran fine and DELIVERED the reason - an institution that
-           was down, or nothing linked yet. It is recorded so the job's row shows
-           it, but it does not count toward the give-up counter: a bank having a
-           bad week must not quietly switch off somebody's check-in. */
-        item.lastError = (exec && exec.soft) ? exec.soft : null;
-        ran++;
-        // Deliver by approval mode. Auto-approve tasks complete on their
-        // own (emailed if requested). Require-approval tasks stop before
-        // delivery: the finished work waits in the approval queue.
-        /* Read from the EFFECTIVE level, not from item.approval. Reading the
-           job's own setting here is what a ceiling would have to get past, and
-           the whole point of the ceiling is that it cannot be got past. */
-        if(level === 'require'){
-          try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
-        } else if(item.notify === 'email' && env.EMAIL_API_KEY && !sameAgain){
-          /* HELD, NOT SENT - see `_autoEmailBatch`. Sending here meant one
-             email per job, so five jobs due at seven in the morning were five
-             separate interruptions carrying one morning's information. They go
-             out together once the loop is done.
-
-             `lastError` is NOT cleared here. The line above already set it from
-             this run's own outcome - null on a clean run, and the SOFT code
-             when the run finished with a warning, which is how an investing
-             check-in says its provider read failed. Blanking it on the way into
-             the batch looked tidy and threw that warning away for every job set
-             to email: the row went green while the numbers behind it came from
-             a read that did not work. The send below writes to this field only
-             when it has something true to put there. */
-          mails.push({ item, out });
-        }
-      }catch(e){
-        if(e && e.__quiet){ item.next = _autoNextAfter(item, now, 'ran'); changed = true; continue; }
-        runFailed = true;
-        const why = String(e.message||e).slice(0,200);
-        item.lastError = why;
-        item.errors = (item.errors||0) + 1;
-        /* Every attempt, not every run. A job that failed five mornings after
-           three tries each was told it had "failed five times", which reads as
-           a product that gave up early - and it is the number people judge the
-           give-up by. Counted honestly so the message can say fifteen. */
-        item.attempts = (Number(item.attempts) || 0) + (Number(e && e.attempts) || 1);
-        // Give up on an automation that keeps failing, rather than burning quota forever.
-        if(item.errors >= 5) item.active = false;
-        failed++;
-        /* A FAILED RUN IS AN EVENT TOO.
-
-           Until now a failure set a field on the job and nothing else, so the
-           history showed successes and silence. Somebody looking at a job that
-           had not produced anything for a week could not tell whether it had
-           been failing every night or had simply had nothing to say - and those
-           call for opposite responses. It goes in the record, with the reason
-           and with whether the job has now been switched off for repeating. */
-        rec.results = (rec.results||[]).concat({
-          id: _resultId(),
-          autoId: item.id, detail: item.detail, at: Date.now(), read: false,
-          kind: 'failed', approval: level, outcome: 'failed', costUSD: 0,
-          /* A failing run says how many attempts are behind it, so "it is
-             still trying" is visible rather than assumed - and the last one
-             says what would actually make it work instead of handing back a
-             cause the person has no way to see. */
-          out: item.errors >= 5
-             ? _autoGiveUpAdvice(item, why, Number(item.attempts) || item.errors)
-             : ('This run did not complete: ' + why
-                + '\n\nAMV tried ' + (Number(e && e.attempts) || 1) + ' time'
-                + ((Number(e && e.attempts) || 1) === 1 ? '' : 's') + ' this run and will try again on the next one. '
-                + 'After five failed runs it switches itself off rather than keep spending.')
-        }).slice(-AUTO_MAX_RESULTS);
-      }
-      item.next = _autoNextAfter(item, now, runFailed ? 'failed' : 'ran');
-      /* A finished step releases what waits on it, with what it produced - or,
-         having failed for good, cancels it. Written before the loop reaches
-         those steps, so a released one runs in this same tick when there is
-         time. A run that ended with nothing to show is not a result. */
-      if(item.done){
-        const made = !runFailed && String(stepOut || '').trim();
-        _autoSettleSteps(rec, item, !!made, stepOut, now, runFailed ? 'its runs failed' : 'it produced nothing');
-      }
-      changed = true;
-    }
-
-    /* THE ONE EMAIL. Before the write-back, so `lastError` - which is a carried
-       key - reaches the record with what actually happened rather than with
-       what was hoped for.
-
-       A refused send comes back FALSE, not as a throw. Dropping that leaves
-       somebody waiting on an email that is never coming, beside a job showing
-       green, so every job in the batch is told. The results themselves are
-       safe either way: they are in the app, and this only ever describes which
-       half arrived. */
-    if(mails.length){
-      let wentOut = false;
-      try{ wentOut = await _autoEmailBatch(env, email, mails); }catch(e){ wentOut = false; }
-      if(!wentOut){
-        const why = mails.length > 1
-          ? 'The results are here in AMV. The one email carrying them could not be delivered.'
-          : 'The result is here in AMV. The email could not be delivered.';
-        for(const m of mails) m.item.lastError = why;
-      }
-      changed = true;
-    }
-
-    /* AMV-205: the tick holds this record for the whole of a run, which can be
-       seconds, and used to write its whole stale copy back at the end. Anything
-       the person did meanwhile - pausing, adding a job, editing one, clearing
-       results - was silently undone, and the one that matters is pause: the job
-       they stopped carried on running and spending.
-
-       Only what the RUN produced is carried across, applied to the record as it
-       is inside the lock. Everything else on it belongs to the person, and is
-       left exactly as they left it. */
-    if(changed) {
-      const ran = new Map((rec.items||[]).map(i => [i.id, i]));
-      const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
-      await _withAuto(env, email, (fresh) => {
-        for(const item of (fresh.items||[])){
-          const after = ran.get(item.id);
-          if(!after) continue;
-          for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
-          if(_hookIsOn(item)) _hookAfterRun(item, now);
-          /* A job the RUN switched off after five failures stays off. A job the
-             PERSON switched off stays off too - so this only ever turns one
-             off, never back on. */
-          if(after.active === false) item.active = false;
-        }
-        const known = new Set((fresh.results||[]).map(r => r && r.id).filter(Boolean));
-        const fresher = produced.filter(r => r && r.id && !known.has(r.id));
-        if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
-      }, { items:[], results:[] });
-    }
-
-    /* ONLY NOW. The results are in the record the person reads them from, so
-       the mail they were built out of has genuinely been reported and the next
-       run should start after it.
-
-       Deliberately AFTER the write-back rather than inside it: these take a
-       lock on a different record, and taking a second lock while holding the
-       automation record is how a tick that already runs on a deadline acquires
-       a way to deadlock. It is also the only ordering that is honest - a
-       cursor that moved before the results were saved is a claim that has not
-       been earned yet.
-
-       Every failure mode here is a repeat, never a loss: if this does not run,
-       or runs and fails, the next run sees the same mail and reports it again. */
-    for(const fn of ingestCommits){
-      try{ await fn(); }
-      catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
-    }
+    const r = await _autoRunAccount(env, email, rec, now, started + AUTO_TICK_BUDGET_MS);
+    scanned += r.scanned; ran += r.ran; failed += r.failed;
   }
 
   /* Running out of time once is a busy minute. Running out of time every tick
@@ -2204,12 +1625,611 @@ async function runDueAutomations(env, atMs, opts){
     audit(env, 'auto_tick_deferred', { queued, processed, deferred, ran, failed });
     try{
       await alertOnce(env, 'auto_backlog',
-        'THE AUTONOMOUS TICK IS OUT OF TIME. ' + processed + ' of ' + queued + ' accounts with work due were '
+        'THE AUTONOMOUS TICK IS OUT OF TIME. ' + processed + ' of ' + inline.length + ' accounts it ran itself were '
         + 'handled and ' + deferred + ' were left for the next run. They are first in line next time, so nothing '
         + 'is lost - but if this keeps happening the due work no longer fits in one tick and people’s jobs are '
-        + 'arriving late. Raise the tick budget or spread the work.', 3 * 60);
+        + 'arriving late. Bind the AMV_JOBS queue (wrangler.toml) so each account runs on its own.', 3 * 60);
     }catch(e){}
   }
-  return { scanned, ran, failed, queued, processed, deferred, truncated };
+  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated }, enqueued ? { enqueued } : {});
+}
+
+/* ONE ACCOUNT'S DUE WORK, start to finish: its plan, holds, ceilings and
+   every job that is due. The tick calls it for each account in turn; the
+   queue consumer calls it for one account per message when the AMV_JOBS
+   queue is bound (_autoQueueConsume). `deadline` is when it must stop
+   starting new work. Returns what it scanned, ran and failed. */
+async function _autoRunAccount(env, email, rec, now, deadline){
+  let scanned = 0, ran = 0, failed = 0;
+  let changed = false;
+  /* Held until the results this account produced are durable. See the end of
+     this block: advancing "AMV has told them about this mail" before they can
+     read it is how a message gets silently skipped for ever. */
+  const ingestCommits = [];
+  // The plan's monthly cost ceiling - automations spend real money and must
+  // count against it, exactly like interactive use. Compute once per user.
+  /* One definition of the budget, shared with autoCreate - the cron used to
+     compute its own and they could drift. A free account now has a small real
+     ceiling rather than zero, which is what lets its one weekly job run. */
+  const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
+  /* AN ACCOUNT ON HOLD RUNS NOTHING WHILE NOBODY IS WATCHING.
+
+     Asked here rather than through _accountHold because there is no request
+     to refuse - the answer is to skip this account and go on to the next.
+     The entitlement was read a line ago, so it costs nothing.
+
+     This is the worst of the paths the hold did not reach: unattended,
+     recurring, and invisible until an invoice arrives. It is NOT re-booked
+     into the bucket, unlike the global-cap skip - that one waits for the day
+     to roll over, and this one waits for an operator to clear the block, so
+     booking it would be re-reading a held account every hour for ever. Its
+     `next` is untouched, so the moment the block is cleared the sweep in the
+     first five minutes of the hour picks it straight back up. */
+  if (ent.blocked) {
+    audit(env, 'auto_skipped_blocked', { email, reason: ent.blockedReason || '' });
+    return { scanned, ran, failed };
+  }
+  /* AMV-100: the cron runs outside requireUser, so it resolves the same
+     subject by hand. Without this a team member's scheduled work would spend
+     against a private ceiling the team is not paying for - the seat would
+     come with its own second budget. */
+  const sub = await _billingSubjectOf(env, email, ent);
+  /* The cron runs outside requireUser, so the family is resolved by hand the
+     same way the plan is. Free when there is no family: _familyOf returns
+     immediately on an entitlement with no familyOf, so this is a read only
+     for accounts that actually belong to one. */
+  const fam = await _familyOf(env, email, ent);
+  /* What this person has connected, read once for the whole user rather than
+     once per job. The needs check below runs for every due item, so its cost
+     has to be flat in the number of jobs. */
+  let connected = {};
+  try { connected = await _autoConnected(env, email); } catch (e) { connected = {}; }
+  const budget = _autoBudget({ plan: sub.plan, custom: sub.customCfg }, fam);
+  const costCeiling = budget.ceiling;
+  const costName = `cost:${sub.subject}:${_periodKeyFor(sub.renewedAt, sub.plan, sub.customCfg)}`;
+
+  /* THE DAY'S CEILING, WHICH THIS PATH CONTRIBUTED TO AND NEVER CONSULTED.
+
+     Chat, the widget and SMS all check the global daily cap before
+     spending. This tick incremented it afterwards and never asked - so once
+     the ceiling was reached, every path a person can SEE refused, and the
+     unattended cron kept going. The one thing running while nobody is
+     watching was the one thing the ceiling did not stop, which is the worst
+     possible place for that hole to be.
+
+     Free accounts are shed first, exactly as they are everywhere else: on a
+     busy day the work that pays nothing is what stops. And a failure to read
+     the counter refuses rather than proceeds - unlike the interactive paths,
+     nobody is here to notice a runaway, so the safe answer is the quiet one. */
+  const gCapAuto = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
+  /* The share of the day's ceiling this account may reach, named once so the
+     coarse gate below and the per-run reservation further down cannot drift
+     apart into two different ceilings. Infinity when no ceiling is set, which
+     _reserveUSD treats as "book it, never refuse". */
+  const payingAuto = _planPriceUSD(sub.plan, sub.customCfg) > 0;
+  const gCapAutoForRun = gCapAuto > 0
+    ? (payingAuto ? gCapAuto : +(gCapAuto * FREE_TIER_CAP_SHARE).toFixed(2))
+    : null;
+  if (gCapAuto > 0) {
+    const capForThem = gCapAutoForRun;
+    /* A READ here on purpose. This is the coarse "is the day's budget gone,
+       skip this account entirely" gate, taken once before the item loop; the
+       binding reservation is taken per RUN below, where it can be settled
+       against what that run actually cost. Reserving here would book one
+       run's worth for however many items the account has due. */
+    let gRes = null;
+    try { gRes = await _checkGlobalCap(env, email, capForThem); }
+    catch (e) {
+      audit(env, 'spend_gate_blind', { what: 'automation', email, error: String((e && e.message) || e) });
+    }
+    if (!gRes || !gRes.allowed) {
+      audit(env, 'auto_skipped_global_cap', { email, paying: payingAuto, value: gRes && gRes.value, cap: capForThem });
+      /* Skipped, not done - it keeps its place so the next tick tries again
+         once the day's ceiling has room. */
+      try { await _autoBucketAdd(env, email, Date.now()); } catch (e) {}
+      try { await alertOnce(env, 'auto_global_cap',
+        'Scheduled work is being skipped because the daily spend ceiling is reached (or the counter is unreadable). '
+        + 'Automations resume on their own when the day rolls over.', 60); } catch (_) {}
+      return { scanned, ran, failed };
+    }
+  }
+
+  /* The plan's JOB limit, honoured here and not only at the moment one is
+     created. Somebody on Elite with twenty-five running jobs who drops to Pro
+     used to keep all twenty-five: creation was gated, running never was, so
+     the only thing standing between them and five times the work they pay for
+     was the monthly spend ceiling.
+
+     The oldest active jobs win, which matches what the app says when the
+     limit is hit - remove one to add another - and is stable between ticks
+     rather than depending on which happened to come due first. Nothing is
+     deactivated: a downgrade is often temporary, and switching somebody's
+     work off permanently is not ours to do. */
+  const allowedIds = new Set(
+    (rec.items || []).filter(x => x.active).slice(0, budget.max).map(x => x.id));
+
+  /* What this tick will mail this account, gathered rather than sent as it
+     goes. Per ACCOUNT, inside the loop over accounts and outside the loop
+     over their jobs, which is exactly the grain a person experiences as
+     "this morning's email". */
+  const mails = [];
+  /* This account's agents (77-agents.js), read once and only when a due job
+     names one. Unreadable is not "none": a job whose agent cannot be read
+     waits rather than running without the budget and the pause it has. */
+  let agentsRec = null;
+  const agentOf = async (id) => {
+    if(!agentsRec){ try{ agentsRec = await _agentsOf(env, email); }catch(e){ agentsRec = { list: [], unreadable: true }; } }
+    if(agentsRec.unreadable) return { unreadable: true };
+    return agentsRec.list.find(a => a && a.id === id) || null;
+  };
+  /* Held for an hour, or to the job's next time: a paused agent's daily job
+     is looked at again tomorrow, not every ten minutes. */
+  const agentHold = (it) => (it.repeat === 'once' || _hookIsOn(it)) ? now + 3600e3 : _autoNextAfter(it, now, 'ran');
+  for(const item of rec.items){
+    if(item.active && !allowedIds.has(item.id)){
+      if(item.lastError !== 'above your plan\u2019s job limit'){
+        item.lastError = 'above your plan\u2019s job limit'; changed = true;
+      }
+      continue;
+    }
+    scanned++;
+    /* A step still waiting is never due. Past its window, the step it waits
+       for has had three days and not finished, so it is cancelled - with
+       everything after it - and says so, rather than waiting for ever. */
+    if(item.waiting){
+      if(item.next > now) continue;
+      item.waiting = false; item.active = false; item.done = true; item.doneAt = now; item.next = 0;
+      item.lastError = 'did not run - the step it waits for did not finish within three days';
+      rec.results = (rec.results||[]).concat({ id: _resultId(now), autoId: item.id, detail: item.detail, at: now,
+        read: false, kind: 'failed', approval: item.approval, outcome: 'failed', costUSD: 0,
+        out: 'This step did not run, so nothing was spent on it. The step it was waiting for did not finish within three days. Set the task up again to try once more.' });
+      _autoSettleSteps(rec, item, false, '', now, 'an earlier step did not finish');
+      changed = true;
+      continue;
+    }
+    if(!item.active || item.next > now) continue;
+    /* HELD, NOT SKIPPED. The job does not run and nothing is spent - and
+       `next` moves to the far side of the window rather than staying in the
+       past, so it goes at a reasonable hour instead of the moment the window
+       closes for every job at once. Nothing is lost: this is a deferral, and
+       the row says so rather than going quiet. */
+    if(_quietNow(rec && rec.quiet, now)){
+      item.next = _quietEndsAt(rec.quiet, now);
+      /* `heldUntil`, NOT `lastError`. The screen prefixes lastError with
+         "Last run:", and a held job did not have a run - describing a
+         deferral as the outcome of a run is the kind of small lie that makes
+         somebody distrust the whole row. It also would have overwritten a
+         real error from the last time the job actually ran. The row reads
+         this field and says "held until your quiet hours end" in its own
+         words. */
+      item.heldUntil = item.next;
+      changed = true;
+      continue;
+    }
+    /* What this item booked before it ran. Reset per item, and handed back by
+       every path below that decides not to run after all - a skipped job that
+       keeps its reservation quietly eats the allowance of the jobs behind it
+       in the same tick. */
+    let itemBooked = 0, itemGlobalBooked = 0, itemAgentBooked = 0;
+    let gDayName = _spendNameFor(email, env);
+    /* THE AGENT THIS JOB BELONGS TO, decided before anything is booked. A
+       deleted agent's job stops; a paused one's waits, and its row says
+       which. Neither spends anything. */
+    let agent = null, agentCost = '';
+    if(item.agent){
+      agent = await agentOf(item.agent);
+      if(!agent || agent.deleted){
+        item.active = false; item.lastError = 'stopped - its agent was deleted';
+        changed = true; continue;
+      }
+      if(agent.unreadable || agent.paused){
+        item.lastError = agent.paused ? 'not run - its agent is paused' : 'not run - its agent could not be read, so it will try again';
+        item.next = agentHold(item);
+        changed = true; continue;
+      }
+      agentCost = _agentCostKey(email, agent.id);
+    }
+    const releaseItem = async () => {
+      if (itemAgentBooked > 0) { await _releaseUSD(env, agentCost, itemAgentBooked, 86400000 * 70); itemAgentBooked = 0; }
+      if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
+      if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
+    };
+    // If this user is already at their monthly spend ceiling, skip the run
+    // (don't burn compute they've effectively used up). Free plan (ceiling 0)
+    // has no paid budget for automations, so they never execute a paid model
+    // call here - they degrade to nothing rather than costing us money.
+    /* An investing check-in makes no model call, so a spend ceiling has
+       nothing to protect against here. Blocking it would stop somebody's
+       savings check-in because they used AMV a lot in chat - two unrelated
+       things, and the one that gets switched off is the one about money. */
+    if(item.kind !== 'invest'){
+      /* The same two facts _autoExecute decides the call from, so the
+         reservation is for the run that is about to happen rather than for
+         the most expensive run the product can do. */
+      const runFree = !!(budget && budget.free) || item.tier === 'free';
+      const runResearch = item.kind === 'research' && !runFree;
+      const runMax = _autoRunMaxUSD(runFree, runResearch);
+      /* The day's ceiling, booked for THIS run. Taken first so a refusal
+         here costs nothing to unwind. */
+      const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
+      gDayName = gNow.name || gDayName;
+      itemGlobalBooked = gNow.reserved;
+      if(!gNow.allowed){
+        audit(env, 'auto_skipped_global_cap', { email, item: item.id, cap: gCapAutoForRun });
+        item.lastError = 'the day’s capacity is used up - this will run again tomorrow';
+        changed = true; await releaseItem(); continue;
+      }
+      const capNow = await _reserveUSD(env, costName, runMax, costCeiling, 86400000 * 70);
+      itemBooked = capNow.reserved;
+      if(!capNow.allowed){
+        /* Name the limit that actually stopped it. "Monthly allowance
+           reached" tells somebody on a family plan to upgrade, which will
+           not help and is not theirs to do - the number is their parent's,
+           and only their parent can move it. The interactive paths already
+           say so; this one said the wrong thing to the only person who could
+           not act on it. */
+        item.lastError = budget.familyCapped
+          ? 'monthly limit set for this account reached - whoever manages your family can raise it'
+          : 'monthly allowance reached';
+        changed = true; await releaseItem(); continue;
+      }
+      /* The agent's own budget, booked the same way: before the run, for
+         the most this run can cost, settled against what it did. */
+      if(agent && +agent.budgetUSD > 0){
+        const agNow = await _reserveUSD(env, agentCost, runMax, +agent.budgetUSD, 86400000 * 70);
+        itemAgentBooked = agNow.reserved;
+        if(!agNow.allowed){
+          item.lastError = 'not run - its agent reached its monthly budget of $' + (+agent.budgetUSD).toFixed(2);
+          item.next = agentHold(item);
+          changed = true; await releaseItem(); continue;
+        }
+      }
+    }
+    // AMV-032: LEASE this specific run slot so two overlapping/retried cron
+    // invocations can't both execute the same due job (duplicate model call or
+    // email). The key is unique to this item's scheduled time; atomic on D1.
+    if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) { await releaseItem(); continue; }
+
+    /* What this run may actually do: the job's level, capped by the account's
+       ceiling, decided HERE - at the point of spending and sending - so
+       nothing that edits a job elsewhere can get past it. */
+    const level = _autoEffective(item, rec);
+
+    /* SUGGEST ONLY: the runner is not called at all.
+
+       This is the level that has to cost nothing, or it is not a permission
+       level - it is a delivery preference with a different label. So the due
+       job produces a note that it is due and what it would do, spends no
+       tokens, sends nothing, and waits to be asked. */
+    /* A trigger set to suggest only would post "this is due" every ten
+       minutes, for ever. It stands down instead and its row says why - the
+       person changes the level, or the account's ceiling, to have it watch. */
+    if(level === 'suggest' && item.when){
+      item.lastError = 'not watching - set to suggest only, which never runs on its own';
+      item.next = _autoNextAfter(item, now, 'ran');
+      changed = true; await releaseItem(); continue;
+    }
+    if(level === 'suggest'){
+      rec.results = (rec.results||[]).concat({
+        id: _resultId(),
+        autoId: item.id, detail: item.detail, at: Date.now(), read: false,
+        /* Zero, stated rather than left absent. The timeline adds these up,
+           and a missing field reads as unknown where the whole point of this
+           level is that the answer is nothing. */
+        kind: 'suggestion', approval: 'suggest', outcome: 'suggested', costUSD: 0,
+        out: 'This job is due and is set to suggest only, so AMV has not run it.\n\n'
+           + 'What it would do:\n' + String(item.detail || '').slice(0, 1200)
+           + '\n\nNothing has been generated and nothing has been sent. Run it when you want it.'
+      }).slice(-AUTO_MAX_RESULTS);
+      item.runs = (item.runs||0) + 1;
+      item.lastLevel = 'suggest';
+      item.next = _autoNextAfter(item, now, 'ran');
+      if(item.done) _autoSettleSteps(rec, item, false, '', now, 'it was set to suggest only, so it produced nothing to build on');
+      ran++; changed = true;
+      /* Suggest-only: nothing was generated and no model was called, so the
+         money booked for it belongs back in the allowance. */
+      await releaseItem();
+      continue;
+    }
+
+    /* ASKED BEFORE ANYTHING IS SPENT.
+
+       Recomputed on every run, from this run's own instruction plus anything
+       a previous run of it discovered - so a job whose work changes from day
+       to day asks for what TODAY needs rather than what it needed when it
+       was created. A run stopped here is deliberately not counted as a
+       failure: five failures switch a job off, and somebody who has not
+       pasted a token yet has not broken anything. */
+    const needs = _autoNeedsFor(item, connected, item.discoveredNeeds);
+    if(!needs.ready){
+      const needsMsg = _autoNeedsMessage(item, needs.missing, now);
+      rec.results = (rec.results||[]).concat({
+        id: _resultId(),
+        autoId: item.id, detail: item.detail, at: now, read: false,
+        kind: 'needs_access', approval: level, outcome: 'needs_access', costUSD: 0,
+        /* Carried as data as well as prose so the interface can list them,
+           link each one to the place it is fixed, and stop showing it the
+           moment it is connected. */
+        needs: needs.missing,
+        out: needsMsg
+      }).slice(-AUTO_MAX_RESULTS);
+      audit(env, 'auto_needs_access', { email, item: item.id, missing: needs.missing.map(m=>m.id) });
+      item.runs = (item.runs||0) + 1;
+      /* TOLD ONCE, ON THE TRANSITION.
+
+         This branch returns before the notify branch, so a job waiting on a
+         connection told NOBODY. Somebody who set up "inbox digest, email me
+         daily" and has not connected a mailbox got silence every morning,
+         for ever - and silence reads as the product doing nothing, not as
+         the product waiting on them. It is the worst place in the whole tick
+         to be quiet, because it is the one failure the person can actually
+         fix in a minute.
+
+         Every tick would be a nag, and they already know by the second one.
+         So: only when the set of things it is waiting for has something new
+         in it, which includes the first time. `lastNeeds` is a carried key,
+         so the comparison survives the write-back. It joins the SAME batch as
+         that morning's real results rather than arriving as its own email -
+         a milestone about interruptions does not get to add one.
+
+         Nothing is written to lastError here. The job has not failed; it is
+         waiting, which the row says in its own words from `lastNeeds`. */
+      const wasWaitingFor = Array.isArray(item.lastNeeds) ? item.lastNeeds : [];
+      const nowWaitingFor = needs.missing.map(m=>m.id);
+      const newlyBlocked = nowWaitingFor.some(id => wasWaitingFor.indexOf(id) < 0);
+      item.lastNeeds = nowWaitingFor;
+      if(newlyBlocked && item.notify === 'email' && env.EMAIL_API_KEY)
+        mails.push({ item, out: needsMsg });
+      item.next = _autoNextAfter(item, now, 'waiting');
+      if(item.done) _autoSettleSteps(rec, item, false, '', now, 'it was waiting for access that was never connected');
+      ran++; changed = true;
+      /* Blocked on access it does not have, so no model call happened. */
+      await releaseItem();
+      continue;
+    }
+    /* Cleared, so a job that was blocked yesterday and is fine today does not
+       keep showing yesterday's request. */
+    if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
+
+    let runFailed = false, stepOut = '';
+    try{
+      /* Tried properly rather than once: a transient fault costs this run
+         a few seconds, where before it cost the whole day. The deadline is
+         the tick's own, so a retry that would eat into somebody else's
+         overdue job is not started. */
+      const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
+                                            _neverList(rec), deadline, agent);
+      const exec = tried.exec;
+      item.attempts = (Number(item.attempts) || 0) + tried.attempts;
+      if(exec && exec.quiet){
+        if(typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
+        item.lastCheckAt = now; item.lastCheckSaw = Number(exec.checked) || 0;
+        if(exec.watch) item.watch = exec.watch;
+        item.lastError = exec.blocked ? ('not watching - ' + exec.blocked) : (exec.note || null); item.runs = (item.runs || 0) + 1;
+        await releaseItem();
+        throw { __quiet: true };
+      }
+      const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
+      stepOut = out;
+      if(exec && exec.watch){ item.watch = exec.watch; item.lastCheckAt = now; }
+      /* DID THIS RUN SAY ANYTHING NEW.
+
+         Counted for every job, whether or not it is set to email, because the
+         count is what earns the offer and the offer is only worth making to
+         somebody who has actually been getting the same email repeatedly.
+         `sameAgain` is the narrower question: does this particular run get to
+         skip the inbox, which needs the person to have accepted. */
+      const digest = _runDigest(out);
+      if(digest && digest === item.lastDigest) item.sameRuns = (Number(item.sameRuns) || 0) + 1;
+      else { item.sameRuns = 0; item.lastDigest = digest; }
+      const sameAgain = !!item.quietUnchanged && (Number(item.sameRuns) || 0) > 0;
+      /* NOT SILENT. The run happened, it cost money, and the person agreed to
+         stop being emailed about repeats - not to stop being told. The row
+         reads this and says the answer has not changed since this date, so a
+         job that has quietly stopped working never looks the same as a job
+         that is working and has nothing new to report. */
+      item.quietSince = sameAgain ? (item.quietSince || now) : 0;
+      /* Held, not called. See the write-back below: what a run has told
+         somebody about is only true once the result is in the record they
+         read it from. */
+      if(exec && typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
+      // record the real cost of this run against the monthly cap
+      let runCost = 0;
+      /* SETTLED against the two reservations taken before the run, not added
+         on top of them - adding outright would charge every automation twice
+         and cut somebody off at half their allowance. The platform total is
+         never reserved against, so it takes the full amount. */
+      try{ const c = _autoCostUSD(exec && exec.usage || {}); runCost = c || 0;
+        const dAcct = c - itemBooked;
+        const dGlobal = c - itemGlobalBooked;
+        if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
+        if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
+        if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
+        /* What the agent spent, whether or not it has a budget of its own -
+           the screen shows it either way. */
+        const dAgent = c - itemAgentBooked;
+        if(agentCost && dAgent !== 0) await counter(env, agentCost, { op:'incr', amount:dAgent, ttlMs: 86400000*70 });
+        itemBooked = 0; itemGlobalBooked = 0; itemAgentBooked = 0;
+      }catch(e){ await _writeFailed(env, 'job_settle', e); }
+      /* What happened to this result, decided here rather than guessed later.
+         "It ran" and "it reached you" are different facts, and the second one
+         is the one somebody is actually asking about when they look. */
+      const outcome = (level === 'require') ? 'waiting'
+                    : (item.notify === 'email' && env.EMAIL_API_KEY) ? 'emailed'
+                    : 'in-app';
+      rec.results = (rec.results||[]).concat({
+        id: _resultId(),
+        autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task',
+        /* The level this run actually executed at, recorded rather than
+           inferred later from the job's current setting - which is the one
+           thing that will have changed by the time anybody reads it back. */
+        approval: level,
+        outcome,
+        costUSD: Math.round(runCost * 1e6) / 1e6,
+        /* WHAT THEY CAN ACT ON, not just read about.
+
+           Only ever cancellations AMV could address to a mailbox somebody
+           reads - `_cancelVerdict` decided that before any of these were
+           built - and only ever handed over, never sent. AMV has no path
+           from here to a stranger's inbox and is not getting one: the
+           owner's decision was their own mail client now, their own mailbox
+           later, never AMV's domain. Omitted entirely when there are none,
+           so an old result and a run that found nothing read the same. */
+        ...(exec && exec.drafts && exec.drafts.length ? { drafts: exec.drafts.slice(0, 10) } : {}),
+      }).slice(-AUTO_MAX_RESULTS);
+      item.runs = (item.runs||0) + 1;
+      item.lastLevel = level;
+      /* It ran, so it is not being held any more. A stale hold would leave
+         the row saying "held until your quiet hours end" about a job that
+         has since gone out. */
+      item.heldUntil = 0;
+      /* A soft failure ran fine and DELIVERED the reason - an institution that
+         was down, or nothing linked yet. It is recorded so the job's row shows
+         it, but it does not count toward the give-up counter: a bank having a
+         bad week must not quietly switch off somebody's check-in. */
+      item.lastError = (exec && exec.soft) ? exec.soft : null;
+      ran++;
+      // Deliver by approval mode. Auto-approve tasks complete on their
+      // own (emailed if requested). Require-approval tasks stop before
+      // delivery: the finished work waits in the approval queue.
+      /* Read from the EFFECTIVE level, not from item.approval. Reading the
+         job's own setting here is what a ceiling would have to get past, and
+         the whole point of the ceiling is that it cannot be got past. */
+      if(level === 'require'){
+        try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
+      } else if(item.notify === 'email' && env.EMAIL_API_KEY && !sameAgain){
+        /* HELD, NOT SENT - see `_autoEmailBatch`. Sending here meant one
+           email per job, so five jobs due at seven in the morning were five
+           separate interruptions carrying one morning's information. They go
+           out together once the loop is done.
+
+           `lastError` is NOT cleared here. The line above already set it from
+           this run's own outcome - null on a clean run, and the SOFT code
+           when the run finished with a warning, which is how an investing
+           check-in says its provider read failed. Blanking it on the way into
+           the batch looked tidy and threw that warning away for every job set
+           to email: the row went green while the numbers behind it came from
+           a read that did not work. The send below writes to this field only
+           when it has something true to put there. */
+        mails.push({ item, out });
+      }
+    }catch(e){
+      if(e && e.__quiet){ item.next = _autoNextAfter(item, now, 'ran'); changed = true; continue; }
+      runFailed = true;
+      const why = String(e.message||e).slice(0,200);
+      item.lastError = why;
+      item.errors = (item.errors||0) + 1;
+      /* Every attempt, not every run. A job that failed five mornings after
+         three tries each was told it had "failed five times", which reads as
+         a product that gave up early - and it is the number people judge the
+         give-up by. Counted honestly so the message can say fifteen. */
+      item.attempts = (Number(item.attempts) || 0) + (Number(e && e.attempts) || 1);
+      // Give up on an automation that keeps failing, rather than burning quota forever.
+      if(item.errors >= 5) item.active = false;
+      failed++;
+      /* A FAILED RUN IS AN EVENT TOO.
+
+         Until now a failure set a field on the job and nothing else, so the
+         history showed successes and silence. Somebody looking at a job that
+         had not produced anything for a week could not tell whether it had
+         been failing every night or had simply had nothing to say - and those
+         call for opposite responses. It goes in the record, with the reason
+         and with whether the job has now been switched off for repeating. */
+      rec.results = (rec.results||[]).concat({
+        id: _resultId(),
+        autoId: item.id, detail: item.detail, at: Date.now(), read: false,
+        kind: 'failed', approval: level, outcome: 'failed', costUSD: 0,
+        /* A failing run says how many attempts are behind it, so "it is
+           still trying" is visible rather than assumed - and the last one
+           says what would actually make it work instead of handing back a
+           cause the person has no way to see. */
+        out: item.errors >= 5
+           ? _autoGiveUpAdvice(item, why, Number(item.attempts) || item.errors)
+           : ('This run did not complete: ' + why
+              + '\n\nAMV tried ' + (Number(e && e.attempts) || 1) + ' time'
+              + ((Number(e && e.attempts) || 1) === 1 ? '' : 's') + ' this run and will try again on the next one. '
+              + 'After five failed runs it switches itself off rather than keep spending.')
+      }).slice(-AUTO_MAX_RESULTS);
+    }
+    item.next = _autoNextAfter(item, now, runFailed ? 'failed' : 'ran');
+    /* A finished step releases what waits on it, with what it produced - or,
+       having failed for good, cancels it. Written before the loop reaches
+       those steps, so a released one runs in this same tick when there is
+       time. A run that ended with nothing to show is not a result. */
+    if(item.done){
+      const made = !runFailed && String(stepOut || '').trim();
+      _autoSettleSteps(rec, item, !!made, stepOut, now, runFailed ? 'its runs failed' : 'it produced nothing');
+    }
+    changed = true;
+  }
+
+  /* THE ONE EMAIL. Before the write-back, so `lastError` - which is a carried
+     key - reaches the record with what actually happened rather than with
+     what was hoped for.
+
+     A refused send comes back FALSE, not as a throw. Dropping that leaves
+     somebody waiting on an email that is never coming, beside a job showing
+     green, so every job in the batch is told. The results themselves are
+     safe either way: they are in the app, and this only ever describes which
+     half arrived. */
+  if(mails.length){
+    let wentOut = false;
+    try{ wentOut = await _autoEmailBatch(env, email, mails); }catch(e){ wentOut = false; }
+    if(!wentOut){
+      const why = mails.length > 1
+        ? 'The results are here in AMV. The one email carrying them could not be delivered.'
+        : 'The result is here in AMV. The email could not be delivered.';
+      for(const m of mails) m.item.lastError = why;
+    }
+    changed = true;
+  }
+
+  /* AMV-205: the tick holds this record for the whole of a run, which can be
+     seconds, and used to write its whole stale copy back at the end. Anything
+     the person did meanwhile - pausing, adding a job, editing one, clearing
+     results - was silently undone, and the one that matters is pause: the job
+     they stopped carried on running and spending.
+
+     Only what the RUN produced is carried across, applied to the record as it
+     is inside the lock. Everything else on it belongs to the person, and is
+     left exactly as they left it. */
+  if(changed) {
+    const ran = new Map((rec.items||[]).map(i => [i.id, i]));
+    const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
+    await _withAuto(env, email, (fresh) => {
+      for(const item of (fresh.items||[])){
+        const after = ran.get(item.id);
+        if(!after) continue;
+        for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
+        if(_hookIsOn(item)) _hookAfterRun(item, now);
+        /* A job the RUN switched off after five failures stays off. A job the
+           PERSON switched off stays off too - so this only ever turns one
+           off, never back on. */
+        if(after.active === false) item.active = false;
+      }
+      const known = new Set((fresh.results||[]).map(r => r && r.id).filter(Boolean));
+      const fresher = produced.filter(r => r && r.id && !known.has(r.id));
+      if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
+    }, { items:[], results:[] });
+  }
+
+  /* ONLY NOW. The results are in the record the person reads them from, so
+     the mail they were built out of has genuinely been reported and the next
+     run should start after it.
+
+     Deliberately AFTER the write-back rather than inside it: these take a
+     lock on a different record, and taking a second lock while holding the
+     automation record is how a tick that already runs on a deadline acquires
+     a way to deadlock. It is also the only ordering that is honest - a
+     cursor that moved before the results were saved is a claim that has not
+     been earned yet.
+
+     Every failure mode here is a repeat, never a loss: if this does not run,
+     or runs and fails, the next run sees the same mail and reports it again. */
+  for(const fn of ingestCommits){
+    try{ await fn(); }
+    catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
+  }
+  return { scanned, ran, failed };
 }
 

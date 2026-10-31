@@ -258,7 +258,7 @@ section('The check happens before the money, not after');
   /* Order asserted against the source, because the behaviour above would look
      identical if the run spent first and refused afterwards - and the whole
      value of this is that a run which cannot finish costs nothing. */
-  const tick = codeOnly(functionBody(src, 'runDueAutomations'));
+  const tick = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   const needsAt = tick.indexOf('_autoNeedsFor');
   const execAt = tick.indexOf('_autoExecute');
   ok(needsAt > 0 && execAt > needsAt,
@@ -314,7 +314,7 @@ section('Everything a run changes about a job actually survives being written ba
 
      Computed, not listed. A seventh field added next year is covered without
      anybody remembering this file exists. */
-  const tick = codeOnly(functionBody(src, 'runDueAutomations'));
+  const tick = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   const assigned = new Set([...tick.matchAll(/\bitem\.(\w+)\s*=(?!=)/g)].map((m) => m[1]));
   ok(assigned.size >= 6, 'the fields a run changes were found', [...assigned].sort());
 

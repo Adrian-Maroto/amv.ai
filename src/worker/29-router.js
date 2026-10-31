@@ -1,4 +1,8 @@
 export default {
+  /* Cloudflare Queues: the background-work queue and its dead-letter queue
+     (15a-job-queue.js). Called only when wrangler.toml names this Worker as
+     their consumer; until then nothing sends to it. */
+  async queue(batch, env, ctx) { return queueHandler(batch, env, ctx); },
   /* Cloudflare Cron trigger. THIS is what makes automations real: it runs on
      Cloudflare's schedule whether or not anyone has the app open.
      Configure in wrangler.toml:

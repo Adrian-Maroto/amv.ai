@@ -182,7 +182,7 @@ section('_budgetFor passes the family through on the request path too');
 
 section('When it stops, the person is told which limit stopped them');
 {
-  const cron = codeOnly(functionBody(src, 'runDueAutomations'));
+  const cron = codeOnly((functionBody(src, 'runDueAutomations') + '\n' + functionBody(src, '_autoRunAccount')));
   ok(/_familyOf\(env, email, ent\)/.test(cron),
      'the cron resolves the family, since it runs outside requireUser', true);
   ok(/_autoBudget\(\{ plan: sub\.plan, custom: sub\.customCfg \}, fam\)/.test(cron),

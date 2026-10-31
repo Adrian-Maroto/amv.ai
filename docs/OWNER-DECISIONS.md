@@ -539,3 +539,11 @@ the repository.
    `[[r2_buckets]]` lines in wrangler.toml. The file library then follows the
    person to every device, and agents and the cloud workspace can keep work
    between runs (about 1.5 US cents per GB a month).
+7. **Background work through a queue (Cloudflare Queues)**: run
+   `npx wrangler queues create amv-jobs` and
+   `npx wrangler queues create amv-jobs-dead` once, then uncomment the queues
+   block in wrangler.toml. Each account with work due then runs on its own,
+   in parallel, retried, with a dead-letter queue for what keeps failing -
+   instead of every account in turn inside one 25-second tick, which starts
+   running late past a few thousand busy accounts. Needs Workers Paid (item
+   1); about 40 US cents per million operations. Until then nothing changes.

@@ -320,7 +320,7 @@ section('The tick does not write the person’s record wholesale');
      it is now, and the tick never puts its own stale copy back. A plain
      DB.put of the whole record inside that function is the defect, exactly as
      it was. */
-  const m = src.match(/async function runDueAutomations\s*\(/);
+  const m = src.match(/async function _autoRunAccount\s*\(/);
   ok(!!m, 'the tick was found', !!m);
   const nexts = [src.indexOf('\nasync function ', m.index + 10), src.indexOf('\nfunction ', m.index + 10)].filter(i => i > 0);
   const body = src.slice(m.index, Math.min(...nexts));
