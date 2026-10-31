@@ -52,6 +52,16 @@ else works. Nothing is quietly replaced by something else. Switching off
   is shed first.
 - **Switches unreadable**: the last answer each server had stays in force and
   an alert says so (`switches_unread`).
+- **Data lost or damaged** (a bad migration, a namespace emptied, records
+  overwritten): restore from a nightly backup, once `AMV_BACKUPS` is bound.
+  List the nights with `GET /admin/backup/nights` (owner token). Restore one
+  with `POST /admin/backup/import {"fromNight":"YYYY-MM-DD","mode":"missing"}`
+  - `missing` puts back only what is gone and never overwrites newer data;
+  `merge` writes the whole night over what is there. A large night answers
+  `202` with `nextPart`: call again with `"fromPart": <nextPart>` until it
+  answers `200`. A restore never undoes a revocation, a block or a sign-out
+  that happened after the night was taken, and says how many it held forward.
+  When D1 is the store, use D1 Time Travel instead (thirty days, to the minute).
 
 ## 4. The model provider is failing
 

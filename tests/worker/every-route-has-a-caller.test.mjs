@@ -48,6 +48,7 @@ const EXEMPT = {
   '/admin/abuse/clear':  'operator abuse review, admin token',
   '/admin/backup/export':'operator backup, admin token',
   '/admin/backup/import':'operator restore, admin token',
+  '/admin/backup/nights':'operator: the nightly backups there are to restore from, admin token (INCIDENT-RUNBOOK section 3)',
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
   '/v1/health/ready':    'asked by the deploy workflow, preflight --live and uptime monitors, not the app',
   '/team/members':       'superseded by /team/get, which already returns the roster',

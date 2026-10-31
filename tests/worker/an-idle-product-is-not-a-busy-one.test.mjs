@@ -226,7 +226,9 @@ section('A restore brings work back, and the marker does not outlive it');
      whatever keys the snapshot holds, straight to KV. A restore is run during
      an incident, so an hour of unscanned automations is at the worst moment. */
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '');
-  const imp = code.slice(code.indexOf('async function backupImport'));
+  /* The restore's writes live in _restoreEntries, which backupImport and the
+     nightly-backup restore both call. */
+  const imp = code.slice(code.indexOf('async function _restoreEntries'));
   const body = imp.slice(0, imp.indexOf('\n}\n'));
   ok(/_forgetKindEmpty/.test(body),
      'backupImport drops the marker for the kinds it writes');

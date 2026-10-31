@@ -114,6 +114,16 @@ export default {
         console.error('[cron] renewal sweep failed', e && e.message);
         try{ await _workerError(env, 'cron.renewals', e); }catch(_){}
       }
+      /* The nightly backup's slice (27a-nightly-backup.js). Runs even while
+         paused, like the renewal sweep: a halted deployment is exactly when a
+         current backup matters most, and it spends nothing. Its own try. */
+      try{
+        const b = await runNightlyBackup(env);
+        if(b && (b.done || b.failed || b.parts)) console.log('[cron] nightly backup', JSON.stringify(b));
+      }catch(e){
+        console.error('[cron] nightly backup failed', e && e.message);
+        try{ await _workerError(env, 'cron.backup', e); }catch(_){}
+      }
       /* Batches with work left get their slice of this tick. Its own try,
          like everything here: a batch fault must not take out the sweeps.
          Skipped while paused, like automations: every item is a call to the
@@ -698,7 +708,7 @@ async function _route(request, env, ctx) {
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
-    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
+    '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
@@ -859,6 +869,7 @@ async function _route(request, env, ctx) {
     case '/admin/digest':        return adminDigest(request, env);
     case '/admin/backup/export': return backupExport(request, env);
     case '/admin/backup/import': return backupImport(request, env);
+    case '/admin/backup/nights': return backupNights(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);

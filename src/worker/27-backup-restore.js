@@ -542,6 +542,69 @@ async function backupExport(request, env){
   });
 }
 
+/* THE RESTORE OF ONE BATCH OF RECORDS, shared by a restore from an uploaded
+   snapshot (backupImport) and a restore from a nightly backup
+   (27a-nightly-backup.js), so the two cannot apply different rules: only the
+   backup prefixes, nothing over the size a backup may hold, and never undoing
+   a revocation. Adds to the counters in `t`. */
+async function _restoreEntries(env, entries, mode, t){
+  const allowed = (key) => BACKUP_PREFIXES.some(p => key.startsWith(p));
+  let { restored, skipped, refused, unrestorable, heldForward } = t;
+  const lost = t.lost;
+  for(const [key, val] of entries){
+    if(!allowed(key)){ refused++; continue; }
+    if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
+      unrestorable++; if(lost.length < 20) lost.push(key); continue;
+    }
+    if(mode === 'missing'){
+      const existing = await env.AMV_KV.get(key);
+      if(existing != null){ skipped++; continue; }
+    }
+    /* AMV-016: A RESTORE MAY NOT UNDO A REVOCATION.
+
+       Everything here was a straight overwrite, which is right for data and
+       wrong for anything that says somebody's access was TAKEN AWAY. A restore
+       is normally run after an incident - which is precisely when the state
+       being written over is the state created by responding to it.
+
+       The sharp one is the token epoch. verifyToken compares a token's epoch
+       against the stored number, and every "sign out everywhere" and every
+       password reset increments it. Writing an older number back makes every
+       token issued before that point valid again - so restoring a snapshot
+       taken the day before a compromise hands the intruder their session back,
+       silently, as part of the recovery.
+
+       The same shape covers a revoked API key, an account blocked for charging
+       back, and a suspended seller: all three are recorded ON the record a
+       restore overwrites.
+
+       Revocation only moves one way. */
+      const merged = await _restoreMerge(env, key, val);
+      if (merged.held) heldForward++;
+      await env.AMV_KV.put(key, merged.value);
+      /* The epoch's authority is the account's revocation object now, so a
+         higher one from the snapshot is carried there too (it only ever
+         rises). Failing is said: the restore otherwise holds. */
+      if (key.startsWith('tokepoch:') && env.AMV_COUNTER) {
+        try { await counter(env, _authName(key.slice(9)), { op: 'authSeed', floor: parseInt(merged.value, 10) || 0, strict: true }); }
+        catch (e) { audit(env, 'restore_epoch_not_raised', { error: String((e && e.message) || e).slice(0, 120) }); }
+      }
+      /* THE ONE WRITER THAT DOES NOT GO THROUGH DB.put.
+
+         Every other write to a scanned namespace passes through DB.put or
+         DB.del, which drop the empty-namespace marker for us. This loop writes
+         whatever keys the snapshot contains, straight to KV - so a restore that
+         brings automations back while the marker still said the namespace was
+         empty would leave them unscanned until the marker aged out. An hour of
+         lateness rather than lost work, but a restore is run during an
+         incident, which is the worst hour to add one to. */
+      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
+    restored++;
+  }
+  Object.assign(t, { restored, skipped, refused, unrestorable, heldForward });
+  return t;
+}
+
 /* POST /admin/backup/import → restore keys from a snapshot.
    Body: { token, snapshot, mode }
      mode 'merge'    (default) - write snapshot keys, leave others untouched.
@@ -627,13 +690,15 @@ async function backupImport(request, env){
   const body = await request.json().catch(()=>({}));
   const snap = body.snapshot;
   const mode = body.mode === 'missing' ? 'missing' : 'merge';
+  /* From a nightly backup in the bucket rather than an uploaded file
+     (27a-nightly-backup.js): { fromNight: 'YYYY-MM-DD', fromPart? }. */
+  if (body.fromNight) return _restoreFromNight(env, body.fromNight, body.fromPart, mode);
 
   if(!snap || snap._amv_backup !== 1 || !snap.data || typeof snap.data !== 'object')
     return json({ error:'not a valid AMV backup snapshot' }, 400);
 
-  // Safety: only allow keys under known backup prefixes, so a tampered snapshot
-  // can't write arbitrary control keys (e.g. GLOBAL_KILL).
-  const allowed = (key) => BACKUP_PREFIXES.some(p => key.startsWith(p));
+  // Safety: only keys under known backup prefixes are written (_restoreEntries),
+  // so a tampered snapshot can't write arbitrary control keys (e.g. GLOBAL_KILL).
 
   // AMV-036: bound the import so a crafted/accidental snapshot can't exhaust
   // resources - cap the key count and reject oversized values.
@@ -648,58 +713,8 @@ async function backupImport(request, env){
      legitimate AMV export and is DATA BEING LOST during a recovery. One
      counter held both, so the second hid behind the first and the response
      said ok:true either way. */
-  let restored = 0, skipped = 0, refused = 0, unrestorable = 0, heldForward = 0;
-  const lost = [];
-  for(const [key, val] of entries){
-    if(!allowed(key)){ refused++; continue; }
-    if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
-      unrestorable++; if(lost.length < 20) lost.push(key); continue;
-    }
-    if(mode === 'missing'){
-      const existing = await env.AMV_KV.get(key);
-      if(existing != null){ skipped++; continue; }
-    }
-    /* AMV-016: A RESTORE MAY NOT UNDO A REVOCATION.
-
-       Everything here was a straight overwrite, which is right for data and
-       wrong for anything that says somebody's access was TAKEN AWAY. A restore
-       is normally run after an incident - which is precisely when the state
-       being written over is the state created by responding to it.
-
-       The sharp one is the token epoch. verifyToken compares a token's epoch
-       against the stored number, and every "sign out everywhere" and every
-       password reset increments it. Writing an older number back makes every
-       token issued before that point valid again - so restoring a snapshot
-       taken the day before a compromise hands the intruder their session back,
-       silently, as part of the recovery.
-
-       The same shape covers a revoked API key, an account blocked for charging
-       back, and a suspended seller: all three are recorded ON the record a
-       restore overwrites.
-
-       Revocation only moves one way. */
-      const merged = await _restoreMerge(env, key, val);
-      if (merged.held) heldForward++;
-      await env.AMV_KV.put(key, merged.value);
-      /* The epoch's authority is the account's revocation object now, so a
-         higher one from the snapshot is carried there too (it only ever
-         rises). Failing is said: the restore otherwise holds. */
-      if (key.startsWith('tokepoch:') && env.AMV_COUNTER) {
-        try { await counter(env, _authName(key.slice(9)), { op: 'authSeed', floor: parseInt(merged.value, 10) || 0, strict: true }); }
-        catch (e) { audit(env, 'restore_epoch_not_raised', { error: String((e && e.message) || e).slice(0, 120) }); }
-      }
-      /* THE ONE WRITER THAT DOES NOT GO THROUGH DB.put.
-
-         Every other write to a scanned namespace passes through DB.put or
-         DB.del, which drop the empty-namespace marker for us. This loop writes
-         whatever keys the snapshot contains, straight to KV - so a restore that
-         brings automations back while the marker still said the namespace was
-         empty would leave them unscanned until the marker aged out. An hour of
-         lateness rather than lost work, but a restore is run during an
-         incident, which is the worst hour to add one to. */
-      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
-    restored++;
-  }
+  const t = await _restoreEntries(env, entries, mode, { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] });
+  const { restored, skipped, refused, unrestorable, heldForward, lost } = t;
   audit(env, 'backup_import', { mode, restored, skipped, refused, unrestorable,
     lost: lost.join(',') || undefined, heldForward, from: snap.createdISO });
   if (unrestorable) {

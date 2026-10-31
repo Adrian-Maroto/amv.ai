@@ -213,7 +213,7 @@ section('The rule is monotonic, checked directly');
 
 section('The merge is on the write path, not beside it');
 {
-  const fn = codeOnly(functionBody(src, 'backupImport'));
+  const fn = codeOnly(functionBody(src, '_restoreEntries'));  // backupImport's writes, shared with the nightly restore
   ok(/_restoreMerge\(env, key, val\)/.test(fn), 'every restored key goes through the merge', true);
   const iMerge = fn.indexOf('_restoreMerge(');
   const iPut = fn.indexOf('AMV_KV.put(key', iMerge);

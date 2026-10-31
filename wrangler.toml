@@ -148,6 +148,18 @@ new_sqlite_classes = ["AMVCounter"]
 # binding = "AMV_FILES"
 # bucket_name = "amv-files"
 
+# ── Nightly backups (object storage) ──
+# Every night the accounts, plans, chats, projects and jobs are copied into a
+# bucket of their own, a slice per five-minute tick, thirty nights kept
+# (src/worker/27a-nightly-backup.js). A restore is one admin request:
+# POST /admin/backup/import { fromNight: "YYYY-MM-DD" }. Create once:
+#   npx wrangler r2 bucket create amv-backups
+# then uncomment:
+#
+# [[r2_buckets]]
+# binding = "AMV_BACKUPS"
+# bucket_name = "amv-backups"
+
 # ── Background work through a queue (Cloudflare Queues) ──
 # Today the cron tick runs every account with work due one after another, in
 # one 25-second budget; past a few thousand busy accounts, jobs start arriving

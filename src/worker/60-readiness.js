@@ -419,6 +419,11 @@ function _readinessReport(env, seen) {
     { id: 'cloudLibrary', name: 'Files in the account, on every device', on: libConfigured(env),
       turnsOn: 'The files people send in chat kept in their account, so the phone sees what the laptop uploaded. Limits per plan are enforced here: Free 100 files and 200 MB, Pro 2,000 and 5 GB, Elite 10,000 and 20 GB, Ultra 25,000 and 50 GB. Without it files stay on each device, and the library says so.',
       how: 'Create an R2 bucket named amv-files (Cloudflare dashboard > R2), then bind it as AMV_FILES in wrangler.toml', blocking: false },
+    { id: 'nightlyBackup', name: 'Nightly backups', on: _nightlyOn(env) || DB._hasD1(env),
+      turnsOn: DB._hasD1(env)
+        ? 'D1 is the store, so its own Time Travel keeps thirty days of every write; the nightly KV backup stands aside.'
+        : 'Every account, plan, chat, project and job copied every night into a bucket of its own, thirty nights kept, restorable from the owner console. Without it the only backup is one an operator downloads by hand.',
+      how: 'Run `npx wrangler r2 bucket create amv-backups`, then uncomment the AMV_BACKUPS lines in wrangler.toml', blocking: false },
     { id: 'jobQueue', name: 'Background work through a queue', on: _jobQueueOn(env),
       turnsOn: 'Each account with work due runs on its own, in parallel, retried with a growing delay, with a dead-letter queue for what keeps failing. Without it the cron tick runs every account in turn inside 25 seconds - fine for thousands of busy accounts, late beyond that, and the tick says so when it runs out of time.',
       how: 'Run `npx wrangler queues create amv-jobs` and `npx wrangler queues create amv-jobs-dead`, then uncomment the queues block in wrangler.toml (binding AMV_JOBS)', blocking: false },
@@ -481,7 +486,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

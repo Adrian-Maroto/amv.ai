@@ -553,3 +553,10 @@ the repository.
    again. Each person's workspace is then saved before their machine stops
    and restored when it starts (packages and caches left out, 512 MB at most).
    Until then the workspace lasts only as long as the machine is awake.
+9. **Nightly backups (Cloudflare R2)**: run
+   `npx wrangler r2 bucket create amv-backups`, then uncomment the
+   `AMV_BACKUPS` lines in wrangler.toml. Every night the accounts, plans,
+   chats, projects and jobs are then copied into that bucket, thirty nights
+   kept, with an alert when a night does not finish; the runbook (section 3)
+   says how to restore one. Until then the only backup is the file an
+   operator downloads from the console by hand.
