@@ -15,7 +15,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'switches.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _killCache, counter, todayKey, _swCache, runDueAutomations, _switchedOff };\nexport function _swStrongReset() { _swStrong = { at: 0, map: null }; }\n');
+writeFileSync(harness, src + '\nexport { DB, _killCache, counter, todayKey, _swCache, runDueAutomations, _switchedOff };\nexport function _swStrongReset() { _swStrong = { at: 0, map: null }; _swStrongAsked = 0; }\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 

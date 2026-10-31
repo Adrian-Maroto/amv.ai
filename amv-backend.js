@@ -42151,12 +42151,19 @@ async function _switches(env) {
 const SWITCH_STRONG_TTL_MS = 5000;
 const SWITCHBOARD = 'switchboard';
 let _swStrong = { at: 0, map: null };
+/* One object everybody's request would ask - the hot key the load probe
+   exists to catch - so the answer is held for SWITCH_STRONG_TTL_MS whatever it
+   was, a map or "no strong answer": calls stay at one per server every few
+   seconds, never one per request. A throw is not cached (the next request
+   asks again, and a write meanwhile is refused). */
+let _swStrongAsked = 0;
 async function _switchesStrong(env) {
   const now = Date.now();
-  if (_swStrong.map && now - _swStrong.at < SWITCH_STRONG_TTL_MS) return _swStrong.map;
+  if (now - _swStrongAsked < SWITCH_STRONG_TTL_MS) return _swStrong.map;
   const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });   // throws when unreachable
   const map = (r && r.map && typeof r.map === 'object') ? r.map : null;
-  if (map) _swStrong = { at: now, map };
+  _swStrong = { at: now, map };
+  _swStrongAsked = now;
   return map;
 }
 /* The first of `names` that is switched off, with why; null when none is. */
@@ -42224,7 +42231,7 @@ async function adminSwitch(request, env) {
   if (env.AMV_COUNTER) {
     try {
       const r = await counter(env, SWITCHBOARD, { op: 'swSet', name, off, why, strict: true });
-      if (r && r.map) { m = Object.assign({}, m, r.map); if (!off) delete m[name]; _swStrong = { at: Date.now(), map: r.map }; }
+      if (r && r.map) { m = Object.assign({}, m, r.map); if (!off) delete m[name]; _swStrong = { at: Date.now(), map: r.map }; _swStrongAsked = Date.now(); }
       else strong = 'failed';
     } catch (e) { strong = 'failed'; }
   }
