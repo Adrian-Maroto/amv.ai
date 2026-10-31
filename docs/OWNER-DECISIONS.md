@@ -10,6 +10,35 @@ What still needs the owner's own hand is only what the repository cannot do:
 paying for something, or signing up for an account in the owner's name. Those
 are listed at the end, with exactly what to do.
 
+## FIRST: the AI is off on production (read on 2026-10-31)
+
+The live server's own readiness answer, read by the deploy on 2026-10-31,
+says `"model": false` and `"payments": false`. With no `AMV_MODEL_KEY` on the
+Worker, every chat turn and every AI feature is refused, for everybody, with
+"AMV is not connected to a model on this deployment yet" - nothing is charged,
+and nothing works. Every deploy before this one reported green anyway,
+because "ready" meant the stores answered. The deploy run now shows a table
+of what production can do, and an error annotation while the AI is off.
+
+Only the owner can fix this - it is an account and a bill in the owner's name:
+
+1. An API key from the model provider AMV is built on, on a plan with
+   enough headroom for launch traffic.
+2. `npx wrangler secret put AMV_MODEL_KEY` (paste the key), and if the
+   provider's address is not the default, `npx wrangler secret put MODEL_API_URL`.
+3. Before opening to the public: `GLOBAL_DAILY_USD_CAP` (the most AMV may
+   spend on models in a day - decision 28) and `MODEL_API_FALLBACK_URL`
+   (where chat goes when the provider fails - see the incident runbook).
+4. Payments: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, and the price
+   ids, so people can subscribe.
+5. Email shows as configured (`EMAIL_API_KEY` is set). If messages still do
+   not arrive, the sending domain is not verified with the email provider, or
+   `RESET_EMAIL_FROM` is not an address on that domain. The readiness screen
+   has a "send a test" button that says which.
+
+After step 2, the next deploy's summary shows "Chat and every AI feature:
+yes". Nothing else needs changing in the code.
+
 ## Decided
 
 **1. SCIM provisioning, Users only - YES. Built** (`71-scim.js`, `a-company-directory-adds-and-removes-its-people`).

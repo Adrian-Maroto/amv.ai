@@ -113,6 +113,37 @@ jobs:
             case "$body" in
               *'"ready":true'*)
                 echo "Live backend ready: $body"
+                # READY IS NOT THE SAME AS USEFUL. Every deploy reported green
+                # for weeks while `capabilities.model` was false on production
+                # - the stores answered, and every chat turn was refused for
+                # want of AMV_MODEL_KEY. The run now says what production can
+                # actually do, on its summary page, and marks the AI being off
+                # as an error annotation. It does not fail the job: the deploy
+                # did what it was asked, and a run that is red until a key is
+                # bought would hide the deploy that really broke something.
+                cap() { case "$body" in *"\"$1\":true"*) echo yes ;; *) echo no ;; esac; }
+                {
+                  echo "### What production can do after this deploy"
+                  echo ""
+                  echo "| Capability | On | Turned on by |"
+                  echo "|---|---|---|"
+                  echo "| Chat and every AI feature | $(cap model) | AMV_MODEL_KEY |"
+                  echo "| Email (sign-in codes, job results) | $(cap email) | EMAIL_API_KEY + a verified sending domain |"
+                  echo "| Payments | $(cap payments) | STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET |"
+                  echo "| AMV's browser | $(cap browser) | the BROWSER binding |"
+                  echo "| Files in the account | $(cap library) | the AMV_FILES (R2) binding |"
+                  echo "| Searching by meaning | $(cap meaning) | the AI binding |"
+                  echo "| Cloud computer | $(cap cloud_computer) | the AMV_COMPUTER binding |"
+                } >> "$GITHUB_STEP_SUMMARY"
+                if [ "$(cap model)" != yes ]; then
+                  echo "::error title=The AI is OFF on production::Every chat turn is refused because AMV_MODEL_KEY is not set on the Worker. Set it once with: npx wrangler secret put AMV_MODEL_KEY"
+                fi
+                if [ "$(cap payments)" != yes ]; then
+                  echo "::warning title=Payments are OFF on production::Nobody can subscribe. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET."
+                fi
+                if [ "$(cap email)" != yes ]; then
+                  echo "::warning title=Email is OFF on production::Sign-in codes and job results cannot be sent. Set EMAIL_API_KEY and RESET_EMAIL_FROM."
+                fi
                 exit 0
                 ;;
             esac

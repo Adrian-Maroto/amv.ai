@@ -227,6 +227,9 @@ if (backend && toml) {
     'RESET_EMAIL_FROM', 'GLOBAL_DAILY_USD_CAP', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
     'APP_URL', 'AUDIT_WEBHOOK',
     // optional integrations - supported but not required to launch
+    /* DATA_STORE=d1 is the explicit switch that lets the Worker use a bound
+       D1 database (docs/DATA-TIER.md); unset, KV holds everything. */
+    'DATA_STORE',
     'ALLOWED_ORIGIN', 'APP_ORIGIN', 'OWNER_EMAIL', 'GOOGLE_CLIENT_ID',
     'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
