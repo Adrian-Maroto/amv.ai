@@ -203,7 +203,10 @@ function _passwordTooLong(password){
 /* 8, the owner's decision (Oct 26): the same as with a second factor. The
    most-guessed passwords are still refused whatever their length
    (_isCommonPassword), which is what a minimum is really standing in for. */
-const PASSWORD_MIN_ALONE = 8;
+/* 15 again (owner decision #43, Oct 31, on the production audit): sign-up is
+   passkey-first, and a password that is the only thing guarding an account
+   has to be long - NIST's 15. 8 once a passkey or authenticator is on it. */
+const PASSWORD_MIN_ALONE = 15;
 /* The one place the minimum is decided, so every screen that states it - the
    reset page, the in-app reset, sign-up - says what the server will check
    (audit Oct 26 #36: the reset page said 8 to accounts that needed 15). */
@@ -420,6 +423,13 @@ async function authSignup(request, env){
     }
     return json({ error:'account exists' }, 409);
   }
+  return _accountCreated(env, request, em, safeName, body);
+}
+
+/* WHAT HAPPENS ONCE AN ACCOUNT EXISTS - by password or by passkey, the same.
+   The sign-up counts, the funnel, the activity line, the invite, and the
+   first session: one place, so the passkey door cannot quietly skip one. */
+async function _accountCreated(env, request, em, safeName, body){
   /* THE DENOMINATOR. Conversion was computed against the number of ENTITLEMENT
      rows, and a free signup never creates one - so the denominator was, near
      enough, "people who have already paid" and the dashboard reported ~100%
@@ -440,7 +450,7 @@ async function authSignup(request, env){
   try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){}
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
-  try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
+  try{ await _referralCapture(env, request, em, (body || {}).ref); }catch(e){}
   /* NO EMAIL ON SIGN-UP (the owner's decision, Oct 26): creating an account
      signs the person straight in. The emailed code is for signing in on a
      new device, which is where it protects somebody. The one email kept here

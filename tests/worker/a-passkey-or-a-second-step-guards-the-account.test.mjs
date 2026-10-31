@@ -56,10 +56,10 @@ const call = async (path, body, tok, headers) => {
 const PW = 'correct horse battery staple';
 const ME = 'rosa@example.com';
 
-section('A new password needs 8 characters (the owner\u2019s rule, Oct 26)');
+section('A password with nothing else guarding the account needs 15 characters (owner decision #43, Oct 31)');
 {
-  const short = await call('/auth/signup', { email: 'short@example.com', name: 'S', password: 'Tr0ub4!' });
-  ok(short.status === 400 && short.d.code === 'password_too_short' && short.d.min === 8, '7 characters is refused, and the answer says 8', [short.status, short.d.code, short.d.min]);
+  const short = await call('/auth/signup', { email: 'short@example.com', name: 'S', password: 'Tr0ub4dor&3xyz' });
+  ok(short.status === 400 && short.d.code === 'password_too_short' && short.d.min === 15, '14 characters is refused, and the answer says 15', [short.status, short.d.code, short.d.min]);
   const long = await call('/auth/signup', { email: ME, name: 'Rosa', password: PW });
   ok(long.status === 200 && !!long.d.token, 'a 28-character phrase is accepted', long.status);
 }
@@ -256,17 +256,46 @@ section('The last way into an account is never removed');
   ok(after.status === 401 && !after.d.token, 'and it signs nobody in', after.status);
 }
 
-section('Every account needs 8, with a second factor or without');
+section('15 with only a password; 8 once a passkey or authenticator guards the account');
 {
   env.ADMIN_TOKEN = 'admin-secret-for-this-suite-only-0123456789';
   const adm = { 'X-Admin-Token': env.ADMIN_TOKEN, Authorization: 'Bearer ' + env.ADMIN_TOKEN };
   await call('/auth/signup', { email: 'plain@example.com', name: 'Plain', password: 'a long enough passphrase' });
-  const alone = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'Nine ch4rs!' }, null, adm);
-  const seven = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'Sev3n!x' }, null, adm);
-  ok(seven.status === 400 && seven.d.min === 8, 'an account with only a password needs 8', [seven.status, seven.d.code]);
-  ok(alone.status === 200, 'and 9 is enough for it', [alone.status, alone.d.error]);
+  const nine = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'Nine ch4rs!' }, null, adm);
+  ok(nine.status === 400 && nine.d.min === 15, 'an account with only a password needs 15', [nine.status, nine.d.code, nine.d.min]);
+  const alone = await call('/auth/admin-reset', { email: 'plain@example.com', password: 'fifteen chars ok' }, null, adm);
+  ok(alone.status === 200, 'and 15 is enough for it', [alone.status, alone.d.error]);
   const guarded = await call('/auth/admin-reset', { email: ME, password: 'Nine ch4rs!' }, null, adm);
   ok(guarded.status === 200, 'one with an authenticator app may have 8 or more', [guarded.status, guarded.d.error]);
+}
+
+section('Sign up with a passkey: the account and its passkey are made together, or not at all');
+{
+  const NEW = 'kim@example.com';
+  const pk = await makeAuthenticator();
+  const o = await call('/auth/passkey/options', { purpose: 'signup', email: NEW, name: 'Kim' });
+  ok(o.status === 200 && o.d.publicKey.rp.id === RP && o.d.publicKey.user.name === NEW && o.d.publicKey.authenticatorSelection.userVerification === 'required',
+     'sign-up options for this site, this address, fingerprint or PIN required', o.d.publicKey && o.d.publicKey.user);
+  ok(!(await W.DB.get(env, 'acct', NEW)), 'and no account exists yet - a closed prompt would leave nothing behind');
+  const badOrigin = await call('/auth/passkey/register', { signup: true, email: NEW, cid: o.d.cid, credential: await pk.create({ challenge: o.d.publicKey.challenge, origin: 'https://amv-signup.example', rpId: RP }) });
+  ok(badOrigin.status === 400 && !(await W.DB.get(env, 'acct', NEW)), 'a passkey made on another origin makes no account', badOrigin.status);
+  const o2 = await call('/auth/passkey/options', { purpose: 'signup', email: NEW, name: 'Kim' });
+  const other = await call('/auth/passkey/register', { signup: true, email: 'someone-else@example.com', cid: o2.d.cid, credential: await pk.create({ challenge: o2.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  ok(other.status === 400 && !(await W.DB.get(env, 'acct', 'someone-else@example.com')), 'a challenge minted for one address makes no account for another', other.status);
+  const o3 = await call('/auth/passkey/options', { purpose: 'signup', email: NEW, name: 'Kim' });
+  const made = await call('/auth/passkey/register', { signup: true, email: NEW, cid: o3.d.cid, credential: await pk.create({ challenge: o3.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  const acct = await W.DB.get(env, 'acct', NEW);
+  ok(made.status === 200 && !!made.d.token, 'a real one: signed straight in', [made.status, made.d.error]);
+  ok(acct && acct.passkeys.length === 1 && !acct.pwHash && acct.name === 'Kim', 'an account with its passkey and no password', acct && { pk: acct.passkeys.length, pw: !!acct.pwHash });
+  const os = await call('/auth/passkey/options', { purpose: 'signin' });
+  const back = await call('/auth/passkey/signin', { cid: os.d.cid, credential: await pk.get({ challenge: os.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  ok(back.status === 200 && !!back.d.token, 'and the passkey signs it back in later', back.status);
+  const pwTry = await call('/auth/login', { email: NEW, password: 'any password at all here' });
+  ok(pwTry.status === 401, 'a password signs nobody into an account that has none', pwTry.status);
+  const taken = await call('/auth/passkey/options', { purpose: 'signup', email: NEW, name: 'Kim again' });
+  ok(taken.status === 409 && taken.d.code === 'account_exists', 'a second passkey sign-up for the same address is refused, and says to sign in', [taken.status, taken.d.code]);
+  const bot = await call('/auth/passkey/options', { purpose: 'signup', email: 'bot@example.com', name: 'B', company: 'x' });
+  ok(bot.status === 400, 'the hidden field bots fill stops it here too', bot.status);
 }
 
 section('Google is not a way round the second step');

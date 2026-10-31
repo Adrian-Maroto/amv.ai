@@ -1227,6 +1227,26 @@ const AMV_API = {
     return { cid: o.cid, credential: { id:c.id, type:c.type, response:{ clientDataJSON:e(res.clientDataJSON), authenticatorData:e(res.authenticatorData),
       signature:e(res.signature), userHandle: res.userHandle ? e(res.userHandle) : '' } } };
   },
+  /* SIGN UP WITH A PASSKEY (owner decision #43). The server mints a challenge
+     for this address, the device makes the passkey, and the server creates
+     the account and the passkey together - so a closed prompt leaves nothing
+     behind. `bot` carries the verification token and the hidden field. */
+  async passkeySignup(email, name, bot){
+    if(!this.live) return null;
+    const b = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const x = atob(t + '='.repeat((4 - t.length % 4) % 4)); const u = new Uint8Array(x.length); for(let i = 0; i < x.length; i++) u[i] = x.charCodeAt(i); return u.buffer; };
+    const e = (buf) => { let s = ''; for(const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify(Object.assign({ purpose:'signup', email, name }, bot || {}))})).json().catch(()=>({}));
+    if(!o.cid){ const er=new Error(_refusalText(o, 'Passkeys are not available right now.')); er.code=o.code; throw er; }
+    const p = o.publicKey;
+    const c = await navigator.credentials.create({ publicKey: Object.assign({}, p, { challenge: b(p.challenge),
+      user: Object.assign({}, p.user, { id: b(p.user.id) }), excludeCredentials: [] }) });
+    const res = c.response;
+    const credential = { id:c.id, type:c.type, response:{ clientDataJSON:e(res.clientDataJSON), attestationObject:e(res.attestationObject) } };
+    const r = await this._fetch('/auth/passkey/register', {method:'POST', body:JSON.stringify({ signup:true, email, cid:o.cid, credential, ref:(bot && bot.ref) || undefined })});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ this._setTokens(d); return d; }
+    { const er=new Error(_refusalText(d, 'That passkey did not create an account.')); if(d.code) er.code=d.code; throw er; }
+  },
   async passkeySignin(){
     if(!this.live) return null;
     const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify(await this.passkeyGet('signin'))});

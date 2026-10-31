@@ -88,12 +88,18 @@ const openSecurity = async (page) => {
 const A = await device();
 await boot(A.page);
 
-section('Sign up: the form says how long the password must be');
+section('Sign up: a passkey first; a password one tap away, and it says how long');
 {
   await A.page.evaluate(() => openAuth('signup'));
   await until(A.page, () => !!document.getElementById('a-pass'));
+  const first = await A.page.evaluate(() => ({ pk: !!document.getElementById('pk-signup') && document.getElementById('pk-signup').classList.contains('bp'),
+    pwHidden: document.getElementById('a-pw-wrap').hidden, submitHidden: document.getElementById('auth-submit').hidden }));
+  ok(first.pk && first.pwHidden && first.submitHidden, 'the main button makes a passkey; the password field waits (owner decision #43)', first);
+  await click(A.page, '#a-use-pw');
+  const shown = await A.page.evaluate(() => !document.getElementById('a-pw-wrap').hidden && !document.getElementById('auth-submit').hidden);
+  ok(shown, '"Use a password instead" brings the password field and its button', shown);
   const ph = await A.page.$eval('#a-pass', e => e.placeholder);
-  ok(/\b8\b/.test(ph), 'the form says how long', ph);
+  ok(/\b15\b/.test(ph), 'the form says how long: 15 with nothing else guarding the account', ph);
   await fill(A.page, '#a-name', 'Nadia'); await fill(A.page, '#a-email', EMAIL); await fill(A.page, '#a-pass', PW);
   await click(A.page, '#auth-submit');
   ok(await signedIn(A.page), 'a 20-character phrase makes the account', true);
@@ -159,6 +165,26 @@ const B = await device();
   await new Promise(r => setTimeout(r, 300));
   await fill(B.page, '#mf-code', totp(secret, 1));
   ok(await signedIn(B.page), 'the code from the app signs in', true);
+}
+
+section('Sign up with a passkey alone: no password, signed straight in, and back in with it');
+{
+  const C = await device({ width: 390, height: 844 });
+  await boot(C.page);
+  await C.page.evaluate(() => openAuth('signup'));
+  await until(C.page, () => !!document.getElementById('pk-signup'));
+  await fill(C.page, '#a-name', 'Tomas'); await fill(C.page, '#a-email', 'tomas@example.com');
+  await click(C.page, '#pk-signup');
+  ok(await signedIn(C.page), 'one tap and the device\u2019s fingerprint make the account and sign in', true);
+  const creds = (await C.cdp.send('WebAuthn.getCredentials', { authenticatorId: C.authenticatorId })).credentials;
+  ok(creds.length === 1 && creds[0].isResidentCredential, 'the phone really holds the passkey', creds.length);
+  await C.page.evaluate(() => signOut());
+  await until(C.page, () => !(S.user && S.user.email));
+  await C.page.evaluate(() => openAuth('login'));
+  await until(C.page, () => !!document.getElementById('pk-btn'));
+  await click(C.page, '#pk-btn');
+  ok(await signedIn(C.page), 'and the passkey signs back in - no password ever existed', true);
+  await C.context.close();
 }
 
 section('At phone width, the Security section fits');

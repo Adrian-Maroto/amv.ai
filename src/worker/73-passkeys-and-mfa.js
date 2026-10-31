@@ -332,10 +332,10 @@ function _pkSite(env){
 }
 const _pkOff = () => json({ error: 'Passkeys are not available on this deployment: it does not know its own address (APP_URL).', code: 'passkeys_unavailable' }, 503);
 
-async function _pkChallenge(env, purpose, email){
+async function _pkChallenge(env, purpose, email, extra){
   const id = _b64u.enc(crypto.getRandomValues(new Uint8Array(18)));
   const c = _b64u.enc(crypto.getRandomValues(new Uint8Array(32)));
-  await env.AMV_KV.put('pkchal:' + id, JSON.stringify({ c, purpose, email: email || '' }), { expirationTtl: PK_CHALLENGE_S });
+  await env.AMV_KV.put('pkchal:' + id, JSON.stringify(Object.assign({}, extra || {}, { c, purpose, email: email || '' })), { expirationTtl: PK_CHALLENGE_S });
   return { id, c };
 }
 /* The challenge, spent: null when it is unknown, expired, for something else,
@@ -436,7 +436,34 @@ async function passkeyOptions(request, env){
     return json({ ok: true, cid: ch.id, publicKey: { challenge: ch.c, rpId: site.rpId, userVerification: 'required', timeout: PK_CHALLENGE_S * 1000,
       allowCredentials: ((acct && acct.passkeys) || []).map(k => ({ type: 'public-key', id: k.id })) } });
   }
-  if(body.purpose !== 'register') return json({ error: 'purpose must be register, signin or stepup' }, 400);
+  /* SIGN UP WITH A PASSKEY (owner decision #43): the account is made only
+     when the passkey verifies, in the same step, so a closed prompt leaves
+     no account behind with no way into it. Every door sign-up has stands
+     here too: the hidden field, the per-network ceiling, the verification,
+     the address check, company sign-in. */
+  if(body.purpose === 'signup'){
+    if(body.company || body.website){ audit(env, 'bot_blocked', { where: 'passkey_signup_honeypot' }); return json({ error: 'signup failed' }, 400); }
+    const sIp = (await _ipHash(env, request)) || _rlIp(request);
+    const sBlock = await guardAction(env, `signup:${sIp}`, 5, 40, 'sign-ups'); if(sBlock) return sBlock;
+    if(!(await _verifyCaptcha(env, body.captchaToken, request))) return json({ error: 'Please complete the verification and try again.', code: 'captcha_required' }, 400);
+    const em = String(body.email || '').toLowerCase().trim();
+    if(!em || em.length > 254 || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(em)) return json({ error: 'valid email required' }, 400);
+    { const sso = await _ssoRequiredFor(env, em); if(sso) return _ssoRequiredJson(sso); }
+    let have = null;
+    try{ have = await DB.getStrict(env, 'acct', em); }
+    catch(e){ return json({ error: 'AMV could not check that address just now. Please try again in a few minutes.', code: 'account_unreadable' }, 503); }
+    if(have && have.email) return json({ error: 'There is already an account with this email. Sign in instead.', code: 'account_exists' }, 409);
+    const name = String(body.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 80);
+    const ch = await _pkChallenge(env, 'signup', em, { name });
+    const handle = _b64u.enc((await _pkSha256('amv-user:' + em)).slice(0, 16));
+    return json({ ok: true, cid: ch.id, publicKey: {
+      challenge: ch.c, rp: { id: site.rpId, name: 'AMV' },
+      user: { id: handle, name: em, displayName: name || em },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
+      attestation: 'none', timeout: PK_CHALLENGE_S * 1000, excludeCredentials: [] } });
+  }
+  if(body.purpose !== 'register') return json({ error: 'purpose must be register, signin, signup or stepup' }, 400);
   const user = await requireUser(request, env);
   if(!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
   const refused = await _stepUp(env, request, user, body.proof); if(refused) return refused;
@@ -457,6 +484,7 @@ async function passkeyOptions(request, env){
 /* POST /auth/passkey/register { cid, credential, name } */
 async function passkeyRegister(request, env){
   const site = _pkSite(env); if(!site) return _pkOff();
+  { const peek = await request.clone().json().catch(() => ({})); if(peek && peek.signup) return _passkeySignupFinish(request, env, site, peek); }
   const user = await requireUser(request, env);
   if(!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
   const em = String(user.email).toLowerCase();
@@ -487,6 +515,37 @@ async function passkeyRegister(request, env){
   audit(env, 'passkey_added', { email: em });
   await _userEvent(env, request, em, 'passkey_added', { name });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });
+}
+
+/* POST /auth/passkey/register { signup: true, email, cid, credential } -
+   the second half of a passkey sign-up. The challenge was minted for this
+   address and is spent once; the account and its passkey are written in one
+   step, under the account's lock, or not at all. */
+async function _passkeySignupFinish(request, env, site, body){
+  const em = String(body.email || '').toLowerCase().trim();
+  const rec = await _pkSpend(env, body.cid, 'signup', em);
+  if(!rec) return json({ error: 'That sign-up has expired. Start again.', code: 'passkey_expired' }, 400);
+  const cred = body.credential && body.credential.response ? body.credential : null;
+  let made;
+  try{ made = await _pkVerifyRegistration({ id: cred && cred.id, ...(cred ? cred.response : {}) }, { challenge: rec.c, origins: site.origins, rpId: site.rpId }); }
+  catch(e){
+    audit(env, 'passkey_refused', { email: em, why: String(e && e.message || e).slice(0, 40), at: 'signup' });
+    return json({ error: /not_verified/.test(String(e && e.message)) ? 'That passkey was made without a fingerprint, face or PIN, so it cannot be used to sign in.' : 'That passkey could not be verified, so no account was made. Try again, or use a password.', code: 'passkey_refused' }, 400);
+  }
+  if(await env.AMV_KV.get('pkcred:' + made.credId)) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
+  const sipHash = await _ipHash(env, request);
+  const name = String(rec.name || '');
+  let created = false;
+  await _withKind(env, 'acct', em, (a) => {
+    if(a && a.email) return;
+    Object.assign(a, { email: em, name, provider: 'email', createdAt: Date.now(), sipHash,
+      passkeys: [{ id: made.credId, alg: made.alg, jwk: made.jwk, count: made.count, name: 'Passkey', at: Date.now(), used: 0, backedUp: !!made.backedUp }] });
+    created = true;
+  }, {});
+  if(!created) return json({ error: 'There is already an account with this email. Sign in instead.', code: 'account_exists' }, 409);
+  await env.AMV_KV.put('pkcred:' + made.credId, em);
+  audit(env, 'passkey_added', { email: em, at: 'signup' });
+  return _accountCreated(env, request, em, name, body);
 }
 
 /* POST /auth/passkey/signin { cid, credential } - no password, no code. */

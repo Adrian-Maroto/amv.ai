@@ -647,7 +647,10 @@ async function doSignupForm() {
   const nm=$('a-name')?.value.trim(), em=$('a-email')?.value.trim().toLowerCase(), pw=$('a-pass')?.value;
   if(!nm){showAuthErr('Please enter your full name.');return;}
   if(!em||!em.includes('@')||!em.includes('.')){showAuthErr('Please enter a valid email.');return;}
-  if(!pw||pw.length<6){showAuthErr('Password must be at least 6 characters.');return;}
+  /* 15, as the server checks (owner decision #43): a password with nothing
+     else guarding the account. The server is the one that decides; this
+     only saves a round trip. */
+  if(!pw||pw.length<15){showAuthErr(T('Use at least 15 characters - a short phrase you will remember works well.'));return;}
   const existing=findAccount(em);
   if(existing){
     const how = existing.provider==='google' ? 'Google' : 'email';
@@ -821,6 +824,47 @@ function _askForMfa(d, email){
   });
 }
 try{ window._askForMfa = _askForMfa; }catch(e){}
+
+/* The password way to sign up, one tap from the passkey button. */
+function _signupUsePassword(){
+  try{
+    const w=$('a-pw-wrap'); if(w) w.hidden=false;
+    const s=$('auth-submit'); if(s) s.hidden=false;
+    const pk=$('pk-signup'); if(pk) pk.classList.remove('bp');
+    const u=$('a-use-pw'); if(u && u.parentElement) u.parentElement.hidden=true;
+    const pf=$('a-pass'); if(pf) pf.focus();
+  }catch(e){}
+}
+/* SIGN UP WITH A PASSKEY (owner decision #43) - the account and its passkey
+   are made together, only once the device's passkey verifies. */
+async function signUpWithPasskey(){
+  const nm=$('a-name')?.value.trim(), em=$('a-email')?.value.trim().toLowerCase();
+  if(!nm){showAuthErr(T('Please enter your full name.'));return;}
+  if(!em||!em.includes('@')||!em.includes('.')){showAuthErr(T('Please enter a valid email.'));return;}
+  if(!(window.AMV_API && AMV_API.live)){ showAuthErr(T('Passkeys need AMV\u2019s server, and this copy is not connected to one.')); _signupUsePassword(); return; }
+  const btn=$('pk-signup'); const label = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent=T('Creating\u2026'); }
+  try{
+    const d = await _withCaptcha(btn, T('Creating\u2026'), (bot)=>AMV_API.passkeySignup(em, nm, bot));
+    if(d && d.token){
+      try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
+      const ini=nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'??';
+      closeOvr(); _completeIntroLogin({ name:nm, email:em, ini, provider:'passkey' });
+      try{ AEGIS.log('signup_complete',{provider:'passkey'}); }catch(e){}
+      return;
+    }
+    throw new Error(T('That passkey did not create an account.'));
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+    if(e && e.code==='account_exists'){ openAuth('login'); const ef=$('a-email'); if(ef) ef.value=em; showAuthErr(T('There is already an account with this email. Sign in instead.')); return; }
+    if(e && e.code==='sso_required'){ showAuthErr(T('Your company signs in to AMV through its own system. Taking you there\u2026')); ssoBegin(em); return; }
+    /* A closed prompt, or a deployment with passkeys off: say so, and open
+       the password way right there - never a dead end. */
+    showAuthErr(e && e.name==='NotAllowedError' ? T('The passkey prompt was closed. Try again, or use a password instead.') : ((e && e.message) || T('That passkey did not create an account.')));
+    _signupUsePassword();
+  }
+}
+try{ window.signUpWithPasskey=signUpWithPasskey; }catch(e){}
 
 /* SIGN IN WITH A PASSKEY - from the sign-in form, where the browser can. */
 async function signInWithPasskey(){

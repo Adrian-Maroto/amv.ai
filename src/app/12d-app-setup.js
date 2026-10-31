@@ -397,12 +397,17 @@ function openAuth(mode){
         '<div class="ord"><span>or</span></div>'+
         (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
         '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
-        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 8 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        /* PASSKEY FIRST (owner decision #43): where the browser can make one,
+           sign-up's main button makes a passkey; a password is the other way,
+           one tap away, and asks for 15 characters. */
+        (!isL && window.PublicKeyCredential ? '<button class="btn bp" id="pk-signup" type="button" style="width:100%;padding:11px;font-size:var(--t-md)">'+escH(T('Create account with a passkey'))+'</button>'+
+          '<div class="asw" style="margin:6px 0 2px"><button id="a-use-pw" type="button">'+escH(T('Use a password instead'))+'</button></div>' : '')+
+        '<div id="a-pw-wrap"'+(!isL && window.PublicKeyCredential ? ' hidden' : '')+'><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 15 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
         // Honeypot: hidden from humans, bots fill it → server rejects. Not display:none
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+
         '<div id="a-turnstile" class="cf-turnstile" style="margin:4px 0"></div>'+
-        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:var(--t-md)">'+(isL?'Sign In':'Create Free Account')+'</button>'+
+        '<button class="btn bp" id="auth-submit" style="width:100%;padding:11px;font-size:var(--t-md)"'+(!isL && window.PublicKeyCredential ? ' hidden' : '')+'>'+(isL?'Sign In':'Create Free Account')+'</button>'+
       '</div>'+
       '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
@@ -414,6 +419,8 @@ function openAuth(mode){
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('pk-btn')?.addEventListener('click',signInWithPasskey);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
+  document.getElementById('pk-signup')?.addEventListener('click',signUpWithPasskey);
+  document.getElementById('a-use-pw')?.addEventListener('click',_signupUsePassword);
   try{ _mountTurnstile(); }catch(e){}
   /* The sheet is open and "Continue with Google" is on screen, so this is the
      last moment the library can still be needed - and the first moment we know

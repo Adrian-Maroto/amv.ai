@@ -488,6 +488,34 @@ passkey (Settings > Security), which AMV keeps asking for wherever one is on -
 the strongest thing to offer everybody, and the first thing a security review
 will ask about.
 
+**43. Sign-up is passkey-first; a password with nothing else needs 15
+characters (owner, Oct 31, on the production audit).** Reverses #35's 8 for
+anybody with no second step. A passkey is the first thing sign-up offers; a
+person who chooses a password instead sets 15 or more characters, unless an
+authenticator app is on the account. Existing accounts keep their password
+until they next change it.
+
+**44. Persistent named Agents - YES, kept out of the way (owner, Oct 31).**
+Reverses the Oct 26 withdrawal of #23, in the form the owner chose: Crew
+stays one box, and after a task works AMV offers "Keep this as an agent?".
+An agent then has a name, its own memory, a monthly budget and a pause
+switch, listed under Crew. Nobody sees agents until they keep one.
+
+**45. Image generation and editing - STAYS REMOVED (owner, Oct 31).** The
+audit recommended bringing back editing and diagrams through an outside
+provider. Revisit after launch with real usage; until then the standing rule
+in CLAUDE.md holds.
+
+**46. Saved sign-ins in AMV's own browser - BUILD NOW (owner, Oct 31),
+against the recommendation to wait for an outside review.** Reverses the
+earlier permanent refusal. Built as: opt-in per agent, one encrypted browser
+profile per agent sealed under a key the Worker holds, a list of the sites it
+may keep, banks and payment sites excluded, every saved sign-in expiring on
+its own and revocable from Settings > Security, nothing of it ever shown to
+the model, every use in the account's activity. The outside security review
+(#39) is still owed before this is offered to the public - recorded here so
+it is not forgotten when the switch is on.
+
 ## What needs the owner's own hand
 
 Only payments and accounts in the owner's name. Nothing here can be done from
