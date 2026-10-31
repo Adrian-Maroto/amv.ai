@@ -84,12 +84,17 @@ section('Sign up, signed straight in');
   ok(fin, 'the new account is signed in, with no code step', fin || await page.evaluate(() => ({ tok: !!AMV_API.token, user: S.user, cv: !!document.getElementById('cv-code'), err: (document.querySelector('.fp-modal') || {}).textContent })));
 }
 
-section('The first sign-in asks for the emailed code, once');
+section('After a run of wrong passwords, the sign-in asks for the emailed code, once');
 {
-  /* Sign-up proves nothing about this browser, so the first sign-in after it
-     asks for the code; that is what makes the browser known. */
+  /* Since Oct 31 (owner decision) the code is asked for only when the account
+     has just had six wrong passwords; entering it is what makes the browser
+     known. The guesses go into the Worker directly: this file's outbound
+     stand-in answers every fetch made from here. */
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
+  for (let i = 0; i < 6; i++) await worker.fetch(new Request(SITE + '/api/auth/login', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '66.7.7.' + (i + 1) },
+    body: JSON.stringify({ email: 'mount@example.com', password: 'Not-the-Passw0rd!' }) }), env, { waitUntil() {}, passThroughOnException() {} });
   await page.evaluate(() => openAuth('login'));
   await until(() => !!document.getElementById('a-email'));
   await fill('#a-email', 'mount@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');

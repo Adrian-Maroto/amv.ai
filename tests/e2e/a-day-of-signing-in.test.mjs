@@ -73,6 +73,17 @@ const signIn = async () => {
   return page.evaluate(() => ({ asked: !!document.getElementById('cv-code'),
     why: ((document.querySelector('.fp-modal .fp-sub') || {}).textContent || '') }));
 };
+/* Since Oct 31 (owner decision) the emailed code is asked for only when the
+   account has just had a run of wrong passwords. This is that run - six
+   guesses, from six other addresses, straight at the server. */
+let guessN = 0;
+const underAttack = async () => {
+  /* Into the Worker directly: this file's outbound stand-in answers every
+     fetch made from here, so a guess sent over HTTP never reached it. */
+  for (let i = 0; i < 6; i++) await worker.fetch(new Request(API + '/auth/login', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '66.6.6.' + (++guessN) },
+    body: JSON.stringify({ email: 'day@example.com', password: 'Not-the-Passw0rd!' }) }), env, { waitUntil() {}, passThroughOnException() {} });
+};
 const enterCode = async () => {
   await fill('#cv-code', codeIn());
   return until(() => !!(AMV_API.token && S.user && S.user.email && !document.getElementById('cv-code')));
@@ -100,12 +111,23 @@ section('A reload keeps you signed in');
   ok(!(await page.evaluate(() => !!document.getElementById('auth-bg'))), 'and nothing asks to sign in again');
 }
 
-section('The first sign-in asks for the emailed code; after that, this browser is trusted');
+section('Signing in is the password - no email, no code');
 {
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
+  const before = mails.length;
+  const r = await signIn();
+  ok(!r.asked && await until(() => !!(AMV_API.token && S.user && S.user.email)), 'the right password signs straight in', r);
+  ok(mails.length === before, 'and nothing is emailed', mails.length - before);
+}
+
+section('After a run of wrong passwords the code is asked for; after that, this browser is trusted');
+{
+  await page.evaluate(() => signOut());
+  await until(() => !(S.user && S.user.email));
+  await underAttack();
   const first = await signIn();
-  ok(first.asked, 'signing in is when the code is emailed - it proves the address', first);
+  ok(first.asked, 'six wrong guesses, then the right password: now the code is emailed', first);
   ok(await enterCode(), 'and the code signs in');
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
@@ -122,6 +144,7 @@ section('After "sign out everywhere", a code - and the reason, not "new device"'
   ok(out === true, 'every session on the account is ended', out);
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
+  await underAttack();
   const r = await signIn();
   ok(r.asked && /signed out on every device/i.test(r.why), 'the code is asked for, and the screen says why', r.why);
   ok(!/new to your account/i.test(r.why), 'never "this device is new" on a device that is not', r.why);
@@ -144,8 +167,10 @@ section('A browser that dropped its cookies is still recognised');
   await page.evaluate(() => signOut());
   await until(() => !(S.user && S.user.email));
   await context.clearCookies();
+  /* While somebody is guessing - when the code is asked for at all. */
+  await underAttack();
   const r = await signIn();
-  ok(!r.asked, 'no code: the page\u2019s own copy proves the device', r);
+  ok(!r.asked, 'no code, even during a run of wrong guesses: the page\u2019s own copy proves the device', r);
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
