@@ -959,6 +959,7 @@ async function _route(request, env, ctx) {
     case '/v1/agents':         return agentsList(request, env);
     case '/v1/agents/save':    return agentsSave(request, env);
     case '/v1/agents/delete':  return agentsDelete(request, env);
+    case '/v1/agents/signins/forget': return agentSignInsForget(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);

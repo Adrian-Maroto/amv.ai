@@ -83,12 +83,18 @@ async function agentsList(request, env) {
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
       budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created,
+      browser: a.browser || { keep: false, sites: [] },
+      signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
       jobs: jobs.map(x => ({ id: x.id, detail: String(x.detail || '').slice(0, 180), active: !!x.active, done: !!x.done,
         repeat: x.repeat, next: x.next || 0, lastError: x.lastError || null })),
       results });
   }
-  return json({ ok: true, agents, max: AGENTS_MAX, allowed: await _agentsAllowed(env, user) });
+  /* Whether an agent's saved sign-ins can do anything here: they need AMV's
+     hosted browser to read with and a key to seal them under. The page says
+     so rather than offering a switch that would do nothing. */
+  const signInsReady = !!env.BROWSER && connConfigured(env);
+  return json({ ok: true, agents, max: AGENTS_MAX, allowed: await _agentsAllowed(env, user), signInsReady });
 }
 
 /* POST /v1/agents/save - create one, or change one (name, role, instructions,
@@ -136,6 +142,22 @@ async function agentsSave(request, env) {
     clean.budgetUSD = Math.round(b * 100) / 100;
   }
   if (body.paused !== undefined) clean.paused = body.paused === true;
+  /* SAVED SIGN-INS (owner decision #46, 77a-agent-signins.js): off unless
+     asked for, and only for the sites listed - never one that moves money. */
+  if (body.browserKeep !== undefined || body.browserSites !== undefined) {
+    const raw = Array.isArray(body.browserSites) ? body.browserSites : [];
+    if (raw.length > AGENT_SITES_MAX) return json({ error: 'An agent keeps sign-ins for at most ' + AGENT_SITES_MAX + ' sites.', code: 'agent_sites' }, 400);
+    const sites = [];
+    for (const r of raw) {
+      const c = _agentSiteClean(r);
+      if (c.error) return json({ error: c.error, code: c.code || 'agent_sites' }, 400);
+      if (!sites.includes(c.host)) sites.push(c.host);
+    }
+    const keep = body.browserKeep === true;
+    if (keep && !sites.length) return json({ error: 'Say which sites this agent may keep a sign-in for.', code: 'agent_sites' }, 400);
+    if (keep && !connConfigured(env)) return json({ error: 'This deployment has no key to seal sign-ins with, so an agent cannot keep one. Nothing was changed.', code: 'needs_service' }, 503);
+    clean.browser = { keep, sites };
+  }
 
   let out = null, refused = null;
   await _withKind(env, 'agents', String(user.email).toLowerCase(), async (rec) => {
@@ -157,12 +179,15 @@ async function agentsSave(request, env) {
     rec.list.push(out);
   }, { list: [] });
   if (refused) return refused;
+  /* Switched off, or sites taken away: what it held for them goes now. */
+  if (clean.browser && !clean.browser.keep) { try { await _agentJarForget(env, email, out.id); } catch (e) {} }
   /* Read back, so the screen shows what is stored rather than what was sent. */
   const stored = await _agentFind(env, email, out.id);
   if (!stored) return json({ error: 'The agent could not be saved. Nothing changed - try again.', code: 'not_saved' }, 503);
   audit(env, id ? 'agent_changed' : 'agent_created', { email, agent: stored.id });
   return json({ ok: true, agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
-                                   budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created } });
+                                   budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
+                                   browser: stored.browser || { keep: false, sites: [] } } });
 }
 
 /* POST /v1/agents/delete - the agent goes, and its jobs stop. The jobs and
@@ -193,6 +218,8 @@ async function agentsDelete(request, env) {
        stopped job's row can still say whose it was. */
     if (a) { a.deleted = Date.now(); a.instructions = ''; a.role = ''; a.paused = true; }
   }, { list: [] });
+  /* And the sign-ins it held - an agent that is gone has no use for one. */
+  try { await _agentJarForget(env, email, id); } catch (e) {}
   audit(env, 'agent_deleted', { email, agent: id, stopped });
   return json({ ok: true, stopped });
 }

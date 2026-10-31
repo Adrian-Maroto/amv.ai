@@ -15,7 +15,7 @@ import { withAuthOps } from '../lib/auth-object.mjs';
 const outbound = makeOutbound();
 const vals = new Map();
 const env = makeEnv({
-  APP_URL: 'http://localhost:9257', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
+  APP_URL: 'http://localhost:9257', AMV_MODEL_KEY: 'k', CONNECT_KEY: 'c'.repeat(44), MODEL_API_URL: 'https://model.example',
   AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
     if (b.op === 'reserve') { vals.set(n, cur + b.amount); return r({ allowed: true, value: vals.get(n) }); }
@@ -95,6 +95,34 @@ section('It fits a phone');
   ok(fit.right <= fit.vw + 1 && fit.scroll <= fit.vw + 1, 'nothing runs off the side at 390 pixels', fit);
   ok(fit.small === 0, 'and its buttons are big enough to hit', fit);
   await page.setViewportSize({ width: 1280, height: 900 });
+}
+
+section('Saved sign-ins: offered only where they can work, and the card says what it holds');
+{
+  /* This deployment has no hosted browser, so the switch is not offered -
+     one line says why instead. */
+  await page.click('#mc-agents .mc-agent [data-dact="mcAgentEdit"]');
+  await page.waitForSelector('#ag-name');
+  const off = await page.evaluate(() => ({ box: !!document.getElementById('ag-keep'), text: document.querySelector('.ob').textContent }));
+  ok(!off.box && /need AMV\u2019s browser/.test(off.text), 'without AMV\u2019s browser the switch is not offered, and it says why', off.box);
+  await page.click('#ag-cancel');
+  /* An agent already keeping sign-ins (set from elsewhere) shows its sites, and can still be switched off. */
+  const id = (await agentsRec()).list[0].id;
+  const set = await page.evaluate(async (id) => { try { return await _autoApi('/v1/agents/save', { id, browserKeep: true, browserSites: ['tracker.example.com'] }); } catch (e) { return { err: e.message }; } }, id);
+  ok(set && set.agent && set.agent.browser.keep, 'the server keeps the setting', set);
+  await page.evaluate(() => mcAgentsReload());
+  await page.waitForFunction(() => /tracker\.example\.com/.test(document.querySelector('#mc-agents .mc-agent-si')?.textContent || ''), null, { timeout: 15000 });
+  const si = await page.evaluate(() => document.querySelector('#mc-agents .mc-agent-si').textContent);
+  ok(/not signed in yet/.test(si) && await page.evaluate(() => !!document.querySelector('#mc-agents [data-dact="mcAgentSignIn"]')),
+     'the card lists the site, says it holds no sign-in yet, and offers to sign in for it', si);
+  await page.click('#mc-agents .mc-agent [data-dact="mcAgentEdit"]');
+  await page.waitForSelector('#ag-keep', { state: 'attached' });
+  ok(await page.isChecked('#ag-keep') && /tracker\.example\.com/.test(await page.inputValue('#ag-sites')), 'its edit dialog shows the switch on, with its site');
+  await page.click('label.cr-mode-opt:has(#ag-keep)');
+  ok(!(await page.isChecked('#ag-keep')), 'the switch is turned off by pressing its label');
+  await page.click('#ag-save');
+  await page.waitForFunction(() => !document.querySelector('#mc-agents .mc-agent-si'), null, { timeout: 15000 });
+  ok((await agentsRec()).list[0].browser.keep === false, 'switching it off is saved, and the card no longer lists sign-ins');
 }
 
 section('Deleting asks first, stops its job and takes the card away');

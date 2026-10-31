@@ -624,6 +624,7 @@ function _mcAgentCard(a){
     + (a.role ? '<p class="mc-agent-role">' + escH(a.role) + '</p>' : '')
     + '<p class="mc-agent-money' + (over ? ' over' : '') + '">' + escH(money) + (over ? ' · ' + escH(T('budget reached, its jobs wait for next month')) : '') + '</p>'
     + jobs
+    + _mcAgentSignIns(a)
     + (last ? '<div class="mc-agent-last"><span>' + escH(T('Latest result')) + ' · ' + escH(_dayLabel(last.at)) + '</span><p>' + escH(last.out.slice(0, 240)) + '</p></div>' : '')
     + '<div class="mc-agent-acts">'
     + '<button class="btn mc-mini bp" data-dact="mcAgentJob" data-darg="' + escH(a.id) + '"' + (a.paused ? ' disabled' : '') + '>' + escH(T('Give it a job')) + '</button>'
@@ -631,6 +632,52 @@ function _mcAgentCard(a){
     + '<button class="btn mc-mini ghost" data-dact="mcAgentPause" data-darg="' + escH(a.id) + '|' + (a.paused ? 'resume' : 'pause') + '">' + escH(a.paused ? T('Resume') : T('Pause')) + '</button>'
     + '<button class="btn mc-mini ghost" data-dact="mcAgentDelete" data-darg="' + escH(a.id) + '">' + escH(T('Delete')) + '</button>'
     + '</div></article>';
+}
+/* SAVED SIGN-INS (owner decision #46): which sites it holds a sign-in for,
+   until when, and Forget - never the sign-in itself, which the server keeps
+   sealed and never sends. */
+function _mcAgentSignIns(a){
+  const b = a.browser || {};
+  if(!b.keep) return '';
+  const held = a.signIns || [];
+  const rows = (b.sites || []).map(site => {
+    const h = held.find(x => x.site === site);
+    return '<li><span>' + escH(site) + '</span> <span class="mc-agent-si-st">'
+      + escH(h ? T('signed in until {0}').replace('{0}', new Date(h.expiresAt).toLocaleDateString()) : T('not signed in yet'))
+      + '</span> ' + (h
+        ? '<button class="mc-sec-link" data-dact="mcAgentForgetSite" data-darg="' + escH(a.id + '|' + site) + '">' + escH(T('Forget')) + '</button>'
+        : '<button class="mc-sec-link" data-dact="mcAgentSignIn" data-darg="' + escH(a.id + '|' + site) + '">' + escH(T('Sign in for it')) + '</button>') + '</li>';
+  }).join('');
+  return '<div class="mc-agent-si"><span>' + escH(T('Sign-ins it may keep (read-only when you are away)')) + '</span><ul>' + rows + '</ul>'
+    + (held.length ? '' : '<p class="mc-agent-none">' + escH(T('Run AMV’s browser as this agent and sign in to one of these sites to give it one.')) + '</p>') + '</div>';
+}
+/* A WATCHED run, as the agent: AMV's browser opens the site in the live view
+   and hands the sign-in to the person - AMV never asks for the password. At
+   the end the server keeps that site's sign-in for the agent, sealed. The
+   person pressed this, which is the consent; nothing on the site is bought,
+   sent or changed beyond signing in. */
+async function mcAgentSignIn(arg){
+  const s = String(arg || ''); const i = s.indexOf('|');
+  const id = s.slice(0, i), site = s.slice(i + 1);
+  const c = (typeof AMVConnectors !== 'undefined') && AMVConnectors.get('browser');
+  if(!c || !c.actions || !c.actions.do){ toast(T('AMV’s browser is not available here, so nothing was opened.'), 'error', 6000); return; }
+  try{
+    const r = await c.actions.do.run({ url: 'https://' + site + '/', agent: id,
+      goal: 'Open the sign-in page of this site and hand it to me to sign in myself. Do not type a password, buy, send or change anything. Stop once I am signed in.' });
+    const kept = (r && r.agentKept) || [];
+    toast(kept.length ? T('Signed in. It keeps the sign-in for {0} for 30 days.').replace('{0}', kept.join(', '))
+                      : T('No sign-in was kept - the site did not end signed in. Nothing changed.'), kept.length ? 'success' : 'warn', 6000);
+  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
+  await mcAgentsReload();
+}
+async function mcAgentForgetSite(arg){
+  const s = String(arg || ''); const i = s.indexOf('|');
+  const id = s.slice(0, i), site = s.slice(i + 1);
+  try{
+    await _autoApi('/v1/agents/signins/forget', { id, site });
+    toast(T('Forgotten. It no longer holds a sign-in for {0}.').replace('{0}', site), 'success', 4000);
+  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
+  await mcAgentsReload();
 }
 /* KEPT OUT OF THE WAY (owner decision #44): Crew stays one box. This section
    appears only once the person has kept an agent - from "Keep as an agent" on
@@ -680,13 +727,32 @@ function mcAgentEdit(id){
     + '<label class="ob-sub" for="ag-role">' + escH(T('Role, in a line')) + '</label><input id="ag-role" class="fp-in" maxlength="160" value="' + escH(a ? a.role : '') + '" placeholder="' + escH(T('e.g. Reads the news in my field and tells me what matters')) + '">'
     + '<label class="ob-sub" for="ag-instr">' + escH(T('How it should work')) + '</label><textarea id="ag-instr" class="fp-in" rows="6" maxlength="4000">' + escH(a ? a.instructions : '') + '</textarea>'
     + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(a ? a.budgetUSD : 0)) + '">'
-    + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>',
+    + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>'
+    + _mcAgentSignInFields(a),
     async () => {
-      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id } : {}, {
-        name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 }));
+      const body = { name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 };
+      const keepBox = $('ag-keep');
+      if(keepBox){
+        body.browserKeep = !!keepBox.checked;
+        body.browserSites = String($('ag-sites').value || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
+      }
+      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id } : {}, body));
       toast(a ? T('Saved.') : T('Agent created. Give it a job to start it working.'), 'success', 4000);
       await mcAgentsReload();
     });
+}
+/* Offered only where it can work: AMV's hosted browser to read with and a
+   key to seal under. Elsewhere one line says why, and an agent already set
+   to keep sign-ins can still be switched off. */
+function _mcAgentSignInFields(a){
+  const b = (a && a.browser) || { keep: false, sites: [] };
+  const ready = !!(_mcAgentsD && _mcAgentsD.signInsReady);
+  if(!ready && !b.keep) return '<p class="ob-sub">' + escH(T('Saved sign-ins for an agent need AMV’s browser, which this deployment does not have yet.')) + '</p>';
+  return '<fieldset class="cr-mode"><legend>' + escH(T('Saved sign-ins')) + '</legend>'
+    + '<label class="cr-mode-opt"><input type="checkbox" id="ag-keep"' + (b.keep ? ' checked' : '') + '><span><b>' + escH(T('Keep my sign-in for these sites')) + '</b><span>'
+    + escH(T('So it can read them while your devices are off. Read-only: it never submits, buys or sends. Never banks or payments. Each expires 30 days after you last signed in.')) + '</span></span></label>'
+    + '<label class="ob-sub" for="ag-sites">' + escH(T('Sites, one per line (at most 10)')) + '</label>'
+    + '<textarea id="ag-sites" class="fp-in" rows="3" maxlength="1200" placeholder="' + escH(T('e.g. tracker.example.com')) + '">' + escH((b.sites || []).join('\n')) + '</textarea></fieldset>';
 }
 function mcAgentJob(id){
   const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id); if(!a) return;
@@ -746,7 +812,7 @@ function mcKeepAsAgent(jobId){
       await mcAgentsReload();
     });
 }
-try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, mcKeepAsAgent, _mcAgentName }); }catch(e){}
+try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, mcKeepAsAgent, mcAgentForgetSite, mcAgentSignIn, _mcAgentName }); }catch(e){}
 
 function _mcServerSchedRow(x){
   /* The time it runs on their clock when it has one - "every day at 8:00 AM",

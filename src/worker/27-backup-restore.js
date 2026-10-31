@@ -156,6 +156,10 @@ const BACKUP_NEVER = [
   /* Mail waiting to be retried (61-owner-digest.js, _outboxDrain): three
      days at most, and restoring it would send an old message again. */
   'outbox:',
+  /* An agent's saved sign-ins (77a-agent-signins.js): other services'
+     credentials, sealed. A backup is a second copy of them in a second place,
+     and restoring one would bring back a sign-in somebody forgot. */
+  'agentjar:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',

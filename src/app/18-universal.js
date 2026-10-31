@@ -236,6 +236,10 @@ AMVConnectors.register({
                finishes somewhere else - a checkout handing over to a payment
                processor, a company site handing over to its sign-in host. */
             data: args.data || {},
+            /* Run as one of the person's agents (owner decision #46): the
+               server seals this run's sign-ins for that agent's listed sites
+               only. Only ever set by the person, from the agent's card. */
+            agent: args.agent ? String(args.agent).slice(0, 64) : undefined,
             dataOrigins: Array.isArray(args.dataOrigins) ? args.dataOrigins.slice(0, 4) : undefined,
             /* THE TICKET, NOT A FLAG. This used to send `approved: !!args.approved`
                - a boolean the caller chose - and the server believed it, so

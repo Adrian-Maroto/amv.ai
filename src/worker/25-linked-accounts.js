@@ -410,7 +410,14 @@ async function browserRun(request, env, ctx, emit, out){
      into somebody's login form. */
   const vault = _webSecrets(body.data);
   /* The person's own sign-ins, sent from their device for this run only. */
-  const jarIn = _webJarIn(body.cookies);
+  const jarIn0 = _webJarIn(body.cookies);
+  /* Run AS ONE OF THEIR AGENTS (owner decision #46): its saved sign-ins for
+     its own sites join the device's, and at the end of this watched run the
+     sign-ins of its sites are kept for it, sealed (77a-agent-signins.js).
+     Looked up in the caller's own record only. */
+  const runAgent = body.agent ? await _agentFind(env, user.email, String(body.agent)) : null;
+  if(body.agent && !runAgent) return json({ error:'That agent does not exist.', code:'agent_unknown' }, 400);
+  const jarIn = jarIn0.concat(runAgent ? await _agentJarLoad(env, user.email, runAgent) : []);
   const vaultKeys = Object.keys(vault);
   const secrets = vaultKeys.map(k => vault[k]);
   if(!goal) return json({ error:'goal required' }, 400);
@@ -570,7 +577,8 @@ async function browserRun(request, env, ctx, emit, out){
     }
 
     const visited = new Set([gate.url]);
-    if(out) out.collect = async () => { const here = await page.url().catch(() => ''); if(here) visited.add(here); out.cookies = await _webJarOut(page, visited); };
+    if(out) out.collect = async () => { const here = await page.url().catch(() => ''); if(here) visited.add(here); out.cookies = await _webJarOut(page, visited);
+      if(runAgent) { try{ out.agentKept = await _agentJarSave(env, user.email, runAgent, out.cookies); }catch(e){ audit(env, 'agent_signins_not_kept', { email: user.email, agent: runAgent.id }); } } };
     if(jarIn.length && !resumeH && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
     if(!resumeH) await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
       .catch((e) => {
@@ -861,7 +869,9 @@ async function browserRunRoute(request, env, ctx){
   const withJar = async (res) => {
     if(!jar.cookies || !jar.cookies.length) return res;
     let body; try{ body = await res.clone().json(); }catch(e){ return res; }
-    return json(Object.assign({}, body, { cookies: jar.cookies }), res.status);
+    /* agentKept: which of an agent's sites this watched run kept a sign-in
+       for (names only - the sign-in itself stays sealed on the server). */
+    return json(Object.assign({}, body, { cookies: jar.cookies }, jar.agentKept && jar.agentKept.length ? { agentKept: jar.agentKept } : {}), res.status);
   };
   if(!live) return withJar(await browserRun(request, env, ctx, null, jar));
   /* Signed in before a stream is opened, so a stranger is answered with a

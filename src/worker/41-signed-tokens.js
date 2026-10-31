@@ -193,6 +193,9 @@ async function revokeUserTokens(env, email) {
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
   try { await _sessDropAll(env, email); } catch (e) {}
+  /* And every sign-in an agent was holding for this account (owner decision
+     #46): "sign out everywhere" means the agents too. */
+  try { await _agentJarForgetAll(env, email); } catch (e) {}
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────

@@ -1678,6 +1678,8 @@ async function authDeleteAccount(request, env) {
                         /* Mail waiting to be retried (_outboxDrain): their address and
                            what it said. A deleted person is sent nothing more. */
                         `outbox:${email}:`,
+                        /* An agent's saved sign-ins (77a-agent-signins.js). */
+                        `agentjar:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,
