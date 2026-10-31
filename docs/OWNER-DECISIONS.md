@@ -523,8 +523,9 @@ background (src/worker/04a-control-plane.js), through the `postgres` driver
 stays the record; a failed Postgres write never fails a request and is listed
 for repair (`pgrepair:`). Erasing an account leaves a tombstone with nothing
 personal on it. API keys are mirrored too (one row per key, its hash only), and teams (an
-organization each, one membership per member). The money ledgers are the
-next slice;
+organization each, one membership per member). Credit packs bought and taken
+back are rows in credit_ledger, one per event. Credit spent, and seller
+earnings, are the next slices;
 backfill, shadow reads and the gradual switch follow docs/DATA-TIER.md.
 
 ## What needs the owner's own hand

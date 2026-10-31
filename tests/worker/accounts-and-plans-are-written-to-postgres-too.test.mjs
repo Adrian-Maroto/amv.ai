@@ -19,6 +19,7 @@ import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirS
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -45,14 +46,26 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
 console.log = (...a) => { const s = a.join(' '); if (s.startsWith('AUDIT')) { try { audits.push(JSON.parse(s.slice(6))); } catch (e) {} return; } quiet(...a); };
-const store = new Map();
+const store = new Map(); const counters = new Map();
 const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ALLOWED_ORIGIN: 'https://amv.test',
   PG: { connectionString: `postgres://${user}@127.0.0.1:${PORT}/postgres` },
+  /* The counter object, standing in: claims taken once, sums kept. */
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
+    const b = JSON.parse(init.body); const r = o => new Response(JSON.stringify(o));
+    const cur = counters.get(n) || 0;
+    if (b.op === 'claim') { if (counters.has('c:' + n)) return r({ claimed: false }); counters.set('c:' + n, 1); return r({ claimed: true }); }
+    if (b.op === 'release') { counters.delete('c:' + n); return r({ ok: true }); }
+    if (b.op === 'incr') { counters.set(n, cur + (b.amount || 0)); return r({ value: counters.get(n) }); }
+    if (b.op === 'get') return r({ value: cur });
+    if (b.op === 'clear') { counters.delete(n); return r({ ok: true }); }
+    if (b.op === 'lifeGet') return r({ tally: {} });
+    return r({ allowed: true, value: cur });
+  } }) }),
   AMV_KV: { async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } } };
 const ctx = { waitUntil(){}, passThroughOnException(){} };
@@ -132,6 +145,27 @@ section('A team is an organization with one membership per member; one with no a
   await W._pgSettle();
   ok(q("select count(*) from organizations where legacy_id='team_abc123'") === '0' && q("select count(*) from memberships m join accounts a on a.id=m.account_id where a.email='ana@example.com'") === '0',
      'a deleted team is gone, memberships and all');
+}
+
+section('Money is one row per event: a pack bought once is one row however often it is reported; each refund is its own row');
+{
+  const ref = 'pi_pack_1';
+  ok(await W._creditGrant(env, { subject: 'ana@example.com', email: 'ana@example.com', usd: 20, ref }), 'a pack is credited');
+  await W._creditGrant(env, { subject: 'ana@example.com', email: 'ana@example.com', usd: 20, ref });
+  await W._pgSettle();
+  ok(q("select count(*)||':'||sum(amount)::text||':'||max(reason) from credit_ledger where idempotency_key='credit:pi_pack_1'") === '1:20.000000:purchase',
+     'one purchase row for 20, however many times the payment is reported');
+  await W._creditReverse(env, ref, 'refund', 5);
+  await W._creditReverse(env, ref, 'refund', 5);
+  await W._creditReverse(env, ref, 'dispute', 0);
+  await W._pgSettle();
+  /* Written in the background, so in any order: compared as a set. */
+  const rows = q("select reason||':'||amount::text from credit_ledger where account_id=(select id from accounts where email='ana@example.com') order by reason").split('\n');
+  ok(rows.join() === 'dispute:-15.000000,purchase:20.000000,refund:-5.000000', 'a partial refund, the same refund again (nothing), then a dispute for the rest', rows);
+  ok(q("select sum(amount)::text from credit_ledger where account_id=(select id from accounts where email='ana@example.com')") === '0.000000',
+     'and the ledger adds up to what is left: nothing');
+  const upd = (() => { try { q("update credit_ledger set amount=999 where idempotency_key='credit:pi_pack_1'"); return 'changed'; } catch (e) { return String(e.stderr || e.message); } })();
+  ok(/append-only/.test(upd), 'and a row, once written, cannot be changed', upd.slice(0, 80));
 }
 
 section('A plan before its account has a row is listed for repair, never invented');

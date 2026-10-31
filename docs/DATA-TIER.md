@@ -109,6 +109,8 @@ alone; a team as an organization with its memberships), tested against a real Po
 that is down (the request is unaffected; the write goes on the `pgrepair:`
 list) and erasure (a tombstone with nothing personal on it).
 
-Not built yet: step 2 for the money ledgers; the backfill
+Credit packs bought, refunded and disputed are written to `credit_ledger`,
+one row per event keyed by the payment. Not built yet: step 2 for credit
+spent (a counter today, per message) and seller earnings; the backfill
 (step 3), which also works through the `pgrepair:` list; shadow reads (step
 4); and the switch (step 5).

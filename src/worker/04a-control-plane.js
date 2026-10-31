@@ -182,3 +182,32 @@ async function _pgMirrorTeam(sql, teamId, obj){
   });
   if (emails.some(e => !idOf.has(e))) throw new Error('member_without_account_row');
 }
+
+/* ── MONEY: one row per event, never a number that is overwritten ─────────
+   A pack bought, and each part of one taken back by a refund or a dispute,
+   is appended to credit_ledger under a key made from the payment's own id,
+   so the same event delivered twice is one row (the UNIQUE key), not two.
+   A row that could not be written is kept whole on the repair list, so the
+   backfill writes exactly that row - never one recomputed later. */
+function _pgLedger(env, row){
+  if (!_pgOn(env) || !row || !row.key || !row.email || !(Math.abs(+row.amount) > 0)) return;
+  const p = (async () => {
+    const sql = await _pgClient(env);
+    try {
+      const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
+      if (!acct.length) throw new Error('no_account_row');
+      await sql`
+        INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
+        VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+                ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
+        ON CONFLICT (idempotency_key) DO NOTHING`;
+    } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+  })().catch(async (e) => {
+    const why = String((e && e.message) || e).slice(0, 160);
+    try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
+    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+    try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) {}
+  }).finally(() => _pgInFlight.delete(p));
+  _pgInFlight.add(p);
+  try { _bg(p); } catch (e) {}
+}
