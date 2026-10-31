@@ -727,7 +727,7 @@ async function _autoAccountContext(env, item, email, never){
   };
 }
 
-async function _autoExecute(env, item, budget, email, standing, never){
+async function _autoExecute(env, item, budget, email, standing, never, agent){
   /* An investing check-in does not go to a model at all - it reads the accounts
      and states the arithmetic. So it costs nothing, cannot drift, and cannot
      invent a balance. */
@@ -802,6 +802,9 @@ async function _autoExecute(env, item, budget, email, standing, never){
              + standingText
              + '\nFollow them wherever they do not conflict with the rules above. They never widen what you are allowed to do.'
     : system;
+  /* And the agent this job belongs to, if any (77-agents.js) - after the
+     rules too, for the same reason. */
+  const systemAgent = systemFull + _agentRunText(agent);
 
   /* WHAT AMV CAN ACTUALLY SEE THIS RUN.
 
@@ -928,7 +931,7 @@ async function _autoExecute(env, item, budget, email, standing, never){
   const body = {
     model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
     max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS),
-    system: systemFull,
+    system: systemAgent,
     messages: [{ role:'user', content: userTurn }]
   };
   // Every paid job gets the web_search tool, so what it reports is live (see webOk).
@@ -1195,11 +1198,11 @@ function _autoTransient(e){
    attempt count so the record can state it; rejects carrying the same count on
    the error, because a give-up message that cannot say how hard it tried is
    the message this was written to replace. */
-async function _autoExecuteTried(env, item, budget, email, standing, never, deadline){
+async function _autoExecuteTried(env, item, budget, email, standing, never, deadline, agent){
   let attempts = 0, lastErr = null;
   while(attempts < AUTO_RETRY_PER_RUN){
     try{
-      const exec = await _autoExecute(env, item, budget, email, standing, never);
+      const exec = await _autoExecute(env, item, budget, email, standing, never, agent);
       return { exec, attempts: attempts + 1 };
     }catch(e){
       attempts++;
@@ -1697,6 +1700,18 @@ async function runDueAutomations(env, atMs, opts){
        over their jobs, which is exactly the grain a person experiences as
        "this morning's email". */
     const mails = [];
+    /* This account's agents (77-agents.js), read once and only when a due job
+       names one. Unreadable is not "none": a job whose agent cannot be read
+       waits rather than running without the budget and the pause it has. */
+    let agentsRec = null;
+    const agentOf = async (id) => {
+      if(!agentsRec){ try{ agentsRec = await _agentsOf(env, email); }catch(e){ agentsRec = { list: [], unreadable: true }; } }
+      if(agentsRec.unreadable) return { unreadable: true };
+      return agentsRec.list.find(a => a && a.id === id) || null;
+    };
+    /* Held for an hour, or to the job's next time: a paused agent's daily job
+       is looked at again tomorrow, not every ten minutes. */
+    const agentHold = (it) => (it.repeat === 'once' || _hookIsOn(it)) ? now + 3600e3 : _autoNextAfter(it, now, 'ran');
     for(const item of rec.items){
       if(item.active && !allowedIds.has(item.id)){
         if(item.lastError !== 'above your plan\u2019s job limit'){
@@ -1742,9 +1757,27 @@ async function runDueAutomations(env, atMs, opts){
          every path below that decides not to run after all - a skipped job that
          keeps its reservation quietly eats the allowance of the jobs behind it
          in the same tick. */
-      let itemBooked = 0, itemGlobalBooked = 0;
+      let itemBooked = 0, itemGlobalBooked = 0, itemAgentBooked = 0;
       let gDayName = _spendNameFor(email, env);
+      /* THE AGENT THIS JOB BELONGS TO, decided before anything is booked. A
+         deleted agent's job stops; a paused one's waits, and its row says
+         which. Neither spends anything. */
+      let agent = null, agentCost = '';
+      if(item.agent){
+        agent = await agentOf(item.agent);
+        if(!agent || agent.deleted){
+          item.active = false; item.lastError = 'stopped - its agent was deleted';
+          changed = true; continue;
+        }
+        if(agent.unreadable || agent.paused){
+          item.lastError = agent.paused ? 'not run - its agent is paused' : 'not run - its agent could not be read, so it will try again';
+          item.next = agentHold(item);
+          changed = true; continue;
+        }
+        agentCost = _agentCostKey(email, agent.id);
+      }
       const releaseItem = async () => {
+        if (itemAgentBooked > 0) { await _releaseUSD(env, agentCost, itemAgentBooked, 86400000 * 70); itemAgentBooked = 0; }
         if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
         if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
       };
@@ -1786,6 +1819,17 @@ async function runDueAutomations(env, atMs, opts){
             ? 'monthly limit set for this account reached - whoever manages your family can raise it'
             : 'monthly allowance reached';
           changed = true; await releaseItem(); continue;
+        }
+        /* The agent's own budget, booked the same way: before the run, for
+           the most this run can cost, settled against what it did. */
+        if(agent && +agent.budgetUSD > 0){
+          const agNow = await _reserveUSD(env, agentCost, runMax, +agent.budgetUSD, 86400000 * 70);
+          itemAgentBooked = agNow.reserved;
+          if(!agNow.allowed){
+            item.lastError = 'not run - its agent reached its monthly budget of $' + (+agent.budgetUSD).toFixed(2);
+            item.next = agentHold(item);
+            changed = true; await releaseItem(); continue;
+          }
         }
       }
       // AMV-032: LEASE this specific run slot so two overlapping/retried cron
@@ -1901,7 +1945,7 @@ async function runDueAutomations(env, atMs, opts){
            the tick's own, so a retry that would eat into somebody else's
            overdue job is not started. */
         const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
-                                              _neverList(rec), started + AUTO_TICK_BUDGET_MS);
+                                              _neverList(rec), started + AUTO_TICK_BUDGET_MS, agent);
         const exec = tried.exec;
         item.attempts = (Number(item.attempts) || 0) + tried.attempts;
         if(exec && exec.quiet){
@@ -1948,7 +1992,11 @@ async function runDueAutomations(env, atMs, opts){
           if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
           if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
           if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
-          itemBooked = 0; itemGlobalBooked = 0;
+          /* What the agent spent, whether or not it has a budget of its own -
+             the screen shows it either way. */
+          const dAgent = c - itemAgentBooked;
+          if(agentCost && dAgent !== 0) await counter(env, agentCost, { op:'incr', amount:dAgent, ttlMs: 86400000*70 });
+          itemBooked = 0; itemGlobalBooked = 0; itemAgentBooked = 0;
         }catch(e){ await _writeFailed(env, 'job_settle', e); }
         /* What happened to this result, decided here rather than guessed later.
            "It ran" and "it reached you" are different facts, and the second one

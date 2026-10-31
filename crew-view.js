@@ -574,6 +574,180 @@ try{
    Every button here posts to the same /auto/update the chat tools use, so the
    screen and the conversation are two doors onto one job rather than two
    records that drift apart. */
+/* AGENTS - named workers that stay (77-agents.js on the server).
+
+   An agent's jobs are ordinary running jobs: this section only names who does
+   them, shows what each agent has spent this month against its own budget and
+   what it produced last, and gives it work. Everything here is read from the
+   server on the way in and after every change, so a card never shows an
+   agent, a budget or a pause the server does not hold. */
+let _mcAgentsD = null, _mcAgentsErr = '', _mcAgentsAsked = false;
+function _mcAgentsLive(){ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }
+async function _mcAgentsLoad(){
+  _mcAgentsAsked = true;
+  try{
+    const r = await AMV_API._fetch('/v1/agents', { method:'GET', timeout:10000 });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    _mcAgentsD = d; _mcAgentsErr = '';
+  }catch(e){ _mcAgentsErr = (e && e.message) || T('the request failed'); }
+  /* In place: only this section changed, and rebuilding the whole of Crew
+     when one request lands is the flicker a-screen-that-refreshes-does-not-
+     flicker exists to stop. */
+  const box = document.getElementById('mc-agents');
+  if(box) box.outerHTML = _mcAgentsHTML();
+}
+async function mcAgentsReload(){
+  try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
+  await _mcAgentsLoad();
+  if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
+}
+function _mcAgentName(id){
+  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id);
+  return a ? a.name : '';
+}
+function _mcAgentCard(a){
+  const spent = a.spentUSD == null ? T('spend could not be read') : '$' + (+a.spentUSD).toFixed(2);
+  const money = a.budgetUSD > 0
+    ? T('{0} of its {1} monthly budget').replace('{0}', spent).replace('{1}', '$' + (+a.budgetUSD).toFixed(2))
+    : T('{0} this month · no budget of its own, your plan’s applies').replace('{0}', spent);
+  const over = a.budgetUSD > 0 && a.spentUSD != null && a.spentUSD >= a.budgetUSD;
+  const live = (a.jobs || []).filter(j => j.active);
+  const jobs = (a.jobs || []).length
+    ? '<ul class="mc-agent-jobs">' + a.jobs.slice(0, 4).map(j => '<li>' + escH(j.detail)
+        + (j.lastError ? ' <span class="mc-agent-err">' + escH(j.lastError) + '</span>' : '') + '</li>').join('') + '</ul>'
+    : '<p class="mc-agent-none">' + escH(T('No jobs yet. Give it one and it starts working on its own.')) + '</p>';
+  const last = (a.results || [])[0];
+  return '<article class="mc-agent' + (a.paused ? ' paused' : '') + '" aria-label="' + escH(a.name) + '">'
+    + '<div class="mc-agent-h"><h4>' + escH(a.name) + '</h4><span class="mc-agent-state' + (a.paused ? '' : ' on') + '">'
+    + escH(a.paused ? T('Paused') : live.length ? T('Working') : T('Idle')) + '</span></div>'
+    + (a.role ? '<p class="mc-agent-role">' + escH(a.role) + '</p>' : '')
+    + '<p class="mc-agent-money' + (over ? ' over' : '') + '">' + escH(money) + (over ? ' · ' + escH(T('budget reached, its jobs wait for next month')) : '') + '</p>'
+    + jobs
+    + (last ? '<div class="mc-agent-last"><span>' + escH(T('Latest result')) + ' · ' + escH(_dayLabel(last.at)) + '</span><p>' + escH(last.out.slice(0, 240)) + '</p></div>' : '')
+    + '<div class="mc-agent-acts">'
+    + '<button class="btn mc-mini bp" data-dact="mcAgentJob" data-darg="' + escH(a.id) + '"' + (a.paused ? ' disabled' : '') + '>' + escH(T('Give it a job')) + '</button>'
+    + '<button class="btn mc-mini ghost" data-dact="mcAgentEdit" data-darg="' + escH(a.id) + '">' + escH(T('Edit')) + '</button>'
+    + '<button class="btn mc-mini ghost" data-dact="mcAgentPause" data-darg="' + escH(a.id) + '|' + (a.paused ? 'resume' : 'pause') + '">' + escH(a.paused ? T('Resume') : T('Pause')) + '</button>'
+    + '<button class="btn mc-mini ghost" data-dact="mcAgentDelete" data-darg="' + escH(a.id) + '">' + escH(T('Delete')) + '</button>'
+    + '</div></article>';
+}
+/* KEPT OUT OF THE WAY (owner decision #44): Crew stays one box. This section
+   appears only once the person has kept an agent - from "Keep as an agent" on
+   a job that works - and until then there is nothing here to read past. */
+function _mcAgentsHTML(){
+  if(!_mcAgentsLive()) return '';
+  if(!_mcAgentsAsked) setTimeout(_mcAgentsLoad, 0);
+  const d = _mcAgentsD;
+  if(!d || !(d.agents || []).length) return '<section id="mc-agents" hidden></section>';
+  const canAdd = d && d.allowed && (d.agents || []).length < d.max;
+  const head = '<div class="sec-head"><h3>' + escH(T('Agents')) + '</h3><span class="sec-sub">'
+    + escH(T('Named workers that keep going: each has its own instructions, its own monthly budget and its own jobs, and you can pause it at any time.'))
+    + '</span>' + (canAdd ? '<button class="mc-sec-link" data-dact="mcAgentEdit" data-darg="">' + escH(T('New agent')) + '</button>' : '') + '</div>';
+  let body;
+  if(!d && _mcAgentsErr) body = '<div class="mc-empty-row">' + escH(T('Your agents could not be loaded ({0}). Their jobs have not stopped.').replace('{0}', _mcAgentsErr))
+    + ' <button class="mc-sec-link" data-dact="mcAgentsReload">' + escH(T('Try again')) + '</button></div>';
+  else if(!d) body = '<div class="mc-empty-row" role="status">' + escH(T('Loading your agents…')) + '</div>';
+  else if(!d.allowed && !(d.agents || []).length) body = '<div class="mc-empty-row">' + escH(T('Agents work in the background, which is part of Pro.'))
+    + ' <button class="mc-sec-link" data-dact="setTab" data-darg="plans">' + escH(T('See plans')) + '</button></div>';
+  else if(!(d.agents || []).length) body = '<div class="mc-empty-row">' + escH(T('No agents yet. Make one for work you hand off again and again - a researcher who reads the news in your field every morning, an assistant who drafts the week’s replies.'))
+    + ' <button class="mc-sec-link" data-dact="mcAgentEdit" data-darg="">' + escH(T('New agent')) + '</button></div>';
+  else body = '<div class="mc-agents">' + d.agents.map(_mcAgentCard).join('') + '</div>';
+  return '<section id="mc-agents" class="mc-sec">' + head + body + '</section>';
+}
+function _mcAgentDialog(title, inner, onSave){
+  const r = $('ovr'); if(!r) return;
+  r.innerHTML = '<div class="ov" id="ag-bg"><div class="ob" role="dialog" aria-modal="true" aria-labelledby="ag-t" style="max-width:560px">'
+    + '<button class="oc" id="ag-x" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<h2 id="ag-t">' + escH(title) + '</h2>' + inner
+    + '<p class="ob-sub" id="ag-msg" role="alert"></p>'
+    + '<div class="sec-row"><button class="btn bp" id="ag-save">' + escH(T('Save')) + '</button><button class="btn bs" id="ag-cancel">' + escH(T('Cancel')) + '</button></div>'
+    + '</div></div>';
+  r.classList.add('on');
+  on($('ag-x'), 'click', closeOvr); on($('ag-cancel'), 'click', closeOvr);
+  onBackdrop($('ag-bg'), closeOvr);
+  on($('ag-save'), 'click', async () => {
+    const b = $('ag-save'); b.disabled = true;
+    try{ await onSave(); closeOvr(); }
+    catch(e){ $('ag-msg').textContent = (e && e.message === 'not-connected') ? T('AMV is not connected to its engine, so nothing was saved.') : ((e && e.message) || T('That did not work. Nothing changed.')); b.disabled = false; }
+  });
+  const f = r.querySelector('input,textarea'); if(f) try{ f.focus(); }catch(e){}
+}
+function mcAgentEdit(id){
+  const a = id && _mcAgentsD ? (_mcAgentsD.agents || []).find(x => x.id === id) : null;
+  _mcAgentDialog(a ? T('Edit {0}').replace('{0}', a.name) : T('New agent'),
+    '<label class="ob-sub" for="ag-name">' + escH(T('Name')) + '</label><input id="ag-name" class="fp-in" maxlength="60" value="' + escH(a ? a.name : '') + '">'
+    + '<label class="ob-sub" for="ag-role">' + escH(T('Role, in a line')) + '</label><input id="ag-role" class="fp-in" maxlength="160" value="' + escH(a ? a.role : '') + '" placeholder="' + escH(T('e.g. Reads the news in my field and tells me what matters')) + '">'
+    + '<label class="ob-sub" for="ag-instr">' + escH(T('How it should work')) + '</label><textarea id="ag-instr" class="fp-in" rows="6" maxlength="4000">' + escH(a ? a.instructions : '') + '</textarea>'
+    + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(a ? a.budgetUSD : 0)) + '">'
+    + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>',
+    async () => {
+      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id } : {}, {
+        name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 }));
+      toast(a ? T('Saved.') : T('Agent created. Give it a job to start it working.'), 'success', 4000);
+      await mcAgentsReload();
+    });
+}
+function mcAgentJob(id){
+  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id); if(!a) return;
+  const every = [['daily', T('Every day')], ['weekly', T('Every week')], ['hourly', T('Every hour')]];
+  _mcAgentDialog(T('A job for {0}').replace('{0}', a.name),
+    '<label class="ob-sub" for="ag-job">' + escH(T('What should it do?')) + '</label><textarea id="ag-job" class="fp-in" rows="4" maxlength="2000"></textarea>'
+    + '<label class="ob-sub" for="ag-every">' + escH(T('How often')) + '</label><select id="ag-every" class="fp-in">' + every.map(e => '<option value="' + e[0] + '">' + escH(e[1]) + '</option>').join('') + '</select>'
+    + '<fieldset class="cr-mode"><legend>' + escH(T('When it has a result')) + '</legend>'
+    + '<label class="cr-mode-opt"><input type="radio" name="ag-appr" value="require" checked><span><b>' + escH(T('Ask first')) + '</b><span>' + escH(T('Each result waits for your approval.')) + '</span></span></label>'
+    + '<label class="cr-mode-opt"><input type="radio" name="ag-appr" value="auto"><span><b>' + escH(T('Autonomous')) + '</b><span>' + escH(T('Results are delivered for you.')) + '</span></span></label></fieldset>',
+    async () => {
+      const detail = $('ag-job').value.trim();
+      if(!detail) throw new Error(T('Say what the job is.'));
+      await _autoApi('/auto/create', { detail, repeat: $('ag-every').value, kind: 'task', notify: 'app', agent: a.id,
+        approval: (document.querySelector('input[name="ag-appr"]:checked') || {}).value === 'auto' ? 'auto' : 'require' });
+      toast(T('{0} has the job. It runs on AMV’s servers, whether or not this is open.').replace('{0}', a.name), 'success', 5000);
+      await mcAgentsReload();
+    });
+}
+async function mcAgentPause(arg){
+  const [id, act] = String(arg || '').split('|');
+  try{
+    await _autoApi('/v1/agents/save', { id, paused: act === 'pause' });
+    toast(act === 'pause' ? T('Paused. Its jobs will not run until you resume it.') : T('Resumed. Its jobs run at their next time.'), 'success', 4000);
+  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
+  await mcAgentsReload();
+}
+async function mcAgentDelete(id){
+  const a = _mcAgentsD && (_mcAgentsD.agents || []).find(x => x.id === id); if(!a) return;
+  if(!(await showConfirmAsync(T('Delete {0}? Its jobs stop running. What it already did stays in your results.').replace('{0}', a.name)))) return;
+  try{
+    const d = await _autoApi('/v1/agents/delete', { id });
+    toast(T('Deleted. {0} of its jobs stopped.').replace('{0}', String(d.stopped || 0)), 'success', 4000);
+  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
+  await mcAgentsReload();
+}
+/* "KEEP THIS AS AN AGENT?" on a job that works: the agent is made from the
+   job (its name, the job as its role and instructions, a budget if wanted),
+   and the job is handed to it - from its next run it works under the
+   agent's instructions, budget and pause. */
+function mcKeepAsAgent(jobId){
+  /* The job's own words, carried on its button: the row was drawn from the
+     server's list a moment ago, so this is what the server holds. */
+  let detail = '';
+  try{ const b = document.querySelector('[data-keep-job="' + CSS.escape(String(jobId)) + '"]'); detail = String((b && b.dataset.keepDetail) || '').trim(); }catch(e){}
+  const guess = detail.split(/[.,;:\n]/)[0].split(/\s+/).slice(0, 4).join(' ');
+  _mcAgentDialog(T('Keep this as an agent'),
+    '<p class="ob-sub">' + escH(T('It gets a name, keeps doing this job, and you can give it more, pause it, or set it a monthly budget.')) + '</p>'
+    + '<label class="ob-sub" for="ag-name">' + escH(T('Name')) + '</label><input id="ag-name" class="fp-in" maxlength="60" value="' + escH(guess) + '">'
+    + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="0">',
+    async () => {
+      const made = await _autoApi('/v1/agents/save', { name: $('ag-name').value, role: detail.slice(0, 160), instructions: detail.slice(0, 4000), budgetUSD: +$('ag-budget').value || 0 });
+      const id = made && made.agent && made.agent.id;
+      if(!id) throw new Error(T('The agent could not be saved. Nothing changed - try again.'));
+      await _autoApi('/auto/update', { action: 'agent', id: jobId, agent: id });
+      toast(T('{0} has the job now. Find it under Crew.').replace('{0}', made.agent.name), 'success', 5000);
+      await mcAgentsReload();
+    });
+}
+try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, mcKeepAsAgent, _mcAgentName }); }catch(e){}
+
 function _mcServerSchedRow(x){
   /* The time it runs on their clock when it has one - "every day at 8:00 AM",
      "every weekday at 7:30 PM" - rather than only how often. */
@@ -599,7 +773,7 @@ function _mcServerSchedRow(x){
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
-      <div class="mc-sched-meta">${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
+      <div class="mc-sched-meta">${x.agent && _mcAgentName(x.agent) ? escH(T('Agent: {0}').replace('{0}', _mcAgentName(x.agent))) + ' · ' : ''}${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
       <div class="mc-sched-mode-row">${(()=>{
         /* What this job will ACTUALLY do tonight - its own level capped by the
            account ceiling. Showing the job's own setting here would have it
@@ -636,6 +810,7 @@ function _mcServerSchedRow(x){
     <div class="mc-sched-acts">
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
       ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookSigning" data-darg="${escH(x.id)}|${escH((x.hook && x.hook.signed) || '')}">${escH(x.hook && x.hook.signed ? T('Signed') + ' · ' + T(_HOOK_SIGNERS[x.hook.signed]) : T('Require signing'))}</button>`}
+      ${x.done || x.agent || x.step || paused || !(x.runs > 0) ? '' : `<button class="btn mc-mini ghost" data-dact="mcKeepAsAgent" data-darg="${escH(x.id)}" data-keep-job="${escH(x.id)}" data-keep-detail="${escH(String(x.detail||'').slice(0, 400))}">${escH(T('Keep as an agent'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -1258,6 +1433,8 @@ function renderCrewView(){
         return `<div class="mc-empty-row">Your running jobs could not be loaded (${escH(st.serverError)}). They have NOT stopped - this screen just cannot show them right now. <button class="mc-sec-link" data-dact="mcReloadJobs">Try again</button></div>`;
       })()}
     </section>`:''}
+
+    ${_mcAgentsHTML()}
 
     ${st.done.length?`<section id="mc-done" class="mc-sec">
       <div class="sec-head"><h3>Recently completed</h3></div>

@@ -651,6 +651,8 @@ async function _route(request, env, ctx) {
     /* And the picture a cited page names for its link previews, on the same
        terms; the address is checked the same way (75-source-previews.js). */
     '/v1/source-preview',
+    /* The caller's own agents (77-agents.js). Reads only; signed in. */
+    '/v1/agents',
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -954,6 +956,9 @@ async function _route(request, env, ctx) {
     case '/v1/source-preview': return sourcePreview(request, env);
     case '/v1/browser/replay': return browserReplay(request, env, ctx);
     case '/v1/meaning':        return meaningRank(request, env);
+    case '/v1/agents':         return agentsList(request, env);
+    case '/v1/agents/save':    return agentsSave(request, env);
+    case '/v1/agents/delete':  return agentsDelete(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);

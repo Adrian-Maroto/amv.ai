@@ -381,6 +381,32 @@ async function autoUpdate(request, env){
     return json({ ok:true, quiet: next });
   }
 
+  /* HAND A JOB TO AN AGENT, OR BACK (owner decision #44, Oct 31): how a job
+     that works becomes an agent's - "Keep this as an agent?" on its row.
+     The agent is looked up in the caller's own record, so another account's
+     agent is simply not found; an empty `agent` gives the job back to AMV.
+     From its next run the job is the agent's: its instructions, its budget,
+     its pause (15-run-context-and-execution.js). */
+  if(body.action === 'agent'){
+    let agentId = '';
+    if(body.agent != null && body.agent !== ''){
+      const a = await _agentFind(env, user.email, String(body.agent));
+      if(!a) return json({ error: 'That agent does not exist.', code: 'agent_unknown' }, 400);
+      agentId = a.id;
+    }
+    let found = false;
+    await _withAuto(env, key, (fresh) => {
+      if(!fresh) return;
+      const it = (fresh.items || []).find(x => x && x.id === id);
+      if(!it) return;
+      found = true;
+      if(agentId) it.agent = agentId; else delete it.agent;
+    }, { items:[], results:[] });
+    if(!found) return json({ error: 'That job is not on this account any more.', code: 'no_job' }, 404);
+    audit(env, 'auto_agent_set', { by: user.email, job: id, agent: agentId || null });
+    return json({ ok: true, id, agent: agentId || null });
+  }
+
   /* WAS THAT RESULT WORTH TELLING ME ABOUT.
 
      Two buttons on a result, and the reason they are not analytics is that they
