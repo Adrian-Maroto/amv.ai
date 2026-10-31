@@ -96,6 +96,19 @@ const env = makeEnv({
 const L = await bootLive({ env, outbound, port: 9187 });
 const { page } = L;
 /* Navigations after the first load are printed by bootLive itself. */
+/* Never leave for another site. Pressing a service's sign-in sends the page
+   to that service, as it should - and on a runner with internet access it
+   really went, a few seconds later, in the middle of the NEXT section
+   ("Execution context was destroyed"). Here there is no internet and it
+   failed silently, which is why it was CI-only. This suite checks what AMV
+   offers and opens, not the provider's own page, so a navigation away from
+   the local server is refused. */
+await page.route('**/*', (route) => {
+  const req = route.request();
+  let host = ''; try { host = new URL(req.url()).hostname; } catch (e) {}
+  if (req.isNavigationRequest() && req.frame() === page.mainFrame() && host !== 'localhost' && host !== '127.0.0.1') return route.abort();
+  return route.fallback();
+});
 
 const EMAIL = 'connectall@example.com';
 const PW = 'A-real-Passw0rd!';
