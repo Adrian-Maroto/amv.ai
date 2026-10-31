@@ -379,7 +379,10 @@ async function aiCountTokens(request, env){
 
    So the caller gets AMV's sentence and a code, by kind; the provider's text
    goes to the operator (_workerError, the alert). Busy and server errors keep
-   their status, because that is what the page and API clients retry on. */
+   their status and carry `provider_error` - the one code every client
+   already reads as passing and retries (the page, the agent loop, batches).
+   A new code there would read as a decision AMV made, and nothing would
+   retry a moment of provider trouble: the gate caught exactly that. */
 function _modelErrorShown(status) {
   const nothing = ' Nothing was charged.';
   if (status === 400) return json({ error: 'The model did not accept this request. Check the messages and parameters, then try again.' + nothing, code: 'invalid_request' }, 400);
@@ -387,7 +390,7 @@ function _modelErrorShown(status) {
   if (status === 401 || status === 403 || status === 404)
     return json({ error: 'AMV’s model service is not available right now. It is not your account - try again later.' + nothing, code: 'model_unavailable' }, 503, { 'Retry-After': '60' });
   if (status === 429 || status === 529 || status >= 500)
-    return json({ error: 'The model is busy right now. Try again in a moment.' + nothing, code: 'model_busy' }, status >= 500 ? status : 429, { 'Retry-After': '10' });
+    return json({ error: 'The model is busy right now. Try again in a moment.' + nothing, code: 'provider_error' }, status >= 500 ? status : 429, { 'Retry-After': '10' });
   return json({ error: 'The model could not answer this request.' + nothing, code: 'model_error' }, 502);
 }
 

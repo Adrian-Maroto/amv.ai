@@ -268,7 +268,7 @@ section('The model refusing is told in AMV\'s words, and never as a sign-in that
 {
   /* Each status on a new account, so no rate limit decides the answer. */
   const want = { 401: [503, 'model_unavailable'], 403: [503, 'model_unavailable'], 400: [400, 'invalid_request'],
-                 429: [429, 'model_busy'], 529: [529, 'model_busy'], 500: [500, 'model_busy'] };
+                 429: [429, 'provider_error'], 529: [529, 'provider_error'], 500: [500, 'provider_error'] };
   let n = 0;
   for (const [st, [code, name]] of Object.entries(want)) {
     const tok = await signup('status' + (n++) + '@chaos.test');
