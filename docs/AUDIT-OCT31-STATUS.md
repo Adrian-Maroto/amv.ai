@@ -1,0 +1,183 @@
+# The Oct 31 audit's 110-item roadmap: where each item stands
+
+The audit asked for its section 88 roadmap to be used as the production master
+checklist. This is that checklist, item by item, checked against the code on
+Nov 1 2026. Every row says what is true now, not what is planned.
+
+**Status words**
+- **Done** - built, tested, on main.
+- **Built, needs you** - built and tested; it does nothing until the owner
+  binds, sets or switches on what the row names (all in `docs/OWNER-DECISIONS.md`).
+- **Partial** - part of it exists; the row says which part is missing.
+- **Yours** - only the owner can do it (money, accounts, settings, people).
+- **Outside** - needs a party outside AMV (a reviewer, an auditor, a lawyer).
+- **Not yet** - code AMV can write, not written yet.
+- **Not doing** - deliberately not done, with the reason.
+
+## Data tier (Postgres)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Provision managed Postgres | Yours |
+| 2 | Provision Hyperdrive | Yours |
+| 3 | Postgres driver | Done (`postgres` 3.4.9, pinned) |
+| 4 | Organizations/workspaces schema | Done (`migrations/postgres/0001_control_plane.sql`) |
+| 5 | Multi-team membership | Done (memberships table; teams mirrored) |
+| 6 | Currency/payment ledger schema | Done (append-only in the database itself) |
+| 7 | Repositories for accounts, plans, teams, keys, money | Done (`04a-control-plane.js`) |
+| 8 | Dual-write mode | Built, needs you (the `PG` binding) |
+| 9 | Resumable backfill | Built, needs you (`POST /admin/pg/backfill`) |
+| 10 | Digest comparison | Done (per-account digest and a full read-back) |
+| 11 | Shadow reads | Built, needs you (`PG_SHADOW`) |
+| 12 | Staff accounts first | Built, needs you (name them in `PG_SHADOW`) |
+| 13 | Progressive migration 1 -> 100% | Not yet - step 5 moves where sign-in and billing read from; waits for your approval after a week of clean shadow reads |
+| 14 | Postgres authoritative | Not yet - after 13 |
+
+## Security and auth
+
+| # | Item | Status |
+|---|---|---|
+| 15 | Strong consistency for revocation | Done (revocation object; sensitive routes refuse when it cannot be read) |
+| 16 | Fail-closed policy for keys and auth | Done (API keys and sensitive routes fail closed) |
+| 17 | Passwords not standing alone at 8 | Done (passkey first; a password alone needs 15) |
+| 18 | Argon2id password hashing | Not yet - PBKDF2-SHA256 today; changing the hash is an authentication change and needs your approval |
+| 19 | External WebAuthn/auth review | Outside |
+
+## Queues, workflows and Tasks
+
+| # | Item | Status |
+|---|---|---|
+| 20 | Queues | Built, needs you (`AMV_JOBS`, its dead-letter queue) |
+| 21 | Email outbox on the queue | Done (Nov 1; the KV record stays the truth) |
+| 22 | Webhook processing on the queue | Not doing - the payment provider already re-sends every event until it is answered and AMV applies each once; a second queue would be a second record of the same money, and it is a billing change |
+| 23 | Indexing/ingestion on the queue | Not yet - there is no server-side ingestion to move (files are read on the device) |
+| 24 | Dead-letter queues and replay | Done (a dead job is booked again; a dead email pointer leaves the email for the tick) |
+| 25 | Durable workflow engine | Not yet - jobs use the queue, leases and retries; Cloudflare Workflows not adopted |
+| 26 | Long Tasks as durable workflows | Partial - steps that wait on each other, leases, retries; no checkpoint inside a step |
+| 27 | Task checkpoints | Not yet |
+| 28 | Task resume/steering | Partial - a chat turn can be steered; a background Task cannot be steered mid-run |
+| 29 | Human-approval pauses | Done (approval levels; "waiting for your OK") |
+
+## Cloud computer and browser
+
+| # | Item | Status |
+|---|---|---|
+| 30 | Workspace storage in R2 | Built, needs you (`WORKSPACES` bucket) |
+| 31 | Checkpoint before sleep | Done |
+| 32 | Restore on wake | Done |
+| 33 | Workspace checksums/versioning | Not yet |
+| 34 | Container crash/recovery tests | Partial (the workspace outlives its container; no crash-mid-write test) |
+| 35 | Capacity beyond 50 | Yours (`max_instances`, a cost decision) |
+| 36 | Wait UI when capacity is full | Partial - an honest "busy, try again" with Retry-After; no queue to wait in |
+| 37 | Dynamic computer sizes | Not yet |
+| 38 | Persistent cloud browser identity | Done (decision #46: sealed per-agent sign-ins) |
+| 39 | Connectors before browser credentials | Done |
+| 40 | Isolated profile per Agent | Done |
+
+## Agents
+
+| # | Item | Status |
+|---|---|---|
+| 41 | First-class persistent Agents | Done (decision #44) |
+| 42 | Roles, instructions, memory, tools | Partial - role and instructions; no memory or tool list of its own |
+| 43 | Agent budgets | Done |
+| 44 | Agent permissions | Partial - each job's approval level; no per-agent permission set |
+| 45 | Event subscriptions | Done through its jobs (a job can start from an address another service calls) |
+| 46 | Routines | Done (its jobs) |
+| 47 | Evidence history | Done (each job's results) |
+| 48 | Companion on top of Agent | Not doing for now - your decision #44 keeps agents out of the way until someone keeps one |
+| 49 | Multi-agent tool-capable DAG nodes | Partial (steps of a Task can go to different agents) |
+| 50 | Parallel researcher/coder/critic patterns | Not yet |
+
+## Files, retrieval and research
+
+| # | Item | Status |
+|---|---|---|
+| 51 | Direct R2 uploads | Not yet |
+| 52 | File quarantine/scanning | Not yet |
+| 53 | Asynchronous file ingestion | Not yet |
+| 54 | Persistent vector indexing | Partial ("searching by meaning" exists; not a persistent index) |
+| 55 | Hybrid lexical/vector retrieval | Partial (project files searched by passage) |
+| 56 | Large-scale conversation index | Not yet |
+| 57 | Source states found/read/extracted/cited | Done (the research trail) |
+| 58 | Real source logos/previews | Done (kept) |
+
+## Models and money
+
+| # | Item | Status |
+|---|---|---|
+| 59 | Model health telemetry | Partial (circuit and failure audit events, readiness) |
+| 60 | Shared/provider-level circuit breaker | Partial - per server; not shared across servers |
+| 61 | Multi-provider routing | Partial (partner engines; a fallback endpoint) |
+| 62 | Negotiate model capacity | Yours |
+| 63 | Load shedding / brownout | Done (Nov 1: one owner action pauses the heavy parts) |
+| 64 | Fewer Durable Object calls per chat | Partial (switches held, totals sharded) |
+| 65 | Production spend ceiling set on purpose | Yours (`GLOBAL_DAILY_USD_CAP`) |
+| 66 | Per-provider budgets | Not yet |
+| 67 | Per-Agent budgets | Done |
+| 68 | Per-Task budgets | Done (Nov 1: a job's own monthly budget) |
+
+## Launch, docs and operations
+
+| # | Item | Status |
+|---|---|---|
+| 69 | consumer_full profile mandatory in CI | Built, needs you (`AMV_LAUNCH_PROFILE`) |
+| 70 | Rewrite GO-LIVE.md | Done (stage table) |
+| 71 | Stale Agent/Companion docs | Done (Agents are real again) |
+| 72 | Expand the capability registry | Partial (`docs/capabilities.json`, gated) |
+| 73 | Docs/readiness generated from the registry | Not yet |
+| 74 | Deep synthetic monitoring | Built, needs you (`AMV_SYNTHETIC=on`) |
+| 75 | External uptime monitor | Built, needs you (the same probe) |
+| 76 | Paging/on-call | Yours |
+| 77 | Public status page | Yours |
+| 78 | SLOs | Done (`docs/SLO.md`) |
+| 79 | RPO/RTO | Done (`docs/SLO.md`: up to 24 hours today) |
+| 80 | Managed backup strategy | Built, needs you (`AMV_BACKUPS`); point-in-time recovery comes with Postgres |
+| 81 | Restore drills | Built, needs you (`node backup.mjs drill`, monthly) |
+| 82 | Staging environment | Yours (a second Cloudflare environment) |
+| 83 | Canary deployments | Not yet (Workers gradual deployments) |
+| 84 | Automated rollback | Not yet |
+| 85 | CodeQL | Yours (a repository setting) |
+| 86 | Secret scanning / push protection | Done in the gate; GitHub's own is yours (a setting) |
+| 87 | SBOM / build provenance | SBOM done (every deploy); provenance not yet |
+| 88 | Container image scanning | Not yet |
+| 89 | Load tests at 1K/10K/100K | Partial (`tools/load-probe.mjs`) |
+| 90 | Chaos/fault injection | Done (store and model failures never fail open) |
+| 91 | Model/prompt eval framework | Not yet |
+| 92 | Canary model/prompt changes | Not yet |
+| 93 | Trust & Safety operations | Yours (people and process) |
+| 94 | Customer-support operations | Yours |
+| 95 | Legal/privacy review | Outside |
+| 96 | SOC 2 | Outside |
+| 97 | Activation funnel analytics | Done (the funnel in the owner digest) |
+| 98 | First value in under 3 minutes | Not yet measured |
+| 99 | Companion/routine onboarding | Not doing for now (decision #44) |
+| 100 | Native iOS/Android | Yours to decide; not started |
+| 101 | macOS/Windows apps | Yours to decide; not started |
+| 102 | Push notifications and approvals | Built, needs you (VAPID keys) |
+| 103 | Image creation/editing | Not doing (decision #45) |
+| 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
+| 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
+| 106 | Policy/DLP gateway | Not yet |
+| 107 | SIEM/audit export | Not yet |
+| 108 | Retention/residency controls | Not yet |
+| 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
+| 110 | Then competitor parity | - |
+
+## From the audit's other sections
+
+- **Logs at 100% (53):** kept on purpose; the audit agrees for now. Sample
+  ordinary successes when traffic passes a million requests a day.
+- **"1M context" (41):** no product copy promises it; the size is one server
+  constant (`ENGINE_CONTEXT_TOKENS`). Provider-reported capabilities per model
+  are not yet read from the provider.
+
+## Counts
+
+Of the 109 items with work in them (110 is "then parity"): **34 done**, **12
+built and waiting on you**, **19 partial** (87 counted here: SBOM done,
+provenance not), **24 not yet**, **16 yours or outside** (decisions, accounts,
+people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
+next work, largest first: durable Task checkpoints (25-27), direct uploads with
+quarantine (51-53), the eval framework (91), shared circuit breaker and
+per-provider budgets (60, 66), audit export (107).
