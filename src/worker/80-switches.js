@@ -130,10 +130,68 @@ async function _switchGate(request, env, path) {
    GET  /v1/admin/switches                  - what exists and what is off
    Admin token only, rate limited by _adminGate, every flip audited and
    alerted, and the record keeps who-when-why so a switch left off is found. */
-async function adminSwitch(request, env) {
-  { const g = await _adminGate(request, env, 'switch', 30, 500); if (g) return g; }
+/* BROWNOUT: shed the heavy work, keep the product (Oct 31 audit, item 63).
+   When the model provider is rationing capacity, or a launch brings more
+   people than AMV can serve, the right move is not to stop everything
+   (GLOBAL_KILL) but to stop what costs the most per person, so sign-in,
+   payments and ordinary chat on the everyday engines keep working for
+   everybody. One owner action switches these off together:
+     - the engines priced above amv-core (derived from ENGINES, so a new
+       expensive engine is shed without editing this list);
+     - background jobs, the cloud computer, AMV's browser, speech and
+       searching by meaning - the long-running and per-minute-billed work.
+   Each is an ordinary switch, so people see the ordinary honest message
+   ("this part of AMV is paused") and nothing is quietly swapped for
+   something else. The record remembers which switches brownout turned off,
+   so ending it turns back on exactly those - never a switch the owner had
+   off for another reason. */
+const BROWNOUT_FEATURES = ['automations', 'computer', 'browser', 'speech', 'meaning'];
+const BROWNOUT_KEY = 'brownout';
+function _brownoutShed() {
+  const base = (ENGINES['amv-core'] || {}).outCost || 10;
+  const heavy = Object.entries(ENGINES).filter(([, e]) => (e.outCost || 0) > base).map(([k]) => 'model:' + k);
+  return BROWNOUT_FEATURES.map(f => 'feature:' + f).concat(heavy);
+}
+async function _brownoutSet(request, env, on, why) {
+  let prev = null;
+  try { prev = JSON.parse((await env.AMV_KV.get(BROWNOUT_KEY)) || 'null'); } catch (e) {
+    return json({ error: 'The brownout record could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
+  }
+  let current = {};
+  try { current = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {
+    return json({ error: 'The switches could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
+  }
+  const flip = async (name, off) => {
+    const r = await adminSwitch(new Request(request.url, { method: 'POST', headers: request.headers,
+      body: JSON.stringify({ name, off, why: off ? 'brownout' + (why ? ': ' + why : '') : 'brownout over' }) }), env, true);
+    return r.status === 200;
+  };
+  if (on) {
+    if (prev && prev.on) return json({ ok: true, brownout: true, shed: prev.shed, note: 'Brownout was already on.' });
+    /* Only what is on now is ours to turn off - and so, later, ours to turn back on. */
+    const shed = _brownoutShed().filter(n => !(current[n] && current[n].off));
+    const done = [];
+    for (const n of shed) if (await flip(n, true)) done.push(n);
+    await env.AMV_KV.put(BROWNOUT_KEY, JSON.stringify({ on: true, shed: done, why, at: Date.now() }));
+    audit(env, 'brownout_on', { shed: done.join(','), why });
+    try { await alertOnce(env, 'brownout:on', 'BROWNOUT ON: ' + done.length + ' heavy part(s) paused (' + done.join(', ') + ')' + (why ? ' - ' + why : '') + '. Sign-in, payments and chat on the everyday engines keep working.', 1); } catch (e) {}
+    return json({ ok: true, brownout: true, shed: done, failed: shed.filter(n => !done.includes(n)) });
+  }
+  if (!prev || !prev.on) return json({ ok: true, brownout: false, restored: [], note: 'Brownout was not on.' });
+  const restored = [];
+  for (const n of (prev.shed || [])) if (await flip(n, false)) restored.push(n);
+  await env.AMV_KV.put(BROWNOUT_KEY, JSON.stringify({ on: false, shed: [], endedAt: Date.now() }));
+  audit(env, 'brownout_off', { restored: restored.join(',') });
+  try { await alertOnce(env, 'brownout:off', 'Brownout over: ' + restored.length + ' part(s) switched back on.', 1); } catch (e) {}
+  return json({ ok: true, brownout: false, restored, failed: (prev.shed || []).filter(n => !restored.includes(n)) });
+}
+
+async function adminSwitch(request, env, gated) {
+  if (!gated) { const g = await _adminGate(request, env, 'switch', 30, 500); if (g) return g; }
   if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   const body = await request.json().catch(() => ({}));
+  /* POST {brownout: true|false, why} - the preset above. */
+  if (typeof body.brownout === 'boolean') return _brownoutSet(request, env, body.brownout, String(body.why || '').slice(0, 200));
   const name = String(body.name || '').toLowerCase().trim();
   if (!SWITCH_NAME_RE.test(name)) return json({ error: 'A switch is feature:, model:, connector: or write: followed by a name.', code: 'bad_switch' }, 400);
   if (name.startsWith('feature:') && !SWITCH_FEATURES[name.slice(8)])
@@ -168,7 +226,9 @@ async function adminSwitches(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   let m = {};
   try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {}
-  return json({ ok: true, off: m,
+  let brownout = null;
+  try { brownout = JSON.parse((await env.AMV_KV.get(BROWNOUT_KEY)) || 'null'); } catch (e) {}
+  return json({ ok: true, off: m, brownout: { on: !!(brownout && brownout.on), shed: (brownout && brownout.shed) || [], wouldShed: _brownoutShed() },
     features: Object.fromEntries(Object.entries(SWITCH_FEATURES).map(([k, f]) => [k, f.what])),
     models: Object.keys(ENGINES),
     shapes: ['feature:<name>', 'model:<engine>', 'connector:<app>', 'write:<action>'] });

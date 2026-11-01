@@ -174,6 +174,39 @@ section('Only the owner can flip one, and only a real one');
   ok(kill.status === 200, 'and the switch routes are never themselves switched off', kill.status);
 }
 
+section('Brownout: the heavy parts stop together, the everyday product keeps working');
+{
+  const env = mkEnv();
+  const tok = await signedIn(env);
+  /* Something already off for another reason must stay off when brownout ends. */
+  await flipSwitch(env, 'feature:speech', true, 'speech supplier incident');
+  const asUser = await call(env, '/v1/admin/switch', { brownout: true }, { Authorization: 'Bearer ' + tok });
+  ok(asUser.status === 403, 'only the owner can start one', asUser.status);
+  const on = await call(env, '/v1/admin/switch', { brownout: true, why: 'launch traffic' }, ADMIN);
+  const od = await on.json(); W._swCache.at = 0; W._swStrongReset();
+  ok(on.status === 200 && od.brownout === true && od.shed.includes('feature:automations') && od.shed.includes('feature:computer'),
+     'background jobs and the cloud computer are paused', od);
+  ok(od.shed.includes('model:amv-forge') && od.shed.includes('model:amv-apex') && od.shed.includes('model:amv-swift') && !od.shed.some(n => /amv-core|amv-pulse/.test(n)),
+     'the engines priced above the everyday one are paused, and the everyday ones are not', od.shed);
+  ok(!od.shed.includes('feature:speech'), 'what was already off is not claimed as brownout\'s', od.shed);
+  const heavy = await call(env, '/v1/messages', { model: 'amv-forge', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, { Authorization: 'Bearer ' + tok });
+  const hd = await heavy.json();
+  ok(heavy.status === 503 && hd.code === 'paused' && hd.engine === 'amv-forge', 'a heavy engine is refused by name - never swapped for a lighter one', hd);
+  ok((await ask(env, tok)).status === 200, 'chat on the everyday engine still answers');
+  const list = await (await call(env, '/v1/admin/switches', undefined, ADMIN)).json();
+  ok(list.brownout.on && list.brownout.shed.length === od.shed.length && list.brownout.wouldShed.length > 0, 'the console shows brownout on and what it paused', list.brownout);
+  const again = await (await call(env, '/v1/admin/switch', { brownout: true }, ADMIN)).json();
+  ok(again.brownout && /already/.test(again.note), 'starting it twice changes nothing', again);
+  const off = await call(env, '/v1/admin/switch', { brownout: false }, ADMIN);
+  const fd = await off.json(); W._swCache.at = 0; W._swStrongReset();
+  ok(off.status === 200 && fd.restored.length === od.shed.length, 'ending it switches back on exactly what it paused', fd);
+  const after = JSON.parse(await env.AMV_KV.get('switches'));
+  ok(after['feature:speech'] && after['feature:speech'].off && !after['feature:automations'] && !after['model:amv-forge'],
+     'and the switch that was off for another reason is still off', Object.keys(after));
+  const back = await call(env, '/v1/messages', { model: 'amv-forge', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, { Authorization: 'Bearer ' + tok });
+  ok(back.status === 200, 'the heavy engine answers again', back.status);
+}
+
 section('The switchboard: a flip reaches every server within seconds; unreachable, writes stop');
 {
   /* Audit, Oct 31: "within about a minute" is fine for a glitchy feature and

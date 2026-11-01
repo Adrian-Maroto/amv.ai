@@ -25,6 +25,17 @@ The background tick stops spending too. Resume from the same button.
 The daily ceiling (`GLOBAL_DAILY_USD_CAP`) is the automatic version of this.
 Reaching it is an incident, not a setting to raise (owner decision 28).
 
+**Too much load, not a runaway: brownout instead.** When the provider is
+rationing capacity or a launch brings more people than AMV can serve, stopping
+everything is the wrong answer. `POST /v1/admin/switch {"brownout": true,
+"why": "..."}` (admin token) pauses the heavy parts together - the engines
+priced above amv-core, background jobs, the cloud computer, AMV's browser,
+speech, searching by meaning - while sign-in, payments and chat on the everyday
+engines keep working for everybody. Each shows the ordinary "paused" message;
+nothing is swapped for something else. `{"brownout": false}` switches back on
+exactly what it paused and leaves alone anything that was off for another
+reason. `GET /v1/admin/switches` shows whether it is on.
+
 ## 2. One part is misbehaving
 
 **Switch off exactly that part:** Founder Dashboard > *Switch off one part*.
