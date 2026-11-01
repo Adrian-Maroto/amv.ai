@@ -758,5 +758,24 @@
   "it": "• Puoi cambiarlo quando vuoi - es. “fammi un poster, ma in cinese” - e AMV segue la richiesta solo per quel compito.",
   "ko": "• 언제든 바꿀 수 있습니다. 예: “포스터 만들어 줘, 근데 중국어로” - AMV는 그 작업에만 그 요청을 따릅니다.",
   "ta": "• எப்போது வேண்டுமானாலும் மாற்றலாம் - எ.கா. “எனக்கு ஒரு சுவரொட்டி செய், ஆனால் சீன மொழியில்” - AMV அந்தப் பணிக்கு மட்டும் அதைப் பின்பற்றும்."
+ },
+ "1 task": {
+  "es": "1 tarea",
+  "zh": "1 个任务",
+  "hi": "1 कार्य",
+  "ar": "مهمة واحدة",
+  "pt": "1 tarefa",
+  "fr": "1 tâche",
+  "de": "1 Aufgabe",
+  "ja": "タスク1件",
+  "ru": "1 задача",
+  "id": "1 tugas",
+  "bn": "1টি কাজ",
+  "ur": "1 کام",
+  "tr": "1 görev",
+  "vi": "1 tác vụ",
+  "it": "1 attività",
+  "ko": "작업 1개",
+  "ta": "1 பணி"
  }
 }

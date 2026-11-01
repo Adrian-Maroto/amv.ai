@@ -38,8 +38,11 @@ function _usageContentHTML(){
   const _trendBars=_daily.map(d=>{
     const h=Math.round((d.count/_maxDay)*100);
     const dObj=new Date(d.day+'T00:00:00');
-    const label=dObj.toLocaleDateString(undefined,{month:'short',day:'numeric'});
-    return '<div class="trend-col" title="'+label+': '+d.count+' task'+(d.count===1?'':'s')+'"><div class="trend-bar-wrap"><div class="trend-bar" style="height:'+Math.max(h,3)+'%"></div></div><div class="trend-lbl">'+dObj.getDate()+'</div></div>';
+    /* The date in the language AMV is in, not the browser's; the count through
+       T, which carries the number into the translation. */
+    let label='';
+    try{ const c=_lang(); label=dObj.toLocaleDateString(c&&c!=='en'&&c!=='auto'?c:undefined,{month:'short',day:'numeric'}); }catch(e){ label=dObj.toLocaleDateString(); }
+    return '<div class="trend-col" title="'+escH(label+': '+T(d.count===1?'1 task':d.count+' tasks'))+'"><div class="trend-bar-wrap"><div class="trend-bar" style="height:'+Math.max(h,3)+'%"></div></div><div class="trend-lbl">'+dObj.getDate()+'</div></div>';
   }).join('');
   const trendPanel=
     '<div class="ss2"><h3>Activity over time</h3>'+
