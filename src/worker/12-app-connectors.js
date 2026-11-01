@@ -737,7 +737,21 @@ function _crewDetailTooLong(){
 async function autoCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
-  const body = await request.json().catch(()=>({}));
+  let body = await request.json().catch(()=>({}));
+  /* A SECOND OPINION (Oct 31 audit, item 50: parallel researcher and
+     critic). One question becomes three steps: two researchers working it
+     side by side from different angles, and a critic that waits for both,
+     checks one against the other and writes the answer that survives. */
+  if(body.pattern === 'second_opinion'){
+    const q = String(body.detail || '').trim();
+    if(!q) return json({ error:'detail required' }, 400);
+    if(q.length > CREW_DETAIL_MAX - 400) return _crewDetailTooLong();
+    body = Object.assign({}, body, { steps: [
+      { title: 'Research', kind: 'research', detail: q + '\n\nWork from primary sources: official sites, filings, the people or organisations involved. Name every source.' },
+      { title: 'Research, another way', kind: 'research', detail: q + '\n\nWork from independent and critical sources: reviews, reporting, complaints, comparisons. Name every source.' },
+      { title: 'Check and answer', role: 'critic', after: [0, 1], detail: q },
+    ] });
+  }
   if(Array.isArray(body.steps)) return _autoCreateSteps(request, env, user, body);
   const detail = String(body.detail||'').trim();
   const repeat = String(body.repeat||'daily').toLowerCase();
@@ -1061,7 +1075,10 @@ async function _autoCreateSteps(request, env, user, body){
       if(!a) return json({ error:'Step ' + (n + 1) + ' names an agent that does not exist.', code:'agent_unknown' }, 400);
       agent = a.id;
     }
-    steps.push({ detail, title, after, agent, kind: s.kind === 'research' ? 'research' : 'task' });
+    /* A critic reviews what it waits for, so it must wait for something. */
+    const role = s.role === 'critic' ? 'critic' : '';
+    if(role && !after.length) return json({ error:'Step ' + (n + 1) + ' checks other steps, so it has to wait for at least one.', code:'step_after' }, 400);
+    steps.push({ detail, title, after, agent, kind: s.kind === 'research' ? 'research' : 'task', role });
   }
   if(steps.every(s => s.after.length)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
 
@@ -1090,6 +1107,7 @@ async function _autoCreateSteps(request, env, user, body){
       created: now, runs: 0, lastError: null, active: true,
       group, step: { n: n + 1, of: steps.length, title: s.title },
       ...(s.agent ? { agent: s.agent } : {}),
+      ...(s.role ? { role: s.role } : {}),
       /* One step: its id, as tasks have always been stored. Several: the
          list, and `got` collects each result as it arrives. */
       ...(waits ? { after: s.after.length === 1 ? ids[s.after[0]] : s.after.map(a => ids[a]), waiting: true } : {}),

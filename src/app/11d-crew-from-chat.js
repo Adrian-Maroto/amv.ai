@@ -223,6 +223,7 @@ async function _crewTool(name, input){
   if(name === 'crew_steps'){
     const raw = Array.isArray(input.steps) ? input.steps : [];
     const steps = raw.map(s => ({ title: String((s && s.title) || '').trim().slice(0, 80), detail: String((s && s.detail) || '').trim(),
+                                  ...(s && s.role === 'critic' ? { role: 'critic' } : {}),
                                   ...(s && Number.isInteger(s.after) ? { after: s.after }
                                       : s && Array.isArray(s.after) && s.after.length ? { after: s.after.filter(Number.isInteger).slice(0, 4) } : {}) }));
     if(steps.length < 2 || steps.length > 5 || steps.some(s => !s.detail))

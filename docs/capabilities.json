@@ -324,6 +324,10 @@
   { "id": "task.steer", "status": "built", "name": "A background job can be steered for its next run with a note that is used once",
     "code": [["src/worker/13-schedules-and-approvals.js", "action === 'steer'"], ["src/worker/15-run-context-and-execution.js", "FOR THIS RUN ONLY"], ["src/crew/mission-control.js", "mcJobSteer"]],
     "tests": ["tests/worker/a-job-can-be-steered-for-its-next-run.test.mjs"],
-    "says": ["steer"] }
+    "says": ["steer"] },
+  { "id": "task.critic", "status": "built", "name": "A step of a Task can be the critic that checks the steps it waits for, and one question can become two researchers and a critic",
+    "code": [["src/worker/12-app-connectors.js", "second_opinion"], ["src/worker/15-run-context-and-execution.js", "THE CHECKER"]],
+    "tests": ["tests/worker/a-task-in-steps-keeps-going-without-you.test.mjs"],
+    "says": ["second opinion", "critic"] }
  ]
 }

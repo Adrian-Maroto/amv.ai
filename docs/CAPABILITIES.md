@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-79 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+80 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -41,6 +41,7 @@
 | A step that waits for several steps running side by side, handed every result | `src/worker/13-schedules-and-approvals.js`, `src/worker/12-app-connectors.js` | `worker/a-task-in-steps-keeps-going-without-you.test.mjs` |
 | A background job can have a monthly budget of its own | `src/worker/77-agents.js`, `src/worker/13-schedules-and-approvals.js` | `worker/an-agent-works-within-what-it-was-given.test.mjs` |
 | A background job can be steered for its next run with a note that is used once | `src/worker/13-schedules-and-approvals.js`, `src/worker/15-run-context-and-execution.js`, `src/crew/mission-control.js` | `worker/a-job-can-be-steered-for-its-next-run.test.mjs` |
+| A step of a Task can be the critic that checks the steps it waits for, and one question can become two researchers and a critic | `src/worker/12-app-connectors.js`, `src/worker/15-run-context-and-execution.js` | `worker/a-task-in-steps-keeps-going-without-you.test.mjs` |
 
 ## Code
 

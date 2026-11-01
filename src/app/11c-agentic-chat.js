@@ -123,7 +123,8 @@ const AMV_TOOLS = [
         title:{type:'string', description:'A few words naming the step, shown to the person.'},
         detail:{type:'string', description:'Exactly what this step does, as an instruction to whoever runs it. It sees this and the result of the step it waits for, nothing else - include everything else it needs.'},
         after:{ anyOf:[ {type:'integer', minimum:0}, {type:'array', items:{type:'integer', minimum:0}, minItems:1, maxItems:4} ],
-                description:'Earlier step it waits for and builds on (0 is the first), or a list to wait for all of, e.g. [0,1,2]. Leave out to start straight away.'}
+                description:'Earlier step it waits for and builds on (0 is the first), or a list to wait for all of, e.g. [0,1,2]. Leave out to start straight away.'},
+        role:{type:'string', enum:['critic'], description:'Only "critic": this step checks the work of the steps it waits for against each other (unsourced claims, disagreements, sums, gaps) and answers with what survives. It must wait for at least one step. Use it when getting something wrong would matter: two researchers side by side, then a critic.'}
       }, required:['title','detail'] } },
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }

@@ -138,6 +138,26 @@ section('A step that fails resumes from where the task got to, not from the star
   answerText = null;
 }
 
+section('A second opinion: two researchers side by side, then a critic that checks both (audit item 50)');
+{
+  put({ items: [], results: [] });
+  const r0 = await post('/auto/create', { pattern: 'second_opinion', detail: 'Is the Leeds Climbing Centre open on bank holidays?', approval: 'auto' });
+  ok(r0.status === 200 && r0.d.items && r0.d.items.length === 3, 'one question becomes three steps', r0.status + ' ' + JSON.stringify(r0.d).slice(0, 160));
+  const [x, y, z] = r0.d.items || [];
+  ok(x && y && !x.waiting && !y.waiting && x.kind === 'research' && y.kind === 'research', 'two researchers, neither waiting for the other', [x && x.kind, y && y.kind]);
+  ok(z && z.role === 'critic' && Array.isArray(z.after) && z.after.includes(x.id) && z.after.includes(y.id), 'and a critic that waits for both', z);
+  prompts = []; mode = 'ok';
+  answerText = (n) => n === 1 ? 'Open 10-4 on bank holidays (official site).' : n === 2 ? 'Closed on bank holidays, per a review from 2023.' : 'What I checked: the two disagree.';
+  await tickAt(x.next + 60e3);
+  ok(/primary sources/.test(prompts[0] || '') && /independent and critical/.test(prompts[1] || ''), 'the researchers work from different angles', prompts.slice(0, 2).map(p => p.slice(-90)));
+  const crit = prompts[2] || '';
+  ok(/Open 10-4/.test(crit) && /Closed on bank holidays/.test(crit), 'the critic is handed both results', crit.slice(0, 200));
+  ok(/YOUR ROLE IN THIS TASK IS THE CHECKER/.test(crit) && /two results that disagree/.test(crit) && /What I checked/.test(crit), 'and told to check them against each other before answering', crit.slice(-300));
+  const bad = await post('/auto/create', { steps: [{ detail: 'Check something', role: 'critic' }, { detail: 'More', after: 0 }], approval: 'auto' });
+  ok(bad.status === 400 && bad.d.code === 'step_after', 'a critic with nothing to check is refused', bad.d);
+  answerText = null;
+}
+
 section('A step whose step fails for good is cancelled, and says why');
 {
   put({ items: [], results: [] });

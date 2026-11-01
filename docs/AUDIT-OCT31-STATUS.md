@@ -87,7 +87,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 47 | Evidence history | Done (each job's results) |
 | 48 | Companion on top of Agent | Not doing for now - your decision #44 keeps agents out of the way until someone keeps one |
 | 49 | Multi-agent tool-capable DAG nodes | Partial (steps of a Task can go to different agents) |
-| 50 | Parallel researcher/coder/critic patterns | Not yet |
+| 50 | Parallel researcher/coder/critic patterns | Done - steps run side by side and a step can wait for several; a step can now be the critic (it checks what it waits for against each other - unsourced claims, disagreements, sums, gaps - and answers with what survives), and `pattern: second_opinion` makes one question into two researchers from different angles plus a critic. Chat can ask for a critic step |
 
 ## Files, retrieval and research
 
