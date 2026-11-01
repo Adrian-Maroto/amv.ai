@@ -24,6 +24,32 @@ const WS_VERSIONS = 5;
    bounded, and a stop without a save is recorded and told, never silent. */
 const WS_SAVE_TRIES = 3;
 
+/* ── ONE KEY PER MACHINE, ONE TOKEN PER CALL (Nov 1 audit COMP-006) ───────
+
+   The root key (AMV_COMPUTER_KEY) used to be handed to every container as
+   its bridge key, and the person's own code runs in that container - so a
+   program reading its own process table held the key of the whole fleet.
+   Now the root key never leaves the two Workers:
+     - each container gets a key DERIVED from the root, this machine's id and
+       a counter that moves every time the container starts. A key read out
+       of a container opens that one machine (its owner's), and only until it
+       next starts - stopping a machine revokes its key, nothing else rotates;
+     - every call from the main Worker carries a token signed with the root
+       for THIS machine's id and THIS path, good for a minute and once: a
+       token for one person's machine is refused by every other one.
+   An incoming root key is never passed on to the container. */
+const CALL_TTL_MS = 60 * 1000;
+const _enc = new TextEncoder();
+async function _hmacHex(key, msg) {
+  const k = await crypto.subtle.importKey('raw', _enc.encode(String(key)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return [...new Uint8Array(await crypto.subtle.sign('HMAC', k, _enc.encode(msg)))].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function _sameHex(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
 /* The names a save recorded as changing while it was read, or nothing. */
 function _wsChanging(meta) {
   if (!meta || !meta.changing) return {};
@@ -45,7 +71,41 @@ export class AMVComputer extends Container {
   ];
   constructor(ctx, env) {
     super(ctx, env);
-    this.envVars = { AMV_CLOUD_KEY: String((env && env.AMV_COMPUTER_KEY) || ''), PORT: '8080' };
+    /* The bridge key is filled in (_machineKey) before the container starts. */
+    this.envVars = { PORT: '8080' };
+    this._used = new Map();
+  }
+
+  async _kv(k) { const s = this.ctx && this.ctx.storage; if (s && typeof s.get === 'function') return s.get(k); return (this._mem || {})[k]; }
+  async _kvPut(k, v) { const s = this.ctx && this.ctx.storage; if (s && typeof s.put === 'function') return s.put(k, v); (this._mem = this._mem || {})[k] = v; }
+  /* This machine's bridge key: derived, never the root. `fresh` moves the
+     counter first - called only when a container is about to start. */
+  async _machineKey(fresh) {
+    const root = String((this.env && this.env.AMV_COMPUTER_KEY) || '');
+    if (root.length < 32) return '';
+    if (fresh || !this._key) {
+      let epoch = +(await this._kv('key_epoch')) || 0;
+      if (fresh) { epoch += 1; await this._kvPut('key_epoch', epoch); }
+      this._key = await _hmacHex(root, 'amv-computer-machine\nv1\n' + this.ctx.id.toString() + '\n' + epoch);
+      this.envVars = Object.assign({}, this.envVars, { AMV_CLOUD_KEY: this._key });
+    }
+    return this._key;
+  }
+  /* A call from the main Worker: signed for this machine, this path, within
+     the minute, and not seen before. */
+  async _callOk(request, path) {
+    const root = String((this.env && this.env.AMV_COMPUTER_KEY) || '');
+    if (root.length < 32) return false;
+    const t = String(request.headers.get('X-AMV-Computer-Call') || '').split('.');
+    if (t.length !== 4 || t[0] !== 'v1' || !/^\d{13}$/.test(t[1]) || !/^[0-9a-f]{32}$/.test(t[2]) || !/^[0-9a-f]{64}$/.test(t[3])) return false;
+    const exp = +t[1], now = Date.now();
+    if (exp < now || exp > now + CALL_TTL_MS + 5000) return false;
+    const want = await _hmacHex(root, ['amv-computer-call', 'v1', this.ctx.id.toString(), path, t[1], t[2]].join('\n'));
+    if (!_sameHex(want, t[3])) return false;
+    for (const [n, e] of this._used) if (e < now) this._used.delete(n);
+    if (this._used.has(t[2])) return false;
+    this._used.set(t[2], exp);
+    return true;
   }
 
   /* ── THE WORKSPACE OUTLIVES THE CONTAINER ────────────────────────────────
@@ -104,7 +164,7 @@ export class AMVComputer extends Container {
   /* The container's own port, directly: containerFetch would try to start a
      container that is already starting. */
   async _bridge(path, init) {
-    const headers = Object.assign({ 'X-AMV-Bridge-Token': String(this.env.AMV_COMPUTER_KEY || '') }, (init && init.headers) || {});
+    const headers = Object.assign({}, (init && init.headers) || {}, { 'X-AMV-Bridge-Token': await this._machineKey(false) });
     return this.container.getTcpPort(8080).fetch('http://container/amv-bridge/' + path, Object.assign({}, init || {}, { headers }));
   }
 
@@ -222,7 +282,7 @@ export class AMVComputer extends Container {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/amv-workspace/forget') {
-      if (request.headers.get('X-AMV-Bridge-Token') !== String(this.env.AMV_COMPUTER_KEY || '') || !this.env.AMV_COMPUTER_KEY)
+      if (!(await this._callOk(request, url.pathname)))
         return new Response(JSON.stringify({ error: 'not_allowed' }), { status: 401 });
       if (this._wsOn()) {
         await this.env.WORKSPACES.delete(this._wsKey());
@@ -236,7 +296,7 @@ export class AMVComputer extends Container {
        Worker reaches this with the person's sign-in checked, never the page. */
     if (url.pathname === '/amv-workspace/versions' || url.pathname === '/amv-workspace/rollback' || url.pathname === '/amv-workspace/fresh') {
       const reply = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
-      if (request.headers.get('X-AMV-Bridge-Token') !== String(this.env.AMV_COMPUTER_KEY || '') || !this.env.AMV_COMPUTER_KEY)
+      if (!(await this._callOk(request, url.pathname)))
         return reply({ error: 'not_allowed' }, 401);
       if (!this._wsOn()) return reply({ error: 'Saved copies are not switched on for this deployment.', code: 'needs_service' }, 503);
       if (url.pathname === '/amv-workspace/versions') {
@@ -300,13 +360,23 @@ export class AMVComputer extends Container {
       console.log(JSON.stringify({ event: 'workspace_rolled_back', to: id }));
       return reply({ restored: true, id });
     }
+    /* Nothing below is reached without a call signed for this machine. */
+    if (!(await this._callOk(request, url.pathname)))
+      return new Response(JSON.stringify({ error: 'not_allowed' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
     /* A machine that did not get its workspace back does no work (COMP-002):
        a command run there would run on an empty disk as though it were
        theirs. The page is told why and offered the remedies. */
     if ((await this._st()).restoreFailed)
       return new Response(JSON.stringify({ error: 'Your saved workspace could not be put back on this machine, so it is not running anything until it is. Put back an earlier saved copy, or start fresh (the copy is kept).', code: 'workspace_restore_failed' }),
         { status: 409, headers: { 'Content-Type': 'application/json' } });
-    const res = await super.fetch(request);
+    /* Everything else is passed to the machine: only with a call signed for
+       it, and with this machine's own key in place of whatever came in. A
+       container about to start gets a key no earlier container had. */
+    await this._machineKey(!this.container.running);
+    const h = new Headers(request.headers);
+    h.delete('X-AMV-Computer-Call');
+    h.set('X-AMV-Bridge-Token', await this._machineKey(false));
+    const res = await super.fetch(new Request(request, { headers: h }));
     /* The request that started the machine ran its restore first; if that
        failed, its answer came from an empty disk and is not handed back. */
     if ((await this._st()).restoreFailed)

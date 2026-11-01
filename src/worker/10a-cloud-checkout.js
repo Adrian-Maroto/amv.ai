@@ -149,8 +149,8 @@ async function computerCheckout(request, env){
 
   await _computerBillAwake(env, user.email, Date.now());
   const call = async (route, payload) => {
-    const r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: JSON.stringify(payload) }));
+    const r = await _computerCall(env, stub, '/amv-bridge/' + route, {
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await r.json().catch(() => ({}));
     if(r.status === 401) throw new Error('computer_key');
     if(!r.ok) throw new Error(String(d.error || ('status_' + r.status)));

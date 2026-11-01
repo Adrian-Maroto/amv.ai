@@ -588,6 +588,13 @@ To switch it on (about ten minutes, once):
    npx wrangler deploy
    ```
 
+   The key stays in the two Workers. Each person's machine is given a key of
+   its own made from it, which changes every time that machine starts, and
+   every call to a machine is signed for that machine alone. If the cloud
+   computer was deployed before November 2026, run `npx wrangler deploy` in
+   `cloud/` once more so it has this: until then it still hands every machine
+   the shared key.
+
 5. Optional, and recommended: keep each person's workspace when their machine
    sleeps. Without it, files in the cloud workspace last only as long as the
    container - a few idle minutes. With it, the workspace is saved before the

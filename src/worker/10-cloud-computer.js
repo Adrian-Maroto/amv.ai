@@ -30,13 +30,35 @@ async function _computerName(email){
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
   return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
 }
+/* A CALL SIGNED FOR ONE MACHINE (Nov 1 audit COMP-006). The computer Worker
+   accepts a call only with a token signed with AMV_COMPUTER_KEY for that
+   machine's id and that path, good for a minute and once (cloud/computer.mjs,
+   _callOk) - so nothing that reaches one machine can be replayed at another.
+   The plain key is still sent beside it, which only a computer Worker from
+   before this change reads; the current one ignores it and never passes it
+   on. It goes when every deployment has redeployed cloud/. */
+async function _computerStub(env, email){
+  const id = env.AMV_COMPUTER.idFromName(await _computerName(email));
+  const stub = env.AMV_COMPUTER.get(id);
+  return Object.assign(Object.create(stub), { _amvId: String(id), fetch: (req) => stub.fetch(req) });
+}
+async function _computerCall(env, stub, path, init){
+  /* The id the stub was made from (_computerStub): what the machine reads as its own. */
+  const id = String(stub._amvId || stub.id || '');
+  const exp = String(Date.now() + 60000);
+  const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(env.AMV_COMPUTER_KEY)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(['amv-computer-call', 'v1', id, path, exp, nonce].join('\n'))))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  const headers = Object.assign({}, (init && init.headers) || {}, { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY), 'X-AMV-Computer-Call': ['v1', exp, nonce, sig].join('.') });
+  return stub.fetch(new Request('http://amv-computer' + path, Object.assign({ method: 'POST' }, init || {}, { headers })));
+}
 /* Erasing an account: the computer Worker deletes the saved workspace and
    stops the machine (cloud/computer.mjs, /amv-workspace/forget). True when
    it said so. */
 async function _computerForget(env, email){
-  const stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(email)));
-  const r = await stub.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST',
-    headers: { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) } }));
+  const stub = await _computerStub(env, email);
+  const r = await _computerCall(env, stub, '/amv-workspace/forget', {});
   if (!r.ok) return false;
   const d = await r.json().catch(() => null);
   return !!(d && d.forgotten);
@@ -88,7 +110,7 @@ async function _computerOpen(request, env, route){
                     code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429) };
   }
   let stub;
-  try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
+  try{ stub = await _computerStub(env, user.email); }
   catch(e){ return { res: json({ error: 'The cloud workspace could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503) }; }
   return { user, stub };
 }
@@ -104,8 +126,8 @@ async function computerVersions(request, env, which){
   const path = which === 'rollback' ? 'rollback' : which === 'fresh' ? 'fresh' : 'versions';
   let r, d;
   try{
-    r = await stub.fetch(new Request('http://amv-computer/amv-workspace/' + path, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: JSON.stringify({ id: String(body.id || '') }) }));
+    r = await _computerCall(env, stub, '/amv-workspace/' + path, {
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(body.id || '') }) });
     d = await r.json().catch(() => null);
   }catch(e){ d = null; }
   if(!d) return json({ error: 'The saved copies could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503);
@@ -122,8 +144,8 @@ async function computerRoute(request, env, route){
   await _computerBillAwake(env, user.email, Date.now());
   let r, text;
   try{
-    r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: raw || '{}' }));
+    r = await _computerCall(env, stub, '/amv-bridge/' + route, {
+      headers: { 'Content-Type': 'application/json' }, body: raw || '{}' });
     text = await r.text();
   }catch(e){
     audit(env, 'computer_unavailable', { by: user.email, route });

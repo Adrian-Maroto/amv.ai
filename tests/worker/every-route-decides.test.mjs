@@ -231,7 +231,9 @@ section('The cloud workspace\u2019s one door really is a door');
      name is trusted for: a session, refused when absent, before anything else. */
   const cc = codeOnly(bodyOf('_computerOpen'));
   ok(/requireUser\(/.test(cc) && /error:'unauthorized' \}, 401/.test(cc.replace(/\s+/g, ' ')), '_computerOpen authenticates and refuses nobody-there', cc.slice(0, 160));
-  ok(cc.indexOf('requireUser(') < cc.indexOf('AMV_COMPUTER.get('), 'and does so before it reaches for a machine', true);
+  const reach = cc.indexOf('_computerStub(');
+  ok(reach > 0 && cc.indexOf('requireUser(') < reach, 'and does so before it reaches for a machine', reach);
+  ok(/AMV_COMPUTER\.get\(/.test(codeOnly(bodyOf('_computerStub'))), 'the machine is reached only through _computerStub', true);
 }
 
 {
