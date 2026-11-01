@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agentjar.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup };\n');
+  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const kv = new Map(); const vals = new Map(); const audits = [];
@@ -115,9 +115,10 @@ section('Read unattended: only the listed pages its job names, and nothing but r
 section('Expires on its own: 30 days after a watched run refreshed it');
 {
   const key = 'agentjar:' + ME + ':' + AG;
-  const rec = await W.connOpen(env, kv.get(key));
+  const k = await W._agentDek(env, ME, AG, false);
+  const rec = await W._agentJarOpen(k, ME, AG, kv.get(key));
   rec.sites['tracker.example.com'].at = Date.now() - 31 * 86400 * 1000;
-  kv.set(key, await W.connSeal(env, rec));
+  kv.set(key, await W._agentJarSeal(k, ME, AG, rec));
   const loaded = await W._agentJarLoad(env, ME, await agent());
   ok(loaded.length === 1 && /WIKI/.test(loaded[0].value), 'the stale site is no longer used; the fresh one is', loaded.map(c => c.domain));
 }
@@ -173,6 +174,62 @@ section('A forget that cannot delete says so, fences the sign-in, and finishes l
   ok(d.d.signIns === 'pending' && d.d.ok === true, 'deleting the agent says its sign-ins are still being deleted', d.d);
   await W.runAgentJarCleanup(env);
   ok(!kv.has(jarKey), 'and they are, at the next retry');
+}
+
+section('Each agent seals with a key of its own, and forgetting destroys it (Nov 1 audit AGENT-010)');
+{
+  const t = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
+  const mk = async (name, site) => (await call('/v1/agents/save', { name, browserKeep: true, browserSites: [site] }, t)).d.agent;
+  const A1 = await mk('Alpha', 'tracker.example.com'), B1 = await mk('Beta', 'tracker.example.com');
+  await W._agentJarSave(env, ME, await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-SECRET')]);
+  await W._agentJarSave(env, ME, await W._agentFind(env, ME, B1.id), [cookie('tracker.example.com', 'BETA-SECRET')]);
+  const ra = await W._agentFind(env, ME, A1.id), rb = await W._agentFind(env, ME, B1.id);
+  ok(ra.browser.dek && rb.browser.dek && ra.browser.dek !== rb.browser.dek, 'each agent has a key of its own', [!!ra.browser.dek, !!rb.browser.dek]);
+  const jarA = kv.get('agentjar:' + ME + ':' + A1.id);
+  let globalOpens = true; try { await W.connOpen(env, jarA); } catch (e) { globalOpens = false; }
+  ok(!globalOpens, 'a jar is not sealed under the deployment key: that key alone opens no sign-in');
+  const kb = await W._agentDek(env, ME, B1.id, false);
+  ok(await W._agentJarOpen(kb, ME, B1.id, jarA) === null && await W._agentJarOpen(kb, ME, A1.id, jarA) === null, 'one agent’s key does not open another agent’s jar');
+  /* A jar copied over another agent's: it does not open there, and nothing is used. */
+  const jarB = kv.get('agentjar:' + ME + ':' + B1.id);
+  kv.set('agentjar:' + ME + ':' + B1.id, jarA);
+  ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, B1.id))).length === 0, 'a jar moved under another agent’s name opens nothing there');
+  kv.set('agentjar:' + ME + ':' + B1.id, jarB);
+  /* A jar sealed the earlier way, under the deployment key: never opened. */
+  kv.set('agentjar:' + ME + ':' + B1.id, await W.connSeal(env, { sites: { 'tracker.example.com': { at: Date.now(), cookies: [cookie('tracker.example.com', 'OLD-FORMAT')] } } }));
+  ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, B1.id))).length === 0, 'a jar in the earlier format is not opened - the next watched run signs in again');
+  kv.set('agentjar:' + ME + ':' + B1.id, jarB);
+  /* Editing an agent keeps its key and its fences. */
+  await call('/v1/agents/signins/forget', { id: A1.id, site: 'tracker.example.com' }, t);
+  await new Promise(r => setTimeout(r, 2));
+  await W._agentJarSave(env, ME, await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-2')]);
+  const before = await W._agentFind(env, ME, A1.id);
+  const ed = await call('/v1/agents/save', { id: A1.id, name: 'Alpha renamed', browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, t);
+  const after = await W._agentFind(env, ME, A1.id);
+  ok(after.browser.dek === before.browser.dek && JSON.stringify(after.browser.revokedSites) === JSON.stringify(before.browser.revokedSites) && after.browser.revokedSites,
+     'changing an agent’s sites keeps its key and the fence on what it forgot', { dek: after.browser.dek === before.browser.dek, revoked: after.browser.revokedSites });
+  ok((await W._agentJarLoad(env, ME, after)).some(c => c.value === 'ALPHA-2'), 'and what it holds still opens');
+  const list = await call('/v1/agents', undefined, t);
+  const exp = await call('/v1/account/export', undefined, t);
+  const shown = JSON.stringify(ed.d) + JSON.stringify(list.d) + JSON.stringify(exp.d);
+  ok(!shown.includes(before.browser.dek) && !/"dek"|revokedSites|revokedAt/.test(shown), 'no agent key or fence is ever sent to the page, in a list, a save or an export', shown.length);
+  ok(exp.d.withheld && exp.d.withheld.agentkeys, 'the export says the keys exist and are withheld', exp.d.withheld);
+  /* Changing CONNECT_KEY (the old one kept as CONNECT_KEY_PREV): sign-ins still open. */
+  const savedKey = env.CONNECT_KEY; env.CONNECT_KEY_PREV = savedKey; env.CONNECT_KEY = 'd'.repeat(44);
+  ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, A1.id))).some(c => c.value === 'ALPHA-2'), 'a new deployment key, the old one kept for opening: every sign-in still opens');
+  env.CONNECT_KEY = savedKey; delete env.CONNECT_KEY_PREV;
+  /* Forgetting every sign-in destroys the key: a stale copy of the jar, read
+     from anywhere, opens to nothing even with the fence taken away. */
+  const stale = kv.get('agentjar:' + ME + ':' + A1.id);
+  const f = await call('/v1/agents/signins/forget', { id: A1.id }, t);
+  const gone = await W._agentFind(env, ME, A1.id);
+  ok(f.status === 200 && !gone.browser.dek, 'forgetting all of an agent’s sign-ins destroys its key', f.d);
+  kv.set('agentjar:' + ME + ':' + A1.id, stale);
+  await W._withKind(env, 'agents', ME, (rec) => { const a = rec.list.find(x => x.id === A1.id); delete a.browser.revokedAt; delete a.browser.revokedSites; }, { list: [] });
+  ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, A1.id))).length === 0, 'a copy that outlived the delete opens to nothing, even without the fence');
+  kv.delete('agentjar:' + ME + ':' + A1.id);
+  await W.revokeUserTokens(env, ME);
+  ok(!(await W._agentFind(env, ME, B1.id)).browser.dek, '"sign out everywhere" destroys every agent’s key');
 }
 
 section('No key to seal with: no sign-in is kept');

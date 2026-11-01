@@ -628,3 +628,17 @@ the repository.
     If it is ever lost, everyone with a password has to reset it; if it is
     ever exposed, put the old value in `PASSWORD_PEPPER_PREVIOUS`, set a new
     `PASSWORD_PEPPER`, and remove the old one once people have signed in.
+17. **A key service for the keys that seal people's sign-ins (Nov 1 audit
+    AGENT-010; recommended before agents keep sign-ins for many people)**:
+    each agent's saved sign-ins are now sealed under a key of that agent's
+    own, and forgetting destroys it - so one leaked agent key opens one
+    agent. The keys themselves are still sealed under `CONNECT_KEY`, which
+    lives in the Worker: whoever holds that secret and a copy of the store can
+    open every agent's key. Closing that last step means a key service that
+    wraps and unwraps keys without ever handing its own key out (AWS KMS,
+    Google Cloud KMS, or an HSM), called from the Worker with a credential
+    scoped to wrap/unwrap only, with its own audit log. It is a monthly bill
+    and an account to run, so it is yours to choose. Until then: keep
+    `CONNECT_KEY` only in Cloudflare's secret store, rotate it with
+    `CONNECT_KEY_PREV` if it is ever exposed, and do not switch agent sign-ins
+    on for a large audience.

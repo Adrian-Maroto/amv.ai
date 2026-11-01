@@ -20358,6 +20358,18 @@ async function accountExport(request, env) {
     catch (e) { noteFailure(kind, e); }
   }
 
+  /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
+     not data: the agents go out with their settings, the keys stay. */
+  if (records.agents && Array.isArray(records.agents.list)) {
+    let had = false;
+    records.agents = Object.assign({}, records.agents, { list: records.agents.list.map(a => {
+      if (!a || !a.browser) return a;
+      if (a.browser.dek) had = true;
+      return Object.assign({}, a, { browser: { keep: !!a.browser.keep, sites: Array.isArray(a.browser.sites) ? a.browser.sites : [] } });
+    }) });
+    if (had) withheld.agentkeys = 'the keys that seal your agents\u2019 saved sign-ins (see each agent to review or forget them)';
+  }
+
   /* The account record is the SUBJECT of the export. Without it there is
      nothing to hand over that means anything, so that one failure is refused
      outright rather than reported as a gap. */
@@ -44015,6 +44027,9 @@ async function _agentsAllowed(env, user) {
 
 /* GET /v1/agents - every agent, with what it has spent this month, how many
    jobs it has, and the latest thing it produced. */
+/* What the page is shown of an agent's browser settings: the switch and the
+   sites. Its key and revocation stamps stay on the server. */
+function _agentBrowserShown(b){ return { keep: !!(b && b.keep), sites: (b && Array.isArray(b.sites)) ? b.sites.slice() : [] }; }
 async function agentsList(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -44032,7 +44047,7 @@ async function agentsList(request, env) {
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
       budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created,
-      browser: a.browser || { keep: false, sites: [] },
+      browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
       jobs: jobs.map(x => ({ id: x.id, detail: String(x.detail || '').slice(0, 180), active: !!x.active, done: !!x.done,
@@ -44114,7 +44129,11 @@ async function agentsSave(request, env) {
     if (id) {
       const a = rec.list.find(x => x && x.id === id && !x.deleted);
       if (!a) { refused = json({ error: 'That agent does not exist.', code: 'agent_unknown' }, 404); return; }
-      Object.assign(a, clean, { updated: Date.now() });
+      /* The browser settings are merged, never replaced: the agent's own key
+         and its revocation stamps (77a) are not the page's to send, and
+         dropping the stamps would make a fenced sign-in usable again. */
+      const browser = clean.browser ? Object.assign({}, a.browser || {}, clean.browser) : a.browser;
+      Object.assign(a, clean, { updated: Date.now() }, browser ? { browser } : {});
       out = a;
       return;
     }
@@ -44143,7 +44162,7 @@ async function agentsSave(request, env) {
   if (signIns === 'failed') return json({ error: 'The agent was saved, but the sign-ins it held could not be forgotten. Try switching it off again in a moment.', code: 'signins_not_forgotten', agentSaved: true }, 503);
   return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
-                                   browser: stored.browser || { keep: false, sites: [] } } });
+                                   browser: _agentBrowserShown(stored.browser) } });
 }
 
 /* POST /v1/agents/delete - the agent goes, and its jobs stop. The jobs and
@@ -44203,7 +44222,8 @@ async function agentsDelete(request, env) {
 
      opt-in per agent, and only for the sites it lists (at most ten);
      never a site that moves money - banks, payments, brokerages, crypto;
-     sealed with AES-GCM under CONNECT_KEY, the seal connected accounts use;
+     sealed with AES-GCM under a key of the agent's own (below), itself
+     sealed under CONNECT_KEY - forgetting destroys that key;
      each site's sign-in expires 30 days after a watched run last refreshed it;
      never in a backup; erased with the agent, the account, and on "sign out
      everywhere";
@@ -44239,6 +44259,72 @@ function _agentSiteOf(domain, sites){
 }
 const _agentJarKey = (email, id) => 'agentjar:' + String(email || '').toLowerCase() + ':' + id;
 
+/* ── ONE KEY PER AGENT (Nov 1 audit AGENT-010) ─────────────────────────────
+
+   Every agent's jar used to be sealed directly under CONNECT_KEY, so one key
+   opened every stored sign-in of every person. Now each agent has a random
+   256-bit key of its own (`browser.dek` on the agent's record, kept sealed
+   under CONNECT_KEY - so changing CONNECT_KEY re-seals small keys, never a
+   sign-in), and its jar is sealed under that key, bound to the account and
+   the agent: a jar copied under another agent's name does not open.
+   Forgetting every sign-in of an agent destroys its key in the same locked
+   write that fences the jar, so a stale copy anywhere is unreadable for good;
+   the next watched run makes a new key. A jar in the earlier format is not
+   opened: it lapses, and the next watched run signs in again.
+   What this does not do is keep the key that seals the keys outside the
+   Worker - that is a key service, the owner's choice (OWNER-DECISIONS). */
+const AGENT_JAR_FMT = 'dek1';
+const _agentJarAad = (email, id) => new TextEncoder().encode('amv-agentjar\n' + String(email || '').toLowerCase() + '\n' + id);
+async function _agentDekImport(env, wrapped){
+  const o = await connOpen(env, wrapped);
+  if(!o || typeof o.k !== 'string') throw new Error('agent_key_unreadable');
+  const raw = _unb64(o.k);
+  if(raw.length !== 32) throw new Error('agent_key_unreadable');
+  return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+/* The agent's key, read (or made) under the record lock - never from a copy
+   of the record somebody read earlier, which may hold a key since destroyed. */
+async function _agentDek(env, email, id, create){
+  let wrapped = '';
+  if(create){
+    const fresh = crypto.getRandomValues(new Uint8Array(32));
+    const sealed = await connSeal(env, { k: _b64(fresh), at: Date.now() });
+    await _withKind(env, 'agents', String(email).toLowerCase(), (rec) => {
+      const a = ((rec && rec.list) || []).find(x => x && x.id === id);
+      if(!a) return;
+      a.browser = a.browser || { keep: false, sites: [] };
+      if(!a.browser.dek) a.browser.dek = sealed;
+      wrapped = a.browser.dek;
+    }, { list: [] });
+  } else {
+    const rec = await DB.get(env, 'agents', String(email).toLowerCase());
+    const a = ((rec && rec.list) || []).find(x => x && x.id === id);
+    wrapped = (a && a.browser && a.browser.dek) || '';
+  }
+  return wrapped ? _agentDekImport(env, wrapped) : null;
+}
+async function _agentJarSeal(key, email, id, rec){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: _agentJarAad(email, id) }, key, new TextEncoder().encode(JSON.stringify(rec)));
+  return AGENT_JAR_FMT + '.' + _b64(iv) + '.' + _b64(ct);
+}
+/* Opens with the agent's key, or answers null: no key (destroyed, or never
+   made), another format, or not this agent's jar. */
+async function _agentJarOpen(key, email, id, raw){
+  const parts = String(raw || '').split('.');
+  if(!key || parts.length !== 3 || parts[0] !== AGENT_JAR_FMT) return null;
+  try{
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: _unb64(parts[1]), additionalData: _agentJarAad(email, id) }, key, _unb64(parts[2]));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }catch(e){ return null; }
+}
+async function _agentJarRead(env, email, id){
+  const raw = await env.AMV_KV.get(_agentJarKey(email, id));
+  if(!raw) return { raw: null, rec: null, key: null };
+  let key = null; try{ key = await _agentDek(env, email, id, false); }catch(e){ key = null; }
+  return { raw, rec: await _agentJarOpen(key, email, id, raw), key };
+}
+
 /* The agent's saved sign-ins, as cookies to put in a browser: only its listed
    sites, only unexpired, nothing at all when it does not keep sign-ins or the
    record cannot be opened. */
@@ -44255,9 +44341,7 @@ function _agentJarRevoked(agent, site, v){
 }
 async function _agentJarLoad(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
-  const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id));
-  if(!raw) return [];
-  let rec = null; try{ rec = await connOpen(env, raw); }catch(e){ rec = null; }
+  let rec = null; try{ rec = (await _agentJarRead(env, email, agent.id)).rec; }catch(e){ rec = null; }
   if(!rec || !rec.sites) return [];
   const now = Date.now(), out = [];
   for(const [site, v] of Object.entries(rec.sites)){
@@ -44282,12 +44366,14 @@ async function _agentJarSave(env, email, agent, cookies){
   }
   const kept = Object.keys(bySite);
   if(!kept.length) return [];
+  const key = await _agentDek(env, email, agent.id, true);
+  if(!key) return [];
   let rec = { sites: {} };
-  try{ const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); if(raw) rec = (await connOpen(env, raw)) || rec; }catch(e){ rec = { sites: {} }; }
+  try{ const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); if(raw) rec = (await _agentJarOpen(key, email, agent.id, raw)) || rec; }catch(e){ rec = { sites: {} }; }
   rec.sites = rec.sites || {};
   for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
   for(const s of kept) rec.sites[s] = { at: Date.now(), cookies: bySite[s] };
-  await env.AMV_KV.put(_agentJarKey(email, agent.id), await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S });
+  await env.AMV_KV.put(_agentJarKey(email, agent.id), await _agentJarSeal(key, email, agent.id, rec), { expirationTtl: AGENT_JAR_TTL_S });
   audit(env, 'agent_signins_kept', { email, agent: agent.id, sites: kept });
   return kept;
 }
@@ -44296,7 +44382,7 @@ async function _agentJarSave(env, email, agent, cookies){
 async function _agentSignInsShown(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
   let rec = null;
-  try{ const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); if(raw) rec = await connOpen(env, raw); }catch(e){ rec = null; }
+  try{ rec = (await _agentJarRead(env, email, agent.id)).rec; }catch(e){ rec = null; }
   if(!rec || !rec.sites) return [];
   const now = Date.now();
   return Object.entries(rec.sites)
@@ -44313,7 +44399,7 @@ async function _agentJarRevoke(env, email, ids, site){
       if(!a || (want && !want.has(a.id))) continue;
       a.browser = a.browser || { keep: false, sites: [] };
       if(site){ a.browser.revokedSites = Object.assign({}, a.browser.revokedSites || {}, { [site]: now }); }
-      else a.browser.revokedAt = now;
+      else { a.browser.revokedAt = now; delete a.browser.dek; }
     }
   }, { list: [] });
   return now;
@@ -44325,20 +44411,21 @@ async function _agentJarRevoke(env, email, ids, site){
    (`agentjarpend:`), which the cron retries until it is gone. */
 async function _agentJarForget(env, email, id, site){
   const key = _agentJarKey(email, id);
-  let rec = null;
-  try{ const raw = await env.AMV_KV.get(key); if(raw) rec = await connOpen(env, raw); }catch(e){ rec = null; }
-  const held = site ? !!(rec && rec.sites && rec.sites[site]) : !!rec;
+  const j = await _agentJarRead(env, email, id).catch(() => ({ raw: null, rec: null, key: null }));
+  /* The whole jar: held if anything is stored, opened or not - with its key
+     destroyed below it is unreadable either way. One site: only if it is in it. */
+  const held = site ? !!(j.rec && j.rec.sites && j.rec.sites[site]) : !!j.raw;
   if(!held) return { held: false, removed: true };
   await _agentJarRevoke(env, email, [id], site);
   try{
-    if(!site || Object.keys(rec.sites || {}).length <= 1) await env.AMV_KV.delete(key);
-    else { delete rec.sites[site]; await env.AMV_KV.put(key, await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S }); }
+    if(!site || Object.keys(j.rec.sites || {}).length <= 1) await env.AMV_KV.delete(key);
+    else { delete j.rec.sites[site]; await env.AMV_KV.put(key, await _agentJarSeal(j.key, email, id, j.rec), { expirationTtl: AGENT_JAR_TTL_S }); }
   }catch(e){ /* read back below decides */ }
   let gone = false;
   try{
     const raw = await env.AMV_KV.get(key);
     if(!raw) gone = true;
-    else if(site){ const after = await connOpen(env, raw); gone = !(after && after.sites && after.sites[site]); }
+    else if(site){ const after = await _agentJarOpen(j.key, email, id, raw); gone = !(after && after.sites && after.sites[site]); }
   }catch(e){ gone = false; }
   if(!gone){
     try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); }catch(e){}
@@ -44384,11 +44471,13 @@ async function runAgentJarCleanup(env){
       const key = _agentJarKey(email, id);
       try{
         if(!site) await env.AMV_KV.delete(key);
-        else { const raw = await env.AMV_KV.get(key); const rec = raw ? await connOpen(env, raw) : null;
-          if(rec && rec.sites && rec.sites[site]){ delete rec.sites[site];
-            if(Object.keys(rec.sites).length) await env.AMV_KV.put(key, await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S }); else await env.AMV_KV.delete(key); } }
-        const raw = await env.AMV_KV.get(key);
-        const gone = !raw || (site && !(((await connOpen(env, raw)) || {}).sites || {})[site]);
+        else { const j = await _agentJarRead(env, email, id);
+          /* Unopenable (its key is gone): nothing in it can be used, so it goes whole. */
+          if(j.raw && !j.rec) await env.AMV_KV.delete(key);
+          else if(j.rec && j.rec.sites && j.rec.sites[site]){ delete j.rec.sites[site];
+            if(Object.keys(j.rec.sites).length) await env.AMV_KV.put(key, await _agentJarSeal(j.key, email, id, j.rec), { expirationTtl: AGENT_JAR_TTL_S }); else await env.AMV_KV.delete(key); } }
+        const after = await _agentJarRead(env, email, id);
+        const gone = !after.raw || (site && after.rec && !((after.rec.sites || {})[site])) || (site && !after.rec);
         if(gone){ await env.AMV_KV.delete(k.name); done++; } else left++;
       }catch(e){ left++; }
     }

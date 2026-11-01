@@ -68,6 +68,9 @@ async function _agentsAllowed(env, user) {
 
 /* GET /v1/agents - every agent, with what it has spent this month, how many
    jobs it has, and the latest thing it produced. */
+/* What the page is shown of an agent's browser settings: the switch and the
+   sites. Its key and revocation stamps stay on the server. */
+function _agentBrowserShown(b){ return { keep: !!(b && b.keep), sites: (b && Array.isArray(b.sites)) ? b.sites.slice() : [] }; }
 async function agentsList(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -85,7 +88,7 @@ async function agentsList(request, env) {
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
       budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created,
-      browser: a.browser || { keep: false, sites: [] },
+      browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
       jobs: jobs.map(x => ({ id: x.id, detail: String(x.detail || '').slice(0, 180), active: !!x.active, done: !!x.done,
@@ -167,7 +170,11 @@ async function agentsSave(request, env) {
     if (id) {
       const a = rec.list.find(x => x && x.id === id && !x.deleted);
       if (!a) { refused = json({ error: 'That agent does not exist.', code: 'agent_unknown' }, 404); return; }
-      Object.assign(a, clean, { updated: Date.now() });
+      /* The browser settings are merged, never replaced: the agent's own key
+         and its revocation stamps (77a) are not the page's to send, and
+         dropping the stamps would make a fenced sign-in usable again. */
+      const browser = clean.browser ? Object.assign({}, a.browser || {}, clean.browser) : a.browser;
+      Object.assign(a, clean, { updated: Date.now() }, browser ? { browser } : {});
       out = a;
       return;
     }
@@ -196,7 +203,7 @@ async function agentsSave(request, env) {
   if (signIns === 'failed') return json({ error: 'The agent was saved, but the sign-ins it held could not be forgotten. Try switching it off again in a moment.', code: 'signins_not_forgotten', agentSaved: true }, 503);
   return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
-                                   browser: stored.browser || { keep: false, sites: [] } } });
+                                   browser: _agentBrowserShown(stored.browser) } });
 }
 
 /* POST /v1/agents/delete - the agent goes, and its jobs stop. The jobs and

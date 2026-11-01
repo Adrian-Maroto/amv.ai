@@ -864,6 +864,18 @@ async function accountExport(request, env) {
     catch (e) { noteFailure(kind, e); }
   }
 
+  /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
+     not data: the agents go out with their settings, the keys stay. */
+  if (records.agents && Array.isArray(records.agents.list)) {
+    let had = false;
+    records.agents = Object.assign({}, records.agents, { list: records.agents.list.map(a => {
+      if (!a || !a.browser) return a;
+      if (a.browser.dek) had = true;
+      return Object.assign({}, a, { browser: { keep: !!a.browser.keep, sites: Array.isArray(a.browser.sites) ? a.browser.sites : [] } });
+    }) });
+    if (had) withheld.agentkeys = 'the keys that seal your agents\u2019 saved sign-ins (see each agent to review or forget them)';
+  }
+
   /* The account record is the SUBJECT of the export. Without it there is
      nothing to hand over that means anything, so that one failure is refused
      outright rather than reported as a gap. */
