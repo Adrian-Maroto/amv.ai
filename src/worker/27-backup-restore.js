@@ -91,6 +91,12 @@ const BACKUP_PREFIXES = [
   /* A team's shared projects and their list - the team's work, edited by its
      members, and not something a restore should leave behind. */
   'tproj:', 'tprojidx:',
+  /* Who chose how long their conversations are kept, and which teams set a
+     period (34a-retention.js). The choice itself is on the account and the
+     team, which are backed up; these are the nightly sweep's way to find
+     them. Restored without them, nobody who stopped using AMV would be
+     trimmed again - a promise kept only for people who come back. */
+  'retainidx:', 'retainteam:',
   /* The catalogue usage tally behind the most-used ranking. One record holding
      catalogue id to an integer and a total, nothing else: no address, no job
      text, no per-user timestamp, so there is nothing in it to protect and

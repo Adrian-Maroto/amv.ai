@@ -56,7 +56,7 @@ section('It NEVER returns a secret, in any form');
     TURNSTILE_SECRET: 'ts-SUPERSECRET', TURNSTILE_SITE_KEY: '0x4AAAsite-SUPERSECRET',
     GOOGLE_CLIENT_ID: 'gid-SUPERSECRET', IMAGE_API_KEY: 'img-SUPERSECRET',
     IMAGE_API_URL: 'https://img.example', ALERT_WEBHOOK: 'https://hooks.example/SUPERSECRET',
-    OWNER_EMAIL: 'owner@example.com', APP_URL: 'https://amv.example',
+    OWNER_EMAIL: 'owner@example.com', APP_URL: 'https://amv.example', PASSWORD_PEPPER: 'p'.repeat(40),
     VIDEO_API_URL: 'https://v.example', VIDEO_API_KEY: 'vid-SUPERSECRET', VIDEO_MODEL: 'm',
     // Per-seat Teams billing and the model failover endpoint are optional
     // capabilities too, so "everything configured" has to include them.
