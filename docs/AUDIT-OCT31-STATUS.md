@@ -30,8 +30,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 10 | Digest comparison | Done (per-account digest and a full read-back) |
 | 11 | Shadow reads | Built, needs you (`PG_SHADOW`) |
 | 12 | Staff accounts first | Built, needs you (name them in `PG_SHADOW`) |
-| 13 | Progressive migration 1 -> 100% | Not yet - step 5 moves where sign-in and billing read from; waits for your approval after a week of clean shadow reads |
-| 14 | Postgres authoritative | Not yet - after 13 |
+| 13 | Progressive migration 1 -> 100% | Needs your approval - step 5 moves where sign-in and billing read from; decide after a week of clean shadow reads |
+| 14 | Postgres authoritative | Needs your approval - follows 13 |
 
 ## Security and auth
 
@@ -40,7 +40,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 15 | Strong consistency for revocation | Done (revocation object; sensitive routes refuse when it cannot be read) |
 | 16 | Fail-closed policy for keys and auth | Done (API keys and sensitive routes fail closed) |
 | 17 | Passwords not standing alone at 8 | Done (passkey first; a password alone needs 15) |
-| 18 | Argon2id password hashing | Not yet - PBKDF2-SHA256 today; changing the hash is an authentication change and needs your approval |
+| 18 | Argon2id password hashing | Needs your approval - PBKDF2-SHA256 today; changing the hash is an authentication change |
 | 19 | External WebAuthn/auth review | Outside |
 
 ## Queues, workflows and Tasks
@@ -50,7 +50,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 20 | Queues | Built, needs you (`AMV_JOBS`, its dead-letter queue) |
 | 21 | Email outbox on the queue | Done (Nov 1; the KV record stays the truth) |
 | 22 | Webhook processing on the queue | Not doing - the payment provider already re-sends every event until it is answered and AMV applies each once; a second queue would be a second record of the same money, and it is a billing change |
-| 23 | Indexing/ingestion on the queue | Not yet - there is no server-side ingestion to move (files are read on the device) |
+| 23 | Indexing/ingestion on the queue | Not doing - there is no server-side ingestion to move: files are read on the person's device, and files kept in the account are checked as they arrive |
 | 24 | Dead-letter queues and replay | Done (a dead job is booked again; a dead email pointer leaves the email for the tick) |
 | 25 | Durable workflow engine | Not yet - jobs use the queue, leases and retries; Cloudflare Workflows not adopted |
 | 26 | Long Tasks as durable workflows | Partial - steps that wait on each other, leases, retries; no checkpoint inside a step |
@@ -69,7 +69,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 34 | Container crash/recovery tests | Partial (the workspace outlives its container; no crash-mid-write test) |
 | 35 | Capacity beyond 50 | Yours (`max_instances`, a cost decision) |
 | 36 | Wait UI when capacity is full | Done (Nov 1: connecting waits for a free workspace, up to five tries, saying so each time; not a queue with a place in line) |
-| 37 | Dynamic computer sizes | Not yet |
+| 37 | Dynamic computer sizes | Yours - more container sizes are a cost decision (`cloud/wrangler.toml` instance types); the code takes whichever is configured |
 | 38 | Persistent cloud browser identity | Done (decision #46: sealed per-agent sign-ins) |
 | 39 | Connectors before browser credentials | Done |
 | 40 | Isolated profile per Agent | Done |
@@ -93,9 +93,9 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 | # | Item | Status |
 |---|---|---|
-| 51 | Direct R2 uploads | Not yet |
+| 51 | Direct R2 uploads | Not yet - needs R2 API credentials from you to sign upload links; until then files go through the Worker (12 MB at most) |
 | 52 | File quarantine/scanning | Partial (Nov 1: a file must be what it says it is; programs and macro-carrying Office files are never kept). An antivirus engine is an outside service, yours to choose |
-| 53 | Asynchronous file ingestion | Not yet |
+| 53 | Asynchronous file ingestion | Not doing - as 23: files are read on the device, not ingested by the server |
 | 54 | Persistent vector indexing | Partial ("searching by meaning" exists; not a persistent index) |
 | 55 | Hybrid lexical/vector retrieval | Partial (project files searched by passage) |
 | 56 | Large-scale conversation index | Not yet |
@@ -135,11 +135,11 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 80 | Managed backup strategy | Built, needs you (`AMV_BACKUPS`); point-in-time recovery comes with Postgres |
 | 81 | Restore drills | Built, needs you (`node backup.mjs drill`, monthly) |
 | 82 | Staging environment | Yours (a second Cloudflare environment) |
-| 83 | Canary deployments | Not yet (Workers gradual deployments) |
-| 84 | Automated rollback | Not yet |
+| 83 | Canary deployments | Needs your approval - it changes how production deploys (Workers gradual deployments) |
+| 84 | Automated rollback | Needs your approval - with 83 |
 | 85 | CodeQL | Yours (a repository setting) |
 | 86 | Secret scanning / push protection | Done in the gate; GitHub's own is yours (a setting) |
-| 87 | SBOM / build provenance | SBOM done (every deploy); provenance not yet |
+| 87 | SBOM / build provenance | SBOM done (every deploy); provenance needs a pinned attestation action added to the workflow |
 | 88 | Container image scanning | Not yet |
 | 89 | Load tests at 1K/10K/100K | Partial (`tools/load-probe.mjs`) |
 | 90 | Chaos/fault injection | Done (store and model failures never fail open) |
@@ -159,7 +159,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
 | 106 | Policy/DLP gateway | Done (Nov 1: a team's data rule, enforced on the server - a message carrying an access key, a private key or a card number is refused before the model is called, naming the kind and never echoing it; a switch on the Team screen) |
-| 107 | SIEM/audit export | Not yet - the team log keeps its last 200 entries in one record; an export worth having needs it stored by month, a KV schema change that waits for your approval |
+| 107 | SIEM/audit export | Needs your approval - the team log keeps its last 200 entries in one record; an export worth having needs it stored by month, a KV schema change |
 | 108 | Retention/residency controls | Not yet |
 | 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
 | 110 | Then competitor parity | - |
@@ -174,11 +174,13 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **43 done**, **12
-built and waiting on you**, **18 partial** (87 counted here: SBOM done,
-provenance not), **16 not yet**, **16 yours or outside** (decisions, accounts,
-people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
-next work, largest first: durable Task checkpoints (25-27), direct uploads with
-quarantine (51-53). Audit export (107) needs a change to
-how the team log is stored, which is a KV schema change and so waits for your
-approval.
+Of the 109 items with work in them (110 is "then parity"): **43 done**,
+**12 built and waiting on you** (a binding, a setting or a key), **18 partial**
+(87 counted here: SBOM done, provenance not), **6 that need your approval**
+before they are built (13, 14, 18, 83, 84, 107 - each changes authentication,
+billing reads, production deploys or the stored data's shape), **17 yours or
+an outside party's** (accounts, money, people, reviews), **6 not done on
+purpose** with the reason beside each, and **7 not yet**: durable workflows and
+checkpoints for long Tasks (25, 27), parallel researcher/critic patterns (50),
+direct uploads (51, needs R2 credentials), a large-scale conversation index
+(56), container image scanning (88) and retention controls (108).
