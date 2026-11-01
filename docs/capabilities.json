@@ -304,6 +304,10 @@
   { "id": "auth.password_pepper", "status": "built", "name": "Password hashes keyed with a secret the store never holds, upgraded at sign-in, rotatable, failing closed without the key",
     "code": [["src/worker/30-accounts-and-sync.js", "_pwMatches"], ["src/worker/30-accounts-and-sync.js", "_pwNeedsUpgrade"]],
     "tests": ["tests/worker/a-stolen-store-cannot-be-guessed-against.test.mjs"],
-    "says": ["password pepper"] }
+    "says": ["password pepper"] },
+  { "id": "data.postgres_reads", "status": "built", "name": "For a chosen cohort, Postgres answers accounts and plans - written there first, checked against KV after every answer, handed back to KV on any difference",
+    "code": [["src/worker/04d-pg-read.js", "_pgReadServe"], ["src/worker/04d-pg-read.js", "_pgWriteThrough"]],
+    "tests": ["tests/worker/postgres-answers-only-where-it-proved-it-can.test.mjs"],
+    "says": ["postgres reads", "pg_read"] }
  ]
 }

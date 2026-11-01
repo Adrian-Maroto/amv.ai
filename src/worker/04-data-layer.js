@@ -65,6 +65,10 @@ const DB = {
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
       raw = row && row.json ? row.json : null;
     } else {
+      /* Step 5: for the read cohort, Postgres answers an account or a plan
+         (04d-pg-read.js); undefined means ask KV, as for everybody else. */
+      const pg = await _pgReadServe(env, kind, id);
+      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
     /* Absent is an answer too, and compared like one: Postgres still having a
@@ -118,6 +122,8 @@ const DB = {
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
       raw = row && row.json ? row.json : null;
     } else {
+      const pg = await _pgReadServe(env, kind, id);
+      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
     if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
@@ -150,15 +156,16 @@ const DB = {
       return;
     }
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
-    /* The Postgres row too, once the store has it (04a-control-plane.js). */
-    _pgAfter(env, kind, id, obj);
+    /* The Postgres row too, once the store has it (04a-control-plane.js) -
+       before going on, for a record Postgres answers (04d-pg-read.js). */
+    if(!(await _pgWriteThrough(env, kind, id, obj))) _pgAfter(env, kind, id, obj);
     /* This namespace is demonstrably not empty any more. */
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
-    _pgAfter(env, kind, id, null);
+    if(!(await _pgWriteThrough(env, kind, id, null))) _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not
        "empty", and the marker means ALL of them are gone. Only a completed
        scan may claim that, so drop the claim and let one prove it. */

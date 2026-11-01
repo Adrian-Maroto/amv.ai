@@ -30,8 +30,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 10 | Digest comparison | Done (per-account digest and a full read-back) |
 | 11 | Shadow reads | Built, needs you (`PG_SHADOW`) |
 | 12 | Staff accounts first | Built, needs you (name them in `PG_SHADOW`) |
-| 13 | Progressive migration 1 -> 100% | Needs your approval - step 5 moves where sign-in and billing read from; decide after a week of clean shadow reads |
-| 14 | Postgres authoritative | Needs your approval - follows 13 |
+| 13 | Progressive migration 1 -> 100% | Built, needs you (`PG_READ`, after the database exists and a clean week of `PG_SHADOW`). Postgres answers accounts and plans for the cohort, written there first, checked against KV after every answer, handed back to KV on any difference or failure |
+| 14 | Postgres authoritative | Not yet, on purpose - removing the KV write can only be checked by step 13 running clean at 100% on the real database, which does not exist yet (`docs/DATA-TIER.md`) |
 
 ## Security and auth
 

@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-74 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+75 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -58,6 +58,7 @@
 | The Postgres backfill copies what was there before, then reads every account back | `src/worker/04b-pg-backfill.js` | `worker/what-was-there-before-is-copied-and-checked.test.mjs` |
 | Shadow reads compare Postgres with KV in the background while KV answers | `src/worker/04c-pg-shadow.js` | `worker/what-was-there-before-is-copied-and-checked.test.mjs` |
 | How long the first real answer took, measured once per account | `src/worker/56-admin.js` | `worker/funnel.test.mjs` |
+| For a chosen cohort, Postgres answers accounts and plans - written there first, checked against KV after every answer, handed back to KV on any difference | `src/worker/04d-pg-read.js` | `worker/postgres-answers-only-where-it-proved-it-can.test.mjs` |
 
 ## Developers
 

@@ -1025,6 +1025,10 @@ const DB = {
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
       raw = row && row.json ? row.json : null;
     } else {
+      /* Step 5: for the read cohort, Postgres answers an account or a plan
+         (04d-pg-read.js); undefined means ask KV, as for everybody else. */
+      const pg = await _pgReadServe(env, kind, id);
+      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
     /* Absent is an answer too, and compared like one: Postgres still having a
@@ -1078,6 +1082,8 @@ const DB = {
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
       raw = row && row.json ? row.json : null;
     } else {
+      const pg = await _pgReadServe(env, kind, id);
+      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
       raw = await env.AMV_KV.get(`${kind}:${id}`);
     }
     if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
@@ -1110,15 +1116,16 @@ const DB = {
       return;
     }
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
-    /* The Postgres row too, once the store has it (04a-control-plane.js). */
-    _pgAfter(env, kind, id, obj);
+    /* The Postgres row too, once the store has it (04a-control-plane.js) -
+       before going on, for a record Postgres answers (04d-pg-read.js). */
+    if(!(await _pgWriteThrough(env, kind, id, obj))) _pgAfter(env, kind, id, obj);
     /* This namespace is demonstrably not empty any more. */
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
-    _pgAfter(env, kind, id, null);
+    if(!(await _pgWriteThrough(env, kind, id, null))) _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not
        "empty", and the marker means ALL of them are gone. Only a completed
        scan may claim that, so drop the claim and let one prove it. */
@@ -2673,12 +2680,17 @@ async function pgShadowRoute(request, env){
   const c = _pgShadowCohort(env);
   const cohort = { addresses: c.emails.size, percent: c.basisPoints / 100 };
   if (!_pgOn(env)) return json({ on: false, cohort, note: 'The Postgres binding PG is not set.' });
-  if (!c.emails.size && !c.basisPoints) return json({ on: false, cohort, note: 'Nobody is in the shadow cohort: set PG_SHADOW (addresses and/or a share, like "5%").' });
+  const rc = _pgReadCohort(env);
+  cohort.read = { addresses: rc.emails.size, percent: rc.basisPoints / 100 };
+  if (!c.emails.size && !c.basisPoints && !rc.emails.size && !rc.basisPoints) return json({ on: false, cohort, note: 'Nobody is in the shadow cohort: set PG_SHADOW (addresses and/or a share, like "5%").' });
   const days = [];
   for (let i = 0; i < 7; i++) {
     const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const [compared, differed] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed')]);
-    days.push({ day, compared, differed });
+    const [compared, differed, served, fellBack, readDiffered] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed')]);
+    /* `read` is step 5 (04d-pg-read.js): answers Postgres gave, reads that
+       fell back to KV, and answers that differed from KV. */
+    days.push({ day, compared, differed, read: { served, fellBack, differed: readDiffered } });
   }
   const sql = await _pgClient(env);
   try {
@@ -2689,6 +2701,195 @@ async function pgShadowRoute(request, env){
   } finally {
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
+}
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CONTROL PLANE IN POSTGRES: STEP 5, POSTGRES ANSWERS (Oct 31 audit, item
+   13; owner approval Nov 1; docs/DATA-TIER.md).
+
+   For the accounts in the read cohort - the `PG_READ` variable, the same
+   shape as PG_SHADOW: addresses and/or a share, like `amv@amv.homes,5%` - an
+   account record and a plan are answered FROM POSTGRES. Everybody else, and
+   API keys for everybody, are answered by KV exactly as before.
+
+   It is built so that Postgres can only answer where it has PROVED it gives
+   the answer KV would:
+
+     - WRITES GO THROUGH FIRST. For an account in the cohort, a write of its
+       account or plan reaches Postgres before the request goes on, instead
+       of in the background - so the next read, on any instance, sees it. A
+       write that does not reach Postgres marks the record stale
+       (`pgstale:<kind>:<email>`) before returning, and a stale record is
+       answered by KV.
+     - EVERY ANSWER IS CHECKED. After Postgres answers, the same record is
+       read from KV in the background and compared field by field. A
+       difference marks the record stale (KV answers from then on), is counted
+       and audited, and the owner is alerted. A stale record whose two copies
+       agree again is unmarked - so a repaired row goes back to Postgres on
+       its own.
+     - ANY FAILURE FALLS BACK. Postgres unreachable, a query error, a row
+       that cannot be turned back into the record: KV answers, and it is
+       counted. Nobody is refused because the new store had a bad minute.
+
+   So the step's check is a number, at GET /admin/pg/shadow: reads Postgres
+   answered, reads that fell back, and answers that differed. A clean week at
+   100% is what step 6 (Postgres alone) waits for; until then KV is still
+   written for everybody and is still the record of truth.
+
+   API keys are not moved here: their record carries fields the key table
+   does not hold, so a key read from Postgres could not be the same record.
+   They stay on KV until the table holds them whole. */
+
+const PG_READ_KINDS = new Set(['acct', 'ent']);
+const PG_READ_STALE_TTL_S = 30 * 86400;
+const PG_READ_RECHECK_MS = 60000;
+const _pgReadChecked = new Map();
+let _pgReadCohortCache = { raw: null, emails: new Set(), basisPoints: 0 };
+
+function _pgReadCohort(env){
+  const raw = String((env && env.PG_READ) || '');
+  if (_pgReadCohortCache.raw === raw) return _pgReadCohortCache;
+  const emails = new Set(); let basisPoints = 0;
+  for (const part of raw.split(',').map(x => x.trim()).filter(Boolean)) {
+    const pct = /^(\d+(?:\.\d+)?)%$/.exec(part);
+    if (pct) basisPoints = Math.max(0, Math.min(10000, Math.round(parseFloat(pct[1]) * 100)));
+    else if (part.includes('@')) emails.add(part.toLowerCase());
+  }
+  _pgReadCohortCache = { raw, emails, basisPoints };
+  return _pgReadCohortCache;
+}
+/* The same hash as the shadow cohort's, so 5% read is a subset of 5% shadow
+   when both are set: the people answered from Postgres were compared first. */
+async function _pgReadIn(env, email){
+  const c = _pgReadCohort(env);
+  if (c.emails.has(email)) return true;
+  if (!c.basisPoints) return false;
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email)));
+  return (((h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3]) >>> 0) % 10000 < c.basisPoints;
+}
+function _pgReadApplies(env, kind, id){
+  if (!env || !env.PG_READ || !PG_READ_KINDS.has(kind) || !_pgOn(env) || DB._hasD1(env)) return '';
+  const email = String(id || '').toLowerCase();
+  return email.includes('@') ? email : '';
+}
+
+/* A row turned back into the record KV holds: every column under the name
+   the record uses, the rest from `extra`, and nothing for a column that is
+   empty - a record that never had a field must not gain one. */
+const _pgMs = (t) => (t == null ? undefined : new Date(t).getTime());
+function _pgDrop(o){ for (const k of Object.keys(o)) if (o[k] === undefined || o[k] === null) delete o[k]; return o; }
+function _pgAcctFromRow(r){
+  return _pgDrop({ ...(r.extra || {}), email: r.email, name: r.name, provider: r.provider, pwHash: r.pw_hash, salt: r.pw_salt,
+    pwIter: r.pw_iter, pwAlgo: r.pw_algo, createdAt: _pgMs(r.created_at), emailVerifiedAt: _pgMs(r.email_verified_at) });
+}
+function _pgEntFromRow(r){
+  return _pgDrop({ ...(r.extra || {}), plan: r.plan, seats: r.seats, source: r.source, renewedAt: _pgMs(r.period_start),
+    periodEnd: _pgMs(r.period_end), lapsedAt: _pgMs(r.lapsed_at), blocked: r.blocked ? true : undefined,
+    blockedReason: r.blocked_reason, customCfg: r.custom_cfg, updatedAt: _pgMs(r.updated_at) });
+}
+/* What two copies are compared as: keys sorted, empty values gone, and the
+   few values the table fills in by default (an empty name, the hash's
+   algorithm name, a plan's "none" source and "free" plan, not blocked)
+   treated as the absence they stand for. Nothing else is forgiven. */
+function _pgCanon(kind, o){
+  if (!o) return 'null';
+  const c = JSON.parse(JSON.stringify(o));
+  _pgDrop(c);
+  if (kind === 'acct') { if (c.name === '') delete c.name; if (c.pwAlgo === 'pbkdf2-sha256') delete c.pwAlgo; }
+  if (kind === 'ent') { if (c.source === 'none') delete c.source; if (c.plan === 'free') delete c.plan; if (c.blocked === false) delete c.blocked; }
+  const sort = (v) => Array.isArray(v) ? v.map(sort) : (v && typeof v === 'object') ? Object.keys(v).sort().reduce((a, k) => (a[k] = sort(v[k]), a), {}) : v;
+  return JSON.stringify(sort(c));
+}
+async function _pgReadRow(sql, kind, email){
+  if (kind === 'acct') {
+    const a = await sql`SELECT email, name, provider, pw_hash, pw_salt, pw_iter, pw_algo, created_at, email_verified_at, extra
+                        FROM accounts WHERE email = ${email} AND deleted_at IS NULL`;
+    return a.length ? _pgAcctFromRow(a[0]) : null;
+  }
+  const e = await sql`SELECT e.plan, e.seats, e.source, e.period_start, e.period_end, e.lapsed_at, e.blocked, e.blocked_reason, e.custom_cfg, e.extra, e.updated_at
+                      FROM entitlements e JOIN accounts a ON a.id = e.account_id WHERE a.email = ${email} AND a.deleted_at IS NULL`;
+  return e.length ? _pgEntFromRow(e[0]) : null;
+}
+const _pgStaleKey = (kind, email) => 'pgstale:' + kind + ':' + email;
+async function _pgReadTally(env, what, email){
+  try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) {}
+}
+
+/* Called by DB.get / DB.getStrict before KV. Returns the record's text when
+   Postgres answers, or undefined for "ask KV" - never throws. */
+async function _pgReadServe(env, kind, id){
+  const email = _pgReadApplies(env, kind, id);
+  if (!email || !(await _pgReadIn(env, email))) return undefined;
+  let stale = false;
+  try { stale = !!(await env.AMV_KV.get(_pgStaleKey(kind, email))); } catch (e) { return undefined; }
+  if (stale) { _pgReadVerify(env, kind, email, null, true); return undefined; }
+  let value;
+  let sql;
+  try {
+    sql = await _pgClient(env);
+    value = await _pgReadRow(sql, kind, email);
+  } catch (e) {
+    try { audit(env, 'pg_read_fell_back', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
+    await _pgReadTally(env, 'fellback', email);
+    return undefined;
+  } finally {
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+  }
+  await _pgReadTally(env, 'served', email);
+  const raw = value == null ? null : JSON.stringify(value);
+  _pgReadVerify(env, kind, email, raw, false);
+  return raw;
+}
+
+/* The background check of an answer Postgres gave (or, for a stale record,
+   whether it may answer again). Rate-limited per record per instance, except
+   that a served answer is always checked the first time. */
+function _pgReadVerify(env, kind, email, servedRaw, wasStale){
+  const key = kind + ':' + email, now = Date.now();
+  if (now - (_pgReadChecked.get(key) || 0) < PG_READ_RECHECK_MS) return;
+  if (_pgReadChecked.size > 5000) _pgReadChecked.clear();
+  _pgReadChecked.set(key, now);
+  const p = (async () => {
+    let kvRaw = null;
+    try { kvRaw = await env.AMV_KV.get(kind + ':' + email); } catch (e) { return; }
+    let kvVal = null; try { kvVal = kvRaw ? JSON.parse(kvRaw) : null; } catch (e) { return; }
+    let pgVal;
+    if (wasStale) {
+      const sql = await _pgClient(env);
+      try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    } else pgVal = servedRaw ? JSON.parse(servedRaw) : null;
+    const same = _pgCanon(kind, pgVal) === _pgCanon(kind, kvVal);
+    if (wasStale) {
+      if (same) { await env.AMV_KV.delete(_pgStaleKey(kind, email)); try { audit(env, 'pg_read_unstale', { kind, id: email }); } catch (e) {} }
+      return;
+    }
+    if (same) return;
+    await env.AMV_KV.put(_pgStaleKey(kind, email), JSON.stringify({ at: Date.now(), why: 'differed' }), { expirationTtl: PG_READ_STALE_TTL_S });
+    await _pgReadTally(env, 'differed', email);
+    try { audit(env, 'pg_read_differed', { kind, id: email }); } catch (e) {}
+    try { await alertOnce(env, 'pg_read_differed',
+      'Postgres answered an ' + kind + ' read differently from KV. That record is now answered by KV again, and the step must not '
+      + 'grow until every difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) {}
+  })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+    .finally(() => _pgInFlight.delete(p));
+  _pgInFlight.add(p);
+  try { _bg(p); } catch (e) {}
+}
+
+/* Called by DB.put / DB.del after KV has the write, INSTEAD of the background
+   mirror, for a record Postgres answers: the write reaches Postgres before
+   the request goes on, or the record is marked stale before it does. */
+async function _pgWriteThrough(env, kind, id, obj){
+  const email = _pgReadApplies(env, kind, id);
+  if (!email || !(await _pgReadIn(env, email))) return false;
+  try {
+    await _pgMirror(env, kind, email, obj);
+  } catch (e) {
+    const why = String((e && e.message) || e).slice(0, 160);
+    try { await env.AMV_KV.put(_pgStaleKey(kind, email), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_READ_STALE_TTL_S }); } catch (_) {}
+    try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+    try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why }); } catch (_) {}
+  }
+  return true;
 }
 /* =====================================================================
    AUDIT LOGGING (auditor #5)
@@ -34886,7 +35087,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -34913,6 +35114,8 @@ function _readinessReport(env, seen) {
       effect: 'Only while rotating PASSWORD_PEPPER: the old value, so passwords made with it still verify and move to the new one at their next sign-in. Remove it once nobody signs in with the old one.' },
     { id: 'partnerCap', name: 'Partner models: daily ceiling', env: 'PARTNER_DAILY_USD_CAP', set: _has(env, 'PARTNER_DAILY_USD_CAP'),
       effect: 'The most the partner engines may spend in one day, on top of the day\u2019s overall ceiling. Reached, those engines are refused by name until tomorrow; AMV\u2019s own engines keep running. Unset, only the overall ceiling applies.' },
+    { id: 'pgRead', name: 'Postgres answers: who is read from it', env: 'PG_READ', set: _has(env, 'PG_READ'),
+      effect: 'Step 5 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), an account and a plan are answered by Postgres, written there before the request goes on, and checked against KV in the background. A record that differs, or a write that did not land, is answered by KV again. Unset, KV answers everybody. Counts at GET /admin/pg/shadow.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),

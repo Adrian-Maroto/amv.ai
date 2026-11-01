@@ -108,12 +108,17 @@ async function pgShadowRoute(request, env){
   const c = _pgShadowCohort(env);
   const cohort = { addresses: c.emails.size, percent: c.basisPoints / 100 };
   if (!_pgOn(env)) return json({ on: false, cohort, note: 'The Postgres binding PG is not set.' });
-  if (!c.emails.size && !c.basisPoints) return json({ on: false, cohort, note: 'Nobody is in the shadow cohort: set PG_SHADOW (addresses and/or a share, like "5%").' });
+  const rc = _pgReadCohort(env);
+  cohort.read = { addresses: rc.emails.size, percent: rc.basisPoints / 100 };
+  if (!c.emails.size && !c.basisPoints && !rc.emails.size && !rc.basisPoints) return json({ on: false, cohort, note: 'Nobody is in the shadow cohort: set PG_SHADOW (addresses and/or a share, like "5%").' });
   const days = [];
   for (let i = 0; i < 7; i++) {
     const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const [compared, differed] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed')]);
-    days.push({ day, compared, differed });
+    const [compared, differed, served, fellBack, readDiffered] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed')]);
+    /* `read` is step 5 (04d-pg-read.js): answers Postgres gave, reads that
+       fell back to KV, and answers that differed from KV. */
+    days.push({ day, compared, differed, read: { served, fellBack, differed: readDiffered } });
   }
   const sql = await _pgClient(env);
   try {

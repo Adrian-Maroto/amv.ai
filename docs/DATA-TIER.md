@@ -141,6 +141,30 @@ account, audited and alerted. At most one comparison per record per minute
 per Worker instance. `GET /admin/pg/shadow` shows reads compared and
 differing per day for a week, and the accounts that differ.
 
-Not built: the switch (step 5). It moves where sign-in, plans and keys are
-READ from, so it waits for the owner's approval and for step 4's week of
-zero unexplained differences.
+Built (owner approval Nov 1), off until `PG_READ` names somebody: **step 5,
+the switch** (`src/worker/04d-pg-read.js`, tested against a real Postgres in
+`postgres-answers-only-where-it-proved-it-can`). `PG_READ` takes the same
+shape as `PG_SHADOW`, and the share uses the same hash, so 5% read is inside
+5% shadow. For those accounts an account record and a plan are answered by
+Postgres, rebuilt from their rows. Three rules make it safe to grow:
+
+- a write of either record reaches Postgres BEFORE the request goes on, and
+  one that does not is marked stale (`pgstale:<kind>:<email>`) and put on
+  the repair list before returning - so a read never answers an old row;
+- every answer is compared with KV in the background, field by field; a
+  difference marks the record stale (KV answers it from then on), is counted
+  and alerted, and the mark lifts by itself once the copies agree again;
+- Postgres unreachable or a query failing: KV answers, and it is counted.
+
+`GET /admin/pg/shadow` now also shows, per day, the reads Postgres answered,
+the reads that fell back, and the answers that differed. API keys stay on KV:
+their record carries fields the key table does not, so a key rebuilt from its
+row would not be the same record. The step's check is the plan above - grow
+the cohort (staff, 1%, 10%, 50%, everyone) only while `differed` stays zero
+and sign-in and payment success are unchanged.
+
+Not built, on purpose: **step 6, Postgres alone.** It removes the KV write, so
+it can only be checked by step 5 having run clean at 100% for a period on the
+real database - which does not exist yet (the owner has not created it). Code
+written now for a step that cannot be measured is a guess shipped as a
+migration; it is built when step 5's numbers say it can be.
