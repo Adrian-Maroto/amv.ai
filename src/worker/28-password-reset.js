@@ -254,14 +254,14 @@ async function authAdminReset(request, env){
   { const bad = _passwordProblem(password, acct); if(bad) return json(bad, 400); }
 
   const salt = crypto.randomUUID().replace(/-/g,'');
-  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pw = await _pwRecord(env, password, salt);
   /* Under the record lock, for the same reason as the self-serve reset: the
      hashing above is slow enough for another write to land, and the loser of
      that race is a credential. */
   try{
     await _withAcct(env, email, (a) => {
       if(!a) return;
-      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      _pwApply(a, pw); a.salt = salt;
       a.pwResetAt = Date.now();
     });
   }catch(e){

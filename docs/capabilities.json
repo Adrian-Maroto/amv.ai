@@ -300,6 +300,10 @@
   { "id": "team.audit_export", "status": "built", "name": "A team's whole activity, kept by day for 400 days, downloadable as NDJSON by an owner, an admin or their API key",
     "code": [["src/worker/33-team-roles.js", "teamAuditExport"], ["src/app/06-team-market.js", "_teamAuditExportWire"]],
     "tests": ["tests/worker/a-team-can-take-its-whole-history-away.test.mjs"],
-    "says": ["audit export", "siem"] }
+    "says": ["audit export", "siem"] },
+  { "id": "auth.password_pepper", "status": "built", "name": "Password hashes keyed with a secret the store never holds, upgraded at sign-in, rotatable, failing closed without the key",
+    "code": [["src/worker/30-accounts-and-sync.js", "_pwMatches"], ["src/worker/30-accounts-and-sync.js", "_pwNeedsUpgrade"]],
+    "tests": ["tests/worker/a-stolen-store-cannot-be-guessed-against.test.mjs"],
+    "says": ["password pepper"] }
  ]
 }

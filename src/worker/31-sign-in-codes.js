@@ -231,7 +231,8 @@ async function authLoginVerify(request, env) {
     try {
       await _withAcct(env, em, (a) => {
         if (!a) return;
-        Object.assign(a, { salt: p.salt, pwHash: p.pwHash, pwIter: p.pwIter, sipHash: p.sipHash, name: p.name || a.name });
+        _pwApply(a, p);
+        Object.assign(a, { salt: p.salt, sipHash: p.sipHash, name: p.name || a.name });
         a.emailVerifiedAt = Date.now();
         applied = true;
       });
@@ -1092,8 +1093,7 @@ async function _reauthForDelete(env, request, user, body) {
       return json({ error: 'Enter your password to confirm you want to delete your account. This cannot be undone.',
                     code: 'reauth_required', need: 'password' }, 401);
     }
-    const hash = await _hashPassword(password, acct.salt, acct.pwIter || 100000);
-    const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+    const ok = await _pwMatches(env, acct, password);
     if (!ok) {
       audit(env, 'delete_reauth_failed', { email: em });
       return json({ error: 'That password is not right.', code: 'reauth_failed', need: 'password' }, 401);

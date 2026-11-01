@@ -63,6 +63,9 @@ function _readinessReport(env, seen) {
     { id: 'admin', name: 'Operator access', blocking: false, on: _has(env, 'ADMIN_TOKEN'),
       turnsOn: 'The founder dashboard, platform stats, the kill switch and the weekly digest.',
       how: put('ADMIN_TOKEN') },
+    { id: 'pepper', name: 'Passwords keyed with a secret the store does not hold', blocking: false, on: _has(env, 'PASSWORD_PEPPER'),
+      turnsOn: 'Every password hash is also keyed with this secret, so a stolen copy of the store cannot be guessed against offline. Existing passwords move to it at their next sign-in. Keep a copy offline: losing it means those people reset their passwords.',
+      how: put('PASSWORD_PEPPER') },
     { id: 'ownerEmail', name: 'Owner address', blocking: false, on: _has(env, 'OWNER_EMAIL'),
       turnsOn: 'The weekly digest, and operator privileges for that account.',
       how: put('OWNER_EMAIL') },
@@ -491,7 +494,7 @@ function _readinessReport(env, seen) {
     paypalHook: 'Taking money', paypalLive: 'Taking money',
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
-    googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
+    googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
     connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
@@ -516,6 +519,8 @@ function _readinessReport(env, seen) {
      a secret, but a screen that prints one env var's value is a screen that
      will print the next one's. */
   const tuning = [
+    { id: 'pepperPrev', name: 'Passwords: the previous pepper', env: 'PASSWORD_PEPPER_PREVIOUS', set: _has(env, 'PASSWORD_PEPPER_PREVIOUS'),
+      effect: 'Only while rotating PASSWORD_PEPPER: the old value, so passwords made with it still verify and move to the new one at their next sign-in. Remove it once nobody signs in with the old one.' },
     { id: 'partnerCap', name: 'Partner models: daily ceiling', env: 'PARTNER_DAILY_USD_CAP', set: _has(env, 'PARTNER_DAILY_USD_CAP'),
       effect: 'The most the partner engines may spend in one day, on top of the day\u2019s overall ceiling. Reached, those engines are refused by name until tomorrow; AMV\u2019s own engines keep running. Unset, only the overall ceiling applies.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),

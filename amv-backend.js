@@ -6446,7 +6446,7 @@ async function _federatedAccount(env, email, fresh){
   await _withAcct(env, email, (rec) => {
     if(!rec) return;
     if((rec.provider || 'email') === 'email' && !rec.emailVerifiedAt && rec.pwHash){
-      delete rec.pwHash; delete rec.salt; delete rec.pwIter; squatted = true;
+      delete rec.pwHash; delete rec.salt; delete rec.pwIter; delete rec.pwPep; delete rec.pwAlgo; squatted = true;
     }
     if(!rec.emailVerifiedAt) rec.emailVerifiedAt = Date.now();
     after = Object.assign({}, rec);
@@ -17088,14 +17088,14 @@ async function authAdminReset(request, env){
   { const bad = _passwordProblem(password, acct); if(bad) return json(bad, 400); }
 
   const salt = crypto.randomUUID().replace(/-/g,'');
-  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pw = await _pwRecord(env, password, salt);
   /* Under the record lock, for the same reason as the self-serve reset: the
      hashing above is slow enough for another write to land, and the loser of
      that race is a credential. */
   try{
     await _withAcct(env, email, (a) => {
       if(!a) return;
-      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      _pwApply(a, pw); a.salt = salt;
       a.pwResetAt = Date.now();
     });
   }catch(e){
@@ -18518,6 +18518,80 @@ async function _hashPassword(password, salt, iterations){
   const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt: enc.encode(salt), iterations: rounds, hash:'SHA-256' }, keyMaterial, 256);
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+/* A KEY THE STORE DOES NOT HOLD (Oct 31 audit, item 18).
+
+   Argon2id is what the audit asked for and the Workers runtime does not have
+   it; PBKDF2 is capped at 100000 rounds (above). What closes the gap that
+   matters - somebody walking away with a copy of the store and guessing
+   offline - is a pepper: the PBKDF2 result is keyed with HMAC-SHA256 under
+   PASSWORD_PEPPER, a Worker secret that lives in Cloudflare's secret store
+   and never in KV, a backup or Postgres. A stolen copy of every account
+   record then cannot be tested against a single guess, however fast the
+   attacker's hardware, because the last step needs a key they do not have.
+
+   Each record names WHICH pepper made it (`pwPep`, a short fingerprint of the
+   secret - not the secret), so:
+     - with no PASSWORD_PEPPER set nothing changes and nothing breaks;
+     - once it is set, every new password is peppered and every existing one
+       is upgraded at its owner's next successful sign-in;
+     - to rotate, move the old value to PASSWORD_PEPPER_PREVIOUS and set a new
+       one: old records still verify, and move to the new key as people sign in.
+   A record whose pepper is in neither secret fails CLOSED and says so to the
+   owner - a password check that passes when its key is missing is no check.
+   Losing the secret means everyone with a peppered password resets it, which
+   is why docs/OWNER-DECISIONS.md says to keep a copy offline. */
+const _PEP_FPS = new Map();
+async function _pepperFp(secret){
+  if(_PEP_FPS.has(secret)) return _PEP_FPS.get(secret);
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-pepper-fingerprint:' + secret));
+  const fp = [...new Uint8Array(d)].slice(0, 6).map(b=>b.toString(16).padStart(2,'0')).join('');
+  _PEP_FPS.set(secret, fp);
+  return fp;
+}
+async function _pepperWrap(secret, hashHex){
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(hashHex));
+  return [...new Uint8Array(sig)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function _pepperFor(env, fp){
+  for(const s of [env && env.PASSWORD_PEPPER, env && env.PASSWORD_PEPPER_PREVIOUS]){
+    if(s && await _pepperFp(String(s)) === fp) return String(s);
+  }
+  return '';
+}
+/* The fields a new password is stored as. Spread onto the record with
+   _pwApply, which also REMOVES a stale pwPep when no pepper is set, so a
+   record can never claim a key its hash was not made with. */
+async function _pwRecord(env, password, salt){
+  const h = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pep = String((env && env.PASSWORD_PEPPER) || '');
+  if(!pep) return { pwHash: h, pwIter: PBKDF2_ITERATIONS, pwAlgo: 'pbkdf2-sha256' };
+  return { pwHash: await _pepperWrap(pep, h), pwIter: PBKDF2_ITERATIONS, pwAlgo: 'pbkdf2-sha256+hmac', pwPep: await _pepperFp(pep) };
+}
+function _pwApply(rec, r){
+  rec.pwHash = r.pwHash; rec.pwIter = r.pwIter; rec.pwAlgo = r.pwAlgo;
+  if(r.pwPep) rec.pwPep = r.pwPep; else delete rec.pwPep;
+  return rec;
+}
+async function _pwMatches(env, acct, password){
+  const h = await _hashPassword(password, acct.salt, acct.pwIter || 100000);
+  let cand = h;
+  if(acct.pwPep){
+    const sec = await _pepperFor(env, acct.pwPep);
+    if(!sec){
+      audit(env, 'password_pepper_missing', { pep: acct.pwPep });
+      try{ await alertOnce(env, 'pepper_missing:' + acct.pwPep, 'A password was checked against an account hashed with a pepper (' + acct.pwPep + ') that is neither PASSWORD_PEPPER nor PASSWORD_PEPPER_PREVIOUS, so the check FAILED. If the secret was changed, put the old value back as PASSWORD_PEPPER_PREVIOUS.', 60); }catch(e){}
+      return false;
+    }
+    cand = await _pepperWrap(sec, h);
+  }
+  return timingSafeEqual(new TextEncoder().encode(cand), new TextEncoder().encode(acct.pwHash || ''));
+}
+async function _pwNeedsUpgrade(env, acct){
+  if((acct.pwIter || 100000) < PBKDF2_ITERATIONS) return true;
+  const pep = String((env && env.PASSWORD_PEPPER) || '');
+  return !!pep && acct.pwPep !== await _pepperFp(pep);
+}
 /* Verify a Cloudflare Turnstile token. Returns true if:
    - Turnstile isn't configured yet (TURNSTILE_SECRET unset) - we don't block
      real users before you've set it up; the honeypot + rate limits still apply.
@@ -18630,7 +18704,7 @@ async function authSignup(request, env){
   { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
   const safeName = String(name||'').slice(0, 80);
   const salt = crypto.randomUUID();
-  const pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pw = await _pwRecord(env, password, salt);
   /* AMV-075: a keyed hash of the signup network, never the address itself. It
      exists for exactly one comparison - "did the inviter and the invited sign up
      from the same place" - and cannot be reversed back into an IP. */
@@ -18653,7 +18727,7 @@ async function authSignup(request, env){
      Decided inside the record lock, where the answer cannot change between
      reading it and acting on it. The mutate returns whether it created the
      account, so the caller can answer honestly without a second read. */
-  const acct = { email: em, name: safeName, provider:'email', salt, pwHash, pwIter: PBKDF2_ITERATIONS, createdAt: Date.now(), sipHash };
+  const acct = _pwApply({ email: em, name: safeName, provider:'email', salt, createdAt: Date.now(), sipHash }, pw);
   /* AMV-031: a record that will not parse is not an address nobody has taken.
      Asked before the lock, because the answer decides whether this is a
      creation at all - and being handed null for a corrupt account record would
@@ -18686,7 +18760,7 @@ async function authSignup(request, env){
        inbox can do. A confirmed account is never touched here, and where no
        code can be sent nothing changes hands at all. */
     if (unconfirmed && _codesOn(env)) {
-      const pending = { salt, pwHash, pwIter: PBKDF2_ITERATIONS, sipHash, name: safeName };
+      const pending = { salt, ...pw, sipHash, name: safeName };
       const c = await _startSignInCode(env, request, em, safeName, 'claim', pending, undefined, body.lang);
       if (c) return c;
     }
@@ -18869,10 +18943,8 @@ async function authLogin(request, env) {
   }
   // verify using the iteration count the hash was MADE with (default 100k for
   // pre-upgrade accounts), so raising the global count never locks anyone out
-  const usedIter = acct.pwIter || 100000;
-  const hash = await _hashPassword(password, acct.salt, usedIter);
-  // constant-time compare to avoid password-timing leaks
-  const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+  // and with the pepper it names, if any; compared in constant time
+  const ok = await _pwMatches(env, acct, password);
   if(!ok){
     await _noteAuthFail(env, rlKey);
     await _signinFailAdd(env, em);
@@ -18897,10 +18969,11 @@ async function authLogin(request, env) {
   }
   // success - clear the failure counter
   try{ await env.AMV_KV.delete(rlKey); }catch(e){}
-  // transparent upgrade: if this account is below the current target, re-hash now
-  if(usedIter < PBKDF2_ITERATIONS){
+  // transparent upgrade: below the current count, or not under the current
+  // pepper, re-hash now with the password that just proved itself
+  if(await _pwNeedsUpgrade(env, acct)){
     try{
-      const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
+      const pw = await _pwRecord(env, password, acct.salt);
       /* AMV-196: under the record lock, re-reading inside it, and ONLY if the
          stored hash is still the one this login verified against.
 
@@ -18915,7 +18988,7 @@ async function authLogin(request, env) {
          does it. */
       await _withAcct(env, em, (fresh) => {
         if (!fresh || fresh.pwHash !== acct.pwHash || fresh.salt !== acct.salt) return;
-        fresh.pwHash = newHash; fresh.pwIter = PBKDF2_ITERATIONS;
+        _pwApply(fresh, pw);
       });
     }catch(e){ /* non-fatal - login still succeeds */ }
   }
@@ -19176,7 +19249,8 @@ async function authLoginVerify(request, env) {
     try {
       await _withAcct(env, em, (a) => {
         if (!a) return;
-        Object.assign(a, { salt: p.salt, pwHash: p.pwHash, pwIter: p.pwIter, sipHash: p.sipHash, name: p.name || a.name });
+        _pwApply(a, p);
+        Object.assign(a, { salt: p.salt, sipHash: p.sipHash, name: p.name || a.name });
         a.emailVerifiedAt = Date.now();
         applied = true;
       });
@@ -20037,8 +20111,7 @@ async function _reauthForDelete(env, request, user, body) {
       return json({ error: 'Enter your password to confirm you want to delete your account. This cannot be undone.',
                     code: 'reauth_required', need: 'password' }, 401);
     }
-    const hash = await _hashPassword(password, acct.salt, acct.pwIter || 100000);
-    const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+    const ok = await _pwMatches(env, acct, password);
     if (!ok) {
       audit(env, 'delete_reauth_failed', { email: em });
       return json({ error: 'That password is not right.', code: 'reauth_failed', need: 'password' }, 401);
@@ -34380,6 +34453,9 @@ function _readinessReport(env, seen) {
     { id: 'admin', name: 'Operator access', blocking: false, on: _has(env, 'ADMIN_TOKEN'),
       turnsOn: 'The founder dashboard, platform stats, the kill switch and the weekly digest.',
       how: put('ADMIN_TOKEN') },
+    { id: 'pepper', name: 'Passwords keyed with a secret the store does not hold', blocking: false, on: _has(env, 'PASSWORD_PEPPER'),
+      turnsOn: 'Every password hash is also keyed with this secret, so a stolen copy of the store cannot be guessed against offline. Existing passwords move to it at their next sign-in. Keep a copy offline: losing it means those people reset their passwords.',
+      how: put('PASSWORD_PEPPER') },
     { id: 'ownerEmail', name: 'Owner address', blocking: false, on: _has(env, 'OWNER_EMAIL'),
       turnsOn: 'The weekly digest, and operator privileges for that account.',
       how: put('OWNER_EMAIL') },
@@ -34808,7 +34884,7 @@ function _readinessReport(env, seen) {
     paypalHook: 'Taking money', paypalLive: 'Taking money',
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
-    googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
+    googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
     connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
@@ -34833,6 +34909,8 @@ function _readinessReport(env, seen) {
      a secret, but a screen that prints one env var's value is a screen that
      will print the next one's. */
   const tuning = [
+    { id: 'pepperPrev', name: 'Passwords: the previous pepper', env: 'PASSWORD_PEPPER_PREVIOUS', set: _has(env, 'PASSWORD_PEPPER_PREVIOUS'),
+      effect: 'Only while rotating PASSWORD_PEPPER: the old value, so passwords made with it still verify and move to the new one at their next sign-in. Remove it once nobody signs in with the old one.' },
     { id: 'partnerCap', name: 'Partner models: daily ceiling', env: 'PARTNER_DAILY_USD_CAP', set: _has(env, 'PARTNER_DAILY_USD_CAP'),
       effect: 'The most the partner engines may spend in one day, on top of the day\u2019s overall ceiling. Reached, those engines are refused by name until tomorrow; AMV\u2019s own engines keep running. Unset, only the overall ceiling applies.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
@@ -35866,11 +35944,11 @@ async function authResetConfirm(request, env) {
      reverted, and in the other direction a login's iteration upgrade could put
      the OLD credential back after this said the reset worked. */
   const salt = crypto.randomUUID().replace(/-/g, '');
-  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pw = await _pwRecord(env, password, salt);
   try {
     await _withAcct(env, email, (a) => {
       if (!a) return;
-      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      _pwApply(a, pw); a.salt = salt;
       a.pwResetAt = Date.now();
     });
   } catch (e) {
@@ -42255,8 +42333,7 @@ async function _stepUp(env, request, user, proof){
   if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
   if(typeof p.password === 'string' && f.password){
     { const bad = _passwordTooLong(p.password); if(bad) return json(bad, 400); }
-    const h = await _hashPassword(p.password, acct.salt, acct.pwIter || 100000);
-    if(timingSafeEqual(new TextEncoder().encode(h), new TextEncoder().encode(acct.pwHash || ''))) return null;
+    if(await _pwMatches(env, acct, p.password)) return null;
   } else if(typeof p.totp === 'string' && f.totp){
     if(await _totpSpend(env, em, p.totp)) return null;
   } else if(typeof p.recovery === 'string' && f.recoveryLeft){

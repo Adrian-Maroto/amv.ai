@@ -269,7 +269,7 @@ async function _federatedAccount(env, email, fresh){
   await _withAcct(env, email, (rec) => {
     if(!rec) return;
     if((rec.provider || 'email') === 'email' && !rec.emailVerifiedAt && rec.pwHash){
-      delete rec.pwHash; delete rec.salt; delete rec.pwIter; squatted = true;
+      delete rec.pwHash; delete rec.salt; delete rec.pwIter; delete rec.pwPep; delete rec.pwAlgo; squatted = true;
     }
     if(!rec.emailVerifiedAt) rec.emailVerifiedAt = Date.now();
     after = Object.assign({}, rec);

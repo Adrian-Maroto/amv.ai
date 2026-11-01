@@ -618,3 +618,13 @@ the repository.
     two minutes longer. Off, deploys are all at once, as before. Either way,
     a version that deploys and then is not ready is rolled back automatically
     (`.github/workflows/deploy.yml`, "Put the previous version back").
+16. **Passwords a stolen copy of the store cannot crack (recommended: do it
+    now, before there are many accounts)**: on your own machine generate a
+    long random value (for example `openssl rand -base64 48`), keep a copy
+    somewhere offline - a password manager is fine - and run
+    `npx wrangler secret put PASSWORD_PEPPER`, pasting it there. Never paste it
+    into a chat or a file in the repository. From then on every new password is
+    keyed with it, and existing ones move to it when their owners next sign in.
+    If it is ever lost, everyone with a password has to reset it; if it is
+    ever exposed, put the old value in `PASSWORD_PEPPER_PREVIOUS`, set a new
+    `PASSWORD_PEPPER`, and remove the old one once people have signed in.

@@ -799,11 +799,11 @@ async function authResetConfirm(request, env) {
      reverted, and in the other direction a login's iteration upgrade could put
      the OLD credential back after this said the reset worked. */
   const salt = crypto.randomUUID().replace(/-/g, '');
-  const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
+  const pw = await _pwRecord(env, password, salt);
   try {
     await _withAcct(env, email, (a) => {
       if (!a) return;
-      a.pwHash = newHash; a.salt = salt; a.pwIter = PBKDF2_ITERATIONS;
+      _pwApply(a, pw); a.salt = salt;
       a.pwResetAt = Date.now();
     });
   } catch (e) {

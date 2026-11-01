@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-73 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+74 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -145,6 +145,7 @@
 | What | Built in | Proved by |
 |---|---|---|
 | Sign-up is passkey-first: the account and its passkey are made together; a password alone needs 15 characters | `src/worker/73-passkeys-and-mfa.js`, `src/app/03-sessions.js` | `worker/a-passkey-or-a-second-step-guards-the-account.test.mjs`, `e2e/sign-in-with-a-passkey.test.mjs` |
+| Password hashes keyed with a secret the store never holds, upgraded at sign-in, rotatable, failing closed without the key | `src/worker/30-accounts-and-sync.js` | `worker/a-stolen-store-cannot-be-guessed-against.test.mjs` |
 
 ## Teaching
 

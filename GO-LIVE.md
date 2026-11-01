@@ -198,6 +198,7 @@ one except the two in the first table.
 | Operator dashboard, kill switch, digest | `ADMIN_TOKEN` | Nothing - a random string. |
 | Owner notices and the weekly digest | `OWNER_EMAIL` | Nothing. |
 | Correct links in every email and invite | `APP_URL` | Nothing. |
+| Passwords a stolen copy of the store cannot crack | `PASSWORD_PEPPER` | Nothing - a long random secret (32+ characters). Keep a copy offline: if it is lost, everyone with a password resets it. To rotate, move the old value to `PASSWORD_PEPPER_PREVIOUS` first. |
 | Encrypted connected-account tokens | `CONNECT_KEY` | Nothing - a random 32+ char value. Without it AMV refuses to connect an account at all. |
 | App connectors - Notion, Canva, Linear, Jira, Stripe, PayPal, Figma, Zapier and 27 more, signed in to at the app | `CONNECT_KEY` (the same one) and `APP_URL` | Nothing else. AMV registers itself with each app automatically, so there is no per-app key. Free. |
 | Passkeys and an authenticator app for sign-in, with recovery codes | `APP_URL` (passkeys belong to the site at that address) and `CONNECT_KEY` (the same one; it seals each authenticator secret) | Nothing else. Without `APP_URL` passkeys say they are unavailable; without `CONNECT_KEY` so does the authenticator app. |
@@ -252,6 +253,7 @@ one except the two in the first table.
 | `NONESSENTIAL_WRITE_CAP` | `150` | The daily write budget telemetry and the waitlist share, so they cannot starve sign-ups. |
 | `PARTNER_DAILY_USD_CAP` | none | The most the partner engines may spend in a day, on top of the overall ceiling. Reached, they are refused by name until tomorrow; AMV's own engines keep running. |
 | `PG_SHADOW` | none | Step 4 of the move to Postgres: which accounts are also read from Postgres and compared in the background (addresses and/or a share, like `amv@amv.homes,5%`). KV still answers. Results at `GET /admin/pg/shadow`. |
+| `PASSWORD_PEPPER_PREVIOUS` | none | Only while rotating `PASSWORD_PEPPER`: the old value, so passwords made with it still verify and move to the new one at their next sign-in. |
 | `MODEL_API_URL` | built-in | Point at a proxy or a specific region. |
 | `MODEL_API_FALLBACK_URL` | none | A second endpoint tried when the primary cannot answer. |
 | `APP_ORIGIN` | none | Read only when `APP_URL` is unset. Set `APP_URL` and ignore this. |

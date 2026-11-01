@@ -373,8 +373,7 @@ async function _stepUp(env, request, user, proof){
   if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
   if(typeof p.password === 'string' && f.password){
     { const bad = _passwordTooLong(p.password); if(bad) return json(bad, 400); }
-    const h = await _hashPassword(p.password, acct.salt, acct.pwIter || 100000);
-    if(timingSafeEqual(new TextEncoder().encode(h), new TextEncoder().encode(acct.pwHash || ''))) return null;
+    if(await _pwMatches(env, acct, p.password)) return null;
   } else if(typeof p.totp === 'string' && f.totp){
     if(await _totpSpend(env, em, p.totp)) return null;
   } else if(typeof p.recovery === 'string' && f.recoveryLeft){

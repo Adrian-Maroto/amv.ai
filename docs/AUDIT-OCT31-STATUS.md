@@ -40,7 +40,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 15 | Strong consistency for revocation | Done (revocation object; sensitive routes refuse when it cannot be read) |
 | 16 | Fail-closed policy for keys and auth | Done (API keys and sensitive routes fail closed) |
 | 17 | Passwords not standing alone at 8 | Done (passkey first; a password alone needs 15) |
-| 18 | Argon2id password hashing | Needs your approval - PBKDF2-SHA256 today; changing the hash is an authentication change |
+| 18 | Argon2id password hashing | Built, needs you (`PASSWORD_PEPPER`). Argon2id does not exist in the Workers runtime and PBKDF2 is capped at 100000 rounds there; what closes the offline-guessing gap instead is a pepper - the hash keyed with a Worker secret the store never holds. Existing passwords move to it at their next sign-in; rotation and a fail-closed missing key are built and tested |
 | 19 | External WebAuthn/auth review | Outside |
 
 ## Queues, workflows and Tasks
