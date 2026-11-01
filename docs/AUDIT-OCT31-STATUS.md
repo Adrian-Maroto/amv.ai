@@ -52,9 +52,9 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 22 | Webhook processing on the queue | Not doing - the payment provider already re-sends every event until it is answered and AMV applies each once; a second queue would be a second record of the same money, and it is a billing change |
 | 23 | Indexing/ingestion on the queue | Not doing - there is no server-side ingestion to move: files are read on the person's device, and files kept in the account are checked as they arrive |
 | 24 | Dead-letter queues and replay | Done (a dead job is booked again; a dead email pointer leaves the email for the tick) |
-| 25 | Durable workflow engine | Not yet - jobs use the queue, leases and retries; Cloudflare Workflows not adopted |
-| 26 | Long Tasks as durable workflows | Partial - steps that wait on each other, leases, retries; no checkpoint inside a step |
-| 27 | Task checkpoints | Not yet |
+| 25 | Durable workflow engine | Not doing, on purpose - background work already runs on a durable engine of its own: the queue, run leases keyed on the due time, retries with backoff, steps that wait on each other, and each finished step's result kept (26, 27). Moving it onto Cloudflare Workflows would run two engines side by side through the move, for no capability AMV lacks |
+| 26 | Long Tasks as durable workflows | Done - a Task is steps that wait on each other, run under leases with retries, survive a failed run, and are cancelled with a reason when what they wait for fails for good (`a-task-in-steps-keeps-going-without-you`) |
+| 27 | Task checkpoints | Done at the step: each finished step's result is kept, and a step that fails is picked up again from there - the finished steps are not run again and the retried one starts from their saved results (proved in `a-task-in-steps-keeps-going-without-you`). A step is one model call, which either answers or does not; one cut off at its length limit now says so |
 | 28 | Task resume/steering | Done - a chat turn can be steered; a background job or a step of a Task takes a note for its next run (Crew > the job > Note for next run), used once and then never again, checked for credentials like the job itself. A single model call already running cannot be changed mid-answer |
 | 29 | Human-approval pauses | Done (approval levels; "waiting for your OK") |
 

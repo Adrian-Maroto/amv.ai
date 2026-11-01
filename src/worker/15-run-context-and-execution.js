@@ -966,7 +966,10 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
     throw new Error('model error ' + r.status + ': ' + t.slice(0,180));
   }
   const data = await r.json();
-  const text = _autoClaimCheck((data.content||[]).map(b=>b.text||'').join('').trim(), env, email);
+  let text = _autoClaimCheck((data.content||[]).map(b=>b.text||'').join('').trim(), env, email);
+  /* A result that reached its length limit ends mid-thought. Read hours
+     later, a cut-off list looks like a complete one, so it says so. */
+  if(data.stop_reason === 'max_tokens' && text) text += '\n\n_' + 'This result reached its length limit and is cut off here.' + '_';
   // Return usage too so the cron loop can charge automation spend against the
   // user's monthly cost cap - otherwise scheduled jobs would be a free way to
   // burn compute (a research watch every 10 min = thousands of calls/month).

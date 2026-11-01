@@ -38,9 +38,10 @@ const post = async (path, body) => {
 };
 const rec = () => JSON.parse(store.get('auto:' + ME) || '{"items":[],"results":[]}');
 const asked = [];
+let stop = 'end_turn';
 globalThis.fetch = async (u, init) => {
   try { const b = JSON.parse(init.body); if (b && b.messages) asked.push(JSON.stringify(b.messages)); } catch (e) {}
-  return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Here are the listings.' }], stop_reason: 'end_turn', usage: { input_tokens: 5, output_tokens: 5 } }), { status: 200 });
+  return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Here are the listings.' }], stop_reason: stop, usage: { input_tokens: 5, output_tokens: 5 } }), { status: 200 });
 };
 let t = Date.now();
 const runNext = async () => { const it = rec().items[0]; t = Math.max(t, it.next) + 60e3; asked.length = 0; await W.runDueAutomations(env, t); return asked.join('\n'); };
@@ -80,6 +81,18 @@ section('A note is checked like everything else a job carries');
   const long = await post('/auto/update', { action: 'steer', id, note: 'x'.repeat(1001) });
   ok(long.status === 400 && long.d.code === 'too_long', 'and so is a note longer than 1000 characters', long.d);
   ok(!rec().items[0].steer, 'neither was stored');
+}
+
+section('A result cut off at its length limit says so');
+{
+  stop = 'max_tokens';
+  await runNext();
+  const last = (rec().results || []).filter(x => x.autoId === id).slice(-1)[0] || {};
+  ok(/reached its length limit and is cut off here/.test(last.out || ''), 'the person reading it later is told it is incomplete', (last.out || '').slice(-120));
+  stop = 'end_turn';
+  await runNext();
+  const next = (rec().results || []).filter(x => x.autoId === id).slice(-1)[0] || {};
+  ok(!/length limit/.test(next.out || ''), 'and a complete one does not say it', (next.out || '').slice(-80));
 }
 
 report();

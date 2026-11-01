@@ -111,6 +111,33 @@ section('Each step runs only after the one it waits for, and is handed its resul
   ok(prompts.length === 0, 'and nothing runs again', prompts.length);
 }
 
+section('A step that fails resumes from where the task got to, not from the start (audit item 27)');
+{
+  put({ items: [], results: [] });
+  const r0 = await post('/auto/create', { steps: STEPS.slice(0, 2), approval: 'auto' });
+  const [a] = r0.d.items;
+  prompts = []; mode = 'ok';
+  /* The first step succeeds; the second fails on its first try. */
+  answerText = (n) => n === 1 ? 'CHECKPOINT: Gym A 12 GBP' : 'RESULT-' + n;
+  /* Every try at the second step fails for this whole run - its in-run
+     retries included - so it has to be picked up again by a later tick. */
+  let failCompare = true;
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { if (failCompare && /Compare the gyms/.test(String(init && init.body))) { prompts.push('(failed)'); return new Response('{"error":{"message":"upstream down"}}', { status: 500 }); } return inner(u, init); };
+  let r = await tickAt(a.next + 1000);
+  failCompare = false;
+  const first = r.items[0], second = r.items[1];
+  ok(first.done && !second.done && second.active, 'the first step finished; the second is still to do', [first.done, second.done, second.active]);
+  const ranFirst = prompts.filter(p => /climbing gyms in Leeds/.test(p)).length;
+  prompts = [];
+  r = await tickAt(Math.max(second.next || 0, a.next) + 10 * 60e3);
+  ok(!prompts.some(p => /climbing gyms in Leeds/.test(p)) && ranFirst === 1, 'when it is tried again, the finished step is not run again', prompts.map(p => p.slice(0, 40)));
+  ok(prompts.some(p => /Compare the gyms/.test(p) && /CHECKPOINT: Gym A 12 GBP/.test(p)), 'and the retried step starts from the first step\u2019s saved result', prompts.map(p => p.slice(0, 80)));
+  ok(r.items[1].done, 'and the task finishes', r.items[1]);
+  globalThis.fetch = inner;
+  answerText = null;
+}
+
 section('A step whose step fails for good is cancelled, and says why');
 {
   put({ items: [], results: [] });
