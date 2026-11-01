@@ -1765,5 +1765,43 @@
   "it": "Non è stato possibile. Non è cambiato nulla.",
   "ko": "할 수 없었습니다. 아무것도 바뀌지 않았습니다.",
   "ta": "அதைச் செய்ய முடியவில்லை. எதுவும் மாறவில்லை."
+ },
+ "It can no longer be used. The stored copy is being deleted and will be gone shortly.": {
+  "es": "Ya no se puede usar. La copia guardada se está eliminando y desaparecerá en breve.",
+  "zh": "它已无法再被使用。存储的副本正在删除，很快就会消失。",
+  "hi": "इसका अब उपयोग नहीं किया जा सकता। संग्रहीत प्रति हटाई जा रही है और जल्द ही चली जाएगी।",
+  "ar": "لم يعد بالإمكان استخدامه. يجري حذف النسخة المخزنة وستختفي قريبًا.",
+  "pt": "Não pode mais ser usado. A cópia armazenada está sendo excluída e logo desaparecerá.",
+  "fr": "Elle ne peut plus être utilisée. La copie enregistrée est en cours de suppression et disparaîtra sous peu.",
+  "de": "Sie kann nicht mehr verwendet werden. Die gespeicherte Kopie wird gelöscht und ist bald weg.",
+  "ja": "もう使用できません。保存されたコピーは削除中で、まもなく消えます。",
+  "ru": "Её больше нельзя использовать. Сохранённая копия удаляется и скоро исчезнет.",
+  "id": "Ini tidak bisa digunakan lagi. Salinan yang tersimpan sedang dihapus dan akan segera hilang.",
+  "bn": "এটি আর ব্যবহার করা যাবে না। সংরক্ষিত কপিটি মুছে ফেলা হচ্ছে এবং শীঘ্রই চলে যাবে।",
+  "ur": "اسے اب استعمال نہیں کیا جا سکتا۔ محفوظ کاپی حذف کی جا رہی ہے اور جلد ختم ہو جائے گی۔",
+  "tr": "Artık kullanılamaz. Kayıtlı kopya siliniyor ve kısa süre içinde kaybolacak.",
+  "vi": "Không thể dùng nữa. Bản sao đã lưu đang được xóa và sẽ sớm biến mất.",
+  "it": "Non può più essere usato. La copia salvata è in fase di eliminazione e sparirà a breve.",
+  "ko": "더 이상 사용할 수 없습니다. 저장된 사본은 삭제 중이며 곧 사라집니다.",
+  "ta": "இனி இதைப் பயன்படுத்த முடியாது. சேமித்த நகல் நீக்கப்படுகிறது, விரைவில் இல்லாமல் போகும்."
+ },
+ "Its sign-ins can no longer be used; the stored copies are being deleted.": {
+  "es": "Sus inicios de sesión ya no se pueden usar; las copias guardadas se están eliminando.",
+  "zh": "它的登录信息已无法再使用；存储的副本正在删除。",
+  "hi": "इसके साइन-इन अब उपयोग नहीं किए जा सकते; संग्रहीत प्रतियाँ हटाई जा रही हैं।",
+  "ar": "لم يعد بالإمكان استخدام عمليات تسجيل الدخول الخاصة به؛ يجري حذف النسخ المخزنة.",
+  "pt": "Os logins dele não podem mais ser usados; as cópias armazenadas estão sendo excluídas.",
+  "fr": "Ses connexions ne peuvent plus être utilisées ; les copies enregistrées sont en cours de suppression.",
+  "de": "Seine Anmeldungen können nicht mehr verwendet werden; die gespeicherten Kopien werden gelöscht.",
+  "ja": "そのサインインはもう使用できません。保存されたコピーは削除中です。",
+  "ru": "Его входы больше нельзя использовать; сохранённые копии удаляются.",
+  "id": "Login miliknya tidak bisa digunakan lagi; salinan yang tersimpan sedang dihapus.",
+  "bn": "এর সাইন-ইনগুলো আর ব্যবহার করা যাবে না; সংরক্ষিত কপিগুলো মুছে ফেলা হচ্ছে।",
+  "ur": "اس کے سائن اِن اب استعمال نہیں ہو سکتے؛ محفوظ کاپیاں حذف کی جا رہی ہیں۔",
+  "tr": "Oturum açma bilgileri artık kullanılamaz; kayıtlı kopyalar siliniyor.",
+  "vi": "Các thông tin đăng nhập của nó không thể dùng nữa; các bản sao đã lưu đang được xóa.",
+  "it": "I suoi accessi non possono più essere usati; le copie salvate sono in fase di eliminazione.",
+  "ko": "이 에이전트의 로그인은 더 이상 사용할 수 없으며, 저장된 사본은 삭제 중입니다.",
+  "ta": "அதன் உள்நுழைவுகளை இனி பயன்படுத்த முடியாது; சேமித்த நகல்கள் நீக்கப்படுகின்றன."
  }
 }

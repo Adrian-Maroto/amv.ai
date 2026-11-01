@@ -16262,6 +16262,10 @@ const BACKUP_NEVER = [
      credentials, sealed. A backup is a second copy of them in a second place,
      and restoring one would bring back a sign-in somebody forgot. */
   'agentjar:',
+  /* A sign-in whose deletion could not be confirmed, waiting to be deleted
+     again (77a-agent-signins.js). Never restored: the sign-in it points at
+     is not restored either, and the retry finds nothing left to do. */
+  'agentjarpend:',
   /* A browser's notification address and its keys: tied to that device,
      and re-made by turning notifications on again. */
   'push:',
@@ -17639,6 +17643,15 @@ export default {
       }catch(e){
         console.error('[cron] nightly backup failed', e && e.message);
         try{ await _workerError(env, 'cron.backup', e); }catch(_){}
+      }
+      /* Saved agent sign-ins whose deletion could not be confirmed
+         (77a-agent-signins.js): already unusable, deleted here for good. */
+      try{
+        const j = await runAgentJarCleanup(env);
+        if(j && (j.done || j.left)) console.log('[cron] agent sign-in cleanup', JSON.stringify(j));
+      }catch(e){
+        console.error('[cron] agent sign-in cleanup failed', e && e.message);
+        try{ await _workerError(env, 'cron.agentjar', e); }catch(_){}
       }
       /* How long conversations are kept (34a-retention.js): accounts and
          teams that chose a period, trimmed whether or not they come back. */
@@ -43935,12 +43948,19 @@ async function agentsSave(request, env) {
   }, { list: [] });
   if (refused) return refused;
   /* Switched off, or sites taken away: what it held for them goes now. */
-  if (clean.browser && !clean.browser.keep) { try { await _agentJarForget(env, email, out.id); } catch (e) {} }
+  /* Not swallowed (Nov 1 audit AGENT-008): if the sign-ins could not be
+     fenced, the change is reported as not complete. */
+  let signIns = null;
+  if (clean.browser && !clean.browser.keep) {
+    try { const r = await _agentJarForget(env, email, out.id); signIns = r.held ? (r.removed ? 'deleted' : 'pending') : null; }
+    catch (e) { signIns = 'failed'; audit(env, 'agent_signin_forget_failed', { email, agent: out.id }); }
+  }
   /* Read back, so the screen shows what is stored rather than what was sent. */
   const stored = await _agentFind(env, email, out.id);
   if (!stored) return json({ error: 'The agent could not be saved. Nothing changed - try again.', code: 'not_saved' }, 503);
   audit(env, id ? 'agent_changed' : 'agent_created', { email, agent: stored.id });
-  return json({ ok: true, agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
+  if (signIns === 'failed') return json({ error: 'The agent was saved, but the sign-ins it held could not be forgotten. Try switching it off again in a moment.', code: 'signins_not_forgotten', agentSaved: true }, 503);
+  return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
                                    browser: stored.browser || { keep: false, sites: [] } } });
 }
@@ -43974,9 +43994,20 @@ async function agentsDelete(request, env) {
     if (a) { a.deleted = Date.now(); a.instructions = ''; a.role = ''; a.paused = true; }
   }, { list: [] });
   /* And the sign-ins it held - an agent that is gone has no use for one. */
-  try { await _agentJarForget(env, email, id); } catch (e) {}
-  audit(env, 'agent_deleted', { email, agent: id, stopped });
-  return json({ ok: true, stopped });
+  let signIns = 'none';
+  try { const r = await _agentJarForget(env, email, id); signIns = r.held ? (r.removed ? 'deleted' : 'pending') : 'none'; }
+  catch (e) {
+    signIns = 'failed';
+    /* Queued, so "AMV will keep trying" is true; the agent itself is a
+       tombstone that runs nothing, so nothing can use them meanwhile. */
+    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); } catch (_) {}
+  }
+  audit(env, 'agent_deleted', { email, agent: id, stopped, signIns });
+  /* Its jobs are stopped and it is gone; what is said about the sign-ins it
+     held is what is true of them. */
+  if (signIns === 'failed') return json({ ok: false, deleted: true, stopped, signIns,
+    error: 'The agent was deleted and its jobs stopped, but the sign-ins it held could not be removed yet. AMV will keep trying; they cannot be used.', code: 'signins_pending' }, 202);
+  return json({ ok: true, stopped, signIns });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -44030,6 +44061,17 @@ const _agentJarKey = (email, id) => 'agentjar:' + String(email || '').toLowerCas
 /* The agent's saved sign-ins, as cookies to put in a browser: only its listed
    sites, only unexpired, nothing at all when it does not keep sign-ins or the
    record cannot be opened. */
+/* REVOKED BEFORE DELETED (Nov 1 audit AGENT-008/011). Forgetting a sign-in
+   first stamps the agent's own record - which every use reads anyway, under
+   the record lock - with when it was revoked; a jar entry saved at or before
+   that moment is never used again, wherever in the world a stale copy of the
+   jar is still being read and even if deleting it failed. */
+function _agentJarRevoked(agent, site, v){
+  const b = (agent && agent.browser) || {};
+  const at = +(v && v.at) || 0;
+  if(at <= (+b.revokedAt || 0)) return true;
+  return at <= (+((b.revokedSites || {})[site]) || 0);
+}
 async function _agentJarLoad(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
   const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id));
@@ -44040,6 +44082,7 @@ async function _agentJarLoad(env, email, agent){
   for(const [site, v] of Object.entries(rec.sites)){
     if(!(agent.browser.sites || []).includes(site)) continue;
     if(!v || !(v.at > 0) || now - v.at > AGENT_JAR_TTL_S * 1000) continue;
+    if(_agentJarRevoked(agent, site, v)) continue;
     for(const c of _webJarIn(v.cookies)) if(_agentSiteOf(c.domain, [site])) out.push(c);
   }
   return out;
@@ -44076,29 +44119,102 @@ async function _agentSignInsShown(env, email, agent){
   if(!rec || !rec.sites) return [];
   const now = Date.now();
   return Object.entries(rec.sites)
-    .filter(([s, v]) => (agent.browser.sites || []).includes(s) && v && now - v.at <= AGENT_JAR_TTL_S * 1000)
+    .filter(([s, v]) => (agent.browser.sites || []).includes(s) && v && now - v.at <= AGENT_JAR_TTL_S * 1000 && !_agentJarRevoked(agent, s, v))
     .map(([s, v]) => ({ site: s, savedAt: v.at, expiresAt: v.at + AGENT_JAR_TTL_S * 1000 }));
 }
+/* The stamp itself, under the agents record lock. Throws if it cannot be
+   written: a forget that cannot fence the credential must not say it did. */
+async function _agentJarRevoke(env, email, ids, site){
+  const now = Date.now();
+  const want = ids ? new Set(ids) : null;
+  await _withKind(env, 'agents', String(email).toLowerCase(), (rec) => {
+    for(const a of (rec && rec.list) || []){
+      if(!a || (want && !want.has(a.id))) continue;
+      a.browser = a.browser || { keep: false, sites: [] };
+      if(site){ a.browser.revokedSites = Object.assign({}, a.browser.revokedSites || {}, { [site]: now }); }
+      else a.browser.revokedAt = now;
+    }
+  }, { list: [] });
+  return now;
+}
+/* FORGET, AND SAY WHAT IS TRUE (AGENT-008/009). Revoked first, then
+   deleted, then read back. Answers { held, removed }: `held` - there was a
+   sign-in to forget; `removed` - the stored copy is confirmed gone. Not
+   removed means it is fenced (unusable) and queued for another try
+   (`agentjarpend:`), which the cron retries until it is gone. */
 async function _agentJarForget(env, email, id, site){
   const key = _agentJarKey(email, id);
-  if(!site){ await env.AMV_KV.delete(key); return true; }
   let rec = null;
   try{ const raw = await env.AMV_KV.get(key); if(raw) rec = await connOpen(env, raw); }catch(e){ rec = null; }
-  if(!rec || !rec.sites || !rec.sites[site]) return false;
-  delete rec.sites[site];
-  if(!Object.keys(rec.sites).length) await env.AMV_KV.delete(key);
-  else await env.AMV_KV.put(key, await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S });
-  return true;
+  const held = site ? !!(rec && rec.sites && rec.sites[site]) : !!rec;
+  if(!held) return { held: false, removed: true };
+  await _agentJarRevoke(env, email, [id], site);
+  try{
+    if(!site || Object.keys(rec.sites || {}).length <= 1) await env.AMV_KV.delete(key);
+    else { delete rec.sites[site]; await env.AMV_KV.put(key, await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S }); }
+  }catch(e){ /* read back below decides */ }
+  let gone = false;
+  try{
+    const raw = await env.AMV_KV.get(key);
+    if(!raw) gone = true;
+    else if(site){ const after = await connOpen(env, raw); gone = !(after && after.sites && after.sites[site]); }
+  }catch(e){ gone = false; }
+  if(!gone){
+    try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); }catch(e){}
+    audit(env, 'agent_signin_delete_pending', { email, agent: id, site: site || 'all' });
+  }
+  return { held: true, removed: gone };
 }
-/* Every agent's, at once: "sign out everywhere" and erasing the account. */
+/* Every agent's, at once: "sign out everywhere" and erasing the account.
+   Fenced first for every agent, then deleted and checked; what is left is
+   queued. Answers { removed } - false when anything is still stored. */
 async function _agentJarForgetAll(env, email){
-  const prefix = 'agentjar:' + String(email || '').toLowerCase() + ':';
+  const em = String(email || '').toLowerCase();
+  try{ await _agentJarRevoke(env, em, null, ''); }catch(e){ audit(env, 'agent_signin_revoke_failed', { email: em }); }
+  const prefix = 'agentjar:' + em + ':';
+  const left = [];
   let cursor;
   do {
     const page = await env.AMV_KV.list({ prefix, cursor });
-    for(const k of (page.keys || [])) await env.AMV_KV.delete(k.name);
+    for(const k of (page.keys || [])){
+      try{ await env.AMV_KV.delete(k.name); }catch(e){}
+      try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
+    }
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
+  for(const k of left){
+    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+  }
+  if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
+  return { removed: !left.length };
+}
+/* The retry, from the cron: every forget that could not be confirmed is
+   tried again until the stored copy is gone. Already fenced meanwhile. */
+async function runAgentJarCleanup(env){
+  let cursor, done = 0, left = 0;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'agentjarpend:', cursor, limit: 200 });
+    for(const k of (page.keys || [])){
+      const rest = k.name.slice('agentjarpend:'.length);
+      const i = rest.lastIndexOf(':');
+      const email = rest.slice(0, i), id = rest.slice(i + 1);
+      let site = '';
+      try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e){}
+      const key = _agentJarKey(email, id);
+      try{
+        if(!site) await env.AMV_KV.delete(key);
+        else { const raw = await env.AMV_KV.get(key); const rec = raw ? await connOpen(env, raw) : null;
+          if(rec && rec.sites && rec.sites[site]){ delete rec.sites[site];
+            if(Object.keys(rec.sites).length) await env.AMV_KV.put(key, await connSeal(env, rec), { expirationTtl: AGENT_JAR_TTL_S }); else await env.AMV_KV.delete(key); } }
+        const raw = await env.AMV_KV.get(key);
+        const gone = !raw || (site && !(((await connOpen(env, raw)) || {}).sites || {})[site]);
+        if(gone){ await env.AMV_KV.delete(k.name); done++; } else left++;
+      }catch(e){ left++; }
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while(cursor);
+  if(left) audit(env, 'agent_signin_delete_still_pending', { left });
+  return { done, left };
 }
 
 /* POST /v1/agents/signins/forget { id, site? } - one site, or all of them. */
@@ -44111,9 +44227,15 @@ async function agentSignInsForget(request, env){
   const agent = await _agentFind(env, email, String(body.id || ''));
   if(!agent) return json({ error: 'That agent does not exist.', code: 'agent_unknown' }, 404);
   const site = body.site ? String(body.site).toLowerCase() : '';
-  await _agentJarForget(env, email, agent.id, site);
-  audit(env, 'agent_signins_forgotten', { email, agent: agent.id, site: site || 'all' });
-  return json({ ok: true, signIns: await _agentSignInsShown(env, email, agent) });
+  let r;
+  try{ r = await _agentJarForget(env, email, agent.id, site); }
+  catch(e){ if(!_isBusy(e)) throw e; return json({ error: 'That sign-in could not be forgotten right now. Nothing changed - try again in a moment.', code: 'busy' }, 503); }
+  if(!r.held) return json({ error: site ? 'This agent holds no sign-in for ' + site + '.' : 'This agent holds no sign-ins.', code: 'not_held' }, 404);
+  audit(env, 'agent_signins_forgotten', { email, agent: agent.id, site: site || 'all', removed: r.removed });
+  const fresh = await _agentFind(env, email, agent.id) || agent;
+  return json({ ok: true, removed: r.removed,
+    note: r.removed ? undefined : 'It can no longer be used. The stored copy is being deleted and will be gone shortly.',
+    signIns: await _agentSignInsShown(env, email, fresh) });
 }
 
 /* READ, UNATTENDED: the pages of an agent's listed sites that its job names,

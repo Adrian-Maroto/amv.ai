@@ -166,6 +166,10 @@ const BACKUP_NEVER = [
      credentials, sealed. A backup is a second copy of them in a second place,
      and restoring one would bring back a sign-in somebody forgot. */
   'agentjar:',
+  /* A sign-in whose deletion could not be confirmed, waiting to be deleted
+     again (77a-agent-signins.js). Never restored: the sign-in it points at
+     is not restored either, and the retry finds nothing left to do. */
+  'agentjarpend:',
   /* A browser's notification address and its keys: tied to that device,
      and re-made by turning notifications on again. */
   'push:',

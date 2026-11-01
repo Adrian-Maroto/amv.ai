@@ -182,12 +182,19 @@ async function agentsSave(request, env) {
   }, { list: [] });
   if (refused) return refused;
   /* Switched off, or sites taken away: what it held for them goes now. */
-  if (clean.browser && !clean.browser.keep) { try { await _agentJarForget(env, email, out.id); } catch (e) {} }
+  /* Not swallowed (Nov 1 audit AGENT-008): if the sign-ins could not be
+     fenced, the change is reported as not complete. */
+  let signIns = null;
+  if (clean.browser && !clean.browser.keep) {
+    try { const r = await _agentJarForget(env, email, out.id); signIns = r.held ? (r.removed ? 'deleted' : 'pending') : null; }
+    catch (e) { signIns = 'failed'; audit(env, 'agent_signin_forget_failed', { email, agent: out.id }); }
+  }
   /* Read back, so the screen shows what is stored rather than what was sent. */
   const stored = await _agentFind(env, email, out.id);
   if (!stored) return json({ error: 'The agent could not be saved. Nothing changed - try again.', code: 'not_saved' }, 503);
   audit(env, id ? 'agent_changed' : 'agent_created', { email, agent: stored.id });
-  return json({ ok: true, agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
+  if (signIns === 'failed') return json({ error: 'The agent was saved, but the sign-ins it held could not be forgotten. Try switching it off again in a moment.', code: 'signins_not_forgotten', agentSaved: true }, 503);
+  return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
                                    browser: stored.browser || { keep: false, sites: [] } } });
 }
@@ -221,7 +228,18 @@ async function agentsDelete(request, env) {
     if (a) { a.deleted = Date.now(); a.instructions = ''; a.role = ''; a.paused = true; }
   }, { list: [] });
   /* And the sign-ins it held - an agent that is gone has no use for one. */
-  try { await _agentJarForget(env, email, id); } catch (e) {}
-  audit(env, 'agent_deleted', { email, agent: id, stopped });
-  return json({ ok: true, stopped });
+  let signIns = 'none';
+  try { const r = await _agentJarForget(env, email, id); signIns = r.held ? (r.removed ? 'deleted' : 'pending') : 'none'; }
+  catch (e) {
+    signIns = 'failed';
+    /* Queued, so "AMV will keep trying" is true; the agent itself is a
+       tombstone that runs nothing, so nothing can use them meanwhile. */
+    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); } catch (_) {}
+  }
+  audit(env, 'agent_deleted', { email, agent: id, stopped, signIns });
+  /* Its jobs are stopped and it is gone; what is said about the sign-ins it
+     held is what is true of them. */
+  if (signIns === 'failed') return json({ ok: false, deleted: true, stopped, signIns,
+    error: 'The agent was deleted and its jobs stopped, but the sign-ins it held could not be removed yet. AMV will keep trying; they cannot be used.', code: 'signins_pending' }, 202);
+  return json({ ok: true, stopped, signIns });
 }

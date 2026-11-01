@@ -674,8 +674,12 @@ async function mcAgentForgetSite(arg){
   const s = String(arg || ''); const i = s.indexOf('|');
   const id = s.slice(0, i), site = s.slice(i + 1);
   try{
-    await _autoApi('/v1/agents/signins/forget', { id, site });
-    toast(T('Forgotten. It no longer holds a sign-in for {0}.').replace('{0}', site), 'success', 4000);
+    const d = await _autoApi('/v1/agents/signins/forget', { id, site });
+    /* Said as it is (Nov 1 audit AGENT-009): forgotten and confirmed gone,
+       or unusable now with the stored copy still being deleted. */
+    toast(d && d.removed === false
+      ? T('It can no longer be used. The stored copy is being deleted and will be gone shortly.')
+      : T('Forgotten. It no longer holds a sign-in for {0}.').replace('{0}', site), d && d.removed === false ? 'info' : 'success', 5000);
   }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
   await mcAgentsReload();
 }
@@ -785,8 +789,14 @@ async function mcAgentDelete(id){
   if(!(await showConfirmAsync(T('Delete {0}? Its jobs stop running. What it already did stays in your results.').replace('{0}', a.name)))) return;
   try{
     const d = await _autoApi('/v1/agents/delete', { id });
-    toast(T('Deleted. {0} of its jobs stopped.').replace('{0}', String(d.stopped || 0)), 'success', 4000);
-  }catch(e){ toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000); }
+    toast(T('Deleted. {0} of its jobs stopped.').replace('{0}', String(d.stopped || 0))
+      + (d.signIns === 'pending' ? ' ' + T('Its sign-ins can no longer be used; the stored copies are being deleted.') : ''), 'success', 5000);
+  }catch(e){
+    /* The agent WAS deleted; only its sign-ins are still on their way out.
+       "Nothing changed" would be false. */
+    if(e && e.code === 'signins_pending') toast(e.message, 'info', 8000);
+    else toast(T('That did not work: {0}. Nothing changed.').replace('{0}', (e && e.message) || ''), 'error', 6000);
+  }
   await mcAgentsReload();
 }
 /* "KEEP THIS AS AN AGENT?" on a job that works: the agent is made from the

@@ -124,6 +124,15 @@ export default {
         console.error('[cron] nightly backup failed', e && e.message);
         try{ await _workerError(env, 'cron.backup', e); }catch(_){}
       }
+      /* Saved agent sign-ins whose deletion could not be confirmed
+         (77a-agent-signins.js): already unusable, deleted here for good. */
+      try{
+        const j = await runAgentJarCleanup(env);
+        if(j && (j.done || j.left)) console.log('[cron] agent sign-in cleanup', JSON.stringify(j));
+      }catch(e){
+        console.error('[cron] agent sign-in cleanup failed', e && e.message);
+        try{ await _workerError(env, 'cron.agentjar', e); }catch(_){}
+      }
       /* How long conversations are kept (34a-retention.js): accounts and
          teams that chose a period, trimmed whether or not they come back. */
       try{

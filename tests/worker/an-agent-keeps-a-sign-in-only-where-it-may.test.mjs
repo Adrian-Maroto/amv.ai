@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agentjar.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites };\n');
+  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const kv = new Map(); const vals = new Map(); const audits = [];
@@ -137,6 +137,42 @@ section('Forgotten: one site, when switched off, with the agent, and on sign out
   ok(!kv.has('agentjar:' + ME + ':' + two.id) && kv.has('agentjar:' + ME + ':' + AG), 'deleting an agent deletes its sign-ins, and only its own');
   await W.revokeUserTokens(env, ME);
   ok(![...kv.keys()].some(k => k.startsWith('agentjar:' + ME + ':')), '"sign out everywhere" forgets every agent’s sign-ins');
+}
+
+section('A forget that cannot delete says so, fences the sign-in, and finishes later (Nov 1 audit AGENT-008/009)');
+{
+  const tok3 = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
+  await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, tok3);
+  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'T-8'), cookie('wiki.example.org', 'W-8')]);
+  const none = await call('/v1/agents/signins/forget', { id: AG, site: 'nothing.example.net' }, tok3);
+  ok(none.status === 404 && none.d.code === 'not_held', 'forgetting a site it does not hold is not reported as done', none.d);
+  /* The store refuses every write to the jar: the delete "succeeds" at the
+     route only if somebody forgets to check. */
+  const realPut = env.AMV_KV.put, realDel = env.AMV_KV.delete;
+  const jarKey = 'agentjar:' + ME + ':' + AG;
+  env.AMV_KV.put = async (k, v, o) => { if (k === jarKey) throw new Error('store down'); return realPut.call(env.AMV_KV, k, v, o); };
+  env.AMV_KV.delete = async (k) => { if (k === jarKey) throw new Error('store down'); return realDel.call(env.AMV_KV, k); };
+  await new Promise(r => setTimeout(r, 2));
+  const f = await call('/v1/agents/signins/forget', { id: AG }, tok3);
+  ok(f.status === 200 && f.d.removed === false && /can no longer be used/.test(f.d.note || ''), 'the answer says it is not gone yet, and that it can no longer be used', f.d);
+  ok(kv.has(jarKey), 'the stored copy really is still there (the store refused)');
+  ok((await W._agentJarLoad(env, ME, await agent())).length === 0, 'but it is fenced: nothing in it is ever used again', 0);
+  ok(f.d.signIns.length === 0, 'and the card no longer lists it');
+  ok(kv.has('agentjarpend:' + ME + ':' + AG), 'the deletion is queued for another try');
+  env.AMV_KV.put = realPut; env.AMV_KV.delete = realDel;
+  const c = await W.runAgentJarCleanup(env);
+  ok(c.done === 1 && !kv.has(jarKey) && !kv.has('agentjarpend:' + ME + ':' + AG), 'the retry deletes it and clears the queue once the store answers', c);
+  /* A new sign-in kept after the forget is not caught by the fence. */
+  await new Promise(r => setTimeout(r, 2));
+  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'T-9')]);
+  ok((await W._agentJarLoad(env, ME, await agent())).some(x => x.value === 'T-9'), 'a sign-in kept afterwards works again');
+  /* Deleting the agent while the store refuses: deleted, and honest about the rest. */
+  env.AMV_KV.delete = async (k) => { if (k === jarKey) throw new Error('store down'); return realDel.call(env.AMV_KV, k); };
+  const d = await call('/v1/agents/delete', { id: AG }, tok3);
+  env.AMV_KV.delete = realDel;
+  ok(d.d.signIns === 'pending' && d.d.ok === true, 'deleting the agent says its sign-ins are still being deleted', d.d);
+  await W.runAgentJarCleanup(env);
+  ok(!kv.has(jarKey), 'and they are, at the next retry');
 }
 
 section('No key to seal with: no sign-in is kept');
