@@ -159,7 +159,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
 | 106 | Policy/DLP gateway | Done (Nov 1: a team's data rule, enforced on the server - a message carrying an access key, a private key or a card number is refused before the model is called, naming the kind and never echoing it; a switch on the Team screen) |
-| 107 | SIEM/audit export | Needs your approval - the team log keeps its last 200 entries in one record; an export worth having needs it stored by month, a KV schema change |
+| 107 | SIEM/audit export | Done (every team action also kept by day for 400 days; owners and admins download any period up to 92 days as NDJSON, from the Team page or with an API key at `/team/audit/export`; a day past its cap says how many are missing) |
 | 108 | Retention/residency controls | Not yet |
 | 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
 | 110 | Then competitor parity | - |

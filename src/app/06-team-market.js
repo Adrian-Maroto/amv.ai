@@ -502,8 +502,37 @@ async function _loadTeamTasks(team, role, myEmail){
         escH((err&&err.message)||'Could not load the team activity log.')+
         ' This is not a record of nothing happening - <button class="tt-mini" id="tal-retry">try again</button></div>';
       on($('tal-retry'),'click',()=>_renderTeamManage(vc, team));
-    });
+    }).finally(()=>_teamAuditExportWire());
   }
+}
+/* Download the team's whole activity for a period (Oct 31 audit, item 107),
+   as NDJSON - one event per line, the shape a security team's own system
+   reads. The same route answers an owner's or admin's API key, so it can be
+   pulled on a schedule; the hint says how. */
+function _teamAuditExportWire(){
+  const el=$('team-audit'); if(!el||$('tal-export')) return;
+  const day=(t)=>new Date(t).toISOString().slice(0,10);
+  const box=document.createElement('div');
+  box.className='team-log-export';
+  box.innerHTML='<label>'+escH(T('From'))+' <input type="date" id="tal-from" value="'+day(Date.now()-29*864e5)+'"></label> '+
+    '<label>'+escH(T('To'))+' <input type="date" id="tal-to" value="'+day(Date.now())+'"></label> '+
+    '<button class="tt-mini" id="tal-export">'+escH(T('Download activity (NDJSON)'))+'</button>'+
+    '<div class="team-log-hint">'+escH(T('Up to 92 days at a time, kept for 400 days. A security tool can fetch the same file with an owner\u2019s or admin\u2019s API key from /team/audit/export.'))+'</div>';
+  el.parentNode.insertBefore(box, el);
+  on($('tal-export'),'click',async()=>{
+    const btn=$('tal-export'); btn.disabled=true;
+    try{
+      const from=($('tal-from')||{}).value||'', to=($('tal-to')||{}).value||'';
+      const r=await AMV_API._fetch('/team/audit/export',{method:'POST',body:JSON.stringify({from,to})});
+      if(!r.ok){ const d=await r.json().catch(()=>null); throw new Error((d&&d.error)||T('The activity could not be exported.')); }
+      const blob=await r.blob();
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='amv-team-activity-'+from+'-to-'+to+'.ndjson'; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      const n=Number(r.headers.get('X-AMV-Events')||0);
+      toast(n?T('Downloaded {n} events.').replace('{n}',n):T('No activity in that period.'),'success');
+    }catch(e){ toast((e&&e.message)||T('The activity could not be exported.'),'error'); }
+    btn.disabled=false;
+  });
 }
 /* ── WHICH ENGINES THE TEAM USES ──────────────────────────────────────────
    Pulse and Core are always on: background jobs, chat summaries and the

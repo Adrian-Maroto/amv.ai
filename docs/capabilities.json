@@ -296,6 +296,10 @@
   { "id": "ops.auto_rollback", "status": "built", "name": "A deployed version that is not ready is rolled back without waiting for anybody",
     "code": [[".github/workflows/deploy.yml", "wrangler rollback --yes"]],
     "tests": ["tests/worker/a-new-version-serves-a-few-before-everybody.test.mjs"],
-    "says": ["automatic rollback"] }
+    "says": ["automatic rollback"] },
+  { "id": "team.audit_export", "status": "built", "name": "A team's whole activity, kept by day for 400 days, downloadable as NDJSON by an owner, an admin or their API key",
+    "code": [["src/worker/33-team-roles.js", "teamAuditExport"], ["src/app/06-team-market.js", "_teamAuditExportWire"]],
+    "tests": ["tests/worker/a-team-can-take-its-whole-history-away.test.mjs"],
+    "says": ["audit export", "siem"] }
  ]
 }

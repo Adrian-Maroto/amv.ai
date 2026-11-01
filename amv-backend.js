@@ -18135,6 +18135,7 @@ async function _route(request, env, ctx) {
     case '/team/leave':      return teamLeave(request, env);
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
+    case '/team/audit/export': return teamAuditExport(request, env);
     case '/team/usage':      return teamUsage(request, env);
     case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/sso':        return teamSso(request, env);
@@ -21039,12 +21040,90 @@ async function _teamAudit(env, team, actorEmail, action, detail){
     /* AMV-SP-05: appended by every member, so read-append-write drops
        entries whenever two people act at once - and an audit log with holes in
        it is worse than none, because it is trusted. */
+    const entry = { t: Date.now(), actor: actorEmail, action, ...(detail||{}) };
     await _withKV(env, 'teamlog', team.id, (log) => {
-      log.push({ t: Date.now(), actor: actorEmail, action, ...(detail||{}) });
+      log.push(entry);
       if (log.length > 200) log.splice(0, log.length - 200);   // keep the most recent
     }, []);
+    await _teamLogDayAppend(env, team.id, entry);
     audit(env, 'team_action', { team: team.id, actor: actorEmail, action });
   }catch(e){ /* logging must never break the operation */ }
+}
+/* THE WHOLE HISTORY, BY DAY (Oct 31 audit, item 107: an audit export a
+   security team can load into its own system).
+
+   The record above keeps the last 200 actions, which is what the activity
+   panel shows and all it ever needed. An export needs everything over a
+   period, so every entry is also appended to the record for its day,
+   `teamlog:<team>:<YYYY-MM-DD>` - small enough to rewrite on each action,
+   addressable by date, kept TEAM_LOG_DAYS and then expired by the store.
+
+   A day is capped at TEAM_LOG_DAY_MAX entries so one runaway script cannot
+   grow a record without bound. Past the cap an entry is COUNTED, not kept,
+   and the export says how many are missing for that day: a log with a hole
+   it admits to can be trusted; one with a hole it hides cannot. */
+const TEAM_LOG_DAYS = 400;
+const TEAM_LOG_DAY_MAX = 5000;
+const TEAM_LOG_EXPORT_DAYS = 92;
+const _teamLogDay = (t) => new Date(t).toISOString().slice(0, 10);
+async function _teamLogDayAppend(env, teamId, entry){
+  const day = _teamLogDay(entry.t);
+  const key = `teamlog:${teamId}:${day}`;
+  await _withRecord(env, 'teamlogday', teamId + ':' + day,
+    async (e) => { const raw = await e.AMV_KV.get(key); if (raw == null) return { e: [], over: 0 }; return JSON.parse(raw); },
+    async (e, k, rec) => { await e.AMV_KV.put(key, JSON.stringify(rec), { expirationTtl: TEAM_LOG_DAYS * 86400 }); },
+    (rec) => { if (rec.e.length >= TEAM_LOG_DAY_MAX) rec.over = (rec.over || 0) + 1; else rec.e.push(entry); });
+}
+/* POST /team/audit/export {from, to} (YYYY-MM-DD, at most 92 days, inclusive)
+   -> NDJSON, one event per line, oldest first. Owners and admins only, from
+   a browser session or from their API key, so a SIEM can pull it on a
+   schedule. A day whose entries passed the cap gets a {"type":"gap"} line
+   saying how many are missing. Nothing is ever invented for a day that has
+   no record: it simply has no lines. */
+async function teamAuditExport(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  if(!_can(team, user.email, 'viewAudit')) return json({ error:'Only a team owner or admin can export the team\u2019s activity.', code:'forbidden' }, 403);
+  const url = new URL(request.url);
+  const body = request.method === 'POST' ? await request.json().catch(()=>({})) : {};
+  const pick = (k) => String(body[k] || url.searchParams.get(k) || '');
+  const isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
+  const today = _teamLogDay(Date.now());
+  const to = pick('to') || today;
+  const from = pick('from') || _teamLogDay(Date.parse(to + 'T00:00:00Z') - 29 * 86400000);
+  if(!isDay(from) || !isDay(to)) return json({ error:'from and to are dates written YYYY-MM-DD.', code:'bad_range' }, 400);
+  const a = Date.parse(from + 'T00:00:00Z'), b = Date.parse(to + 'T00:00:00Z');
+  const span = Math.round((b - a) / 86400000) + 1;
+  if(span < 1) return json({ error:'from is after to.', code:'bad_range' }, 400);
+  if(span > TEAM_LOG_EXPORT_DAYS) return json({ error:'At most ' + TEAM_LOG_EXPORT_DAYS + ' days per export; ask for the period in parts.', code:'range_too_long' }, 400);
+  const days = Array.from({ length: span }, (_, i) => _teamLogDay(a + i * 86400000));
+  const recs = [];
+  for(let i = 0; i < days.length; i += 16){
+    recs.push(...await Promise.all(days.slice(i, i + 16).map(async (d) => {
+      const raw = await env.AMV_KV.get(`teamlog:${team.id}:${d}`);
+      if(raw == null) return null;
+      try{ return { d, rec: JSON.parse(raw) }; }catch(e){ return { d, rec: null }; }
+    })));
+  }
+  const lines = [];
+  let events = 0;
+  for(const x of recs){
+    if(!x) continue;
+    if(!x.rec){ lines.push(JSON.stringify({ type:'gap', team: team.id, day: x.d, reason:'unreadable' })); continue; }
+    for(const ev of x.rec.e || []){
+      const { t, actor, action, ...detail } = ev;
+      lines.push(JSON.stringify({ type:'team_action', time: new Date(t).toISOString(), team: team.id, actor, action, detail }));
+      events++;
+    }
+    if(x.rec.over) lines.push(JSON.stringify({ type:'gap', team: team.id, day: x.d, reason:'day_cap', missing: x.rec.over }));
+  }
+  await _teamAudit(env, team, user.email, 'audit_exported', { from, to, events });
+  return new Response(lines.join('\n') + (lines.length ? '\n' : ''), { status: 200, headers: {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Content-Disposition': 'attachment; filename="amv-team-activity-' + from + '-to-' + to + '.ndjson"',
+    'Cache-Control': 'no-store', 'X-AMV-Events': String(events) } });
 }
 async function teamInvite(request, env){
   const user = await requireUser(request, env);
