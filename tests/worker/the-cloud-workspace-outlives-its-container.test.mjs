@@ -22,6 +22,7 @@ import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from 'net';
+import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -68,8 +69,12 @@ const portTo = (base) => ({ running: true, getTcpPort: () => ({
 const bucket = () => {
   const m = new Map();
   return { m,
-    async put(k, v) { const chunks = []; for await (const c of v) chunks.push(Buffer.from(c)); m.set(k, Buffer.concat(chunks)); },
-    async get(k) { if (!m.has(k)) return null; const b = m.get(k); return { size: b.length, body: new Blob([b]).stream() }; },
+    meta: new Map(),
+    /* As the real bucket does: given sha256, it refuses bytes that do not match. */
+    async put(k, v, o) { const chunks = []; for await (const c of v) chunks.push(Buffer.from(c)); const buf = Buffer.concat(chunks);
+      if (o && o.sha256 && createHash('sha256').update(buf).digest('hex') !== o.sha256) throw new Error('sha256 mismatch');
+      m.set(k, buf); this.meta.set(k, (o && o.customMetadata) || {}); },
+    async get(k) { if (!m.has(k)) return null; const b = m.get(k); return { size: b.length, body: new Blob([b]).stream(), customMetadata: this.meta.get(k) || {} }; },
     async delete(k) { m.delete(k); } };
 };
 const id = { toString: () => 'a1b2c3d4' };
@@ -112,6 +117,29 @@ section('Stopped for being idle, the workspace is saved; the next machine starts
      'the new machine has the person’s files', events);
   ok(existsSync(join(two, 'src', 'app.js')), 'folders and all');
   ok(!existsSync(join(two, 'node_modules')) && !existsSync(join(two, 'app', 'node_modules')), 'but not installed packages - an install makes those again');
+}
+
+section('The saved copy carries its checksum, and a damaged one is never unpacked');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(A.base) }, env).onActivityExpired();
+  const saved = env.WORKSPACES.m.get('ws/a1b2c3d4.tgz');
+  const meta = env.WORKSPACES.meta.get('ws/a1b2c3d4.tgz');
+  ok(meta && meta.sha256 === createHash('sha256').update(saved).digest('hex'), 'saved with the checksum of exactly what was saved', meta);
+  /* The stored object is replaced by another archive that unpacks perfectly
+     well - a stale copy, a swapped object - so only the checksum can tell. */
+  const other = join(box, 'other'); mkdirSync(other, { recursive: true }); writeFileSync(join(other, 'not-yours.txt'), 'someone else\n');
+  const otherTgz = join(box, 'other.tgz');
+  spawnSync('tar', ['-czf', otherTgz, '-C', other, '.']);
+  env.WORKSPACES.m.set('ws/a1b2c3d4.tgz', readFileSync(otherTgz));
+  const three = join(box, 'three'); mkdirSync(three, { recursive: true }); writeFileSync(join(three, 'mine.txt'), 'already here\n');
+  const C = await bridge(three);
+  events.length = 0;
+  await new AMVComputer({ id, container: portTo(C.base) }, env).onStart();
+  ok(events.includes('workspace_restore_failed') && !existsSync(join(three, 'not-yours.txt')), 'a copy that is not the one saved is refused, nothing of it unpacked', events);
+  ok(readFileSync(join(three, 'mine.txt'), 'utf8') === 'already here\n', 'and what was there is untouched');
+  const wrong = await fetch(C.base + '/amv-bridge/restore', { method: 'PUT', headers: { 'X-AMV-Bridge-Token': KEY, 'X-AMV-SHA256': 'f'.repeat(64) }, body: saved });
+  ok(wrong.status === 422 && (await wrong.json()).error === 'checksum_mismatch', 'the bridge itself says why', wrong.status);
 }
 
 section('With no bucket nothing changes, and nothing breaks');

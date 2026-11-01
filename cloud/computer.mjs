@@ -58,7 +58,8 @@ export class AMVComputer extends Container {
     try {
       const obj = await this.env.WORKSPACES.get(this._wsKey());
       if (!obj) return;
-      const r = await this._bridge('restore', { method: 'PUT', body: obj.body, headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(obj.size) } });
+      const sha = obj.customMetadata && obj.customMetadata.sha256;
+      const r = await this._bridge('restore', { method: 'PUT', body: obj.body, headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(obj.size), ...(sha ? { 'X-AMV-SHA256': sha } : {}) } });
       console.log(JSON.stringify({ event: r.ok ? 'workspace_restored' : 'workspace_restore_failed', status: r.status, bytes: obj.size }));
     } catch (e) {
       /* An empty workspace is worse than a slow one, but a machine that never
@@ -78,7 +79,13 @@ export class AMVComputer extends Container {
              far larger than this object's memory. */
           const { readable, writable } = new FixedLengthStream(size);
           const done = r.body.pipeTo(writable);
-          await this.env.WORKSPACES.put(this._wsKey(), readable, { httpMetadata: { contentType: 'application/gzip' } });
+          /* With its checksum: the bucket checks the bytes it received against
+             it and refuses the upload if they differ (the last good copy
+             stays), and the restore checks it again before unpacking. */
+          const sha = String(r.headers.get('X-AMV-SHA256') || '').toLowerCase();
+          const ok = /^[0-9a-f]{64}$/.test(sha);
+          await this.env.WORKSPACES.put(this._wsKey(), readable, Object.assign({ httpMetadata: { contentType: 'application/gzip' } },
+            ok ? { sha256: sha, customMetadata: { sha256: sha } } : {}));
           await done;
           console.log(JSON.stringify({ event: 'workspace_saved', bytes: size }));
         } else {

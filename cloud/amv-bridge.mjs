@@ -64,7 +64,7 @@ import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSy
          mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync, openSync, closeSync, fstatSync,
          mkdtempSync, rmSync, createReadStream, createWriteStream, constants as FS } from 'fs';
 import { resolve, join, dirname, relative, sep, basename } from 'path';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 
 const VERSION = '1.0.0';
@@ -354,6 +354,12 @@ const CLOUD = ARGS.includes('--cloud');
    session only, and the page is told so rather than losing it silently. */
 const SNAPSHOT_SKIP = ['./node_modules', '*/node_modules', './.venv', '*/.venv', '*/__pycache__', './.cache', '*/.cache', './.npm', '*/.npm'];
 const SNAPSHOT_MAX = 512 * 1024 * 1024;
+function _fileSha256(file) {
+  return new Promise((done) => {
+    const h = createHash('sha256'); const rs = createReadStream(file);
+    rs.on('data', (c) => h.update(c)); rs.on('end', () => done(h.digest('hex'))); rs.on('error', () => done(''));
+  });
+}
 if (CLOUD) {
   const key = String(process.env.AMV_CLOUD_KEY || '');
   if (key.length < 32) {
@@ -1339,7 +1345,11 @@ const server = createServer(async (req, res) => {
        still whole, and a command running in the background is normal. */
     if ((code !== 0 && code !== 1) || !size) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 500, { error: 'snapshot_failed' }); }
     if (size > SNAPSHOT_MAX) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 413, { error: 'too_large', size, max: SNAPSHOT_MAX }); }
-    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size) });
+    /* ITS CHECKSUM GOES WITH IT (Oct 31 audit, item 33): the bucket refuses an
+       upload that does not match it, and a restore refuses a copy that does
+       not - so a damaged copy is never unpacked over somebody's work. */
+    const sha = await _fileSha256(file);
+    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size), ...(sha ? { 'X-AMV-SHA256': sha } : {}) });
     const rs = createReadStream(file);
     rs.on('close', () => { try { rmSync(file, { force: true }); } catch (e) {} });
     rs.pipe(res);
@@ -1355,6 +1365,17 @@ const server = createServer(async (req, res) => {
       req.pipe(ws);
     });
     if (got.over || got.error || !got.n) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, got.over ? 413 : 400, { error: got.over ? 'too_large' : 'bad_body' }); }
+    /* A copy saved with a checksum is unpacked only if it still matches it.
+       The workspace is left exactly as it was otherwise. */
+    const want = String(req.headers['x-amv-sha256'] || '').toLowerCase();
+    if (want) {
+      const have = await _fileSha256(file);
+      if (!/^[0-9a-f]{64}$/.test(want) || have !== want) {
+        try { rmSync(file, { force: true }); } catch (e) {}
+        console.log('  ✗ workspace copy refused: it does not match its checksum');
+        return json(res, 422, { error: 'checksum_mismatch' });
+      }
+    }
     /* GNU tar strips leading slashes and refuses names that climb with "..";
        --no-same-owner keeps everything owned by the workspace's own user. */
     const code = await new Promise((done) => {
