@@ -143,8 +143,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 88 | Container image scanning | Not yet |
 | 89 | Load tests at 1K/10K/100K | Partial (`tools/load-probe.mjs`) |
 | 90 | Chaos/fault injection | Done (store and model failures never fail open) |
-| 91 | Model/prompt eval framework | Not yet |
-| 92 | Canary model/prompt changes | Not yet |
+| 91 | Model/prompt eval framework | Done (Nov 1: `npm run evals` - eight cases through AMV's own API, graded by checks that do not depend on wording; costs model credit, so it is run before a change, not on every commit) |
+| 92 | Canary model/prompt changes | Done (`--compare`: fails when the new engine loses any case the current one passes) |
 | 93 | Trust & Safety operations | Yours (people and process) |
 | 94 | Customer-support operations | Yours |
 | 95 | Legal/privacy review | Outside |
@@ -174,11 +174,11 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **37 done**, **12
+Of the 109 items with work in them (110 is "then parity"): **39 done**, **12
 built and waiting on you**, **18 partial** (87 counted here: SBOM done,
-provenance not), **22 not yet**, **16 yours or outside** (decisions, accounts,
+provenance not), **20 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
-quarantine (51-53), the eval framework (91) and per-provider budgets (66). Audit export (107) needs a change to
+quarantine (51-53) and per-provider budgets (66). Audit export (107) needs a change to
 how the team log is stored, which is a KV schema change and so waits for your
 approval.
