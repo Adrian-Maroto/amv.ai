@@ -453,6 +453,10 @@ function _partnerStream(upstream, eng){
 /* One streamed call to the partner, answered in AMV's own event stream. A
    refusal before any output is a plain error response the caller already
    knows how to refund. */
+/* The partner supplier's spend today, one counter: partner traffic is the
+   smaller share by design, so it is not split the way the whole day is. */
+function _partnerSpendName(){ return 'pspend:' + todayKey(); }
+
 async function _partnerCall(env, eng, body, signal){
   const base = _partnerBase(env);
   if(!base || !env.AMV_PARTNER_KEY) return new Response(JSON.stringify({ error: { message: 'This engine is not connected.' } }), { status: 503 });
@@ -23462,12 +23466,14 @@ async function aiProxy(request, env, ctx, principal) {
      exists to stop a bill. */
   const estUSD = (((estIn + AI_INJECTED_INPUT_TOK) * AI_INPUT_SAFETY) / 1e6) * eng.inCost
                + (estOut / 1e6) * eng.outCost;
-  let bookedUSD = 0, bookedGlobalUSD = 0, bookedCreditUSD = 0;
+  let bookedUSD = 0, bookedGlobalUSD = 0, bookedCreditUSD = 0, bookedPartnerUSD = 0;
+  const partnerName = eng.provider === 'partner' ? _partnerSpendName() : '';
   const creditName = _creditSpentName(subject);
   const releaseUSD = async () => {
     if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
     if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
     if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, 0, true); bookedCreditUSD = 0; }
+    if (bookedPartnerUSD > 0) { await _releaseUSD(env, partnerName, bookedPartnerUSD, 86400000 * 2); bookedPartnerUSD = 0; }
   };
   /* Already past a plan limit and running on credit: the plan's own dollar
      ceiling is not booked as well - the credit is what pays for this one. */
@@ -23540,6 +23546,26 @@ async function aiProxy(request, env, ctx, principal) {
     await refundReservation();   // the call never happened - don't eat their quota
     return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
                 { 'Retry-After': _retryAfterMidnight() });
+  }
+
+  /* 4b) THE SECOND SUPPLIER'S OWN DAILY CEILING (Oct 31 audit, item 66),
+     when the owner sets one (PARTNER_DAILY_USD_CAP). AMV's own engines are
+     held by the day's ceiling above; a partner engine is also held by this,
+     so one supplier's price or a runaway on one engine cannot spend the whole
+     day. Booked like the others, given back by every refusal, settled to what
+     the turn cost. Reached, the engine is refused by name - never swapped for
+     another one behind the person's back. */
+  const partnerCap = partnerName ? +env.PARTNER_DAILY_USD_CAP : 0;
+  if (partnerName && partnerCap > 0) {
+    const pRes = await _reserveUSD(env, partnerName, estUSD, partnerCap, 86400000 * 2);
+    bookedPartnerUSD = pRes.reserved;
+    if (!pRes.allowed) {
+      audit(env, 'partner_cap_hit', { engine: key, cap: partnerCap });
+      ctx.waitUntil(alertOnce(env, 'partner_cap', 'The partner engines reached their daily ceiling ($' + partnerCap + '). They are refused until tomorrow; AMV\u2019s own engines are unaffected.', 360).catch(() => {}));
+      await refundReservation();
+      return json({ error: 'This engine has reached today\u2019s limit. Choose another engine - they are running normally.',
+                    code: 'engine_daily_limit', engine: key }, 503, { 'Retry-After': _retryAfterMidnight() });
+    }
   }
 
   // 5) clamp output tokens to the engine max (cost ceiling per call)
@@ -23712,7 +23738,8 @@ async function aiProxy(request, env, ctx, principal) {
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
     reqMessages: body.messages || [], reserved: reserve, feature: _tag.surface, project: _tag.project,
     reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
-    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
+    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD,
+    partnerName: partnerCap > 0 ? partnerName : '', reservedPartnerUSD: bookedPartnerUSD }));
 
   return new Response(toClient, {
     status: 200,
@@ -25028,7 +25055,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0, partnerName = '', reservedPartnerUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -25166,6 +25193,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   const gRes = dCost !== 0
     ? await counter(env, gName, { op: 'incr', amount: dCost, ttlMs: 86400000 * 2 })
     : { value: 0 };
+  /* The partner supplier's day, settled the same way when it has a ceiling. */
+  if (partnerName) {
+    const dP = cost - (reservedPartnerUSD || 0);
+    if (dP !== 0) { try { await counter(env, partnerName, { op: 'incr', amount: dP, ttlMs: 86400000 * 2 }); } catch (e) { await _writeFailed(env, 'partner_settle', e); } }
+  }
   /* A message that ran on prepaid credit is paid for by the credit, at the
      markup, and settled against what was booked for it - not added to the
      plan's own ledger as well, which would charge it twice. */
@@ -34648,7 +34680,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -34671,6 +34703,8 @@ function _readinessReport(env, seen) {
      a secret, but a screen that prints one env var's value is a screen that
      will print the next one's. */
   const tuning = [
+    { id: 'partnerCap', name: 'Partner models: daily ceiling', env: 'PARTNER_DAILY_USD_CAP', set: _has(env, 'PARTNER_DAILY_USD_CAP'),
+      effect: 'The most the partner engines may spend in one day, on top of the day\u2019s overall ceiling. Reached, those engines are refused by name until tomorrow; AMV\u2019s own engines keep running. Unset, only the overall ceiling applies.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),

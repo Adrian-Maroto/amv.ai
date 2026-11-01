@@ -64,6 +64,9 @@ function mkEnv(partner) {
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
     AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body || '{}'); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
+      /* The partner's day honours its ceiling, as the real counter does; the
+         other counters stay as permissive as this suite always had them. */
+      if (b.op === 'reserve' && /^pspend:/.test(n) && cur + Number(b.amount || 0) > Number(b.cap)) return r({ allowed: false, value: cur });
       if (b.op === 'reserve') { vals.set(n, cur + Number(b.amount || 0)); return r({ allowed: true, value: vals.get(n) }); }
       if (b.op === 'incr') { vals.set(n, cur + Number(b.amount || 0)); return r({ value: vals.get(n) }); }
       if (b.op === 'get') return r({ value: cur });
@@ -152,6 +155,40 @@ section('A turn is translated there and back, and settled at the engine’s pric
   ok(/"stop_reason":"tool_use"/.test(body), 'and the stop reason says a tool was asked for');
   const usd = [...env._vals.entries()].filter(([k]) => k.startsWith('cost:')).reduce((n, [, v]) => n + v, 0);
   ok(Math.abs(usd - (2000 * 3 + 500 * 12) / 1e6) < 0.002, 'settled at Vega’s own prices: 2k in at $3/M + 500 out at $12/M = $0.012', usd);
+}
+
+section('The partner engines have a daily ceiling of their own: reached, refused by name, nothing kept');
+{
+  const env = mkEnv(true);
+  env.PARTNER_DAILY_USD_CAP = '0.5';
+  const a = await account(env, 'pro');
+  const pKey = () => [...env._vals.keys()].find(k => k.startsWith('pspend:'));
+  partnerCalls = [];
+  const r1 = await req(env, '/v1/messages', TURN, a.tok); await r1.text(); await settle();
+  ok(r1.status === 200 && partnerCalls.length === 1, 'under the ceiling it answers', r1.status);
+  ok(pKey() && Math.abs(env._vals.get(pKey()) - 0.012) < 0.002, 'and the partner’s day is charged exactly what the turn cost, not what was booked', env._vals.get(pKey()));
+  env._vals.set(pKey(), 0.4999);
+  const costBefore = [...env._vals.entries()].filter(([k]) => k.startsWith('cost:')).reduce((n, [, v]) => n + v, 0);
+  partnerCalls = [];
+  const r2 = await req(env, '/v1/messages', TURN, a.tok); const t2 = await r2.text(); await settle();
+  let d2 = {}; try { d2 = JSON.parse(t2); } catch (e) { d2 = { streamed: t2.slice(0, 80) }; }
+  ok(r2.status === 503 && d2.code === 'engine_daily_limit' && d2.engine === 'amv-vega' && /Choose another engine/.test(d2.error), 'at the ceiling: refused, naming the engine, saying the others work', d2);
+  ok(partnerCalls.length === 0, 'and the partner is not called', partnerCalls.length);
+  const costAfter = [...env._vals.entries()].filter(([k]) => k.startsWith('cost:')).reduce((n, [, v]) => n + v, 0);
+  ok(Math.abs(costAfter - costBefore) < 1e-9 && Math.abs(env._vals.get(pKey()) - 0.4999) < 1e-9, 'nothing stays booked against the person or the partner', { costBefore, costAfter, p: env._vals.get(pKey()) });
+  modelCalls = 0;
+  const own = await req(env, '/v1/messages', { model: 'amv-core', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, a.tok); await own.text(); await settle();
+  ok(own.status === 200 && modelCalls === 1, 'AMV’s own engines keep running', own.status);
+  /* The partner itself failing after the day was booked: the booking goes back. */
+  env._vals.set(pKey(), 0);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => String(url) === PARTNER + '/chat/completions' ? new Response('{"error":"down"}', { status: 503 }) : realFetch(url, init);
+  const r4 = await req(env, '/v1/messages', TURN, a.tok); await r4.text(); await settle();
+  globalThis.fetch = realFetch;
+  ok(r4.status >= 500 && Math.abs(env._vals.get(pKey())) < 1e-9, 'a partner that fails gives the day’s booking back', { status: r4.status, p: env._vals.get(pKey()) });
+  const env2 = mkEnv(true); const b2 = await account(env2, 'pro');
+  const r3 = await req(env2, '/v1/messages', TURN, b2.tok); await r3.text(); await settle();
+  ok(r3.status === 200 && ![...env2._vals.keys()].some(k => k.startsWith('pspend:')), 'with no ceiling set, nothing extra is counted', [...env2._vals.keys()].filter(k => /spend/.test(k)));
 }
 
 section('A tool AMV does not offer never reaches a partner either');

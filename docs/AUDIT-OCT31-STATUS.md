@@ -113,7 +113,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 63 | Load shedding / brownout | Done (Nov 1: one owner action pauses the heavy parts) |
 | 64 | Fewer Durable Object calls per chat | Partial (switches held, totals sharded) |
 | 65 | Production spend ceiling set on purpose | Yours (`GLOBAL_DAILY_USD_CAP`) |
-| 66 | Per-provider budgets | Not yet |
+| 66 | Per-provider budgets | Done (Nov 1: `PARTNER_DAILY_USD_CAP` - the second supplier's own daily ceiling, booked, refunded and settled like the others; AMV's own engines are held by the overall ceiling) |
 | 67 | Per-Agent budgets | Done |
 | 68 | Per-Task budgets | Done (Nov 1: a job's own monthly budget) |
 
@@ -174,11 +174,11 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **39 done**, **12
+Of the 109 items with work in them (110 is "then parity"): **40 done**, **12
 built and waiting on you**, **18 partial** (87 counted here: SBOM done,
-provenance not), **20 not yet**, **16 yours or outside** (decisions, accounts,
+provenance not), **19 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
-quarantine (51-53) and per-provider budgets (66). Audit export (107) needs a change to
+quarantine (51-53). Audit export (107) needs a change to
 how the team log is stored, which is a KV schema change and so waits for your
 approval.

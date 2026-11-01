@@ -493,7 +493,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -516,6 +516,8 @@ function _readinessReport(env, seen) {
      a secret, but a screen that prints one env var's value is a screen that
      will print the next one's. */
   const tuning = [
+    { id: 'partnerCap', name: 'Partner models: daily ceiling', env: 'PARTNER_DAILY_USD_CAP', set: _has(env, 'PARTNER_DAILY_USD_CAP'),
+      effect: 'The most the partner engines may spend in one day, on top of the day\u2019s overall ceiling. Reached, those engines are refused by name until tomorrow; AMV\u2019s own engines keep running. Unset, only the overall ceiling applies.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),

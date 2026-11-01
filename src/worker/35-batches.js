@@ -849,12 +849,14 @@ async function aiProxy(request, env, ctx, principal) {
      exists to stop a bill. */
   const estUSD = (((estIn + AI_INJECTED_INPUT_TOK) * AI_INPUT_SAFETY) / 1e6) * eng.inCost
                + (estOut / 1e6) * eng.outCost;
-  let bookedUSD = 0, bookedGlobalUSD = 0, bookedCreditUSD = 0;
+  let bookedUSD = 0, bookedGlobalUSD = 0, bookedCreditUSD = 0, bookedPartnerUSD = 0;
+  const partnerName = eng.provider === 'partner' ? _partnerSpendName() : '';
   const creditName = _creditSpentName(subject);
   const releaseUSD = async () => {
     if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
     if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
     if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, 0, true); bookedCreditUSD = 0; }
+    if (bookedPartnerUSD > 0) { await _releaseUSD(env, partnerName, bookedPartnerUSD, 86400000 * 2); bookedPartnerUSD = 0; }
   };
   /* Already past a plan limit and running on credit: the plan's own dollar
      ceiling is not booked as well - the credit is what pays for this one. */
@@ -927,6 +929,26 @@ async function aiProxy(request, env, ctx, principal) {
     await refundReservation();   // the call never happened - don't eat their quota
     return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
                 { 'Retry-After': _retryAfterMidnight() });
+  }
+
+  /* 4b) THE SECOND SUPPLIER'S OWN DAILY CEILING (Oct 31 audit, item 66),
+     when the owner sets one (PARTNER_DAILY_USD_CAP). AMV's own engines are
+     held by the day's ceiling above; a partner engine is also held by this,
+     so one supplier's price or a runaway on one engine cannot spend the whole
+     day. Booked like the others, given back by every refusal, settled to what
+     the turn cost. Reached, the engine is refused by name - never swapped for
+     another one behind the person's back. */
+  const partnerCap = partnerName ? +env.PARTNER_DAILY_USD_CAP : 0;
+  if (partnerName && partnerCap > 0) {
+    const pRes = await _reserveUSD(env, partnerName, estUSD, partnerCap, 86400000 * 2);
+    bookedPartnerUSD = pRes.reserved;
+    if (!pRes.allowed) {
+      audit(env, 'partner_cap_hit', { engine: key, cap: partnerCap });
+      ctx.waitUntil(alertOnce(env, 'partner_cap', 'The partner engines reached their daily ceiling ($' + partnerCap + '). They are refused until tomorrow; AMV\u2019s own engines are unaffected.', 360).catch(() => {}));
+      await refundReservation();
+      return json({ error: 'This engine has reached today\u2019s limit. Choose another engine - they are running normally.',
+                    code: 'engine_daily_limit', engine: key }, 503, { 'Retry-After': _retryAfterMidnight() });
+    }
   }
 
   // 5) clamp output tokens to the engine max (cost ceiling per call)
@@ -1099,7 +1121,8 @@ async function aiProxy(request, env, ctx, principal) {
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
     reqMessages: body.messages || [], reserved: reserve, feature: _tag.surface, project: _tag.project,
     reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
-    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
+    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD,
+    partnerName: partnerCap > 0 ? partnerName : '', reservedPartnerUSD: bookedPartnerUSD }));
 
   return new Response(toClient, {
     status: 200,

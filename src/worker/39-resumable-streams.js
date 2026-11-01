@@ -192,7 +192,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0, partnerName = '', reservedPartnerUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -330,6 +330,11 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   const gRes = dCost !== 0
     ? await counter(env, gName, { op: 'incr', amount: dCost, ttlMs: 86400000 * 2 })
     : { value: 0 };
+  /* The partner supplier's day, settled the same way when it has a ceiling. */
+  if (partnerName) {
+    const dP = cost - (reservedPartnerUSD || 0);
+    if (dP !== 0) { try { await counter(env, partnerName, { op: 'incr', amount: dP, ttlMs: 86400000 * 2 }); } catch (e) { await _writeFailed(env, 'partner_settle', e); } }
+  }
   /* A message that ran on prepaid credit is paid for by the credit, at the
      markup, and settled against what was booked for it - not added to the
      plan's own ledger as well, which would charge it twice. */

@@ -228,6 +228,10 @@ function _partnerStream(upstream, eng){
 /* One streamed call to the partner, answered in AMV's own event stream. A
    refusal before any output is a plain error response the caller already
    knows how to refund. */
+/* The partner supplier's spend today, one counter: partner traffic is the
+   smaller share by design, so it is not split the way the whole day is. */
+function _partnerSpendName(){ return 'pspend:' + todayKey(); }
+
 async function _partnerCall(env, eng, body, signal){
   const base = _partnerBase(env);
   if(!base || !env.AMV_PARTNER_KEY) return new Response(JSON.stringify({ error: { message: 'This engine is not connected.' } }), { status: 503 });
