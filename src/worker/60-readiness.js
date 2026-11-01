@@ -734,6 +734,13 @@ async function healthReady(request, env) {
       library: libConfigured(env),
       meaning: _meaningOn(env),
       cloud_computer: _computerOn(env),
+      /* Booleans only, like the rest: whether each is configured, never
+         anything it is configured WITH. Notifications is checked by the
+         keys' shape, so a key pasted wrongly reads as off, not on. */
+      notifications: _pushOn(env),
+      job_queue: _jobQueueOn(env),
+      nightly_backup: _nightlyOn(env),
+      postgres: _pgOn(env),
     },
   };
   _readyMemo = { at: now, body };

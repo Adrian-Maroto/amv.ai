@@ -49,6 +49,23 @@ section('Healthy stores: ready');
   ok(!JSON.stringify(d).includes(SECRET) && !JSON.stringify(d).includes('whsec'), 'and no secret appears anywhere in it');
 }
 
+section('Notifications read as on only when both keys have the right shape - never the keys themselves');
+{
+  const PUB = 'B' + 'x'.repeat(86), PRIV = 'p'.repeat(43);
+  const w = await load();
+  const base = () => ({ AMV_KV: kv(), AMV_COUNTER: okCounter(), JWT_SECRET: 'j' });
+  const off = await (await get(w, base())).json();
+  ok(off.capabilities.notifications === false && off.capabilities.job_queue === false && off.capabilities.nightly_backup === false && off.capabilities.postgres === false,
+     'nothing set: each reads off', off.capabilities);
+  const w2 = await load();
+  const on = await (await get(w2, Object.assign(base(), { VAPID_PUBLIC_KEY: PUB, VAPID_PRIVATE_KEY: PRIV }))).json();
+  ok(on.capabilities.notifications === true, 'both keys set: on', on.capabilities);
+  ok(!JSON.stringify(on).includes(PRIV) && !JSON.stringify(on).includes(PUB), 'and neither key appears in the answer');
+  const w3 = await load();
+  const bad = await (await get(w3, Object.assign(base(), { VAPID_PUBLIC_KEY: PUB, VAPID_PRIVATE_KEY: 'VAPID_PRIVATE_KEY=' + PRIV }))).json();
+  ok(bad.capabilities.notifications === false, 'a key pasted with its label still on it reads as off, so the mistake shows', bad.capabilities);
+}
+
 section('A store that fails: not ready, and which one');
 {
   const w = await load();

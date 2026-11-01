@@ -57,6 +57,10 @@ jobs:
           code=${out%% *}; t=${out##* }
           if [ "$code" = "200" ] && grep -q '"ready":true' /tmp/ready; then row "Stores reachable" "yes" "${t}s"
           else row "Stores reachable" "**no** (HTTP $code): $(head -c 300 /tmp/ready | tr '|\n' '/ ')" "${t}s"; fail=1; fi
+          # What is switched on (booleans the server reports; never a value).
+          on=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('/tmp/ready','utf8')).capabilities||{};console.log(Object.entries(c).map(([k,v])=>k+': '+(v?'on':'off')).join(', '))}catch(e){console.log('not reported')}")
+          row "Switched on" "$on" "-"
+          echo "Switched on: $on"
 
           # 3. Does the page itself load? (the page a visitor downloads)
           out=$(curl -sS -o /tmp/page -w '%{http_code} %{time_total}' --max-time 20 "$SITE/" || echo "000 0")
