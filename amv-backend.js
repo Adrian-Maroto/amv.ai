@@ -11674,7 +11674,7 @@ async function runDueAutomations(env, atMs, opts){
          re-booked them. Booked into the CURRENT hour, which is what the next
          tick reads - otherwise "the tick ran out of time" quietly becomes "the
          job did not run until the next sweep". */
-      for(const rest of inline.slice(processed - 1)) {
+      for(const rest of inline.slice(processed)) {
         try { await _autoBucketAdd(env, rest.id, Date.now()); } catch (e) {}
       }
       break;

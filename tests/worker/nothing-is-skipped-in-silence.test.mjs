@@ -355,6 +355,21 @@ section('A tick that runs out of time stops on purpose and says what it left');
   ok(ranIt.every(i => i >= n - r.processed),
      'and they are the most overdue, so the rest lead the next tick', ranIt);
 
+  /* Nov 1 forensic audit TASK-001: what is booked for the next tick is
+     exactly what did not run - not one more, not one fewer. The loop used
+     slice(processed - 1), which re-booked one account that had already run
+     and, with nothing processed, booked only the LAST account. */
+  const hour = new Date().toISOString().slice(0, 13);
+  const booked = new Set();
+  for (const [k, v] of env.AMV_KV._map) {
+    if (!k.startsWith('duehour:' + hour)) continue;
+    try { for (const e of (JSON.parse(v).emails || [])) booked.add(e); } catch (e) {}
+  }
+  const leftIdx = [];
+  for (let i = 0; i < n; i++) if (!ranIt.includes(i)) leftIdx.push(i);
+  ok(leftIdx.every(i => booked.has('slow' + i + '@example.com')), 'every account it did not reach is booked for the next tick', { left: leftIdx, booked: [...booked] });
+  ok(ranIt.every(i => !booked.has('slow' + i + '@example.com')), 'and none it already ran is booked again', { ran: ranIt, booked: [...booked] });
+
   /* Prove it, rather than reasoning about it: run again and the leftovers go. */
   alerts = [];
   const r2 = await W.runDueAutomations(env);
