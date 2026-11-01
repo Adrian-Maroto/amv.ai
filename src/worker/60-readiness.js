@@ -733,6 +733,16 @@ async function healthReady(request, env) {
   }
   if (DB._hasD1(env)) await probe('d1', async () => { await env.DB.prepare('SELECT 1').bind().first(); });
   const ready = Object.values(checks).every(c => c.ok);
+  /* STATE, NOT ONLY BINDINGS (Nov 1 audit REL-001/003): whether last night's
+     backup (or tonight's) actually completed, and whether Postgres answers
+     everybody's reads - not merely whether the bindings exist. */
+  let backupFresh = false;
+  if (_nightlyOn(env)) {
+    for (const d of [_nightlyDay(now), _nightlyDay(now - 86400000)]) {
+      try { const st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(d))) || 'null'); if (st && st.done) { backupFresh = true; break; } } catch (e) {}
+    }
+  }
+  const pgReadsAll = _pgOn(env) && _pgReadCohort(env).basisPoints >= 10000;
   const body = {
     ready, ts: now, checks,
     capabilities: {
@@ -750,6 +760,8 @@ async function healthReady(request, env) {
       job_queue: _jobQueueOn(env),
       nightly_backup: _nightlyOn(env),
       postgres: _pgOn(env),
+      backup_fresh: backupFresh,
+      postgres_reads_all: pgReadsAll,
     },
   };
   _readyMemo = { at: now, body };

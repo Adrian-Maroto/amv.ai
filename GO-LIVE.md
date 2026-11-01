@@ -19,10 +19,16 @@ customer - is told AMV is "just waiting for API keys" when a stage needs more.
 | **Enterprise production** | consumer production, plus an outside security review of sign-in, SOC 2 work, retention and residency controls | **Not yet** |
 
 At consumer production the deploy enforces the promise: set the repository
-variable `AMV_LAUNCH_PROFILE` to `consumer_full`, and a deploy whose live
-server reports the AI, payments or email off fails instead of warning
-(.github/workflows/deploy.yml). Until then it warns, and every deploy run's
-summary shows what production can do.
+variable `AMV_LAUNCH_PROFILE` to `consumer_full`, and a deploy fails instead
+of warning unless the live server reports all of these on
+(.github/workflows/deploy.yml): the AI, payments, email, Postgres, the
+background-work queue, nightly backups, **a backup that actually finished
+last night**, and **Postgres answering every read** (`PG_READ=100%`). The
+preflight adds what only a file can show: the queue's dead-letter queue and
+the bucket cloud workspaces are saved to (`cloud/wrangler.toml`). Binding
+something is not the same as it working, so the two state checks are read
+from what the server reports, not from a file. Until the profile is set it
+warns, and every deploy run's summary shows what production can do.
 
 Run `node preflight.mjs` at any time - it checks all of this and tells you
 precisely what's missing. Green = ready to deploy.

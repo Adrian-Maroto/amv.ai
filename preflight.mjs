@@ -443,20 +443,35 @@ const BINDING_CAPS = [
   { id: 'library',        binding: 'AMV_FILES',    re: /binding\s*=\s*"AMV_FILES"/,  what: 'the cloud Library (files kept in the account)' },
   { id: 'meaning',        binding: 'AI',           re: /^\s*\[ai\][\s\S]*?binding\s*=\s*"AI"/m, what: 'searching by meaning (Workers AI)' },
   { id: 'cloud_computer', binding: 'AMV_COMPUTER', re: /name\s*=\s*"AMV_COMPUTER"/, what: 'AMV\'s cloud computer' },
+  /* What the production architecture needs, not only what the product shows
+     (Nov 1 audit REL-001): the transactional store, the queue with its
+     dead-letter queue, the nightly backups, and the bucket a cloud workspace
+     is saved to. Each regex only matches an UNCOMMENTED line. */
+  { id: 'postgres',       binding: 'PG',           re: /^\s*\[\[hyperdrive\]\][^\[]*?^\s*binding\s*=\s*"PG"/m, what: 'the Postgres control plane (Hyperdrive)' },
+  { id: 'job_queue',      binding: 'AMV_JOBS',     re: { test: (t) => /^\s*binding\s*=\s*"AMV_JOBS"/m.test(t) && /^\s*dead_letter_queue\s*=/m.test(t) }, what: 'the background-work queue and its dead-letter queue' },
+  { id: 'nightly_backup', binding: 'AMV_BACKUPS',  re: /^\s*binding\s*=\s*"AMV_BACKUPS"/m, what: 'nightly backups' },
+  { id: 'workspaces',     binding: 'WORKSPACES',   file: 'cloud/wrangler.toml', re: /^\s*binding\s*=\s*"WORKSPACES"/m, what: 'saved cloud workspaces (cloud/wrangler.toml)' },
 ];
+/* Checked against the LIVE Worker only (what it reports, not what a file
+   declares): last night's backup finished, and Postgres answers every read.
+   Required by the public profiles - a launch on the old data tier, or with
+   backups that are not completing, is not the launch they promise. */
+const LIVE_STATE = { consumer_full: ['backup_fresh', 'postgres_reads_all'], enterprise: ['backup_fresh', 'postgres_reads_all'], team: ['backup_fresh'] };
 const LAUNCH_PROFILES = {
   dev:           [],
   private_beta:  [],
-  consumer_full: ['browser', 'library', 'meaning', 'cloud_computer'],
-  team:          ['library', 'meaning'],
-  enterprise:    ['browser', 'library', 'meaning', 'cloud_computer'],
+  consumer_full: ['browser', 'library', 'meaning', 'cloud_computer', 'postgres', 'job_queue', 'nightly_backup', 'workspaces'],
+  team:          ['library', 'meaning', 'postgres', 'job_queue', 'nightly_backup'],
+  enterprise:    ['browser', 'library', 'meaning', 'cloud_computer', 'postgres', 'job_queue', 'nightly_backup', 'workspaces'],
 };
 const argOf = (name) => { const a = process.argv.find(x => x.startsWith('--' + name + '=')); return a ? a.slice(name.length + 3) : ''; };
 const PROFILE = argOf('profile') || process.env.AMV_PROFILE || '';
 if (toml) {
   const on = {};
+  let cloudToml = '';
+  try { cloudToml = readFileSync(process.env.AMV_CLOUD_WRANGLER_TOML || join(ROOT, 'cloud', 'wrangler.toml'), 'utf8'); } catch (e) {}
   for (const c of BINDING_CAPS) {
-    on[c.id] = c.re.test(toml);
+    on[c.id] = c.re.test(c.file === 'cloud/wrangler.toml' ? cloudToml : toml);
     if (on[c.id]) ok(`ON: ${c.what} (${c.binding} is declared)`);
   }
   const off = BINDING_CAPS.filter(c => !on[c.id]);
@@ -487,7 +502,8 @@ if (LIVE) {
     if (d.ready) ok(`${LIVE} is ready: its stores answered`);
     else err(`${LIVE} is NOT ready: ` + Object.entries(d.checks || {}).filter(([, v]) => !v.ok).map(([k, v]) => k + ' (' + (v.why || 'failed') + ')').join(', '),
       'fix what failed - the Worker accepts traffic it cannot serve until then');
-    const need = (PROFILE && LAUNCH_PROFILES[PROFILE]) || [];
+    /* The cloud bucket is seen by the computer's own Worker, not this one. */
+    const need = ((PROFILE && LAUNCH_PROFILES[PROFILE]) || []).filter(id => id !== 'workspaces').concat((PROFILE && LIVE_STATE[PROFILE]) || []);
     for (const id of need) if (!(d.capabilities || {})[id])
       err(`the ${PROFILE} launch needs ${id}, and the deployed Worker reports it is not switched on`,
         'the binding is declared but the Worker cannot use it - see /v1/health/ready and the readiness screen');

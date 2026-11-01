@@ -197,10 +197,17 @@ jobs:
                   echo "::warning title=Email is OFF on production::Sign-in codes and job results cannot be sent. Set EMAIL_API_KEY and RESET_EMAIL_FROM."
                 fi
                 # Once the owner has declared AMV public, what it promises is required.
+                # Not only model, email and payments (Nov 1 audit REL-002): the
+                # data tier, the queue, and backups that actually completed.
+                case "$LAUNCH_PROFILE" in
+                  consumer_full|enterprise) need="model email payments postgres job_queue nightly_backup backup_fresh postgres_reads_all" ;;
+                  team) need="model email payments postgres job_queue nightly_backup backup_fresh" ;;
+                  *) need="" ;;
+                esac
                 case "$LAUNCH_PROFILE" in
                   consumer_full|team|enterprise)
                     missing=""
-                    for c in model email payments; do [ "$(cap $c)" = yes ] || missing="$missing $c"; done
+                    for c in $need; do [ "$(cap $c)" = yes ] || missing="$missing $c"; done
                     if [ -n "$missing" ]; then
                       echo "::error title=Not fit for the $LAUNCH_PROFILE launch profile::Off on production:$missing. The launch profile requires them."
                       exit 1

@@ -66,6 +66,29 @@ section('Notifications read as on only when both keys have the right shape - nev
   ok(bad.capabilities.notifications === false, 'a key pasted with its label still on it reads as off, so the mistake shows', bad.capabilities);
 }
 
+section('State, not only bindings: a backup that finished, and Postgres answering every read (Nov 1 audit REL-001/003)');
+{
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const BK = { put: async () => {}, get: async () => null, list: async () => ({ objects: [] }) };
+  const PG = { connectionString: 'postgres://u@h:5432/d' };
+  const base = (extra) => Object.assign({ AMV_KV: kv(), AMV_COUNTER: okCounter(), JWT_SECRET: 'j', AMV_BACKUPS: BK }, extra || {});
+  const none = await (await get(await load(), base())).json();
+  ok(none.capabilities.nightly_backup === true && none.capabilities.backup_fresh === false, 'backups switched on but none finished: not fresh', none.capabilities);
+  const e1 = base(); await e1.AMV_KV.put('bkrun:' + day(Date.now() - 86400000), JSON.stringify({ done: true }));
+  const y = await (await get(await load(), e1)).json();
+  ok(y.capabilities.backup_fresh === true, 'last night\u2019s backup finished: fresh', y.capabilities);
+  const e2 = base(); await e2.AMV_KV.put('bkrun:' + day(Date.now() - 3 * 86400000), JSON.stringify({ done: true }));
+  await e2.AMV_KV.put('bkrun:' + day(Date.now()), JSON.stringify({ done: false }));
+  const old = await (await get(await load(), e2)).json();
+  ok(old.capabilities.backup_fresh === false, 'only an older one, and tonight\u2019s still running: not fresh', old.capabilities);
+  const half = await (await get(await load(), base({ PG, PG_READ: '50%' }))).json();
+  ok(half.capabilities.postgres === true && half.capabilities.postgres_reads_all === false, 'Postgres bound and answering half: not all', half.capabilities);
+  const all = await (await get(await load(), base({ PG, PG_READ: '100%' }))).json();
+  ok(all.capabilities.postgres_reads_all === true, 'answering everybody: all', all.capabilities);
+  const unbound = await (await get(await load(), base({ PG_READ: '100%' }))).json();
+  ok(unbound.capabilities.postgres_reads_all === false, 'the variable without a database is not "all"', unbound.capabilities);
+}
+
 section('A store that fails: not ready, and which one');
 {
   const w = await load();

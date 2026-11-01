@@ -23,11 +23,15 @@ mkdirSync(DIR, { recursive: true });
 
 const real = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8')
   .replace(/^id = "[^"]*"$/m, 'id = "0123456789abcdef0123456789abcdef"');
-const run = (text, env = {}, args = '') => {
+const realCloud = readFileSync(join(ROOT, 'cloud', 'wrangler.toml'), 'utf8');
+const cloudOn = realCloud.replace(/^# \[\[r2_buckets\]\]\n# binding = "WORKSPACES"\n# bucket_name = "amv-workspaces"/m, '[[r2_buckets]]\nbinding = "WORKSPACES"\nbucket_name = "amv-workspaces"');
+const run = (text, env = {}, args = '', cloud = realCloud) => {
   const f = join(DIR, 'w' + Math.random().toString(36).slice(2) + '.toml');
   writeFileSync(f, text);
+  const cf = f.replace(/\.toml$/, '.cloud.toml');
+  writeFileSync(cf, cloud);
   try {
-    return { code: 0, out: execSync('node preflight.mjs ' + args, { cwd: ROOT, stdio: 'pipe', env: { ...process.env, AMV_WRANGLER_TOML: f, AMV_PROFILE: '', ...env } }).toString() };
+    return { code: 0, out: execSync('node preflight.mjs ' + args, { cwd: ROOT, stdio: 'pipe', env: { ...process.env, AMV_WRANGLER_TOML: f, AMV_CLOUD_WRANGLER_TOML: cf, AMV_PROFILE: '', ...env } }).toString() };
   } catch (e) { return { code: e.status, out: String(e.stdout || '') + String(e.stderr || '') }; }
 };
 /* Every optional block switched on, the way the owner would: the # removed. */
@@ -36,13 +40,20 @@ const allOn = real
   .replace(/^# \[\[r2_buckets\]\]\n# binding = "AMV_FILES"\n# bucket_name = "amv-files"/m, '[[r2_buckets]]\nbinding = "AMV_FILES"\nbucket_name = "amv-files"')
   .replace(/^# \[ai\]\n# binding = "AI"/m, '[ai]\nbinding = "AI"')
   .replace(/^# \[\[durable_objects\.bindings\]\]\n# name = "AMV_COMPUTER"\n# class_name = "AMVComputer"\n# script_name = "amv-computer"/m,
-           '[[durable_objects.bindings]]\nname = "AMV_COMPUTER"\nclass_name = "AMVComputer"\nscript_name = "amv-computer"');
+           '[[durable_objects.bindings]]\nname = "AMV_COMPUTER"\nclass_name = "AMVComputer"\nscript_name = "amv-computer"')
+  /* And what the production architecture needs (Nov 1 audit REL-001). */
+  .replace(/^# \[\[hyperdrive\]\]\n# binding = "PG"\n# id = "[^"]*"/m, '[[hyperdrive]]\nbinding = "PG"\nid = "0123456789abcdef0123456789abcdef"')
+  .replace(/^# \[\[r2_buckets\]\]\n# binding = "AMV_BACKUPS"\n# bucket_name = "amv-backups"/m, '[[r2_buckets]]\nbinding = "AMV_BACKUPS"\nbucket_name = "amv-backups"')
+  .replace(/^# \[\[queues\.producers\]\]\n# binding = "AMV_JOBS"\n# queue = "amv-jobs"\n#\n# \[\[queues\.consumers\]\]\n# queue = "amv-jobs"\n# max_batch_size = 10\n# max_batch_timeout = 5\n# max_retries = 4\n# dead_letter_queue = "amv-jobs-dead"/m,
+           '[[queues.producers]]\nbinding = "AMV_JOBS"\nqueue = "amv-jobs"\n\n[[queues.consumers]]\nqueue = "amv-jobs"\nmax_batch_size = 10\nmax_batch_timeout = 5\nmax_retries = 4\ndead_letter_queue = "amv-jobs-dead"');
 
 section('The fixtures are what they claim');
 {
   ok(/^# binding = "BROWSER"/m.test(real), 'the repository config has the browser commented out');
   ok(/^binding = "BROWSER"/m.test(allOn) && /^binding = "AMV_FILES"/m.test(allOn) && /^binding = "AI"/m.test(allOn) && /^name = "AMV_COMPUTER"/m.test(allOn),
      'and the switched-on copy has all four uncommented');
+  ok(/^binding = "PG"/m.test(allOn) && /^binding = "AMV_BACKUPS"/m.test(allOn) && /^binding = "AMV_JOBS"/m.test(allOn) && /^dead_letter_queue/m.test(allOn) && /^binding = "WORKSPACES"/m.test(cloudOn),
+     'and Postgres, backups, the queue with its dead letters, and the workspace bucket too');
 }
 
 section('Commented out is OFF - never "declared"');
@@ -58,8 +69,14 @@ section('A launch profile that needs them fails until they are on');
 {
   const off = run(real, { AMV_PROFILE: 'consumer_full' });
   ok(off.code === 1, 'consumer_full with them commented out is NOT ready');
-  ok((off.out.match(/the consumer_full launch needs/g) || []).length === 4, 'and says which four, one by one', off.out.match(/the consumer_full launch needs[^\n]*/g));
-  const on = run(allOn, { AMV_PROFILE: 'consumer_full' });
+  ok((off.out.match(/the consumer_full launch needs/g) || []).length === 8, 'and says which eight, one by one', off.out.match(/the consumer_full launch needs[^\n]*/g));
+  /* Nov 1 audit REL-001: the product's four switched on is not enough - the
+     data tier, queue, backups and saved workspaces are required too. */
+  const fourOnly = run(allOn.replace(/^\[\[hyperdrive\]\]\nbinding = "PG"/m, '# [[hyperdrive]]\n# binding = "PG"'), { AMV_PROFILE: 'consumer_full' }, '', cloudOn);
+  ok(fourOnly.code === 1 && /needs the Postgres control plane/.test(fourOnly.out), 'without Postgres, consumer_full is NOT ready', fourOnly.out.match(/the consumer_full launch needs[^\n]*/g));
+  const noWs = run(allOn, { AMV_PROFILE: 'consumer_full' }, '', realCloud);
+  ok(noWs.code === 1 && /saved cloud workspaces/.test(noWs.out), 'nor without the bucket a cloud workspace is saved to');
+  const on = run(allOn, { AMV_PROFILE: 'consumer_full' }, '', cloudOn);
   ok(on.code === 0, 'uncommented, the same profile passes', on.out.slice(-600));
   ok(/every binding the consumer_full launch needs is declared/.test(on.out), 'and says so');
   const flag = run(real, {}, '--profile=consumer_full');
