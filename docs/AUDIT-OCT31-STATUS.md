@@ -107,7 +107,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | # | Item | Status |
 |---|---|---|
 | 59 | Model health telemetry | Partial (circuit and failure audit events, readiness) |
-| 60 | Shared/provider-level failover | Partial - each server fails over on its own; the state is not shared across servers |
+| 60 | Shared/provider-level failover | Done (Nov 1: a server whose circuit opens tells the others; read at most every five seconds, only when a fallback is configured) |
 | 61 | Multi-provider routing | Partial (partner engines; a fallback endpoint) |
 | 62 | Negotiate model capacity | Yours |
 | 63 | Load shedding / brownout | Done (Nov 1: one owner action pauses the heavy parts) |
@@ -174,12 +174,11 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **35 done**, **12
-built and waiting on you**, **19 partial** (87 counted here: SBOM done,
+Of the 109 items with work in them (110 is "then parity"): **36 done**, **12
+built and waiting on you**, **18 partial** (87 counted here: SBOM done,
 provenance not), **23 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
-quarantine (51-53), the eval framework (91), failover state shared across
-servers and per-provider budgets (60, 66). Audit export (107) needs a change to
+quarantine (51-53), the eval framework (91) and per-provider budgets (66). Audit export (107) needs a change to
 how the team log is stored, which is a KV schema change and so waits for your
 approval.

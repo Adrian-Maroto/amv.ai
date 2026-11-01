@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'transport.harness.mjs');
 writeFileSync(harness, src + `
-export { _modelFetch, _modelBase, _modelHeaders, _modelKey, MODEL_API_DEFAULT, MODEL_API_VERSION, _modelCb, _modelCircuitOpen };
+export { _modelFetch, _modelBase, _modelHeaders, _modelKey, MODEL_API_DEFAULT, MODEL_API_VERSION, _modelCb, _modelCircuitOpen, _modelCbShared };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -41,7 +41,7 @@ const spy = (plan) => {
 };
 /* Each section is a fresh server as far as the primary's circuit goes - a
    section that fails the primary five times must not change the next one. */
-const env = (extra = {}) => (W._modelCb.fails = [], W._modelCb.openUntil = 0, { AMV_MODEL_KEY: 'k-secret', AMV_KV: {
+const env = (extra = {}) => (W._modelCb.fails = [], W._modelCb.openUntil = 0, W._modelCbShared.at = 0, W._modelCbShared.until = 0, { AMV_MODEL_KEY: 'k-secret', AMV_KV: {
   async get() { return null; }, async put() {}, async delete() {},
   async list() { return { keys: [], list_complete: true }; } }, ...extra });
 
@@ -234,6 +234,41 @@ section('Five failures in a minute: the primary is skipped for a while, then tri
   await W._modelFetch(e, { messages: [] });
   globalThis.fetch = realFetch;
   ok(/primary\.test/.test(String(calls[0].url)), 'after the open window, the primary is tried first again');
+}
+
+section('One server tripping tells the others: they skip the primary too, until the time it set');
+{
+  /* Server A: five failures trip its circuit, and it writes when it opens until. */
+  const kv = new Map(); let reads = 0, writes = 0;
+  const shared = { async get(k) { reads++; return kv.has(k) ? kv.get(k) : null; }, async put(k, v) { writes++; kv.set(k, v); }, async delete() {}, async list() { return { keys: [], list_complete: true }; } };
+  const A = env({ MODEL_API_URL: 'https://primary.test', MODEL_API_FALLBACK_URL: 'https://backup.test', AMV_KV: shared });
+  spy([500, 200, 500, 200, 500, 200, 500, 200, 500, 200]);
+  for (let i = 0; i < 5; i++) await W._modelFetch(A, { messages: [] });
+  await new Promise(r => setTimeout(r, 0));
+  const until = +kv.get('modelcircuit');
+  ok(writes === 1 && until > Date.now() && until <= Date.now() + 30000, 'the server that tripped wrote when its circuit opens until, once', { writes, until: until - Date.now() });
+  /* Server B: a fresh server with no failures of its own. */
+  W._modelCb.fails = []; W._modelCb.openUntil = 0; W._modelCbShared.at = 0; W._modelCbShared.until = 0;
+  let calls = spy([200]);
+  await W._modelFetch(A, { messages: [] });
+  ok(calls.length === 1 && /backup\.test/.test(String(calls[0].url)), 'another server goes straight to the backup without failing five times first', calls.map(c => String(c.url)));
+  const r0 = reads;
+  calls = spy([200, 200, 200]);
+  for (let i = 0; i < 3; i++) await W._modelFetch(A, { messages: [] });
+  ok(reads === r0, 'and it reads the shared state at most every few seconds, not once a request', reads - r0);
+  /* Past the time it set, the primary is asked again. */
+  W._modelCbShared.at = 0; kv.set('modelcircuit', String(Date.now() - 1));
+  calls = spy([200]);
+  await W._modelFetch(A, { messages: [] });
+  ok(/primary\.test/.test(String(calls[0].url)), 'once that time has passed, the primary is tried first again');
+  /* With nothing to fall back to, nothing is read or written. */
+  const r1 = reads, w1 = writes;
+  W._modelCbShared.at = 0;
+  spy([500, 500, 500, 500, 500, 500]);
+  const solo = env({ MODEL_API_URL: 'https://primary.test', AMV_KV: shared });
+  for (let i = 0; i < 6; i++) await W._modelFetch(solo, { messages: [] });
+  globalThis.fetch = realFetch;
+  ok(reads === r1 && writes === w1, 'without a fallback the shared state costs nothing', { reads: reads - r1, writes: writes - w1 });
 }
 
 section('With nothing to fall back to, the primary failure is the answer');

@@ -438,7 +438,10 @@ const AI_INPUT_SAFETY = 1.25;      // cache writes are billed at ~125% of input
 const MODEL_CB_WINDOW_MS = 60000, MODEL_CB_TRIP = 5, MODEL_CB_OPEN_MS = 30000;
 const _modelCb = { fails: [], openUntil: 0 };
 function _modelCircuitOpen(){ return Date.now() < _modelCb.openUntil; }
-function _modelCircuitOk(){ _modelCb.fails = []; _modelCb.openUntil = 0; }
+/* A success seen here is first-hand: it closes this server's circuit and
+   overrides the shared copy for this server (other servers keep theirs until
+   it expires). */
+function _modelCircuitOk(){ _modelCb.fails = []; _modelCb.openUntil = 0; try{ _modelCbShared.until = 0; }catch(e){} }
 function _modelCircuitFail(env){
   const now = Date.now();
   _modelCb.fails = _modelCb.fails.filter(t => now - t < MODEL_CB_WINDOW_MS);
@@ -446,7 +449,35 @@ function _modelCircuitFail(env){
   if(_modelCb.fails.length >= MODEL_CB_TRIP && !_modelCircuitOpen()){
     _modelCb.openUntil = now + MODEL_CB_OPEN_MS;
     try{ audit(env, 'model_circuit_open', { fails: _modelCb.fails.length }); }catch(e){}
+    _modelCircuitPublish(env, _modelCb.openUntil);
   }
+}
+/* SHARED ACROSS SERVERS (Oct 31 audit, item 60). Each server used to learn
+   on its own that the primary was down - at a thousand servers, five failed
+   turns each before any of them stopped asking. A server whose circuit opens
+   now writes WHEN it opens until; every other server reads that at most once
+   every five seconds and skips the primary until then too. Only with a
+   fallback configured (otherwise there is nowhere else to go, and nothing is
+   read or written). The value is a time, so a copy that is late or stale
+   expires by itself; a write that fails changes nothing but this. Written
+   only when the shared copy is not already open, so a thousand servers
+   tripping together do not all write the one key. */
+const MODEL_CB_SHARED_KEY = 'modelcircuit';
+const MODEL_CB_SHARED_READ_MS = 5000;
+const _modelCbShared = { at: 0, until: 0 };
+async function _modelCircuitSharedOpen(env){
+  const now = Date.now();
+  if(now - _modelCbShared.at >= MODEL_CB_SHARED_READ_MS){
+    _modelCbShared.at = now;
+    try{ _modelCbShared.until = +(await env.AMV_KV.get(MODEL_CB_SHARED_KEY)) || 0; }catch(e){}
+  }
+  return now < _modelCbShared.until;
+}
+function _modelCircuitPublish(env, until){
+  if(!env || !env.AMV_KV || !(_modelBase(env, 'fallback') && _modelBase(env, 'fallback') !== _modelBase(env))) return;
+  if(_modelCbShared.until >= until) return;
+  _modelCbShared.until = until;
+  try{ _bg(env.AMV_KV.put(MODEL_CB_SHARED_KEY, String(until), { expirationTtl: 60 }).catch(() => {})); }catch(e){}
 }
 async function _modelFetch(env, payload, opts){
   const o = opts || {};
@@ -481,7 +512,7 @@ async function _modelFetch(env, payload, opts){
      waiting out a provider that is down. Then one request tries the primary
      again; a success closes the circuit. Per server, held in memory - no
      storage on the path, and every server learns on its own. */
-  const skipPrimary = hasAlt && _modelCircuitOpen();
+  const skipPrimary = hasAlt && (_modelCircuitOpen() || await _modelCircuitSharedOpen(env));
   if(!skipPrimary){
     try{ r = await fetch(primary + '/v1/messages', init); }
     catch(e){ err = e; }
