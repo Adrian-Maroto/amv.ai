@@ -860,6 +860,11 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
      consequence against the official source, because a table in a program is
      the last place a tax deadline should come from. */
   userTurn += _countryRunNote(item.country);
+  /* STEERING (Oct 31 audit, item 28): a note the person left for the NEXT
+     run of this job - "this time, only the Lisbon listings" - used once and
+     then not again. It shapes the task; the rules above still bind it. */
+  if(item.steer && item.steer.text && +item.steer.at > +(item.lastSteerAt || 0))
+    userTurn += '\n\nFOR THIS RUN ONLY, THE USER ADDED: ' + _fenceUntrusted(String(item.steer.text).slice(0, AUTO_STEER_MAX), _dataFenceTag());
   if(page){
     const pTag = _dataFenceTag();
     userTurn += '\n\nTHE PAGE THEY ASKED AMV TO WATCH (' + item.when.url + ') HAS CHANGED: '
@@ -1438,7 +1443,10 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
                             it waits for that have already finished. */
                          'got',
                          /* A trigger's last look, which found nothing to do. */
-                         'lastCheckAt', 'lastCheckSaw', 'watch'];
+                         'lastCheckAt', 'lastCheckSaw', 'watch',
+                         /* Which steering note the last run used, so the
+                            next one does not use it again (13-schedules). */
+                         'lastSteerAt'];
 
 /* `quick` is the every-minute tick (see `scheduled` in 29-router.js). It only
    ever takes the cheap path: accounts the due-work index names, and nothing
@@ -2098,6 +2106,8 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       }).slice(-AUTO_MAX_RESULTS);
       item.runs = (item.runs||0) + 1;
       item.lastLevel = level;
+      /* The steering note, if there was one, has now been used. */
+      if(item.steer && +item.steer.at > +(item.lastSteerAt || 0)) item.lastSteerAt = +item.steer.at;
       /* It ran, so it is not being held any more. A stale hold would leave
          the row saying "held until your quiet hours end" about a job that
          has since gone out. */

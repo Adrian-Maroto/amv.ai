@@ -55,7 +55,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 25 | Durable workflow engine | Not yet - jobs use the queue, leases and retries; Cloudflare Workflows not adopted |
 | 26 | Long Tasks as durable workflows | Partial - steps that wait on each other, leases, retries; no checkpoint inside a step |
 | 27 | Task checkpoints | Not yet |
-| 28 | Task resume/steering | Partial - a chat turn can be steered; a background Task cannot be steered mid-run |
+| 28 | Task resume/steering | Done - a chat turn can be steered; a background job or a step of a Task takes a note for its next run (Crew > the job > Note for next run), used once and then never again, checked for credentials like the job itself. A single model call already running cannot be changed mid-answer |
 | 29 | Human-approval pauses | Done (approval levels; "waiting for your OK") |
 
 ## Cloud computer and browser

@@ -8354,6 +8354,7 @@ function _autoSettleSteps(rec, item, ok, out, now, why){
 /* Long enough for a real standing instruction, short enough that it cannot
    become a second prompt smuggled into every unattended run. */
 const AUTO_STANDING_MAX = 1200;
+const AUTO_STEER_MAX = 1000;   // a note for the next run only (item 28)
 
 async function autoUpdate(request, env){
   const user = await requireUser(request, env);
@@ -8609,6 +8610,18 @@ async function autoUpdate(request, env){
     _autoSettleSteps({ items }, gone, false, '', Date.now(), 'it was deleted');
   }
   else if(body.action === 'pause')  items[i].active = false;
+  /* STEER THE NEXT RUN (Oct 31 audit, item 28). A note for this job's next
+     run only, without changing what it is: "this time skip the weekend
+     listings". Empty clears one not yet used. Checked for credentials like
+     everything else a job carries. */
+  else if(body.action === 'steer'){
+    const text = String(body.note == null ? '' : body.note).trim();
+    if(text.length > AUTO_STEER_MAX) return json({ error: 'Keep the note to ' + AUTO_STEER_MAX + ' characters.', code: 'too_long' }, 400);
+    if(text && _detailSecrets(text).length)
+      return json({ error:'credentials_in_detail', message:'AMV does not store passwords, card numbers or security codes. The note was not saved.' }, 400);
+    if(text) items[i].steer = { text, at: Date.now() }; else delete items[i].steer;
+    audit(env, 'auto_steered', { by: user.email, job: id, cleared: !text });
+  }
   /* A step still waiting goes back to waiting, not onto a clock of its own -
      it runs when the step before it finishes, and not before. */
   else if(body.action === 'resume' && items[i].waiting) items[i].active = true;
@@ -10878,6 +10891,11 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
      consequence against the official source, because a table in a program is
      the last place a tax deadline should come from. */
   userTurn += _countryRunNote(item.country);
+  /* STEERING (Oct 31 audit, item 28): a note the person left for the NEXT
+     run of this job - "this time, only the Lisbon listings" - used once and
+     then not again. It shapes the task; the rules above still bind it. */
+  if(item.steer && item.steer.text && +item.steer.at > +(item.lastSteerAt || 0))
+    userTurn += '\n\nFOR THIS RUN ONLY, THE USER ADDED: ' + _fenceUntrusted(String(item.steer.text).slice(0, AUTO_STEER_MAX), _dataFenceTag());
   if(page){
     const pTag = _dataFenceTag();
     userTurn += '\n\nTHE PAGE THEY ASKED AMV TO WATCH (' + item.when.url + ') HAS CHANGED: '
@@ -11456,7 +11474,10 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
                             it waits for that have already finished. */
                          'got',
                          /* A trigger's last look, which found nothing to do. */
-                         'lastCheckAt', 'lastCheckSaw', 'watch'];
+                         'lastCheckAt', 'lastCheckSaw', 'watch',
+                         /* Which steering note the last run used, so the
+                            next one does not use it again (13-schedules). */
+                         'lastSteerAt'];
 
 /* `quick` is the every-minute tick (see `scheduled` in 29-router.js). It only
    ever takes the cheap path: accounts the due-work index names, and nothing
@@ -12116,6 +12137,8 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       }).slice(-AUTO_MAX_RESULTS);
       item.runs = (item.runs||0) + 1;
       item.lastLevel = level;
+      /* The steering note, if there was one, has now been used. */
+      if(item.steer && +item.steer.at > +(item.lastSteerAt || 0)) item.lastSteerAt = +item.steer.at;
       /* It ran, so it is not being held any more. A stale hold would leave
          the row saying "held until your quiet hours end" about a job that
          has since gone out. */

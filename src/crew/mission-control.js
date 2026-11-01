@@ -829,7 +829,24 @@ function mcJobBudget(arg){
       renderCrewView();
     });
 }
-try{ Object.assign(window, { mcJobBudget }); }catch(e){}
+/* STEER THE NEXT RUN (Oct 31 audit, item 28): a note this job's next run
+   reads and then never again - the job itself does not change. */
+function mcJobSteer(arg){
+  const jobId = String(arg || '');
+  const job = (Array.isArray(_AUTOS) ? _AUTOS : []).find(x => x && x.id === jobId) || {};
+  const pending = job.steer && +job.steer.at > +(job.lastSteerAt || 0) ? String(job.steer.text || '') : '';
+  _mcAgentDialog(T('A note for the next run'),
+    '<p class="ob-sub">' + escH(T('Its next run reads this, once. What the job does every time stays as it is.')) + '</p>'
+    + '<label class="ob-sub" for="ag-steer">' + escH(T('Note (leave empty to remove it)')) + '</label><textarea id="ag-steer" class="fp-in" rows="3" maxlength="1000">' + escH(pending) + '</textarea>',
+    async () => {
+      const note = String(($('ag-steer') || {}).value || '').trim();
+      await _autoApi('/auto/update', { action: 'steer', id: jobId, note });
+      toast(note ? T('Saved. The next run will read it.') : T('Note removed.'), 'success', 4000);
+      if(typeof _autoRefresh === 'function') await _autoRefresh();
+      renderCrewView();
+    });
+}
+try{ Object.assign(window, { mcJobBudget, mcJobSteer }); }catch(e){}
 try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, mcKeepAsAgent, mcAgentForgetSite, mcAgentSignIn, _mcAgentName }); }catch(e){}
 
 function _mcServerSchedRow(x){
@@ -895,6 +912,7 @@ function _mcServerSchedRow(x){
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
       ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookSigning" data-darg="${escH(x.id)}|${escH((x.hook && x.hook.signed) || '')}">${escH(x.hook && x.hook.signed ? T('Signed') + ' · ' + T(_HOOK_SIGNERS[x.hook.signed]) : T('Require signing'))}</button>`}
       ${x.done || x.agent || x.step || paused || !(x.runs > 0) ? '' : `<button class="btn mc-mini ghost" data-dact="mcKeepAsAgent" data-darg="${escH(x.id)}" data-keep-job="${escH(x.id)}" data-keep-detail="${escH(String(x.detail||'').slice(0, 400))}">${escH(T('Keep as an agent'))}</button>`}
+      ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcJobSteer" data-darg="${escH(x.id)}">${escH(x.steer && +x.steer.at > +(x.lastSteerAt || 0) ? T('Note for next run \u2713') : T('Note for next run'))}</button>`}
       ${x.done || x.agent ? '' : `<button class="btn mc-mini ghost" data-dact="mcJobBudget" data-darg="${escH(x.id)}|${escH(String(+x.budgetUSD > 0 ? +x.budgetUSD : 0))}">${escH(+x.budgetUSD > 0 ? T('Budget') + ' $' + (+x.budgetUSD).toFixed(2) : T('Monthly budget'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>

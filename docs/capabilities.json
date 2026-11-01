@@ -320,6 +320,10 @@
   { "id": "computer.workspace_versions", "status": "built", "name": "The cloud workspace keeps its five earlier saved copies, and any of them can be put back without losing the current one",
     "code": [["cloud/computer.mjs", "_wsKeepCurrent"], ["src/worker/10-cloud-computer.js", "computerVersions"], ["src/app/36d-workspace-copies.js", "_wsCopiesLoad"]],
     "tests": ["tests/worker/the-cloud-workspace-outlives-its-container.test.mjs"],
-    "says": ["saved copies", "workspace versions"] }
+    "says": ["saved copies", "workspace versions"] },
+  { "id": "task.steer", "status": "built", "name": "A background job can be steered for its next run with a note that is used once",
+    "code": [["src/worker/13-schedules-and-approvals.js", "action === 'steer'"], ["src/worker/15-run-context-and-execution.js", "FOR THIS RUN ONLY"], ["src/crew/mission-control.js", "mcJobSteer"]],
+    "tests": ["tests/worker/a-job-can-be-steered-for-its-next-run.test.mjs"],
+    "says": ["steer"] }
  ]
 }

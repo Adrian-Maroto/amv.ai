@@ -324,6 +324,7 @@ function _autoSettleSteps(rec, item, ok, out, now, why){
 /* Long enough for a real standing instruction, short enough that it cannot
    become a second prompt smuggled into every unattended run. */
 const AUTO_STANDING_MAX = 1200;
+const AUTO_STEER_MAX = 1000;   // a note for the next run only (item 28)
 
 async function autoUpdate(request, env){
   const user = await requireUser(request, env);
@@ -579,6 +580,18 @@ async function autoUpdate(request, env){
     _autoSettleSteps({ items }, gone, false, '', Date.now(), 'it was deleted');
   }
   else if(body.action === 'pause')  items[i].active = false;
+  /* STEER THE NEXT RUN (Oct 31 audit, item 28). A note for this job's next
+     run only, without changing what it is: "this time skip the weekend
+     listings". Empty clears one not yet used. Checked for credentials like
+     everything else a job carries. */
+  else if(body.action === 'steer'){
+    const text = String(body.note == null ? '' : body.note).trim();
+    if(text.length > AUTO_STEER_MAX) return json({ error: 'Keep the note to ' + AUTO_STEER_MAX + ' characters.', code: 'too_long' }, 400);
+    if(text && _detailSecrets(text).length)
+      return json({ error:'credentials_in_detail', message:'AMV does not store passwords, card numbers or security codes. The note was not saved.' }, 400);
+    if(text) items[i].steer = { text, at: Date.now() }; else delete items[i].steer;
+    audit(env, 'auto_steered', { by: user.email, job: id, cleared: !text });
+  }
   /* A step still waiting goes back to waiting, not onto a clock of its own -
      it runs when the step before it finishes, and not before. */
   else if(body.action === 'resume' && items[i].waiting) items[i].active = true;
