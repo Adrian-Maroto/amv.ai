@@ -19,6 +19,7 @@ import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 import { pathToFileURL } from 'url';
 import { assetLinks } from './apps/android/assetlinks.mjs';
+import { renderCapabilities } from './tools/capabilities-doc.mjs';
 import vm from 'vm';
 
 const args = process.argv.slice(2);
@@ -103,6 +104,8 @@ function emitBridge() {
   /* The cloud computer's image is built from cloud/ (cloud/Dockerfile copies
      this), so it always carries the bridge these suites test. */
   writeFileSync('cloud/amv-bridge.mjs', readFileSync(BRIDGE_SRC));
+  /* The readable list of what AMV can do, from the checked one. */
+  writeFileSync('docs/CAPABILITIES.md', renderCapabilities(JSON.parse(readFileSync('docs/capabilities.json', 'utf8'))));
   /* The command-line tool, downloaded from Settings -> API keys - the page
      writes this deployment's address into it at download time. */
   writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));

@@ -124,8 +124,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 69 | consumer_full profile mandatory in CI | Built, needs you (`AMV_LAUNCH_PROFILE`) |
 | 70 | Rewrite GO-LIVE.md | Done (stage table) |
 | 71 | Stale Agent/Companion docs | Done (Agents are real again) |
-| 72 | Expand the capability registry | Partial (`docs/capabilities.json`, gated) |
-| 73 | Docs/readiness generated from the registry | Not yet |
+| 72 | Expand the capability registry | Done (Nov 1: 76 entries, every built one naming its code and test, checked by the gate) |
+| 73 | Docs/readiness generated from the registry | Done (Nov 1: `docs/CAPABILITIES.md` is written from the registry on every build; a stale or hand-edited copy fails the gate) |
 | 74 | Deep synthetic monitoring | Built, needs you (`AMV_SYNTHETIC=on`) |
 | 75 | External uptime monitor | Built, needs you (the same probe) |
 | 76 | Paging/on-call | Yours |
@@ -174,9 +174,9 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **40 done**, **12
-built and waiting on you**, **19 partial** (87 counted here: SBOM done,
-provenance not), **18 not yet**, **16 yours or outside** (decisions, accounts,
+Of the 109 items with work in them (110 is "then parity"): **42 done**, **12
+built and waiting on you**, **18 partial** (87 counted here: SBOM done,
+provenance not), **17 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
 quarantine (51-53). Audit export (107) needs a change to

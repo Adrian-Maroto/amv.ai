@@ -26,6 +26,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { codeOnly } from './tests/lib/source.mjs';
+import { renderCapabilities } from './tools/capabilities-doc.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
@@ -261,6 +262,14 @@ step('Build is fresh (index.html reflects source)', () => {
     const have = existsSync(R('amv-backend.js')) ? readFileSync(R('amv-backend.js'), 'utf8') : '';
     if (want !== have)
       throw new Error('amv-backend.js does not match src/worker/*.js. Edit src/worker, never amv-backend.js, then run node build.mjs.');
+  }
+  /* The readable capability page, the same way and for the same reason: it
+     is the registry rendered (tools/capabilities-doc.mjs), never a hand-kept
+     copy, and a stale or hand-edited one is named before the build replaces it. */
+  {
+    const page = existsSync(R('docs/CAPABILITIES.md')) ? readFileSync(R('docs/CAPABILITIES.md'), 'utf8') : '';
+    if (page !== renderCapabilities(JSON.parse(readFileSync(R('docs/capabilities.json'), 'utf8'))))
+      throw new Error('docs/CAPABILITIES.md is not what docs/capabilities.json renders. Edit the registry, never the page, then run node build.mjs.');
   }
   sh('node build.mjs');
   const html = existsSync(R('index.html')) ? readFileSync(R('index.html'), 'utf8') : '';
