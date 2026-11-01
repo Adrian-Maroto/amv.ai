@@ -102,11 +102,23 @@ const { page } = L;
    ("Execution context was destroyed"). Here there is no internet and it
    failed silently, which is why it was CI-only. This suite checks what AMV
    offers and opens, not the provider's own page, so a navigation away from
-   the local server is refused. */
+   the local server is answered "204 No Content", which leaves the page where
+   it is. Not aborted: an aborted navigation makes the browser show its own
+   error page, which is a navigation too - that is what still destroyed the
+   context on CI after the first version of this guard. */
+const leftFor = [];
+/* Every main-frame navigation after boot, on stdout: CI keeps stdout in the
+   failure report and drops stderr, so a navigation from somewhere else is
+   named the next time it happens instead of guessed at. */
+page.on('framenavigated', (f) => { if (f === page.mainFrame()) console.log('[navigated] ' + f.url()); });
 await page.route('**/*', (route) => {
   const req = route.request();
   let host = ''; try { host = new URL(req.url()).hostname; } catch (e) {}
-  if (req.isNavigationRequest() && req.frame() === page.mainFrame() && host !== 'localhost' && host !== '127.0.0.1') return route.abort();
+  if (req.isNavigationRequest() && req.frame() === page.mainFrame() && host !== 'localhost' && host !== '127.0.0.1') {
+    leftFor.push(req.url());
+    console.log('[kept from leaving for] ' + req.url());
+    return route.fulfill({ status: 204, body: '' });
+  }
   return route.fallback();
 });
 
@@ -297,6 +309,7 @@ section('An app AMV connects: Slack\'s own sign-in, from a sentence');
   ok(/FOUND/.test(toolResultSent()) && /Do NOT say it is connected/.test(toolResultSent()), 'and the model is told nothing is connected until they finish', toolResultSent().slice(0, 160));
   const r = await press('how:p:slack');
   ok(/Slack/.test(r.ovr) && !r.missing, 'pressing it opens Slack\'s sign-in - the directory row\'s own flow', r.ovr.slice(0, 160) || r.missing);
+  ok(await page.evaluate(() => !!document.getElementById('mta')), 'and the page is still AMV afterwards', leftFor);
 }
 
 section('A mailbox: QQ Mail opens its own app-password setup');
