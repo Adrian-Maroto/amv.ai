@@ -1005,5 +1005,24 @@
   "it": "Budget mensile",
   "ko": "월 예산",
   "ta": "மாத வரவுசெலவு"
+ },
+ "Every cloud workspace is in use right now. Waiting for one to free up - try {0} of {1}.": {
+  "es": "Todos los espacios de trabajo en la nube están en uso ahora mismo. Esperando a que se libere uno: intento {0} de {1}.",
+  "zh": "所有云工作区现在都在使用中。正在等待空出一个——第 {0} 次尝试，共 {1} 次。",
+  "hi": "इस समय सभी क्लाउड वर्कस्पेस उपयोग में हैं। एक के खाली होने का इंतज़ार - प्रयास {0} / {1}।",
+  "ar": "جميع مساحات العمل السحابية مستخدمة الآن. ننتظر أن تتوفر واحدة - المحاولة {0} من {1}.",
+  "pt": "Todos os espaços de trabalho na nuvem estão em uso agora. Esperando um ficar livre - tentativa {0} de {1}.",
+  "fr": "Tous les espaces de travail cloud sont utilisés en ce moment. En attente qu’un se libère - essai {0} sur {1}.",
+  "de": "Alle Cloud-Arbeitsbereiche sind gerade belegt. Warte, bis einer frei wird - Versuch {0} von {1}.",
+  "ja": "クラウドワークスペースはすべて使用中です。空くのを待っています - {1} 回中 {0} 回目。",
+  "ru": "Все облачные рабочие среды сейчас заняты. Ждём, пока освободится одна - попытка {0} из {1}.",
+  "id": "Semua ruang kerja cloud sedang dipakai. Menunggu satu kosong - percobaan {0} dari {1}.",
+  "bn": "এখন সব ক্লাউড ওয়ার্কস্পেস ব্যবহারে আছে। একটি খালি হওয়ার অপেক্ষা - চেষ্টা {0} / {1}।",
+  "ur": "اس وقت تمام کلاؤڈ ورک اسپیس استعمال میں ہیں۔ ایک کے خالی ہونے کا انتظار - کوشش {0} از {1}۔",
+  "tr": "Tüm bulut çalışma alanları şu anda kullanımda. Birinin boşalması bekleniyor - deneme {0}/{1}.",
+  "vi": "Mọi không gian làm việc đám mây đều đang được dùng. Đang chờ một chỗ trống - lần thử {0}/{1}.",
+  "it": "Tutti gli spazi di lavoro nel cloud sono in uso. In attesa che se ne liberi uno - tentativo {0} di {1}.",
+  "ko": "지금은 모든 클라우드 작업 공간이 사용 중입니다. 하나가 빌 때까지 기다리는 중 - {1}회 중 {0}회째.",
+  "ta": "அனைத்து கிளவுட் பணியிடங்களும் இப்போது பயன்பாட்டில் உள்ளன. ஒன்று காலியாகக் காத்திருக்கிறது - முயற்சி {0} / {1}."
  }
 }

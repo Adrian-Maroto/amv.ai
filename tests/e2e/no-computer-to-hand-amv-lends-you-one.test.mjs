@@ -84,6 +84,35 @@ section('A machine that will not start: said as that, and nothing is connected')
   ok(!st.connected && !st.cloud, 'not connected', st);
 }
 
+section('Every workspace busy: it waits for one, says so, and connects when one frees up');
+{
+  /* Busy twice, then free. The thirty-second waits are shortened here only. */
+  await setAnswer('/v1/computer/status', 200, { exec: { running: 0, max: 4 }, mcp: [] });
+  const res = await page.evaluate(async () => {
+    const realST = window.setTimeout;
+    window.setTimeout = (fn, ms, ...a) => realST(fn, ms >= 30000 ? 30 : ms, ...a);
+    const inner = AMV_API._fetch; let n = 0; const toasts = [];
+    const realToast = window.toast; window.toast = (m, ...r) => { toasts.push(String(m)); return realToast && realToast(m, ...r); };
+    AMV_API._fetch = async (path, opts) => {
+      if (path === '/v1/computer/status') { n++; if (n <= 2) return { ok: false, status: 503, json: async () => ({ error: 'Every cloud workspace is busy right now. Try again in a few minutes - nothing ran.', code: 'computer_busy' }) }; }
+      return inner(path, opts);
+    };
+    let err = null;
+    try { await bridgeCloudConnect(); } catch (e) { err = e.message; }
+    const out = { n, err, connected: BRIDGE.connected, cloud: BRIDGE.cloud, toasts: toasts.slice() };
+    try { await bridgeDisconnect(); } catch (e) {}
+    /* And when none frees up, it gives up after five tries with the server's own words. */
+    n = -100;
+    let err2 = null; try { await bridgeCloudConnect(); } catch (e) { err2 = e.message; }
+    out.gaveUpAfter = n + 100; out.err2 = err2; out.connected2 = BRIDGE.connected;
+    AMV_API._fetch = inner; window.setTimeout = realST; window.toast = realToast;
+    return out;
+  });
+  ok(res.n === 3 && !res.err && res.connected && res.cloud, 'busy twice, then connected - without the person retrying', res);
+  ok(res.toasts.filter(t => /Waiting for one to free up/.test(t)).length === 2 && res.toasts.some(t => /try 2 of 5/.test(t)), 'and it said it was waiting, each time', res.toasts);
+  ok(res.gaveUpAfter === 5 && /busy right now/.test(res.err2 || '') && !res.connected2, 'with none free, it stops after five tries and says why, not connected', res);
+}
+
 section('Using it: asked first, then connected - and the card says what it is');
 {
   await setAnswer('/v1/computer/status', 200, { exec: { running: 0, max: 4 }, mcp: [] });

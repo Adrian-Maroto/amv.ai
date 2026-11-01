@@ -68,7 +68,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 33 | Workspace checksums/versioning | Partial - checksums done (Nov 1: the bucket refuses an upload that does not match, a restore refuses a copy that does not); one copy kept, no older versions |
 | 34 | Container crash/recovery tests | Partial (the workspace outlives its container; no crash-mid-write test) |
 | 35 | Capacity beyond 50 | Yours (`max_instances`, a cost decision) |
-| 36 | Wait UI when capacity is full | Partial - an honest "busy, try again" with Retry-After; no queue to wait in |
+| 36 | Wait UI when capacity is full | Done (Nov 1: connecting waits for a free workspace, up to five tries, saying so each time; not a queue with a place in line) |
 | 37 | Dynamic computer sizes | Not yet |
 | 38 | Persistent cloud browser identity | Done (decision #46: sealed per-agent sign-ins) |
 | 39 | Connectors before browser credentials | Done |
@@ -174,8 +174,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **36 done**, **12
-built and waiting on you**, **19 partial** (87 counted here: SBOM done,
+Of the 109 items with work in them (110 is "then parity"): **37 done**, **12
+built and waiting on you**, **18 partial** (87 counted here: SBOM done,
 provenance not), **22 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with

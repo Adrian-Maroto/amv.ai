@@ -290,6 +290,23 @@ async function _bridgeCloudCall(route, body, timeoutMs){
   }
   return _bridgeAnswer(r.status, d);
 }
+/* EVERY WORKSPACE BUSY: WAIT FOR ONE RATHER THAN FAIL (Oct 31 audit, item 36).
+   The server answers computer_busy when the deployment's machines are all in
+   use, and nothing ran. Connecting then waits - up to five tries thirty
+   seconds apart, saying so each time - instead of handing the person an
+   error to retry by hand. Anything else, and the last busy answer, is
+   thrown as before. */
+const BRIDGE_CLOUD_BUSY_TRIES = 5, BRIDGE_CLOUD_BUSY_WAIT_MS = 30000;
+async function _bridgeCloudWaitForOne(){
+  for(let i = 1; ; i++){
+    try{ return await _bridgeCloudCall('status', {}, 90000); }
+    catch(e){
+      if(e.code !== 'computer_busy' || i >= BRIDGE_CLOUD_BUSY_TRIES) throw e;
+      toast(T('Every cloud workspace is in use right now. Waiting for one to free up - try {0} of {1}.').replace('{0}', String(i + 1)).replace('{1}', String(BRIDGE_CLOUD_BUSY_TRIES)), 'info', BRIDGE_CLOUD_BUSY_WAIT_MS);
+      await new Promise(r => setTimeout(r, BRIDGE_CLOUD_BUSY_WAIT_MS));
+    }
+  }
+}
 /* What the cloud computer has to offer this account, from the server: whether
    this deployment runs one, whether the plan includes it, and the minutes. */
 async function bridgeCloudInfo(){
@@ -310,7 +327,7 @@ async function bridgeCloudConnect(){
   if(BRIDGE.connected && !BRIDGE.cloud) throw new Error('Disconnect this computer first - AMV works on one computer at a time.');
   const prev = Object.assign({}, BRIDGE);
   Object.assign(BRIDGE, _bridgeCloudState(), { connected: true, why: '' });
-  try{ await _bridgeCloudCall('status', {}, 90000); }
+  try{ await _bridgeCloudWaitForOne(); }
   catch(e){ Object.assign(BRIDGE, prev); throw e; }
   _bridgeRemember();
   return BRIDGE;
