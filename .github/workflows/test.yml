@@ -86,6 +86,13 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap xvfb xdotool imagemagick
+          # The four Postgres suites (accounts and plans, read proofs, the
+          # money schema, the backfill) start a real server and FAIL without
+          # one - they never skip (Nov 1 audit TEST-001). The runner image
+          # has carried one so far; installed here so a new image cannot
+          # take it away, and its version printed for the record.
+          ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1 || sudo apt-get install -y -qq postgresql
+          ls -d /usr/lib/postgresql/*/bin && /usr/lib/postgresql/*/bin/postgres --version
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --ro-bind / / --unshare-user true && echo "bubblewrap works"
       # THE SAME GATE THAT RUNS LOCALLY.
