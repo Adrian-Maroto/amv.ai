@@ -80,6 +80,8 @@ const bucket = () => {
     async delete(k) { m.delete(k); } };
 };
 const id = { toString: () => 'a1b2c3d4' };
+/* The object's own storage, standing in: what a restart cannot lose. */
+const memStorage = () => { const m = new Map(); return { async get(k) { return m.get(k); }, async put(k, v) { m.set(k, JSON.parse(JSON.stringify(v))); } }; };
 const quiet = console.log; const events = [];
 console.log = (...a) => { const s = a.join(' '); if (s.startsWith('{"event"')) { events.push(JSON.parse(s).event); return; } quiet(...a); };
 
@@ -157,9 +159,22 @@ section('A snapshot that fails never replaces the last good copy');
 {
   const env = { AMV_COMPUTER_KEY: 'not-the-key-' + 'z'.repeat(40), WORKSPACES: bucket() };
   env.WORKSPACES.m.set('ws/a1b2c3d4.tgz', Buffer.from('the last good copy'));
-  const m = new AMVComputer({ id, container: portTo(A.base) }, env);
+  const storage = memStorage();
+  const m = new AMVComputer({ id, container: portTo(A.base), storage }, env);
   await m.onActivityExpired();
-  ok(String(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')) === 'the last good copy' && m.stopped, 'the old copy is kept, and the machine still stops', events.slice(-2));
+  ok(String(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')) === 'the last good copy', 'the old copy is kept', events.slice(-2));
+  /* Nov 1 audit COMP-001: a failed save does not stop the machine - its disk
+     holds work the copy does not - until a bounded number of tries. */
+  ok(!m.stopped, 'and the machine is NOT stopped on a failed save: it tries again at the next idle window');
+  await m.onActivityExpired();
+  ok(!m.stopped, 'nor on the second');
+  await m.onActivityExpired();
+  ok(m.stopped && events.includes('workspace_stopped_unsaved'), 'on the third it is stopped, because a machine that can never save would bill for ever', events.slice(-3));
+  ok(String(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')) === 'the last good copy', 'the last good copy still stands');
+  const told = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': env.AMV_COMPUTER_KEY } }))).json();
+  ok(told.state && told.state.lostUnsaved && told.state.lostUnsaved.tries === 3, 'and the person is told the last session could not be saved', told.state);
+  const again = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': env.AMV_COMPUTER_KEY } }))).json();
+  ok(!again.state.lostUnsaved, 'once, not every time they look');
 }
 
 section('An archive that climbs out of the workspace writes nothing outside it');
@@ -228,6 +243,72 @@ section('Each save keeps the copy it replaces, the newest five are kept, and one
   ok(after.versions.length === 5, 'and still only five are kept', after.versions.length);
   const forget = await m.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }));
   ok(forget.status === 200 && env.WORKSPACES.m.size === 0, 'erasing the account deletes every copy, not only the latest', [...env.WORKSPACES.m.keys()]);
+}
+
+section('A restore that fails stops the machine working, and never saves over the good copy (Nov 1 audit COMP-002)');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  const good = Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz'));
+  /* The stored copy no longer matches its checksum: the restore refuses it. */
+  env.WORKSPACES.meta.set('ws/a1b2c3d4.tgz', { sha256: 'f'.repeat(64) });
+  const five = join(box, 'five'); mkdirSync(five, { recursive: true });
+  const E = await bridge(five);
+  const storage = memStorage();
+  const m = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage }, env);
+  await m.onStart();
+  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}' }));
+  const wd = await work.json().catch(() => ({}));
+  ok(work.status === 409 && wd.code === 'workspace_restore_failed', 'the machine refuses work on a disk that is not the person\u2019s workspace', wd);
+  writeFileSync(join(five, 'stray.txt'), 'written on the empty disk\n');
+  await m.onActivityExpired();
+  ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), good) === 0, 'and going idle does not save the empty disk over the good copy');
+  const restarted = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage }, env);
+  const still = await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}' }));
+  ok(still.status === 409, 'a restart does not forget it - the state is in the object\u2019s own storage', still.status);
+  const v = await (await restarted.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  ok(v.state && v.state.restoreFailed, 'the saved-copies list says what happened', v.state);
+  /* The other remedy works too: an earlier copy put back on a machine that
+     failed its restore (the copy that failed is kept, unverified). */
+  {
+    const env2 = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+    for (const [k, b] of env.WORKSPACES.m) env2.WORKSPACES.m.set(k, b);
+    for (const [k, b] of env.WORKSPACES.meta) env2.WORKSPACES.meta.set(k, b);
+    await env2.WORKSPACES.put('ws/a1b2c3d4.v/1700000000000.tgz', new Blob([good]).stream(), {});
+    const st2 = memStorage(); await st2.put('ws_state', { restoreFailed: { at: 1, why: 'test' } });
+    const m2 = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage: st2 }, env2);
+    const rb = await m2.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY }, body: JSON.stringify({ id: '1700000000000' }) }));
+    const rbd = await rb.json();
+    ok(rb.status === 200 && rbd.restored && Buffer.compare(Buffer.from(env2.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), good) === 0, 'putting back an earlier copy is the other remedy, and it works', rbd);
+    ok(!(await st2.get('ws_state')).restoreFailed, 'and clears the failed state');
+  }
+  /* The remedy chosen on purpose: start fresh, the failed copy kept. */
+  const before = new Set(env.WORKSPACES.m.keys());
+  const f = await (await restarted.fetch(new Request('http://amv-computer/amv-workspace/fresh', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  const kept = [...env.WORKSPACES.m.keys()].filter(k => !before.has(k) && k.startsWith('ws/a1b2c3d4.v/'));
+  ok(f.fresh && kept.length === 1 && Buffer.compare(Buffer.from(env.WORKSPACES.m.get(kept[0])), good) === 0, 'starting fresh keeps the copy that failed among the saved copies', kept);
+  ok(!env.WORKSPACES.m.has('ws/a1b2c3d4.tgz'), 'and the workspace starts empty');
+  const after = await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}' }));
+  ok(after.status !== 409, 'after which the machine works again', after.status);
+  const no = await (await restarted.fetch(new Request('http://amv-computer/amv-workspace/fresh', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  ok(no.code === 'not_needed', 'and "start fresh" is refused when nothing went wrong', no);
+}
+
+section('A rollback does not throw away running work it could not save');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  await new Promise(r => setTimeout(r, 3));
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  const list = await (await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  const cur = Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz'));
+  /* The running machine's snapshot fails: its bridge answers with a key it does not accept. */
+  const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }), storage: memStorage() }, Object.assign({}, env, { AMV_COMPUTER_KEY: KEY }));
+  m._bridge = async () => new Response('no', { status: 500 });
+  const r = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY }, body: JSON.stringify({ id: list.versions[0].id }) }));
+  const d = await r.json();
+  ok(r.status === 409 && d.code === 'save_failed', 'refused, saying why', d);
+  ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), cur) === 0 && !m.destroyed, 'nothing was put back and the machine was not stopped');
 }
 
 /* The main Worker's half: deleting the account asks the computer to forget. */

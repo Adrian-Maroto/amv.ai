@@ -101,14 +101,16 @@ async function computerVersions(request, env, which){
   if(open.res) return open.res;
   const { user, stub } = open;
   const body = which === 'rollback' ? await request.json().catch(() => ({})) : {};
+  const path = which === 'rollback' ? 'rollback' : which === 'fresh' ? 'fresh' : 'versions';
   let r, d;
   try{
-    r = await stub.fetch(new Request('http://amv-computer/amv-workspace/' + (which === 'rollback' ? 'rollback' : 'versions'), { method: 'POST',
+    r = await stub.fetch(new Request('http://amv-computer/amv-workspace/' + path, { method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: JSON.stringify({ id: String(body.id || '') }) }));
     d = await r.json().catch(() => null);
   }catch(e){ d = null; }
   if(!d) return json({ error: 'The saved copies could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503);
   if(which === 'rollback' && d.restored) audit(env, 'computer_rolled_back', { by: user.email, to: d.id });
+  if(which === 'fresh' && d.fresh) audit(env, 'computer_started_fresh', { by: user.email });
   return json(Object.assign({ ok: r.ok }, d), r.status);
 }
 async function computerRoute(request, env, route){
