@@ -160,5 +160,33 @@ section('The same policy carries the team\u2019s rules for its members\u2019 com
   await policy(owner, null);
 }
 
+section('A team can refuse to send credentials and card numbers to AMV - on the server');
+{
+  const dlp = (v, tok) => call('/team/policy', { dlp: v }, tok || owner).then(async x => ({ status: x.status, d: await x.json() }));
+  const KEY = 'AKIA' + 'Q7ZK3M2LXPRT4VWN';
+  const CARD = '4111 1111 1111 1111';
+  const before = await ask(member, 'amv-core', 'deploy with ' + KEY);
+  ok(before.status === 200, 'with no rule, nothing is refused', before.status);
+  ok((await dlp('block', member)).status === 403, 'a member cannot turn it on');
+  ok((await dlp('maybe')).status === 400, 'a rule that is not "block" or off is refused');
+  const on = await dlp('block');
+  ok(on.status === 200 && on.d.dlp === 'block', 'the owner turns it on', on.d);
+  const key = await ask(member, 'amv-core', 'deploy with ' + KEY);
+  ok(key.status === 422 && key.d.code === 'dlp_blocked' && key.d.found === 'a cloud access key' && key.called === 0, 'a cloud key is refused before the model is called, naming the kind', key.d);
+  ok(!JSON.stringify(key.d).includes(KEY), 'and the key itself is not repeated back');
+  const card = await ask(member, 'amv-core', 'charge ' + CARD + ' exp 04/28');
+  ok(card.status === 422 && card.d.found === 'a payment card number', 'a card number is refused', card.d);
+  const notCard = await ask(member, 'amv-core', 'order number 1234 5678 9012 3456 shipped');
+  ok(notCard.status === 200, 'a long number that is not a card is not', notCard.status);
+  const plain = await ask(member, 'amv-core', 'summarise the meeting notes');
+  ok(plain.status === 200, 'an ordinary message is untouched', plain.status);
+  const log = (await (await call('/team/audit', {}, owner)).json()).log || [];
+  ok(log.some(x => x.action === 'data_rule_changed'), 'the change is in the activity log', log.map(x => x.action));
+  const team = (await (await call('/team/get', {}, member)).json()).team;
+  ok(team.policy.dlp === 'block' && team.policy.agentRules, 'and setting it left the other rules as they were', team.policy);
+  await dlp(null);
+  ok((await ask(member, 'amv-core', 'deploy with ' + KEY)).status === 200, 'off again, it sends');
+}
+
 if (report('a-team-chooses-its-engines') > 0) process.exitCode = 1;
 done();

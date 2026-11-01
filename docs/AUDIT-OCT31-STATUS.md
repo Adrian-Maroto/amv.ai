@@ -158,7 +158,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 103 | Image creation/editing | Not doing (decision #45) |
 | 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
-| 106 | Policy/DLP gateway | Not yet |
+| 106 | Policy/DLP gateway | Done (Nov 1: a team's data rule, enforced on the server - a message carrying an access key, a private key or a card number is refused before the model is called, naming the kind and never echoing it; a switch on the Team screen) |
 | 107 | SIEM/audit export | Not yet - the team log keeps its last 200 entries in one record; an export worth having needs it stored by month, a KV schema change that waits for your approval |
 | 108 | Retention/residency controls | Not yet |
 | 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
@@ -174,9 +174,9 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **42 done**, **12
+Of the 109 items with work in them (110 is "then parity"): **43 done**, **12
 built and waiting on you**, **18 partial** (87 counted here: SBOM done,
-provenance not), **17 not yet**, **16 yours or outside** (decisions, accounts,
+provenance not), **16 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
 quarantine (51-53). Audit export (107) needs a change to

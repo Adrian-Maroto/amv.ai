@@ -21,6 +21,7 @@ const AMVTeam = {
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.members; },
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(_refusalText(d)); e.code=d.code; throw e; } this._cache=null; return true; },
   /* engines: a list of engine ids, or null for everything the plan includes. */
+  async setDlp(on){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({dlp:on?'block':null})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s data rule.')); return d.dlp||null; },
   async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s engines.')); return d.engines||null; },
   /* Company sign-in, for the owner: {action:'get'|'set'|'verify'|'require'|'remove', ...}. */
   async sso(body){ const r=await AMV_API._fetch('/team/sso',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ const e=new Error(_refusalText(d, 'That did not work.')); if(d.code) e.code=d.code; throw e; } return d; },
@@ -521,7 +522,8 @@ function _teamEnginesHTML(team, canManage){
   const chosen=(team.policy&&Array.isArray(team.policy.engines))?team.policy.engines:null;
   const on=id=>!chosen || chosen.indexOf(id)>=0;
   if(!canManage){
-    if(!chosen) return '';
+    const dlpLine=(team.policy&&team.policy.dlp==='block')?'<p class="vsub" style="margin:0">Your team does not send credentials or card numbers to AMV.</p>':'';
+    if(!chosen) return dlpLine?'<div class="ss2">'+dlpLine+'</div>':'';
     const names=MODEL_ORDER.filter(k=>MODELS[k]&&k!=='auto'&&(_TEAM_BASE_ENGINES.indexOf(MODELS[k].model)>=0||on(MODELS[k].model))).map(k=>MODELS[k].label);
     return '<div class="ss2"><h3>Engines</h3><p class="vsub" style="margin:0">Your team uses '+escH(names.join(', '))+
       '. The owner or an admin chooses these.</p></div>';
@@ -541,10 +543,18 @@ function _teamEnginesHTML(team, canManage){
     '</div>'+
     '<button class="btn bp" id="team-eng-save" style="font-size:var(--t-sm)">Save</button>'+
     '<div class="team-eng-say" id="team-eng-say" role="status" aria-live="polite"></div>'+
+    '<label class="team-eng-row"><input type="checkbox" id="team-dlp"'+(team.policy&&team.policy.dlp==='block'?' checked':'')+'> <b>Refuse credentials and card numbers</b><span>A message carrying an access key, a private key or a card number is not sent to AMV.</span></label>'+
   '</div>';
 }
 function _teamEnginesWire(vc, team){
   const list=$('team-eng-list'), save=$('team-eng-save'); if(!save) return;
+  const dlp=$('team-dlp');
+  if(dlp) on(dlp,'change',async()=>{
+    dlp.disabled=true;
+    try{ const v=await AMVTeam.setDlp(dlp.checked); team.policy=Object.assign({}, team.policy||{}, { dlp: v }); toast(v?'Saved. Credentials and card numbers are not sent to AMV.':'Saved. The data rule is off.','success',4000); }
+    catch(e){ dlp.checked=!dlp.checked; toast((e&&e.message)||'Could not save the team\u2019s data rule.','error',5000); }
+    dlp.disabled=false;
+  });
   document.querySelectorAll('input[name="team-eng-mode"]').forEach(r=>on(r,'change',()=>{
     if(list) list.hidden = (document.querySelector('input[name="team-eng-mode"]:checked')||{}).value!=='some';
   }));

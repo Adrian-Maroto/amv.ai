@@ -284,6 +284,10 @@
   { "id": "data.time_to_first_answer", "status": "built", "name": "How long the first real answer took, measured once per account",
     "code": [["src/worker/56-admin.js", "_ttvBucket"]],
     "tests": ["tests/worker/funnel.test.mjs"],
-    "says": ["time to first answer"] }
+    "says": ["time to first answer"] },
+  { "id": "team.dlp", "status": "built", "name": "A team can refuse to send credentials and card numbers to AMV, enforced on the server",
+    "code": [["src/worker/35-batches.js", "_dlpFind"], ["src/worker/33-team-roles.js", "data_rule_changed"]],
+    "tests": ["tests/worker/a-team-chooses-its-engines.test.mjs"],
+    "says": ["dlp gateway"] }
  ]
 }

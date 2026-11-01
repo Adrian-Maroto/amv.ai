@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-69 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+70 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -157,6 +157,7 @@
 | A read-only Viewer role on teams: reads shared work and projects, and the server refuses every change it tries | `src/worker/33-team-roles.js`, `src/team/team-projects.js` | `worker/a-viewer-reads-and-does-not-change.test.mjs` |
 | Company sign-in over OpenID Connect, on a domain proved by DNS | `src/worker/11-company-sign-in.js` | `worker/a-company-signs-in-only-its-own-people.test.mjs` |
 | People added and removed, and admins named, by the company's directory (SCIM 2.0 Users and Groups) | `src/worker/71-scim.js`, `src/team/team-sso.js` | `worker/a-company-directory-adds-and-removes-its-people.test.mjs`, `worker/a-company-directory-decides-who-is-admin.test.mjs`, `e2e/sign-in-with-your-company.test.mjs` |
+| A team can refuse to send credentials and card numbers to AMV, enforced on the server | `src/worker/35-batches.js`, `src/worker/33-team-roles.js` | `worker/a-team-chooses-its-engines.test.mjs` |
 
 ## The cloud computer
 

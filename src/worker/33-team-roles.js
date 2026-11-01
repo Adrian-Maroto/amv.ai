@@ -328,7 +328,10 @@ async function teamSetPolicy(request, env){
   let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
   const setRules = Object.prototype.hasOwnProperty.call(body, 'agentRules');
-  const setEngines = !setRules || Object.prototype.hasOwnProperty.call(body, 'engines');
+  const setDlp = Object.prototype.hasOwnProperty.call(body, 'dlp');
+  const setEngines = (!setRules && !setDlp) || Object.prototype.hasOwnProperty.call(body, 'engines');
+  if(setDlp && body.dlp !== 'block' && body.dlp !== null)
+    return json({ error:'The data rule is "block" or null.', code:'bad_request' }, 400);
   const deny = setRules ? 'Only the team\u2019s owner or an admin can set the team\u2019s rules.' : 'Only the team\u2019s owner or an admin can choose its engines.';
   if(!_can(team, user.email, 'setPolicy')) return json({ error: deny, code:'forbidden' }, 403);
   let agentRules = null;
@@ -353,12 +356,16 @@ async function teamSetPolicy(request, env){
       const prev = _teamEngineList(fresh);
       /* Only what was sent changes: saving the rules leaves the engines as
          they were, and the other way round. */
-      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {});
+      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {}, setDlp ? { dlp: body.dlp || null } : {});
       team = fresh;
       return { prev };
     });
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   if(r && r.error) return json({ error: r.error }, r.status || 400);
+  if(setDlp){
+    await _teamAudit(env, team, user.email, 'data_rule_changed', { dlp: body.dlp || 'off' });
+    if(!setEngines && !setRules) return json({ ok:true, dlp: body.dlp || null });
+  }
   if(setRules){
     const n = ['block', 'ask', 'protect'].reduce((a, k) => a + agentRules[k].length, 0) + (agentRules.afterWrite ? 1 : 0) + (agentRules.onFinish ? 1 : 0);
     await _teamAudit(env, team, user.email, 'agent_rules_changed', { rules: n });

@@ -198,7 +198,7 @@ async function _principalOf(env, email, ent, extra) {
   data.billingSubject = sub.subject;
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
-  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; }
+  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; data.teamDlp = !!sub.teamDlp; }
   data.billingRenewedAt = sub.renewedAt || 0;
   /* Set when an account is blocked for charging back or a refund pattern. It
      rides on the entitlement, which is read here anyway, so every path that

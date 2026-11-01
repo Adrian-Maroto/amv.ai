@@ -394,6 +394,36 @@ function _modelErrorShown(status) {
   return json({ error: 'The model could not answer this request.' + nothing, code: 'model_error' }, 502);
 }
 
+/* What a team's data rule refuses: the shapes of real credentials and of a
+   payment card number (13-19 digits that pass the card checksum). Read from
+   what the person and their tools wrote, never from AMV's own replies. */
+const DLP_SHAPES = [
+  ['a private key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/],
+  ['a cloud access key', /\bAKIA[0-9A-Z]{16}\b/],
+  ['a live payment key', /\b[rs]k_live_[A-Za-z0-9]{20,}/],
+  ['a source-host token', /\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})/],
+  ['a chat bot token', /\bxox[bpas]-[0-9A-Za-z-]{20,}/],
+];
+function _luhn(d){ let s = 0, alt = false; for (let i = d.length - 1; i >= 0; i--) { let n = +d[i]; if (alt) { n *= 2; if (n > 9) n -= 9; } s += n; alt = !alt; } return s % 10 === 0; }
+function _dlpFind(messages){
+  const texts = [];
+  for (const m of (Array.isArray(messages) ? messages : [])) {
+    if (!m || m.role === 'assistant') continue;
+    if (typeof m.content === 'string') texts.push(m.content);
+    else if (Array.isArray(m.content)) for (const b of m.content) {
+      if (b && typeof b.text === 'string') texts.push(b.text);
+      if (b && b.type === 'tool_result') texts.push(typeof b.content === 'string' ? b.content : JSON.stringify(b.content || ''));
+    }
+  }
+  const all = texts.join('\n');
+  for (const [what, re] of DLP_SHAPES) if (re.test(all)) return what;
+  for (const m of all.matchAll(/\b(?:\d[ -]?){13,19}\b/g)) {
+    const d = m[0].replace(/\D/g, '');
+    if (d.length >= 13 && d.length <= 19 && _luhn(d)) return 'a payment card number';
+  }
+  return '';
+}
+
 async function aiProxy(request, env, ctx, principal) {
   const user = principal || await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
@@ -508,6 +538,19 @@ async function aiProxy(request, env, ctx, principal) {
   if (Array.isArray(user.teamEngines) && !user.teamEngines.includes(key)) {
     return json({ error: `Your team has not turned on ${_engineTitle(key, eng)}. Choose another engine, or ask your team\u2019s owner or an admin to allow it in Team.`,
                   code: 'team_policy', engine: key }, 403);
+  }
+
+  /* 1b-ii) THE TEAM'S DATA RULE (Oct 31 audit, item 106). With dlp 'block'
+     set, a message carrying a credential or a card number is refused here,
+     before anything is counted or sent - on the server, so a modified page
+     cannot get past it. Says which kind was found, never the thing itself. */
+  if (user.teamDlp) {
+    const found = _dlpFind(body.messages);
+    if (found) {
+      audit(env, 'dlp_blocked', { team: user.teamId || '', kind: found });
+      return json({ error: 'Your team does not allow ' + found + ' to be sent to AMV, and this message contains one. Remove it and send again.',
+                    code: 'dlp_blocked', found }, 422);
+    }
   }
 
   /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,

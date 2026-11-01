@@ -543,6 +543,7 @@ async function _billingSubjectOf(env, email, ent){
   /* Every member, seated or not: the policy is the company's rule about its
      people, not a condition of the seat it pays for. */
   out.teamEngines = _teamEngineList(team);
+  out.teamDlp = !!(team.policy && team.policy.dlp === 'block');
   out.seated = _teamSeated(team).some(x => x.email === em);
   const teamPlan = _teamPlan(team);
   if(out.seated && _planRankOf(teamPlan, team.customCfg) >= _planRankOf(out.plan, out.customCfg)){
