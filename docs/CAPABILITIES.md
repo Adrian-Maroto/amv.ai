@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-76 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+77 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -59,6 +59,7 @@
 | Shadow reads compare Postgres with KV in the background while KV answers | `src/worker/04c-pg-shadow.js` | `worker/what-was-there-before-is-copied-and-checked.test.mjs` |
 | How long the first real answer took, measured once per account | `src/worker/56-admin.js` | `worker/funnel.test.mjs` |
 | For a chosen cohort, Postgres answers accounts and plans - written there first, checked against KV after every answer, handed back to KV on any difference | `src/worker/04d-pg-read.js` | `worker/postgres-answers-only-where-it-proved-it-can.test.mjs` |
+| Conversations are kept only as long as the person or their team chose, enforced by the server and followed by the app | `src/worker/34a-retention.js`, `src/app/02-state.js` | `worker/conversations-are-kept-only-as-long-as-chosen.test.mjs`, `e2e/a-device-keeps-only-what-the-account-keeps.test.mjs` |
 
 ## Developers
 

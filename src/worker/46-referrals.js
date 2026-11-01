@@ -544,6 +544,7 @@ async function _billingSubjectOf(env, email, ent){
      people, not a condition of the seat it pays for. */
   out.teamEngines = _teamEngineList(team);
   out.teamDlp = !!(team.policy && team.policy.dlp === 'block');
+  out.teamRetention = (team.policy && +team.policy.retentionDays) || null;
   out.seated = _teamSeated(team).some(x => x.email === em);
   const teamPlan = _teamPlan(team);
   if(out.seated && _planRankOf(teamPlan, team.customCfg) >= _planRankOf(out.plan, out.customCfg)){

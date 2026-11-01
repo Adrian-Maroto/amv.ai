@@ -305,6 +305,34 @@ function _syncTrim(out){
 }
 try{ window._syncSessionList=_syncSessionList; }catch(e){}
 
+/* HOW LONG CONVERSATIONS ARE KEPT, on this device (34a-retention.js on the
+   server is the authority; this follows the period it sent). Same rule as
+   the server: older than the period by its last change goes, undated stays.
+   Returns how many went. */
+function _retentionTrimLocal(r){
+  if(!r || !(r.days > 0)) return 0;
+  const cutoff = Date.now() - r.days * 864e5;
+  const old = (it) => { if(!it) return false; const v = it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt;
+    const n = typeof v === 'number' ? v : Date.parse(v); return Number.isFinite(n) && n > 0 && n < cutoff; };
+  let n = 0;
+  try{
+    if(Array.isArray(_raw.convs)){
+      const keep = _raw.convs.filter(c => !old(c)); n += _raw.convs.length - keep.length;
+      if(keep.length !== _raw.convs.length){
+        if(!keep.length && typeof newConvObj === 'function') keep.push(newConvObj());
+        if(_raw.cur && !keep.some(c => c && c.id === _raw.cur)) _raw.cur = keep.length ? keep[0].id : null;
+        _raw.convs = keep; _persist('convs', keep);
+      }
+    }
+    if(typeof _SESSIONS !== 'undefined' && Array.isArray(_SESSIONS)){
+      const before = _SESSIONS.length; const keep = _SESSIONS.filter(x => !old(x));
+      if(keep.length !== before){ n += before - keep.length; _SESSIONS.length = 0; keep.forEach(x => _SESSIONS.push(x)); store(_sessKey(), _SESSIONS); }
+    }
+    const h = load('amv_handoffs');
+    if(Array.isArray(h)){ const keep = h.filter(x => !old(x)); if(keep.length !== h.length){ n += h.length - keep.length; store('amv_handoffs', keep); } }
+  }catch(e){ _logErr('retention.trim', e); }
+  return n;
+}
 const AMVSync = {
   _timer: null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
@@ -368,6 +396,9 @@ const AMVSync = {
       if(Array.isArray(data.handoffs)){
         try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
       }
+      /* The server already trimmed what it sent; this trims what only this
+         device still had, so the two agree. */
+      if(AMV_API.retention){ const n = _retentionTrimLocal(AMV_API.retention); if(n && typeof renderHist === 'function') try{ renderHist(); }catch(e){} }
       /* What AMV has learned about each project. Merged like the rest, and put
          back into the live object as well as into storage - otherwise the
          facts would only appear after a reload, which on the one screen that

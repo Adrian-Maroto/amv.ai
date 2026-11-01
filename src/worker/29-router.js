@@ -124,6 +124,15 @@ export default {
         console.error('[cron] nightly backup failed', e && e.message);
         try{ await _workerError(env, 'cron.backup', e); }catch(_){}
       }
+      /* How long conversations are kept (34a-retention.js): accounts and
+         teams that chose a period, trimmed whether or not they come back. */
+      try{
+        const r = await runRetentionSweep(env);
+        if(r && r.trimmed) console.log('[cron] retention', JSON.stringify(r));
+      }catch(e){
+        console.error('[cron] retention sweep failed', e && e.message);
+        try{ await _workerError(env, 'cron.retention', e); }catch(_){}
+      }
       /* The Postgres backfill (04b-pg-backfill.js), only once the owner has
          started it; a slice of about twenty seconds. Not skipped while paused:
          it calls no model and spends nothing. Its own try. */
@@ -901,6 +910,7 @@ async function _route(request, env, ctx) {
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
     case '/team/audit/export': return teamAuditExport(request, env);
+    case '/account/retention': return accountRetention(request, env);
     case '/team/usage':      return teamUsage(request, env);
     case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/sso':        return teamSso(request, env);

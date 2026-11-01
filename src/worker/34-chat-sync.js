@@ -102,6 +102,11 @@ async function syncPush(request, env){
      the record that actually won - never more than a couple of times, because
      each attempt starts from newer data. */
   let merged = null, curRev = 0, authoritative = false, guarded = true;
+  /* How long this person's conversations are kept (34a-retention.js):
+     applied after the merge, so a device still holding an old conversation
+     cannot put it back. */
+  const retention = await _retentionFor(env, user.email, user);
+  let trimmed = 0;
   for(let attempt = 0; attempt < 3; attempt++){
     const current = (await DB.get(env, 'data', user.email)) || {};
     curRev = +(current._rev || 0);
@@ -113,6 +118,7 @@ async function syncPush(request, env){
     merged = _mergeSyncRecord(current, filtered, authoritative);
     merged._updatedAt = Date.now();
     merged._rev = curRev + 1;
+    if(retention.days) trimmed = _retentionPrune(merged, retention.days).removed;
 
     // Enforce a real size cap (the comment used to promise this but didn't do it).
     const serialized = JSON.stringify(merged);
@@ -154,7 +160,11 @@ async function syncPush(request, env){
   }
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
-  return json({ ok:true, rev: merged._rev, merged: !authoritative, guarded, serverTime: Date.now() });
+  if(trimmed) audit(env, 'retention_trimmed', { email: user.email, removed: trimmed, days: retention.days, how: 'push' });
+  /* `merged` tells the app to pull: true too when old conversations were
+     trimmed, so the device drops what the server no longer keeps. */
+  return json({ ok:true, rev: merged._rev, merged: !authoritative || trimmed > 0, guarded, serverTime: Date.now(),
+    retention: retention.days ? { days: retention.days, by: retention.by } : null });
 }
 
 /* AMV-006 / AMV-023: ONE PRINCIPAL, BUILT ONE WAY.
@@ -198,7 +208,7 @@ async function _principalOf(env, email, ent, extra) {
   data.billingSubject = sub.subject;
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
-  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; data.teamDlp = !!sub.teamDlp; }
+  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; data.teamDlp = !!sub.teamDlp; data.teamRetention = sub.teamRetention || null; }
   data.billingRenewedAt = sub.renewedAt || 0;
   /* Set when an account is blocked for charging back or a refund pattern. It
      rides on the entitlement, which is read here anyway, so every path that

@@ -21,6 +21,7 @@ const AMVTeam = {
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.members; },
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(_refusalText(d)); e.code=d.code; throw e; } this._cache=null; return true; },
   /* engines: a list of engine ids, or null for everything the plan includes. */
+  async setRetention(days){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({retentionDays:days||null})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save how long the team keeps conversations.')); return d.retentionDays||null; },
   async setDlp(on){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({dlp:on?'block':null})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s data rule.')); return d.dlp||null; },
   async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s engines.')); return d.engines||null; },
   /* Company sign-in, for the owner: {action:'get'|'set'|'verify'|'require'|'remove', ...}. */
@@ -573,10 +574,21 @@ function _teamEnginesHTML(team, canManage){
     '<button class="btn bp" id="team-eng-save" style="font-size:var(--t-sm)">Save</button>'+
     '<div class="team-eng-say" id="team-eng-say" role="status" aria-live="polite"></div>'+
     '<label class="team-eng-row"><input type="checkbox" id="team-dlp"'+(team.policy&&team.policy.dlp==='block'?' checked':'')+'> <b>Refuse credentials and card numbers</b><span>A message carrying an access key, a private key or a card number is not sent to AMV.</span></label>'+
+    (function(){ const cur=(team.policy&&+team.policy.retentionDays)||0; const o=(v,l)=>'<option value="'+v+'"'+(cur===v||(!cur&&!v)?' selected':'')+'>'+escH(T(l))+'</option>';
+      return '<label class="team-eng-row"><b>'+escH(T('Keep members\u2019 conversations'))+'</b> <select class="inp" id="team-ret" style="width:auto">'+o(0,'Forever')+o(365,'1 year')+o(180,'6 months')+o(90,'90 days')+o(30,'30 days')+'</select>'+
+        '<span>'+escH(T('Older ones are deleted for every member, on AMV and on their devices. A member can choose a shorter period, never a longer one.'))+'</span></label>'; })()+
   '</div>';
 }
 function _teamEnginesWire(vc, team){
   const list=$('team-eng-list'), save=$('team-eng-save'); if(!save) return;
+  const ret=$('team-ret');
+  if(ret) on(ret,'change',async()=>{
+    ret.disabled=true; const before=(team.policy&&team.policy.retentionDays)||0;
+    try{ const v=await AMVTeam.setRetention(+ret.value||null); team.policy=Object.assign({}, team.policy||{}, { retentionDays: v });
+      toast(v?T('Saved. Conversations older than {n} days are deleted for every member.').replace('{n}',v):T('Saved. Members\u2019 conversations are kept until they delete them.'),'success',4000); }
+    catch(e){ ret.value=String(before||0); toast((e&&e.message)||T('Could not save how long the team keeps conversations.'),'error',5000); }
+    ret.disabled=false;
+  });
   const dlp=$('team-dlp');
   if(dlp) on(dlp,'change',async()=>{
     dlp.disabled=true;

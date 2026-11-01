@@ -1136,7 +1136,7 @@ const AMV_API = {
   async syncPull(){
     if(!this.live || !this.token) return null;
     try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
-      if(d && d.ok){ this.syncRev = d.rev || 0; return d.data; }
+      if(d && d.ok){ this.syncRev = d.rev || 0; this.retention = d.retention || null; return d.data; }
       return null; }
     catch(e){ return null; }
   },
@@ -1145,6 +1145,7 @@ const AMV_API = {
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
+        if(d.retention !== undefined) this.retention = d.retention || null;
         /* Known here, and said to the OPERATOR by the server - once a week,
            through the alert channel - not reported as an error from every
            visitor's browser on every page load. That was one Sentry issue
@@ -3336,6 +3337,34 @@ function _syncTrim(out){
 }
 try{ window._syncSessionList=_syncSessionList; }catch(e){}
 
+/* HOW LONG CONVERSATIONS ARE KEPT, on this device (34a-retention.js on the
+   server is the authority; this follows the period it sent). Same rule as
+   the server: older than the period by its last change goes, undated stays.
+   Returns how many went. */
+function _retentionTrimLocal(r){
+  if(!r || !(r.days > 0)) return 0;
+  const cutoff = Date.now() - r.days * 864e5;
+  const old = (it) => { if(!it) return false; const v = it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt;
+    const n = typeof v === 'number' ? v : Date.parse(v); return Number.isFinite(n) && n > 0 && n < cutoff; };
+  let n = 0;
+  try{
+    if(Array.isArray(_raw.convs)){
+      const keep = _raw.convs.filter(c => !old(c)); n += _raw.convs.length - keep.length;
+      if(keep.length !== _raw.convs.length){
+        if(!keep.length && typeof newConvObj === 'function') keep.push(newConvObj());
+        if(_raw.cur && !keep.some(c => c && c.id === _raw.cur)) _raw.cur = keep.length ? keep[0].id : null;
+        _raw.convs = keep; _persist('convs', keep);
+      }
+    }
+    if(typeof _SESSIONS !== 'undefined' && Array.isArray(_SESSIONS)){
+      const before = _SESSIONS.length; const keep = _SESSIONS.filter(x => !old(x));
+      if(keep.length !== before){ n += before - keep.length; _SESSIONS.length = 0; keep.forEach(x => _SESSIONS.push(x)); store(_sessKey(), _SESSIONS); }
+    }
+    const h = load('amv_handoffs');
+    if(Array.isArray(h)){ const keep = h.filter(x => !old(x)); if(keep.length !== h.length){ n += h.length - keep.length; store('amv_handoffs', keep); } }
+  }catch(e){ _logErr('retention.trim', e); }
+  return n;
+}
 const AMVSync = {
   _timer: null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
@@ -3399,6 +3428,9 @@ const AMVSync = {
       if(Array.isArray(data.handoffs)){
         try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
       }
+      /* The server already trimmed what it sent; this trims what only this
+         device still had, so the two agree. */
+      if(AMV_API.retention){ const n = _retentionTrimLocal(AMV_API.retention); if(n && typeof renderHist === 'function') try{ renderHist(); }catch(e){} }
       /* What AMV has learned about each project. Merged like the rest, and put
          back into the live object as well as into storage - otherwise the
          facts would only appear after a reload, which on the one screen that
@@ -13863,6 +13895,7 @@ const AMVTeam = {
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(_refusalText(d)); return d.members; },
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(_refusalText(d)); e.code=d.code; throw e; } this._cache=null; return true; },
   /* engines: a list of engine ids, or null for everything the plan includes. */
+  async setRetention(days){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({retentionDays:days||null})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save how long the team keeps conversations.')); return d.retentionDays||null; },
   async setDlp(on){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({dlp:on?'block':null})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s data rule.')); return d.dlp||null; },
   async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(_refusalText(d, 'Could not save the team\u2019s engines.')); return d.engines||null; },
   /* Company sign-in, for the owner: {action:'get'|'set'|'verify'|'require'|'remove', ...}. */
@@ -14415,10 +14448,21 @@ function _teamEnginesHTML(team, canManage){
     '<button class="btn bp" id="team-eng-save" style="font-size:var(--t-sm)">Save</button>'+
     '<div class="team-eng-say" id="team-eng-say" role="status" aria-live="polite"></div>'+
     '<label class="team-eng-row"><input type="checkbox" id="team-dlp"'+(team.policy&&team.policy.dlp==='block'?' checked':'')+'> <b>Refuse credentials and card numbers</b><span>A message carrying an access key, a private key or a card number is not sent to AMV.</span></label>'+
+    (function(){ const cur=(team.policy&&+team.policy.retentionDays)||0; const o=(v,l)=>'<option value="'+v+'"'+(cur===v||(!cur&&!v)?' selected':'')+'>'+escH(T(l))+'</option>';
+      return '<label class="team-eng-row"><b>'+escH(T('Keep members\u2019 conversations'))+'</b> <select class="inp" id="team-ret" style="width:auto">'+o(0,'Forever')+o(365,'1 year')+o(180,'6 months')+o(90,'90 days')+o(30,'30 days')+'</select>'+
+        '<span>'+escH(T('Older ones are deleted for every member, on AMV and on their devices. A member can choose a shorter period, never a longer one.'))+'</span></label>'; })()+
   '</div>';
 }
 function _teamEnginesWire(vc, team){
   const list=$('team-eng-list'), save=$('team-eng-save'); if(!save) return;
+  const ret=$('team-ret');
+  if(ret) on(ret,'change',async()=>{
+    ret.disabled=true; const before=(team.policy&&team.policy.retentionDays)||0;
+    try{ const v=await AMVTeam.setRetention(+ret.value||null); team.policy=Object.assign({}, team.policy||{}, { retentionDays: v });
+      toast(v?T('Saved. Conversations older than {n} days are deleted for every member.').replace('{n}',v):T('Saved. Members\u2019 conversations are kept until they delete them.'),'success',4000); }
+    catch(e){ ret.value=String(before||0); toast((e&&e.message)||T('Could not save how long the team keeps conversations.'),'error',5000); }
+    ret.disabled=false;
+  });
   const dlp=$('team-dlp');
   if(dlp) on(dlp,'change',async()=>{
     dlp.disabled=true;

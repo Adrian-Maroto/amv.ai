@@ -453,6 +453,8 @@ function _renderSetPaneInner(only, into){
         '<div class="prv-data-row"><div><div class="prv-pref-t">Export data</div><div class="prv-pref-s">Download everything AMV has for you as a JSON file.</div></div><button class="btn bs" id="prv-export" style="font-size:var(--t-sm)">Export data</button></div>'+
         '<div class="prv-data-row"><div><div class="prv-pref-t">Shared chats</div><div class="prv-pref-s">Manage conversations you\u2019ve shared with a public link.</div></div><button class="btn bs" id="prv-shared" style="font-size:var(--t-sm)">Manage</button></div>'+
         '<div class="prv-data-row"><div><div class="prv-pref-t">Memory preferences</div><div class="prv-pref-s">Control what AMV remembers about you across chats.</div></div><button class="btn bs" id="prv-memory" style="font-size:var(--t-sm)">Open memory</button></div>'+
+        (AMV_API.hasSession?'<div class="prv-data-row"><div><div class="prv-pref-t">Keep conversations</div><div class="prv-pref-s" id="prv-ret-s">Older ones are deleted from AMV and from this device. Anything you are still using is never old.</div></div>'+
+          '<select class="inp" id="prv-ret" style="width:auto;font-size:var(--t-sm)" disabled><option value="">Forever</option><option value="365">1 year</option><option value="180">6 months</option><option value="90">90 days</option><option value="30">30 days</option></select></div>':'')+
         '<div class="prv-data-row"><div><div class="prv-pref-t">Clear all chats</div><div class="prv-pref-s">Permanently delete your conversation history.</div></div><button class="btn bs" id="prv-clrchats" style="font-size:var(--t-sm)">Clear chats</button></div>'+
         '<div class="prv-data-row"><div><div class="prv-pref-t" style="color:var(--red-txt)">Delete all data</div><div class="prv-pref-s">Remove everything AMV has stored for you. This can\u2019t be undone.</div></div><button class="btn bd2" id="prv-clrall" style="font-size:var(--t-sm)">Delete everything</button></div>'+
       '</div>'+
@@ -493,6 +495,25 @@ function _renderSetPaneInner(only, into){
       S.convs=[newConvObj()];S.cur=S.convs[0].id;_autoSave();renderHist();btn.textContent='Done!';btn.style.color='var(--green)';setTimeout(()=>renderSetPane(),1200);
     });
     on($('prv-export'),'click',()=>_exportUserData());
+    /* How long conversations are kept (the server enforces it; 34a-retention.js). */
+    if($('prv-ret')){
+      const sel=$('prv-ret'), sub=$('prv-ret-s');
+      const show=(d)=>{ if(!d) return; sel.value=d.mine?String(d.mine):''; sel.disabled=false;
+        if(d.by==='team'&&d.team&&sub) sub.textContent=T('Your team keeps conversations for {n} days, so that applies whatever you choose here.').replace('{n}',d.team); };
+      AMV_API._fetch('/account/retention',{method:'POST',body:'{}'}).then(r=>r.json()).then(show).catch(()=>{ if(sub) sub.textContent=T('Could not load this setting. Check your connection and open this page again.'); });
+      on(sel,'change',async()=>{
+        sel.disabled=true;
+        try{
+          const r=await AMV_API._fetch('/account/retention',{method:'POST',body:JSON.stringify({days:sel.value?+sel.value:null})});
+          const d=await r.json().catch(()=>null);
+          if(!r.ok||!d||!d.ok) throw new Error((d&&d.error)||T('Could not save this setting.'));
+          show(d); AMV_API.retention=d.days?{days:d.days,by:d.by}:null;
+          const n=_retentionTrimLocal(AMV_API.retention);
+          toast(d.days?T('Conversations older than {n} days will be deleted.').replace('{n}',d.days)+(n?' '+T('{n} removed from this device.').replace('{n}',n):''):T('Conversations are kept until you delete them.'),'success');
+        }catch(e){ toast((e&&e.message)||T('Could not save this setting.'),'error'); }
+        sel.disabled=false;
+      });
+    }
     on($('prv-ga-save'),'click',()=>{
       const v=($('prv-ga-id')?$('prv-ga-id').value:'').trim();
       _analyticsSetId(v);

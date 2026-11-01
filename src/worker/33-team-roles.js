@@ -407,9 +407,13 @@ async function teamSetPolicy(request, env){
   if(!team) return json({ error:'no team' }, 404);
   const setRules = Object.prototype.hasOwnProperty.call(body, 'agentRules');
   const setDlp = Object.prototype.hasOwnProperty.call(body, 'dlp');
-  const setEngines = (!setRules && !setDlp) || Object.prototype.hasOwnProperty.call(body, 'engines');
+  const setRet = Object.prototype.hasOwnProperty.call(body, 'retentionDays');
+  const setEngines = (!setRules && !setDlp && !setRet) || Object.prototype.hasOwnProperty.call(body, 'engines');
   if(setDlp && body.dlp !== 'block' && body.dlp !== null)
     return json({ error:'The data rule is "block" or null.', code:'bad_request' }, 400);
+  const retDays = setRet && body.retentionDays != null ? +body.retentionDays : null;
+  if(setRet && retDays !== null && !RETENTION_CHOICES.has(retDays))
+    return json({ error:'Choose 30, 90, 180 or 365 days, or keep everything.', code:'bad_request' }, 400);
   const deny = setRules ? 'Only the team\u2019s owner or an admin can set the team\u2019s rules.' : 'Only the team\u2019s owner or an admin can choose its engines.';
   if(!_can(team, user.email, 'setPolicy')) return json({ error: deny, code:'forbidden' }, 403);
   let agentRules = null;
@@ -434,12 +438,19 @@ async function teamSetPolicy(request, env){
       const prev = _teamEngineList(fresh);
       /* Only what was sent changes: saving the rules leaves the engines as
          they were, and the other way round. */
-      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {}, setDlp ? { dlp: body.dlp || null } : {});
+      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {}, setDlp ? { dlp: body.dlp || null } : {}, setRet ? { retentionDays: retDays } : {});
       team = fresh;
       return { prev };
     });
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   if(r && r.error) return json({ error: r.error }, r.status || 400);
+  if(setRet){
+    /* The nightly sweep finds the team through this; members who never come
+       back are trimmed too (34a-retention.js). */
+    if(retDays) await env.AMV_KV.put('retainteam:' + team.id, '1'); else await env.AMV_KV.delete('retainteam:' + team.id);
+    await _teamAudit(env, team, user.email, 'retention_changed', { days: retDays || 'all' });
+    if(!setEngines && !setRules && !setDlp) return json({ ok:true, retentionDays: retDays });
+  }
   if(setDlp){
     await _teamAudit(env, team, user.email, 'data_rule_changed', { dlp: body.dlp || 'off' });
     if(!setEngines && !setRules) return json({ ok:true, dlp: body.dlp || null });
@@ -978,8 +989,13 @@ async function syncPull(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const data = (await DB.get(env, 'data', user.email)) || {};
+  /* Nothing older than the period is handed out (34a-retention.js); the
+     stored copy is trimmed at the next push or tonight's sweep. */
+  const retention = await _retentionFor(env, user.email, user);
+  if(retention.days) _retentionPrune(data, retention.days);
   // rev is what a client echoes back on push to prove it saw this version.
-  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now() });
+  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now(),
+    retention: retention.days ? { days: retention.days, by: retention.by } : null });
 }
 /* Push the user's data up (last-write-wins per top-level key, with a merge). */
 const SYNC_ALLOWED_KEYS = new Set([

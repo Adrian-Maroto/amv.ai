@@ -1136,7 +1136,7 @@ const AMV_API = {
   async syncPull(){
     if(!this.live || !this.token) return null;
     try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
-      if(d && d.ok){ this.syncRev = d.rev || 0; return d.data; }
+      if(d && d.ok){ this.syncRev = d.rev || 0; this.retention = d.retention || null; return d.data; }
       return null; }
     catch(e){ return null; }
   },
@@ -1145,6 +1145,7 @@ const AMV_API = {
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
+        if(d.retention !== undefined) this.retention = d.retention || null;
         /* Known here, and said to the OPERATOR by the server - once a week,
            through the alert channel - not reported as an error from every
            visitor's browser on every page load. That was one Sentry issue

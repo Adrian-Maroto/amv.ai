@@ -17560,6 +17560,15 @@ export default {
         console.error('[cron] nightly backup failed', e && e.message);
         try{ await _workerError(env, 'cron.backup', e); }catch(_){}
       }
+      /* How long conversations are kept (34a-retention.js): accounts and
+         teams that chose a period, trimmed whether or not they come back. */
+      try{
+        const r = await runRetentionSweep(env);
+        if(r && r.trimmed) console.log('[cron] retention', JSON.stringify(r));
+      }catch(e){
+        console.error('[cron] retention sweep failed', e && e.message);
+        try{ await _workerError(env, 'cron.retention', e); }catch(_){}
+      }
       /* The Postgres backfill (04b-pg-backfill.js), only once the owner has
          started it; a slice of about twenty seconds. Not skipped while paused:
          it calls no model and spends nothing. Its own try. */
@@ -18337,6 +18346,7 @@ async function _route(request, env, ctx) {
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
     case '/team/audit/export': return teamAuditExport(request, env);
+    case '/account/retention': return accountRetention(request, env);
     case '/team/usage':      return teamUsage(request, env);
     case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/sso':        return teamSso(request, env);
@@ -21688,9 +21698,13 @@ async function teamSetPolicy(request, env){
   if(!team) return json({ error:'no team' }, 404);
   const setRules = Object.prototype.hasOwnProperty.call(body, 'agentRules');
   const setDlp = Object.prototype.hasOwnProperty.call(body, 'dlp');
-  const setEngines = (!setRules && !setDlp) || Object.prototype.hasOwnProperty.call(body, 'engines');
+  const setRet = Object.prototype.hasOwnProperty.call(body, 'retentionDays');
+  const setEngines = (!setRules && !setDlp && !setRet) || Object.prototype.hasOwnProperty.call(body, 'engines');
   if(setDlp && body.dlp !== 'block' && body.dlp !== null)
     return json({ error:'The data rule is "block" or null.', code:'bad_request' }, 400);
+  const retDays = setRet && body.retentionDays != null ? +body.retentionDays : null;
+  if(setRet && retDays !== null && !RETENTION_CHOICES.has(retDays))
+    return json({ error:'Choose 30, 90, 180 or 365 days, or keep everything.', code:'bad_request' }, 400);
   const deny = setRules ? 'Only the team\u2019s owner or an admin can set the team\u2019s rules.' : 'Only the team\u2019s owner or an admin can choose its engines.';
   if(!_can(team, user.email, 'setPolicy')) return json({ error: deny, code:'forbidden' }, 403);
   let agentRules = null;
@@ -21715,12 +21729,19 @@ async function teamSetPolicy(request, env){
       const prev = _teamEngineList(fresh);
       /* Only what was sent changes: saving the rules leaves the engines as
          they were, and the other way round. */
-      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {}, setDlp ? { dlp: body.dlp || null } : {});
+      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {}, setDlp ? { dlp: body.dlp || null } : {}, setRet ? { retentionDays: retDays } : {});
       team = fresh;
       return { prev };
     });
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   if(r && r.error) return json({ error: r.error }, r.status || 400);
+  if(setRet){
+    /* The nightly sweep finds the team through this; members who never come
+       back are trimmed too (34a-retention.js). */
+    if(retDays) await env.AMV_KV.put('retainteam:' + team.id, '1'); else await env.AMV_KV.delete('retainteam:' + team.id);
+    await _teamAudit(env, team, user.email, 'retention_changed', { days: retDays || 'all' });
+    if(!setEngines && !setRules && !setDlp) return json({ ok:true, retentionDays: retDays });
+  }
   if(setDlp){
     await _teamAudit(env, team, user.email, 'data_rule_changed', { dlp: body.dlp || 'off' });
     if(!setEngines && !setRules) return json({ ok:true, dlp: body.dlp || null });
@@ -22259,8 +22280,13 @@ async function syncPull(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const data = (await DB.get(env, 'data', user.email)) || {};
+  /* Nothing older than the period is handed out (34a-retention.js); the
+     stored copy is trimmed at the next push or tonight's sweep. */
+  const retention = await _retentionFor(env, user.email, user);
+  if(retention.days) _retentionPrune(data, retention.days);
   // rev is what a client echoes back on push to prove it saw this version.
-  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now() });
+  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now(),
+    retention: retention.days ? { days: retention.days, by: retention.by } : null });
 }
 /* Push the user's data up (last-write-wins per top-level key, with a merge). */
 const SYNC_ALLOWED_KEYS = new Set([
@@ -22385,6 +22411,11 @@ async function syncPush(request, env){
      the record that actually won - never more than a couple of times, because
      each attempt starts from newer data. */
   let merged = null, curRev = 0, authoritative = false, guarded = true;
+  /* How long this person's conversations are kept (34a-retention.js):
+     applied after the merge, so a device still holding an old conversation
+     cannot put it back. */
+  const retention = await _retentionFor(env, user.email, user);
+  let trimmed = 0;
   for(let attempt = 0; attempt < 3; attempt++){
     const current = (await DB.get(env, 'data', user.email)) || {};
     curRev = +(current._rev || 0);
@@ -22396,6 +22427,7 @@ async function syncPush(request, env){
     merged = _mergeSyncRecord(current, filtered, authoritative);
     merged._updatedAt = Date.now();
     merged._rev = curRev + 1;
+    if(retention.days) trimmed = _retentionPrune(merged, retention.days).removed;
 
     // Enforce a real size cap (the comment used to promise this but didn't do it).
     const serialized = JSON.stringify(merged);
@@ -22437,7 +22469,11 @@ async function syncPush(request, env){
   }
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
-  return json({ ok:true, rev: merged._rev, merged: !authoritative, guarded, serverTime: Date.now() });
+  if(trimmed) audit(env, 'retention_trimmed', { email: user.email, removed: trimmed, days: retention.days, how: 'push' });
+  /* `merged` tells the app to pull: true too when old conversations were
+     trimmed, so the device drops what the server no longer keeps. */
+  return json({ ok:true, rev: merged._rev, merged: !authoritative || trimmed > 0, guarded, serverTime: Date.now(),
+    retention: retention.days ? { days: retention.days, by: retention.by } : null });
 }
 
 /* AMV-006 / AMV-023: ONE PRINCIPAL, BUILT ONE WAY.
@@ -22481,7 +22517,7 @@ async function _principalOf(env, email, ent, extra) {
   data.billingSubject = sub.subject;
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
-  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; data.teamDlp = !!sub.teamDlp; }
+  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; data.teamDlp = !!sub.teamDlp; data.teamRetention = sub.teamRetention || null; }
   data.billingRenewedAt = sub.renewedAt || 0;
   /* Set when an account is blocked for charging back or a refund pattern. It
      rides on the entitlement, which is read here anyway, so every path that
@@ -22975,6 +23011,153 @@ async function enginesList(request, env) {
   return json({ ok: true, engines: primary.concat(partners) });
 }
 
+/* HOW LONG CONVERSATIONS ARE KEPT (Oct 31 audit, item 108: retention
+   controls).
+
+   A person can choose to keep their conversations for 30, 90, 180 or 365
+   days (Settings > Privacy), and a team's owner or admin can set the same for
+   every member (Team > Data rules). Where both are set, the SHORTER one
+   applies - a company's rule is a ceiling its people can go under, never
+   over.
+
+   What is removed: a conversation, a Dev or Lab session, or a handoff whose
+   last change is older than the period. Something still in use is never old,
+   because using it changes it. Something with no date at all is kept and
+   counted - deleting what cannot be dated would be guessing.
+
+   Where it is enforced - the server is the authority, the app only follows:
+     - every sync push, after the merge and before the write, so a device
+       that still holds an old conversation cannot put it back;
+     - every sync pull, so what is handed out has already been trimmed;
+     - the nightly sweep, for accounts that never come back - otherwise a
+       period would only apply to people who keep using AMV;
+     - the app trims its own copy when it pulls, from the period the server
+       sends, so the device and the server agree.
+
+   Residency (where in the world the data is held) is not here: the store is
+   Cloudflare's global KV, and a region cannot be promised by this code. */
+
+const RETENTION_CHOICES = new Set([30, 90, 180, 365]);
+const RETENTION_LISTS = ['convs', 'chats', 'sessions', 'handoffs'];
+const RETENTION_SWEEP_MS = 15000;
+
+function _retentionStamp(it){
+  const v = _syncStamp(it);
+  const n = typeof v === 'number' ? v : Date.parse(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+/* Trims `data` in place. Returns how many items went, and how many had no
+   date and were kept. */
+function _retentionPrune(data, days, now){
+  const out = { removed: 0, undated: 0 };
+  if (!data || !(days > 0)) return out;
+  const cutoff = (now || Date.now()) - days * 86400000;
+  for (const k of RETENTION_LISTS) {
+    if (!Array.isArray(data[k])) continue;
+    const keep = data[k].filter(it => {
+      const s = _retentionStamp(it);
+      if (!s) { out.undated++; return true; }
+      return s >= cutoff;
+    });
+    out.removed += data[k].length - keep.length;
+    data[k] = keep;
+  }
+  return out;
+}
+/* The period that applies to one person, and whose rule it is. `user` is the
+   principal requireUser returned (it carries the team's policy); the
+   personal choice is on the account record. */
+async function _retentionFor(env, email, user){
+  const acct = await DB.get(env, 'acct', String(email || '').toLowerCase());
+  const mine = acct && RETENTION_CHOICES.has(+acct.retentionDays) ? +acct.retentionDays : 0;
+  let team = user && RETENTION_CHOICES.has(+user.teamRetention) ? +user.teamRetention : 0;
+  if (!user) {
+    const t = await _teamOf(env, email).catch(() => null);
+    team = t && t.policy && RETENTION_CHOICES.has(+t.policy.retentionDays) ? +t.policy.retentionDays : 0;
+  }
+  if (!mine && !team) return { days: 0, by: null, mine: 0, team: 0 };
+  const days = mine && team ? Math.min(mine, team) : (mine || team);
+  return { days, by: team && days === team ? 'team' : 'you', mine, team };
+}
+async function _retentionIndex(env, email, on){
+  const k = 'retainidx:' + String(email || '').toLowerCase();
+  if (on) await env.AMV_KV.put(k, '1'); else await env.AMV_KV.delete(k);
+}
+
+/* POST /account/retention {days: 30|90|180|365|null}: the person's own
+   choice. Answers the period that now applies (a team's may be shorter). */
+async function accountRetention(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
+  if (Object.prototype.hasOwnProperty.call(body, 'days')) {
+    const d = body.days == null ? null : +body.days;
+    if (d !== null && !RETENTION_CHOICES.has(d)) return json({ error: 'Choose 30, 90, 180 or 365 days, or keep everything.', code: 'bad_request' }, 400);
+    try {
+      await _withAcct(env, user.email, (a) => { if (!a) return; if (d) a.retentionDays = d; else delete a.retentionDays; });
+    } catch (e) { if (!_isBusy(e)) throw e; return _busyJson('account'); }
+    await _retentionIndex(env, user.email, !!d);
+    audit(env, 'retention_set', { email: user.email, days: d || 'all' });
+  }
+  const r = await _retentionFor(env, user.email, user);
+  return json({ ok: true, days: r.days || null, by: r.by, mine: r.mine || null, team: r.team || null });
+}
+
+/* The nightly part: everybody who chose a period, and every member of a team
+   that set one. Bounded per run and resumable (`retainrun:<day>` holds the
+   cursors), like the backup it runs beside. */
+async function _retentionTrimOne(env, email, days){
+  let removed = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const cur = await DB.get(env, 'data', email);
+    if (!cur) return 0;
+    const rev = +(cur._rev || 0);
+    const r = _retentionPrune(cur, days);
+    if (!r.removed) return 0;
+    cur._rev = rev + 1; cur._updatedAt = Date.now();
+    const res = await DB.putIfRev(env, 'data', email, cur, rev);
+    if (res.ok) { removed = r.removed; break; }
+  }
+  if (removed) audit(env, 'retention_trimmed', { email, removed, days, how: 'nightly' });
+  return removed;
+}
+async function runRetentionSweep(env, atMs){
+  const now = atMs || Date.now();
+  const day = new Date(now).toISOString().slice(0, 10);
+  const stateKey = 'retainrun:' + day;
+  let st = null; try { st = JSON.parse((await env.AMV_KV.get(stateKey)) || 'null'); } catch (e) { st = null; }
+  st = st || { people: null, teams: null, done: false, trimmed: 0, accounts: 0 };
+  if (st.done) return { ran: false, done: true };
+  const until = Date.now() + RETENTION_SWEEP_MS;
+  /* People who chose a period themselves. */
+  while (st.people !== 'end' && Date.now() < until) {
+    const page = await env.AMV_KV.list({ prefix: 'retainidx:', cursor: st.people || undefined, limit: 100 });
+    for (const k of page.keys) {
+      const email = k.name.slice('retainidx:'.length);
+      /* An erased account leaves no address behind in an index either. */
+      if (!(await DB.get(env, 'acct', email))) { await env.AMV_KV.delete(k.name); continue; }
+      const r = await _retentionFor(env, email, null);
+      if (r.days) { st.trimmed += await _retentionTrimOne(env, email, r.days); st.accounts++; }
+    }
+    st.people = page.list_complete ? 'end' : page.cursor;
+  }
+  /* Every member of a team that set one. */
+  while (st.people === 'end' && st.teams !== 'end' && Date.now() < until) {
+    const page = await env.AMV_KV.list({ prefix: 'retainteam:', cursor: st.teams || undefined, limit: 50 });
+    for (const k of page.keys) {
+      const team = await DB.get(env, 'team', k.name.slice('retainteam:'.length));
+      if (!team || !(team.policy && RETENTION_CHOICES.has(+team.policy.retentionDays))) continue;
+      for (const m of team.members || []) {
+        const r = await _retentionFor(env, m.email, null);
+        if (r.days) { st.trimmed += await _retentionTrimOne(env, m.email, r.days); st.accounts++; }
+      }
+    }
+    st.teams = page.list_complete ? 'end' : page.cursor;
+  }
+  st.done = st.people === 'end' && st.teams === 'end';
+  await env.AMV_KV.put(stateKey, JSON.stringify(st), { expirationTtl: 3 * 86400 });
+  return { ran: true, done: st.done, trimmed: st.trimmed, accounts: st.accounts };
+}
 /* ══ BATCHES: MANY REQUESTS, ANSWERED IN THE BACKGROUND ══════════════════════
 
    A developer with a thousand documents to summarise should not have to hold
@@ -28384,6 +28567,7 @@ async function _billingSubjectOf(env, email, ent){
      people, not a condition of the seat it pays for. */
   out.teamEngines = _teamEngineList(team);
   out.teamDlp = !!(team.policy && team.policy.dlp === 'block');
+  out.teamRetention = (team.policy && +team.policy.retentionDays) || null;
   out.seated = _teamSeated(team).some(x => x.email === em);
   const teamPlan = _teamPlan(team);
   if(out.seated && _planRankOf(teamPlan, team.customCfg) >= _planRankOf(out.plan, out.customCfg)){

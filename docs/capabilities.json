@@ -312,6 +312,10 @@
   { "id": "ops.image_scan", "status": "built", "name": "The cloud computer's image is scanned for known vulnerabilities and fails on any that a rebuild can fix",
     "code": [[".github/workflows/image-scan.yml", "--ignore-unfixed --exit-code 1"]],
     "tests": ["tests/worker/the-cloud-image-is-scanned.test.mjs"],
-    "says": ["image scanning"] }
+    "says": ["image scanning"] },
+  { "id": "data.retention", "status": "built", "name": "Conversations are kept only as long as the person or their team chose, enforced by the server and followed by the app",
+    "code": [["src/worker/34a-retention.js", "_retentionPrune"], ["src/worker/34a-retention.js", "runRetentionSweep"], ["src/app/02-state.js", "_retentionTrimLocal"]],
+    "tests": ["tests/worker/conversations-are-kept-only-as-long-as-chosen.test.mjs", "tests/e2e/a-device-keeps-only-what-the-account-keeps.test.mjs"],
+    "says": ["retention"] }
  ]
 }

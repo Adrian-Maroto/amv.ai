@@ -160,7 +160,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
 | 106 | Policy/DLP gateway | Done (Nov 1: a team's data rule, enforced on the server - a message carrying an access key, a private key or a card number is refused before the model is called, naming the kind and never echoing it; a switch on the Team screen) |
 | 107 | SIEM/audit export | Done (every team action also kept by day for 400 days; owners and admins download any period up to 92 days as NDJSON, from the Team page or with an API key at `/team/audit/export`; a day past its cap says how many are missing) |
-| 108 | Retention/residency controls | Not yet |
+| 108 | Retention/residency controls | Retention done: a person (Settings > Privacy) or a team's owner or admin chooses 30, 90, 180 or 365 days, the shorter wins, and the server enforces it on every sync push and pull and in a nightly sweep, with the app trimming its own copy. Residency is outside the code: the store is Cloudflare's global KV, so a region cannot be promised here |
 | 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
 | 110 | Then competitor parity | - |
 
