@@ -138,6 +138,21 @@ section('The nightly sweep trims people who never come back');
   ok(again.ran === false, 'and the night’s run is not repeated');
 }
 
+section('A trim working from an older copy never overwrites a sync that landed meanwhile (Nov 1 audit STATE-001)');
+{
+  /* The sweep reads the record... */
+  const read = JSON.parse(m.get('data:ana@example.com'));
+  const rev = read._rev;
+  /* ...a device pushes new work in between... */
+  const p = await call('/sync/push', { data: { convs: [conv('just-written', 0)] }, baseRev: rev }, ana);
+  ok(p.status === 200 && p.d.rev === rev + 1, 'the device\u2019s push lands', p.d);
+  /* ...and the sweep writes its trimmed, older copy. */
+  read.convs = []; read._rev = rev + 1;
+  const res = await W.DB.putIfRev(env, 'data', 'ana@example.com', read, rev);
+  ok(res.ok === false && res.guarded === true, 'the stale write is refused, and the refusal is a real guard', res);
+  ok(stored('ana@example.com').convs.some(c => c.id === 'just-written'), 'the conversation the device just wrote is still there');
+}
+
 section('Choosing to keep everything again takes the person out of the sweep');
 {
   const r = await call('/account/retention', { days: null }, ana);

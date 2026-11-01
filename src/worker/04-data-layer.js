@@ -201,6 +201,23 @@ const DB = {
       const changed = (r && r.meta && typeof r.meta.changes === 'number') ? r.meta.changes : 1;
       return { ok: changed > 0, guarded: true };
     }
+    /* KV: the revision is checked and moved on in the Durable Object first
+       (07-atomic-counters.js, revCas), so a writer whose copy is out of date
+       is refused rather than putting it back over a newer write. Without the
+       object bound (a development machine) the write is unguarded and says
+       so, as it always did. */
+    if(env.AMV_COUNTER){
+      const nextRev = +obj._rev || 0;
+      const cas = await counter(env, 'rev:' + kind + ':' + id, { op: 'revCas', expect: +expectedRev || 0, set: nextRev });
+      if(!cas || !cas.ok) return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
+      try { await env.AMV_KV.put(`${kind}:${id}`, j); }
+      catch(e){
+        try { await counter(env, 'rev:' + kind + ':' + id, { op: 'revCas', expect: +expectedRev || 0, set: nextRev, undo: true }); } catch(_) {}
+        throw e;
+      }
+      await _forgetKindEmpty(env, kind);
+      return { ok: true, guarded: true };
+    }
     await env.AMV_KV.put(`${kind}:${id}`, j);
     await _forgetKindEmpty(env, kind);
     return { ok: true, guarded: false };

@@ -273,6 +273,27 @@ section('And an address nobody has is still free to take');
   ok(r.status === 200, 'an ordinary signup works', r.status);
 }
 
+section('A record\u2019s revision, in the real object: only the writer who saw the latest may write (Nov 1 audit STATE-001/002)');
+{
+  const o = mkDO();
+  ok((await doCall(o, { op: 'revCas', expect: 7, set: 8 })).ok === true, 'a revision the object has never seen is taken as given');
+  ok((await doCall(o, { op: 'revCas', expect: 7, set: 8 })).ok === false, 'a second writer who also read 7 is refused - it has not seen 8');
+  ok((await doCall(o, { op: 'revCas', expect: 8, set: 9 })).ok === true, 'one who read 8 goes ahead');
+  ok((await doCall(o, { op: 'revCas', expect: 12, set: 13 })).ok === true, 'a writer holding a NEWER revision than the object (KV written another way, a restore) is not refused');
+  ok((await doCall(o, { op: 'revCas', expect: 13, set: 14 })).ok === true, 'a write moves it to 14');
+  await doCall(o, { op: 'revCas', expect: 13, set: 14, undo: true });
+  ok((await doCall(o, { op: 'revCas', expect: 13, set: 14 })).ok === true, 'undo puts it back to 13 after a KV write that failed, so the next writer who read 13 is not locked out');
+  /* Left ahead of KV by a writer that died between the two: overtaken once
+     it is older than KV takes to show a write everywhere. */
+  const realNow = Date.now;
+  await doCall(o, { op: 'revCas', expect: 14, set: 15 });
+  ok((await doCall(o, { op: 'revCas', expect: 14, set: 15 })).ok === false, 'just after, the same old revision is still refused');
+  Date.now = () => realNow() + 121000;
+  const late = await doCall(o, { op: 'revCas', expect: 14, set: 15 });
+  Date.now = realNow;
+  ok(late.ok === true && late.overtook === 15, 'two minutes on, a revision nobody ever wrote to KV is overtaken', late);
+}
+
 globalThis.fetch = realFetch;
 if (report('a-lock-that-expired-is-somebody-elses-lock') > 0) process.exitCode = 1;
 done();

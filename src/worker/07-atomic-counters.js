@@ -121,6 +121,35 @@ export class AMVCounter {
       await this.state.storage.setAlarm(now + ttl + 1000);
       return json({ claimed: true, until: now + ttl, owner });
     }
+    /* A RECORD'S REVISION, HELD WHERE IT CANNOT BE STALE (Nov 1 audit
+       STATE-001/002). KV cannot compare-and-set, so a write "guarded" by the
+       revision a writer read was not guarded at all: a writer working from
+       a copy read a moment before somebody else's write put its older copy
+       back. The revision lives here; a write may go to KV only if the
+       revision it read is still the current one, and moves it on in the same
+       step. `expect` = the revision the writer read; `set` = the one it
+       writes. A revision this object has never seen is taken as given (the
+       first write after this existed). One left ahead of KV - the writer
+       died between this and its KV write - is overtaken after REV_STUCK_MS,
+       longer than KV takes to show a write everywhere. `undo` puts it back
+       when the KV write fails. */
+    if (op === 'revCas') {
+      const now = Date.now();
+      const cur = await this.state.storage.get('rev');
+      const expect = +body.expect || 0, set = +body.set || 0;
+      if (body.undo) {
+        if (cur && cur.rev === set) await this.state.storage.put('rev', { rev: expect, at: now });
+        return json({ ok: true });
+      }
+      /* Refused only when the object holds a NEWER revision than the writer
+         read: that is somebody else's write the writer has not seen. One
+         older than the writer's means KV was written another way (a restore
+         from a backup), and the writer's copy is the newer one. */
+      const stuck = cur && cur.rev > expect && now - (cur.at || 0) > 120000;
+      if (cur && cur.rev > expect && !stuck) return json({ ok: false, cur: cur.rev });
+      await this.state.storage.put('rev', { rev: set, at: now });
+      return json({ ok: true, ...(stuck ? { overtook: cur.rev } : {}) });
+    }
     if (op === 'release') {
       /* AMV-013: A RELEASE USED TO DELETE WHOEVER'S LOCK WAS THERE.
 
@@ -340,6 +369,11 @@ async function counter(env, name, payload) {
        is never read from: paid for and never seen. The caller asks for that to
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
+    /* A revision that cannot be checked is a write that does not happen. */
+    if (env.AMV_COUNTER && payload.op === 'revCas') {
+      audit(env, 'atomic_unavailable', { op: 'revCas', name: String(name).slice(0, 120) });
+      return { ok: false, unavailable: true, code: 'atomic_unavailable' };
+    }
     if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session' || payload.op === 'clear')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };

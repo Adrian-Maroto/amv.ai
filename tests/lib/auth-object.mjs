@@ -38,7 +38,21 @@ export function withAuthOps(ns) {
       return { fetch: async (u, init) => {
         let b = {}; try { b = JSON.parse((init && init.body) || '{}'); } catch (e) {}
         const a = authObjectOp(String(id), b, store);
-        return a || inner.fetch(u, init);
+        if (a) return a;
+        /* A record's revision (revCas), as the object keeps it: a write goes
+           ahead only from the current revision; one never seen is taken as
+           given; undo puts it back. Faithful enough that a suite exercising
+           sync sees real conflicts, not a stand-in that says no to all. */
+        if (b.op === 'revCas') {
+          const k = 'rev|' + String(id);
+          const cur = store.get(k);
+          const expect = +b.expect || 0, set = +b.set || 0;
+          if (b.undo) { if (cur === set) store.set(k, expect); return new Response(JSON.stringify({ ok: true })); }
+          if (cur !== undefined && cur > expect) return new Response(JSON.stringify({ ok: false, cur }));
+          store.set(k, set);
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        return inner.fetch(u, init);
       } };
     },
   });
