@@ -164,18 +164,40 @@ async function armConsent() {
 }
 await armConsent();
 
+/* A LOST PAGE CONTEXT IS SURVIVED ONCE, AND NAMED. On CI only, and twice
+   now in different sections, an evaluate has failed with "Execution context
+   was destroyed" while no main-frame navigation was logged - so the cause is
+   not one this suite can see. Rather than fail the whole file on a context
+   it did not lose itself, the step waits for the page to settle, re-arms the
+   approval watcher (it lives in the page and goes with it) and tries once
+   more, printing where the page is so the next occurrence carries evidence.
+   A second loss in the same step still fails. */
+let contextLost = 0;
+async function inPage(fn, arg) {
+  try { return await page.evaluate(fn, arg); }
+  catch (e) {
+    if (!/Execution context was destroyed/.test(String(e && e.message))) throw e;
+    contextLost++;
+    console.log('[context lost] at ' + page.url() + ' - waiting for the page and trying once more');
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await page.waitForFunction(() => typeof setTab === 'function' && !!document.getElementById('mta'), null, { timeout: 15000 }).catch(() => {});
+    await armConsent();
+    return await page.evaluate(fn, arg);
+  }
+}
+
 async function say(text, { approve = true } = {}) {
   /* A gap between messages, because AMV has a burst limiter and is right to.
      Sending these back to back tripped it, and the turn was answered with
      "too many requests in a few seconds" instead of reaching the model - which
      read exactly like a broken tool and was the protection working. */
   await page.waitForTimeout(3000);
-  await page.evaluate((yes) => {
+  await inPage((yes) => {
     window.__approve = yes;
     window.__consent = { seen: 0, title: '', body: '' };
   }, approve);
 
-  await page.evaluate(async (t) => {
+  await inPage(async (t) => {
     setTab('chat');
     await new Promise(x => setTimeout(x, 300));
     const box = document.getElementById('mta');
@@ -383,6 +405,7 @@ section('On a phone the card fits and every button can be pressed');
   ok(r.small === 0, 'every button at least 32px tall', r);
 }
 
+if (contextLost) console.log('[context lost] ' + contextLost + ' time(s) during this run - see the lines above for where');
 ok(L.errors.length === 0, 'no page errors', L.errors.slice(0, 3));
 await L.close();
 outbound.restore();
