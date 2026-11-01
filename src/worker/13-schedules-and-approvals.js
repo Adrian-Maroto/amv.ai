@@ -387,6 +387,29 @@ async function autoUpdate(request, env){
      agent is simply not found; an empty `agent` gives the job back to AMV.
      From its next run the job is the agent's: its instructions, its budget,
      its pause (15-run-context-and-execution.js). */
+  /* A JOB'S OWN MONTHLY BUDGET (Oct 31 audit, item 68): dollars, enforced
+     by the runner before every run like an agent's. 0 or empty removes it;
+     the account's own allowance still applies either way. */
+  if(body.action === 'budget'){
+    const raw = body.budgetUSD;
+    const usd = (raw === '' || raw == null) ? 0 : Number(raw);
+    if(!Number.isFinite(usd) || usd < 0 || usd > 10000)
+      return json({ error: 'A job budget is a number of dollars from 0 to 10,000 (0 removes it).', code: 'bad_budget' }, 400);
+    let found = false;
+    await _withAuto(env, key, (fresh) => {
+      if(!fresh) return;
+      const it = (fresh.items || []).find(x => x && x.id === id);
+      if(!it) return;
+      found = true;
+      if(usd > 0) it.budgetUSD = Math.round(usd * 100) / 100; else delete it.budgetUSD;
+    }, { items:[], results:[] });
+    if(!found) return json({ error: 'That job is not on this account any more.', code: 'no_job' }, 404);
+    let spent = 0;
+    try{ const r = await counter(env, _jobCostKey(user.email, id), { op:'get' }); spent = +(r && r.value) || 0; }catch(e){}
+    audit(env, 'auto_budget_set', { by: user.email, job: id, usd });
+    return json({ ok: true, id, budgetUSD: usd > 0 ? Math.round(usd * 100) / 100 : null, spentUSD: Math.round(spent * 10000) / 10000 });
+  }
+
   if(body.action === 'agent'){
     let agentId = '';
     if(body.agent != null && body.agent !== ''){

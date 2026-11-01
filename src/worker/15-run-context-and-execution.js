@@ -1813,7 +1813,11 @@ async function _autoRunAccount(env, email, rec, now, deadline){
        every path below that decides not to run after all - a skipped job that
        keeps its reservation quietly eats the allowance of the jobs behind it
        in the same tick. */
-    let itemBooked = 0, itemGlobalBooked = 0, itemAgentBooked = 0;
+    let itemBooked = 0, itemGlobalBooked = 0, itemAgentBooked = 0, itemJobBooked = 0;
+    /* THE JOB'S OWN MONTHLY BUDGET, when it has one (Oct 31 audit, item 68):
+       the same kind of ceiling an agent has, on one job. */
+    const jobBudget = +item.budgetUSD > 0 ? +item.budgetUSD : 0;
+    const jobCost = jobBudget ? _jobCostKey(email, item.id) : '';
     let gDayName = _spendNameFor(email, env);
     /* THE AGENT THIS JOB BELONGS TO, decided before anything is booked. A
        deleted agent's job stops; a paused one's waits, and its row says
@@ -1833,6 +1837,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       agentCost = _agentCostKey(email, agent.id);
     }
     const releaseItem = async () => {
+      if (itemJobBooked > 0) { await _releaseUSD(env, jobCost, itemJobBooked, 86400000 * 70); itemJobBooked = 0; }
       if (itemAgentBooked > 0) { await _releaseUSD(env, agentCost, itemAgentBooked, 86400000 * 70); itemAgentBooked = 0; }
       if (itemBooked > 0) { await _releaseUSD(env, costName, itemBooked, 86400000 * 70); itemBooked = 0; }
       if (itemGlobalBooked > 0) { await _releaseUSD(env, gDayName, itemGlobalBooked, 86400000 * 2); itemGlobalBooked = 0; }
@@ -1883,6 +1888,15 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         itemAgentBooked = agNow.reserved;
         if(!agNow.allowed){
           item.lastError = 'not run - its agent reached its monthly budget of $' + (+agent.budgetUSD).toFixed(2);
+          item.next = agentHold(item);
+          changed = true; await releaseItem(); continue;
+        }
+      }
+      if(jobBudget){
+        const jbNow = await _reserveUSD(env, jobCost, runMax, jobBudget, 86400000 * 70);
+        itemJobBooked = jbNow.reserved;
+        if(!jbNow.allowed){
+          item.lastError = 'not run - this job reached its monthly budget of $' + jobBudget.toFixed(2);
           item.next = agentHold(item);
           changed = true; await releaseItem(); continue;
         }
@@ -2052,7 +2066,9 @@ async function _autoRunAccount(env, email, rec, now, deadline){
            the screen shows it either way. */
         const dAgent = c - itemAgentBooked;
         if(agentCost && dAgent !== 0) await counter(env, agentCost, { op:'incr', amount:dAgent, ttlMs: 86400000*70 });
-        itemBooked = 0; itemGlobalBooked = 0; itemAgentBooked = 0;
+        const dJob = c - itemJobBooked;
+        if(jobCost && dJob !== 0) await counter(env, jobCost, { op:'incr', amount:dJob, ttlMs: 86400000*70 });
+        itemBooked = 0; itemGlobalBooked = 0; itemAgentBooked = 0; itemJobBooked = 0;
       }catch(e){ await _writeFailed(env, 'job_settle', e); }
       /* What happened to this result, decided here rather than guessed later.
          "It ran" and "it reached you" are different facts, and the second one

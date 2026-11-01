@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agents.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens, _agentCostKey };
+export { runDueAutomations, issueTokens, _agentCostKey, _jobCostKey, counter, monthKey };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -147,6 +147,39 @@ section('Over its own budget, it waits for next month and says so');
   due(); modelCalls = 0;
   await W.runDueAutomations(env, Date.now() + 4);
   ok(modelCalls > 0, 'with no budget of its own, the plan’s ceiling is the only one', modelCalls);
+}
+
+section('A job of its own can have a monthly budget too, enforced the same way');
+{
+  const made = await call('/auto/create', { detail: 'Summarise the markets each morning', repeat: 'daily', approval: 'auto' });
+  const jobId = made.d.item && made.d.item.id;
+  ok(made.status === 200 && jobId && !made.d.item.agent, 'a job that belongs to no agent', made.status);
+  const dueJob = () => { const r = rec(); const j = r.items.find(i => i.id === jobId); j.next = Date.now() - 1000; put(r); };
+  const bad = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 1e9 });
+  ok(bad.status === 400 && bad.d.code === 'bad_budget', 'an impossible budget is refused', bad.status);
+  const neg = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: -5 });
+  ok(neg.status === 400, 'so is a negative one', neg.status);
+  const other = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 5 }, theirs.token);
+  ok(other.status === 404, 'another account cannot set a budget on my job', other.status);
+  const set = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 0.01 });
+  ok(set.status === 200 && set.d.budgetUSD === 0.01 && rec().items.find(i => i.id === jobId).budgetUSD === 0.01, 'set, and stored on the job', set.d);
+  dueJob(); modelCalls = 0;
+  await W.runDueAutomations(env, Date.now() + 5);
+  let it = rec().items.find(i => i.id === jobId);
+  ok(modelCalls === 0, 'a budget smaller than one run costs: nothing runs', modelCalls);
+  ok(/this job reached its monthly budget of \$0\.01/.test(it.lastError || '') && it.next > Date.now(), 'the row names the job’s budget, and it is not due again at once', it.lastError);
+  await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 5 });
+  const acctName = 'cost:' + ME + ':' + W.monthKey();
+  const acctBefore = +((await W.counter(env, acctName, { op: 'get' })) || {}).value || 0;
+  dueJob(); modelCalls = 0;
+  await W.runDueAutomations(env, Date.now() + 6);
+  const acctAfter = +((await W.counter(env, acctName, { op: 'get' })) || {}).value || 0;
+  it = rec().items.find(i => i.id === jobId);
+  const shown = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 5 });
+  ok(modelCalls > 0 && !/budget/.test(it.lastError || ''), 'with room in the budget, it runs', { modelCalls, err: it.lastError });
+  ok(shown.d.spentUSD > 0 && Math.abs(shown.d.spentUSD - (acctAfter - acctBefore)) < 1e-4, 'and its budget is charged what the run actually cost - the same amount the account was', { job: shown.d.spentUSD, account: acctAfter - acctBefore });
+  const off = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 0 });
+  ok(off.d.budgetUSD === null && !('budgetUSD' in rec().items.find(i => i.id === jobId)), '0 removes it', off.d);
 }
 
 section('A task in steps can hand each step to a different agent');

@@ -812,6 +812,24 @@ function mcKeepAsAgent(jobId){
       await mcAgentsReload();
     });
 }
+/* A JOB'S OWN MONTHLY BUDGET (Oct 31 audit, item 68). The server enforces
+   it before every run, like an agent's; this only asks for the number and
+   says what was spent so far this month. */
+function mcJobBudget(arg){
+  const [jobId, cur] = String(arg || '').split('|');
+  _mcAgentDialog(T('Monthly budget for this job'),
+    '<p class="ob-sub">' + escH(T('This job stops for the month when it has spent this much. Your plan’s own limit always applies as well.')) + '</p>'
+    + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(+cur || 0)) + '">',
+    async () => {
+      const d = await _autoApi('/auto/update', { action: 'budget', id: jobId, budgetUSD: +$('ag-budget').value || 0 });
+      toast(d.budgetUSD
+        ? T('Budget set: ${0} a month. ${1} spent so far this month.').replace('{0}', d.budgetUSD.toFixed(2)).replace('{1}', (+d.spentUSD || 0).toFixed(2))
+        : T('This job has no budget of its own now.'), 'success', 5000);
+      if(typeof _autoRefresh === 'function') await _autoRefresh();
+      renderCrewView();
+    });
+}
+try{ Object.assign(window, { mcJobBudget }); }catch(e){}
 try{ Object.assign(window, { mcAgentsReload, mcAgentEdit, mcAgentJob, mcAgentPause, mcAgentDelete, mcKeepAsAgent, mcAgentForgetSite, mcAgentSignIn, _mcAgentName }); }catch(e){}
 
 function _mcServerSchedRow(x){
@@ -877,6 +895,7 @@ function _mcServerSchedRow(x){
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
       ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookSigning" data-darg="${escH(x.id)}|${escH((x.hook && x.hook.signed) || '')}">${escH(x.hook && x.hook.signed ? T('Signed') + ' · ' + T(_HOOK_SIGNERS[x.hook.signed]) : T('Require signing'))}</button>`}
       ${x.done || x.agent || x.step || paused || !(x.runs > 0) ? '' : `<button class="btn mc-mini ghost" data-dact="mcKeepAsAgent" data-darg="${escH(x.id)}" data-keep-job="${escH(x.id)}" data-keep-detail="${escH(String(x.detail||'').slice(0, 400))}">${escH(T('Keep as an agent'))}</button>`}
+      ${x.done || x.agent ? '' : `<button class="btn mc-mini ghost" data-dact="mcJobBudget" data-darg="${escH(x.id)}|${escH(String(+x.budgetUSD > 0 ? +x.budgetUSD : 0))}">${escH(+x.budgetUSD > 0 ? T('Budget') + ' $' + (+x.budgetUSD).toFixed(2) : T('Monthly budget'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;

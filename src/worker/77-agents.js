@@ -31,6 +31,8 @@ const AGENT_BUDGET_MAX_USD = 10000;
 
 function _agentId() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function _agentIdOk(id) { return /^g[a-z0-9]{6,24}$/.test(String(id || '')); }
+/* A single job's spend this month, when it has a budget of its own. */
+function _jobCostKey(email, id) { return `jobcost:${String(email || '').toLowerCase()}:${id}:${monthKey()}`; }
 function _agentCostKey(email, id) { return `agentcost:${String(email || '').toLowerCase()}:${id}:${monthKey()}`; }
 
 /* The record, or an empty one. */
