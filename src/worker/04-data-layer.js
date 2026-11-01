@@ -155,6 +155,7 @@ const DB = {
       _pgAfter(env, kind, id, obj);
       return;
     }
+    await _pgReadFence(env, kind, id);
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
     /* The Postgres row too, once the store has it (04a-control-plane.js) -
        before going on, for a record Postgres answers (04d-pg-read.js). */
@@ -164,6 +165,7 @@ const DB = {
   },
   async del(env, kind, id){
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
+    await _pgReadFence(env, kind, id);
     await env.AMV_KV.delete(`${kind}:${id}`);
     if(!(await _pgWriteThrough(env, kind, id, null))) _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not

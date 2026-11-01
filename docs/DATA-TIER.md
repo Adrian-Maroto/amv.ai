@@ -148,16 +148,22 @@ shape as `PG_SHADOW`, and the share uses the same hash, so 5% read is inside
 5% shadow. For those accounts an account record and a plan are answered by
 Postgres, rebuilt from their rows. Three rules make it safe to grow:
 
-- a write of either record reaches Postgres BEFORE the request goes on, and
-  one that does not is marked stale (`pgstale:<kind>:<email>`) and put on
-  the repair list before returning - so a read never answers an old row;
-- every answer is compared with KV in the background, field by field; a
-  difference marks the record stale (KV answers it from then on), is counted
-  and alerted, and the mark lifts by itself once the copies agree again;
+- **proved, or not served** (Nov 1 forensic audit DATA-001/002/003): a row
+  answers only if it matches a proof (`pgok:<kind>:<email>`, a digest of
+  the record) written after the two copies were compared and found the same,
+  or after a write-through read its own row back. With no proof, KV answers
+  and the comparison runs in the background - so a wrong row is never served
+  even once, and a comparison that fails simply leaves no proof;
+- a write removes the proof BEFORE KV changes (if it cannot, the write
+  fails), reaches Postgres before the request goes on, is read back, and is
+  proved only if the row reads back as written; otherwise no proof, KV
+  answers, and it goes on the repair list (no expiry - an unresolved
+  difference does not become fine because time passed);
 - Postgres unreachable or a query failing: KV answers, and it is counted.
 
 `GET /admin/pg/shadow` now also shows, per day, the reads Postgres answered,
-the reads that fell back, and the answers that differed. API keys stay on KV:
+the reads KV answered because the record was not yet proved, the reads that
+fell back, and the rows that differed. API keys stay on KV:
 their record carries fields the key table does not, so a key rebuilt from its
 row would not be the same record. The step's check is the plan above - grow
 the cohort (staff, 1%, 10%, 50%, everyone) only while `differed` stays zero

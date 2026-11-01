@@ -204,7 +204,7 @@ async function runPgBackfill(env, opts){
                repair that fails again stays where it is. */
             if (phase !== 'repair' && phase !== 'verify') {
               const kind = phase === 'wallet' ? null : phase;
-              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {} }
+              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {} }
             }
           }
         }

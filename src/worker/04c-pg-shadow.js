@@ -114,11 +114,12 @@ async function pgShadowRoute(request, env){
   const days = [];
   for (let i = 0; i < 7; i++) {
     const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const [compared, differed, served, fellBack, readDiffered] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
-      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed')]);
+    const [compared, differed, served, fellBack, readDiffered, unproved] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':unproved')]);
     /* `read` is step 5 (04d-pg-read.js): answers Postgres gave, reads that
        fell back to KV, and answers that differed from KV. */
-    days.push({ day, compared, differed, read: { served, fellBack, differed: readDiffered } });
+    days.push({ day, compared, differed, read: { served, unproved, fellBack, differed: readDiffered } });
   }
   const sql = await _pgClient(env);
   try {

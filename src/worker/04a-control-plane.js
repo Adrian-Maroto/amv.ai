@@ -24,7 +24,9 @@
    Without PG, none of this runs. */
 
 const PG_MIRROR_KINDS = new Set(['acct', 'ent', 'apikeys', 'team']);
-const PG_REPAIR_TTL_S = 30 * 86400;
+/* No expiry on a repair marker (Nov 1 audit DATA-006): an unresolved
+   difference does not become fine because a month passed. The backfill's
+   repair phase removes a marker when it has rewritten the row. */
 const _pgInFlight = new Set();
 
 function _pgOn(env){
@@ -45,7 +47,7 @@ function _pgAfter(env, kind, id, obj){
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);
       try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
-      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {}
       try { await alertOnce(env, 'pg_mirror_failed',
         'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
         + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}
@@ -200,7 +202,7 @@ function _pgLedger(env, row){
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
     try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
-    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch (_) {}
     try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) {}
   }).finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);

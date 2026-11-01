@@ -1115,6 +1115,7 @@ const DB = {
       _pgAfter(env, kind, id, obj);
       return;
     }
+    await _pgReadFence(env, kind, id);
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
     /* The Postgres row too, once the store has it (04a-control-plane.js) -
        before going on, for a record Postgres answers (04d-pg-read.js). */
@@ -1124,6 +1125,7 @@ const DB = {
   },
   async del(env, kind, id){
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
+    await _pgReadFence(env, kind, id);
     await env.AMV_KV.delete(`${kind}:${id}`);
     if(!(await _pgWriteThrough(env, kind, id, null))) _pgAfter(env, kind, id, null);
     /* A delete can only make a namespace emptier - but "emptier" is not
@@ -2070,7 +2072,9 @@ async function _writeFailed(env, where, e) {
    Without PG, none of this runs. */
 
 const PG_MIRROR_KINDS = new Set(['acct', 'ent', 'apikeys', 'team']);
-const PG_REPAIR_TTL_S = 30 * 86400;
+/* No expiry on a repair marker (Nov 1 audit DATA-006): an unresolved
+   difference does not become fine because a month passed. The backfill's
+   repair phase removes a marker when it has rewritten the row. */
 const _pgInFlight = new Set();
 
 function _pgOn(env){
@@ -2091,7 +2095,7 @@ function _pgAfter(env, kind, id, obj){
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);
       try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
-      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {}
       try { await alertOnce(env, 'pg_mirror_failed',
         'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
         + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}
@@ -2246,7 +2250,7 @@ function _pgLedger(env, row){
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
     try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
-    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
+    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch (_) {}
     try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) {}
   }).finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
@@ -2500,7 +2504,7 @@ async function runPgBackfill(env, opts){
                repair that fails again stays where it is. */
             if (phase !== 'repair' && phase !== 'verify') {
               const kind = phase === 'wallet' ? null : phase;
-              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {} }
+              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {} }
             }
           }
         }
@@ -2686,11 +2690,12 @@ async function pgShadowRoute(request, env){
   const days = [];
   for (let i = 0; i < 7; i++) {
     const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const [compared, differed, served, fellBack, readDiffered] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
-      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed')]);
+    const [compared, differed, served, fellBack, readDiffered, unproved] = await Promise.all([_tallyGet(env, 'pgshadow:' + day + ':compared'), _tallyGet(env, 'pgshadow:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':served'), _tallyGet(env, 'pgread:' + day + ':fellback'), _tallyGet(env, 'pgread:' + day + ':differed'),
+      _tallyGet(env, 'pgread:' + day + ':unproved')]);
     /* `read` is step 5 (04d-pg-read.js): answers Postgres gave, reads that
        fell back to KV, and answers that differed from KV. */
-    days.push({ day, compared, differed, read: { served, fellBack, differed: readDiffered } });
+    days.push({ day, compared, differed, read: { served, unproved, fellBack, differed: readDiffered } });
   }
   const sql = await _pgClient(env);
   try {
@@ -2712,23 +2717,12 @@ async function pgShadowRoute(request, env){
    API keys for everybody, are answered by KV exactly as before.
 
    It is built so that Postgres can only answer where it has PROVED it gives
-   the answer KV would:
-
-     - WRITES GO THROUGH FIRST. For an account in the cohort, a write of its
-       account or plan reaches Postgres before the request goes on, instead
-       of in the background - so the next read, on any instance, sees it. A
-       write that does not reach Postgres marks the record stale
-       (`pgstale:<kind>:<email>`) before returning, and a stale record is
-       answered by KV.
-     - EVERY ANSWER IS CHECKED. After Postgres answers, the same record is
-       read from KV in the background and compared field by field. A
-       difference marks the record stale (KV answers from then on), is counted
-       and audited, and the owner is alerted. A stale record whose two copies
-       agree again is unmarked - so a repaired row goes back to Postgres on
-       its own.
-     - ANY FAILURE FALLS BACK. Postgres unreachable, a query error, a row
-       that cannot be turned back into the record: KV answers, and it is
-       counted. Nobody is refused because the new store had a bad minute.
+   the answer KV would - see "PROVED, OR NOT SERVED" below: a row answers only
+   if it matches a proof written after the two copies were compared (or after
+   a write-through read its own row back), a write removes the proof before KV
+   changes, and any failure means KV answers. Postgres unreachable: KV
+   answers, and it is counted. Nobody is refused because the new store had a
+   bad minute.
 
    So the step's check is a number, at GET /admin/pg/shadow: reads Postgres
    answered, reads that fell back, and answers that differed. A clean week at
@@ -2740,7 +2734,6 @@ async function pgShadowRoute(request, env){
    They stay on KV until the table holds them whole. */
 
 const PG_READ_KINDS = new Set(['acct', 'ent']);
-const PG_READ_STALE_TTL_S = 30 * 86400;
 const PG_READ_RECHECK_MS = 60000;
 const _pgReadChecked = new Map();
 let _pgReadCohortCache = { raw: null, emails: new Set(), basisPoints: 0 };
@@ -2809,21 +2802,39 @@ async function _pgReadRow(sql, kind, email){
                       FROM entitlements e JOIN accounts a ON a.id = e.account_id WHERE a.email = ${email} AND a.deleted_at IS NULL`;
   return e.length ? _pgEntFromRow(e[0]) : null;
 }
-const _pgStaleKey = (kind, email) => 'pgstale:' + kind + ':' + email;
+/* PROVED, OR NOT SERVED (Nov 1 audit DATA-001/002/003).
+
+   The first version of this step answered from Postgres and then checked the
+   answer against KV in the background - so a row that was wrong was wrong
+   for one real request before anything noticed. Now a row may answer only
+   if it matches a PROOF: `pgok:<kind>:<email>`, a digest of the record in the
+   form both copies were compared in, written only after the two copies were
+   compared and found the same (or after a write-through that read its own
+   row back). With no proof, KV answers and the comparison runs in the
+   background; a row that does not match its proof is not served, and the
+   proof is removed. So:
+     - a failed comparison leaves no proof, and KV answers (DATA-002);
+     - a failed write leaves no proof, and KV answers (DATA-003) - the proof
+       is removed BEFORE KV is written, and if that removal fails, so does
+       the write;
+     - a row changed by anything but a proved write no longer matches its
+       proof, and is never served unverified (DATA-001).
+   The proof has no expiry: a record is proved until a write removes it. */
+const _pgOkKey = (kind, email) => 'pgok:' + kind + ':' + email;
+async function _pgProofOf(kind, value){ return (await _pgDigest(_pgCanon(kind, value))).slice(0, 40); }
 async function _pgReadTally(env, what, email){
   try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) {}
 }
 
 /* Called by DB.get / DB.getStrict before KV. Returns the record's text when
-   Postgres answers, or undefined for "ask KV" - never throws. */
+   a proved Postgres row answers, or undefined for "ask KV" - never throws. */
 async function _pgReadServe(env, kind, id){
   const email = _pgReadApplies(env, kind, id);
   if (!email || !(await _pgReadIn(env, email))) return undefined;
-  let stale = false;
-  try { stale = !!(await env.AMV_KV.get(_pgStaleKey(kind, email))); } catch (e) { return undefined; }
-  if (stale) { _pgReadVerify(env, kind, email, null, true); return undefined; }
-  let value;
-  let sql;
+  let proof = null;
+  try { proof = await env.AMV_KV.get(_pgOkKey(kind, email)); } catch (e) { return undefined; }
+  if (!proof) { _pgReadVerify(env, kind, email); await _pgReadTally(env, 'unproved', email); return undefined; }
+  let value, sql;
   try {
     sql = await _pgClient(env);
     value = await _pgReadRow(sql, kind, email);
@@ -2834,61 +2845,87 @@ async function _pgReadServe(env, kind, id){
   } finally {
     if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
   }
+  if ((await _pgProofOf(kind, value)) !== proof) {
+    /* The row is not the one that was proved. Not served; proof gone; KV
+       answers; the comparison says whether it was Postgres or KV that moved. */
+    try { await env.AMV_KV.delete(_pgOkKey(kind, email)); } catch (e) {}
+    await _pgReadTally(env, 'differed', email);
+    try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch (e) {}
+    _pgReadVerify(env, kind, email);
+    return undefined;
+  }
   await _pgReadTally(env, 'served', email);
-  const raw = value == null ? null : JSON.stringify(value);
-  _pgReadVerify(env, kind, email, raw, false);
-  return raw;
+  return value == null ? null : JSON.stringify(value);
 }
 
-/* The background check of an answer Postgres gave (or, for a stale record,
-   whether it may answer again). Rate-limited per record per instance, except
-   that a served answer is always checked the first time. */
-function _pgReadVerify(env, kind, email, servedRaw, wasStale){
+/* The comparison: both copies read, compared in canonical form, and the proof
+   written only when they are the same. Rate-limited per record per instance.
+   Any failure - a store that does not answer, a record that does not parse -
+   leaves no proof, which means KV keeps answering. */
+function _pgReadVerify(env, kind, email){
   const key = kind + ':' + email, now = Date.now();
   if (now - (_pgReadChecked.get(key) || 0) < PG_READ_RECHECK_MS) return;
   if (_pgReadChecked.size > 5000) _pgReadChecked.clear();
   _pgReadChecked.set(key, now);
   const p = (async () => {
-    let kvRaw = null;
-    try { kvRaw = await env.AMV_KV.get(kind + ':' + email); } catch (e) { return; }
-    let kvVal = null; try { kvVal = kvRaw ? JSON.parse(kvRaw) : null; } catch (e) { return; }
+    const kvRaw = await env.AMV_KV.get(kind + ':' + email);
+    const kvVal = kvRaw ? JSON.parse(kvRaw) : null;
+    const sql = await _pgClient(env);
     let pgVal;
-    if (wasStale) {
-      const sql = await _pgClient(env);
-      try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
-    } else pgVal = servedRaw ? JSON.parse(servedRaw) : null;
-    const same = _pgCanon(kind, pgVal) === _pgCanon(kind, kvVal);
-    if (wasStale) {
-      if (same) { await env.AMV_KV.delete(_pgStaleKey(kind, email)); try { audit(env, 'pg_read_unstale', { kind, id: email }); } catch (e) {} }
+    try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (_pgCanon(kind, pgVal) === _pgCanon(kind, kvVal)) {
+      /* Re-read KV: a write that landed during the comparison removed the
+         proof it would otherwise be written over. */
+      const again = await env.AMV_KV.get(kind + ':' + email);
+      if (again !== kvRaw) return;
+      await env.AMV_KV.put(_pgOkKey(kind, email), await _pgProofOf(kind, pgVal));
       return;
     }
-    if (same) return;
-    await env.AMV_KV.put(_pgStaleKey(kind, email), JSON.stringify({ at: Date.now(), why: 'differed' }), { expirationTtl: PG_READ_STALE_TTL_S });
     await _pgReadTally(env, 'differed', email);
     try { audit(env, 'pg_read_differed', { kind, id: email }); } catch (e) {}
     try { await alertOnce(env, 'pg_read_differed',
-      'Postgres answered an ' + kind + ' read differently from KV. That record is now answered by KV again, and the step must not '
-      + 'grow until every difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) {}
+      'Postgres holds an ' + kind + ' record that differs from KV. KV is answering for it, and the step must not grow until every '
+      + 'difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) {}
   })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
   try { _bg(p); } catch (e) {}
 }
 
+/* Called by DB.put / DB.del BEFORE KV is written: the proof goes first. If it
+   cannot be removed, this throws and the write does not happen - a record
+   whose proof outlived its change is the one thing that may not exist. */
+async function _pgReadFence(env, kind, id){
+  const email = _pgReadApplies(env, kind, id);
+  if (!email || !(await _pgReadIn(env, email))) return;
+  await env.AMV_KV.delete(_pgOkKey(kind, email));
+}
+
 /* Called by DB.put / DB.del after KV has the write, INSTEAD of the background
    mirror, for a record Postgres answers: the write reaches Postgres before
-   the request goes on, or the record is marked stale before it does. */
+   the request goes on and is read back; only a row that reads back the same
+   as what was written gets a proof. Anything else leaves no proof (KV
+   answers) and goes on the repair list. Answers whether this path handled
+   the record at all. */
 async function _pgWriteThrough(env, kind, id, obj){
   const email = _pgReadApplies(env, kind, id);
   if (!email || !(await _pgReadIn(env, email))) return false;
+  let why = '';
   try {
     await _pgMirror(env, kind, email, obj);
+    const sql = await _pgClient(env);
+    let back;
+    try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (_pgCanon(kind, back) === _pgCanon(kind, obj)) {
+      await env.AMV_KV.put(_pgOkKey(kind, email), await _pgProofOf(kind, back));
+      return true;
+    }
+    why = 'read back differs';
   } catch (e) {
-    const why = String((e && e.message) || e).slice(0, 160);
-    try { await env.AMV_KV.put(_pgStaleKey(kind, email), JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_READ_STALE_TTL_S }); } catch (_) {}
-    try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why }), { expirationTtl: PG_REPAIR_TTL_S }); } catch (_) {}
-    try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why }); } catch (_) {}
+    why = String((e && e.message) || e).slice(0, 160);
   }
+  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); } catch (_) {}
+  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why }); } catch (_) {}
   return true;
 }
 /* =====================================================================
@@ -16266,6 +16303,11 @@ const BACKUP_NEVER = [
      again (77a-agent-signins.js). Never restored: the sign-in it points at
      is not restored either, and the retry finds nothing left to do. */
   'agentjarpend:',
+  /* A proof that a Postgres row matched KV (04d-pg-read.js). Derived, and
+     only true of the rows it was made against: a restore writes KV, so a
+     restored proof could vouch for a row it never saw. Regenerated by the
+     comparison on the next read. */
+  'pgok:',
   /* A browser's notification address and its keys: tied to that device,
      and re-made by turning notifications on again. */
   'push:',

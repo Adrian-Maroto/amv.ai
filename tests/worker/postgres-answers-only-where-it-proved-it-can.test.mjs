@@ -99,64 +99,103 @@ section('Outside the cohort, KV answers exactly as before');
   q("update accounts set name = 'Otto' where email = 'out@example.com'");
 }
 
-section('Inside it, the account and the plan come from Postgres, and match KV');
+section('Unproved, KV answers; the comparison writes the proof; then Postgres answers (Nov 1 audit DATA-001)');
 {
-  const a = await W.DB.get(env, 'acct', 'in@example.com');
-  const kv = JSON.parse(store.get('acct:in@example.com'));
+  /* Rows were mirrored before the cohort existed: there is no proof yet. */
+  ok(!store.has('pgok:acct:in@example.com') && !store.has('pgok:ent:in@example.com'), 'no record starts out proved');
+  q("update entitlements set plan = 'free' where account_id = (select id from accounts where email='in@example.com')");
+  const first = await W.DB.get(env, 'ent', 'in@example.com');
+  await settle();
+  ok(first.plan === 'pro', 'a Postgres row that is WRONG is never served, not even once: KV answered the unproved record', first);
+  ok(!store.has('pgok:ent:in@example.com'), 'and the comparison found them different, so no proof was written');
+  ok(alerts.some(a => /differs from KV/.test(a)), 'and the owner is told', alerts);
+  q("update entitlements set plan = 'pro' where account_id = (select id from accounts where email='in@example.com')");
+  const fresh = await import(harness + '?t=' + Date.now() + 'p');
+  await fresh.DB.get(env, 'acct', 'in@example.com'); await fresh.DB.get(env, 'ent', 'in@example.com');
+  await fresh._pgSettle();
+  ok(store.has('pgok:acct:in@example.com') && store.has('pgok:ent:in@example.com'), 'once both copies agree, each record gets its proof');
+  /* Proof that Postgres is the one answering: the KV copy is taken away
+     behind its back, and the proved row still answers. */
+  const kvAcct = store.get('acct:in@example.com');
+  store.delete('acct:in@example.com');
+  const a = await fresh.DB.get(env, 'acct', 'in@example.com');
+  const kv = JSON.parse(kvAcct);
   ok(a && a.email === 'in@example.com' && a.pwHash === kv.pwHash && a.salt === kv.salt && a.pwIter === kv.pwIter && a.sipHash === kv.sipHash && a.createdAt === kv.createdAt,
-     'the account, rebuilt from its row, is the KV record field for field', { a, kv });
-  const e = await W.DB.get(env, 'ent', 'in@example.com');
+     'a proved row answers, rebuilt from Postgres field for field', { a, kv });
+  store.set('acct:in@example.com', kvAcct);
+  const e = await fresh.DB.get(env, 'ent', 'in@example.com');
   ok(e.plan === 'pro' && e.subId === 'sub_1' && e.renewedAt === ENT.renewedAt && e.updatedAt === ENT.updatedAt && !('blocked' in e) && !('seats' in e),
      'the plan too - and no field the record never had', e);
-  await settle();
-  ok(!store.has('pgstale:acct:in@example.com') && !store.has('pgstale:ent:in@example.com'), 'the background check found both the same');
   const login = await post('/auth/login', { email: 'in@example.com', password: PW });
-  ok(login.status === 200, 'and the person signs in with the record Postgres answered', login.status);
+  ok(login.status === 200, 'and the person signs in', login.status);
 }
 
-section('A write reaches Postgres before the request goes on');
+section('A row changed behind the proof is not served, and loses its proof');
+{
+  q("update entitlements set plan = 'free' where account_id = (select id from accounts where email='in@example.com')");
+  const fresh = await import(harness + '?t=' + Date.now() + 'q');
+  const r = await fresh.DB.get(env, 'ent', 'in@example.com');
+  await fresh._pgSettle();
+  ok(r.plan === 'pro', 'the changed row did not match its proof, so KV answered - the paid plan, not the wrong row', r);
+  ok(!store.has('pgok:ent:in@example.com'), 'and the proof is gone until the copies agree again');
+  q("update entitlements set plan = 'pro' where account_id = (select id from accounts where email='in@example.com')");
+  const again = await import(harness + '?t=' + Date.now() + 'r');
+  await again.DB.get(env, 'ent', 'in@example.com'); await again._pgSettle();
+  ok(store.has('pgok:ent:in@example.com'), 'then it is proved again');
+}
+
+section('A write reaches Postgres before the request goes on, is read back, and is proved');
 {
   await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 1 }));
   ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='in@example.com'") === 'ultra', 'the row has it with nothing left in flight');
-  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'and the next read answers it');
-  await settle();
+  const before = store.get('pgok:ent:in@example.com');
+  ok(!!before, 'and the row it read back is proved');
+  const kvEnt = store.get('ent:in@example.com'); store.delete('ent:in@example.com');
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'so the next read is answered by Postgres, with the new plan');
+  store.set('ent:in@example.com', kvEnt);
 }
 
-section('An answer that differs from KV is handed back to KV, and comes back when they agree');
+section('A write Postgres cannot hold faithfully is not proved');
 {
-  q("update entitlements set plan = 'free' where account_id = (select id from accounts where email='in@example.com')");
-  await new Promise(r => setTimeout(r, 0));
-  // the instance checked this record a moment ago; a fresh instance would check now
-  const fresh = await import(harness + '?t=' + Date.now() + 'b');
-  const first = await fresh.DB.get(env, 'ent', 'in@example.com');
-  await fresh._pgSettle();
-  ok(first.plan === 'free', 'the read Postgres answered is what Postgres holds (this is the one the check exists for)');
-  ok(store.has('pgstale:ent:in@example.com'), 'the check marks the record stale');
-  ok(alerts.some(a => /answered an ent read differently/.test(a)), 'and the owner is told', alerts);
-  ok((await fresh.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'from then on KV answers - the paid plan, not the wrong row');
-  q("update entitlements set plan = 'ultra' where account_id = (select id from accounts where email='in@example.com')");
-  const again = await import(harness + '?t=' + Date.now() + 'c');
-  await again.DB.get(env, 'ent', 'in@example.com');
-  await again._pgSettle();
-  ok(!store.has('pgstale:ent:in@example.com'), 'once both copies agree, the mark is lifted and Postgres answers again');
+  /* A date stored as text, which the timestamp column cannot round-trip. */
+  const odd = Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 3, renewedAt: '2026-10-01' });
+  await W.DB.put(env, 'ent', 'in@example.com', odd);
+  ok(!store.has('pgok:ent:in@example.com') && /read back differs/.test(store.get('pgrepair:ent:in@example.com') || ''), 'the row read back is not what was written, so there is no proof and it is on the repair list', store.get('pgrepair:ent:in@example.com'));
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).renewedAt === '2026-10-01', 'and KV answers, exactly as written');
+  store.delete('pgrepair:ent:in@example.com');
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 4 }));
+  ok(store.has('pgok:ent:in@example.com'), 'a faithful write is proved again');
+}
+
+section('A write whose proof cannot be removed does not happen (DATA-003)');
+{
+  const realDel = env.AMV_KV.delete;
+  env.AMV_KV.delete = async (k) => { if (k.startsWith('pgok:')) throw new Error('store down'); return realDel.call(env.AMV_KV, k); };
+  let threw = false;
+  try { await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 9 })); } catch (e) { threw = true; }
+  env.AMV_KV.delete = realDel;
+  ok(threw, 'the put fails');
+  ok(JSON.parse(store.get('ent:in@example.com')).plan === 'ultra', 'and KV was not changed underneath a proof that would still vouch for the old row');
 }
 
 section('Postgres down: KV answers, sign-in works, and it is counted');
 {
   env.PG = { connectionString: `postgres://${user}@127.0.0.1:1/postgres` };
-  const before = audits.filter(a => a.event === 'pg_read_fell_back' || a.type === 'pg_read_fell_back').length;
+  const before = audits.filter(a => JSON.stringify(a).includes('pg_read_fell_back')).length;
   const login = await post('/auth/login', { email: 'in@example.com', password: PW });
   ok(login.status === 200, 'the person still signs in', login.status);
   ok(audits.filter(a => JSON.stringify(a).includes('pg_read_fell_back')).length > before, 'and the fallback is on the record');
   ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'their plan is still right');
 }
 
-section('A write that cannot reach Postgres is marked stale before it returns');
+section('A write that cannot reach Postgres leaves no proof, so the old row is never served (DATA-003)');
 {
   await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 2 }));
-  ok(store.has('pgstale:ent:in@example.com') && store.has('pgrepair:ent:in@example.com'), 'stale and on the repair list the moment the put returns');
+  ok(!store.has('pgok:ent:in@example.com') && store.has('pgrepair:ent:in@example.com'), 'no proof, and on the repair list the moment the put returns');
+  /* Even if the repair marker could not be written, the missing proof alone keeps the old row from answering. */
   env.PG = { connectionString: GOOD };
-  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'elite', 'so with Postgres back, the next read is KV’s new plan, never the old row');
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'elite', 'with Postgres back, the next read is KV’s new plan, never the old row');
+  ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='in@example.com'") === 'ultra', '(the row Postgres still holds is the old one)');
   await settle();
 }
 
