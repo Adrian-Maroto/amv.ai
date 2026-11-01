@@ -37,6 +37,7 @@ ok(/permissions:\s*\n\s*contents: read/.test(code), 'with read-only permissions'
 
 section('The image takes its OS fixes when it is built');
 ok(/apt-get upgrade -y/.test(d), 'apt-get upgrade runs in the build');
+ok(/npm install -g npm@\d+/.test(d) && d.indexOf('npm install -g npm') < d.indexOf('USER amv'), 'and npm is replaced by a current release, as root, before the image drops to the person\u2019s user');
 
 report();
 done();
