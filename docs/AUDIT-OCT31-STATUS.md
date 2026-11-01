@@ -154,7 +154,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 99 | Companion/routine onboarding | Not doing for now (decision #44) |
 | 100 | Native iOS/Android | Yours to decide; not started |
 | 101 | macOS/Windows apps | Yours to decide; not started |
-| 102 | Push notifications and approvals | Built, needs you (VAPID keys) |
+| 102 | Push notifications and approvals | Done (VAPID keys set Nov 1; the live readiness reports notifications on) |
 | 103 | Image creation/editing | Not doing (decision #45) |
 | 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
