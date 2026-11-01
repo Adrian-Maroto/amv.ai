@@ -117,7 +117,7 @@
 | Background work through a queue when one is bound: one message per due account, run in parallel with retries and a dead-letter queue; without the binding the tick runs every account itself, and a queue that refuses never costs a job | `src/worker/15a-job-queue.js`, `src/worker/15-run-context-and-execution.js` | `worker/background-work-goes-through-the-queue.test.mjs` |
 | Every night backed up when the backups bucket is bound: a slice per tick, resumed where it stopped, complete only with its manifest, thirty nights kept, late nights paged, restorable through the same rules as any restore | `src/worker/27a-nightly-backup.js`, `src/worker/27-backup-restore.js` | `worker/every-night-is-backed-up.test.mjs` |
 | Brownout: the heavy parts pause together while sign-in, payments and everyday chat keep working | `src/worker/80-switches.js` | `worker/one-part-of-amv-can-be-switched-off.test.mjs` |
-| A restore drill reads a whole nightly backup through the restore path and writes nothing | `src/worker/27a-nightly-backup.js`, `backup.mjs` | `worker/every-night-is-backed-up.test.mjs` |
+| A restore drill reads a whole nightly backup through the restore path, checks every part's checksum and writes nothing; a restore needs a sound drill of that night first | `src/worker/27a-nightly-backup.js`, `backup.mjs` | `worker/every-night-is-backed-up.test.mjs` |
 | A commit with a real-shaped credential in it fails the gate | `check.mjs` | `worker/check.test.mjs` |
 | A server that sees the model provider failing tells the others | `src/worker/02-partner-engines.js` | `worker/model-transport.test.mjs` |
 | The partner engines have a daily spending ceiling of their own | `src/worker/35-batches.js` | `worker/partner-engines-are-sold-as-amv.test.mjs` |

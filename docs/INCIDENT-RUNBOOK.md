@@ -65,7 +65,13 @@ else works. Nothing is quietly replaced by something else. Switching off
   an alert says so (`switches_unread`).
 - **Data lost or damaged** (a bad migration, a namespace emptied, records
   overwritten): restore from a nightly backup, once `AMV_BACKUPS` is bound.
-  List the nights with `GET /admin/backup/nights` (owner token). Restore one
+  List the nights with `GET /admin/backup/nights` (owner token). First drill
+  the night: `POST /admin/backup/import {"fromNight":"YYYY-MM-DD","mode":"verify"}`
+  (repeat with `fromPart` until `more: false`). It reads every part, checks
+  each against the checksum the manifest recorded, and writes nothing; a
+  restore without a sound drill of that night is refused (`drill_required`),
+  and a part that changed since is refused again at restore time
+  (`restore_checksum`). Then restore it
   with `POST /admin/backup/import {"fromNight":"YYYY-MM-DD","mode":"missing"}`
   - `missing` puts back only what is gone and never overwrites newer data;
   `merge` writes the whole night over what is there. A large night answers

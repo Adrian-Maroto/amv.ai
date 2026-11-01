@@ -233,7 +233,7 @@
     "code": [["src/worker/80-switches.js", "_brownoutShed"]],
     "tests": ["tests/worker/one-part-of-amv-can-be-switched-off.test.mjs"],
     "says": ["brownout"] },
-  { "id": "ops.restore_drill", "status": "built", "name": "A restore drill reads a whole nightly backup through the restore path and writes nothing",
+  { "id": "ops.restore_drill", "status": "built", "name": "A restore drill reads a whole nightly backup through the restore path, checks every part's checksum and writes nothing; a restore needs a sound drill of that night first",
     "code": [["src/worker/27a-nightly-backup.js", "_drillEntries"], ["backup.mjs", "doDrill"]],
     "tests": ["tests/worker/every-night-is-backed-up.test.mjs"],
     "says": ["restore drill"] },

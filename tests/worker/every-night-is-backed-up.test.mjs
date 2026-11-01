@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { createHash } from 'crypto';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -94,6 +95,24 @@ const nightRecords = (b, day) => {
 const T0 = Date.UTC(2026, 9, 31, 2, 0, 0);
 const DAY = '2026-10-31';
 
+/* Whole-night drill and restore, slice after slice, as the owner console runs them. */
+async function drillAll(){
+  let res, body, from = 0, rounds = 0, verified = 0;
+  do {
+    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from, mode: 'verify' }), env);
+    body = await res.json(); from = body.nextPart; rounds++; verified = body.verified || verified;
+  } while (body.more && rounds < 20);
+  return Object.assign(body, { res, verified });
+}
+async function restoreAll(){
+  let res, body, from = 0, rounds = 0;
+  do {
+    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from }), env);
+    body = await res.json(); from = body.nextPart; rounds++;
+  } while (body.more && rounds < 20);
+  return Object.assign(body, { res });
+}
+
 section('With no bucket, nothing runs and nothing breaks');
 {
   const env = withKV(mkEnv()); seed(env);
@@ -165,43 +184,58 @@ section('Thirty nights are kept; older ones go');
 
 section('The restore drill reads a whole night through the restore path and writes nothing');
 {
-  const before = JSON.stringify([...env._m.entries()].sort());
+  /* Its own bookkeeping (that the night was drilled) aside: no record. */
+  const dataOnly = () => JSON.stringify([...env._m.entries()].filter(([k]) => !k.startsWith('bkdrill:')).sort());
+  const before = dataOnly();
   const man = JSON.parse(B.o.get('backups/' + DAY + '/manifest.json'));
-  let res, body, from = 0, rounds = 0, verified = 0;
-  do {
-    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from, mode: 'verify' }), env);
-    body = await res.json(); from = body.nextPart; rounds++; verified += body.verified || 0;
-  } while (body.more && rounds < 20);
-  ok(res.status === 200 && body.drill && body.ok && verified === man.keyCount, 'every record the manifest counts is read and would be restored', { status: res.status, verified, expected: man.keyCount });
-  ok(JSON.stringify([...env._m.entries()].sort()) === before, 'and not one record was written');
-  /* A part with a record a restore would refuse makes the drill fail, not pass. */
+  ok(Array.isArray(man.partSha) && man.partSha.length === man.parts && man.partSha.every(h => /^[0-9a-f]{64}$/.test(h)), 'the manifest carries a checksum for every part (Nov 1 audit DR-004)', man.partSha);
+  const body = await drillAll();
+  ok(body.res.status === 200 && body.drill && body.ok && body.verified === man.keyCount && body.checksums === true, 'every record the manifest counts is read, every part matches its checksum', { status: body.res.status, verified: body.verified, expected: man.keyCount });
+  ok(dataOnly() === before, 'and not one record was written');
+  /* A part changed after the backup was taken: its checksum no longer matches. */
   const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
   B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
-  const bad = await (await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, mode: 'verify' }), env)).json();
-  ok(bad.drill && bad.ok === false && bad.refused === 1 && env._m.get('GLOBAL_KILL') === '0', 'a record outside what a restore accepts fails the drill, and is still not written', bad);
-  B.o.set(p0, orig);
+  const bad = await drillAll();
+  ok(bad.ok === false && bad.badParts.includes(0) && env._m.get('GLOBAL_KILL') === '0', 'a part that does not match its checksum fails the drill, and nothing in it is written', bad);
+  /* The same record in a backup whose checksum matches it (taken that way): the record check still refuses it. */
+  const man2 = JSON.parse(B.o.get('backups/' + DAY + '/manifest.json'));
+  const tampered = B.o.get(p0); const realSum = man2.partSha[0];
+  man2.partSha[0] = createHash('sha256').update(tampered).digest('hex');
+  B.o.set('backups/' + DAY + '/manifest.json', JSON.stringify(man2));
+  const bad2 = await drillAll();
+  ok(bad2.ok === false && bad2.refused === 1 && env._m.get('GLOBAL_KILL') === '0', 'a record outside what a restore accepts fails the drill, and is still not written', bad2);
+  B.o.set(p0, orig); man2.partSha[0] = realSum; B.o.set('backups/' + DAY + '/manifest.json', JSON.stringify(man2));
   const nameless = await W.backupImport(admin('/admin/backup/import', { mode: 'verify' }), env);
   ok(nameless.status === 400, 'a drill names the night it reads', nameless.status);
 }
 
-section('A night is put back through the same rules as any restore');
+section('A night is put back only after a drill found all of it sound, through the same rules as any restore');
 {
   for (const k of [...env._m.keys()]) if (k.startsWith('acct:')) env._m.delete(k);
-  let res, body, from = 0, rounds = 0;
-  do {
-    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from }), env);
-    body = await res.json(); from = body.nextPart; rounds++;
-  } while (body.more && rounds < 20);
-  ok(res.status === 200 && body.ok && [...env._m.keys()].filter(k => k.startsWith('acct:')).length === 2600, 'every account is back', { status: res.status, restored: body.restored });
-  /* A tampered part tries to switch the deployment off. */
-  B.o.set('backups/' + DAY + '/part-000000.ndjson', JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + B.o.get('backups/' + DAY + '/part-000000.ndjson'));
+  for (const k of [...env._m.keys()]) if (k.startsWith('bkdrill:')) env._m.delete(k);
+  const early = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
+  const e = await early.json();
+  ok(early.status === 409 && e.code === 'drill_required' && ![...env._m.keys()].some(k => k.startsWith('acct:')), 'without a sound drill of that night, nothing is restored at all', e);
+  await drillAll();
+  const body = await restoreAll();
+  ok(body.res.status === 200 && body.ok && [...env._m.keys()].filter(k => k.startsWith('acct:')).length === 2600, 'after one, every account is back', { status: body.res.status, restored: body.restored });
+  /* A part changed after a sound drill: the restore checks it again and stops. */
+  const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
+  B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
   env._m.set('GLOBAL_KILL', '0');
-  const t = await (await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env)).json();
-  ok(env._m.get('GLOBAL_KILL') === '0' && t.refused >= 1, 'a key outside the backup prefixes is refused, not written', { refused: t.refused });
-  B.o.delete('backups/' + DAY + '/part-000001.ndjson');
-  const miss = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
-  const m = await miss.json();
-  ok(miss.status === 422 && m.code === 'restore_incomplete' && m.nextPart === 1, 'a missing part stops the restore and says where', m);
+  const t = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
+  const tb = await t.json();
+  ok(t.status === 422 && tb.code === 'restore_checksum' && env._m.get('GLOBAL_KILL') === '0', 'a part changed since the drill stops the restore before it is applied', tb);
+  B.o.set(p0, orig);
+  /* A missing part: the drill finds it, and the restore is not even started. */
+  const p1 = 'backups/' + DAY + '/part-000001.ndjson', orig1 = B.o.get(p1);
+  B.o.delete(p1);
+  const d = await drillAll();
+  ok(d.res.status === 422 && d.code === 'restore_incomplete', 'a missing part fails the drill and says where', d);
+  for (const k of [...env._m.keys()]) if (k.startsWith('acct:')) env._m.delete(k);
+  const r2 = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
+  ok(r2.status === 409 && ![...env._m.keys()].some(k => k.startsWith('acct:')), 'and with no sound drill since, the restore writes nothing - no half-restored store', r2.status);
+  B.o.set(p1, orig1);
   const none = await W.backupImport(admin('/admin/backup/import', { fromNight: '2020-01-01' }), env);
   ok(none.status === 404, 'a night with no complete backup is refused', none.status);
   const anon = await W.backupImport(new Request('https://api.amv.test/admin/backup/import', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ fromNight: DAY }) }), env);
