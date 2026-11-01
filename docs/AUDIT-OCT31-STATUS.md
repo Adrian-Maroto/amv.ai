@@ -98,7 +98,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 53 | Asynchronous file ingestion | Not doing - as 23: files are read on the device, not ingested by the server |
 | 54 | Persistent vector indexing | Partial ("searching by meaning" exists; not a persistent index) |
 | 55 | Hybrid lexical/vector retrieval | Partial (project files searched by passage) |
-| 56 | Large-scale conversation index | Not yet |
+| 56 | Large-scale conversation index | Not yet, on purpose - each person's conversations are one record (at most 4 MB) that every signed-in device already holds and searches; a server index starts paying off when chats become rows per conversation (phase 3 of `docs/DATA-TIER.md`), and built before that it would index a record that is about to change shape |
 | 57 | Source states found/read/extracted/cited | Done (the research trail) |
 | 58 | Real source logos/previews | Done (kept) |
 
@@ -174,13 +174,13 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **43 done**,
-**12 built and waiting on you** (a binding, a setting or a key), **18 partial**
-(87 counted here: SBOM done, provenance not), **6 that need your approval**
-before they are built (13, 14, 18, 83, 84, 107 - each changes authentication,
-billing reads, production deploys or the stored data's shape), **17 yours or
-an outside party's** (accounts, money, people, reviews), **6 not done on
-purpose** with the reason beside each, and **7 not yet**: durable workflows and
-checkpoints for long Tasks (25, 27), parallel researcher/critic patterns (50),
-direct uploads (51, needs R2 credentials), a large-scale conversation index
-(56), container image scanning (88) and retention controls (108).
+Of the 109 items with work in them (110 is "then parity"), as of Nov 1 after
+the owner's approval of every item that needed it: **56 done**, **12 built
+and waiting on you** (a binding, a setting or a key - including canary
+deploys `AMV_CANARY`, the password pepper `PASSWORD_PEPPER` and Postgres
+reads `PG_READ`), **15 partial** (each says what is missing; 87 counted here:
+SBOM done, provenance not), **13 yours** and **3 an outside party's**
+(accounts, money, people, reviews), **8 not done on purpose** with the reason
+beside each (22, 23, 25, 48, 53, 56, 99, 103), and **2 not yet**: Postgres
+alone (14, which can only be checked once step 13 has run on the real
+database) and direct uploads (51, which needs R2 credentials from you).
