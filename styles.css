@@ -17428,3 +17428,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .team-log-export input[type=date]{min-height:36px;padding:0 var(--sp-2);border:1px solid var(--bd);border-radius:var(--r-sm);background:var(--s1);color:var(--tx);font:inherit;font-size:var(--t-sm)}
 .team-log-export .tt-mini{min-height:36px}
 .team-log-hint{flex-basis:100%;font-size:var(--t-xs);color:var(--mu);line-height:1.5}
+
+/* LAYER A352 - The cloud workspace's saved copies: one row each, the time and
+   size on the left, "Put back" on the right; wraps on a phone. */
+.brg-ws-vers{margin-top:var(--sp-3)}
+.brg-ws-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.brg-ws-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-2) 0;border-top:1px solid var(--bd);font-size:var(--t-sm);color:var(--tx)}
+.brg-ws-row .btn{min-height:36px}

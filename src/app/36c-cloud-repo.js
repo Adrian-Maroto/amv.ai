@@ -33,6 +33,7 @@ function _cloudRepoWire(root){
   root = root || document;
   const go = root.querySelector('#brg-gh-open');
   if(go && !go._amv){ go._amv = 1; on(go, 'click', async () => { go.disabled = true; try{ await _cloudRepoOpen(root); } finally { go.disabled = false; } }); }
+  _wsCopiesWire(root);
   const send = root.querySelector('#brg-gh-send');
   if(send && !send._amv){ send._amv = 1; on(send, 'click', async () => { send.disabled = true; try{ await _cloudRepoSend(); } finally { send.disabled = false; } }); }
 }

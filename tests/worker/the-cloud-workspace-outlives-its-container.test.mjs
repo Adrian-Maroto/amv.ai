@@ -74,7 +74,9 @@ const bucket = () => {
     async put(k, v, o) { const chunks = []; for await (const c of v) chunks.push(Buffer.from(c)); const buf = Buffer.concat(chunks);
       if (o && o.sha256 && createHash('sha256').update(buf).digest('hex') !== o.sha256) throw new Error('sha256 mismatch');
       m.set(k, buf); this.meta.set(k, (o && o.customMetadata) || {}); },
-    async get(k) { if (!m.has(k)) return null; const b = m.get(k); return { size: b.length, body: new Blob([b]).stream(), customMetadata: this.meta.get(k) || {} }; },
+    async get(k) { if (!m.has(k)) return null; const b = m.get(k); return { size: b.length, body: new Blob([b]).stream(), customMetadata: this.meta.get(k) || {}, uploaded: new Date() }; },
+    async head(k) { return m.has(k) ? { size: m.get(k).length } : null; },
+    async list({ prefix }) { return { objects: [...m.keys()].filter(k => k.startsWith(prefix)).map(key => ({ key, size: m.get(key).length })), truncated: false }; },
     async delete(k) { m.delete(k); } };
 };
 const id = { toString: () => 'a1b2c3d4' };
@@ -184,6 +186,50 @@ section('Erasing the account deletes the saved workspace and stops the machine -
   ok(await other.text() === 'proxied to the container', 'every other request still goes to the machine');
 }
 
+section('Each save keeps the copy it replaces, the newest five are kept, and one can be put back');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  const at = (n) => readFileSync(join(one, 'notes.md'), 'utf8');
+  for (let i = 1; i <= 7; i++) {
+    writeFileSync(join(one, 'notes.md'), 'version ' + i + '\n');
+    await new AMVComputer({ id, container: portTo(A.base) }, env).onActivityExpired();
+    await new Promise(r => setTimeout(r, 3));
+  }
+  const vkeys = [...env.WORKSPACES.m.keys()].filter(k => k.startsWith('ws/a1b2c3d4.v/'));
+  ok(vkeys.length === 5 && vkeys.every(k => /\/\d{13}\.tgz$/.test(k)), 'seven saves leave the copy plus the five before it', vkeys);
+  const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }) }, env);
+  const no = await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': 'nope' } }));
+  ok(no.status === 401, 'listing them needs AMV\u2019s key', no.status);
+  const list = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  ok(list.current && list.versions.length === 5 && list.versions[0].id > list.versions[4].id && list.versions.every(v => v.bytes > 0 && !('key' in v)),
+     'listed newest first, with when and how big, and no storage key', list);
+  const bad = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY }, body: JSON.stringify({ id: '../../x' }) }));
+  const gone = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY }, body: JSON.stringify({ id: '1000000000000' }) }));
+  ok(bad.status === 400 && gone.status === 404, 'a malformed or unknown copy is refused', [bad.status, gone.status]);
+  /* The oldest kept copy holds "version 2" (saves 2..6 replaced 1..5 copies; the copy itself is version 7). */
+  writeFileSync(join(one, 'notes.md'), 'unsaved work on the running machine\n');
+  const oldest = list.versions[list.versions.length - 1].id;
+  const back = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY }, body: JSON.stringify({ id: oldest }) }));
+  const bd = await back.json();
+  ok(back.status === 200 && bd.restored && m.destroyed, 'putting one back stops the running machine', bd);
+  const four = join(box, 'four'); mkdirSync(four, { recursive: true });
+  const D = await bridge(four);
+  await new AMVComputer({ id, container: portTo(D.base) }, env).onStart();
+  ok(readFileSync(join(four, 'notes.md'), 'utf8') === 'version 2\n', 'and the next machine starts with the chosen copy', readFileSync(join(four, 'notes.md'), 'utf8'));
+  const after = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  const kept = [];
+  for (const v of after.versions) {
+    const buf = env.WORKSPACES.m.get('ws/a1b2c3d4.v/' + v.id + '.tgz');
+    const t = mkdtempSync(join(tmpdir(), 'amv-v-')); writeFileSync(join(t, 'a.tgz'), buf);
+    spawnSync('tar', ['-xzf', join(t, 'a.tgz'), '-C', t]);
+    try { kept.push(readFileSync(join(t, 'notes.md'), 'utf8').trim()); } catch (e) { kept.push('?'); }
+  }
+  ok(kept.includes('unsaved work on the running machine'), 'what was on the running machine was kept as a copy first, so this can be undone', kept);
+  ok(after.versions.length === 5, 'and still only five are kept', after.versions.length);
+  const forget = await m.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }));
+  ok(forget.status === 200 && env.WORKSPACES.m.size === 0, 'erasing the account deletes every copy, not only the latest', [...env.WORKSPACES.m.keys()]);
+}
+
 /* The main Worker's half: deleting the account asks the computer to forget. */
 section('Deleting an account reaches the computer Worker');
 {
@@ -204,6 +250,16 @@ section('Deleting an account reaches the computer Worker');
     body: JSON.stringify(body) }), env, ctx); return { status: r.status, d: await r.json().catch(() => ({})) }; };
   const PW = 'a long enough passphrase here';
   const s = await post('/auth/signup', { email: 'wren@example.com', name: 'Wren', password: PW });
+  /* The saved copies, through the main Worker: a plan that has the
+     workspace, and AMV's key on the way in. */
+  const freeList = await post('/v1/computer/versions', {}, s.d.token);
+  ok(freeList.status === 402 && freeList.d.code === 'plan_required', 'without a plan that has the workspace, the copies are not listed', freeList);
+  store.set('ent:wren@example.com', JSON.stringify({ plan: 'pro', source: 'stripe', renewedAt: Date.now(), updatedAt: Date.now() }));
+  asked.length = 0;
+  await post('/v1/computer/versions', {}, s.d.token);
+  await post('/v1/computer/rollback', { id: '1700000000000' }, s.d.token);
+  ok(asked.length === 2 && /\/amv-workspace\/versions$/.test(asked[0].url) && /\/amv-workspace\/rollback$/.test(asked[1].url) && asked.every(a => a.key === KEY),
+     'with one, the list and the put-back reach the computer Worker with AMV\u2019s key', asked.map(a => a.url));
   const del = await post('/auth/delete', { password: PW }, s.d.token);
   const f = asked.find(a => /\/amv-workspace\/forget$/.test(a.url));
   ok(del.status === 200 && f && f.key === KEY, 'the account was deleted and the computer asked to forget, with AMV’s key', { status: del.status, asked: asked.map(a => a.url) });

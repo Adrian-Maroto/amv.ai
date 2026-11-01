@@ -664,8 +664,9 @@ function _bridgeCardHTML(){
       + '<div class="brg-repo" id="brg-repo" aria-live="polite">' + _cloudRepoHTML() + '</div>'
       + '<div class="brg-acts">'
         + '<button class="btn bs" id="brg-gh-open" type="button">' + escH(T('Open a GitHub repository')) + '</button>'
+        + '<button class="btn bs" id="brg-ws-ver" type="button" aria-expanded="false" aria-controls="brg-ws-vers">' + escH(T('Saved copies')) + '</button>'
         + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
-      + '</div></div>';
+      + '</div><div class="brg-ws-vers" id="brg-ws-vers" aria-live="polite" hidden></div></div>';
   }
   if(BRIDGE.connected){
     return '<div class="brg brg-on">'

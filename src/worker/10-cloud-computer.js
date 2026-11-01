@@ -92,6 +92,25 @@ async function _computerOpen(request, env, route){
   catch(e){ return { res: json({ error: 'The cloud workspace could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503) }; }
   return { user, stub };
 }
+/* EARLIER COPIES OF THE WORKSPACE (Oct 31 audit, item 33). The list, and
+   putting one back, go to the computer Worker with AMV's key after the same
+   checks as every other request - the person's sign-in names the machine.
+   Neither wakes the container, so neither is billed as awake time. */
+async function computerVersions(request, env, which){
+  const open = await _computerOpen(request, env, which);
+  if(open.res) return open.res;
+  const { user, stub } = open;
+  const body = which === 'rollback' ? await request.json().catch(() => ({})) : {};
+  let r, d;
+  try{
+    r = await stub.fetch(new Request('http://amv-computer/amv-workspace/' + (which === 'rollback' ? 'rollback' : 'versions'), { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: JSON.stringify({ id: String(body.id || '') }) }));
+    d = await r.json().catch(() => null);
+  }catch(e){ d = null; }
+  if(!d) return json({ error: 'The saved copies could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503);
+  if(which === 'rollback' && d.restored) audit(env, 'computer_rolled_back', { by: user.email, to: d.id });
+  return json(Object.assign({ ok: r.ok }, d), r.status);
+}
 async function computerRoute(request, env, route){
   const open = await _computerOpen(request, env, route);
   if(open.res) return open.res;

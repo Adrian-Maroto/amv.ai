@@ -65,7 +65,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 30 | Workspace storage in R2 | Built, needs you (`WORKSPACES` bucket) |
 | 31 | Checkpoint before sleep | Done |
 | 32 | Restore on wake | Done |
-| 33 | Workspace checksums/versioning | Partial - checksums done (Nov 1: the bucket refuses an upload that does not match, a restore refuses a copy that does not); one copy kept, no older versions |
+| 33 | Workspace checksums/versioning | Done - checksums (the bucket refuses an upload that does not match, a restore refuses a copy that does not), and each save keeps the copy it replaces: the five newest are listed on the cloud workspace card and any can be put back; putting one back first keeps what is on the running machine, so it can be undone |
 | 34 | Container crash/recovery tests | Partial (the workspace outlives its container; no crash-mid-write test) |
 | 35 | Capacity beyond 50 | Yours (`max_instances`, a cost decision) |
 | 36 | Wait UI when capacity is full | Done (Nov 1: connecting waits for a free workspace, up to five tries, saying so each time; not a queue with a place in line) |
