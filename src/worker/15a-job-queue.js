@@ -81,6 +81,13 @@ async function _autoQueueConsume(batch, env){
   try{ off = await _switchedOff(env, 'feature:automations'); }catch(e){ off = true; }
   for(const msg of (batch.messages || [])){
     const body = msg.body || {};
+    /* A waiting email (61-owner-digest.js). Not stopped by the automations
+       switch: it is mail somebody is owed, not new work. */
+    if(body.kind === 'outbox'){
+      try{ await _outboxConsume(env, msg); }
+      catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }
+      continue;
+    }
     const email = String(body.email || '').toLowerCase();
     if(!email){ msg.ack(); continue; }
     /* Stopped on purpose: acknowledged, not retried. The job keeps its place
@@ -110,6 +117,9 @@ async function _autoQueueConsume(batch, env){
 async function _autoQueueDead(batch, env){
   const emails = [];
   for(const msg of (batch.messages || [])){
+    /* A dead email pointer: the record is still in the outbox, and the tick
+       sends it - nothing more to do here. */
+    if(msg.body && msg.body.kind === 'outbox'){ audit(env, 'outbox_queue_dead', {}); msg.ack(); continue; }
     const email = String((msg.body && msg.body.email) || '').toLowerCase();
     if(email){
       emails.push(email);

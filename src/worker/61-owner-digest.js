@@ -1009,9 +1009,11 @@ async function _sendEmail(env, to, subject, html, text, cls) {
   if (got === 'transient' && EMAIL_OUTBOX_CLASSES.has(cls || 'other')) {
     try {
       const id = idem.slice(4);
-      await env.AMV_KV.put('outbox:' + String(to).toLowerCase().trim() + ':' + id, JSON.stringify({ id, idem, to, subject, html, text, cls: cls || 'other', from,
+      const key = 'outbox:' + String(to).toLowerCase().trim() + ':' + id;
+      await env.AMV_KV.put(key, JSON.stringify({ id, idem, to, subject, html, text, cls: cls || 'other', from,
         attempts: 2, next: Date.now() + EMAIL_OUTBOX_BACKOFF_MS[0], at: Date.now() }), { expirationTtl: 3 * 86400 });
       audit(env, 'email_queued', { cls, to });
+      await _outboxPoint(env, key, EMAIL_OUTBOX_BACKOFF_MS[0]);
     } catch (e) { audit(env, 'email_lost', { cls, to, error: String((e && e.message) || e).slice(0, 120) }); }
   }
   /* Still false: not delivered NOW. Queued mail arriving later is the outbox
@@ -1028,25 +1030,62 @@ async function _outboxDrain(env, now) {
   if (!env.EMAIL_API_KEY) return { sent, retried, gaveUp, seen };
   const page = await env.AMV_KV.list({ prefix: 'outbox:', limit: 50 });
   for (const k of page.keys) {
-    let it = null;
-    try { it = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); } catch (e) {}
-    if (!it) { try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+    const r = await _outboxSendOne(env, k.name, t);
+    if (r === 'gone') continue;
     seen++;
-    if (it.next > t) continue;
-    const got = await _emailPost(env, it.from || env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT, it.to, it.subject, it.html, it.text, it.idem);
-    if (got === 'ok') { await env.AMV_KV.delete(k.name); sent++; audit(env, 'email_outbox_sent', { cls: it.cls, attempts: it.attempts + 1 }); continue; }
-    const step = it.attempts - 1;                     // attempts 2 -> the first backoff already used
-    if (got === 'permanent' || step >= EMAIL_OUTBOX_BACKOFF_MS.length) {
-      await env.AMV_KV.delete(k.name); gaveUp++;
-      audit(env, 'email_outbox_gave_up', { cls: it.cls, to: it.to, attempts: it.attempts + 1, why: got });
-      try { await alertOnce(env, 'email_outbox_gave_up', 'An email could not be delivered after every retry (' + it.cls + '). Check the email provider on the readiness screen.', 60); } catch (e) {}
-      continue;
-    }
-    it.attempts += 1; it.next = t + EMAIL_OUTBOX_BACKOFF_MS[step];
-    await env.AMV_KV.put(k.name, JSON.stringify(it), { expirationTtl: 3 * 86400 });
-    retried++;
+    if (r === 'sent') sent++; else if (r === 'retried') retried++; else if (r === 'gaveUp') gaveUp++;
   }
   return { sent, retried, gaveUp, seen };
+}
+
+/* One waiting email, by its key: 'gone' (sent already, or erased with its
+   account - the record is the truth, so a pointer to nothing sends nothing),
+   'notyet', 'sent', 'retried' (with its next try booked) or 'gaveUp'. The tick
+   and the queue both come here; the provider's idempotency key (the same on
+   every try) makes the same email sent from both one email. */
+async function _outboxSendOne(env, key, now) {
+  const t = now || Date.now();
+  let it = null;
+  try { it = JSON.parse((await env.AMV_KV.get(key)) || 'null'); } catch (e) {}
+  if (!it) { try { await env.AMV_KV.delete(key); } catch (e) {} return 'gone'; }
+  if (it.next > t) return 'notyet';
+  const got = await _emailPost(env, it.from || env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT, it.to, it.subject, it.html, it.text, it.idem);
+  if (got === 'ok') { await env.AMV_KV.delete(key); audit(env, 'email_outbox_sent', { cls: it.cls, attempts: it.attempts + 1 }); return 'sent'; }
+  const step = it.attempts - 1;                     // attempts 2 -> the first backoff already used
+  if (got === 'permanent' || step >= EMAIL_OUTBOX_BACKOFF_MS.length) {
+    await env.AMV_KV.delete(key);
+    audit(env, 'email_outbox_gave_up', { cls: it.cls, to: it.to, attempts: it.attempts + 1, why: got });
+    try { await alertOnce(env, 'email_outbox_gave_up', 'An email could not be delivered after every retry (' + it.cls + '). Check the email provider on the readiness screen.', 60); } catch (e) {}
+    return 'gaveUp';
+  }
+  it.attempts += 1; it.next = t + EMAIL_OUTBOX_BACKOFF_MS[step];
+  await env.AMV_KV.put(key, JSON.stringify(it), { expirationTtl: 3 * 86400 });
+  await _outboxPoint(env, key, EMAIL_OUTBOX_BACKOFF_MS[step]);
+  return 'retried';
+}
+
+/* With the job queue bound, a waiting email is also a message on it, due
+   when its next try is: it is tried on time rather than at the next tick,
+   and a backlog drains in parallel instead of fifty a tick. The message only
+   names the record. The tick still drains the outbox, so a queue that is
+   down, or a message that died, delays mail and never loses it. */
+async function _outboxPoint(env, key, delayMs) {
+  if (!_jobQueueOn(env)) return;
+  try { await env.AMV_JOBS.sendBatch([{ body: { kind: 'outbox', key }, delaySeconds: Math.max(0, Math.min(43200, Math.round(delayMs / 1000))) }]); }
+  catch (e) { audit(env, 'outbox_queue_send_failed', { error: String((e && e.message) || e).slice(0, 120) }); }
+}
+
+/* The consumer's half: one message, one email. A pointer whose email is not
+   due yet (the queue was early) is sent again for the time left. */
+async function _outboxConsume(env, msg) {
+  const key = String((msg.body && msg.body.key) || '');
+  if (!key.startsWith('outbox:') || !env.EMAIL_API_KEY) { msg.ack(); return; }
+  const r = await _outboxSendOne(env, key);
+  if (r === 'notyet') {
+    let it = null; try { it = JSON.parse((await env.AMV_KV.get(key)) || 'null'); } catch (e) {}
+    if (it) await _outboxPoint(env, key, Math.max(0, it.next - Date.now()));
+  }
+  msg.ack();
 }
 /* Whether the provider has said, in the last day, that it will not send from
    this deployment's sender at all. A day, so a fix at the provider is noticed

@@ -21,7 +21,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'outbox.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _sendEmail, _outboxDrain, EMAIL_OUTBOX_BACKOFF_MS };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _sendEmail, _outboxDrain, EMAIL_OUTBOX_BACKOFF_MS, queueHandler };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 let plan = [], posts = [], alerts = [];
@@ -64,6 +64,49 @@ section('Still down: job mail waits in the outbox, and is not called sent');
   r = await W._outboxDrain(env, Date.now() + W.EMAIL_OUTBOX_BACKOFF_MS[0] + 1000);
   ok(r.sent === 1 && posts.length === 1 && posts[0].idem === firstIdem, 'when due, it is sent - with the key it was first tried with', { r, idem: posts[0] && posts[0].idem });
   ok(outbox(env).length === 0, 'and removed');
+}
+
+section('With the job queue bound, a waiting email is tried when it is due, not at the next tick');
+{
+  const env = mkEnv(); const q = []; env.AMV_JOBS = { async sendBatch(msgs) { q.push(...msgs); } };
+  plan = ['net', 'net']; posts = [];
+  await send(env, 'done');
+  const key = outbox(env)[0];
+  ok(q.length === 1 && q[0].body.kind === 'outbox' && q[0].body.key === key && q[0].delaySeconds === W.EMAIL_OUTBOX_BACKOFF_MS[0] / 1000,
+     'a message names the waiting email, due at its first retry', q);
+  ok(Object.keys(q[0].body).sort().join() === 'key,kind', 'the message names the record and carries none of the mail - erasing the account erases the email', q[0].body);
+  const msg = (body) => ({ body, attempts: 1, acked: false, retried: null, ack() { this.acked = true; }, retry(o) { this.retried = o; } });
+  /* Early: the queue delivered before the email was due - booked again for the time left, nothing sent. */
+  let m = msg(q[0].body); q.length = 0; posts = [];
+  await W.queueHandler({ queue: 'amv-jobs', messages: [m] }, env);
+  ok(m.acked && posts.length === 0 && q.length === 1 && q[0].delaySeconds > 0, 'not due yet: nothing sent, and booked for when it is', { posts: posts.length, q });
+  /* Due, provider still down: retried on the queue at the next step, the record says so. */
+  const rec = JSON.parse(env.AMV_KV._m.get(key)); rec.next = Date.now() - 1; env.AMV_KV._m.set(key, JSON.stringify(rec));
+  m = msg({ kind: 'outbox', key }); q.length = 0; plan = [503];
+  await W.queueHandler({ queue: 'amv-jobs', messages: [m] }, env);
+  ok(m.acked && JSON.parse(env.AMV_KV._m.get(key)).attempts === 3 && q.length === 1 && q[0].delaySeconds === W.EMAIL_OUTBOX_BACKOFF_MS[1] / 1000,
+     'still down: the next try is booked on the queue', q);
+  /* Due, provider back: sent once, with the key it always had; the record is gone. */
+  const r2 = JSON.parse(env.AMV_KV._m.get(key)); r2.next = Date.now() - 1; env.AMV_KV._m.set(key, JSON.stringify(r2));
+  m = msg({ kind: 'outbox', key }); q.length = 0; plan = [200]; posts = [];
+  await W.queueHandler({ queue: 'amv-jobs', messages: [m] }, env);
+  ok(m.acked && posts.length === 1 && posts[0].idem === r2.idem && outbox(env).length === 0, 'back up: sent once, under the same idempotency key, and gone from the outbox');
+  /* A pointer to an email that is gone (sent by the tick, or erased with the account) sends nothing. */
+  m = msg({ kind: 'outbox', key }); posts = [];
+  await W.queueHandler({ queue: 'amv-jobs', messages: [m] }, env);
+  ok(m.acked && posts.length === 0, 'a message whose email is gone sends nothing');
+  /* A pointer that died on the queue leaves the email where the tick will send it. */
+  plan = ['net', 'net']; await send(env, 'done');
+  const k2 = outbox(env)[0];
+  m = msg({ kind: 'outbox', key: k2 });
+  await W.queueHandler({ queue: 'amv-jobs-dead', messages: [m] }, env);
+  ok(m.acked && outbox(env).includes(k2), 'a dead message loses nothing: the email is still waiting for the tick');
+  /* Automations switched off does not hold mail somebody is owed. */
+  env.AMV_KV._m.set('switch:feature:automations', JSON.stringify({ off: true }));
+  const r3 = JSON.parse(env.AMV_KV._m.get(k2)); r3.next = Date.now() - 1; env.AMV_KV._m.set(k2, JSON.stringify(r3));
+  m = msg({ kind: 'outbox', key: k2 }); plan = [200]; posts = [];
+  await W.queueHandler({ queue: 'amv-jobs', messages: [m] }, env);
+  ok(posts.length === 1 && !outbox(env).includes(k2), 'and mail is not new work: it goes even with automations paused');
 }
 
 section('A sign-in code is never queued');
