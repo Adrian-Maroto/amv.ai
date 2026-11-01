@@ -151,6 +151,35 @@ section('Deleting removes the bytes, and so does deleting the account');
   ok(!(await W.DB.get(env, 'lib', 'gone@example.com')), 'and so is the list', true);
 }
 
+section('A file must be what it says it is: programs and macro-carrying Office files are not kept');
+{
+  const r2 = mkR2(), env = mkEnv(r2);
+  const tok = await signup(env, 'q@example.com');
+  const b64 = (buf) => Buffer.from(buf).toString('base64');
+  const bin = (kind, n, bytes, extra) => ({ sig: kind + '|' + n + '|' + bytes.length, kind, name: n, size: bytes.length, body: b64(bytes), ...(extra || {}) });
+  /* A tiny zip whose list of parts names what is inside it. */
+  const zip = (parts) => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40), Buffer.from(parts.join('\n')), Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]);
+  const put = async (f) => { const r = await req(env, '/v1/library/put', f, tok); return { status: r.status, d: await jsonOf(r) }; };
+  const pdf = await put(bin('pdf', 'contract.pdf', Buffer.from('%PDF-1.7\n1 0 obj')));
+  ok(pdf.status === 200 && pdf.d.ok, 'a real PDF is kept', pdf);
+  const png = await put(bin('img', 'logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])));
+  ok(png.status === 200, 'a real image is kept', png.status);
+  const docx = await put(bin('office', 'plan.docx', zip(['[Content_Types].xml', 'word/document.xml']), { format: 'docx' }));
+  ok(docx.status === 200, 'a Word file is kept', docx);
+  const before = r2._m.size;
+  const fakePdf = await put(bin('pdf', 'invoice.pdf', Buffer.from('<html><script>steal()</script>')));
+  ok(fakePdf.status === 422 && fakePdf.d.error === 'refused_not_what_it_says' && /not what it says it is/.test(fakePdf.d.message), 'a "PDF" that is not one is refused, and said', fakePdf.d);
+  const exe = await put(bin('pdf', 'invoice.pdf', Buffer.concat([Buffer.from('MZ'), Buffer.alloc(60)])));
+  ok(exe.status === 422 && exe.d.error === 'refused_program', 'a program named like a PDF is refused as a program', exe.d);
+  const svg = await put(bin('img', 'logo.svg', Buffer.from('<svg onload="x()"></svg>')));
+  ok(svg.status === 422, 'an "image" that is markup is not kept as an image', svg.status);
+  const macro = await put(bin('office', 'budget.xlsx', zip(['[Content_Types].xml', 'xl/workbook.xml', 'xl/vbaProject.bin']), { format: 'xlsx' }));
+  ok(macro.status === 422 && macro.d.error === 'refused_macros' && /contains macros/.test(macro.d.message), 'an Office file carrying macros is refused, and says why', macro.d);
+  ok(r2._m.size === before, 'and nothing refused reached storage', r2._m.size - before);
+  const text = await put(file('readme.txt', 'MZ is just two letters in a note'));
+  ok(text.status === 200, 'a text note is text, whatever it starts with', text.status);
+}
+
 section('Folders: checked on the server, and a move is read back');
 {
   const r2 = mkR2(), env = mkEnv(r2);

@@ -40342,6 +40342,45 @@ async function libList(request, env){
   return json({ ok: true, configured: true, files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
 
+/* A FILE IS WHAT IT SAYS IT IS, OR IT IS NOT KEPT (Oct 31 audit, item 52).
+   Not an antivirus - that is an outside service the owner would choose - but
+   the checks that need none: the first bytes must be the kind the upload
+   claims (a PDF starts %PDF-, a Word/Excel/PowerPoint file is a zip, an image
+   is one of the image formats a browser shows), a program is never kept
+   whatever it is called, and an Office file carrying macros (a program
+   inside it) is refused. Only the start of a file is decoded, and for Office
+   only the end, where a zip lists what is in it - so a large file costs no
+   more to check than a small one. */
+function _b64Bytes(s){ try { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch (e) { return null; } }
+function _libContentRefusal(kind, body){
+  if (kind === 'text') return '';
+  const clean = body.replace(/\s+/g, '');
+  const head = _b64Bytes(clean.slice(0, 64));
+  if (!head || head.length < 4) return 'not_what_it_says';
+  const at = (i, ...v) => v.every((x, k) => head[i + k] === x);
+  const str = (i, t) => [...t].every((c, k) => head[i + k] === c.charCodeAt(0));
+  /* A program, whatever it is called. */
+  if (str(0, 'MZ') || at(0, 0x7f, 0x45, 0x4c, 0x46) || at(0, 0xfe, 0xed, 0xfa) || at(0, 0xcf, 0xfa, 0xed, 0xfe) || at(0, 0xca, 0xfe, 0xba, 0xbe) || str(0, '#!'))
+    return 'program';
+  if (kind === 'pdf') return str(0, '%PDF-') ? '' : 'not_what_it_says';
+  if (kind === 'img') {
+    const image = at(0, 0x89, 0x50, 0x4e, 0x47) || at(0, 0xff, 0xd8, 0xff) || str(0, 'GIF8') || (str(0, 'RIFF') && str(8, 'WEBP'))
+      || str(4, 'ftyp') || str(0, 'BM');
+    return image ? '' : 'not_what_it_says';
+  }
+  if (kind === 'office') {
+    if (!at(0, 0x50, 0x4b, 0x03, 0x04)) return 'not_what_it_says';
+    /* The zip's own list of parts is at its end. */
+    const tailChars = Math.min(clean.length - (clean.length % 4), 262144);
+    const tail = _b64Bytes(clean.slice(clean.length - tailChars));
+    if (!tail) return 'not_what_it_says';
+    const text = new TextDecoder('latin1').decode(tail);
+    if (/vbaProject\.bin|vbaData\.xml/i.test(text)) return 'macros';
+    return '';
+  }
+  return '';
+}
+
 /* POST /v1/library/put { sig, kind, name, size, format, summary, mime, body } */
 async function libPut(request, env){
   if (!libConfigured(env)) return _libOff();
@@ -40360,6 +40399,15 @@ async function libPut(request, env){
     return json({ error: 'bad_request', message: 'That was not a file AMV could keep.' }, 400);
   if (body.length > LIB_FILE_MAX)
     return json({ error: 'too_large', message: 'That file is too large to keep in your account (' + Math.round(LIB_FILE_MAX / LIB_MB) + ' MB at most). It is still kept on this device.' }, 413);
+  const refused = _libContentRefusal(kind, body);
+  if (refused) {
+    audit(env, 'library_refused', { by: user.email, kind, why: refused });
+    return json({ error: 'refused_' + refused, message: refused === 'macros'
+      ? 'That Office file contains macros - programs inside it - so it was not kept in your account. It is still on this device.'
+      : refused === 'program'
+        ? 'That is a program, and programs are not kept in your account. It is still on this device.'
+        : 'That file is not what it says it is, so it was not kept in your account. It is still on this device.' }, 422);
+  }
 
   const folder = _libFolder(b.folder);
   if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);

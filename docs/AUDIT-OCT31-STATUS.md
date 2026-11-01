@@ -94,7 +94,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | # | Item | Status |
 |---|---|---|
 | 51 | Direct R2 uploads | Not yet |
-| 52 | File quarantine/scanning | Not yet |
+| 52 | File quarantine/scanning | Partial (Nov 1: a file must be what it says it is; programs and macro-carrying Office files are never kept). An antivirus engine is an outside service, yours to choose |
 | 53 | Asynchronous file ingestion | Not yet |
 | 54 | Persistent vector indexing | Partial ("searching by meaning" exists; not a persistent index) |
 | 55 | Hybrid lexical/vector retrieval | Partial (project files searched by passage) |
@@ -175,8 +175,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 ## Counts
 
 Of the 109 items with work in them (110 is "then parity"): **40 done**, **12
-built and waiting on you**, **18 partial** (87 counted here: SBOM done,
-provenance not), **19 not yet**, **16 yours or outside** (decisions, accounts,
+built and waiting on you**, **19 partial** (87 counted here: SBOM done,
+provenance not), **18 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
 quarantine (51-53). Audit export (107) needs a change to
