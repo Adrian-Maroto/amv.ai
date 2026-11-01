@@ -698,8 +698,12 @@ async function backupImport(request, env){
   const snap = body.snapshot;
   const mode = body.mode === 'missing' ? 'missing' : 'merge';
   /* From a nightly backup in the bucket rather than an uploaded file
-     (27a-nightly-backup.js): { fromNight: 'YYYY-MM-DD', fromPart? }. */
-  if (body.fromNight) return _restoreFromNight(env, body.fromNight, body.fromPart, mode);
+     (27a-nightly-backup.js): { fromNight: 'YYYY-MM-DD', fromPart? }.
+     mode 'verify' is the restore DRILL: every part read and every record
+     checked as a restore would check it, nothing written - so it can be run
+     against production on any day without changing anybody's data. */
+  if (body.fromNight) return _restoreFromNight(env, body.fromNight, body.fromPart, body.mode === 'verify' ? 'verify' : mode);
+  if (body.mode === 'verify') return json({ error: 'A drill reads a nightly backup: name it with fromNight.', code: 'bad_request' }, 400);
 
   if(!snap || snap._amv_backup !== 1 || !snap.data || typeof snap.data !== 'object')
     return json({ error:'not a valid AMV backup snapshot' }, 400);

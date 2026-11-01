@@ -769,6 +769,39 @@ step('The price of an engine is the same number in both places', () => {
    window property, so reading one that way is odd but correct. Comments and
    strings are stripped first, or the four comments above would be reported as
    the defect they warn about - the mistake the dead-guards stage is named for. */
+/* NO CREDENTIAL IS COMMITTED. Every tracked file, for the shapes a real key
+   has: a live payment key, a cloud access key, a source-host token, a chat
+   bot token, a webhook signing secret, a private key WITH its body. A key in
+   the history is a key published, whatever happens to the file after, so it is
+   caught before the commit reaches main rather than found later.
+   Test fixtures that only look like keys are not keys and are left alone: a
+   private-key header with no key under it, and the cloud provider's own
+   documented example key (it ends EXAMPLE). Anything else that matches is
+   either a real key - rotate it, then remove it - or a fixture that should be
+   made obviously fake. */
+step('No credential is committed', () => {
+  const PATTERNS = [
+    ['live payment key', /\b[rs]k_live_[A-Za-z0-9]{20,}/],
+    ['payment webhook secret', /\bwhsec_[A-Za-z0-9]{24,}/],
+    ['cloud access key', /\bAKIA(?![0-9A-Z]{9}EXAMPLE)[0-9A-Z]{16}\b/],
+    ['source-host token', /\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})/],
+    ['chat bot token', /\bxox[bpas]-[0-9A-Za-z-]{20,}/],
+    ['browser API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+    ['private key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----\s*(?:\\n)?[A-Za-z0-9+/=\s]{200,}/],
+  ];
+  const files = execSync('git ls-files -z', { cwd: ROOT }).toString().split('\0').filter(Boolean);
+  const found = [];
+  for (const f of files) {
+    let text;
+    try { text = readFileSync(join(ROOT, f), 'utf8'); } catch (e) { continue; }
+    if (text.includes('\0')) continue;                       // binary
+    for (const [what, re] of PATTERNS) if (re.test(text)) found.push(f + ': ' + what);
+  }
+  if (found.length)
+    throw new Error('Something shaped like a real credential is committed:\n    ' + found.join('\n    ')
+      + '\n  If it is real, rotate it first - it is already published - then remove it. If it is a fixture, make it obviously fake.');
+});
+
 step('No window read reaches for a binding that is not on window', () => {
   /* STRINGS BLANKED, not just comments. The depth walk below counts braces, and
      `codeOnly` keeps string literals by default - so a `}` inside a sentence of

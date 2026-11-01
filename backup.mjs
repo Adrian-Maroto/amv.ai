@@ -98,15 +98,64 @@ async function doRestore() {
     (res.rejected ? `, ${Y}rejected ${res.rejected} (outside backup scope)${X}` : ''));
 }
 
+/* THE RESTORE DRILL. Reads the newest complete nightly backup (or the night
+   named) part by part through the same server path a restore uses, with
+   mode 'verify': every record is checked the way a restore checks it and
+   nothing is written, so it is safe against production on any day. It says
+   how long reading the whole night took - the floor under how long a real
+   restore takes - and fails if the night holds fewer records than its
+   manifest says, or any record a restore would refuse. */
+async function doDrill() {
+  needConfig();
+  let day = args[1] && /^\d{4}-\d{2}-\d{2}$/.test(args[1]) ? args[1] : '';
+  if (!day) {
+    const r = await fetch(API + '/admin/backup/nights', { headers: { 'X-Admin-Token': TOKEN } });
+    if (r.status === 403) die('forbidden - check AMV_ADMIN_TOKEN');
+    const d = await r.json().catch(() => ({}));
+    if (!d.on) die('nightly backups are not switched on here: ' + (d.note || 'no AMV_BACKUPS bucket'));
+    const done = (d.nights || []).filter(n => n.complete).map(n => n.day).sort();
+    if (!done.length) die('there is no complete nightly backup yet');
+    day = done[done.length - 1];
+  }
+  console.log(`${B}Restore drill${X} - reading the ${day} backup, writing nothing`);
+  const t0 = Date.now();
+  let part = 0, verified = 0, refused = 0, unrestorable = 0, expected = null, parts = null, calls = 0;
+  const lost = [];
+  for (;;) {
+    calls++;
+    const r = await post('/admin/backup/import', { fromNight: day, fromPart: part, mode: 'verify' });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 403) die('forbidden - check AMV_ADMIN_TOKEN');
+    if (!d.drill) die(`the drill could not read the backup: HTTP ${r.status} ${d.error || ''}`);
+    verified += d.verified || 0; refused += d.refused || 0; unrestorable += d.unrestorable || 0;
+    for (const k of d.lost || []) if (lost.length < 20) lost.push(k);
+    expected = d.expected; parts = d.parts;
+    if (!d.more) break;
+    part = d.nextPart;
+    if (calls > 10000) die('the drill did not finish');
+  }
+  const secs = ((Date.now() - t0) / 1000).toFixed(1);
+  const counted = verified + refused + unrestorable;
+  console.log(`  ${parts} part(s), ${verified} record(s) a restore would write, read in ${secs}s over ${calls} request(s)`);
+  let bad = false;
+  if (expected != null && counted !== expected) { bad = true; console.log(`${RED}✗${X} the manifest says ${expected} records; the parts hold ${counted}`); }
+  if (refused) { bad = true; console.log(`${RED}✗${X} ${refused} record(s) outside what a restore accepts`); }
+  if (unrestorable) { bad = true; console.log(`${RED}✗${X} ${unrestorable} record(s) a restore could not write: ${lost.join(', ')}`); }
+  if (bad) process.exit(1);
+  console.log(`${G}✓${X} the ${day} backup is complete and restorable. Reading it took ${secs}s; a real restore also writes every record, so it takes longer.`);
+}
+
 (async () => {
   if (cmd === 'export') await doExport();
   else if (cmd === 'restore') await doRestore();
+  else if (cmd === 'drill') await doDrill();
   else {
     console.log(`${B}AMV backup${X}\n`);
     console.log('  node backup.mjs export                  save a snapshot to ./backups/');
     console.log('  node backup.mjs export --out file.json  save to a specific path');
     console.log('  node backup.mjs restore file.json       restore (merge; never deletes)');
     console.log('  node backup.mjs restore file.json --missing   only restore keys that are gone');
+    console.log('  node backup.mjs drill [YYYY-MM-DD]      read a nightly backup through the restore path, write nothing');
     console.log(`\n  ${DIM}Set AMV_API_URL and AMV_ADMIN_TOKEN first.${X}`);
     process.exit(cmd ? 1 : 0);
   }

@@ -163,6 +163,27 @@ section('Thirty nights are kept; older ones go');
   ok(list.on && list.nights.some(n => n.day === DAY && n.complete), 'the owner console lists the nights there are to restore from', list.nights);
 }
 
+section('The restore drill reads a whole night through the restore path and writes nothing');
+{
+  const before = JSON.stringify([...env._m.entries()].sort());
+  const man = JSON.parse(B.o.get('backups/' + DAY + '/manifest.json'));
+  let res, body, from = 0, rounds = 0, verified = 0;
+  do {
+    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from, mode: 'verify' }), env);
+    body = await res.json(); from = body.nextPart; rounds++; verified += body.verified || 0;
+  } while (body.more && rounds < 20);
+  ok(res.status === 200 && body.drill && body.ok && verified === man.keyCount, 'every record the manifest counts is read and would be restored', { status: res.status, verified, expected: man.keyCount });
+  ok(JSON.stringify([...env._m.entries()].sort()) === before, 'and not one record was written');
+  /* A part with a record a restore would refuse makes the drill fail, not pass. */
+  const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
+  B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
+  const bad = await (await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, mode: 'verify' }), env)).json();
+  ok(bad.drill && bad.ok === false && bad.refused === 1 && env._m.get('GLOBAL_KILL') === '0', 'a record outside what a restore accepts fails the drill, and is still not written', bad);
+  B.o.set(p0, orig);
+  const nameless = await W.backupImport(admin('/admin/backup/import', { mode: 'verify' }), env);
+  ok(nameless.status === 400, 'a drill names the night it reads', nameless.status);
+}
+
 section('A night is put back through the same rules as any restore');
 {
   for (const k of [...env._m.keys()]) if (k.startsWith('acct:')) env._m.delete(k);

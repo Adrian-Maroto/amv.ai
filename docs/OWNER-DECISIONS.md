@@ -588,3 +588,25 @@ the repository.
     Settings > Account > "Notify this device", and are told when a background
     job has a result or is waiting for their OK - named, never what it found.
     On an iPhone it works once AMV is added to the Home Screen.
+11. **Code and secret scanning on GitHub (free, two clicks each)**: Settings >
+    Code security > turn on **CodeQL** ("Default" setup), **Secret scanning**
+    and **Push protection**. They are repository settings, not files, so the
+    repository cannot switch them on itself. The gate already refuses a commit
+    with a real-shaped credential in it (`check.mjs`, "No credential is
+    committed"), and every deploy records what it contains (an SBOM on the run
+    summary); these add GitHub's own analysis and block a key at push time.
+12. **The site watched from outside (synthetic probe)**: set the repository
+    variable `AMV_SYNTHETIC` to `on` (Settings > Secrets and variables >
+    Actions > Variables). Every fifteen minutes it asks the live site whether
+    it answers, reaches its stores, loads the page and keeps the source
+    private; a failure is a failed workflow, which GitHub emails you about. It
+    uses Actions minutes, which is why it is yours to switch on. The objectives
+    it measures are in `docs/SLO.md`.
+13. **A person who is woken up (paging)**: an on-call service (PagerDuty,
+    Opsgenie or similar) fed by the failed-workflow email and Cloudflare's
+    notifications, and a public status page. Nothing in the repository can
+    page a phone. Until then, the email from item 12 is the alarm.
+14. **The monthly restore drill**: `AMV_API_URL=https://api.amv.homes
+    AMV_ADMIN_TOKEN=... node backup.mjs drill` reads the newest nightly backup
+    through the restore path and writes nothing. Put the time it reports in
+    the table in `docs/SLO.md`. Needs item 9 first.

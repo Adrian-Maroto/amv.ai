@@ -89,6 +89,30 @@ jobs:
         if: steps.creds.outputs.ready == 'yes'
         run: npm ci
 
+      # WHAT IS IN THIS RELEASE: a software bill of materials, from the same
+      # lockfile the deploy installs, by npm itself (no third-party action).
+      # Production dependencies only - what can reach the Worker - with every
+      # component and its exact version, kept on this run's summary so "were we
+      # running X when advisory Y came out" is answered by looking it up, not by
+      # reconstructing it. The advisory check itself is in the gate
+      # (audit-deps.mjs); this is the record of what shipped.
+      - name: Record what this release contains
+        if: steps.creds.outputs.ready == 'yes'
+        run: |
+          npm sbom --sbom-format cyclonedx --omit dev > sbom.cdx.json
+          n=$(node -e "const b=require('./sbom.cdx.json');console.log((b.components||[]).length)")
+          {
+            echo "### What this release contains"
+            echo ""
+            echo "$n production components (CycloneDX, from package-lock.json at ${GITHUB_SHA::7})."
+            echo ""
+            echo "<details><summary>Every component and version</summary>"
+            echo ""
+            node -e "const b=require('./sbom.cdx.json');for(const c of (b.components||[]).slice().sort((x,y)=>x.name.localeCompare(y.name)))console.log('- '+(c.group?c.group+'/':'')+c.name+' '+c.version)"
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # `npm run deploy`, not `wrangler deploy` directly: the package's
       # `predeploy` hook runs the deploy preflight, which is the check that
       # catches an unbound KV namespace, a missing Durable Object migration or

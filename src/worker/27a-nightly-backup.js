@@ -153,6 +153,16 @@ async function backupNights(request, env){
    Only a complete night; part by part, through _restoreEntries; and when the
    time a request has runs short it stops between parts and says where to go
    on from, rather than finishing short. */
+/* The drill's check of one part: each record is what a restore would accept
+   (a prefix restore writes, a value it can hold), counted - nothing written. */
+function _drillEntries(entries, t){
+  for (const [key, val] of entries) {
+    if (!BACKUP_PREFIXES.some(p => key.startsWith(p))) { t.refused++; continue; }
+    if (typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES) { t.unrestorable++; if (t.lost.length < 20) t.lost.push(key); continue; }
+    t.verified++;
+  }
+}
+
 async function _restoreFromNight(env, day, fromPart, mode){
   if (!_nightlyOn(env)) return json({ error: 'Nightly backups are not switched on here.', code: 'needs_service' }, 503);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) return json({ error: 'Name the night as YYYY-MM-DD.', code: 'bad_request' }, 400);
@@ -161,6 +171,8 @@ async function _restoreFromNight(env, day, fromPart, mode){
   if (!man || !man.complete) return json({ error: 'There is no complete backup for ' + day + '.', code: 'no_backup' }, 404);
   const started = Date.now();
   const t = { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] };
+  const drill = mode === 'verify';
+  if (drill) t.verified = 0;
   let part = Math.max(0, parseInt(fromPart, 10) || 0);
   for (; part < man.parts; part++) {
     if (Date.now() - started > NIGHTLY_SLICE_MS) break;
@@ -175,7 +187,16 @@ async function _restoreFromNight(env, day, fromPart, mode){
       let r; try { r = JSON.parse(line); } catch (e) { t.unrestorable++; continue; }
       if (r && typeof r.k === 'string') entries.push([r.k, r.v]);
     }
-    await _restoreEntries(env, entries, mode, t);
+    if (drill) _drillEntries(entries, t);
+    else await _restoreEntries(env, entries, mode, t);
+  }
+  if (drill) {
+    audit(env, 'backup_drill', { from: 'night:' + day, verified: t.verified, refused: t.refused, unrestorable: t.unrestorable, through: part });
+    const sound = !t.unrestorable && !t.refused;
+    const base = { ok: sound, drill: true, parts: man.parts, expected: man.keyCount, verified: t.verified, refused: t.refused,
+      unrestorable: t.unrestorable, lost: t.lost, ms: Date.now() - started, snapshotFrom: man.finishedISO };
+    if (part < man.parts) return json({ ...base, more: true, nextPart: part }, 202);
+    return json({ ...base, more: false }, sound ? 200 : 422);
   }
   audit(env, 'backup_import', { mode, from: 'night:' + day, ...t, lost: t.lost.join(',') || undefined, through: part });
   const ok = !t.unrestorable;

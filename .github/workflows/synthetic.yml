@@ -1,0 +1,75 @@
+name: synthetic
+
+# THE LIVE SITE, ASKED FROM OUTSIDE, EVERY FIFTEEN MINUTES.
+#
+# The deploy checks the site once, at the moment it ships. This asks again
+# all day, from a machine that is not Cloudflare's, the questions a person's
+# first request depends on - so "AMV is down" is found by this and not by
+# the first customer, and the answers are the measurements docs/SLO.md is
+# written against.
+#
+# OFF UNTIL THE OWNER TURNS IT ON. Every run uses Actions minutes, which are
+# the owner's to spend: set the repository variable AMV_SYNTHETIC to "on"
+# (Settings > Secrets and variables > Actions > Variables). A skipped job uses
+# none. A failed run is a failed workflow, and GitHub emails the owner about
+# it - the nearest thing to a page this repository can send. Real paging (an
+# on-call rota, a phone) is the owner's to set up; docs/SLO.md says how.
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synthetic
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: vars.AMV_SYNTHETIC == 'on' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      API: ${{ vars.AMV_API_URL || 'https://api.amv.homes' }}
+      SITE: ${{ vars.AMV_SITE_URL || 'https://amv.homes' }}
+    steps:
+      - name: Ask the live site what a first request needs
+        run: |
+          fail=0
+          row() { echo "| $1 | $2 | $3 |" >> "$GITHUB_STEP_SUMMARY"; }
+          {
+            echo "### The live site, asked from outside"
+            echo ""
+            echo "| Question | Answer | Time |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Is the server there at all? (liveness: reads nothing)
+          out=$(curl -sS -o /tmp/live -w '%{http_code} %{time_total}' --max-time 15 "$API/v1/health" || echo "000 0")
+          code=${out%% *}; t=${out##* }
+          if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/live; then row "Server answers" "yes" "${t}s"
+          else row "Server answers" "**no** (HTTP $code)" "${t}s"; fail=1; fi
+
+          # 2. Can it reach its stores? (readiness: what every request needs)
+          out=$(curl -sS -o /tmp/ready -w '%{http_code} %{time_total}' --max-time 20 "$API/v1/health/ready" || echo "000 0")
+          code=${out%% *}; t=${out##* }
+          if [ "$code" = "200" ] && grep -q '"ready":true' /tmp/ready; then row "Stores reachable" "yes" "${t}s"
+          else row "Stores reachable" "**no** (HTTP $code): $(head -c 300 /tmp/ready | tr '|\n' '/ ')" "${t}s"; fail=1; fi
+
+          # 3. Does the page itself load? (the page a visitor downloads)
+          out=$(curl -sS -o /tmp/page -w '%{http_code} %{time_total}' --max-time 20 "$SITE/" || echo "000 0")
+          code=${out%% *}; t=${out##* }
+          if [ "$code" = "200" ] && grep -q '<title' /tmp/page; then row "Page loads" "yes, $(wc -c < /tmp/page) bytes" "${t}s"
+          else row "Page loads" "**no** (HTTP $code)" "${t}s"; fail=1; fi
+
+          # 4. Is the source still private? (the host serves public/ only)
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$SITE/amv-backend.js" || echo 000)
+          if [ "$code" = "404" ]; then row "Server source not served" "yes" "-"
+          else row "Server source not served" "**no**: /amv-backend.js answered HTTP $code" "-"; fail=1; fi
+
+          if [ "$fail" = "1" ]; then
+            echo "::error::The live site failed a synthetic check - see the run summary. docs/INCIDENT-RUNBOOK.md section 0 is the first minute."
+            exit 1
+          fi
