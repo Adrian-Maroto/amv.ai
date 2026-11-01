@@ -107,7 +107,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | # | Item | Status |
 |---|---|---|
 | 59 | Model health telemetry | Partial (circuit and failure audit events, readiness) |
-| 60 | Shared/provider-level circuit breaker | Partial - per server; not shared across servers |
+| 60 | Shared/provider-level failover | Partial - each server fails over on its own; the state is not shared across servers |
 | 61 | Multi-provider routing | Partial (partner engines; a fallback endpoint) |
 | 62 | Negotiate model capacity | Yours |
 | 63 | Load shedding / brownout | Done (Nov 1: one owner action pauses the heavy parts) |
@@ -150,7 +150,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 95 | Legal/privacy review | Outside |
 | 96 | SOC 2 | Outside |
 | 97 | Activation funnel analytics | Done (the funnel in the owner digest) |
-| 98 | First value in under 3 minutes | Not yet measured |
+| 98 | First value in under 3 minutes | Done as a measurement (Nov 1: time from sign-up to the first answer, in the owner digest); making it fast is product work |
 | 99 | Companion/routine onboarding | Not doing for now (decision #44) |
 | 100 | Native iOS/Android | Yours to decide; not started |
 | 101 | macOS/Windows apps | Yours to decide; not started |
@@ -159,7 +159,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 104 | Living Docs/Sheets/Slides | Partial (Office files edited in place; the sheet editor) |
 | 105 | Enterprise RBAC/group policy | Partial (three team roles; SCIM; company sign-in) |
 | 106 | Policy/DLP gateway | Not yet |
-| 107 | SIEM/audit export | Not yet |
+| 107 | SIEM/audit export | Not yet - the team log keeps its last 200 entries in one record; an export worth having needs it stored by month, a KV schema change that waits for your approval |
 | 108 | Retention/residency controls | Not yet |
 | 109 | Skills/MCP ecosystem | Partial (connectors from the open registry) |
 | 110 | Then competitor parity | - |
@@ -174,10 +174,12 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 
 ## Counts
 
-Of the 109 items with work in them (110 is "then parity"): **34 done**, **12
+Of the 109 items with work in them (110 is "then parity"): **35 done**, **12
 built and waiting on you**, **19 partial** (87 counted here: SBOM done,
-provenance not), **24 not yet**, **16 yours or outside** (decisions, accounts,
+provenance not), **23 not yet**, **16 yours or outside** (decisions, accounts,
 people, reviews), **4 not doing** with reasons. Nothing in the "not yet" rows is blocked; they are the
 next work, largest first: durable Task checkpoints (25-27), direct uploads with
-quarantine (51-53), the eval framework (91), shared circuit breaker and
-per-provider budgets (60, 66), audit export (107).
+quarantine (51-53), the eval framework (91), failover state shared across
+servers and per-provider budgets (60, 66). Audit export (107) needs a change to
+how the team log is stored, which is a KV schema change and so waits for your
+approval.

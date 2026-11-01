@@ -82,6 +82,23 @@ section('An empty funnel reports nothing rather than a made-up number');
   ok(r.avgDaysToPay === null, 'nor an average time to pay when nobody has paid', r.avgDaysToPay);
 }
 
+section('How long the first real answer took: the share inside three minutes');
+{
+  const env = mkEnv();
+  const now = Date.now();
+  const made = { 'a@x.com': now - 60e3, 'b@x.com': now - 2 * 60e3, 'c@x.com': now - 20 * 60e3, 'd@x.com': now - 5 * 86400e3 };
+  for (const [em, at] of Object.entries(made)) await W.DB.put(env, 'acct', em, { name: em, createdAt: at });
+  for (const em of Object.keys(made)) { await W._funnelMark(env, em, 'signup'); await W._funnelMark(env, em, 'activated'); }
+  await W._funnelMark(env, 'a@x.com', 'activated');
+  await W._funnelMark(env, 'nobody@x.com', 'activated');          // no account record: not timed
+  const r = await W._funnelReport(env);
+  ok(r.firstAnswer.measured === 4, 'each account timed once, and one with no record not at all', r.firstAnswer);
+  ok(r.firstAnswer.within['3m'] === 2 && r.firstAnswer.within['1h'] === 1 && r.firstAnswer.within.later === 1, 'into the right buckets', r.firstAnswer.within);
+  ok(r.firstAnswer.under3MinPct === 50, 'half got a real answer within three minutes', r.firstAnswer.under3MinPct);
+  const empty = await W._funnelReport(mkEnv());
+  ok(empty.firstAnswer.under3MinPct === null, 'and with nobody timed, no share is invented', empty.firstAnswer);
+}
+
 section('"Came back" means a second DAY, not a second visit');
 {
   /* Somebody who opens AMV three times in one afternoon has not come back. */

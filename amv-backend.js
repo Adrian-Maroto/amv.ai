@@ -33293,6 +33293,14 @@ async function _funnelMark(env, email, step){
     if(step !== 'signup') await _recordGrowth(env, step, em);
     /* How long it took them to pay, accumulated rather than stored per user, so
        the average is available without reading every account. */
+    /* HOW LONG TO THE FIRST REAL ANSWER (Oct 31 audit, item 98: "first value
+       in under three minutes"). Counted into a few buckets, once per account,
+       so the share that got there fast is one read - not a per-user record. */
+    if(step === 'activated'){
+      const acct = await DB.get(env, 'acct', em);
+      const ms = acct && acct.createdAt ? Date.now() - acct.createdAt : -1;
+      if(ms >= 0) await _tallyAdd(env, 'funnel:ttv:' + _ttvBucket(ms), em, 1);
+    }
     if(step === 'paid'){
       const acct = await DB.get(env, 'acct', em);
       const age = acct && acct.createdAt ? Date.now() - acct.createdAt : 0;
@@ -33304,6 +33312,9 @@ async function _funnelMark(env, email, step){
     return true;
   }catch(e){ return false; }   // a funnel stat must never fail a real action
 }
+
+const TTV_BUCKETS = [['3m', 3 * 60e3], ['10m', 10 * 60e3], ['1h', 3600e3], ['1d', 86400e3], ['later', Infinity]];
+function _ttvBucket(ms){ for (const [k, max] of TTV_BUCKETS) if (ms < max) return k; return 'later'; }
 
 async function _funnelReport(env){
   const out = {};
@@ -33319,8 +33330,16 @@ async function _funnelReport(env){
     const cnt = (await counter(env, 'funnelttpn', { op: 'get' })).value || 0;
     if(cnt > 0) days = +(sum / cnt).toFixed(1);
   }catch(e){}
+  /* Time from sign-up to the first answer, among those who got one. */
+  const ttv = {};
+  let ttvN = 0;
+  for(const [k] of TTV_BUCKETS){
+    try{ ttv[k] = Math.max(0, await _tallyGet(env, 'funnel:ttv:' + k)); }catch(e){ ttv[k] = 0; }
+    ttvN += ttv[k];
+  }
   return {
     ...out,
+    firstAnswer: { within: ttv, measured: ttvN, under3MinPct: ttvN > 0 ? +((ttv['3m'] / ttvN) * 100).toFixed(1) : null },
     activatedPct: pct(out.activated),
     returnedPct: pct(out.returned),
     paidPct: pct(out.paid),
@@ -34944,6 +34963,7 @@ function _digestSnapshot(m) {
     qualityVotes: (m.quality && m.quality.votes) || 0,
     avgFirstTokenMs: (m.speed && m.speed.avgFirstTokenMs != null) ? m.speed.avgFirstTokenMs : null,
     activatedPct: (m.funnel && m.funnel.activatedPct != null) ? m.funnel.activatedPct : null,
+    firstAnswer3mPct: (m.funnel && m.funnel.firstAnswer && m.funnel.firstAnswer.under3MinPct != null) ? m.funnel.firstAnswer.under3MinPct : null,
     returnedPct: (m.funnel && m.funnel.returnedPct != null) ? m.funnel.returnedPct : null,
     paidPct: (m.funnel && m.funnel.paidPct != null) ? m.funnel.paidPct : null,
     avgDaysToPay: (m.funnel && m.funnel.avgDaysToPay != null) ? m.funnel.avgDaysToPay : null,
@@ -34981,6 +35001,8 @@ function _buildDigest(m, prev) {
        everything else says how the business is doing today (AMV-101). */
     ['Got a real answer',      snap.activatedPct == null ? 'not enough signups yet'
                                  : _delta(snap.activatedPct, pv('activatedPct'), { pct: true }) + ' of signups'],
+    ['First answer within 3 minutes', snap.firstAnswer3mPct == null ? 'nobody has been timed yet'
+                                 : _delta(snap.firstAnswer3mPct, pv('firstAnswer3mPct'), { pct: true }) + ' of those who got one'],
     ['Came back another day',  snap.returnedPct == null ? 'not enough signups yet'
                                  : _delta(snap.returnedPct, pv('returnedPct'), { pct: true }) + ' of signups'],
     ['Went on to pay',         snap.paidPct == null ? 'not enough signups yet'

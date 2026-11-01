@@ -98,6 +98,7 @@ function _digestSnapshot(m) {
     qualityVotes: (m.quality && m.quality.votes) || 0,
     avgFirstTokenMs: (m.speed && m.speed.avgFirstTokenMs != null) ? m.speed.avgFirstTokenMs : null,
     activatedPct: (m.funnel && m.funnel.activatedPct != null) ? m.funnel.activatedPct : null,
+    firstAnswer3mPct: (m.funnel && m.funnel.firstAnswer && m.funnel.firstAnswer.under3MinPct != null) ? m.funnel.firstAnswer.under3MinPct : null,
     returnedPct: (m.funnel && m.funnel.returnedPct != null) ? m.funnel.returnedPct : null,
     paidPct: (m.funnel && m.funnel.paidPct != null) ? m.funnel.paidPct : null,
     avgDaysToPay: (m.funnel && m.funnel.avgDaysToPay != null) ? m.funnel.avgDaysToPay : null,
@@ -135,6 +136,8 @@ function _buildDigest(m, prev) {
        everything else says how the business is doing today (AMV-101). */
     ['Got a real answer',      snap.activatedPct == null ? 'not enough signups yet'
                                  : _delta(snap.activatedPct, pv('activatedPct'), { pct: true }) + ' of signups'],
+    ['First answer within 3 minutes', snap.firstAnswer3mPct == null ? 'nobody has been timed yet'
+                                 : _delta(snap.firstAnswer3mPct, pv('firstAnswer3mPct'), { pct: true }) + ' of those who got one'],
     ['Came back another day',  snap.returnedPct == null ? 'not enough signups yet'
                                  : _delta(snap.returnedPct, pv('returnedPct'), { pct: true }) + ' of signups'],
     ['Went on to pay',         snap.paidPct == null ? 'not enough signups yet'
