@@ -51,13 +51,13 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const API = 'http://127.0.0.1:' + server.address().port;
 mkdirSync(join(__dir, '.build'), { recursive: true });
-const CASES = join(__dir, '.build', 'evals.cases.json');
-writeFileSync(CASES, JSON.stringify({ cases: [
+const casesFile = join(__dir, '.build', 'evals.cases.json');
+writeFileSync(casesFile, JSON.stringify({ cases: [
   { id: 'arithmetic', ask: 'What is 17 times 23?', mustMatch: ['\\b391\\b'] },
   { id: 'json', ask: 'Reply with JSON', json: true },
 ] }));
 const run = (extra, env) => new Promise((resolve) => {
-  const p = spawn(process.execPath, [join(ROOT, 'tools', 'evals.mjs'), '--api', API, '--cases', CASES, ...extra],
+  const p = spawn(process.execPath, [join(ROOT, 'tools', 'evals.mjs'), '--api', API, '--cases', casesFile, ...extra],
     { env: Object.assign({ PATH: process.env.PATH }, env) });
   let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => out += d);
   p.on('close', (code) => resolve({ code, out }));
