@@ -1,0 +1,64 @@
+name: image-scan
+
+# THE CLOUD COMPUTER'S IMAGE, CHECKED FOR KNOWN HOLES (Oct 31 audit, item 88).
+#
+# cloud/Dockerfile is what every account's cloud computer runs: a Debian base,
+# Node, Python, git and a compiler, with people's own code running inside.
+# A package in it with a published, FIXED vulnerability is a hole somebody
+# else has already written up. This builds the image exactly as `wrangler
+# deploy` does from cloud/ and scans it, and fails on any HIGH or CRITICAL
+# finding that has a fix available - the ones that are ours to close by
+# rebuilding. Findings with no fix yet are listed, not failed on: there is
+# nothing to do about them but wait, and a check that is always red is a
+# check people stop reading.
+#
+# Runs when cloud/ changes, every Monday (new advisories land on old
+# packages), and by hand. The scanner is the scanner's own container image at
+# a pinned version, not a third-party action - nothing here runs code that
+# can change under the same name.
+on:
+  push:
+    branches: [main]
+    paths: ['cloud/**', 'bridge/**', '.github/workflows/image-scan.yml']
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-scan
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - name: Build the cloud computer's image as deploy builds it
+        run: docker build -t amv-cloud:scan cloud/
+      - name: Scan it
+        env:
+          TRIVY: aquasec/trivy:0.56.2
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy"
+          run() { docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$RUNNER_TEMP/trivy:/root/.cache" "$TRIVY" image --scanners vuln --no-progress "$@" amv-cloud:scan; }
+          # Everything HIGH or CRITICAL, for the record.
+          run --severity HIGH,CRITICAL --format table > report.txt || true
+          {
+            echo "### Cloud computer image"
+            echo ""
+            echo '```'
+            head -c 60000 report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat report.txt
+          # The gate: only what a rebuild can fix.
+          if ! run --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --format table > fixable.txt; then
+            cat fixable.txt
+            echo "::error title=Fixable vulnerabilities in the cloud computer::A HIGH or CRITICAL finding with a fix is in the image. Rebuild on a newer base (cloud/Dockerfile) or update the package named above."
+            exit 1
+          fi
+          echo "No HIGH or CRITICAL finding with a fix available."

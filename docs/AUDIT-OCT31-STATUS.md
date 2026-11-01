@@ -140,7 +140,7 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 85 | CodeQL | Done (turned on Nov 1; its first run passed) |
 | 86 | Secret scanning / push protection | Done (in the gate, and GitHub's own turned on Nov 1) |
 | 87 | SBOM / build provenance | SBOM done (every deploy); provenance needs a pinned attestation action added to the workflow |
-| 88 | Container image scanning | Not yet |
+| 88 | Container image scanning | Done (`.github/workflows/image-scan.yml`: the cloud computer's image, built as deploy builds it, scanned on every change and weekly; fails on any fixable HIGH or CRITICAL; the image upgrades its OS packages at build) |
 | 89 | Load tests at 1K/10K/100K | Partial (`tools/load-probe.mjs`) |
 | 90 | Chaos/fault injection | Done (store and model failures never fail open) |
 | 91 | Model/prompt eval framework | Done (Nov 1: `npm run evals` - eight cases through AMV's own API, graded by checks that do not depend on wording; costs model credit, so it is run before a change, not on every commit) |

@@ -308,6 +308,10 @@
   { "id": "data.postgres_reads", "status": "built", "name": "For a chosen cohort, Postgres answers accounts and plans - written there first, checked against KV after every answer, handed back to KV on any difference",
     "code": [["src/worker/04d-pg-read.js", "_pgReadServe"], ["src/worker/04d-pg-read.js", "_pgWriteThrough"]],
     "tests": ["tests/worker/postgres-answers-only-where-it-proved-it-can.test.mjs"],
-    "says": ["postgres reads", "pg_read"] }
+    "says": ["postgres reads", "pg_read"] },
+  { "id": "ops.image_scan", "status": "built", "name": "The cloud computer's image is scanned for known vulnerabilities and fails on any that a rebuild can fix",
+    "code": [[".github/workflows/image-scan.yml", "--ignore-unfixed --exit-code 1"]],
+    "tests": ["tests/worker/the-cloud-image-is-scanned.test.mjs"],
+    "says": ["image scanning"] }
  ]
 }

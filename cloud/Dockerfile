@@ -1,7 +1,11 @@
 # AMV's cloud computer: the AMV bridge in --cloud mode, in a folder of its own.
 # Built by `wrangler deploy` from this folder (see wrangler.toml and GO-LIVE.md).
 FROM node:22-bookworm-slim
+# Upgraded at build, not only installed: the base image's own packages carry
+# fixes released after it was tagged, and this machine runs people's code.
+# .github/workflows/image-scan.yml fails on any fixable HIGH or CRITICAL.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends git python3 python3-pip python3-venv ca-certificates curl build-essential \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --shell /bin/bash amv \
