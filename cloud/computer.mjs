@@ -24,6 +24,12 @@ const WS_VERSIONS = 5;
    bounded, and a stop without a save is recorded and told, never silent. */
 const WS_SAVE_TRIES = 3;
 
+/* The names a save recorded as changing while it was read, or nothing. */
+function _wsChanging(meta) {
+  if (!meta || !meta.changing) return {};
+  try { const v = JSON.parse(decodeURIComponent(meta.changing)); return Array.isArray(v) ? { changing: v.slice(0, 20).map(String) } : {}; } catch (e) { return {}; }
+}
+
 export class AMVComputer extends Container {
   defaultPort = 8080;
   /* Kept in step with COMPUTER_AWAKE_S in amv-backend.js, which bills this
@@ -69,7 +75,8 @@ export class AMVComputer extends Container {
     const sha = obj.customMetadata && obj.customMetadata.sha256;
     const verify = !(opts && opts.verify === false);
     await this.env.WORKSPACES.put(to, readable, Object.assign({ httpMetadata: { contentType: 'application/gzip' } },
-      sha ? Object.assign(verify ? { sha256: sha } : {}, { customMetadata: { sha256: sha } }) : {}));
+      sha ? Object.assign(verify ? { sha256: sha } : {}, { customMetadata: Object.assign({}, obj.customMetadata, { sha256: sha }) })
+        : (obj.customMetadata ? { customMetadata: Object.assign({}, obj.customMetadata) } : {})));
     await done;
     return true;
   }
@@ -77,10 +84,10 @@ export class AMVComputer extends Container {
     const out = [];
     let cursor;
     do {
-      const page = await this.env.WORKSPACES.list({ prefix: this._wsVerPrefix(), cursor });
+      const page = await this.env.WORKSPACES.list({ prefix: this._wsVerPrefix(), cursor, include: ['customMetadata'] });
       for (const o of page.objects || []) {
         const m = /\/(\d{13})\.tgz$/.exec(o.key);
-        if (m) out.push({ id: m[1], at: new Date(+m[1]).toISOString(), bytes: o.size, key: o.key });
+        if (m) out.push(Object.assign({ id: m[1], at: new Date(+m[1]).toISOString(), bytes: o.size, key: o.key }, _wsChanging(o.customMetadata)));
       }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
@@ -164,13 +171,17 @@ export class AMVComputer extends Container {
            stays), and the restore checks it again before unpacking. */
         const sha = String(r.headers.get('X-AMV-SHA256') || '').toLowerCase();
         const ok = /^[0-9a-f]{64}$/.test(sha);
+        /* Files that kept changing on every try while it was read (Nov 1
+           audit COMP-004): kept with the copy, so it says which may be torn. */
+        const changing = String(r.headers.get('X-AMV-Changing') || '').slice(0, 2000);
+        const meta = Object.assign(ok ? { sha256: sha } : {}, changing ? { changing } : {});
         /* The copy about to be replaced becomes an earlier copy. Failing to
            keep it is logged and does not stop today's save. */
         try { await this._wsKeepCurrent(); } catch (e) { console.log(JSON.stringify({ event: 'workspace_version_not_kept', error: String((e && e.message) || e).slice(0, 160) })); }
         await this.env.WORKSPACES.put(this._wsKey(), readable, Object.assign({ httpMetadata: { contentType: 'application/gzip' } },
-          ok ? { sha256: sha, customMetadata: { sha256: sha } } : {}));
+          Object.assign(ok ? { sha256: sha } : {}, Object.keys(meta).length ? { customMetadata: meta } : {})));
         await done;
-        console.log(JSON.stringify({ event: 'workspace_saved', bytes: size }));
+        console.log(JSON.stringify(Object.assign({ event: 'workspace_saved', bytes: size }, changing ? { changing: true } : {})));
         saved = true;
       } else {
         /* Too large or unreadable: the last good copy stays as it was,
@@ -230,13 +241,13 @@ export class AMVComputer extends Container {
       if (!this._wsOn()) return reply({ error: 'Saved copies are not switched on for this deployment.', code: 'needs_service' }, 503);
       if (url.pathname === '/amv-workspace/versions') {
         const cur = await this.env.WORKSPACES.get(this._wsKey());
-        const current = cur ? { bytes: cur.size, at: cur.uploaded ? new Date(cur.uploaded).toISOString() : null } : null;
+        const current = cur ? Object.assign({ bytes: cur.size, at: cur.uploaded ? new Date(cur.uploaded).toISOString() : null }, _wsChanging(cur.customMetadata)) : null;
         if (cur) try { await cur.body.cancel(); } catch (e) {}
         const st = await this._st();
         /* What the person must be told: the copy could not be put back, or
            the machine stopped without its last save. Seen once, then gone. */
         if (st.lostUnsaved) await this._setSt({ lostUnsaved: null });
-        return reply({ current, versions: (await this._wsVersions()).map(({ id, at, bytes }) => ({ id, at, bytes })),
+        return reply({ current, versions: (await this._wsVersions()).map(({ id, at, bytes, changing }) => Object.assign({ id, at, bytes }, changing ? { changing } : {})),
           state: { restoreFailed: st.restoreFailed || null, lostUnsaved: st.lostUnsaved || null } });
       }
       /* START FRESH after a failed restore, on purpose: the copy that could

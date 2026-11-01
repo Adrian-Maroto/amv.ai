@@ -17,7 +17,7 @@
      - erasing the account deletes the saved workspace and stops the machine,
        and only AMV's key can ask for that. */
 import { spawn } from 'child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -76,7 +76,7 @@ const bucket = () => {
       m.set(k, buf); this.meta.set(k, (o && o.customMetadata) || {}); },
     async get(k) { if (!m.has(k)) return null; const b = m.get(k); return { size: b.length, body: new Blob([b]).stream(), customMetadata: this.meta.get(k) || {}, uploaded: new Date() }; },
     async head(k) { return m.has(k) ? { size: m.get(k).length } : null; },
-    async list({ prefix }) { return { objects: [...m.keys()].filter(k => k.startsWith(prefix)).map(key => ({ key, size: m.get(key).length })), truncated: false }; },
+    async list({ prefix, include }) { return { objects: [...m.keys()].filter(k => k.startsWith(prefix)).map(key => Object.assign({ key, size: m.get(key).length }, include && include.includes('customMetadata') ? { customMetadata: this.meta.get(key) || {} } : {})), truncated: false }; },
     async delete(k) { m.delete(k); } };
 };
 const id = { toString: () => 'a1b2c3d4' };
@@ -186,6 +186,65 @@ section('An archive that climbs out of the workspace writes nothing outside it')
   spawnSync('tar', ['-czPf', evil, '-C', join(t, 'in'), '../escape.txt']);
   const r = await fetch(B.base + '/amv-bridge/restore', { method: 'PUT', headers: { 'X-AMV-Bridge-Token': KEY }, body: readFileSync(evil) });
   ok(!existsSync(join(box, 'escape.txt')) && !existsSync(join(dirname(two), 'escape.txt')), 'nothing was written beside the workspace', r.status);
+}
+
+section('A copy put back replaces the workspace exactly, or not at all (Nov 1 audit COMP-003)');
+{
+  /* Every file under a folder, with its bytes, installed packages left out. */
+  const tree = (dir) => { const out = {}; const walk = (d, rel) => { for (const e of readdirSync(d, { withFileTypes: true })) {
+    if (e.name === 'node_modules') continue; const r = rel ? rel + '/' + e.name : e.name;
+    if (e.isDirectory()) { out[r + '/'] = ''; walk(join(d, e.name), r); } else out[r] = readFileSync(join(d, e.name), 'utf8'); } }; walk(dir, ''); return out; };
+  const snap = await fetch(A.base + '/amv-bridge/snapshot', { headers: { 'X-AMV-Bridge-Token': KEY } });
+  const bytes = Buffer.from(await snap.arrayBuffer());
+  /* The machine has moved on since: a file deleted from the copy's point of view, a folder, a changed file. */
+  writeFileSync(join(two, 'stale.txt'), 'deleted since\n'); mkdirSync(join(two, 'extra', 'deep'), { recursive: true });
+  writeFileSync(join(two, 'extra', 'deep', 'x.txt'), 'x\n'); writeFileSync(join(two, 'notes.md'), 'edited later\n');
+  const r = await fetch(B.base + '/amv-bridge/restore', { method: 'PUT', headers: { 'X-AMV-Bridge-Token': KEY, 'X-AMV-SHA256': snap.headers.get('x-amv-sha256') }, body: bytes });
+  ok(r.status === 200, 'the copy was put back', r.status);
+  ok(JSON.stringify(tree(two)) === JSON.stringify(tree(one)), 'and the workspace is exactly what was saved: files deleted since are gone, edits undone', { have: Object.keys(tree(two)), want: Object.keys(tree(one)) });
+  ok(!readdirSync(two).some(n => n.startsWith('.amv-')), 'with nothing of the swap left behind', readdirSync(two));
+  /* A copy that cannot be unpacked (cut short, and saved before checksums): nothing changes. */
+  writeFileSync(join(two, 'mine.txt'), 'work in progress\n');
+  const before = JSON.stringify(tree(two));
+  const cut = await fetch(B.base + '/amv-bridge/restore', { method: 'PUT', headers: { 'X-AMV-Bridge-Token': KEY }, body: bytes.subarray(0, Math.floor(bytes.length * 0.6)) });
+  ok(cut.status === 500 && JSON.stringify(tree(two)) === before, 'an unpack that fails half way leaves the workspace exactly as it was - not a mixture of two', cut.status);
+  ok(!readdirSync(two).some(n => n.startsWith('.amv-')), 'and its staging folder is gone', readdirSync(two));
+  /* A restore cut off by a crash left its folders behind: the next one clears them, and they are never saved. */
+  mkdirSync(join(two, '.amv-restore-old1'), { recursive: true }); writeFileSync(join(two, '.amv-restore-old1', 'half.txt'), 'h');
+  const s2 = await fetch(B.base + '/amv-bridge/snapshot', { headers: { 'X-AMV-Bridge-Token': KEY } });
+  const listing = spawnSync('tar', ['-tzf', '-'], { input: Buffer.from(await s2.arrayBuffer()) }).stdout.toString();
+  ok(!/\.amv-restore-/.test(listing), 'a leftover staging folder is never part of a saved copy', listing.split('\n').slice(0, 8));
+  const r2 = await fetch(B.base + '/amv-bridge/restore', { method: 'PUT', headers: { 'X-AMV-Bridge-Token': KEY }, body: bytes });
+  ok(r2.status === 200 && !existsSync(join(two, '.amv-restore-old1')), 'and the next restore clears it', readdirSync(two));
+}
+
+section('A file still being written is read again, and named if it never settles (Nov 1 audit COMP-004)');
+{
+  const three = join(box, 'busy'); mkdirSync(three, { recursive: true });
+  writeFileSync(join(three, 'calm.txt'), 'calm\n');
+  const C = await bridge(three);
+  /* A program in the background writing to one file the whole time. */
+  /* 16MB rewritten in place every millisecond: tar takes far longer than that to read it, so every read sees it change. */
+  const busy = join(three, 'busy.log');
+  writeFileSync(busy, Buffer.alloc(16 << 20, 97));
+  const writer = spawn(process.execPath, ['-e', `const fs=require('fs');const fd=fs.openSync(${JSON.stringify(busy)},'r+');const b=Buffer.alloc(4096,98);setInterval(()=>{for(let i=0;i<8;i++)fs.writeSync(fd,b,0,b.length,Math.floor(Math.random()*4000)*4096);},1);`], { stdio: 'ignore' });
+  running.push(writer);
+  await new Promise(r => setTimeout(r, 300));
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  const m = new AMVComputer({ id, container: portTo(C.base) }, env);
+  await m.onActivityExpired();
+  writer.kill('SIGKILL');
+  const tries = (C.log().match(/reading it again/g) || []).length;
+  ok(env.WORKSPACES.m.has('ws/a1b2c3d4.tgz'), 'the workspace is still saved - refusing it would lose every other file', [...env.WORKSPACES.m.keys()]);
+  const v = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  ok(v.current && Array.isArray(v.current.changing) && v.current.changing.includes('busy.log') && !v.current.changing.includes('calm.txt'),
+     'and the copy names the file that never settled, and only that one', v.current);
+  ok(tries === 2, 'after reading it twice more before settling for it', C.log().slice(-400));
+  /* Once it settles, a save carries no such note. */
+  const m2 = new AMVComputer({ id, container: portTo(C.base) }, env);
+  await m2.onActivityExpired();
+  const v2 = await (await m2.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': KEY } }))).json();
+  ok(v2.current && !v2.current.changing && v2.versions.some(x => Array.isArray(x.changing)), 'a calm save carries no note; the earlier copy keeps its own', v2);
 }
 
 section('Erasing the account deletes the saved workspace and stops the machine - on AMV’s key only');

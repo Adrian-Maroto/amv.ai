@@ -352,8 +352,17 @@ const CLOUD = ARGS.includes('--cloud');
 /* What a workspace snapshot leaves out: what an install or a build makes
    again. And the most it may be - past this the workspace is kept for the
    session only, and the page is told so rather than losing it silently. */
-const SNAPSHOT_SKIP = ['./node_modules', '*/node_modules', './.venv', '*/.venv', '*/__pycache__', './.cache', '*/.cache', './.npm', '*/.npm'];
+const SNAPSHOT_SKIP = ['./.amv-restore-*', './.amv-replaced-*', './node_modules', '*/node_modules', './.venv', '*/.venv', '*/__pycache__', './.cache', '*/.cache', './.npm', '*/.npm'];
 const SNAPSHOT_MAX = 512 * 1024 * 1024;
+const SNAPSHOT_TRIES = 3;
+/* The files that kept changing, as a header: JSON, percent-encoded, whole
+   names dropped from the end until it fits - never a name cut in half. */
+function _changingHeader(names) {
+  const list = names.length ? names.slice() : ['?'];
+  let v = encodeURIComponent(JSON.stringify(list));
+  while (v.length > 2000 && list.length > 1) { list.pop(); v = encodeURIComponent(JSON.stringify(list.concat('…'))); }
+  return v.length > 2000 ? encodeURIComponent('["?"]') : v;
+}
 function _fileSha256(file) {
   return new Promise((done) => {
     const h = createHash('sha256'); const rs = createReadStream(file);
@@ -1336,20 +1345,37 @@ const server = createServer(async (req, res) => {
      caches - so a snapshot is the person's work, not their node_modules. */
   if (CLOUD && path === '/amv-bridge/snapshot' && req.method === 'GET') {
     const file = join(tmpdir(), 'amv-snapshot-' + randomBytes(6).toString('hex') + '.tgz');
-    const code = await new Promise((done) => {
-      const t = spawn('tar', ['-czf', file, ...SNAPSHOT_SKIP.flatMap(x => ['--exclude', x]), '-C', ROOT, '.'], { stdio: ['ignore', 'ignore', 'pipe'] });
-      t.on('error', () => done(-1)); t.on('close', (c) => done(c));
-    });
+    /* SNAPSHOT_TRIES archives, until one is read while nothing changed (Nov 1
+       audit COMP-004). tar exits 1 when a file changed while it was read: that
+       file's copy may be half old and half new. A command still writing in
+       the background is normal, so it is tried again; if the same files are
+       still changing on the last try the archive is kept - refusing it would
+       lose every other file in the workspace - and the files are NAMED with
+       it (X-AMV-Changing) so the saved copy says which ones may be torn. */
+    let code = -1, changing = [];
+    for (let attempt = 0; attempt < SNAPSHOT_TRIES; attempt++) {
+      try { rmSync(file, { force: true }); } catch (e) {}
+      let err = '';
+      code = await new Promise((done) => {
+        const t = spawn('tar', ['-czf', file, ...SNAPSHOT_SKIP.flatMap(x => ['--exclude', x]), '-C', ROOT, '.'], { stdio: ['ignore', 'ignore', 'pipe'] });
+        t.stderr.on('data', (c) => { if (err.length < 65536) err += c; });
+        t.on('error', () => done(-1)); t.on('close', (c) => done(c));
+      });
+      changing = [...new Set([...err.matchAll(/^tar: (.+?): (?:file changed as we read it|File shrank by \d+ bytes)/gm)].map(m => m[1].replace(/^\.\//, '')))].slice(0, 20);
+      if (code !== 1) break;
+      if (attempt < SNAPSHOT_TRIES - 1) { console.log('  · a file changed while the workspace was read - reading it again'); await new Promise(r => setTimeout(r, 300 * (attempt + 1))); }
+    }
     let size = 0; try { size = statSync(file).size; } catch (e) { size = 0; }
-    /* tar exits 1 when a file changed while it was read - the archive is
-       still whole, and a command running in the background is normal. */
+    /* Exit 1 after every try: kept, with the files that kept changing named. */
     if ((code !== 0 && code !== 1) || !size) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 500, { error: 'snapshot_failed' }); }
     if (size > SNAPSHOT_MAX) { try { rmSync(file, { force: true }); } catch (e) {} return json(res, 413, { error: 'too_large', size, max: SNAPSHOT_MAX }); }
     /* ITS CHECKSUM GOES WITH IT (Oct 31 audit, item 33): the bucket refuses an
        upload that does not match it, and a restore refuses a copy that does
        not - so a damaged copy is never unpacked over somebody's work. */
     const sha = await _fileSha256(file);
-    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size), ...(sha ? { 'X-AMV-SHA256': sha } : {}) });
+    if (code === 1) console.log('  ! workspace saved while ' + (changing.length || 'some') + ' file(s) kept changing: ' + changing.slice(0, 5).join(', '));
+    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size), ...(sha ? { 'X-AMV-SHA256': sha } : {}),
+      ...(code === 1 ? { 'X-AMV-Changing': _changingHeader(changing) } : {}) });
     const rs = createReadStream(file);
     rs.on('close', () => { try { rmSync(file, { force: true }); } catch (e) {} });
     rs.pipe(res);
@@ -1376,14 +1402,47 @@ const server = createServer(async (req, res) => {
         return json(res, 422, { error: 'checksum_mismatch' });
       }
     }
-    /* GNU tar strips leading slashes and refuses names that climb with "..";
+    /* INTO A STAGING FOLDER, THEN SWAPPED IN (Nov 1 audit COMP-003). Unpacked
+       over the live workspace, a tar that failed half way left a mixture of
+       two workspaces, and a file deleted since the copy was taken stayed -
+       so "put back" did not give back what was saved. Now the copy is
+       unpacked beside the workspace (same disk, so a move is a rename), and
+       only a whole, successful unpack replaces it: everything there is moved
+       aside, everything unpacked is moved in, and if any move fails every
+       move already made is undone. What was there is deleted only after.
+       Leftovers of a restore cut off by a crash are cleared first.
+       GNU tar strips leading slashes and refuses names that climb with "..";
        --no-same-owner keeps everything owned by the workspace's own user. */
+    const ours = (n) => n.startsWith('.amv-restore-') || n.startsWith('.amv-replaced-');
+    for (const n of readdirSync(ROOT)) if (ours(n)) { try { rmSync(join(ROOT, n), { recursive: true, force: true }); } catch (e) {} }
+    let stage = '';
+    try { stage = mkdtempSync(join(ROOT, '.amv-restore-')); } catch (e) { try { rmSync(file, { force: true }); } catch (e2) {} return json(res, 500, { error: 'restore_failed' }); }
     const code = await new Promise((done) => {
-      const t = spawn('tar', ['-xzf', file, '--no-same-owner', '-C', ROOT], { stdio: ['ignore', 'ignore', 'pipe'] });
+      const t = spawn('tar', ['-xzf', file, '--no-same-owner', '-C', stage], { stdio: ['ignore', 'ignore', 'pipe'] });
       t.on('error', () => done(-1)); t.on('close', (c) => done(c));
     });
     try { rmSync(file, { force: true }); } catch (e) {}
-    if (code !== 0) return json(res, 500, { error: 'restore_failed' });
+    if (code !== 0) {
+      try { rmSync(stage, { recursive: true, force: true }); } catch (e) {}
+      console.log('  ✗ workspace copy could not be unpacked - the workspace was left as it was');
+      return json(res, 500, { error: 'restore_failed' });
+    }
+    const aside = mkdtempSync(join(ROOT, '.amv-replaced-'));
+    const moved = [], placed = [];
+    try {
+      for (const n of readdirSync(ROOT)) { if (ours(n)) continue; renameSync(join(ROOT, n), join(aside, n)); moved.push(n); }
+      for (const n of readdirSync(stage)) { renameSync(join(stage, n), join(ROOT, n)); placed.push(n); }
+    } catch (e) {
+      let whole = true;
+      for (const n of placed.reverse()) { try { renameSync(join(ROOT, n), join(stage, n)); } catch (e2) { whole = false; } }
+      for (const n of moved.reverse()) { try { renameSync(join(aside, n), join(ROOT, n)); } catch (e2) { whole = false; } }
+      try { rmSync(stage, { recursive: true, force: true }); } catch (e2) {}
+      if (whole) try { rmSync(aside, { recursive: true, force: true }); } catch (e2) {}
+      console.log('  ✗ workspace swap failed and was ' + (whole ? 'undone' : 'NOT fully undone (the earlier files are in ' + basename(aside) + ')'));
+      return json(res, 500, { error: 'restore_failed', undone: whole });
+    }
+    try { rmSync(aside, { recursive: true, force: true }); } catch (e) {}
+    try { rmSync(stage, { recursive: true, force: true }); } catch (e) {}
     console.log('  ✓ workspace restored (' + Math.round(got.n / 1024) + ' KB)');
     return json(res, 200, { restored: true, bytes: got.n });
   }
