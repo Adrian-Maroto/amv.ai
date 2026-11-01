@@ -9,7 +9,7 @@ after a quarter of measurement shows it is met.
 
 | Signal | Where it comes from | Since |
 |---|---|---|
-| Server answers, stores reachable, page loads, source private | `.github/workflows/synthetic.yml`, every 15 minutes from outside Cloudflare, once the owner sets `AMV_SYNTHETIC=on` | built; off until switched on |
+| Server answers, stores reachable, page loads, source private | `.github/workflows/synthetic.yml`, every 15 minutes from outside Cloudflare (`AMV_SYNTHETIC=on`) | on since Nov 1 |
 | Every deploy serves what was built and is ready | `.github/workflows/deploy.yml` (ready check, byte-for-byte publish check) | live |
 | Model calls failing, the circuit opening, spend climbing | the audit log and alerts (`model_circuit_open`, the spend alerts at 50/70/85/95%) | live |
 | Background work dying | the dead-letter queue alert (`15a-job-queue.js`) | live once `AMV_JOBS` is bound |

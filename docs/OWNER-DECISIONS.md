@@ -610,3 +610,11 @@ the repository.
     AMV_ADMIN_TOKEN=... node backup.mjs drill` reads the newest nightly backup
     through the restore path and writes nothing. Put the time it reports in
     the table in `docs/SLO.md`. Needs item 9 first.
+15. **Canary deploys (recommended: on)**: set the repository variable
+    `AMV_CANARY` to `on`. Each backend release then serves 10% of requests
+    first and must answer ready - asked of the new version itself - for two
+    minutes before it serves everybody; if it does not, the version that was
+    serving takes all traffic back and the run fails. A deploy takes about
+    two minutes longer. Off, deploys are all at once, as before. Either way,
+    a version that deploys and then is not ready is rolled back automatically
+    (`.github/workflows/deploy.yml`, "Put the previous version back").

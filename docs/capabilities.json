@@ -288,6 +288,14 @@
   { "id": "team.dlp", "status": "built", "name": "A team can refuse to send credentials and card numbers to AMV, enforced on the server",
     "code": [["src/worker/35-batches.js", "_dlpFind"], ["src/worker/33-team-roles.js", "data_rule_changed"]],
     "tests": ["tests/worker/a-team-chooses-its-engines.test.mjs"],
-    "says": ["dlp gateway"] }
+    "says": ["dlp gateway"] },
+  { "id": "ops.canary_deploy", "status": "built", "name": "A new backend version serves a tenth of requests and must answer ready before it serves everybody",
+    "code": [["scripts/canary-deploy.mjs", "Cloudflare-Workers-Version-Overrides"], [".github/workflows/deploy.yml", "AMV_CANARY"]],
+    "tests": ["tests/worker/a-new-version-serves-a-few-before-everybody.test.mjs"],
+    "says": ["canary deploy"] },
+  { "id": "ops.auto_rollback", "status": "built", "name": "A deployed version that is not ready is rolled back without waiting for anybody",
+    "code": [[".github/workflows/deploy.yml", "wrangler rollback --yes"]],
+    "tests": ["tests/worker/a-new-version-serves-a-few-before-everybody.test.mjs"],
+    "says": ["automatic rollback"] }
  ]
 }

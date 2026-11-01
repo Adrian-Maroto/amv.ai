@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-70 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
+72 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -118,6 +118,8 @@
 | A server that sees the model provider failing tells the others | `src/worker/02-partner-engines.js` | `worker/model-transport.test.mjs` |
 | The partner engines have a daily spending ceiling of their own | `src/worker/35-batches.js` | `worker/partner-engines-are-sold-as-amv.test.mjs` |
 | An eval framework and a canary for engine and prompt changes | `tools/evals.mjs` | `worker/an-eval-grades-what-it-says.test.mjs` |
+| A new backend version serves a tenth of requests and must answer ready before it serves everybody | `scripts/canary-deploy.mjs`, `.github/workflows/deploy.yml` | `worker/a-new-version-serves-a-few-before-everybody.test.mjs` |
+| A deployed version that is not ready is rolled back without waiting for anybody | `.github/workflows/deploy.yml` | `worker/a-new-version-serves-a-few-before-everybody.test.mjs` |
 
 ## Projects
 

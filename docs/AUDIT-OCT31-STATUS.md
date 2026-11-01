@@ -126,8 +126,8 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 71 | Stale Agent/Companion docs | Done (Agents are real again) |
 | 72 | Expand the capability registry | Done (Nov 1: 76 entries, every built one naming its code and test, checked by the gate) |
 | 73 | Docs/readiness generated from the registry | Done (Nov 1: `docs/CAPABILITIES.md` is written from the registry on every build; a stale or hand-edited copy fails the gate) |
-| 74 | Deep synthetic monitoring | Built, needs you (`AMV_SYNTHETIC=on`) |
-| 75 | External uptime monitor | Built, needs you (the same probe) |
+| 74 | Deep synthetic monitoring | Done (`.github/workflows/synthetic.yml`, on since Nov 1) |
+| 75 | External uptime monitor | Done (the same probe, every 15 minutes from GitHub's runners) |
 | 76 | Paging/on-call | Yours |
 | 77 | Public status page | Yours |
 | 78 | SLOs | Done (`docs/SLO.md`) |
@@ -135,10 +135,10 @@ Nov 1 2026. Every row says what is true now, not what is planned.
 | 80 | Managed backup strategy | Built, needs you (`AMV_BACKUPS`); point-in-time recovery comes with Postgres |
 | 81 | Restore drills | Built, needs you (`node backup.mjs drill`, monthly) |
 | 82 | Staging environment | Yours (a second Cloudflare environment) |
-| 83 | Canary deployments | Needs your approval - it changes how production deploys (Workers gradual deployments) |
-| 84 | Automated rollback | Needs your approval - with 83 |
-| 85 | CodeQL | Yours (a repository setting) |
-| 86 | Secret scanning / push protection | Done in the gate; GitHub's own is yours (a setting) |
+| 83 | Canary deployments | Built, needs you (`AMV_CANARY=on`; `scripts/canary-deploy.mjs`: 10% first, readiness asked of the new version itself, old version back if not ready) |
+| 84 | Automated rollback | Done (a deployed version that is not ready is rolled back by the deploy workflow) |
+| 85 | CodeQL | Done (turned on Nov 1; its first run passed) |
+| 86 | Secret scanning / push protection | Done (in the gate, and GitHub's own turned on Nov 1) |
 | 87 | SBOM / build provenance | SBOM done (every deploy); provenance needs a pinned attestation action added to the workflow |
 | 88 | Container image scanning | Not yet |
 | 89 | Load tests at 1K/10K/100K | Partial (`tools/load-probe.mjs`) |

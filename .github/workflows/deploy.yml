@@ -118,7 +118,7 @@ jobs:
       # catches an unbound KV namespace, a missing Durable Object migration or
       # a stale build before any of it reaches the live Worker.
       - name: Preflight, then deploy the Worker
-        if: steps.creds.outputs.ready == 'yes'
+        if: steps.creds.outputs.ready == 'yes' && vars.AMV_CANARY != 'on'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -133,12 +133,29 @@ jobs:
           AMV_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
         run: npm run deploy
 
+      # CANARY (Oct 31 audit, item 83). With the repository variable
+      # AMV_CANARY set to on, the new version serves 10% of requests first and
+      # is asked /v1/health/ready ITSELF for two minutes before it serves
+      # everybody; not ready, and the version that was serving takes all
+      # traffic back. scripts/canary-deploy.mjs says how, including the one
+      # case it hands to a plain deploy (a Durable Object migration).
+      - name: Preflight, then release through a canary
+        if: steps.creds.outputs.ready == 'yes' && vars.AMV_CANARY == 'on'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AMV_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
+        run: |
+          npm run predeploy
+          node scripts/canary-deploy.mjs
+
       # A deploy that reports success and a backend that answers are different
       # claims. This makes the second one, against the domain people actually
       # use, so "it deployed" cannot stand in for "it works". It asks
       # /v1/health/ready rather than /v1/health: a Worker that runs and
       # cannot reach its store is alive and serves nobody (scale audit).
       - name: Check the live backend is ready
+        id: ready
         if: steps.creds.outputs.ready == 'yes'
         env:
           LAUNCH_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
@@ -197,7 +214,36 @@ jobs:
             sleep 6
           done
           echo "::error::The Worker deployed but https://api.amv.homes/v1/health/ready did not report ready:true. Its body above says which store failed."
+          echo "not_ready=yes" >> "$GITHUB_OUTPUT"
           exit 1
+
+      # AUTOMATIC ROLLBACK (Oct 31 audit, item 84). A Worker that deployed and
+      # then cannot answer "ready" is put back to the version that was serving
+      # before, at once, without waiting for somebody to read the red run. Only
+      # for that failure: a launch-profile refusal is configuration, not code,
+      # and putting old code back would not fix it. The run stays red and says
+      # what happened, so the broken commit is still looked at.
+      - name: Put the previous version back if this one is not ready
+        if: failure() && steps.ready.outputs.not_ready == 'yes'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if npx wrangler rollback --yes --message "Automatic: ${GITHUB_SHA::7} was not ready after deploy"; then
+            echo "::error title=Rolled back::${GITHUB_SHA::7} deployed but was not ready, so the previous version is serving again. Fix the commit and push again."
+            {
+              echo "### Rolled back"
+              echo ""
+              echo "${GITHUB_SHA::7} deployed but /v1/health/ready never said ready, so the previous version was put back automatically."
+            } >> "$GITHUB_STEP_SUMMARY"
+            for i in 1 2 3 4 5; do
+              if curl -sS --max-time 15 https://api.amv.homes/v1/health/ready | grep -q '"ready":true'; then echo "The previous version is ready."; exit 0; fi
+              sleep 6
+            done
+            echo "::error title=Still not ready after rollback::The previous version is not ready either - the cause is probably a store or a binding, not the code. docs/INCIDENT-RUNBOOK.md section 3."
+          else
+            echo "::error title=Rollback failed::The new version is not ready and could not be rolled back automatically. Roll back by hand: npx wrangler rollback. docs/INCIDENT-RUNBOOK.md."
+          fi
 
   # THE WEBSITE, READ BACK THE SAME WAY THE WORKER IS.
   #
