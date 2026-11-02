@@ -1,5 +1,7 @@
 # November 1 forensic audit: where each P0 stands
 
+Every one of the 169 findings, with its status, is in `docs/AUDIT-NOV1-ALL.md`. This page has the detail on what was fixed and how it was proved.
+
 The audit (169 findings, 34 P0) said NO-GO. This page tracks its P0 list:
 what each finding claimed, what was checked against the code, what changed,
 and what stays with the owner. A row counts as **fixed** only when a test
