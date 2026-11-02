@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agents.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens, _agentCostKey, _jobCostKey, counter, monthKey };
+export { runDueAutomations, issueTokens, _agentCostKey, _jobCostKey, counter, monthKey, _outcomes };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -390,6 +390,11 @@ section('Its record is kept, and three bad runs in a row pause it (Nov 1 audit A
   due(); modelCalls = 0;
   await W.runDueAutomations(env, Date.now() + 12);
   ok(modelCalls === 1, 'and it runs again - what went wrong before it was resumed does not pause it again', modelCalls);
+  /* Nov 1 audit USAGE-005: the owner sees cost per GOOD outcome by kind. */
+  const oc = await W._outcomes(env, W.monthKey());
+  ok(oc.agent && oc.agent.good >= 1 && oc.agent.runs > oc.agent.good && oc.agent.costUSD > 0 && oc.agent.costPerGoodUSD > 0,
+    'agent runs are counted good or not - an off-form result is not good - with their cost per good one', oc.agent);
+  ok(oc.background && oc.background.runs >= 1, 'and runs that belong to no agent are counted apart', oc.background);
   unthrottle();
 }
 

@@ -300,13 +300,18 @@ async function adminStats(request, env) {
   const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
 
   // Where the money went this month, and what caching saved.
-  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
+  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'background', 'agent', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
     const v = await _tallyGet(env, `featcost:${feat}:${month}`);
     if (v > 0) featureCost[feat] = +v.toFixed(2);
   }
   const cacheSaved = +(await _tallyGet(env, `cachesave:${month}`)).toFixed(2);
+  /* Cost per GOOD outcome, by kind of work (Nov 1 audit USAGE-005): an answer
+     delivered whole, a background or agent run that produced its result in
+     the form promised, an action AMV read back as done. */
+  const outcomes = await _outcomes(env, month).catch(() => ({}));
+  try { const a = await _actOutcomes(env, month); outcomes.actions = { runs: a.verified + a.unchecked + a.not_confirmed + a.unverifiable + a.failed, good: a.verified, goodPct: a.verifiedRatePct, costUSD: 0, costPerGoodUSD: null }; } catch (e) {}
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
@@ -404,6 +409,7 @@ async function adminStats(request, env) {
        is the list that promise is kept from. */
     appRequests,
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
+    outcomes,
     users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
              conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
     /* Say plainly whether the per-account lists below are everything or a

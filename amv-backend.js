@@ -4049,6 +4049,25 @@ function _tallyShardOf(who) {
 async function _tallyAdd(env, name, who, amount, ttlMs) {
   return counter(env, name + ':s' + _tallyShardOf(who), ttlMs ? { op: 'incr', amount, ttlMs } : { op: 'incr', amount });
 }
+/* GOOD AND BAD OUTCOMES, per kind of work, per month (Nov 1 audit
+   USAGE-005). One count per answer or run; the money is in featcost. */
+const OUTCOME_CLASSES = ['chat', 'api', 'crew', 'build', 'code', 'voice', 'batch', 'widget', 'background', 'agent'];
+async function _outcomeAdd(env, cls, who, good) {
+  const c = OUTCOME_CLASSES.includes(cls) ? cls : 'other';
+  return _tallyAdd(env, `outcome:${c}:${monthKey()}:${good ? 'good' : 'bad'}`, who, 1, 86400000 * 400);
+}
+async function _outcomes(env, month) {
+  const out = {};
+  for (const c of OUTCOME_CLASSES) {
+    const good = await _tallyGet(env, `outcome:${c}:${month}:good`).catch(() => 0);
+    const bad = await _tallyGet(env, `outcome:${c}:${month}:bad`).catch(() => 0);
+    const cost = await _tallyGet(env, `featcost:${c}:${month}`).catch(() => 0);
+    if (!good && !bad && !cost) continue;
+    out[c] = { runs: good + bad, good, goodPct: good + bad ? +((good / (good + bad)) * 100).toFixed(1) : null,
+               costUSD: +(+cost).toFixed(2), costPerGoodUSD: good ? +(cost / good).toFixed(4) : null };
+  }
+  return out;
+}
 async function _tallyGet(env, name) {
   const names = [name];
   for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
@@ -12570,6 +12589,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         const dGlobal = c - itemGlobalBooked;
         if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
         if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
+        if(c>0) await _tallyAdd(env, `featcost:${agent ? 'agent' : 'background'}:${monthKey()}`, email, c, 86400000*70);
         if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
         /* What the agent spent, whether or not it has a budget of its own -
            the screen shows it either way. */
@@ -12606,6 +12626,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
            so an old result and a run that found nothing read the same. */
         ...(exec && exec.drafts && exec.drafts.length ? { drafts: exec.drafts.slice(0, 10) } : {}),
       }).slice(-AUTO_MAX_RESULTS);
+      try{ await _outcomeAdd(env, agent ? 'agent' : 'background', email, !(exec && exec.contractFail) && !!String(out || '').trim()); }catch(e){ /* the owner's ratio */ }
       item.runs = (item.runs||0) + 1;
       item.lastLevel = level;
       /* The steering note, if there was one, has now been used. */
@@ -12661,6 +12682,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       // Give up on an automation that keeps failing, rather than burning quota forever.
       if(item.errors >= 5) item.active = false;
       failed++;
+      try{ await _outcomeAdd(env, agent ? 'agent' : 'background', email, false); }catch(_e){ /* the owner's ratio */ }
       /* A FAILED RUN IS AN EVENT TOO.
 
          Until now a failure set a field on the job and nothing else, so the
@@ -26610,6 +26632,9 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
   await _tallyAdd(env, `costtotal:${monthKey()}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
+  /* COST PER GOOD OUTCOME (Nov 1 audit USAGE-005): whether this answer was
+     delivered whole. One count per turn; its cost is already in featcost. */
+  try { await _outcomeAdd(env, feature || 'chat', user && (user.billingSubject || user.email), !!finished && total > 0); } catch (e) { /* the owner's ratio; never the answer */ }
 
   /* ACTIVATED, at the only moment that actually proves it: AMV finished writing
      something for this person. Not "opened the app", not "typed into the box" -
@@ -34900,13 +34925,18 @@ async function adminStats(request, env) {
   const freeCost = +(cohorts.free ? cohorts.free.cost : 0).toFixed(2);
 
   // Where the money went this month, and what caching saved.
-  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'api', 'batch', 'other', 'sms', 'widget'];
+  const features = ['chat', 'crew', 'build', 'code', 'voice', 'automation', 'background', 'agent', 'api', 'batch', 'other', 'sms', 'widget'];
   const featureCost = {};
   for (const feat of features) {
     const v = await _tallyGet(env, `featcost:${feat}:${month}`);
     if (v > 0) featureCost[feat] = +v.toFixed(2);
   }
   const cacheSaved = +(await _tallyGet(env, `cachesave:${month}`)).toFixed(2);
+  /* Cost per GOOD outcome, by kind of work (Nov 1 audit USAGE-005): an answer
+     delivered whole, a background or agent run that produced its result in
+     the form promised, an action AMV read back as done. */
+  const outcomes = await _outcomes(env, month).catch(() => ({}));
+  try { const a = await _actOutcomes(env, month); outcomes.actions = { runs: a.verified + a.unchecked + a.not_confirmed + a.unverifiable + a.failed, good: a.verified, goodPct: a.verifiedRatePct, costUSD: 0, costPerGoodUSD: null }; } catch (e) {}
 
   // top spenders (who costs us most this month) - abuse / margin watch
   const topSpenders = [...users].sort((a, b) => b.monthCostUSD - a.monthCostUSD).slice(0, 20);
@@ -35004,6 +35034,7 @@ async function adminStats(request, env) {
        is the list that promise is kept from. */
     appRequests,
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
+    outcomes,
     users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
              conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
     /* Say plainly whether the per-account lists below are everything or a

@@ -533,6 +533,25 @@ function _tallyShardOf(who) {
 async function _tallyAdd(env, name, who, amount, ttlMs) {
   return counter(env, name + ':s' + _tallyShardOf(who), ttlMs ? { op: 'incr', amount, ttlMs } : { op: 'incr', amount });
 }
+/* GOOD AND BAD OUTCOMES, per kind of work, per month (Nov 1 audit
+   USAGE-005). One count per answer or run; the money is in featcost. */
+const OUTCOME_CLASSES = ['chat', 'api', 'crew', 'build', 'code', 'voice', 'batch', 'widget', 'background', 'agent'];
+async function _outcomeAdd(env, cls, who, good) {
+  const c = OUTCOME_CLASSES.includes(cls) ? cls : 'other';
+  return _tallyAdd(env, `outcome:${c}:${monthKey()}:${good ? 'good' : 'bad'}`, who, 1, 86400000 * 400);
+}
+async function _outcomes(env, month) {
+  const out = {};
+  for (const c of OUTCOME_CLASSES) {
+    const good = await _tallyGet(env, `outcome:${c}:${month}:good`).catch(() => 0);
+    const bad = await _tallyGet(env, `outcome:${c}:${month}:bad`).catch(() => 0);
+    const cost = await _tallyGet(env, `featcost:${c}:${month}`).catch(() => 0);
+    if (!good && !bad && !cost) continue;
+    out[c] = { runs: good + bad, good, goodPct: good + bad ? +((good / (good + bad)) * 100).toFixed(1) : null,
+               costUSD: +(+cost).toFixed(2), costPerGoodUSD: good ? +(cost / good).toFixed(4) : null };
+  }
+  return out;
+}
 async function _tallyGet(env, name) {
   const names = [name];
   for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);

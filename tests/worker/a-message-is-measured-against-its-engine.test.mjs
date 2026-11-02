@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'fitscontext.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _fitsContext, _estimateTextTokens, ENGINES };\n');
+writeFileSync(harness, src + '\nexport { DB, _fitsContext, _estimateTextTokens, ENGINES, _outcomes, monthKey };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -175,6 +175,14 @@ section('Near the edge the provider counts it, and its count decides (Nov 1 audi
   { const env = mkEnv(); const tok = await signedIn(env); countCalls = 0; countSays = null;
     const r = await ask(env, tok, zh(1100000)); await ctx.settle();
     ok(countCalls === 1 && r.status === 413 && upstreamCalls === 0, 'with no count, the estimate decides as before', { status: r.status, countCalls }); }
+}
+
+section('A delivered answer counts as a good outcome (Nov 1 audit USAGE-005)');
+{
+  const env = mkEnv(); const tok = await signedIn(env); countSays = null;
+  const r = await ask(env, tok, 'hello there'); await r.text(); await ctx.settle();
+  const oc = await W._outcomes(env, W.monthKey());
+  ok(oc.chat && oc.chat.good === 1 && oc.chat.runs === 1, 'one answer, delivered whole, is one good chat outcome', oc.chat);
 }
 
 report();

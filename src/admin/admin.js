@@ -397,6 +397,16 @@ function _admRenderTab(tab, backendLive, live){
             '<div class="adm-econ-note">Prompt caching saved <b>$'+(live.margin.cacheSavedUSD||0).toLocaleString()+'</b> this month.</div>'
           : '<div class="adm-empty">No spend recorded yet this month.</div>')
         : _admPending('Cost split by feature, and what caching saved'))+
+      /* COST PER GOOD OUTCOME (Nov 1 audit USAGE-005): by kind of work, how
+         much of it came out right and what each good one cost. */
+      _admCard('Cost per good outcome', live
+        ? (Object.keys(live.outcomes||{}).length
+          ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Work</th><th>Runs</th><th>Good</th><th>Cost</th><th>Per good one</th></tr></thead><tbody>'
+            + Object.entries(live.outcomes).sort((a,b)=>(b[1].runs||0)-(a[1].runs||0)).map(([k,o])=>'<tr><td>'+escH(k)+'</td><td>'+(o.runs||0).toLocaleString()+'</td><td>'
+              + (o.goodPct==null?'-':o.goodPct+'%')+'</td><td>$'+(o.costUSD||0).toLocaleString()+'</td><td>'+(o.costPerGoodUSD==null?'-':'$'+o.costPerGoodUSD)+'</td></tr>').join('')
+            + '</tbody></table></div><div class="adm-econ-note">Good means an answer delivered whole, a background or agent run that produced its result in the form promised, or an action AMV read back as done.</div>'
+          : '<div class="adm-empty">No outcomes recorded yet this month.</div>')
+        : _admPending('How much of each kind of work came out right, and what each good one cost'))+
       _admCard('Subscriptions by tier','<div class="adm-barlist">'+tierBar('Free','free')+tierBar('Pro','pro')+tierBar('Elite','elite')+tierBar('Ultra','ultra')+tierBar('Custom','custom')+'</div>')+
       _admCard('Top spenders (margin watch)', live&&live.topSpenders&&live.topSpenders.length?'<div class="adm-loglist">'+live.topSpenders.slice(0,10).map(u=>'<div class="adm-logrow"><span class="adm-badge '+(u.plan==='free'?'off':'ok')+'">'+escH(u.plan)+'</span><span>'+escH(u.email)+'</span><span class="adm-logtime">$'+u.monthCostUSD+'</span></div>').join('')+'</div>':(live?'<div class="adm-empty">No paying users yet.</div>':_admPending('Who costs the most this month - abuse & margin watch')))+
       _admCard('Financial forecast &amp; investor KPIs', _admPending('Growth-based ARR/MRR projections, CAC/LTV, burn, runway'));

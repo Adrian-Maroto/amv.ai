@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 78, Roadmap 45, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 79, Roadmap 44, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -121,7 +121,7 @@ Totals: Fixed 78, Roadmap 45, Owner 25, Already true 14, Not a defect here 7
 | USAGE-002 | High | P1 | Global daily spend ceiling can become a global outage switch | Owner | global ceiling is a spend decision; now refuses only when truly full |
 | USAGE-003 | Medium | P2 | Sharded global spend reservation may reject while aggregate capacity remains | Fixed | spend shares all tried before refusing |
 | USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Fixed | every unattended run reserves its worst case before it starts - model, searches, a contract repair and the pages AMV's browser may open - against its job, its agent, the account and the platform, and settles to what it really cost; job and agent rows show spent, left and why they wait (an-agent-works-within-what-it-was-given, an-agent-keeps-a-sign-in-only-where-it-may). The cloud computer is never reached by unattended work and is held to the plan minutes it shows |
-| USAGE-005 | Medium | P2 | AMV does not yet operate on cost per verified outcome as a first-class metric | Roadmap | cost per verified outcome |
+| USAGE-005 | Medium | P2 | AMV does not yet operate on cost per verified outcome as a first-class metric | Fixed | every answer and every background and agent run is counted good or not (delivered whole; result in the form promised), actions by whether AMV read them back as done; the owner console shows runs, good rate, cost and cost per good outcome by kind of work each month (a-message-is-measured-against-its-engine, an-agent-works-within-what-it-was-given) |
 | USAGE-006 | High | P0 | Credits and entitlements must be authoritative in strong append-only storage before cutover | Owner | with DATA-004/005 |
 | SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Already true | gate fails any swallowed money/permission write; others reviewed by area |
 | SEC-002 | Medium | P1 | 50 Math.random uses include persistent/server identifiers | Fixed | Math.random banned in Worker code |

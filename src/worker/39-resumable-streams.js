@@ -383,6 +383,9 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
   await _tallyAdd(env, `costtotal:${monthKey()}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
+  /* COST PER GOOD OUTCOME (Nov 1 audit USAGE-005): whether this answer was
+     delivered whole. One count per turn; its cost is already in featcost. */
+  try { await _outcomeAdd(env, feature || 'chat', user && (user.billingSubject || user.email), !!finished && total > 0); } catch (e) { /* the owner's ratio; never the answer */ }
 
   /* ACTIVATED, at the only moment that actually proves it: AMV finished writing
      something for this person. Not "opened the app", not "typed into the box" -

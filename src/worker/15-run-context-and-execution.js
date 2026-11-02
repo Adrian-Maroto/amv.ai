@@ -2179,6 +2179,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         const dGlobal = c - itemGlobalBooked;
         if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
         if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
+        if(c>0) await _tallyAdd(env, `featcost:${agent ? 'agent' : 'background'}:${monthKey()}`, email, c, 86400000*70);
         if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
         /* What the agent spent, whether or not it has a budget of its own -
            the screen shows it either way. */
@@ -2215,6 +2216,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
            so an old result and a run that found nothing read the same. */
         ...(exec && exec.drafts && exec.drafts.length ? { drafts: exec.drafts.slice(0, 10) } : {}),
       }).slice(-AUTO_MAX_RESULTS);
+      try{ await _outcomeAdd(env, agent ? 'agent' : 'background', email, !(exec && exec.contractFail) && !!String(out || '').trim()); }catch(e){ /* the owner's ratio */ }
       item.runs = (item.runs||0) + 1;
       item.lastLevel = level;
       /* The steering note, if there was one, has now been used. */
@@ -2270,6 +2272,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       // Give up on an automation that keeps failing, rather than burning quota forever.
       if(item.errors >= 5) item.active = false;
       failed++;
+      try{ await _outcomeAdd(env, agent ? 'agent' : 'background', email, false); }catch(_e){ /* the owner's ratio */ }
       /* A FAILED RUN IS AN EVENT TOO.
 
          Until now a failure set a field on the job and nothing else, so the
