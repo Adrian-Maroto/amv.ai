@@ -6062,6 +6062,45 @@ async function connAct(request, env){
     : await guardAction(env, 'connact:r:' + user.email, 60, 1000, 'actions on your connected accounts');
   if(blocked) return blocked;
 
+  /* ONCE, ACROSS A LOST ANSWER (Nov 1 audit TASK-012). A write may carry an
+     Idempotency-Key. The first request with it takes a claim on the
+     account's own atomic object and runs; its answer is kept for a day under
+     the key. Any later request with the same key - the page asking again
+     because the answer never arrived - gets that answer back and writes
+     nothing. A request whose answer is not kept yet (still running, or the
+     Worker died mid-write) is told AMV may already have done it, and is never
+     run a second time. Without the atomic object the write is refused rather
+     than run unguarded: the caller asked for once. */
+  let idem = null;
+  if(spec.writes){
+    const ik = String(request.headers.get('Idempotency-Key') || body.idempotencyKey || '');
+    if(ik){
+      if(!/^[A-Za-z0-9_-]{16,80}$/.test(ik)) return json({ error:'bad_idempotency_key', message:'An Idempotency-Key is 16 to 80 letters, digits, - or _.' }, 400);
+      const digest = await _sha256Hex(JSON.stringify([name, body.args || {}]));
+      const kvKey = `actidem:${String(user.email).toLowerCase()}:${ik}`;
+      let kept = null;
+      try{ kept = JSON.parse((await env.AMV_KV.get(kvKey)) || 'null'); }catch(e){ kept = null; }
+      if(kept){
+        if(kept.d !== digest) return json({ error:'idempotency_conflict', message:'That Idempotency-Key was used for a different action. Nothing was done.' }, 409);
+        await _actCount(env, 'replayed', user.email);
+        return json(Object.assign({}, kept.body, { replayed: true }), kept.status || 200);
+      }
+      let c = null;
+      try{ c = await counter(env, kvKey, { op:'claim', ttlMs: ACT_IDEM_TTL_S * 1000 }); }catch(e){ c = null; }
+      if(!c || c.unavailable) return json({ error:'idempotency_unavailable', message:'AMV could not make sure this happens only once right now, so it was not done. Try again in a moment.' }, 503);
+      if(!c.claimed) return json({ error:'idempotency_pending', action: name,
+        message:'AMV is already doing this, or may already have done it. Look in the account before asking again, so it does not happen twice.' }, 409);
+      idem = { kvKey, digest };
+    }
+  }
+  /* Every answer to a keyed write is kept under its key, success or not - a
+     failure that reached the provider must not be retried blind either. */
+  const reply = async (obj, status) => {
+    if(idem){ try{ await env.AMV_KV.put(idem.kvKey, JSON.stringify({ d: idem.digest, status: status || 200, body: obj, at: Date.now() }), { expirationTtl: ACT_IDEM_TTL_S }); }
+              catch(e){ audit(env, 'action_idem_unsaved', { by: user.email, action: name }); } }
+    return json(obj, status);
+  };
+
   const got = await connUse(env, user.email, spec.need, 'action:' + name, { attended: true });
   if(!got.ok){
     /* The capability is the refusal, and it names itself. "Not connected" and
@@ -6075,7 +6114,7 @@ async function connAct(request, env){
       : got.code === 'unreadable'
         ? 'That connection could not be read on this deployment. Nothing has been disconnected.'
         : 'That could not be done (' + got.code + ').';
-    return json({ error: got.code, need: spec.need, message: msg }, 409);
+    return reply({ error: got.code, need: spec.need, message: msg }, 409);
   }
 
   try{
@@ -6094,23 +6133,23 @@ async function connAct(request, env){
       if(v === undefined){
         await _actCount(env, 'unverifiable', user.email);
         audit(env, 'conn_action_unverifiable', { by: user.email, action: name });
-        return json({ error:'not_verifiable', action: name,
+        return reply({ error:'not_verifiable', action: name,
           message:'AMV has no way to check that, so it is not reporting it as done. Look in the account itself.' }, 500);
       }
       if(v === false){
         await _actCount(env, 'not_confirmed', user.email);
         audit(env, 'conn_action_not_confirmed', { by: user.email, action: name });
-        return json({ error:'not_confirmed', action: name, result: _actShown(result),
+        return reply({ error:'not_confirmed', action: name, result: _actShown(result),
           message:'The account said yes, but when AMV checked, the change was not there. Look in the account before trying again, so it does not happen twice.' }, 502);
       }
     }
-    if(!spec.writes) return json({ ok: true, action: name, result });
+    if(!spec.writes) return reply({ ok: true, action: name, result });
     const receipt = await _actReceipt(env, user.email, name, spec, body.args || {}, result);
     await _actCount(env, receipt.status === 'done' ? 'verified' : 'unchecked', user.email);
     audit(env, 'action_receipt', { by: user.email, action: name, status: receipt.status, undo: !!receipt.undo });
     /* What only the server needed (an earlier copy of the cells, a full commit
        id) stays here; the receipt's ticket carries what the undo needs. */
-    return json({ ok: true, action: name, result: _actShown(result), receipt });
+    return reply({ ok: true, action: name, result: _actShown(result), receipt });
   }catch(e){
     /* The provider's own message is logged and NOT returned. It can carry a
        quota name, an internal id, or a hint about the account, and none of that
@@ -6133,10 +6172,10 @@ async function connAct(request, env){
       no_channel: 'Say which Slack channel to post in; there is no default.',
       no_text: 'There was no message to post.',
     }[why];
-    if (own) return json({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
+    if (own) return reply({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
     if (why.startsWith('slack_refused:'))
-      return json({ error: 'slack_refused', action: name, message: 'Slack refused the message (' + why.slice(14) + '). Nothing was posted.' }, 502);
-    return json({ error:'action_failed', action: name,
+      return reply({ error: 'slack_refused', action: name, message: 'Slack refused the message (' + why.slice(14) + '). Nothing was posted.' }, 502);
+    return reply({ error:'action_failed', action: name,
       message:'That did not work. Nothing was changed.' }, 502);
   }
 }
@@ -6205,7 +6244,9 @@ function _actContractProblems(reg){
    or had to take back. Counted per month as tallies (no shared object), from
    the same places that decide what the person is told, so the owner's figure
    and the person's screen cannot disagree. Never fails the action. */
-const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 'failed', 'undone', 'undo_failed', 'undo_refused'];
+const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 'failed', 'undone', 'undo_failed', 'undo_refused', 'replayed'];
+/* How long a write's answer is kept under its Idempotency-Key (connAct). */
+const ACT_IDEM_TTL_S = 86400;
 async function _actCount(env, outcome, who){
   try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) {}
 }
@@ -21551,6 +21592,8 @@ async function authDeleteAccount(request, env) {
                            above in this same scan, and a delete that fails there is
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
+                        /* Answers to writes kept under their Idempotency-Key (connAct). */
+                        `actidem:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,

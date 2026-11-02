@@ -1702,6 +1702,8 @@ async function authDeleteAccount(request, env) {
                            above in this same scan, and a delete that fails there is
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
+                        /* Answers to writes kept under their Idempotency-Key (connAct). */
+                        `actidem:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,

@@ -1459,8 +1459,18 @@ const AMV_API = {
      foothold on this page can take it, and the same call works when the tab is
      shut because it was never the tab doing it. */
   async connectAct(action, args){
-    return this._wrote('/v1/connect/act', { action, args: args || {} },
-      'That could not be done on your connected account.');
+    /* ONE KEY FOR THIS ONE WRITE (Nov 1 audit TASK-012). If the answer is
+       lost on the way back - the connection drops after the account was
+       changed - it is asked for once more under the same key, and the server
+       hands back the first answer instead of doing it again. Only a request
+       that got no answer at all is asked again; any answer is final. */
+    const idempotencyKey = 'w' + Date.now().toString(36) + '-' + _randToken(15);
+    const body = { action, args: args || {}, idempotencyKey };
+    try{ return await this._wrote('/v1/connect/act', body, 'That could not be done on your connected account.'); }
+    catch(e){
+      if(e && e.status) throw e;
+      return this._wrote('/v1/connect/act', body, 'That could not be done on your connected account.');
+    }
   },
   /* Take back one thing AMV did, with the signed ticket its receipt carried. */
   async connectUndo(token){

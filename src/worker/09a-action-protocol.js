@@ -57,7 +57,9 @@ function _actContractProblems(reg){
    or had to take back. Counted per month as tallies (no shared object), from
    the same places that decide what the person is told, so the owner's figure
    and the person's screen cannot disagree. Never fails the action. */
-const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 'failed', 'undone', 'undo_failed', 'undo_refused'];
+const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 'failed', 'undone', 'undo_failed', 'undo_refused', 'replayed'];
+/* How long a write's answer is kept under its Idempotency-Key (connAct). */
+const ACT_IDEM_TTL_S = 86400;
 async function _actCount(env, outcome, who){
   try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) {}
 }

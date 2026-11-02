@@ -72,6 +72,8 @@ globalThis.fetch = async (url, init) => {
 
 /* ── The account ──────────────────────────────────────────────────────── */
 const outcomes = new Map();
+const claims = new Set();
+let claimsDown = false;
 function mkEnv() {
   const m = new Map();
   return {
@@ -89,6 +91,11 @@ function mkEnv() {
         if (b.op === 'incr') outcomes.set(n, (outcomes.get(n) || 0) + (b.amount || 0));
         return new Response(JSON.stringify({ value: outcomes.get(n) || 0 }));
       }
+      { const b = JSON.parse(init.body);
+        if (b.op === 'claim') {
+          if (claimsDown) return new Response('down', { status: 503 });
+          if (claims.has(n)) return new Response(JSON.stringify({ claimed: false }));
+          claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: 'o' })); } }
       return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
@@ -225,6 +232,45 @@ section('A sheet goes back to what it said - unless somebody has written in it s
   r = await act('sheets.write', { fileId: 'sheet1234567890', range: 'Big!A1:T30', values: big });
   ok(r.status === 200 && r.d.receipt.undo === null && /Version history/.test(r.d.receipt.irreversible || ''),
      'too many cells to carry: no ticket, and it says where the way back is', r.d.receipt);
+}
+
+section('A write sent twice under one key happens once, and the second answer is the first (Nov 1 audit TASK-012)');
+{
+  const keyed = async (key, action, args) => {
+    const r = await W.default.fetch(new Request('https://api.amv.test/v1/connect/act', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '45.45.45.45', Authorization: 'Bearer ' + tok, 'Idempotency-Key': key },
+      body: JSON.stringify({ action, args }) }), env, ctx);
+    return { status: r.status, d: await jsonOf(r) };
+  };
+  const posts = () => sent.filter(x => /chat\.postMessage/.test(x)).length;
+  sent.length = 0;
+  const first = await keyed('lost-answer-0000000001', 'slack.post', { channel: '#team', text: 'Standup moved to 10' });
+  ok(first.status === 200 && first.d.receipt && posts() === 1, 'the first one posts, with its receipt', [first.status, posts()]);
+  /* The page never saw that answer, so it asks again with the same key. */
+  const again = await keyed('lost-answer-0000000001', 'slack.post', { channel: '#team', text: 'Standup moved to 10' });
+  ok(again.status === 200 && again.d.replayed === true && posts() === 1, 'asked again, nothing is posted a second time', [again.status, posts(), again.d.replayed]);
+  ok(JSON.stringify(again.d.receipt) === JSON.stringify(first.d.receipt), 'and the answer is the same receipt, ticket and all', again.d.receipt);
+  const other = await keyed('lost-answer-0000000001', 'slack.post', { channel: '#team', text: 'Something else' });
+  ok(other.status === 409 && other.d.error === 'idempotency_conflict' && posts() === 1, 'the same key for a different write is refused, and nothing is posted', [other.status, other.d.error]);
+  /* Running, or died mid-write: claimed, and no answer kept. Never run again. */
+  claims.add('actidem:' + ME + ':in-flight-000000000001');
+  const pending = await keyed('in-flight-000000000001', 'slack.post', { channel: '#team', text: 'x' });
+  ok(pending.status === 409 && pending.d.error === 'idempotency_pending' && /may already have done it/.test(pending.d.message) && posts() === 1,
+    'a write that may already have happened is not run again, and says to look first', [pending.status, pending.d]);
+  claimsDown = true;
+  const down = await keyed('no-atomic-00000000001', 'slack.post', { channel: '#team', text: 'y' });
+  claimsDown = false;
+  ok(down.status === 503 && down.d.error === 'idempotency_unavailable' && posts() === 1, 'with no way to make sure of once, it is not done at all', [down.status, down.d.error]);
+  const bad = await keyed('short', 'slack.post', { channel: '#team', text: 'z' });
+  ok(bad.status === 400 && posts() === 1, 'a malformed key is refused before anything happens', bad.status);
+  /* A failure is kept under its key too: a refusal is not retried blind. */
+  const nope1 = await keyed('refused-0000000000001', 'slack.post', { channel: '#nope', text: 'q' });
+  const n = sent.length;
+  const nope2 = await keyed('refused-0000000000001', 'slack.post', { channel: '#nope', text: 'q' });
+  ok(nope1.status === 502 && nope2.status === 502 && nope2.d.replayed === true && sent.length === n, 'a refused write answered again from what was kept, without asking Slack again', [nope1.status, nope2.status, sent.length - n]);
+  const p0 = posts();
+  const plain = await act('slack.post', { channel: '#team', text: 'no key' });
+  ok(plain.status === 200 && posts() === p0 + 1, 'a write without a key works as before', [plain.status, posts(), plain.d]);
 }
 
 section('Signing out everywhere ends the tickets too');

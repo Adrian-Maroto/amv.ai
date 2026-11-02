@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 68, Roadmap 56, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 69, Roadmap 55, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -74,7 +74,7 @@ Totals: Fixed 68, Roadmap 56, Owner 25, Already true 13, Not a defect here 7
 | TASK-009 | High | P1 | Steering applies to future runs but not a universal durable active-step protocol | Fixed | steering note applied to the next run (earlier batch) |
 | TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Roadmap | DAG nodes as agents |
 | TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Roadmap | push connectors instead of polling |
-| TASK-012 | Medium | P2 | Cross-system idempotency needs one end-to-end key | Roadmap | end-to-end idempotency key |
+| TASK-012 | Medium | P2 | Cross-system idempotency needs one end-to-end key | Fixed | every write on a connected account carries one key from the page; the first request claims it on the atomic object, its answer is kept a day, a lost answer is asked for again under the same key and gets the first answer with nothing written twice; a claimed key with no kept answer is never run again (what-amv-did-can-be-taken-back, a-lost-answer-is-asked-for-again-once). Unattended runs make no writes. |
 | TASK-013 | Medium | P2 | Interactive timeouts are healthy but not unified with Task promotion | Roadmap | task promotion |
 | DR-001 | High | P0 | Nightly backup covers only selected KV prefixes | Owner | Postgres PITR and R2 versioning are provider switches |
 | DR-002 | High | P1 | Nightly backup lacks a strong single-run lease | Fixed | backup lease |
