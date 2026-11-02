@@ -74,6 +74,7 @@ const CLASSIFIED = {
      this row cannot be used to hang a grant on anybody else. */
   connStart:         'the handshake row is keyed by its own random state, and the account inside it is checked before the grant is written',
   shareVisibility:   'checks rec.owner before writing',
+  tasksCancel:       'a batch is keyed by its own id; the handler refuses unless rec.owner is the caller (not-theirs reads as not-found), and a job is under _autoKey(caller)',
   autoCreate:        'key is _autoKey(caller)',
   autoUpdate:        'key is _autoKey(caller)',
   autoClearResults:  'key is _autoKey(caller)',

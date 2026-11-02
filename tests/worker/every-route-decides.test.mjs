@@ -64,6 +64,7 @@ const PUBLIC = {
   '/waitlist':           'a public sign-up form',
   '/v1/engines':         'what the product offers right now, AMV names only - nothing about who is asking',
   '/v1/market/list':     'the catalogue is meant to be browsable by anyone',
+  '/v1/market/check':    'a device asks whether plugins it installed were taken down - public listing state only, at most 50 ids, rate limited per IP',
   '/v1/market/view':     'a view counter on a public listing',
   '/v1/widget/config-public': 'the embeddable widget runs on other peoples sites',
   '/v1/widget/chat':     'the same widget, gated by its own key and rate limits',

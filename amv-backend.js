@@ -32107,6 +32107,10 @@ async function marketDisable(request, env) {
   return json({ ok: true, ...out });
 }
 async function marketCheck(request, env) {
+  /* Public on purpose - a device asks about plugins it installed, signed in or
+     not - so it is bounded per IP: at most 50 ids a call, 60 calls a minute. */
+  const lim = await guardAction(env, 'mktcheck:' + (request.headers.get('CF-Connecting-IP') || 'anon'), 60, 2000, 'checking plugins');
+  if (lim) return lim;
   const body = await request.json().catch(() => ({}));
   const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter(x => /^[a-z0-9_]+$/i.test(x)).slice(0, 50);
   const disabled = [];
@@ -46427,7 +46431,7 @@ async function supportAccount(request, env){
   return json({ ok: true, account: {
     email, created: acct.created || null, name: acct.name ? true : false,
     signIn: { password: !!acct.pwHash, passkeys: Array.isArray(acct.passkeys) ? acct.passkeys.length : 0, authenticator: !!acct.totp, google: !!acct.google },
-    plan: { plan: ent.plan || 'free', source: ent.source || '', renewedAt: ent.renewedAt || null, status: ent.status || '', cancelAt: ent.cancelAt || null },
+    plan: { plan: _planOf(ent), sold: ent.plan || 'free', source: ent.source || '', renewedAt: ent.renewedAt || null, status: ent.status || '', cancelAt: ent.cancelAt || null },
     usage: { periodTokens: monthUsed },
     counts: { jobs: (auto.items || []).length, agents: (agents.list || []).filter(a => a && !a.deleted).length,
               connections: Object.keys(conns).length, files: (lib.files || []).length },

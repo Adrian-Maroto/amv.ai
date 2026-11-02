@@ -51,7 +51,7 @@ async function supportAccount(request, env){
   return json({ ok: true, account: {
     email, created: acct.created || null, name: acct.name ? true : false,
     signIn: { password: !!acct.pwHash, passkeys: Array.isArray(acct.passkeys) ? acct.passkeys.length : 0, authenticator: !!acct.totp, google: !!acct.google },
-    plan: { plan: ent.plan || 'free', source: ent.source || '', renewedAt: ent.renewedAt || null, status: ent.status || '', cancelAt: ent.cancelAt || null },
+    plan: { plan: _planOf(ent), sold: ent.plan || 'free', source: ent.source || '', renewedAt: ent.renewedAt || null, status: ent.status || '', cancelAt: ent.cancelAt || null },
     usage: { periodTokens: monthUsed },
     counts: { jobs: (auto.items || []).length, agents: (agents.list || []).filter(a => a && !a.deleted).length,
               connections: Object.keys(conns).length, files: (lib.files || []).length },
