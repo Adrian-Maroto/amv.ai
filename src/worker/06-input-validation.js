@@ -100,6 +100,9 @@ const MAX_BINARY_CHARS = 10000000;
 const MESSAGES_BODY_MAX_BYTES = 16 * 1024 * 1024;
 const VALID_ROLES = new Set(['user', 'assistant']);
 const MAX_BLOCKS_PER_MSG = 64;
+/* A page opened in AMV's hosted browser for an unattended run: about twenty
+   seconds of a browser, billed by the hour, with headroom (USAGE-004). */
+const BROWSER_PAGE_USD = 0.002;
 const WEB_SEARCH_COST_USD = 0.01;   // ~$10 / 1000 provider web-search requests (AMV-021)
 const VALID_BLOCK_TYPES = new Set(['text', 'image', 'tool_use', 'tool_result', 'document', 'thinking', 'redacted_thinking']);
 

@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 76, Roadmap 47, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 77, Roadmap 46, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -120,7 +120,7 @@ Totals: Fixed 76, Roadmap 47, Owner 25, Already true 14, Not a defect here 7
 | USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Roadmap | fewer DO calls per turn |
 | USAGE-002 | High | P1 | Global daily spend ceiling can become a global outage switch | Owner | global ceiling is a spend decision; now refuses only when truly full |
 | USAGE-003 | Medium | P2 | Sharded global spend reservation may reject while aggregate capacity remains | Fixed | spend shares all tried before refusing |
-| USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Roadmap | partly done: a job and an agent each have a monthly budget enforced before every run, and their rows show spent, left and why a job waits; cloud computer and browser minutes are metered against the plan, not yet against a per-task budget |
+| USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Fixed | every unattended run reserves its worst case before it starts - model, searches, a contract repair and the pages AMV's browser may open - against its job, its agent, the account and the platform, and settles to what it really cost; job and agent rows show spent, left and why they wait (an-agent-works-within-what-it-was-given, an-agent-keeps-a-sign-in-only-where-it-may). The cloud computer is never reached by unattended work and is held to the plan minutes it shows |
 | USAGE-005 | Medium | P2 | AMV does not yet operate on cost per verified outcome as a first-class metric | Roadmap | cost per verified outcome |
 | USAGE-006 | High | P0 | Credits and entitlements must be authoritative in strong append-only storage before cutover | Owner | with DATA-004/005 |
 | SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Already true | gate fails any swallowed money/permission write; others reviewed by area |

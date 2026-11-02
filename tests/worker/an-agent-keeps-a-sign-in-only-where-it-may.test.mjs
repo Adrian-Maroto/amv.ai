@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agentjar.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind };\n');
+  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind, _autoCostUSD, _autoRunMaxUSD, BROWSER_PAGE_USD, AGENT_READ_PAGES_MAX };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const kv = new Map(); const vals = new Map(); const audits = [];
@@ -130,6 +130,12 @@ section('Read unattended: only the listed pages its job names, and nothing but r
   ok(failed.length === 1 && !failed[0].text && /could not be put into the browser/.test(failed[0].error || ''), 'a sign-in that cannot be applied reads nothing, and says so for the page', failed);
   ok(!calls.some(c => c[0] === 'goto'), 'no page is opened signed out and read as though it were the real one', calls);
   ok(!audits.some(a => a.event === 'agent_signins_used') && audits.some(a => a.event === 'agent_signins_not_applied'), 'and it is recorded as not applied - never as used', audits.map(a => a.event));
+  /* Nov 1 audit USAGE-004: the pages it opens are paid for from the same
+     budget as the model, reserved before the run and charged after. */
+  const none0 = { input: 0, output: 0, webSearches: 0 };
+  ok(W._autoCostUSD(Object.assign({ browserPages: 2 }, none0), 'amv-core') === 2 * W.BROWSER_PAGE_USD && W.BROWSER_PAGE_USD > 0, 'each page opened is charged to the run', W._autoCostUSD(Object.assign({ browserPages: 2 }, none0), 'amv-core'));
+  const withB = W._autoRunMaxUSD(false, false, 'amv-core', false, false, true), without = W._autoRunMaxUSD(false, false, 'amv-core', false, false, false);
+  ok(Math.abs(withB - without - W.AGENT_READ_PAGES_MAX * W.BROWSER_PAGE_USD) < 1e-12, 'and the most it can open is reserved before it runs', [withB, without]);
 }
 
 section('Expires on its own: 30 days after a watched run refreshed it');
