@@ -11129,7 +11129,15 @@ function renderChatMsgs() {
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
         (m._more && !m._interrupted && i===msgs.length-1?'<div class="ai-cut"><span>'+escH(m._more==='allowance' ? T('This answer was kept short because today’s usage is almost used up.') : m._more==='pause_turn' ? T('AMV paused partway through this one.') : T('This answer reached the most AMV writes in one reply.'))+'</span>'+(m._more==='allowance' ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">'+escH(T('See plans'))+'</button>' : '<button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button>')+'</div>':'')+
-        (m._interrupted?'<div class="ai-cut"><span>'+escH(m._interrupted==='engine' ? T('The engine stopped partway through. What you see above is what it wrote.') : T('The connection dropped partway through. What you see above is what arrived.'))+'</span><button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button></div>':'')+
+        (m._interrupted?'<div class="ai-cut"><span>'+escH(m._interrupted==='engine' ? T('The engine stopped partway through. What you see above is what it wrote.') : T('The connection dropped partway through. What you see above is what arrived.'))+'</span>'+
+          /* CONTINUE, NOT ONLY RETRY (Nov 1 audit MODEL-004). A stream that
+             broke after words arrived cannot be failed over invisibly, so the
+             part is kept and the rest is asked for as a new turn - which the
+             router may send to another engine - rather than paying for the
+             whole answer again. Only on the last answer: a Continue further up
+             would continue the wrong thing. Retry stays for a fresh start. */
+          (i===msgs.length-1 && typeof m.c==='string' && m.c.trim() ? '<button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button>' : '')+
+          '<button class="ai-snag-retry" data-action="retry-ai" type="button">'+escH(T('Retry'))+'</button></div>':'')+
         // A complete answer that simply could not be delivered live.
         (m._recovered?'<div class="ai-recovered"><span>Your connection dropped, so AMV recovered this answer rather than making you wait for it again.</span></div>':''));
     }

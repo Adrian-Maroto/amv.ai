@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 67, Roadmap 57, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 68, Roadmap 56, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -113,7 +113,7 @@ Totals: Fixed 67, Roadmap 57, Owner 25, Already true 13, Not a defect here 7
 | MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Roadmap | provider-authoritative context limits |
 | MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Roadmap | tokenizer-based limits |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Owner | second model provider is commercial |
-| MODEL-004 | Medium | P2 | Streaming cannot transparently fail over after tokens are emitted | Roadmap | mid-stream failover |
+| MODEL-004 | Medium | P2 | Streaming cannot transparently fail over after tokens are emitted | Fixed | a broken stream keeps what arrived, marked as cut off by the engine or the connection, and offers Continue: a new turn carrying the part, so the rest is written once (when-the-engine-fails-partway); a lost connection recovers the whole parked answer |
 | MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Roadmap | quality-gated model canaries |
 | VOICE-001 | Strategic | P2 | Voice remains STT→text model→TTS rather than native speech-to-speech | Roadmap | native speech-to-speech |
 | VOICE-002 | Medium | P2 | Meeting/diarization workflow is incomplete | Roadmap | meetings/diarization |

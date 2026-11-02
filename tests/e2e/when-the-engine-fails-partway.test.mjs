@@ -120,6 +120,23 @@ section('Overloaded partway: the part is kept, and the engine is named as what s
   const r = await last();
   ok(/The first half of the answer/.test(r.text) && r.m.cut === 'engine', 'what arrived is kept, marked as cut off by the engine', r.m);
   ok(/The engine stopped partway through/.test(r.text) && !/connection dropped/.test(r.text), 'and the banner says the engine stopped, not the connection', r.text.slice(-200));
+  /* Nov 1 audit MODEL-004: the rest is asked for as a new turn, carrying
+     the part that arrived, rather than starting the answer over. */
+  const btn = await page.evaluate(() => [...document.querySelectorAll('.mr:not(.u)')].slice(-1)[0].querySelectorAll('[data-action="continue-ai"]').length);
+  ok(btn === 1, 'Continue is offered beside Retry', btn);
+  nextTurns = [text(' and the second half.')];
+  const n = modelSaw.length;
+  await page.waitForTimeout(1200);
+  await page.click('.mr:not(.u):last-of-type [data-action="continue-ai"], [data-action="continue-ai"]');
+  for (let i = 0; i < 80 && modelSaw.length === n; i++) await page.waitForTimeout(100);
+  await page.waitForFunction(() => S.busy === false, null, { timeout: 30000 }).catch(() => {});
+  const sent = modelSaw[modelSaw.length - 1] || {};
+  const msgs = (sent.messages || []).map(m => ({ role: m.role, t: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }));
+  const partAt = msgs.findIndex(m => m.role === 'assistant' && /The first half of the answer/.test(m.t));
+  ok(modelSaw.length > n && partAt >= 0 && /Continue exactly where you stopped/.test((msgs[partAt + 1] || {}).t || ''),
+    'the continuation carries the part that arrived, then asks for the rest', msgs.slice(-3));
+  const end = await page.evaluate(() => ({ a: (getMsgs() || []).filter(m => m.r === 'a').slice(-2).map(m => m.c), cut: (getMsgs() || []).slice(-1)[0]._interrupted }));
+  ok(/The first half/.test(end.a[0] || '') && /second half/.test(end.a[1] || '') && !end.cut, 'the part stays, and the rest follows it complete', end);
 }
 
 const ended = (txt, why) => start + ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
