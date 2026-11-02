@@ -216,7 +216,7 @@ jobs:
                 fi
                 case "$LAUNCH_PROFILE" in
                   consumer_full|team|enterprise)
-                    missing="
+                    missing=""
                     for c in $need; do [ "$(cap $c)" = yes ] || missing="$missing $c"; done
                     if [ -n "$missing" ]; then
                       echo "::error title=Not fit for the $LAUNCH_PROFILE launch profile::Off on production:$missing. The launch profile requires them."
