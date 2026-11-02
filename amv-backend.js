@@ -18485,6 +18485,20 @@ export default {
         console.error('[cron] cohort check failed', e && e.message);
         try{ await _workerError(env, 'cron.cohort', e); }catch(_){}
       }
+      /* THE SERVICE OBJECTIVES (REL-010): measured once an hour - it reads
+         every shard of the month's counts - and the owner told when one is
+         over its error budget. */
+      try{
+        const hourFlag = 'slocheck:' + new Date().toISOString().slice(0, 13);
+        if(!(await env.AMV_KV.get(hourFlag))){
+          await env.AMV_KV.put(hourFlag, '1', { expirationTtl: 7200 });
+          const r = await runSloCheck(env);
+          if(r.told) console.log('[cron] slo', JSON.stringify(r));
+        }
+      }catch(e){
+        console.error('[cron] slo check failed', e && e.message);
+        try{ await _workerError(env, 'cron.slo', e); }catch(_){}
+      }
     })());
   },
 
@@ -34928,6 +34942,53 @@ async function _appRequestCounts(env) {
   return { top, complete };
 }
 
+/* THE SERVICE OBJECTIVES, FROM WHAT HAPPENED (Nov 1 audit REL-010).
+   docs/SLO.md sets them; this measures them from the month's own counts -
+   answers delivered whole, how fast they started, background runs that
+   produced their result - and says how much of each error budget is spent.
+   Over budget is an incident: the owner is told once a day (runSloCheck). */
+const SLO_TARGETS = [
+  { id: 'chat_delivered', what: 'A chat answer is delivered whole', objective: 99.5, classes: ['chat', 'api'] },
+  { id: 'background_runs', what: 'A background or agent run produces its result', objective: 99, classes: ['background', 'agent'] },
+];
+async function _sloReport(env, month) {
+  const oc = await _outcomes(env, month).catch(() => ({}));
+  const out = [];
+  for (const t of SLO_TARGETS) {
+    let good = 0, runs = 0;
+    for (const c of t.classes) { if (oc[c]) { good += oc[c].good; runs += oc[c].runs; } }
+    const actual = runs ? (good / runs) * 100 : null;
+    const allowed = 100 - t.objective;
+    const used = runs ? ((runs - good) / runs) * 100 / allowed * 100 : 0;
+    out.push({ id: t.id, what: t.what, objective: t.objective, runs, actualPct: actual == null ? null : +actual.toFixed(2),
+               budgetUsedPct: +used.toFixed(1), status: runs < 20 ? 'too_few' : used >= 100 ? 'broken' : used >= 50 ? 'burning' : 'ok' });
+  }
+  /* How fast answers start: the share inside five seconds, from the buckets. */
+  const per = await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(b =>
+    Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`).catch(() => 0))).then(v => v.reduce((a, c) => a + c, 0))));
+  const n = per.reduce((a, c) => a + c, 0), fast = n - per[4];
+  const share = n ? (fast / n) * 100 : null;
+  out.push({ id: 'chat_starts_fast', what: 'A chat answer starts within 5 seconds', objective: 99.5, runs: n,
+             actualPct: share == null ? null : +share.toFixed(2), budgetUsedPct: n ? +(((n - fast) / n) * 100 / 0.5 * 100).toFixed(1) : 0,
+             status: n < 20 ? 'too_few' : (n - fast) / n * 100 >= 0.5 ? 'broken' : (n - fast) / n * 100 >= 0.25 ? 'burning' : 'ok' });
+  return out;
+}
+/* Once a day at most per objective: an objective over its budget is said to
+   the owner with the runbook to open. */
+async function runSloCheck(env) {
+  const month = monthKey();
+  const slo = await _sloReport(env, month);
+  let told = 0;
+  for (const o of slo) {
+    if (o.status !== 'broken') continue;
+    const flag = 'slo:' + o.id + ':' + todayKey();
+    if (await env.AMV_KV.get(flag)) continue;
+    await env.AMV_KV.put(flag, '1', { expirationTtl: 2 * 86400 });
+    await notify(env, 'Objective broken: ' + o.what + ' - ' + o.actualPct + '% this month against ' + o.objective + '%, ' + o.budgetUsedPct + '% of the error budget spent. See docs/INCIDENT-RUNBOOK.md, "An objective is broken".');
+    told++;
+  }
+  return { checked: slo.length, told };
+}
 async function adminStats(request, env) {
   /* AMV-052: through the SAME gate as every other admin route. This was a bare
      token comparison with no rate limit, so three of the sixteen admin routes
@@ -35114,6 +35175,7 @@ async function adminStats(request, env) {
     appRequests,
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
     outcomes,
+    slo: await _sloReport(env, month).catch(() => []),
     users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
              conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
     /* Say plainly whether the per-account lists below are everything or a

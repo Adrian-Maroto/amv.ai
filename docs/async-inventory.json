@@ -72,6 +72,12 @@
    "owner": "src/worker/47-renewal-sweep.js",
    "retry": "a measurement; the next tick recomputes it",
    "runs": "runCohortCheck"
+  },
+  "slo": {
+   "what": "measuring the service objectives and telling the owner when one is over budget",
+   "owner": "src/worker/56-admin.js",
+   "runs": "runSloCheck",
+   "retry": "once an hour behind a flag; a failed check is reported and the next hour runs it again; each broken objective is said once a day"
   }
  },
  "queue": {

@@ -319,6 +319,20 @@ export default {
         console.error('[cron] cohort check failed', e && e.message);
         try{ await _workerError(env, 'cron.cohort', e); }catch(_){}
       }
+      /* THE SERVICE OBJECTIVES (REL-010): measured once an hour - it reads
+         every shard of the month's counts - and the owner told when one is
+         over its error budget. */
+      try{
+        const hourFlag = 'slocheck:' + new Date().toISOString().slice(0, 13);
+        if(!(await env.AMV_KV.get(hourFlag))){
+          await env.AMV_KV.put(hourFlag, '1', { expirationTtl: 7200 });
+          const r = await runSloCheck(env);
+          if(r.told) console.log('[cron] slo', JSON.stringify(r));
+        }
+      }catch(e){
+        console.error('[cron] slo check failed', e && e.message);
+        try{ await _workerError(env, 'cron.slo', e); }catch(_){}
+      }
     })());
   },
 

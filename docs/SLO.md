@@ -28,9 +28,10 @@ latency objectives below are targets, not measurements.
 |---|---|---|---|
 | The site loads | 99.9% of probes | synthetic, "Page loads" | 43 minutes |
 | Sign-in and the API answer | 99.9% of probes | synthetic, "Server answers" and "Stores reachable" | 43 minutes |
-| A chat message starts streaming | 99.5% of attempts, first token within 5 s at the median | not yet measured (needs request analytics) | 3.6 hours |
+| A chat answer is delivered whole | 99.5% of answers | measured: every answer counted good or not (`slo` in `/admin/stats`), checked hourly, the owner told when the budget is spent | 0.5% of answers |
+| A chat answer starts streaming within 5 s | 99.5% of answers | measured: time-to-first-word buckets by engine, same check | 0.5% of answers |
 | A payment's plan arrives | 100% of paid events within 1 hour | the provider's own retries, idempotent on AMV's side; reconciled by the renewal sweep | none: a missed payment is an incident |
-| Background work runs | 99% of due runs within 10 minutes of due | dead-letter alerts once the queue is bound | 7.2 hours |
+| Background work runs | 99% of runs produce their result | measured: every background and agent run counted, same check; dead-letter alerts once the queue is bound | 1% of runs |
 | Nothing is served that should not be | 100% | synthetic, "Server source not served"; the deploy's publish check | none |
 
 **When the budget is spent:** no new features ship until the cause is fixed and

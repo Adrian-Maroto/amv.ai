@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 89, Roadmap 33, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 90, Roadmap 32, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -93,7 +93,7 @@ Totals: Fixed 89, Roadmap 33, Owner 25, Already true 14, Not a defect here 8
 | REL-007 | High | P1 | Launch profile is optional | Fixed | deploys warn when no profile is declared |
 | REL-008 | Medium | P1 | Two release-gate tests currently fail | Not a defect here | the two failing tests needed bubblewrap/acorn, which CI installs |
 | REL-009 | High | P1 | No complete 24/7 paging/on-call/status operation | Owner | on-call/paging service (OWNER-DECISIONS 13) |
-| REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Roadmap | percentile/burn-rate telemetry |
+| REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Fixed | the objectives in docs/SLO.md are measured from the month's own counts - answers delivered whole, background runs that produced their result, the share of answers starting within 5 s from the time-to-first-word buckets - with the share of each error budget spent, shown in the owner console; checked hourly, a spent budget is told to the owner once a day naming its runbook section (an-objective-is-measured-and-its-breach-said) |
 | REL-011 | Medium | P2 | 100% head sampling is not sustainable at millions | Owner | log sampling vs. Logpush cost |
 | REL-012 | Medium | P1 | No universal trace ID across request, Queue, Task, Agent, tool, action, and verification | Fixed | every answer carries X-AMV-Request-Id (the Cloudflare ray id), also in the 500 log line; queue/task propagation still to do |
 | REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Already true | model circuit breaker already shared through KV |

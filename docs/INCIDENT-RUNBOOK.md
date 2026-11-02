@@ -127,3 +127,23 @@ An on-call rota, paging, a public status page and outside monitoring that
 calls `/v1/health/ready` every minute are services the owner signs up for
 (owner decision 40 and the scale audit, #66). Until then, nobody is woken up
 by anything: the alerts go to `ALERT_WEBHOOK`, if it is set.
+
+## An objective is broken
+
+The hourly check (`runSloCheck`, `src/worker/56-admin.js`) sends this when an
+objective in `docs/SLO.md` has spent its month's error budget. The owner
+console's stats show each objective, its actual rate and how much budget is
+spent (`slo` in `/admin/stats`).
+
+- **A chat answer is delivered whole** - answers cut off or never started.
+  Look at the model circuit (`model_circuit_open` in the audit log) and the
+  provider's status first; a brownout (`80-switches.js`) sheds non-essential
+  load while it recovers.
+- **A background or agent run produces its result** - failed runs and
+  results off their agent's form. The jobs' rows say why each failed; a run
+  of off-form results pauses its agent by itself.
+- **A chat answer starts within 5 seconds** - the time-to-first-word buckets
+  by engine say whether it is one engine or all of them.
+
+Write down what happened and when the budget recovered in the incident log
+below; a broken objective with no entry is an unexplained one.
