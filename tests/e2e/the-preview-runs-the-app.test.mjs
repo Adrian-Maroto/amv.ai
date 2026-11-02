@@ -27,7 +27,7 @@
 
    Playwright reaches into the frame over the debugging protocol, so these can
    check what the page became - which the parent, correctly, cannot. */
-import { bootApp } from '../lib/harness.mjs';
+import { bootApp, armGeom } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat' });
@@ -295,6 +295,7 @@ section('Opened anywhere but AMV’s sandboxed frame, the preview page writes no
      without the sandbox, and posts it a script: that would run as AMV. */
   const origin = new URL(page.url()).origin;
   const ctx2 = await page.context().browser().newContext();
+  await armGeom(ctx2);
   const tab = await ctx2.newPage();
   await tab.goto(origin + '/preview.html');
   await tab.evaluate(() => window.postMessage({ __amv: 'preview', html: '<p id="pwn">ran</p><script>window.__pwned = 1</script>' }, '*'));

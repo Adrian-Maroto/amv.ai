@@ -66,8 +66,9 @@ async function _retentionFor(env, email, user){
   const days = mine && team ? Math.min(mine, team) : (mine || team);
   return { days, by: team && days === team ? 'team' : 'you', mine, team };
 }
-async function _retentionIndex(env, email, on){
-  const k = 'retainidx:' + String(email || '').toLowerCase();
+async function _retentionIndex(env, who, on){
+  const email = String(who || '').toLowerCase();
+  const k = `retainidx:${email}`;
   if (on) await env.AMV_KV.put(k, '1'); else await env.AMV_KV.delete(k);
 }
 
@@ -144,7 +145,8 @@ async function _retentionSweepSlice(env, atMs){
       for (const m of team.members || []) {
         /* Already reached in the first pass, with the shorter of the two
            periods (STATE-004): not counted, or read, twice. */
-        try { if (await env.AMV_KV.get('retainidx:' + String(m.email || '').toLowerCase())) continue; } catch (e) {}
+        const email = String(m.email || '').toLowerCase();
+        try { if (await env.AMV_KV.get(`retainidx:${email}`)) continue; } catch (e) {}
         const r = await _retentionFor(env, m.email, null);
         if (r.days) { st.trimmed += await _retentionTrimOne(env, m.email, r.days); st.accounts++; }
       }

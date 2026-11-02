@@ -1669,6 +1669,8 @@ async function authDeleteAccount(request, env) {
                  `totpset:${email}`,
                  /* Background work held after failing (15a-job-queue.js). */
                  `autoquar:${email}`, `autodead:${email}`,
+                 /* Their own retention choice, indexed for the nightly sweep. */
+                 `retainidx:${email}`,
                  ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const id of myPasskeys) loose.push(`pkcred:${id}`);
