@@ -3849,6 +3849,24 @@ async function counter(env, name, payload) {
   // ---- KV fallback (best-effort, NOT atomic) - only used if DO unbound ----
   return _counterKVFallback(env, name, payload);
 }
+/* WORK THAT MUST RUN ALONE (Nov 1 audit DR-002, STATE-003). The nightly
+   backup and the retention sweep each keep their progress in a KV record; two
+   runs at once - a slow cron tick overlapping the next, or an operator's
+   manual run beside it - both read the same cursor and both move it. So each
+   slice takes a lease first: the object's claim, which expires on its own if
+   the holder dies, and is given back only by the holder that names it
+   (AMV-013). A run that does not get it does nothing and says so. With no
+   object bound (a single-instance deployment) there is nothing to race. */
+async function _runAlone(env, name, ttlMs) {
+  if (!env.AMV_COUNTER) return { held: true, owner: '' };
+  let r = null;
+  try { r = await counter(env, 'lease:' + name, { op: 'claim', ttlMs }); } catch (e) { r = null; }
+  return r && r.claimed ? { held: true, owner: r.owner || '' } : { held: false };
+}
+async function _runAloneEnd(env, name, lease) {
+  if (!lease || !lease.held || !lease.owner) return;
+  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (e) {}
+}
 async function _counterKVFallback(env, name, payload) {
   const op = payload.op;
   /* No usable store at all. Every branch below reaches straight into
@@ -17217,6 +17235,14 @@ const _nightlyManifest = (day) => 'backups/' + day + '/manifest.json';
 /* One tick's share. Returns what it did, for the log. */
 async function runNightlyBackup(env, atMs){
   if (!_nightlyOn(env)) return { on: false };
+  /* One slice at a time, ever (DR-002). */
+  const lease = await _runAlone(env, 'nightly-backup', NIGHTLY_SLICE_MS + 60000);
+  if (!lease.held) return { on: true, busy: true };
+  try { return await _nightlyBackupSlice(env, atMs); }
+  finally { await _runAloneEnd(env, 'nightly-backup', lease); }
+}
+async function _nightlyBackupSlice(env, atMs){
+  if (!_nightlyOn(env)) return { on: false };
   if (DB._hasD1(env)) return { on: false, why: 'd1' };
   const now = +atMs || Date.now();
   const day = _nightlyDay(now);
@@ -23563,6 +23589,13 @@ async function _retentionTrimOne(env, email, days){
   return removed;
 }
 async function runRetentionSweep(env, atMs){
+  /* One sweep at a time (STATE-003). */
+  const lease = await _runAlone(env, 'retention-sweep', RETENTION_SWEEP_MS + 60000);
+  if (!lease.held) return { ran: false, busy: true };
+  try { return await _retentionSweepSlice(env, atMs); }
+  finally { await _runAloneEnd(env, 'retention-sweep', lease); }
+}
+async function _retentionSweepSlice(env, atMs){
   const now = atMs || Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
   const stateKey = 'retainrun:' + day;
@@ -23589,6 +23622,9 @@ async function runRetentionSweep(env, atMs){
       const team = await DB.get(env, 'team', k.name.slice('retainteam:'.length));
       if (!team || !(team.policy && RETENTION_CHOICES.has(+team.policy.retentionDays))) continue;
       for (const m of team.members || []) {
+        /* Already reached in the first pass, with the shorter of the two
+           periods (STATE-004): not counted, or read, twice. */
+        try { if (await env.AMV_KV.get('retainidx:' + String(m.email || '').toLowerCase())) continue; } catch (e) {}
         const r = await _retentionFor(env, m.email, null);
         if (r.days) { st.trimmed += await _retentionTrimOne(env, m.email, r.days); st.accounts++; }
       }

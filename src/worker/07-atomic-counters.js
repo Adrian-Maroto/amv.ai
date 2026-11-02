@@ -384,6 +384,24 @@ async function counter(env, name, payload) {
   // ---- KV fallback (best-effort, NOT atomic) - only used if DO unbound ----
   return _counterKVFallback(env, name, payload);
 }
+/* WORK THAT MUST RUN ALONE (Nov 1 audit DR-002, STATE-003). The nightly
+   backup and the retention sweep each keep their progress in a KV record; two
+   runs at once - a slow cron tick overlapping the next, or an operator's
+   manual run beside it - both read the same cursor and both move it. So each
+   slice takes a lease first: the object's claim, which expires on its own if
+   the holder dies, and is given back only by the holder that names it
+   (AMV-013). A run that does not get it does nothing and says so. With no
+   object bound (a single-instance deployment) there is nothing to race. */
+async function _runAlone(env, name, ttlMs) {
+  if (!env.AMV_COUNTER) return { held: true, owner: '' };
+  let r = null;
+  try { r = await counter(env, 'lease:' + name, { op: 'claim', ttlMs }); } catch (e) { r = null; }
+  return r && r.claimed ? { held: true, owner: r.owner || '' } : { held: false };
+}
+async function _runAloneEnd(env, name, lease) {
+  if (!lease || !lease.held || !lease.owner) return;
+  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (e) {}
+}
 async function _counterKVFallback(env, name, payload) {
   const op = payload.op;
   /* No usable store at all. Every branch below reaches straight into

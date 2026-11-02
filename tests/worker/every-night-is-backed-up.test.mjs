@@ -68,7 +68,10 @@ const mkEnv = (extra = {}) => Object.assign({
   AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = counterVals.get(n) || 0;
     if (b.op === 'rateCheck') { counterVals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
-    if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
+    /* A claim as the object makes one: held until released by its owner or expired. */
+    if (b.op === 'claim') { const h = counterVals.get('c:' + n); if (h && h.until > Date.now()) return new Response(JSON.stringify({ claimed: false }));
+      const owner = 'o' + Math.floor(Math.random() * 1e9); counterVals.set('c:' + n, { owner, until: Date.now() + (b.ttlMs || 30000) }); return new Response(JSON.stringify({ claimed: true, owner })); }
+    if (b.op === 'release') { const h = counterVals.get('c:' + n); if (h && b.owner && h.owner !== b.owner) return new Response(JSON.stringify({ released: false })); counterVals.delete('c:' + n); return new Response(JSON.stringify({ released: true })); }
     return new Response(JSON.stringify({ allowed: true, value: cur }));
   } }) },
 }, extra);
@@ -240,6 +243,23 @@ section('A night is put back only after a drill found all of it sound, through t
   ok(none.status === 404, 'a night with no complete backup is refused', none.status);
   const anon = await W.backupImport(new Request('https://api.amv.test/admin/backup/import', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ fromNight: DAY }) }), env);
   ok(anon.status === 401 || anon.status === 403, 'and without the owner’s token nothing is restored', anon.status);
+}
+
+section('One backup slice at a time (Nov 1 audit DR-002)');
+{
+  const later = T0 + 3 * 86400000;
+  const stateKeys = () => [...env._m.keys()].filter(k => k.startsWith('bkrun:')).sort().join();
+  /* Somebody else's slice holds the lease: this one does nothing. */
+  counterVals.set('c:lease:nightly-backup', { owner: 'someone-else', until: Date.now() + 60000 });
+  const before = stateKeys();
+  const busy = await W.runNightlyBackup(env, later);
+  ok(busy.busy === true && stateKeys() === before, 'a slice that finds another running does nothing, and touches no progress', busy);
+  ok(counterVals.get('c:lease:nightly-backup').owner === 'someone-else', 'and leaves the other holder holding it');
+  counterVals.delete('c:lease:nightly-backup');
+  /* Two at once: one works, one is a clean no-op; the lease is given back. */
+  const pair = await Promise.all([W.runNightlyBackup(env, later), W.runNightlyBackup(env, later)]);
+  ok(pair.filter(r => r.busy).length === 1 && pair.filter(r => !r.busy).length === 1, 'two started together: one runs, the other does nothing', pair.map(r => r.busy ? 'busy' : (r.done ? 'done' : 'ran')));
+  ok(!counterVals.has('c:lease:nightly-backup'), 'and the lease is given back when the slice ends');
 }
 
 console.log = quiet;

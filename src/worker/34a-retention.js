@@ -109,6 +109,13 @@ async function _retentionTrimOne(env, email, days){
   return removed;
 }
 async function runRetentionSweep(env, atMs){
+  /* One sweep at a time (STATE-003). */
+  const lease = await _runAlone(env, 'retention-sweep', RETENTION_SWEEP_MS + 60000);
+  if (!lease.held) return { ran: false, busy: true };
+  try { return await _retentionSweepSlice(env, atMs); }
+  finally { await _runAloneEnd(env, 'retention-sweep', lease); }
+}
+async function _retentionSweepSlice(env, atMs){
   const now = atMs || Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
   const stateKey = 'retainrun:' + day;
@@ -135,6 +142,9 @@ async function runRetentionSweep(env, atMs){
       const team = await DB.get(env, 'team', k.name.slice('retainteam:'.length));
       if (!team || !(team.policy && RETENTION_CHOICES.has(+team.policy.retentionDays))) continue;
       for (const m of team.members || []) {
+        /* Already reached in the first pass, with the shorter of the two
+           periods (STATE-004): not counted, or read, twice. */
+        try { if (await env.AMV_KV.get('retainidx:' + String(m.email || '').toLowerCase())) continue; } catch (e) {}
         const r = await _retentionFor(env, m.email, null);
         if (r.days) { st.trimmed += await _retentionTrimOne(env, m.email, r.days); st.accounts++; }
       }

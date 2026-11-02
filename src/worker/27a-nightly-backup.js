@@ -40,6 +40,14 @@ const _nightlyManifest = (day) => 'backups/' + day + '/manifest.json';
 /* One tick's share. Returns what it did, for the log. */
 async function runNightlyBackup(env, atMs){
   if (!_nightlyOn(env)) return { on: false };
+  /* One slice at a time, ever (DR-002). */
+  const lease = await _runAlone(env, 'nightly-backup', NIGHTLY_SLICE_MS + 60000);
+  if (!lease.held) return { on: true, busy: true };
+  try { return await _nightlyBackupSlice(env, atMs); }
+  finally { await _runAloneEnd(env, 'nightly-backup', lease); }
+}
+async function _nightlyBackupSlice(env, atMs){
+  if (!_nightlyOn(env)) return { on: false };
   if (DB._hasD1(env)) return { on: false, why: 'd1' };
   const now = +atMs || Date.now();
   const day = _nightlyDay(now);

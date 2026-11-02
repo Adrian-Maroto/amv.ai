@@ -159,5 +159,15 @@ section('Choosing to keep everything again takes the person out of the sweep');
   ok(r.d.days === null && !m.has('retainidx:ana@example.com'), 'no period, and no index entry', r.d);
 }
 
+section('One retention sweep at a time (Nov 1 audit STATE-003)');
+{
+  vals.set('c:lease:retention-sweep', 1);
+  const busy = await W.runRetentionSweep(env, Date.now() + 9 * 86400000);
+  ok(busy.busy === true && busy.ran === false, 'a sweep that finds another running does nothing', busy);
+  vals.delete('c:lease:retention-sweep');
+  const ran = await W.runRetentionSweep(env, Date.now() + 9 * 86400000);
+  ok(!ran.busy && !vals.get('c:lease:retention-sweep'), 'with the lease free it runs, and gives the lease back', ran);
+}
+
 report();
 done();
