@@ -8,6 +8,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "accesslog": {
+   "class": "account",
+   "holds": "when support looked at the account, and why",
+   "kept": "400 days",
+   "backup": true,
+   "authority": "kv"
+  },
   "acct": {
    "class": "security",
    "holds": "password hash, salt, passkey and second-step state",

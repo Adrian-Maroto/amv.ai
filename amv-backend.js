@@ -16816,7 +16816,10 @@ const BACKUP_PREFIXES = [
   /* What somebody chose extra usage does when their plan runs out. A choice
      about their money: a restore that forgot it would start spending a
      balance somebody had set never to be used. */
-  'creditpref:'
+  'creditpref:',
+  /* The person's record of when support looked at their account
+     (83-support.js): a restore must not erase that it happened. */
+  'accesslog:'
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
@@ -18987,7 +18990,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/tasks', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/tasks', '/v1/account/access', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
@@ -19159,6 +19162,7 @@ async function _route(request, env, ctx) {
     case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
     case '/admin/auto/release':  return autoQuarantineRelease(request, env);
     case '/admin/pg/shadow':     return pgShadowRoute(request, env);
+    case '/admin/support/account': return supportAccount(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
@@ -19200,6 +19204,7 @@ async function _route(request, env, ctx) {
     case '/v1/messages/batches/results': return batchResults(request, env);
     case '/v1/messages/batches/cancel':  return batchCancel(request, env);
     case '/v1/tasks':                    return tasksList(request, env);
+    case '/v1/account/access':           return accountAccessLog(request, env);
     case '/v1/tasks/cancel':             return tasksCancel(request, env);
     case '/v1/usage':        return usageReport(request, env);
     case '/sms/register':    return smsRegister(request, env);
@@ -21731,6 +21736,8 @@ async function authDeleteAccount(request, env) {
                  `autoquar:${email}`, `autodead:${email}`,
                  /* Their own retention choice, indexed for the nightly sweep. */
                  `retainidx:${email}`,
+                 /* When support looked at the account (83-support.js). */
+                 `accesslog:${email}`,
                  ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const id of myPasskeys) loose.push(`pkcred:${id}`);
@@ -46316,4 +46323,72 @@ async function tasksCancel(request, env){
   const rec = (await DB.get(env, 'auto', _autoKey(email))) || { items: [], results: [] };
   const it = (rec.items || []).find(x => x && x.id === m[2]);
   return json({ ok: true, task: it ? _taskOfJob(it, rec, Date.now(), null) : null });
+}
+/* =====================================================================
+   SUPPORT SEES THE ACCOUNT, NOT WHAT IS IN IT (Nov 1 audit OPS-001).
+
+   POST /admin/support/account { email, reason }
+     What support needs to resolve a billing or account problem - the plan
+     and its state, when the account was made, this period's usage, how many
+     jobs, agents, connections and files there are, the sign-in methods -
+     and nothing anybody wrote: no chat, no file name, no job text, no
+     token. Operator token only, rate limited, a reason required.
+
+   GET /v1/account/access
+     The person's own record of every time support looked, with the reason
+     given. Nobody looks at an account without the account being told.
+
+   There is no support route that reads content. The only way to content is
+   the operator's whole-namespace backup, which exists for disaster
+   recovery, is bounded to ten a minute, and is audited.
+   ===================================================================== */
+const ACCESS_LOG_MAX = 50;
+async function _accessLogAdd(env, email, entry){
+  const k = `accesslog:${email}`;
+  let list = [];
+  try { list = JSON.parse((await env.AMV_KV.get(k)) || '[]'); } catch (e) { list = []; }
+  list.push(entry);
+  await env.AMV_KV.put(k, JSON.stringify(list.slice(-ACCESS_LOG_MAX)), { expirationTtl: 400 * 86400 });
+}
+
+async function supportAccount(request, env){
+  const gate = await _adminGate(request, env, 'support', 30, 500);
+  if (gate) return gate;
+  const body = await request.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const reason = String(body.reason || '').replace(/\s+/g, ' ').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Which account? Give its address.', code: 'bad_email' }, 400);
+  if (reason.length < 10) return json({ error: 'Say why you are looking - the person will see it.', code: 'reason_required' }, 400);
+  const acct = await DB.get(env, 'acct', email);
+  if (!acct) return json({ error: 'There is no account with that address.', code: 'not_found' }, 404);
+  /* Told before it is shown: if the record of the look cannot be written,
+     nothing is shown. */
+  try { await _accessLogAdd(env, email, { at: Date.now(), who: 'AMV support', what: 'account details (no content)', reason: reason.slice(0, 300) }); }
+  catch (e) { return json({ error: 'The look could not be recorded, so nothing was shown.', code: 'not_recorded' }, 503); }
+  audit(env, 'support_viewed', { email, reason: reason.slice(0, 120) });
+
+  const ent = (await DB.get(env, 'ent', email)) || { plan: 'free' };
+  const auto = (await DB.get(env, 'auto', _autoKey(email))) || { items: [] };
+  const agents = (await DB.get(env, 'agents', email)) || { list: [] };
+  const conns = (await DB.get(env, CONN_KV, email)) || {};
+  const lib = (await DB.get(env, LIB_KIND, email)) || { files: [] };
+  let monthUsed = null;
+  try { monthUsed = +((await counter(env, `usg:${email}:${_periodKeyFor(ent.renewedAt, ent.plan, ent.customCfg)}`, { op: 'get' })).value || 0); } catch (e) { monthUsed = null; }
+  return json({ ok: true, account: {
+    email, created: acct.created || null, name: acct.name ? true : false,
+    signIn: { password: !!acct.pwHash, passkeys: Array.isArray(acct.passkeys) ? acct.passkeys.length : 0, authenticator: !!acct.totp, google: !!acct.google },
+    plan: { plan: ent.plan || 'free', source: ent.source || '', renewedAt: ent.renewedAt || null, status: ent.status || '', cancelAt: ent.cancelAt || null },
+    usage: { periodTokens: monthUsed },
+    counts: { jobs: (auto.items || []).length, agents: (agents.list || []).filter(a => a && !a.deleted).length,
+              connections: Object.keys(conns).length, files: (lib.files || []).length },
+    connectedProviders: [...new Set(Object.values(conns).map(c => c && c.provider).filter(Boolean))],
+  }, recorded: true });
+}
+
+async function accountAccessLog(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  let list = [];
+  try { list = JSON.parse((await env.AMV_KV.get(`accesslog:${String(user.email).toLowerCase()}`)) || '[]'); } catch (e) { list = []; }
+  return json({ ok: true, access: list.slice().reverse() });
 }

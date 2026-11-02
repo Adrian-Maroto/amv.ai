@@ -142,7 +142,10 @@ const BACKUP_PREFIXES = [
   /* What somebody chose extra usage does when their plan runs out. A choice
      about their money: a restore that forgot it would start spending a
      balance somebody had set never to be used. */
-  'creditpref:'
+  'creditpref:',
+  /* The person's record of when support looked at their account
+     (83-support.js): a restore must not erase that it happened. */
+  'accesslog:'
 ];
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot

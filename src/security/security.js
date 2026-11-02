@@ -89,12 +89,27 @@ function _secPaint(){
         : (_secState.totpAvailable ? '<button class="btn bp" id="sec-totp-on" style="margin-top:10px">' + escH(T('Set up an authenticator app')) + '</button>'
                                    : '<div class="set-sub">' + escH(T('Authenticator apps are not available on this AMV yet.')) + '</div>'))
     + '<div id="sec-totp-setup"></div></div>'
-    + '<div id="sec-proof"></div><div class="set-sub" id="sec-msg" role="status" aria-live="polite"></div>';
+    + '<div id="sec-proof"></div><div class="set-sub" id="sec-msg" role="status" aria-live="polite"></div>'
+    /* WHO LOOKED (OPS-001): every time AMV support opened this account's
+       details, with the reason they gave. Support never sees content. */
+    + '<div class="ss2"><h3>' + escH(T('Support access')) + '</h3><div class="set-sub" id="sec-access">' + escH(T('Loading…')) + '</div></div>';
   on($('sec-pk-add'), 'click', _secAddPasskey);
   on($('sec-totp-on'), 'click', _secTotpOn);
   on($('sec-totp-off'), 'click', _secTotpOff);
   on($('sec-rc-new'), 'click', _secNewCodes);
   host.querySelectorAll('[data-sec-rm]').forEach(b => on(b, 'click', () => _secRemove(b.getAttribute('data-sec-rm'))));
+  _secAccess();
+}
+async function _secAccess(){
+  const box = $('sec-access'); if(!box) return;
+  try{
+    const d = await _secApi.call('/v1/account/access');
+    const list = d.access || [];
+    box.innerHTML = list.length
+      ? list.slice(0, 20).map(a => '<div class="sess-meta">' + escH(_secWhen(a.at) + ' · ' + (a.who || T('AMV support')) + ' · ' + (a.reason || '')) + '</div>').join('')
+        + '<div class="sess-meta">' + escH(T('Support sees your plan, usage and settings - never your chats, files or jobs.')) + '</div>'
+      : escH(T('Nobody from AMV has looked at your account. Support sees your plan, usage and settings - never your chats, files or jobs.'));
+  }catch(e){ box.textContent = T('AMV could not read this just now.'); }
 }
 const _secMsg = (t) => { const m = $('sec-msg'); if(m) m.textContent = t || ''; };
 const _secFail = (e) => _secMsg(e && e.name === 'NotAllowedError' ? T('The passkey prompt was closed. Nothing was changed.') : ((e && e.message) || T('That did not work. Try again.')));

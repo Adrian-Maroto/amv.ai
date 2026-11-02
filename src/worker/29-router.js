@@ -821,7 +821,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/tasks', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/tasks', '/v1/account/access', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
@@ -993,6 +993,7 @@ async function _route(request, env, ctx) {
     case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
     case '/admin/auto/release':  return autoQuarantineRelease(request, env);
     case '/admin/pg/shadow':     return pgShadowRoute(request, env);
+    case '/admin/support/account': return supportAccount(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
@@ -1034,6 +1035,7 @@ async function _route(request, env, ctx) {
     case '/v1/messages/batches/results': return batchResults(request, env);
     case '/v1/messages/batches/cancel':  return batchCancel(request, env);
     case '/v1/tasks':                    return tasksList(request, env);
+    case '/v1/account/access':           return accountAccessLog(request, env);
     case '/v1/tasks/cancel':             return tasksCancel(request, env);
     case '/v1/usage':        return usageReport(request, env);
     case '/sms/register':    return smsRegister(request, env);

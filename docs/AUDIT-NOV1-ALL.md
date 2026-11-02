@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 90, Roadmap 32, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 91, Roadmap 31, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -165,7 +165,7 @@ Totals: Fixed 90, Roadmap 32, Owner 25, Already true 14, Not a defect here 8
 | PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Roadmap | structured shopping/travel results |
 | PROD-019 | Medium | P2 | Research Trail should distinguish found/opened/read/extracted/cited | Already true | the research panel already keeps found (in search results), opened-but-could-not-read, read, and cited apart, per source and in the trail (a-source-is-found-read-and-cited); "extracted" is not a state AMV can observe separately, so it is not claimed |
 | PROD-020 | Strategic | P2 | Trusted agency must be the product thesis, not feature count | Roadmap | product direction |
-| OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Roadmap | support tooling with break-glass |
+| OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Fixed | support resolves billing and account problems from an operator-only view of the account's shape - plan, usage, sign-in methods, counts - with no chat, file name, job text or token; a reason is required and every look is recorded, before anything is shown, where the person sees it in Settings; there is no support route to content at all - the only way to content is the disaster-recovery backup, operator-token, rate-limited and audited (support-sees-the-account-not-what-is-in-it) |
 | OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Owner | live incident exercises |
 | OPS-003 | Medium | P2 | Data classification must become executable policy | Fixed | every kind of record the Worker keeps has a class, what it holds and how long it is kept in docs/data-inventory.json; a test checks it against the code both ways and enforces the class rules: no credential in a backup, no short-lived challenge restored, every lasting money record backed up (every-record-has-a-class); erasure is enforced by erasure-covers-every-key |
 | OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Already true | erasure names everything it could not delete |
