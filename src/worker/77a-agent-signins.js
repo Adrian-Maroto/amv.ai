@@ -84,7 +84,7 @@ async function _agentDek(env, email, id, create){
       a.browser = a.browser || { keep: false, sites: [] };
       if(!a.browser.dek) a.browser.dek = sealed;
       wrapped = a.browser.dek;
-    }, { list: [] });
+    });
   } else {
     const rec = await DB.get(env, 'agents', String(email).toLowerCase());
     const a = ((rec && rec.list) || []).find(x => x && x.id === id);
@@ -190,7 +190,9 @@ async function _agentJarRevoke(env, email, ids, site){
       if(site){ a.browser.revokedSites = Object.assign({}, a.browser.revokedSites || {}, { [site]: now }); }
       else { a.browser.revokedAt = now; delete a.browser.dek; }
     }
-  }, { list: [] });
+    /* No record, nothing written: an erased account must not get an empty
+       agents record back from the forget that runs after it is deleted. */
+  });
   return now;
 }
 /* FORGET, AND SAY WHAT IS TRUE (AGENT-008/009). Revoked first, then

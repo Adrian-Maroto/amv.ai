@@ -1694,6 +1694,10 @@ async function authDeleteAccount(request, env) {
                         `outbox:${email}:`,
                         /* An agent's saved sign-ins (77a-agent-signins.js). */
                         `agentjar:${email}:`,
+                        /* Its retry queue (_agentJarForget): the jars are deleted just
+                           above in this same scan, and a delete that fails there is
+                           reported as data surviving - so the queue entry goes too. */
+                        `agentjarpend:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,

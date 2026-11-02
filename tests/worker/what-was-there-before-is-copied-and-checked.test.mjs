@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -184,6 +184,40 @@ section('Run again from the start, it copies nothing twice and finds a row chang
   ok(q("select mismatches||'|'||last_mismatch from migration_accounts where email='p010@example.com'") === '1|name', 'and counted against that account');
   const s = await status();
   ok(s.accountsDiffering === 1, 'the status says so', s.accountsDiffering);
+}
+
+section('One run at a time: a lease, taken over only from a run that went silent (Nov 1 audit DATA-008)');
+{
+  const phaseCursors = () => q("select coalesce(string_agg(kind||'='||coalesce(cursor,'-')||':'||copied, ',' order by kind), '') from migration_cursor where kind not like '\\_%'");
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  /* Somebody else holds it, and is alive. */
+  q("insert into migration_cursor (kind, cursor, copied, updated_at) values ('_lease', 'run:other', 0, now()) on conflict (kind) do update set cursor='run:other', updated_at=now()");
+  const before = phaseCursors();
+  const busy = await W.runPgBackfill(env, { sliceMs: 60000 });
+  ok(busy.busy === true && phaseCursors() === before && q("select cursor from migration_cursor where kind='_lease'") === 'run:other',
+     'a run that finds the lease held does nothing, and leaves the holder holding it', busy);
+  /* The holder went silent: taken over, and released at the end of the slice. */
+  q("update migration_cursor set updated_at = now() - interval '10 minutes' where kind='_lease'");
+  const took = await W.runPgBackfill(env, { sliceMs: 1 });
+  ok(!took.busy && !took.leaseLost && phaseCursors() !== before, 'a lease silent past its time is taken over, and the run moves on', took);
+  ok(q("select cursor from migration_cursor where kind='_lease'") === '', 'and the lease is given back when the slice ends');
+  /* Two at once: exactly one works. */
+  const pair = await Promise.all([W.runPgBackfill(env, { sliceMs: 1 }), W.runPgBackfill(env, { sliceMs: 1 })]);
+  ok(pair.filter(r => r.busy).length === 1 && pair.filter(r => !r.busy).length === 1, 'two runs started together: one holds the lease, the other is a clean no-op', pair.map(r => r.busy ? 'busy' : r.state));
+  /* Losing the lease in the middle of a slice: the cursor is not moved, and the run stops. */
+  const mid = phaseCursors();
+  const realList = kv.list; let stolen = false;
+  kv.list = async (o) => { if (!stolen && /^(acct|ent|team|apikeys|wallet_tx|pgrepair)/.test(o.prefix || '')) { stolen = true; q("update migration_cursor set cursor='run:thief', updated_at=now() where kind='_lease'"); } return realList.call(kv, o); };
+  const lost = await W.runPgBackfill(env, { sliceMs: 60000 });
+  kv.list = realList;
+  ok(stolen && lost.leaseLost === true && phaseCursors() === mid, 'a run whose lease was taken stops, and moves no cursor', { lost, before: mid, after: phaseCursors() });
+  ok(q("select cursor from migration_cursor where kind='_lease'") === 'run:thief', 'and does not give back a lease that is not its own');
+  const c = await W._pgClient(env);
+  try { await W._pgLeaseRelease(c, 'run:not-the-holder'); } finally { await c.end({ timeout: 5 }); }
+  ok(q("select cursor from migration_cursor where kind='_lease'") === 'run:thief', 'releasing is only ever done by the holder: anybody else\u2019s release changes nothing');
+  q("update migration_cursor set cursor='' where kind='_lease'");
+  const { last } = await runToEnd();
+  ok(last.state === 'done', 'with the lease free again, it finishes', last);
 }
 
 section('Stopped, it stays stopped');

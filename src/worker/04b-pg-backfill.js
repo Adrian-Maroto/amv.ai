@@ -107,6 +107,41 @@ async function _pgBackfillSave(sql, phase, cursor, add){
     ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, copied = migration_cursor.copied + ${add || 0}, updated_at = now()`;
 }
 
+/* ONE RUN AT A TIME (Nov 1 audit DATA-008). The cron and an owner's "start"
+   could each run a slice at once, both reading the same cursor and both
+   moving it - a page copied twice is harmless, a cursor moved back past
+   pages the other run already did is not. A run now holds a lease: the
+   `_lease` row of migration_cursor names its holder and when it last showed
+   it was alive. Taking it succeeds only when nobody holds it or the holder
+   has been silent for PG_BACKFILL_LEASE_S (a crashed run is taken over);
+   every cursor it saves renews the lease in the SAME statement and is written
+   only while it still holds it, so a run that lost its lease cannot move a
+   cursor, and stops. Released when the slice ends. */
+const PG_BACKFILL_LEASE_S = 120;
+async function _pgLeaseTake(sql, me){
+  const r = await sql`
+    INSERT INTO migration_cursor (kind, cursor, copied, updated_at) VALUES ('_lease', ${me}, 0, now())
+    ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = now()
+      WHERE migration_cursor.cursor IS NULL OR migration_cursor.cursor = ''
+         OR migration_cursor.updated_at < now() - make_interval(secs => ${PG_BACKFILL_LEASE_S})
+    RETURNING cursor`;
+  return r.length === 1 && r[0].cursor === me;
+}
+async function _pgLeaseRelease(sql, me){
+  await sql`UPDATE migration_cursor SET cursor = '', updated_at = now() WHERE kind = '_lease' AND cursor = ${me}`;
+}
+/* A cursor saved under the lease, renewing it: false when the lease is no
+   longer this run's - and then nothing was written. */
+async function _pgBackfillSaveHeld(sql, me, phase, cursor, add){
+  const r = await sql`
+    WITH held AS (UPDATE migration_cursor SET updated_at = now() WHERE kind = '_lease' AND cursor = ${me} RETURNING 1)
+    INSERT INTO migration_cursor (kind, cursor, copied, updated_at)
+      SELECT ${phase}, ${cursor}, ${add || 0}, now() WHERE EXISTS (SELECT 1 FROM held)
+    ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, copied = migration_cursor.copied + ${add || 0}, updated_at = now()
+    RETURNING kind`;
+  return r.length === 1;
+}
+
 /* One record of one phase. Returns 'copied', 'same', 'mismatched' (verify),
    'skipped', or throws. */
 async function _pgBackfillOne(env, sql, phase, keyName, t){
@@ -181,9 +216,13 @@ async function runPgBackfill(env, opts){
   const started = Date.now();
   const sql = await _pgClient(env);
   const t = { phase: '', copied: 0, same: 0, mismatched: 0, skipped: 0, failed: 0, lines: 0, unkeyed: 0, unreadable: 0 };
+  const me = 'run:' + [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
+  let held = false;
   try {
     const run = await _pgBackfillCursor(sql, '_run');
     if (run.cursor !== 'running') return { on: true, state: run.cursor || 'not_started' };
+    held = await _pgLeaseTake(sql, me);
+    if (!held) return { on: true, state: 'running', busy: true, note: 'Another run of the backfill holds the lease; this one did nothing.' };
     for (const phase of PG_BACKFILL_PHASES) {
       let cur = await _pgBackfillCursor(sql, phase);
       if (cur.cursor === 'done') continue;
@@ -212,12 +251,16 @@ async function runPgBackfill(env, opts){
            pass goes on past it rather than trying it for ever. */
         const finished = !!page.list_complete;
         cur = { cursor: finished ? 'done' : page.cursor, copied: cur.copied + n };
-        await _pgBackfillSave(sql, phase, cur.cursor, n);
+        if (!(await _pgBackfillSaveHeld(sql, me, phase, cur.cursor, n))) {
+          held = false;
+          try { audit(env, 'pg_backfill_lease_lost', { phase }); } catch (_) {}
+          return { on: true, state: 'running', leaseLost: true, ...t };
+        }
         if (finished || Date.now() - started >= sliceMs) break;
       }
       if (cur.cursor !== 'done') return { on: true, state: 'running', ...t };
     }
-    await _pgBackfillSave(sql, '_run', 'done', 0);
+    if (!(await _pgBackfillSaveHeld(sql, me, '_run', 'done', 0))) { held = false; return { on: true, state: 'running', leaseLost: true, ...t }; }
     const left = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 });
     const bad = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE mismatches > 0`;
     const clean = !(left.keys || []).length && !bad[0].n;
@@ -226,6 +269,7 @@ async function runPgBackfill(env, opts){
       : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait.', 60); } catch (e) {}
     return { on: true, state: 'done', clean, ...t };
   } finally {
+    if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) {} }
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
 }
