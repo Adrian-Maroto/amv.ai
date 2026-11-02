@@ -289,6 +289,32 @@ section('If the preview document is not served, it degrades and says so');
      'and the note sits above the preview rather than squeezed beside it', heavy);
 }
 
+section('Opened anywhere but AMV’s sandboxed frame, the preview page writes nothing (Nov 1 audit SEC-004)');
+{
+  /* A hostile site opens preview.html in a tab of its own, or frames it
+     without the sandbox, and posts it a script: that would run as AMV. */
+  const origin = new URL(page.url()).origin;
+  const ctx2 = await page.context().browser().newContext();
+  const tab = await ctx2.newPage();
+  await tab.goto(origin + '/preview.html');
+  await tab.evaluate(() => window.postMessage({ __amv: 'preview', html: '<p id="pwn">ran</p><script>window.__pwned = 1</script>' }, '*'));
+  await tab.waitForTimeout(400);
+  const top = await tab.evaluate(() => ({ pwned: !!window.__pwned, p: !!document.getElementById('pwn'), says: document.body.textContent.trim() }));
+  ok(!top.pwned && !top.p && /only works inside AMV/.test(top.says), 'opened as a page of its own: nothing it is sent is written', top);
+  await tab.setContent('<iframe id="f" src="' + origin + '/preview.html"></iframe>');
+  await tab.waitForFunction(() => { try { const d = document.getElementById('f').contentDocument; return d && d.readyState === 'complete' && /preview/.test(d.title); } catch (e) { return true; } }, null, { timeout: 10000 }).catch(() => {});
+  await tab.waitForTimeout(300);
+  const framed = await tab.evaluate(() => new Promise(res => {
+    const f = document.getElementById('f');
+    f.contentWindow.postMessage({ __amv: 'preview', html: '<p id="pwn">ran</p>' }, '*');
+    setTimeout(() => { try { res({ readable: true, p: !!f.contentDocument.getElementById('pwn') }); } catch (e) { res({ readable: false }); } }, 500);
+  }));
+  const inner = tab.frames().find(fr => /preview\.html/.test(fr.url()));
+  const innerSays = inner ? await inner.evaluate(() => ({ p: !!document.getElementById('pwn'), says: document.body.textContent.trim() })).catch(() => null) : null;
+  ok(!framed.p && (!innerSays || !innerSays.p), 'framed without the sandbox: nothing is written either', { framed, innerSays });
+  await ctx2.close();
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

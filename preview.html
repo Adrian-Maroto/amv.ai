@@ -52,8 +52,23 @@
      second message. The parent does that by resetting src, which is also what
      makes "reload the preview" mean what it says. */
   var done = false;
+  /* ONLY INSIDE AMV'S SANDBOX, ONLY FROM ITS PARENT (Nov 1 audit SEC-004).
+     Served from AMV's own address with no policy of its own, this page would
+     be AMV's origin if anybody opened it directly - a tab another site opens,
+     or a frame without the sandbox - and then writing whatever HTML a window
+     posted would run a stranger's script with AMV's storage in reach. So it
+     renders only where it is safe by construction: in a frame (it has a
+     parent), whose origin is opaque ("null" - sandboxed without
+     allow-same-origin), and only what that parent sends. Anywhere else it
+     says so and writes nothing. */
+  var sealed = (function () { try { return window.parent !== window && String(self.origin) === 'null'; } catch (err) { return false; } })();
+  if (!sealed) {
+    try { document.getElementById('w').textContent = 'This page only works inside AMV.'; } catch (err) {}
+    return;
+  }
   window.addEventListener('message', function (e) {
     var d = e && e.data;
+    if (e.source !== window.parent) return;
     if (!d || d.__amv !== 'preview' || done) return;
     done = true;
     var html = d.html == null ? '' : String(d.html);

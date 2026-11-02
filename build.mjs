@@ -1130,6 +1130,7 @@ const PUBLISH = [
   'amv-chrome.js',         // its background script
   'amv-chrome-share.js',   // and the one script it runs, on AMV's own address
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
+  'preview.html',          // the frame an app preview renders in (sandboxed, opaque origin)
   'picker.html',           // Google's file picker, opened as its own window
   'picker.js',             // what that window runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
