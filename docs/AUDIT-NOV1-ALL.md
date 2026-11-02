@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 66, Roadmap 58, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 67, Roadmap 57, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -170,7 +170,7 @@ Totals: Fixed 66, Roadmap 58, Owner 25, Already true 13, Not a defect here 7
 | OPS-003 | Medium | P2 | Data classification must become executable policy | Roadmap | executable data classification |
 | OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Already true | erasure names everything it could not delete |
 | OPS-005 | Medium | P2 | Global KV/R2/provider architecture cannot promise region residency today | Owner | region residency is a provider choice |
-| OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Roadmap | private mode everywhere |
+| OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Fixed | a temporary chat is not stored or synced, reads and writes no memory, and now sets up no background job, task in steps, watch or standing instruction (a-temporary-chat-leaves-nothing) |
 | OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Roadmap | abuse risk controls at scale |
 | OPS-008 | Medium | P2 | Marketplace supply-chain governance needs publisher and update controls | Roadmap | marketplace publisher controls |
 | OPS-009 | Medium | P2 | Large translation packs require quality/version governance | Roadmap | translation governance |

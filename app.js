@@ -28192,6 +28192,13 @@ function _whenSay(w){
 try{ window._whenSay = _whenSay; }catch(e){}
 
 async function _crewTool(name, input){
+  /* A TEMPORARY CHAT LEAVES NOTHING BEHIND (Nov 1 audit OPS-006). A job,
+     a task in steps, a watch or a standing instruction is text from this
+     chat kept on AMV's servers and replayed on every run - the same kind of
+     keeping as a memory, which a temporary chat already refuses. Looking,
+     pausing, removing and approving keep nothing new, so they still work. */
+  if(_TEMP_KEEPS.includes(name) && _isTempChat())
+    return { text:'Not set up: this is a temporary chat, so nothing from it is kept - and a background job is kept on AMV\u2019s servers and run again and again. Tell the user so plainly, and that they can ask again in a normal chat if they want it.', render:null };
   input = input || {};
 
   if(name === 'crew_list'){
@@ -28477,6 +28484,7 @@ function _memFind(input){
                  + '. Ask the user which one before removing anything.' };
 }
 
+const _TEMP_KEEPS = ['crew_add', 'crew_steps', 'crew_watch', 'crew_update', 'crew_standing'];
 function _sectionErr(e){
   const msg = (e && e.message) || 'the server did not accept it';
   if(msg === 'not-connected' || /not-connected/.test(msg))

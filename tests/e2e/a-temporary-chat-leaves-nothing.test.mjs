@@ -61,6 +61,30 @@ section('It is not saved, not synced, and nothing is learned from it');
   ok(/Temporary chat/.test(r.banner), 'the banner stays at the top of the conversation');
 }
 
+section('No background job, task or standing instruction is kept from it (Nov 1 audit OPS-006)');
+{
+  const r = await page.evaluate(async () => {
+    let calls = 0;
+    const real = window._autoApi;
+    window._autoApi = async (path) => { calls++; return { items: [], item: { repeat: 'daily', approval: 'require' } }; };
+    const out = {};
+    for (const [n, i] of [['crew_add', { detail: 'Remind me where the PIN is', repeat: 'daily' }],
+                          ['crew_steps', { steps: [{ title: 'a', detail: 'a' }, { title: 'b', detail: 'b', after: 0 }] }],
+                          ['crew_watch', { url: 'https://example.com', what: 'price' }],
+                          ['crew_update', { id: 'x', detail: 'the blue mug' }],
+                          ['crew_standing', { standing: 'mention the blue mug' }]]) {
+      const t = await _crewTool(n, i); out[n] = t && t.text;
+    }
+    const sent = calls; calls = 0;
+    const listed = await _crewTool('crew_list', {});
+    window._autoApi = real;
+    return { out, sent, listCalls: calls, listed: listed && listed.text };
+  });
+  ok(Object.values(r.out).every(t => /temporary chat/i.test(t || '')), 'each one is refused, saying why', r.out);
+  ok(r.sent === 0, 'and nothing was sent to be kept', r.sent);
+  ok(r.listCalls > 0 && !/temporary chat/i.test(r.listed || ''), 'looking at what already exists still works', r.listed);
+}
+
 section('Memories are not read into it, and nothing is extracted from it');
 {
   const r = await page.evaluate(async () => {
