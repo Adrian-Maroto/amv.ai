@@ -24,6 +24,7 @@ import { createInterface } from 'node:readline';
 
 const DEFAULT_API = '__AMV_API__';
 const VERSION = '1';
+const API_VERSION = '2026-11-01';   // the AMV API this was written for (docs/API-VERSIONS.md)
 const ENGINES = ['auto', 'amv-pulse', 'amv-core', 'amv-swift', 'amv-forge', 'amv-apex'];
 
 const HELP = `amv - ask AMV from a terminal
@@ -122,7 +123,7 @@ async function ask({ base, key, model, system, maxTokens, messages, onText, sign
     res = await fetch(base + '/v1/messages', {
       method: 'POST', signal,
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json',
-                 'User-Agent': 'amv-cli/' + VERSION },
+                 'User-Agent': 'amv-cli/' + VERSION, 'AMV-API-Version': API_VERSION },
       body: JSON.stringify(body),
     });
   } catch (e) {
@@ -203,7 +204,7 @@ async function countTokens({ base, key, model, system, messages, signal }) {
   try {
     res = await fetch(base + '/v1/messages/count_tokens', {
       method: 'POST', signal,
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION },
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION, 'AMV-API-Version': API_VERSION },
       body: JSON.stringify(body),
     });
   } catch (e) {
@@ -327,7 +328,7 @@ async function askTools({ base, key, model, system, maxTokens, messages, tools, 
   let res;
   try {
     res = await fetch(base + '/v1/messages', { method: 'POST', signal,
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION },
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION, 'AMV-API-Version': API_VERSION },
       body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages, tools }) });
   } catch (e) {
     if (signal && signal.aborted) throw stopped();
@@ -531,7 +532,7 @@ async function batch(o, base, key, stdout, stderr) {
   const [, verb, arg] = o.words;
   const post = async (path, body) => {
     let res;
-    try { res = await fetch(base + path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION }, body: JSON.stringify(body || {}) }); }
+    try { res = await fetch(base + path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION, 'AMV-API-Version': API_VERSION }, body: JSON.stringify(body || {}) }); }
     catch (e) { throw fail('could not reach ' + base + ' (' + (e.cause && e.cause.code || e.message) + ')'); }
     if (!res.ok) throw await refusal(res);
     return res;

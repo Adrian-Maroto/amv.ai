@@ -55,7 +55,7 @@ section('The handler awaits its routing, which is the whole fix');
      awaits the function that serves it; that function is what is read. */
   const fs0 = code.indexOf('async fetch(request, env, ctx) {');
   const outer = code.slice(fs0, code.indexOf('\n  },', fs0));
-  ok(/const res = await _serveRequest\(/.test(outer) && /return _withRequestId\(res, rid\)/.test(outer),
+  ok(/const res = await _serveRequest\(/.test(outer) && /return (_withApiVersion\()?_withRequestId\(res, rid\)/.test(outer),
      'the fetch handler awaits the one function that serves the request', outer.slice(0, 200));
   const s = code.indexOf('async function _serveRequest(request, env, ctx, rid) {');
   const e = code.indexOf('\nfunction _withRequestId', s);

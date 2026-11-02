@@ -87,12 +87,12 @@ function _mountCookies(response, mounted) {
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, AMV-API-Version',
 });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id, AMV-API-Version',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
   'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why, X-AMV-Answer-Cap',
@@ -18268,6 +18268,41 @@ function _withRequestId(res, rid){
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
   } catch (e) { return res; }
 }
+/* The API's versions, oldest first. `current` is what an unnamed request
+   gets. A deprecated one keeps working until its sunset and says so on
+   every answer (Deprecation, Sunset); after the sunset
+   it is refused with 410 and the version to move to. docs/API-VERSIONS.md. */
+const API_VERSIONS = { '2026-11-01': { status: 'current' } };
+function _apiVersionOf(request, table, now){
+  let path = '';
+  try { path = new URL(request.url).pathname; } catch (e) { return { version: null }; }
+  if (!path.startsWith('/v1/')) return { version: null };
+  const current = Object.keys(table).find(k => table[k].status === 'current');
+  const asked = String(request.headers.get('AMV-API-Version') || '').trim();
+  if (!asked) return { version: current };
+  const v = table[asked];
+  if (!v) return { version: current, refuse: { status: 400, body: { error: 'AMV does not have an API version called ' + asked.slice(0, 40) + '. The current one is ' + current + '.', code: 'api_version_unknown', current } } };
+  const sunsetAt = v.sunset ? Date.parse(v.sunset + 'T00:00:00Z') : 0;
+  if (v.status === 'deprecated' && sunsetAt && (now || Date.now()) >= sunsetAt)
+    return { version: current, refuse: { status: 410, body: { error: 'API version ' + asked + ' was retired on ' + v.sunset + '. Send AMV-API-Version: ' + current + ', or leave the header out for the current version.', code: 'api_version_retired', current } } };
+  return { version: asked, deprecated: v.status === 'deprecated', sunset: v.sunset || '' };
+}
+function _withApiVersion(res, ver){
+  if (!ver || !ver.version || !res || res.status === 101 || res.webSocket) return res;
+  try {
+    const h = new Headers(res.headers);
+    h.set('AMV-API-Version', ver.version);
+    const add = ['AMV-API-Version'];
+    if (ver.deprecated) {
+      h.set('Deprecation', 'true');
+      if (ver.sunset) { h.set('Sunset', new Date(ver.sunset + 'T00:00:00Z').toUTCString()); add.push('Sunset'); }
+      add.push('Deprecation');
+    }
+    const ex = h.get('Access-Control-Expose-Headers');
+    if (h.get('Access-Control-Allow-Origin')) h.set('Access-Control-Expose-Headers', [ex, ...add.filter(x => !new RegExp(x, 'i').test(ex || ''))].filter(Boolean).join(', '));
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  } catch (e) { return res; }
+}
 export default {
   /* Cloudflare Queues: the background-work queue and its dead-letter queue
      (15a-job-queue.js). Called only when wrangler.toml names this Worker as
@@ -18484,8 +18519,16 @@ export default {
        request under - so a person quoting it from an error, the page's
        report and the platform log all name the same request. */
     const rid = String(request.headers.get('cf-ray') || '').slice(0, 64) || _randId(16);
+    /* WHICH VERSION OF THE API (Nov 1 audit PROD-015). Only on /v1/: the
+       caller may name the version it was written for; one AMV does not know
+       is refused before anything runs, a retired one is gone, a deprecated
+       one works and says when it ends. Every answer names the version that
+       served it. */
+    const ver = _apiVersionOf(request, API_VERSIONS);
+    if (ver.refuse) return _withRequestId(_applyCors(request, env, json(ver.refuse.body, ver.refuse.status)), rid);
+    if (ver.deprecated) { try { ctx.waitUntil(_tallyAdd(env, 'apiver:' + ver.version + ':' + monthKey(), rid, 1, 86400000 * 400)); } catch (e) {} }
     const res = await _serveRequest(request, env, ctx, rid);
-    return _withRequestId(res, rid);
+    return _withApiVersion(_withRequestId(res, rid), ver);
   },
 
 };

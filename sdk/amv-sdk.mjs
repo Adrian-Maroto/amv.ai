@@ -31,6 +31,10 @@
 
 const DEFAULT_API = '__AMV_API__';
 export const VERSION = '1';
+/* The version of AMV's API this SDK was written for (docs/API-VERSIONS.md).
+   Sent on every request, so a later change to the API cannot change what
+   this code gets without it being told. */
+export const API_VERSION = '2026-11-01';
 
 export class AMVError extends Error {
   constructor(message, { status = 0, code = '', retryAfter = 0 } = {}) {
@@ -159,7 +163,7 @@ export class AMV {
       let res;
       try {
         res = await this._fetch(this.base + path, { method: 'POST', signal,
-          headers: { 'Authorization': 'Bearer ' + this.key, 'Content-Type': 'application/json', 'User-Agent': 'amv-sdk/' + VERSION },
+          headers: { 'Authorization': 'Bearer ' + this.key, 'Content-Type': 'application/json', 'User-Agent': 'amv-sdk/' + VERSION, 'AMV-API-Version': API_VERSION },
           body: JSON.stringify(body) });
       } catch (e) {
         if (signal && signal.aborted) throw new AMVError('stopped', { code: 'aborted' });
