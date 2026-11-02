@@ -146,15 +146,18 @@ export class AMVComputer extends Container {
     do {
       const page = await this.env.WORKSPACES.list({ prefix: this._wsVerPrefix(), cursor, include: ['customMetadata'] });
       for (const o of page.objects || []) {
-        const m = /\/(\d{13})\.tgz$/.exec(o.key);
-        if (m) out.push(Object.assign({ id: m[1], at: new Date(+m[1]).toISOString(), bytes: o.size, key: o.key }, _wsChanging(o.customMetadata)));
+        const m = /\/(\d{13}(?:-[0-9a-f]{8})?)\.tgz$/.exec(o.key);
+        if (m) out.push(Object.assign({ id: m[1], at: new Date(+m[1].slice(0, 13)).toISOString(), bytes: o.size, key: o.key }, _wsChanging(o.customMetadata)));
       }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
     return out.sort((a, b) => b.id.localeCompare(a.id));
   }
   async _wsKeepCurrent(opts) {
-    const key = this._wsVerPrefix() + Date.now() + '.tgz';
+    /* The millisecond orders the copies; eight random hex characters after
+       it keep two copies made in the same millisecond apart (Nov 1 audit
+       COMP-008) - the second used to overwrite the first. */
+    const key = this._wsVerPrefix() + Date.now() + '-' + [...crypto.getRandomValues(new Uint8Array(4))].map(b => b.toString(16).padStart(2, '0')).join('') + '.tgz';
     const kept = await this._wsCopy(this._wsKey(), key, opts);
     const all = await this._wsVersions();
     for (const v of all.slice(WS_VERSIONS)) await this.env.WORKSPACES.delete(v.key);
@@ -327,7 +330,7 @@ export class AMVComputer extends Container {
       }
       const body = await request.json().catch(() => ({}));
       const id = String(body.id || '');
-      if (!/^\d{13}$/.test(id)) return reply({ error: 'Choose one of the saved copies.', code: 'bad_request' }, 400);
+      if (!/^\d{13}(?:-[0-9a-f]{8})?$/.test(id)) return reply({ error: 'Choose one of the saved copies.', code: 'bad_request' }, 400);
       const key = this._wsVerPrefix() + id + '.tgz';
       const there = typeof this.env.WORKSPACES.head === 'function' ? await this.env.WORKSPACES.head(key) : await this.env.WORKSPACES.get(key);
       if (!there) return reply({ error: 'That saved copy is no longer kept.', code: 'not_found' }, 404);

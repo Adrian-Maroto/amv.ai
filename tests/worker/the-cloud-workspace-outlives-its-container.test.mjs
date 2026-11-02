@@ -325,7 +325,18 @@ section('Each save keeps the copy it replaces, the newest five are kept, and one
     await new Promise(r => setTimeout(r, 3));
   }
   const vkeys = [...env.WORKSPACES.m.keys()].filter(k => k.startsWith('ws/a1b2c3d4.v/'));
-  ok(vkeys.length === 5 && vkeys.every(k => /\/\d{13}\.tgz$/.test(k)), 'seven saves leave the copy plus the five before it', vkeys);
+  ok(vkeys.length === 5 && vkeys.every(k => /\/\d{13}-[0-9a-f]{8}\.tgz$/.test(k)), 'seven saves leave the copy plus the five before it', vkeys);
+  /* Nov 1 audit COMP-008: two copies kept in the same millisecond both survive. */
+  {
+    const env2 = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+    env2.WORKSPACES.m.set('ws/a1b2c3d4.tgz', Buffer.from('one')); env2.WORKSPACES.meta.set('ws/a1b2c3d4.tgz', {});
+    const m2 = new AMVComputer({ id, container: portTo(A.base) }, env2);
+    const realNow = Date.now; Date.now = () => 1800000000000;
+    try { await m2._wsKeepCurrent(); env2.WORKSPACES.m.set('ws/a1b2c3d4.tgz', Buffer.from('two')); await m2._wsKeepCurrent(); }
+    finally { Date.now = realNow; }
+    const same = [...env2.WORKSPACES.m.keys()].filter(k => k.startsWith('ws/a1b2c3d4.v/1800000000000'));
+    ok(same.length === 2 && new Set(same.map(k => String(env2.WORKSPACES.m.get(k)))).size === 2, 'two copies made in the same millisecond are two copies, not one overwriting the other', same);
+  }
   const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }) }, env);
   const no = await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: { 'X-AMV-Bridge-Token': 'nope' } }));
   ok(no.status === 401, 'listing them needs AMV\u2019s key', no.status);
