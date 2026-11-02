@@ -78,6 +78,22 @@ section('Chat can set the time too, and says when it first runs');
      'and it tells them the time, that it runs with everything closed, and when the first run is', r.add);
 }
 
+section('Too long for this answer: handed to the servers to start now (Nov 1 audit TASK-013)');
+{
+  const r = await page.evaluate(async () => {
+    const calls = [];
+    window.fetchDeadline = async (url, o) => {
+      const b = JSON.parse(o.body); calls.push({ url, body: b });
+      return new Response(JSON.stringify({ item: { id: 'n1', repeat: 'once', approval: b.approval, next: Date.now() } }), { status: 200 });
+    };
+    const t = await _crewTool('crew_add', { detail: 'Compare every recycled cardboard supplier in Portugal', repeat: 'now' });
+    return { calls, text: t.text };
+  });
+  const b = (r.calls.find(c => /\/auto\/create$/.test(c.url)) || {}).body || {};
+  ok(b.repeat === 'once' && b.runNow === true && !b.firstRunAt && b.kind === 'research', 'one job, due now by the server\u2019s clock, as research', b);
+  ok(/Started in the background \(job n1\)/.test(r.text) && /do not also attempt the work/.test(r.text), 'and the answer says so and stops, rather than holding the request open', r.text);
+}
+
 section('A running job shows the time it runs, not only how often');
 {
   const html = await page.evaluate(() => _mcServerSchedRow({ id: 'a3', detail: 'News digest', repeat: 'daily', active: true, approval: 'auto',

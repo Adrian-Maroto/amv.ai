@@ -27081,10 +27081,10 @@ const AMV_TOOLS = [
   },
   {
     name:'crew_add',
-    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"), or ONCE at a later time ("on Friday at 9, check whether tickets are on sale" - repeat "once" with date and time). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
+    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"), or ONCE at a later time ("on Friday at 9, check whether tickets are on sale" - repeat "once" with date and time). Pass the time they said; it runs at that time on THEIR clock. Also repeat "now": ONE piece of work too long to wait for in this answer - deep research across many sources, a long report - started on the servers within about a minute, carrying on with AMV closed, its result arriving in Crew. Say so and stop; do not also attempt it here. Not for one-off work you can just do now in this answer.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
-      repeat:{type:'string', enum:['once','10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs. "once" runs one time, at date and time, and is then finished.'},
+      repeat:{type:'string', enum:['now','once','10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs. "once" runs one time, at date and time, and is then finished. "now" runs one time, starting within about a minute, in the background.'},
       date:{type:'string', description:'For "once" only: the day it runs, "YYYY-MM-DD" on their calendar, within the next year. Work out the real date from what they said ("Friday" is the coming Friday).'},
       time:{type:'string', description:'For once, daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
       days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly jobs: which days. "weekdays" is mon-fri.'},
@@ -28245,6 +28245,21 @@ async function _crewTool(name, input){
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
     const asked = String(input.repeat || '');
     const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
+    /* TOO LONG FOR THIS ANSWER (Nov 1 audit TASK-013): handed to the
+       servers as a one-time job due now, which the minute's run picks up -
+       it carries on with AMV closed and its result lands in Crew. The answer
+       here ends rather than holding a request open for minutes. */
+    if(asked === 'now'){
+      const nowApproval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'auto';
+      let o;
+      try{ o = await _autoApi('/auto/create', { detail, repeat:'once', runNow:true, kind:'research', approval:nowApproval, notify:'app' }); }
+      catch(e){ return { text: _crewErr(e), render:null }; }
+      _crewSynced();
+      const id = o && o.item && o.item.id;
+      return { text:'Started in the background' + (id ? ' (job ' + id + ')' : '') + '. It begins on AMV\u2019s servers within about a minute and carries on with their computer off and AMV closed; the result arrives in their Crew tab'
+        + ({ auto:'.', require:' and waits for their approval before it counts as delivered.', suggest:' - but it is set to suggest only, so it will NOT run until they ask.' }[String((o && o.item && o.item.approval) || nowApproval)] || '.')
+        + ' Tell them that in a sentence and stop: do not also attempt the work in this answer.', render:null };
+    }
     if(asked === 'once'){
       const at = _crewOnceAt(input);
       if(!at) return { text:'A one-time job needs a date ("YYYY-MM-DD") and a time ("HH:MM") that are still to come and within a year. Ask the user exactly when, then call again.', render:null };

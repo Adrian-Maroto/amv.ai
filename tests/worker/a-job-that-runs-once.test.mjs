@@ -153,6 +153,21 @@ section('A recurring job is exactly what it was');
   ok(it.next > due + 20 * 3600e3, 'and next runs about a day later', Math.round((it.next - due) / 3600e3) + 'h');
 }
 
+section('Too long to wait for in chat: handed over to run now, by the server\u2019s clock (Nov 1 audit TASK-013)');
+{
+  const before = Date.now();
+  const r = await post('/auto/create', { detail: 'Research every supplier of recycled cardboard in Portugal and compare them', repeat: 'once', runNow: true, kind: 'research', approval: 'auto' });
+  ok(r.status === 200 && r.d.item && r.d.item.repeat === 'once' && r.d.item.next >= before && r.d.item.next <= Date.now(), 'it is created, due now by the server\u2019s clock', r.d.item && r.d.item.next - before);
+  const fromSlowDevice = await post('/auto/create', { detail: 'Same, from a device whose clock is ten minutes slow', repeat: 'once', firstRunAt: Date.now() - 600e3 });
+  ok(fromSlowDevice.status === 400, 'where a device-clock time ten minutes behind would have been refused', fromSlowDevice.status);
+  const notOnce = await post('/auto/create', { detail: 'A daily job', repeat: 'daily', runNow: true });
+  ok(notOnce.status === 200 && notOnce.d.item.next > Date.now() + 3600e3, '"now" applies to a one-time job only, never to a schedule', notOnce.d.item && notOnce.d.item.next - Date.now());
+  modelCalls = 0;
+  const after = await tickAt(Date.now() + 30e3);
+  const it = after.items.find(i => i.id === r.d.item.id);
+  ok(modelCalls > 0 && it.done === true, 'the next run picks it up and finishes it, with nobody holding a request open', { modelCalls, done: it && it.done });
+}
+
 globalThis.fetch = realFetch;
 if (report('a-job-that-runs-once') > 0) process.exitCode = 1;
 done();

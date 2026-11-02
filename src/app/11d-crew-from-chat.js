@@ -190,6 +190,21 @@ async function _crewTool(name, input){
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
     const asked = String(input.repeat || '');
     const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
+    /* TOO LONG FOR THIS ANSWER (Nov 1 audit TASK-013): handed to the
+       servers as a one-time job due now, which the minute's run picks up -
+       it carries on with AMV closed and its result lands in Crew. The answer
+       here ends rather than holding a request open for minutes. */
+    if(asked === 'now'){
+      const nowApproval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'auto';
+      let o;
+      try{ o = await _autoApi('/auto/create', { detail, repeat:'once', runNow:true, kind:'research', approval:nowApproval, notify:'app' }); }
+      catch(e){ return { text: _crewErr(e), render:null }; }
+      _crewSynced();
+      const id = o && o.item && o.item.id;
+      return { text:'Started in the background' + (id ? ' (job ' + id + ')' : '') + '. It begins on AMV\u2019s servers within about a minute and carries on with their computer off and AMV closed; the result arrives in their Crew tab'
+        + ({ auto:'.', require:' and waits for their approval before it counts as delivered.', suggest:' - but it is set to suggest only, so it will NOT run until they ask.' }[String((o && o.item && o.item.approval) || nowApproval)] || '.')
+        + ' Tell them that in a sentence and stop: do not also attempt the work in this answer.', render:null };
+    }
     if(asked === 'once'){
       const at = _crewOnceAt(input);
       if(!at) return { text:'A one-time job needs a date ("YYYY-MM-DD") and a time ("HH:MM") that are still to come and within a year. Ask the user exactly when, then call again.', render:null };

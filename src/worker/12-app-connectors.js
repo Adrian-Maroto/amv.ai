@@ -937,6 +937,11 @@ async function autoCreate(request, env){
     const t = +body.firstRunAt;
     if(t > Date.now() - 60e3 && t < Date.now() + 366*86400e3){ next = t; firstGiven = true; }
   }
+  /* "Now", by the server's clock, not the device's (TASK-013): a one-time
+     job handed over from chat because it is too long to wait for. A device
+     whose clock is a few minutes slow would otherwise ask for a time already
+     past and be refused. */
+  if(body.runNow === true && repeat === 'once'){ next = Date.now(); firstGiven = true; }
   /* THE TIME THEY SAID, ON THEIR CLOCK. See _schedNextAt. The zone is the
      one their device reports, else the one their network is in; a schedule
      with neither is kept in UTC and says so in `tz`. A first run given as an
