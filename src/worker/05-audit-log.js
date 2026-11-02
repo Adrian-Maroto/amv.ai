@@ -53,7 +53,7 @@ function audit(env, event, detail) {
       // blocked on it and the isolate is kept alive until it settles.
       _bg(fetchDeadline(env.AUDIT_WEBHOOK, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rec),
+        body: JSON.stringify(_scrubPII(rec)),
       }));
     }
     // Product analytics: mirror every business event to PostHog when configured
@@ -68,12 +68,31 @@ function audit(env, event, detail) {
           api_key: env.POSTHOG_KEY,
           event: 'srv_' + event,
           distinct_id: _phId(by || email || (detail && detail.user) || 'server'),
-          properties: { ...safe, source: 'amv-worker' },
+          properties: { ..._scrubPII(safe), source: 'amv-worker' },
           timestamp: rec.t,
         }),
       }));
     }
   } catch { /* logging must never throw */ }
+}
+/* WHAT LEAVES FOR SOMEBODY ELSE'S SERVICE CARRIES NO ADDRESS (Nov 1 audit
+   SEC-007). The log line above is AMV's own (Workers Logs). What is copied to
+   an outside collector or analytics went with every field as it was - an
+   address in `email`, `target`, `buyer`, `to`, or inside a sentence - and an
+   IP. Outside, an address becomes the same pseudonym every time (so events
+   still join up per person) and an IP is dropped. */
+const _EMAIL_IN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+function _scrubPII(v, depth) {
+  const d = (depth || 0) + 1;
+  if (typeof v === 'string') return v.replace(_EMAIL_IN, (m) => _phId(m.toLowerCase()));
+  if (Array.isArray(v)) return d > 6 ? [] : v.map(x => _scrubPII(x, d));
+  if (v && typeof v === 'object') {
+    if (d > 6) return {};
+    const out = {};
+    for (const [k, x] of Object.entries(v)) { if (/^(ip|cfip|clientip)$/i.test(k)) continue; out[k] = _scrubPII(x, d); }
+    return out;
+  }
+  return v;
 }
 function _highSignal(event) {
   return event === 'auth_fail' || event === 'spend_cap_hit' ||

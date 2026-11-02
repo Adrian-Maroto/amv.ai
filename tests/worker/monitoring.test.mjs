@@ -70,6 +70,19 @@ const bodyStr = cap ? JSON.stringify(cap.body) : '';
 ok(!/seller@x\.com/.test(bodyStr), 'the raw seller email is NOT in the payload (masked)');
 ok(cap && cap.body && cap.body.properties && cap.body.properties.title === 'Thing', 'non-PII properties are preserved for analytics');
 
+/* Nov 1 audit SEC-007: what goes to an outside service carries no address, wherever it sits, and no IP. */
+section('What is copied outside carries no address and no IP');
+posts = [];
+W.audit({ POSTHOG_KEY: 'phc_test', AUDIT_WEBHOOK: 'https://collector.example/in' }, 'auth_fail',
+  { email: 'victim@example.com', target: 'other@example.org', note: 'tried victim@example.com twice', ip: '203.0.113.9', kind: 'password' });
+await new Promise(r => setTimeout(r, 20));
+const hook = posts.find(p => /collector\.example/.test(p.url));
+const ph = posts.find(p => /\/capture\/$/.test(p.url));
+const out = JSON.stringify([hook && hook.body, ph && ph.body]);
+ok(hook && ph, 'both the collector and analytics were sent the event', posts.map(p => p.url));
+ok(!/@example\.(com|org)/.test(out) && !/203\.0\.113\.9/.test(out), 'no address, in any field or inside a sentence, and no IP', out.slice(0, 300));
+ok(hook && hook.body.email === hook.body.note.split(' ')[1] && /^u_/.test(hook.body.email) && hook.body.kind === 'password', 'the same address becomes the same pseudonym, and the rest is kept', hook && hook.body);
+
 globalThis.fetch = origFetch;
 report();
 done();
