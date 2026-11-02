@@ -44377,7 +44377,11 @@ async function agentsList(request, env) {
      hosted browser to read with and a key to seal them under. The page says
      so rather than offering a switch that would do nothing. */
   const signInsReady = !!env.BROWSER && connConfigured(env);
-  return json({ ok: true, agents, max: AGENTS_MAX, allowed: await _agentsAllowed(env, user), signInsReady });
+  /* The engines this plan lets an agent run on (AGENT-003). */
+  const entNow = (await DB.get(env, 'ent', email)) || { plan: 'free' };
+  const rank = _planRankOf(entNow.plan, entNow.customCfg);
+  const engines = Object.keys(ENGINES).filter(k => rank >= (PLAN_RANK[ENGINES[k].minPlan] || 0) && ['amv-pulse', 'amv-core', 'amv-forge', 'amv-apex', 'amv-swift'].includes(k));
+  return json({ ok: true, agents, max: AGENTS_MAX, allowed: await _agentsAllowed(env, user), signInsReady, engines });
 }
 
 /* POST /v1/agents/save - create one, or change one (name, role, instructions,

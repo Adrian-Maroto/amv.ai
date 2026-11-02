@@ -125,6 +125,22 @@ section('Saved sign-ins: offered only where they can work, and the card says wha
   ok((await agentsRec()).list[0].browser.keep === false, 'switching it off is saved, and the card no longer lists sign-ins');
 }
 
+section('Its engine and whether it may search the web, chosen in the same dialog (Nov 1 audit AGENT-003/004)');
+{
+  await page.click('#mc-agents .mc-agent [data-dact="mcAgentEdit"]');
+  await page.waitForSelector('#ag-engine');
+  const opts = await page.evaluate(() => [...document.querySelectorAll('#ag-engine option')].map(o => o.value));
+  ok(opts[0] === '' && opts.length > 1, 'the everyday engine first, then the ones the plan includes', opts);
+  const pick = opts.find(v => v && v !== 'amv-core') || opts[1];
+  await page.selectOption('#ag-engine', pick);
+  await page.click('label.cr-mode-opt:has(#ag-web)');
+  await page.click('#ag-save');
+  await page.waitForFunction(() => !document.getElementById('ag-engine'), null, { timeout: 15000 }).catch(() => {});
+  await new Promise(r => setTimeout(r, 300));
+  const a = (await agentsRec()).list[0];
+  ok(a.engine === pick && a.web === false, 'saved on the server as chosen', { engine: a.engine, web: a.web });
+}
+
 section('Deleting asks first, stops its job and takes the card away');
 {
   await page.click('#mc-agents [data-dact="mcAgentDelete"]');

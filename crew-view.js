@@ -732,9 +732,12 @@ function mcAgentEdit(id){
     + '<label class="ob-sub" for="ag-instr">' + escH(T('How it should work')) + '</label><textarea id="ag-instr" class="fp-in" rows="6" maxlength="4000">' + escH(a ? a.instructions : '') + '</textarea>'
     + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(a ? a.budgetUSD : 0)) + '">'
     + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>'
+    + _mcAgentEngineFields(a)
     + _mcAgentSignInFields(a),
     async () => {
       const body = { name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 };
+      if($('ag-engine')) body.engine = $('ag-engine').value;
+      if($('ag-web')) body.web = !!$('ag-web').checked;
       const keepBox = $('ag-keep');
       if(keepBox){
         body.browserKeep = !!keepBox.checked;
@@ -744,6 +747,18 @@ function mcAgentEdit(id){
       toast(a ? T('Saved.') : T('Agent created. Give it a job to start it working.'), 'success', 4000);
       await mcAgentsReload();
     });
+}
+/* The engine its jobs run on, and whether it may search the web. Only the
+   engines the plan includes are offered; the server checks again. */
+function _mcAgentEngineFields(a){
+  const list = (_mcAgentsD && Array.isArray(_mcAgentsD.engines)) ? _mcAgentsD.engines : [];
+  const cur = (a && a.engine) || '';
+  const label = (k) => (typeof ENGINE_LABEL !== 'undefined' && ENGINE_LABEL[k]) || k;
+  return '<label class="ob-sub" for="ag-engine">' + escH(T('Engine')) + '</label>'
+    + '<select id="ag-engine" class="fp-in"><option value=""' + (cur ? '' : ' selected') + '>' + escH(T('The everyday engine')) + '</option>'
+    + list.map(k => '<option value="' + escH(k) + '"' + (k === cur ? ' selected' : '') + '>' + escH(label(k)) + '</option>').join('') + '</select>'
+    + '<p class="ob-sub">' + escH(T('A heavier engine costs more per run, and counts against its budget at that price.')) + '</p>'
+    + '<label class="cr-mode-opt"><input type="checkbox" id="ag-web"' + (a && a.web === false ? '' : ' checked') + '><span><b>' + escH(T('May search the web')) + '</b></span></label>';
 }
 /* Offered only where it can work: AMV's hosted browser to read with and a
    key to seal under. Elsewhere one line says why, and an agent already set
