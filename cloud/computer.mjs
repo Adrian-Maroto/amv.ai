@@ -23,6 +23,13 @@ const WS_VERSIONS = 5;
    sleepAfter window of awake time, which the provider bills - so it is
    bounded, and a stop without a save is recorded and told, never silent. */
 const WS_SAVE_TRIES = 3;
+/* A CHECKPOINT WHILE IT IS IN USE (Nov 1 audit COMP-015). The idle save is
+   the only save if nothing else happens - but the platform can stop a
+   container for its own reasons (a host moved, a release rolled out), and
+   then nothing since the last idle save survives. So a machine in use is
+   also saved at most every WS_CHECKPOINT_MS, in the background of a request,
+   never twice at once. What a platform stop can lose is then minutes. */
+const WS_CHECKPOINT_MS = 10 * 60 * 1000;
 
 /* ── ONE KEY PER MACHINE, ONE TOKEN PER CALL (Nov 1 audit COMP-006) ───────
 
@@ -258,10 +265,26 @@ export class AMVComputer extends Container {
     return saved;
   }
 
+  async _checkpointMaybe() {
+    if (!this._wsOn() || !this.container.running || this._checkpointing) return;
+    const st = await this._st();
+    if (st.restoreFailed) return;
+    const last = +(await this._kv('ws_saved_at')) || 0;
+    if (!last) { await this._kvPut('ws_saved_at', Date.now()); return; }   // the first request starts the clock
+    if (Date.now() - last < WS_CHECKPOINT_MS) return;
+    this._checkpointing = true;
+    const run = (async () => {
+      try { if (await this._wsSave()) { await this._kvPut('ws_saved_at', Date.now()); console.log(JSON.stringify({ event: 'workspace_checkpoint' })); } }
+      finally { this._checkpointing = false; }
+    })();
+    if (this.ctx && typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(run); else await run;
+  }
+
   async onActivityExpired() {
     if (this._wsOn() && this.container.running && !(await this._st()).restoreFailed) {
       if (await this._wsSave()) {
         await this._setSt({ saveFails: null });
+        await this._kvPut('ws_saved_at', Date.now());
       } else {
         /* NOT STOPPED ON A FAILED SAVE (COMP-001): the disk holds work the
            saved copy does not. Kept up for another idle window to try again;
@@ -380,6 +403,7 @@ export class AMVComputer extends Container {
     h.delete('X-AMV-Computer-Call');
     h.set('X-AMV-Bridge-Token', await this._machineKey(false));
     const res = await super.fetch(new Request(request, { headers: h }));
+    await this._checkpointMaybe();
     /* The request that started the machine ran its restore first; if that
        failed, its answer came from an empty disk and is not handed back. */
     if ((await this._st()).restoreFailed)

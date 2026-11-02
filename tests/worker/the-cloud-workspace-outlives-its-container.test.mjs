@@ -302,6 +302,25 @@ section('A machine holds a key of its own, and a call opens only the machine it 
   } finally { lib.fetch = libFetch; }
 }
 
+section('A machine in use is saved every few minutes, not only when it goes idle (Nov 1 audit COMP-015)');
+{
+  const lib = Object.getPrototypeOf(AMVComputer.prototype); const libFetch = lib.fetch;
+  lib.fetch = async function () { return new Response('ok'); };
+  try {
+    const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+    const storage = memStorage();
+    const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }), storage }, env);
+    const go = async () => m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+    await go();
+    ok(!env.WORKSPACES.m.has('ws/a1b2c3d4.tgz') && +(await storage.get('ws_saved_at')) > 0, 'the first request starts the clock and saves nothing', [...env.WORKSPACES.m.keys()]);
+    await go();
+    ok(!env.WORKSPACES.m.has('ws/a1b2c3d4.tgz'), 'a minute later, still nothing - not a save per request');
+    await storage.put('ws_saved_at', Date.now() - 11 * 60 * 1000);
+    await go();
+    ok(env.WORKSPACES.m.has('ws/a1b2c3d4.tgz') && Date.now() - (await storage.get('ws_saved_at')) < 5000, 'ten minutes on, the next request saves it - a platform stop loses minutes, not a session', [...env.WORKSPACES.m.keys()]);
+  } finally { lib.fetch = libFetch; }
+}
+
 section('Erasing the account deletes the saved workspace and stops the machine - on AMV’s key only');
 {
   const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
