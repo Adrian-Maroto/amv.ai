@@ -4286,6 +4286,17 @@ async function autoList(request, env){
     const n = _autoNeedsFor(it, _conn, it.discoveredNeeds);
     return _hookShown(n.ready ? it : Object.assign({}, it, { willNeed: n.missing }));
   });
+  /* A JOB WITH A BUDGET SAYS WHERE IT STANDS (Nov 1 audit USAGE-004): what it
+     has spent this month and what is left, read from the same counter the run
+     is held to - only for jobs that have one, so the list stays cheap. */
+  await Promise.all(_items.map(async (it) => {
+    if(!(+it.budgetUSD > 0)) return;
+    try{
+      const spent = +((await counter(env, _jobCostKey(user.email, it.id), { op:'get' })).value || 0);
+      it.spentUSD = Math.round(spent * 100) / 100;
+      it.leftUSD = Math.max(0, Math.round((+it.budgetUSD - spent) * 100) / 100);
+    }catch(e){ it.spentUSD = null; }
+  }));
   /* Their agents, by id and name only: enough for the chat to say whose
      job a row is and to hand new work to one by name. */
   let _agents = [];

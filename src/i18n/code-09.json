@@ -1480,5 +1480,43 @@
   "it": "le ultime 3 esecuzioni sono fallite o non avevano la forma promessa",
   "ko": "최근 3회 실행이 실패했거나 약속한 형식이 아니었습니다",
   "ta": "அதன் கடைசி 3 ஓட்டங்கள் தோல்வியடைந்தன அல்லது வாக்களித்த வடிவத்தில் வரவில்லை"
+ },
+ "Budget of {0} used up this month - it waits for next month": {
+  "es": "Presupuesto de {0} agotado este mes: espera al mes que viene",
+  "zh": "本月 {0} 预算已用完 - 将等到下个月",
+  "hi": "इस महीने {0} का बजट खत्म - यह अगले महीने तक रुकेगा",
+  "ar": "استُنفدت ميزانية {0} هذا الشهر - ينتظر الشهر القادم",
+  "pt": "Orçamento de {0} esgotado este mês - espera pelo próximo mês",
+  "fr": "Budget de {0} épuisé ce mois-ci - il attend le mois prochain",
+  "de": "Budget von {0} diesen Monat aufgebraucht - es wartet auf den nächsten Monat",
+  "ja": "今月の予算 {0} を使い切りました - 来月まで待ちます",
+  "ru": "Бюджет {0} в этом месяце исчерпан - ждёт следующего месяца",
+  "id": "Anggaran {0} habis bulan ini - menunggu bulan depan",
+  "bn": "এই মাসে {0} বাজেট শেষ - পরের মাস পর্যন্ত অপেক্ষা করবে",
+  "ur": "اس مہینے {0} کا بجٹ ختم - یہ اگلے مہینے تک رکے گا",
+  "tr": "Bu ayki {0} bütçe tükendi - gelecek ayı bekliyor",
+  "vi": "Ngân sách {0} tháng này đã hết - chờ đến tháng sau",
+  "it": "Budget di {0} esaurito questo mese - aspetta il mese prossimo",
+  "ko": "이번 달 예산 {0}을(를) 모두 사용 - 다음 달까지 대기",
+  "ta": "இந்த மாதம் {0} வரவுசெலவு தீர்ந்தது - அடுத்த மாதம் வரை காத்திருக்கும்"
+ },
+ "{0} of {1} spent this month · {2} left": {
+  "es": "{0} de {1} gastados este mes · quedan {2}",
+  "zh": "本月已用 {0}/{1} · 剩余 {2}",
+  "hi": "इस महीने {1} में से {0} खर्च · {2} बचे",
+  "ar": "أُنفق {0} من {1} هذا الشهر · يتبقى {2}",
+  "pt": "{0} de {1} gastos este mês · restam {2}",
+  "fr": "{0} sur {1} dépensés ce mois-ci · reste {2}",
+  "de": "{0} von {1} diesen Monat ausgegeben · {2} übrig",
+  "ja": "今月 {1} のうち {0} 使用 · 残り {2}",
+  "ru": "Потрачено {0} из {1} в этом месяце · осталось {2}",
+  "id": "{0} dari {1} terpakai bulan ini · sisa {2}",
+  "bn": "এই মাসে {1}-এর মধ্যে {0} খরচ · বাকি {2}",
+  "ur": "اس مہینے {1} میں سے {0} خرچ · {2} باقی",
+  "tr": "Bu ay {1} bütçenin {0} kadarı harcandı · {2} kaldı",
+  "vi": "Đã dùng {0}/{1} tháng này · còn {2}",
+  "it": "{0} di {1} spesi questo mese · restano {2}",
+  "ko": "이번 달 {1} 중 {0} 사용 · {2} 남음",
+  "ta": "இந்த மாதம் {1}-இல் {0} செலவு · {2} மீதம்"
  }
 }

@@ -962,9 +962,16 @@ function _mcServerSchedRow(x){
            bargain was that they lose nothing by not looking. */
         const same = x.quietSince
           ? `<span class="mc-sched-same">Same answer since ${escH(_dayLabel(x.quietSince))} · in AMV, not your inbox</span>` : '';
+        /* ITS OWN BUDGET, WHERE IT STANDS (USAGE-004): spent and left this
+           month, from the counter the run is held to; when it is used up the
+           row says that is why the job is waiting. */
+        const money = (+x.budgetUSD > 0 && x.spentUSD != null)
+          ? `<span class="mc-sched-money${x.leftUSD <= 0 ? ' over' : ''}">${escH(x.leftUSD <= 0
+              ? T('Budget of {0} used up this month - it waits for next month').replace('{0}', '$' + (+x.budgetUSD).toFixed(2))
+              : T('{0} of {1} spent this month · {2} left').replace('{0}', '$' + (+x.spentUSD).toFixed(2)).replace('{1}', '$' + (+x.budgetUSD).toFixed(2)).replace('{2}', '$' + (+x.leftUSD).toFixed(2)))}</span>` : '';
         return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
              + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'')
-             + quiet + same;
+             + quiet + same + money;
       })()}</div>
     </div>
     <div class="mc-sched-acts">

@@ -194,7 +194,12 @@ section('A job of its own can have a monthly budget too, enforced the same way')
   const shown = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 5 });
   ok(modelCalls > 0 && !/budget/.test(it.lastError || ''), 'with room in the budget, it runs', { modelCalls, err: it.lastError });
   ok(shown.d.spentUSD > 0 && Math.abs(shown.d.spentUSD - (acctAfter - acctBefore)) < 1e-4, 'and its budget is charged what the run actually cost - the same amount the account was', { job: shown.d.spentUSD, account: acctAfter - acctBefore });
+  /* The list says where it stands (Nov 1 audit USAGE-004). */
+  const listed = await call('/auto/list', {});
+  const row = (listed.d.items || []).find(i => i.id === jobId) || {};
+  ok(row.spentUSD === Math.round(shown.d.spentUSD * 100) / 100 && Math.abs(row.leftUSD - (5 - shown.d.spentUSD)) < 0.011, 'the job list shows what it has spent and what is left', { spent: row.spentUSD, left: row.leftUSD });
   const off = await call('/auto/update', { action: 'budget', id: jobId, budgetUSD: 0 });
+  ok(!('spentUSD' in (((await call('/auto/list', {})).d.items || []).find(i => i.id === jobId) || {})), 'a job with no budget of its own carries neither', true);
   ok(off.d.budgetUSD === null && !('budgetUSD' in rec().items.find(i => i.id === jobId)), '0 removes it', off.d);
 }
 
