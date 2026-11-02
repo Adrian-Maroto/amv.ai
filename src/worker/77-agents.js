@@ -87,7 +87,7 @@ async function agentsList(request, env) {
     const results = (auto.results || []).filter(r => r && ids.has(r.autoId)).slice(-3).reverse()
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
-      budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created,
+      budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created, engine: a.engine || '', web: a.web !== false,
       browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
@@ -147,6 +147,20 @@ async function agentsSave(request, env) {
     clean.budgetUSD = Math.round(b * 100) / 100;
   }
   if (body.paused !== undefined) clean.paused = body.paused === true;
+  /* Its own engine and whether it may search the web (Nov 1 audit
+     AGENT-003/004). An engine is accepted only if the plan allows it now;
+     each run checks again. '' is the everyday engine. */
+  if (body.engine !== undefined) {
+    const ek = String(body.engine || '');
+    if (ek && !ENGINES[ek]) return json({ error: 'There is no engine called ' + ek + '.', code: 'agent_engine' }, 400);
+    if (ek) {
+      const ent = (await DB.get(env, 'ent', String(user.email).toLowerCase())) || { plan: 'free' };
+      if (_planRankOf(ent.plan, ent.customCfg) < (PLAN_RANK[ENGINES[ek].minPlan] || 0))
+        return json({ error: 'That engine is not on your plan.', code: 'agent_engine_plan' }, 403);
+    }
+    clean.engine = ek;
+  }
+  if (body.web !== undefined) clean.web = body.web !== false;
   /* SAVED SIGN-INS (owner decision #46, 77a-agent-signins.js): off unless
      asked for, and only for the sites listed - never one that moves money. */
   if (body.browserKeep !== undefined || body.browserSites !== undefined) {
@@ -203,6 +217,7 @@ async function agentsSave(request, env) {
   if (signIns === 'failed') return json({ error: 'The agent was saved, but the sign-ins it held could not be forgotten. Try switching it off again in a moment.', code: 'signins_not_forgotten', agentSaved: true }, 503);
   return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
+                                   engine: stored.engine || '', web: stored.web !== false,
                                    browser: _agentBrowserShown(stored.browser) } });
 }
 

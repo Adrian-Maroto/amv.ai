@@ -51,10 +51,10 @@ const call = async (path, body, token = mine.token, method = 'POST') => {
 const rec = () => JSON.parse(store.get('auto:' + ME) || '{"items":[],"results":[]}');
 const put = (r) => store.set('auto:' + ME, JSON.stringify(r));
 
-let modelCalls = 0, lastSystem = '', systems = [];
+let modelCalls = 0, lastSystem = '', systems = [], lastBody = null;
 globalThis.fetch = async (u, init) => {
   modelCalls++;
-  try { const b = JSON.parse(String((init && init.body) || '{}')); lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); systems.push(lastSystem); } catch (e) {}
+  try { const b = JSON.parse(String((init && init.body) || '{}')); lastBody = b; lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); systems.push(lastSystem); } catch (e) {}
   return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Three things changed in solar policy this week.' }], stop_reason: 'end_turn',
     usage: { input_tokens: 2000, output_tokens: 800 } }), { status: 200 });
 };
@@ -209,6 +209,43 @@ section('An API key cannot hire or fire');
   const k = await W.default.fetch(new Request('https://api.amv.test/v1/agents/save', { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-AMV-Key': 'amv_sk_notreal', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ name: 'Bot' }) }), env, ctx);
   ok(k.status === 401 || k.status === 403, 'a key that is not a session is refused', k.status);
+}
+
+section('An agent can have its own engine, priced as that engine, and be kept off the web (Nov 1 audit AGENT-003/004)');
+{
+  const unthrottle = () => { for (const k of [...store.keys()]) if (/agents:/.test(k) && /(^rl|act)/.test(k)) store.delete(k); };
+  unthrottle();
+  await call('/v1/agents/save', { id: agentId, budgetUSD: 0, paused: false });
+  const bad = await call('/v1/agents/save', { id: agentId, engine: 'amv-nothing' });
+  ok(bad.status === 400 && bad.d.code === 'agent_engine', 'an engine that does not exist is refused', bad.d);
+  const freeAcct = await W.issueTokens(env, 'cy@test.com', 'Cy');
+  store.set('ent:cy@test.com', JSON.stringify({ plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
+  const fa = await call('/v1/agents/save', { name: 'Cy agent' }, freeAcct.token);
+  const notPlan = fa.d.agent ? await call('/v1/agents/save', { id: fa.d.agent.id, engine: 'amv-apex' }, freeAcct.token) : { status: 0, d: {} };
+  ok(notPlan.status === 403 && notPlan.d.code === 'agent_engine_plan', 'one the plan does not include is refused', notPlan.d);
+  const set = await call('/v1/agents/save', { id: agentId, engine: 'amv-forge', web: false });
+  ok(set.status === 200 && set.d.agent.engine === 'amv-forge' && set.d.agent.web === false, 'saved, and read back', set.d.agent);
+  /* Its job runs on that engine, without the web, and is charged at that engine's prices. */
+  const costKey = 'ctr:' + W._agentCostKey(ME, agentId);
+  const before = +(await W.counter(env, W._agentCostKey(ME, agentId), { op: 'get' })).value || 0;
+  due(); lastBody = null;
+  await W.runDueAutomations(env, Date.now() + 6);
+  ok(lastBody && /fable/.test(lastBody.model) && !lastBody.tools, 'the run uses its engine, and has no web search', lastBody && { model: lastBody.model, tools: lastBody.tools });
+  const after = +(await W.counter(env, W._agentCostKey(ME, agentId), { op: 'get' })).value || 0;
+  const spent = after - before;
+  /* 2,000 in and 800 out at the heavier engine's $10/$50 per million: $0.06 before markup, more than the everyday $0.018. */
+  ok(spent >= 0.06 - 1e-9, 'and is charged at that engine’s prices, not the everyday one’s', spent);
+  /* The plan lapses: the next run is on the everyday engine. */
+  unthrottle();
+  await call('/v1/agents/save', { id: agentId, engine: 'amv-apex' });
+  store.set('ent:' + ME, JSON.stringify({ plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
+  due(); lastBody = null;
+  await W.runDueAutomations(env, Date.now() + 7);
+  ok(lastBody && lastBody.model && !/fable-5-1/.test(lastBody.model), 'on a plan without that engine, the run goes ahead on the everyday one', lastBody && lastBody.model);
+  store.set('ent:' + ME, JSON.stringify({ plan: 'ultra' }));
+  unthrottle();
+  await call('/v1/agents/save', { id: agentId, engine: '', web: true });
+  unthrottle();
 }
 
 section('Deleted, its jobs stop and their results stay');

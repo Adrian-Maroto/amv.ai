@@ -756,7 +756,8 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
      - "write me a poem" does not search - and each search is booked in the
      run's reservation before it runs (_autoRunMaxUSD), so this cannot spend
      past the ceiling. It still cannot send, buy, book or touch an account. */
-  const webOk = !free;
+  /* An agent can be kept off the web (Nov 1 audit AGENT-004). */
+  const webOk = !free && !(agent && agent.web === false);
 
   /* Research jobs SEARCH THE LIVE WEB and report what's happening. The prompt is
      deliberately framed as monitoring and analysis - "here's what changed,
@@ -962,7 +963,7 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
   }
 
   const body = {
-    model: free ? ENGINES['amv-pulse'].model : ENGINES['amv-core'].model,
+    model: free ? ENGINES['amv-pulse'].model : ((agent && agent._ek && ENGINES[agent._ek]) ? ENGINES[agent._ek].model : ENGINES['amv-core'].model),
     max_tokens: free ? FREE_AUTO_MAX_TOKENS : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS),
     system: systemAgent,
     messages: [{ role:'user', content: userTurn }]
@@ -1056,18 +1057,37 @@ const AUTO_RESEARCH_MAX_TOKENS = 2500;
 const AUTO_TASK_MAX_TOKENS = 3000;
 const AUTO_EST_IN_TOK = 8000;
 const AUTO_FREE_EST_IN_TOK = 3000;
-function _autoRunMaxUSD(free, isResearch){
+/* AN AGENT'S OWN ENGINE (Nov 1 audit AGENT-003). An agent may name the
+   engine its jobs run on - only one the plan allows, checked when it is saved
+   and again at every run (a plan that lapsed runs on the everyday engine).
+   What a run reserves and is charged follows that engine's prices, never the
+   everyday engine's - a heavier engine priced as a lighter one is money
+   spent past the ceiling. Free runs always use the free engine. */
+function _autoEngineFor(agent, ent, free){
+  if(free || !agent || !agent.engine) return '';
+  const e = ENGINES[agent.engine];
+  if(!e) return '';
+  const rank = _planRankOf(ent && ent.plan, ent && ent.customCfg);
+  return rank >= (PLAN_RANK[e.minPlan] || 0) ? agent.engine : '';
+}
+function _autoRates(ek){
+  const e = ek && ENGINES[ek];
+  return { i: Math.max(3, e ? +e.inCost || 0 : 0), o: Math.max(15, e ? +e.outCost || 0 : 0) };
+}
+function _autoRunMaxUSD(free, isResearch, ek, noWeb){
   const inTok  = free ? AUTO_FREE_EST_IN_TOK : AUTO_EST_IN_TOK;
   const outTok = free ? FREE_AUTO_MAX_TOKENS
                : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS);
   /* Every paid run may reach the web (webOk in _autoExecute), so every paid
      run reserves its searches. A free one never searches. */
-  const searches = free ? 0 : AUTO_MAX_SEARCHES;
-  return (inTok / 1e6) * 3 + (outTok / 1e6) * 15 + searches * WEB_SEARCH_COST_USD;
+  const searches = (free || noWeb) ? 0 : AUTO_MAX_SEARCHES;
+  const r = _autoRates(ek);
+  return (inTok / 1e6) * r.i + (outTok / 1e6) * r.o + searches * WEB_SEARCH_COST_USD;
 }
-function _autoCostUSD(usage){
-  const inUSD  = (usage.input||0)  / 1e6 * 3;     // ~$3 / M input
-  const outUSD = (usage.output||0) / 1e6 * 15;    // ~$15 / M output
+function _autoCostUSD(usage, ek){
+  const r = _autoRates(ek);
+  const inUSD  = (usage.input||0)  / 1e6 * r.i;   // at least ~$3 / M input
+  const outUSD = (usage.output||0) / 1e6 * r.o;   // at least ~$15 / M output
   const searchUSD = (usage.webSearches||0) * WEB_SEARCH_COST_USD; // ~$10 / 1000 searches
   return inUSD + outUSD + searchUSD;
 }
@@ -1847,7 +1867,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
     /* THE AGENT THIS JOB BELONGS TO, decided before anything is booked. A
        deleted agent's job stops; a paused one's waits, and its row says
        which. Neither spends anything. */
-    let agent = null, agentCost = '';
+    let agent = null, agentCost = '', runEk = '';
     if(item.agent){
       agent = await agentOf(item.agent);
       if(!agent || agent.deleted){
@@ -1881,7 +1901,8 @@ async function _autoRunAccount(env, email, rec, now, deadline){
          the most expensive run the product can do. */
       const runFree = !!(budget && budget.free) || item.tier === 'free';
       const runResearch = item.kind === 'research' && !runFree;
-      const runMax = _autoRunMaxUSD(runFree, runResearch);
+      runEk = _autoEngineFor(agent, ent, runFree);
+      const runMax = _autoRunMaxUSD(runFree, runResearch, runEk, !!(agent && agent.web === false));
       /* The day's ceiling, booked for THIS run. Taken first so a refusal
          here costs nothing to unwind. */
       const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
@@ -2040,7 +2061,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
          the tick's own, so a retry that would eat into somebody else's
          overdue job is not started. */
       const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
-                                            _neverList(rec), deadline, agent);
+                                            _neverList(rec), deadline, agent ? Object.assign({}, agent, { _ek: runEk }) : agent);
       const exec = tried.exec;
       item.attempts = (Number(item.attempts) || 0) + tried.attempts;
       if(exec && exec.quiet){
@@ -2081,7 +2102,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
          on top of them - adding outright would charge every automation twice
          and cut somebody off at half their allowance. The platform total is
          never reserved against, so it takes the full amount. */
-      try{ const c = _autoCostUSD(exec && exec.usage || {}); runCost = c || 0;
+      try{ const c = _autoCostUSD(exec && exec.usage || {}, runEk); runCost = c || 0;
         const dAcct = c - itemBooked;
         const dGlobal = c - itemGlobalBooked;
         if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
