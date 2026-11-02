@@ -239,10 +239,14 @@ export class AMVCounter {
     }
     if (op === 'swSet') {
       const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
-      const name = String(body.name || '').slice(0, 80);
-      if (!name) return json({ error: 'name required' }, 400);
-      if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
-      else delete sb.map[name];
+      /* `names`: several switches in ONE write (Nov 1 audit SEC-012) - a
+         brownout lands everywhere at once, or not at all. */
+      const names = Array.isArray(body.names) ? body.names.map(n => String(n || '').slice(0, 80)).filter(Boolean).slice(0, 64) : [String(body.name || '').slice(0, 80)].filter(Boolean);
+      if (!names.length) return json({ error: 'name required' }, 400);
+      for (const name of names) {
+        if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
+        else delete sb.map[name];
+      }
       sb.v += 1;
       await this.state.storage.put('sw', sb);
       return json({ v: sb.v, map: sb.map });

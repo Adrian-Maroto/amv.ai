@@ -161,29 +161,44 @@ async function _brownoutSet(request, env, on, why) {
   try { current = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}') || {}; } catch (e) {
     return json({ error: 'The switches could not be read, so nothing was changed. Try again.', code: 'switches_unread' }, 503);
   }
-  const flip = async (name, off) => {
-    const r = await adminSwitch(new Request(request.url, { method: 'POST', headers: request.headers,
-      body: JSON.stringify({ name, off, why: off ? 'brownout' + (why ? ': ' + why : '') : 'brownout over' }) }), env, true);
-    return r.status === 200;
-  };
-  if (on) {
-    if (prev && prev.on) return json({ ok: true, brownout: true, shed: prev.shed, note: 'Brownout was already on.' });
-    /* Only what is on now is ours to turn off - and so, later, ours to turn back on. */
-    const shed = _brownoutShed().filter(n => !(current[n] && current[n].off));
-    const done = [];
-    for (const n of shed) if (await flip(n, true)) done.push(n);
-    await env.AMV_KV.put(BROWNOUT_KEY, JSON.stringify({ on: true, shed: done, why, at: Date.now() }));
-    audit(env, 'brownout_on', { shed: done.join(','), why });
-    try { await alertOnce(env, 'brownout:on', 'BROWNOUT ON: ' + done.length + ' heavy part(s) paused (' + done.join(', ') + ')' + (why ? ' - ' + why : '') + '. Sign-in, payments and chat on the everyday engines keep working.', 1); } catch (e) {}
-    return json({ ok: true, brownout: true, shed: done, failed: shed.filter(n => !done.includes(n)) });
+  /* ALL AT ONCE (Nov 1 audit SEC-012). A brownout used to flip its switches
+     one by one, each its own switchboard write: half-way through, servers saw
+     half a brownout, and a failure part of the way left the record saying
+     less than what was off. Now the whole set is ONE switchboard write and
+     ONE KV write, and the record names exactly what was changed. With the
+     switchboard unreachable, turning a brownout ON still lands in KV (an
+     emergency brake within a minute) and says so; turning it OFF is refused,
+     as for any one switch. */
+  const reason = on ? 'brownout' + (why ? ': ' + why : '') : 'brownout over';
+  const names = on ? _brownoutShed().filter(n => !(current[n] && current[n].off)) : ((prev && prev.shed) || []);
+  if (on && prev && prev.on) return json({ ok: true, brownout: true, shed: prev.shed, note: 'Brownout was already on.' });
+  if (!on && (!prev || !prev.on)) return json({ ok: true, brownout: false, restored: [], note: 'Brownout was not on.' });
+  let strong = !env.AMV_COUNTER ? 'none' : 'ok';
+  let m = Object.assign({}, current);
+  if (env.AMV_COUNTER && names.length) {
+    try {
+      const r = await counter(env, SWITCHBOARD, { op: 'swSet', names, off: on, why: reason, strict: true });
+      if (r && r.map) { m = Object.assign({}, m, r.map); _swStrong = { at: Date.now(), map: r.map }; _swStrongAsked = Date.now(); }
+      else strong = 'failed';
+    } catch (e) { strong = 'failed'; }
   }
-  if (!prev || !prev.on) return json({ ok: true, brownout: false, restored: [], note: 'Brownout was not on.' });
-  const restored = [];
-  for (const n of (prev.shed || [])) if (await flip(n, false)) restored.push(n);
+  if (strong === 'failed' && !on)
+    return json({ error: 'The switchboard could not be written, so the brownout was left on. Try again in a minute.', code: 'switchboard_unavailable' }, 503);
+  for (const n of names) { if (on) m[n] = { off: true, why: reason, at: Date.now() }; else delete m[n]; }
+  await env.AMV_KV.put(SWITCH_KEY, JSON.stringify(m));
+  _swCache = { at: Date.now(), map: m };
+  if (on) {
+    await env.AMV_KV.put(BROWNOUT_KEY, JSON.stringify({ on: true, shed: names, why, at: Date.now() }));
+    audit(env, 'brownout_on', { shed: names.join(','), why });
+    try { await alertOnce(env, 'brownout:on', 'BROWNOUT ON: ' + names.length + ' heavy part(s) paused (' + names.join(', ') + ')' + (why ? ' - ' + why : '') + '. Sign-in, payments and chat on the everyday engines keep working.', 1); } catch (e) {}
+    const body = { ok: strong !== 'failed', brownout: true, shed: names, failed: [] };
+    if (strong === 'failed') Object.assign(body, { pending: true, reaches: 'every server within about a minute: the switchboard could not be written' });
+    return json(body, strong === 'failed' ? 202 : 200);
+  }
   await env.AMV_KV.put(BROWNOUT_KEY, JSON.stringify({ on: false, shed: [], endedAt: Date.now() }));
-  audit(env, 'brownout_off', { restored: restored.join(',') });
-  try { await alertOnce(env, 'brownout:off', 'Brownout over: ' + restored.length + ' part(s) switched back on.', 1); } catch (e) {}
-  return json({ ok: true, brownout: false, restored, failed: (prev.shed || []).filter(n => !restored.includes(n)) });
+  audit(env, 'brownout_off', { restored: names.join(',') });
+  try { await alertOnce(env, 'brownout:off', 'Brownout over: ' + names.length + ' part(s) switched back on.', 1); } catch (e) {}
+  return json({ ok: true, brownout: false, restored: names, failed: [] });
 }
 
 async function adminSwitch(request, env, gated) {

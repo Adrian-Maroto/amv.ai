@@ -37,7 +37,7 @@ globalThis.fetch = async (url) => {
 function mkEnv(extra) {
   const m = new Map(); const vals = new Map(); modelCalls = [];
   return Object.assign({
-    AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
+    _vals: vals, AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
     JWT_SECRET: 'j', ADMIN_TOKEN: 'admin-secret', APP_URL: 'https://amv.test',
     AMV_KV: {
       _map: m,
@@ -57,7 +57,7 @@ function mkEnv(extra) {
         /* The switchboard, as the counter object keeps it. */
         if (b.op === 'swGet' || b.op === 'swSet') {
           const sb = vals.get('sw:' + n) || { v: 0, map: {} };
-          if (b.op === 'swSet') { if (b.off) sb.map[b.name] = { off: true, why: b.why || '', at: Date.now() }; else delete sb.map[b.name]; sb.v++; vals.set('sw:' + n, sb); }
+          if (b.op === 'swSet') { for (const nm of (b.names || [b.name])) { if (b.off) sb.map[nm] = { off: true, why: b.why || '', at: Date.now() }; else delete sb.map[nm]; } sb.v++; vals.set('sw:' + n, sb); }
           return new Response(JSON.stringify({ v: sb.v, map: sb.map }));
         }
         if (b.op === 'reserve') {
@@ -211,6 +211,14 @@ section('Brownout: the heavy parts stop together, the everyday product keeps wor
      'and the switch that was off for another reason is still off', Object.keys(after));
   const back = await call(env, '/v1/messages', { model: 'amv-forge', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }, { Authorization: 'Bearer ' + tok });
   ok(back.status === 200, 'the heavy engine answers again', back.status);
+  /* Nov 1 audit SEC-012: the whole set is one switchboard write. */
+  const before = (env._vals.get('sw:switchboard') || { v: 0 }).v;
+  await call(env, '/v1/admin/switch', { brownout: true, why: 'again' }, ADMIN);
+  const mid = JSON.parse(JSON.stringify(env._vals.get('sw:switchboard') || { v: 0, map: {} }));
+  ok(mid.v === before + 1 && Object.keys(mid.map).filter(k => /brownout/.test(mid.map[k].why || '')).length === od.shed.length, 'starting a brownout is one switchboard write carrying every part it pauses', { writes: mid.v - before });
+  const endR = await (await call(env, '/v1/admin/switch', { brownout: false }, ADMIN)).json();
+  ok((env._vals.get('sw:switchboard') || {}).v === mid.v + 1, 'and ending it is one write too', { writes: (env._vals.get('sw:switchboard') || {}).v - mid.v, endR });
+  W._swCache.at = 0; W._swStrongReset();
 }
 
 section('The switchboard: a flip reaches every server within seconds; unreachable, writes stop');
