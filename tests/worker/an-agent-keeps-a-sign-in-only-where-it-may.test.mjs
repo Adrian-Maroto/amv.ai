@@ -73,6 +73,17 @@ section('Opt-in, listed sites only, never a site that moves money');
     const r = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com', bank] }, tok);
     ok(r.status === 400 && r.d.code === 'money_site', bank + ' is refused - it moves money', [r.status, r.d.code]);
   }
+  /* Nov 1 audit AGENT-012: more than money. */
+  for (const [site, code] of [['accounts.google.com', 'identity_site'], ['login.microsoftonline.com', 'identity_site'], ['okta.com', 'identity_site'],
+                              ['irs.gov', 'government_site'], ['www.tax.service.gov.uk', 'government_site'], ['impots.gouv.fr', 'government_site'],
+                              ['mychart.example-clinic.org', 'health_site'], ['patient.portal.example.com', 'health_site']]) {
+    const r = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com', site] }, tok);
+    ok(r.status === 400 && r.d.code === code, site + ' is refused (' + code + ')', [r.status, r.d.code]);
+  }
+  for (const site of ['github.com', 'notion.so', 'epicgames.com', 'linear.app']) {
+    const r = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: [site] }, tok);
+    ok(r.status === 200, site + ' is an ordinary site and allowed', [r.status, r.d.code]);
+  }
   const none = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: [] }, tok);
   ok(none.status === 400, 'keeping sign-ins with no site named is refused', none.status);
   const many = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: Array.from({ length: 11 }, (_, i) => 's' + i + '.example.com') }, tok);

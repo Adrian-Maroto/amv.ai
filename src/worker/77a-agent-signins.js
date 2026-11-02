@@ -31,12 +31,37 @@ const AGENT_JAR_TTL_S = 30 * 86400;
 const AGENT_MONEY_WORD = /bank|banco|banque|sparkasse|creditunion|credit-union|brokerage|crypto|wallet/i;
 const AGENT_MONEY_BRAND = /(^|[.-])(paypal|venmo|zelle|stripe|squareup|cash\.app|wise|revolut|monzo|n26|chime|klarna|afterpay|affirm|coinbase|binance|kraken|robinhood|schwab|fidelity|vanguard|etrade|ibkr|interactivebrokers|chase|wellsfargo|bankofamerica|citi|citibank|hsbc|barclays|santander|capitalone|amex|americanexpress|discover|visa|mastercard|usbank|pnc|truist|ally|sofi|plaid)([.-]|$)/i;
 const AGENT_MONEY_SITE = { test: (host) => AGENT_MONEY_WORD.test(String(host || '')) || AGENT_MONEY_BRAND.test(String(host || '')) };
+/* MORE THAN MONEY (Nov 1 audit AGENT-012). A kept sign-in is worth whatever
+   the site can do, and three more kinds of site are worth more than any
+   one inbox:
+     - an identity provider: signed in there is signed in everywhere it vouches
+       for - the master key, not one room;
+     - government: taxes, benefits, immigration, licences - acts in a person's
+       legal name, and a stolen session there is identity theft;
+     - health: medical records and prescriptions, the most sensitive data
+       there is and the hardest to take back.
+   Refused when a site is added and again when a cookie is kept, like money. */
+const AGENT_IDENTITY_SITE = /(^|\.)(accounts\.google\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|idmsa\.apple\.com|okta\.com|oktapreview\.com|auth0\.com|onelogin\.com|duosecurity\.com|pingidentity\.com|login\.gov|id\.me|accounts\.firefox\.com|github\.com\/login)$/i;
+const AGENT_GOV_SITE = /(^|\.)(gov|mil|gouv\.[a-z]{2}|gob\.[a-z]{2}|gov\.[a-z]{2}|govt\.[a-z]{2}|go\.[a-z]{2}|gc\.ca|admin\.ch|bund\.de|service\.gov\.uk|europa\.eu)$/i;
+const AGENT_HEALTH_SITE = /mychart|patient|health|medical|clinic|hospital|pharmacy|doctor|epiccare|kaiserpermanente|cerner|athena(health)?|teladoc|zocdoc|cvs|walgreens|nhs\.uk/i;
+function _agentSiteRisk(host){
+  const h = String(host || '').toLowerCase();
+  if(AGENT_MONEY_SITE.test(h)) return 'money';
+  if(AGENT_IDENTITY_SITE.test(h)) return 'identity';
+  if(AGENT_GOV_SITE.test(h)) return 'government';
+  if(AGENT_HEALTH_SITE.test(h)) return 'health';
+  return '';
+}
 
 function _agentSiteClean(raw){
   let host = String(raw || '').trim().toLowerCase();
   host = host.replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '').replace(/^www\./, '');
   if(!/^[a-z0-9.-]{3,253}$/.test(host) || host.indexOf('.') < 0) return { error: 'That is not a website address.' };
-  if(AGENT_MONEY_SITE.test(host)) return { error: host + ' moves money, so an agent never keeps a sign-in for it. Connect it through AMV’s bank link instead, or do it yourself.', code: 'money_site' };
+  const risk = _agentSiteRisk(host);
+  if(risk === 'money') return { error: host + ' moves money, so an agent never keeps a sign-in for it. Connect it through AMV’s bank link instead, or do it yourself.', code: 'money_site' };
+  if(risk === 'identity') return { error: host + ' signs you in to other sites, so an agent never keeps a sign-in for it - it would be a key to everything else.', code: 'identity_site' };
+  if(risk === 'government') return { error: host + ' acts in your legal name (taxes, benefits, documents), so an agent never keeps a sign-in for it.', code: 'government_site' };
+  if(risk === 'health') return { error: host + ' looks like a health or medical site, so an agent never keeps a sign-in for it.', code: 'health_site' };
   if(!_webHostAllowed('https://' + host + '/').ok) return { error: host + ' is not a site AMV’s browser may open.', code: 'site_blocked' };
   return { host };
 }
@@ -150,7 +175,7 @@ async function _agentJarSave(env, email, agent, cookies){
   const bySite = {};
   for(const c of _webJarIn(cookies)){
     const s = _agentSiteOf(c.domain, sites);
-    if(!s || AGENT_MONEY_SITE.test(String(c.domain || ''))) continue;
+    if(!s || _agentSiteRisk(String(c.domain || '').replace(/^\./, ''))) continue;
     (bySite[s] = bySite[s] || []).push(c);
   }
   const kept = Object.keys(bySite);
@@ -311,7 +336,7 @@ async function _agentReadSites(env, email, agent, detail){
   for(const m of String(detail || '').matchAll(/https?:\/\/[^\s<>"')]+/g)){
     let u; try{ u = new URL(m[0]); }catch(e){ continue; }
     if(!_agentSiteOf(u.hostname, agent.browser.sites)) continue;
-    if(!_webHostAllowed(u.href).ok || AGENT_MONEY_SITE.test(u.hostname)) continue;
+    if(!_webHostAllowed(u.href).ok || _agentSiteRisk(u.hostname)) continue;
     if(!urls.includes(u.href)) urls.push(u.href);
     if(urls.length >= AGENT_READ_PAGES_MAX) break;
   }
