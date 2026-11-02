@@ -166,7 +166,9 @@ section('The object down: reading is fine, changing how the account is protected
   DO.down = true;
   const sync = await go('/sync/pull', 'POST');
   ok(sync.status === 200, 'with the object unreachable, reading your own chats still works', sync);
-  for (const [path, method] of [['/auth/security', 'POST'], ['/v1/keys/create', 'POST'], ['/auth/delete', 'POST'], ['/v1/spend/set', 'POST'], ['/team/invite', 'POST']]) {
+  for (const [path, method] of [['/auth/security', 'POST'], ['/v1/keys/create', 'POST'], ['/auth/delete', 'POST'], ['/v1/spend/set', 'POST'], ['/team/invite', 'POST'],
+      /* Nov 1 audit STATE-005: money out, everything handed over, and stored sign-ins. */
+      ['/v1/market/withdraw', 'POST'], ['/v1/account/export', 'GET'], ['/team/audit/export', 'POST'], ['/v1/agents/save', 'POST']]) {
     const r = await go(path, method);
     ok(r.status === 503 && r.d.code === 'auth_unconfirmed', path + ': refused while the revocation cannot be confirmed - a 503 that says so, not a 401', r);
   }
@@ -177,6 +179,11 @@ section('The object down: reading is fine, changing how the account is protected
   ok(back.status === 200, 'with the object back, the same route works again', back.status);
   const kb = await go('/v1/usage', 'GET', made.key);
   ok(kb.status === 200, 'and so does the key', kb.status);
+  DO.down = true;
+  /* What only takes access away keeps working: ending a session is never refused. */
+  const out = await go('/auth/logout', 'POST');
+  ok(out.status !== 503, 'signing out still works while it cannot be confirmed - it only takes access away', out);
+  DO.down = false;
 }
 
 section('KV failing is still a refusal, never zero');

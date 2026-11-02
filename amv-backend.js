@@ -27133,8 +27133,13 @@ async function _authState(env, email, sid) {
    somebody just ended could still be used - which is acceptable for reading a
    chat and not for changing how the account is protected, where it is spent,
    who can act for it, or deleting it. Those routes refuse with a 503 that says
-   so, rather than a 401 that would send the page into a sign-in loop. */
-const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$)/;
+   so, rather than a 401 that would send the page into a sign-in loop.
+   Nov 1 audit STATE-005 added the rest of what a stolen session would go
+   for in that minute: money out (a marketplace withdrawal), everything the
+   account holds handed over (the data export and a team's activity export),
+   and an agent told to keep sign-ins. Ending a session or signing out
+   everywhere is never on this list - those only take access away. */
+const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$|v1\/market\/withdraw$|v1\/account\/export$|team\/audit\/export$|v1\/agents\/save$)/;
 function _revocationRefusal() {
   return Object.assign(new Error('revocation unconfirmed'), { amvRefusal: {
     status: 503, body: { error: 'AMV could not confirm your sign-in is still current, so this change was not made. Nothing else is affected - try again in a minute.',
