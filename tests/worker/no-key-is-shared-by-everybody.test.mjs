@@ -37,7 +37,14 @@ section('One chat turn stays inside its storage budget');
   ok(c.kvWritesPerReq <= 3, 'KV writes per turn', c.kvWritesPerReq);
   ok(c.kvReadsPerReq <= 8, 'KV reads per turn', c.kvReadsPerReq);
   ok(c.kvListsPerReq === 0, 'no KV list on a turn - a list scans', c.kvListsPerReq);
-  ok(c.doCallsPerReq <= 30, 'counter calls per turn', c.doCallsPerReq);
+  /* Nov 1 audit USAGE-001: was 20.4 with the month figures written one
+     object at a time; they are one call now. Includes the once-ever marks of
+     an account's first answer, so a returning person's turn is lower still. */
+  ok(c.doCallsPerReq <= 18.5, 'counter calls per turn', c.doCallsPerReq);
+  const objs = Object.keys(r.chatObjects || {});
+  ok(objs.some(k => /^econ:.* tallyMany$/.test(k)) && (r.chatObjects[objs.find(k => /^econ:/.test(k))] / USERS) === 1,
+    'the owner\u2019s month figures for a turn are written in one call', objs.filter(k => /^econ/.test(k)));
+  ok(!objs.some(k => /^(costtotal|featcost|cachesave|ttfb|ttfbsum|ttfbn|outcome):/.test(k)), 'and none of them one at a time any more', objs.filter(k => /^(costtotal|featcost|ttfb|outcome)/.test(k)));
 }
 
 section('Reading screens cost reads only');

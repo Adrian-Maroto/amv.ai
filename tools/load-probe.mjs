@@ -60,14 +60,15 @@ export async function probe({ users = 200 } = {}) {
     AMV_COUNTER: {
       idFromName: n => n,
       get: (n) => ({ async fetch(_u, init) {
-        doOps.push({ k: n, who, route });
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        doOps.push({ k: n, who, route, op: b.op || '' });
         const out = (o) => new Response(JSON.stringify(o));
         if (b.op === 'reserve') { if (b.cap != null && cur + b.amount > b.cap) return out({ allowed: false, value: cur }); vals.set(n, cur + b.amount); return out({ allowed: true, value: cur + b.amount }); }
         if (b.op === 'incr') { vals.set(n, Math.max(0, cur + (b.amount || 0))); return out({ value: vals.get(n) }); }
         if (b.op === 'checkCap') return out({ allowed: b.cap == null || cur < b.cap, value: cur });
         if (b.op === 'rateCheck') return out({ allowed: true, count: 1 });
         if (b.op === 'claim') return out({ claimed: true });
+        if (b.op === 'tallyMany') return out({ ok: true, many: true });
         if (b.op && b.op.startsWith('auth')) return out({ seeded: true, epoch: 0, ended: false });
         return out({ allowed: true, value: cur });
       } }),
@@ -140,7 +141,9 @@ export async function probe({ users = 200 } = {}) {
   };
   const kvWritesShared = shared(kvOps, o => o.op === 'w').slice(0, 8);
   const doShared = shared(doOps).slice(0, 8);
-  return { users, perRoute, kvWritesShared, doShared };
+  const chatObjects = {};
+  for (const o of doOps.filter(o => o.route === "chat")) { const k = String(o.k).replace(/[^:]*@[^:]*/g, "<who>").replace(/\d{4}-\d{2}(-\d{2})?/g, "<d>").replace(/:s\d+$/, ":s#").replace(/:\d{6,}/g, ":<n>") + " " + o.op; chatObjects[k] = (chatObjects[k] || 0) + 1; }
+  return { users, perRoute, kvWritesShared, doShared, chatObjects };
 }
 
 if (import.meta.url === 'file://' + process.argv[1]) {

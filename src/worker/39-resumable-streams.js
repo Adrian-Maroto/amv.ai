@@ -382,10 +382,26 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
-  await _tallyAdd(env, `costtotal:${monthKey()}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
-  /* COST PER GOOD OUTCOME (Nov 1 audit USAGE-005): whether this answer was
-     delivered whole. One count per turn; its cost is already in featcost. */
-  try { await _outcomeAdd(env, feature || 'chat', user && (user.billingSubject || user.email), !!finished && total > 0); } catch (e) { /* the owner's ratio; never the answer */ }
+  /* The month figures for the owner - total cost (AMV-088), whether this
+     answer was delivered whole (USAGE-005), cost by feature and what caching
+     saved (AMV-071), how fast it started - written together, one call
+     (_econAdd, USAGE-001). Never allowed to fail the answer it counts. */
+  const _econ = [];
+  const _payer = user && (user.billingSubject || user.email);
+  { const mk = monthKey();
+    _econ.push([`costtotal:${mk}`, cost]);
+    _econ.push([_outcomeName(feature || 'chat', !!finished && total > 0), 1]);
+    _econ.push([`featcost:${feature || 'chat'}:${mk}`, cost]);
+    const saved = (cacheRead / 1e6) * eng.inCost * 0.90;   // what a cache read did NOT cost
+    if (saved > 0) _econ.push([`cachesave:${mk}`, saved]);
+    /* Latency, as a histogram rather than a log: the shape is the useful
+       part, the individual request is only a liability. */
+    const ttfb = _firstByteAt ? _firstByteAt - _t0 : 0;
+    if (ttfb > 0) {
+      const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500' : ttfb < 5000 ? 'p5000' : 'slow';
+      _econ.push([`ttfb:${eng.key || 'unknown'}:${b}:${mk}`, 1], [`ttfbsum:${mk}`, ttfb], [`ttfbn:${mk}`, 1]);
+    } }
+  try { await _econAdd(env, _payer, _econ); } catch (e) { /* reporting must never break metering */ }
 
   /* ACTIVATED, at the only moment that actually proves it: AMV finished writing
      something for this person. Not "opened the app", not "typed into the box" -
@@ -393,35 +409,6 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
      to fail the request it is measuring. */
   try { if (total > 0 && user && user.email) await _funnelMark(env, user.email, 'activated'); } catch (e) {}
 
-  /* AMV-071: two numbers the owner cannot run this business without.
-
-     WHERE the money goes - a single blended cost figure cannot tell you that
-     images are eating the margin while chat is fine, so spend is split by
-     feature. And WHAT CACHING IS WORTH - a cached input token costs a tenth of
-     a fresh one, so the saving is real money that would otherwise be invisible.
-     Both are month-scoped global counters: two extra increments per request,
-     which is a small price for being able to see the unit economics at all. */
-  try {
-    const mk = monthKey();
-    await _tallyAdd(env, `featcost:${feature || 'chat'}:${mk}`, user && (user.billingSubject || user.email), cost, 86400000 * 70);
-    const saved = (cacheRead / 1e6) * eng.inCost * 0.90;   // what a cache read did NOT cost
-    const payer = user && (user.billingSubject || user.email);
-    if (saved > 0) await _tallyAdd(env, `cachesave:${mk}`, payer, saved, 86400000 * 70);
-    /* Latency, as a histogram rather than a log. Buckets mean the owner can see
-       "most answers start inside a second" without AMV keeping a record of who
-       asked what and when - the shape is the useful part, the individual
-       request is only a liability. */
-    try {
-      const ttfb = _firstByteAt ? _firstByteAt - _t0 : 0;
-      if (ttfb > 0) {
-        const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500'
-                : ttfb < 5000 ? 'p5000' : 'slow';
-        await _tallyAdd(env, `ttfb:${eng.key || 'unknown'}:${b}:${mk}`, payer, 1, 86400000 * 70);
-        await _tallyAdd(env, `ttfbsum:${mk}`, payer, ttfb, 86400000 * 70);
-        await _tallyAdd(env, `ttfbn:${mk}`, payer, 1, 86400000 * 70);
-      }
-    } catch (e) { /* a measurement must never break the response it measured */ }
-  } catch (e) { /* reporting must never break metering */ }
 
   /* THE DAY'S SPEND, SAID ON THE WAY UP (audit, Oct 31) - not only at 80%.
      A ceiling announced once, near the top, is a ceiling found out about

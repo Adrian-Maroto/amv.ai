@@ -295,6 +295,27 @@ export class AMVCounter {
       await this.state.storage.put('t', t);
       return json({ total: t.total });
     }
+    /* SEVERAL TALLIES IN ONE CALL (Nov 1 audit USAGE-001). The owner's
+       month figures - cost, cost by feature, outcomes, caching saved, how
+       fast answers start - were one object call each, up to seven per chat
+       turn. They are fields of one object per shard per month now: one call.
+       Read back field by field with tallyField (_tallyGet). */
+    if (op === 'tallyMany') {
+      const f = (await this.state.storage.get('tm')) || {};
+      const add = (body.fields && typeof body.fields === 'object') ? body.fields : {};
+      for (const [k, v] of Object.entries(add).slice(0, 32)) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !k || k.length > 160) continue;
+        f[k] = (f[k] || 0) + n;
+      }
+      await this.state.storage.put('tm', f);
+      if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + Number(body.ttlMs));
+      return json({ ok: true, many: true });
+    }
+    if (op === 'tallyField') {
+      const f = (await this.state.storage.get('tm')) || {};
+      return json({ value: +f[String(body.name || '')] || 0 });
+    }
     if (op === 'tallyGet') {
       return json((await this.state.storage.get('t')) || { counts: {}, total: 0 });
     }
@@ -536,9 +557,12 @@ async function _tallyAdd(env, name, who, amount, ttlMs) {
 /* GOOD AND BAD OUTCOMES, per kind of work, per month (Nov 1 audit
    USAGE-005). One count per answer or run; the money is in featcost. */
 const OUTCOME_CLASSES = ['chat', 'api', 'crew', 'build', 'code', 'voice', 'batch', 'widget', 'background', 'agent'];
-async function _outcomeAdd(env, cls, who, good) {
+function _outcomeName(cls, good) {
   const c = OUTCOME_CLASSES.includes(cls) ? cls : 'other';
-  return _tallyAdd(env, `outcome:${c}:${monthKey()}:${good ? 'good' : 'bad'}`, who, 1, 86400000 * 400);
+  return `outcome:${c}:${monthKey()}:${good ? 'good' : 'bad'}`;
+}
+async function _outcomeAdd(env, cls, who, good) {
+  return _econAdd(env, who, [[_outcomeName(cls, good), 1]]);
 }
 async function _outcomes(env, month) {
   const out = {};
@@ -552,11 +576,35 @@ async function _outcomes(env, month) {
   }
   return out;
 }
+/* The month figures written together (_econAdd): which names, and the
+   object that holds them - one per shard per month. */
+const ECON_RE = /^(costtotal|featcost|outcome|cachesave|ttfb|ttfbsum|ttfbn):/;
+const ECON_TTL_MS = 86400000 * 400;
+function _econName(month, shard){ return 'econ:' + month + ':s' + shard; }
+async function _econAdd(env, who, entries) {
+  const list = (entries || []).filter(e => e && e[0] && Number.isFinite(+e[1]) && +e[1] !== 0);
+  if (!list.length) return;
+  const month = monthKey();
+  let r = null;
+  try { r = await counter(env, _econName(month, _tallyShardOf(who)), { op: 'tallyMany', fields: Object.fromEntries(list.map(e => [e[0], +e[1]])), ttlMs: ECON_TTL_MS }); }
+  catch (e) { r = null; }
+  /* No object that knows the op (no binding, or the KV fallback): the same
+     numbers, one call each, as before. Nothing is lost either way. */
+  if (r && r.many === true) return;
+  for (const [n, v] of list) await _tallyAdd(env, n, who, +v, ECON_TTL_MS);
+}
 async function _tallyGet(env, name) {
   const names = [name];
   for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
   const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
-  return vals.reduce((a, b) => a + b, 0);
+  let sum = vals.reduce((a, b) => a + b, 0);
+  const month = ECON_RE.test(name) && (String(name).match(/\d{4}-\d{2}/) || [])[0];
+  if (month) {
+    const fv = await Promise.all(Array.from({ length: TALLY_SHARDS }, (_, k) =>
+      counter(env, _econName(month, k), { op: 'tallyField', name }).then(r => +(r && r.value) || 0).catch(() => 0)));
+    sum += fv.reduce((a, b) => a + b, 0);
+  }
+  return sum;
 }
 async function _nonEssentialWrite(env, what) {
   const cap = Math.max(1, parseInt(env.NONESSENTIAL_WRITE_CAP || '', 10) || NONESSENTIAL_DAILY_WRITES);

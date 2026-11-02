@@ -2178,8 +2178,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         const dAcct = c - itemBooked;
         const dGlobal = c - itemGlobalBooked;
         if(dAcct !== 0) await counter(env, costName, { op:'incr', amount:dAcct, ttlMs: 86400000*70 });
-        if(c>0) await _tallyAdd(env, `costtotal:${monthKey()}`, email, c, 86400000*70);
-        if(c>0) await _tallyAdd(env, `featcost:${agent ? 'agent' : 'background'}:${monthKey()}`, email, c, 86400000*70);
+        if(c>0) await _econAdd(env, email, [[`costtotal:${monthKey()}`, c], [`featcost:${agent ? 'agent' : 'background'}:${monthKey()}`, c]]);
         if(dGlobal !== 0) await counter(env, gDayName, { op:'incr', amount:dGlobal, ttlMs: 86400000*2 });
         /* What the agent spent, whether or not it has a budget of its own -
            the screen shows it either way. */

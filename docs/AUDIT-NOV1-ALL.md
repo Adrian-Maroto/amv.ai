@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 79, Roadmap 44, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 80, Roadmap 43, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -117,7 +117,7 @@ Totals: Fixed 79, Roadmap 44, Owner 25, Already true 14, Not a defect here 7
 | MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Roadmap | quality-gated model canaries |
 | VOICE-001 | Strategic | P2 | Voice remains STT→text model→TTS rather than native speech-to-speech | Roadmap | native speech-to-speech |
 | VOICE-002 | Medium | P2 | Meeting/diarization workflow is incomplete | Roadmap | meetings/diarization |
-| USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Roadmap | fewer DO calls per turn |
+| USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Fixed | the owner's month figures for a turn (cost, cost by feature, outcome, caching saved, time to first word) are one object call instead of up to seven: the load probe goes from 20.4 to 18.1 object calls per first turn and about 14 for a returning person's turn; every call that guards money or limits is unchanged, so every quota invariant is (no-key-is-shared-by-everybody, the-owners-month-figures-are-one-call) |
 | USAGE-002 | High | P1 | Global daily spend ceiling can become a global outage switch | Owner | global ceiling is a spend decision; now refuses only when truly full |
 | USAGE-003 | Medium | P2 | Sharded global spend reservation may reject while aggregate capacity remains | Fixed | spend shares all tried before refusing |
 | USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Fixed | every unattended run reserves its worst case before it starts - model, searches, a contract repair and the pages AMV's browser may open - against its job, its agent, the account and the platform, and settles to what it really cost; job and agent rows show spent, left and why they wait (an-agent-works-within-what-it-was-given, an-agent-keeps-a-sign-in-only-where-it-may). The cloud computer is never reached by unattended work and is held to the plan minutes it shows |
