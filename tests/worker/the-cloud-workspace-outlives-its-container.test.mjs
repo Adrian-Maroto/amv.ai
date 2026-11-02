@@ -43,10 +43,10 @@ const running = [];
 process.on('exit', () => { for (const c of running) try { c.kill('SIGKILL'); } catch (e) {} });
 const freePort = () => new Promise(res => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 
-async function bridge(dir) {
+async function bridge(dir, extraEnv) {
   const port = await freePort();
   const child = spawn(process.execPath, [BRIDGE, dir, '--cloud'], {
-    stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { AMV_CLOUD_KEY: MKEY, PORT: String(port) }) });
+    stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { AMV_CLOUD_KEY: MKEY, PORT: String(port) }, extraEnv || {}) });
   running.push(child);
   let out = '';
   child.stdout.on('data', b => { out += b; }); child.stderr.on('data', b => { out += b; });
@@ -319,6 +319,42 @@ section('A machine in use is saved every few minutes, not only when it goes idle
     await go();
     ok(env.WORKSPACES.m.has('ws/a1b2c3d4.tgz') && Date.now() - (await storage.get('ws_saved_at')) < 5000, 'ten minutes on, the next request saves it - a platform stop loses minutes, not a session', [...env.WORKSPACES.m.keys()]);
   } finally { lib.fetch = libFetch; }
+}
+
+section('Restored onto a newer machine image, the workspace rebuilds its own tools and checks them (Nov 1 audit COMP-014)');
+{
+  const old = join(box, 'img-old'), neu = join(box, 'img-new'), same = join(box, 'img-same');
+  for (const d of [old, neu, same]) mkdirSync(d, { recursive: true });
+  mkdirSync(join(old, '.amv'), { recursive: true });
+  writeFileSync(join(old, 'main.py'), 'print(1)\n');
+  writeFileSync(join(old, '.amv', 'setup.sh'), 'mkdir -p tools && echo built > tools/ready\n');
+  writeFileSync(join(old, '.amv', 'check.sh'), 'test -f tools/ready\n');
+  const O = await bridge(old, { AMV_IMAGE: 'img-1' }), N = await bridge(neu, { AMV_IMAGE: 'img-2' });
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(O.base) }, env).onActivityExpired();
+  ok(env.WORKSPACES.meta.get('ws/a1b2c3d4.tgz').image === 'img-1', 'the copy records the image it was saved on', env.WORKSPACES.meta.get('ws/a1b2c3d4.tgz'));
+  const st = memStorage();
+  const n = new AMVComputer({ id, container: portTo(N.base), storage: st }, env);
+  await n.onStart();
+  ok(existsSync(join(neu, 'main.py')) && readFileSync(join(neu, 'tools', 'ready'), 'utf8').trim() === 'built', 'on the new image its setup ran, and its tools are back', readdirSync(neu));
+  const last = JSON.parse(readFileSync(join(neu, '.amv', 'last-setup.json'), 'utf8'));
+  ok(last.ok === true && last.imageWas === 'img-1' && last.image === 'img-2' && last.checkCode === 0, 'the check passed, and the outcome is recorded in the workspace', last);
+  const s1 = await n._st();
+  ok(s1.setup && s1.setup.ok === true && s1.setup.image === 'img-2', 'and kept for the person to be shown', s1.setup);
+  /* Already set up on this image: not run again. */
+  const again = await fetch(N.base + '/amv-bridge/setup', { method: 'POST', headers: { 'X-AMV-Bridge-Token': MKEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ imageWas: 'img-2' }) });
+  const ag = await again.json();
+  ok(ag.ran === false && ag.why === 'same_image', 'restored onto the same image it was set up on, nothing is re-run', ag);
+  /* A check that fails is said, and the files stay as restored. */
+  writeFileSync(join(neu, '.amv', 'check.sh'), 'exit 3\n');
+  const bad = await (await fetch(N.base + '/amv-bridge/setup', { method: 'POST', headers: { 'X-AMV-Bridge-Token': MKEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ imageWas: 'img-0' }) })).json();
+  ok(bad.ran === true && bad.ok === false && bad.checkCode === 3 && existsSync(join(neu, 'main.py')), 'a failing check is reported as failed, and nothing is undone', bad);
+  const noKey = await fetch(N.base + '/amv-bridge/setup', { method: 'POST', body: '{}' });
+  ok(noKey.status === 401, 'and only AMV\u2019s key can start it', noKey.status);
+  /* A workspace with no setup of its own: nothing runs. */
+  const S = await bridge(same, { AMV_IMAGE: 'img-2' });
+  const none = await (await fetch(S.base + '/amv-bridge/setup', { method: 'POST', headers: { 'X-AMV-Bridge-Token': MKEY, 'Content-Type': 'application/json' }, body: '{}' })).json();
+  ok(none.ran === false && none.why === 'no_setup', 'a workspace with no setup script runs nothing', none);
 }
 
 section('Erasing the account deletes the saved workspace and stops the machine - on AMV’s key only');

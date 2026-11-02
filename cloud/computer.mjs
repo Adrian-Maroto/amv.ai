@@ -205,7 +205,22 @@ export class AMVComputer extends Container {
       const sha = obj.customMetadata && obj.customMetadata.sha256;
       const r = await this._bridge('restore', { method: 'PUT', body: obj.body, headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(obj.size), ...(sha ? { 'X-AMV-SHA256': sha } : {}) } });
       console.log(JSON.stringify({ event: r.ok ? 'workspace_restored' : 'workspace_restore_failed', status: r.status, bytes: obj.size }));
-      if (r.ok) { await this._setSt({ restoreFailed: null }); return; }
+      if (r.ok) {
+        await this._setSt({ restoreFailed: null });
+        /* Its own setup, when the image changed under it (COMP-014). The
+           outcome is kept for the person to see; a setup that fails leaves
+           the files exactly as restored and the machine usable. */
+        try {
+          const su = await this._bridge('setup', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageWas: (obj.customMetadata && obj.customMetadata.image) || '' }) });
+          const d = await su.json().catch(() => ({}));
+          if (d && d.ran) {
+            await this._setSt({ setup: { at: Date.now(), ok: !!d.ok, image: d.image || '', imageWas: d.imageWas || '' } });
+            console.log(JSON.stringify({ event: d.ok ? 'workspace_setup_done' : 'workspace_setup_failed', image: d.image || '', was: d.imageWas || '' }));
+          }
+        } catch (e) { console.log(JSON.stringify({ event: 'workspace_setup_failed', error: String((e && e.message) || e).slice(0, 160) })); }
+        return;
+      }
       why = 'the copy could not be unpacked (' + r.status + ')';
     } catch (e) {
       why = String((e && e.message) || e).slice(0, 160);
@@ -244,7 +259,10 @@ export class AMVComputer extends Container {
         /* Files that kept changing on every try while it was read (Nov 1
            audit COMP-004): kept with the copy, so it says which may be torn. */
         const changing = String(r.headers.get('X-AMV-Changing') || '').slice(0, 2000);
-        const meta = Object.assign(ok ? { sha256: sha } : {}, changing ? { changing } : {});
+        /* The image it was running on, so a restore onto another one knows
+           to rebuild the workspace's tools (COMP-014). */
+        const image = String(r.headers.get('X-AMV-Image') || '').slice(0, 60);
+        const meta = Object.assign(ok ? { sha256: sha } : {}, changing ? { changing } : {}, image ? { image } : {});
         /* The copy about to be replaced becomes an earlier copy. Failing to
            keep it is logged and does not stop today's save. */
         try { await this._wsKeepCurrent(); } catch (e) { console.log(JSON.stringify({ event: 'workspace_version_not_kept', error: String((e && e.message) || e).slice(0, 160) })); }
@@ -334,7 +352,7 @@ export class AMVComputer extends Container {
            the machine stopped without its last save. Seen once, then gone. */
         if (st.lostUnsaved) await this._setSt({ lostUnsaved: null });
         return reply({ current, versions: (await this._wsVersions()).map(({ id, at, bytes, changing }) => Object.assign({ id, at, bytes }, changing ? { changing } : {})),
-          state: { restoreFailed: st.restoreFailed || null, lostUnsaved: st.lostUnsaved || null } });
+          state: { restoreFailed: st.restoreFailed || null, lostUnsaved: st.lostUnsaved || null, setup: st.setup || null } });
       }
       /* START FRESH after a failed restore, on purpose: the copy that could
          not be put back is kept as an earlier copy first, then the machine

@@ -23,6 +23,9 @@ RUN apt-get update \
  && npm cache clean --force \
  && useradd --create-home --shell /bin/bash amv \
  && mkdir -p /work && chown amv:amv /work
+# The image's version (COMP-014): a workspace saved on one and restored on
+# another re-runs its own .amv/setup.sh. Raise it with any change above.
+ENV AMV_IMAGE=2026-11-02
 COPY amv-bridge.mjs /app/amv-bridge.mjs
 USER amv
 WORKDIR /work

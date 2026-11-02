@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 88, Roadmap 34, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 89, Roadmap 33, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -43,7 +43,7 @@ Totals: Fixed 88, Roadmap 34, Owner 25, Already true 14, Not a defect here 8
 | COMP-011 | High | P0 | Cloud computer is capped at 50 instances | Owner | Cloudflare container quota (OWNER-DECISIONS 19) |
 | COMP-012 | Medium | P2 | One machine class cannot fit all workloads | Roadmap | more machine sizes is a plan/pricing decision |
 | COMP-013 | High | P0 | Workspace persistence binding is commented out by default | Fixed | launch gate requires workspace storage for paid profiles |
-| COMP-014 | Medium | P2 | Environment reconstruction is not first-class | Roadmap | environment rebuild from a manifest |
+| COMP-014 | Medium | P2 | Environment reconstruction is not first-class | Fixed | the machine image carries its version; a saved workspace records the image it ran on; restored onto a different one, the workspace's own .amv/setup.sh runs and then .amv/check.sh, as its own user with its commands' environment, and the outcome is recorded in .amv/last-setup.json and shown to the person; same image and already set up, nothing reruns; a failing check is said and undoes nothing (the-cloud-workspace-outlives-its-container) |
 | COMP-015 | Medium | P2 | SIGTERM/checkpoint behavior needs explicit crash-safe handling | Fixed | in-use machine saved every ten minutes |
 | AGENT-001 | Medium | P1 | Persistent Agent IDs use Math.random | Fixed | no Math.random ids anywhere in the Worker |
 | AGENT-002 | High | P1 | Agents lack dedicated memory namespaces | Fixed | each run is told what that agent's own last runs found, fenced as data |

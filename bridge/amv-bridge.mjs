@@ -352,6 +352,7 @@ const CLOUD = ARGS.includes('--cloud');
 /* What a workspace snapshot leaves out: what an install or a build makes
    again. And the most it may be - past this the workspace is kept for the
    session only, and the page is told so rather than losing it silently. */
+const SETUP_TIMEOUT_MS = 10 * 60 * 1000;   // a workspace's own setup, after a restore (COMP-014)
 const SNAPSHOT_SKIP = ['./.amv-restore-*', './.amv-replaced-*', './node_modules', '*/node_modules', './.venv', '*/.venv', '*/__pycache__', './.cache', '*/.cache', './.npm', '*/.npm'];
 const SNAPSHOT_MAX = 512 * 1024 * 1024;
 const SNAPSHOT_TRIES = 3;
@@ -1375,7 +1376,10 @@ const server = createServer(async (req, res) => {
     const sha = await _fileSha256(file);
     if (code === 1) console.log('  ! workspace saved while ' + (changing.length || 'some') + ' file(s) kept changing: ' + changing.slice(0, 5).join(', '));
     res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': String(size), ...(sha ? { 'X-AMV-SHA256': sha } : {}),
-      ...(code === 1 ? { 'X-AMV-Changing': _changingHeader(changing) } : {}) });
+      ...(code === 1 ? { 'X-AMV-Changing': _changingHeader(changing) } : {}),
+      /* The machine image this workspace was last running on (COMP-014): a
+         restore onto a newer one re-runs the workspace's own setup. */
+      ...(process.env.AMV_IMAGE ? { 'X-AMV-Image': String(process.env.AMV_IMAGE).slice(0, 60) } : {}) });
     const rs = createReadStream(file);
     rs.on('close', () => { try { rmSync(file, { force: true }); } catch (e) {} });
     rs.pipe(res);
@@ -1451,6 +1455,42 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST') {
     try { body = await readBody(req); }
     catch (e) { return json(res, e.code === 'too_large' ? 413 : 400, { error: e.code || 'bad_body' }); }
+  }
+
+  /* ── THE WORKSPACE REBUILDS ITS OWN TOOLCHAIN (Nov 1 audit COMP-014) ─────
+
+     Installed packages and caches are not in a snapshot - they are rebuilt.
+     A workspace says how in .amv/setup.sh, and how to tell it worked in
+     .amv/check.sh. After a restore onto a different machine image than the
+     one it was saved from (or when it has never been set up here), AMV runs
+     setup and then the check, as the workspace's own user, in the
+     workspace, with the same environment its commands get, and records the
+     outcome in .amv/last-setup.json - so a workspace restored after an image
+     upgrade either has its tools back and says so, or says it does not. */
+  if (CLOUD && path === '/amv-bridge/setup' && req.method === 'POST') {
+    const image = String(process.env.AMV_IMAGE || '').slice(0, 60);
+    const was = String((body && body.imageWas) || '').slice(0, 60);
+    const dir = join(ROOT, '.amv');
+    const setupFile = join(dir, 'setup.sh'), checkFile = join(dir, 'check.sh'), lastFile = join(dir, 'last-setup.json');
+    if (!existsSync(setupFile)) return json(res, 200, { ran: false, why: 'no_setup' });
+    let last = null; try { last = JSON.parse(readFileSync(lastFile, 'utf8')); } catch (e) { last = null; }
+    if (was && was === image && last && last.image === image && last.ok) return json(res, 200, { ran: false, why: 'same_image', image });
+    const runScript = (file) => new Promise((done) => {
+      let out = '';
+      const child = spawn('bash', [file], { cwd: ROOT, env: childEnv(null), stdio: ['ignore', 'pipe', 'pipe'] });
+      const keep = (b) => { out = (out + b.toString()).slice(-4000); };
+      child.stdout.on('data', keep); child.stderr.on('data', keep);
+      const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch (e) {} out += '\n[stopped after ' + SETUP_TIMEOUT_MS / 60000 + ' minutes]'; }, SETUP_TIMEOUT_MS);
+      child.on('close', (code) => { clearTimeout(timer); done({ code: code == null ? -1 : code, out }); });
+      child.on('error', (e) => { clearTimeout(timer); done({ code: -1, out: String(e.message || e) }); });
+    });
+    const setup = await runScript(setupFile);
+    const check = setup.code === 0 && existsSync(checkFile) ? await runScript(checkFile) : null;
+    const ok = setup.code === 0 && (!check || check.code === 0);
+    const record = { at: Date.now(), image, imageWas: was, ok, setupCode: setup.code, checkCode: check ? check.code : null, tail: (check || setup).out.slice(-2000) };
+    try { writeFileSync(lastFile, JSON.stringify(record, null, 1)); } catch (e) {}
+    console.log('  ' + (ok ? '✓' : '✗') + ' workspace setup ' + (ok ? 'done' : 'failed') + ' (' + (was || 'no image') + ' -> ' + (image || 'no image') + ')');
+    return json(res, 200, Object.assign({ ran: true }, record));
   }
 
   /* ── DISCONNECT HAS TO REACH THE MACHINE ──────────────────────────────────
