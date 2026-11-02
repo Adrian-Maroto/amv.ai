@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 65, Roadmap 59, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 66, Roadmap 58, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -61,7 +61,7 @@ Totals: Fixed 65, Roadmap 59, Owner 25, Already true 13, Not a defect here 7
 | AGENT-014 | Medium | P2 | Saved browser sessions have a fixed 30-day TTL without renewal policy clarity | Fixed | renewal policy written down |
 | AGENT-015 | High | P1 | Read-only unattended browsing is a strong safety choice but incomplete product parity | Roadmap | unattended writes stay off by design |
 | AGENT-016 | Medium | P2 | Agent records are account-aggregated rather than normalized | Roadmap | normalized agent records with DATA-013 |
-| AGENT-017 | Medium | P2 | Agents lack strict output schemas and completion contracts | Roadmap | output schemas per agent |
+| AGENT-017 | Medium | P2 | Agents lack strict output schemas and completion contracts | Fixed | an agent can promise named sections or a typed JSON object; checked by code after every run, repaired once from its own answer, otherwise marked and no dependent step starts (an-agent-works-within-what-it-was-given) |
 | AGENT-018 | Strategic | P2 | AMV Companion is not yet a fully integrated persistent-agent experience | Roadmap | Companion integration |
 | TASK-001 | Critical | P0 | Timeout rebooking slice is off by one and catastrophically wrong at zero processed | Fixed | ticks book exactly the accounts not reached |
 | TASK-002 | High | P0 | AMV has no real durable Workflow engine for long multi-step Tasks | Roadmap | durable workflow engine (Cloudflare Workflows) |

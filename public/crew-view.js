@@ -733,11 +733,18 @@ function mcAgentEdit(id){
     + '<label class="ob-sub" for="ag-budget">' + escH(T('Monthly budget in dollars (0 = no budget of its own)')) + '</label><input id="ag-budget" class="fp-in" type="number" inputmode="decimal" min="0" max="10000" step="1" value="' + escH(String(a ? a.budgetUSD : 0)) + '">'
     + '<p class="ob-sub">' + escH(T('Its jobs stop for the month when the budget is reached. Your plan’s own limit always applies as well.')) + '</p>'
     + _mcAgentEngineFields(a)
+    + _mcAgentContractFields(a)
     + _mcAgentSignInFields(a),
     async () => {
       const body = { name: $('ag-name').value, role: $('ag-role').value, instructions: $('ag-instr').value, budgetUSD: +$('ag-budget').value || 0 };
       if($('ag-engine')) body.engine = $('ag-engine').value;
       if($('ag-web')) body.web = !!$('ag-web').checked;
+      if($('ag-form')){
+        const kind = $('ag-form').value;
+        const parts = String($('ag-parts').value || '').split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+        if(kind && !parts.length) throw new Error(T('Name the parts every result must have, or choose any form.'));
+        body.contract = kind ? { kind, required: parts } : null;
+      }
       const keepBox = $('ag-keep');
       if(keepBox){
         body.browserKeep = !!keepBox.checked;
@@ -759,6 +766,19 @@ function _mcAgentEngineFields(a){
     + list.map(k => '<option value="' + escH(k) + '"' + (k === cur ? ' selected' : '') + '>' + escH(label(k)) + '</option>').join('') + '</select>'
     + '<p class="ob-sub">' + escH(T('A heavier engine costs more per run, and counts against its budget at that price.')) + '</p>'
     + '<label class="cr-mode-opt"><input type="checkbox" id="ag-web"' + (a && a.web === false ? '' : ' checked') + '><span><b>' + escH(T('May search the web')) + '</b></span></label>';
+}
+/* THE FORM OF ITS RESULTS (AGENT-017). Checked by the server after every
+   run; an off-form result is repaired once, and otherwise nothing that
+   builds on it is started. */
+function _mcAgentContractFields(a){
+  const c = (a && a.contract) || null;
+  const kind = c ? c.kind : '';
+  const opt = (v, t) => '<option value="' + v + '"' + (v === kind ? ' selected' : '') + '>' + escH(t) + '</option>';
+  return '<label class="ob-sub" for="ag-form">' + escH(T('Form of every result')) + '</label>'
+    + '<select id="ag-form" class="fp-in">' + opt('', T('Any form')) + opt('sections', T('Named sections')) + opt('json', T('A JSON object with named fields')) + '</select>'
+    + '<label class="ob-sub" for="ag-parts">' + escH(T('Parts it must always have, one per line')) + '</label>'
+    + '<textarea id="ag-parts" class="fp-in" rows="3" maxlength="800" placeholder="' + escH(T('e.g. Summary, Sources - or price:number for a JSON field')) + '">' + escH(c ? c.required.join('\n') : '') + '</textarea>'
+    + '<p class="ob-sub">' + escH(T('AMV checks every result. One without these parts is put right once; if it still is not, it is marked, and no step that builds on it starts.')) + '</p>';
 }
 /* Offered only where it can work: AMV's hosted browser to read with and a
    key to seal under. Elsewhere one line says why, and an agent already set

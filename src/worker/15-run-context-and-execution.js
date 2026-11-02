@@ -987,8 +987,44 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
   // user's monthly cost cap - otherwise scheduled jobs would be a free way to
   // burn compute (a research watch every 10 min = thousands of calls/month).
   const usage = data.usage || {};
-  return { text, usage: { input: usage.input_tokens||0, output: usage.output_tokens||0,
+  let inTok = usage.input_tokens || 0, outTok = usage.output_tokens || 0;
+  /* THE AGENT'S OUTPUT CONTRACT (AGENT-017). Checked by code. A result that
+     does not have the promised shape gets ONE repair: the model is shown its
+     own answer and what is wrong, and asked to reshape it without adding
+     anything - no tools, no new facts, and only what it wrote is sent back,
+     so the repair is bounded and was reserved for (_autoRunMaxUSD). Still
+     wrong after that, the result is marked and nothing builds on it. */
+  let contractFail = null;
+  if(agent && agent.contract && text && !free){
+    let chk = _agentContractCheck(agent.contract, text);
+    if(!chk.ok){
+      try{
+        const fix = await _modelFetch(env, {
+          model: body.model, max_tokens: body.max_tokens, system: systemAgent,
+          messages: [
+            { role: 'user', content: 'The job: ' + String(item.detail || '').slice(0, 2000) },
+            { role: 'assistant', content: text.slice(0, 60000) },
+            { role: 'user', content: 'That answer does not have the form this agent must always give: ' + chk.problems.join('; ') + '.'
+                + _agentContractText(agent.contract)
+                + '\nRewrite the whole answer in that form. Use ONLY what is in your answer above - add no new facts, figures or sources. '
+                + 'Where something the form asks for is not in it, say that it is not known.' }
+          ]
+        });
+        if(fix.ok){
+          const fd = await fix.json();
+          const fu = fd.usage || {};
+          inTok += fu.input_tokens || 0; outTok += fu.output_tokens || 0;
+          const fixed = _autoClaimCheck((fd.content || []).map(b => b.text || '').join('').trim(), env, email);
+          const chk2 = fixed ? _agentContractCheck(agent.contract, fixed) : chk;
+          if(fixed && chk2.ok && fd.stop_reason !== 'max_tokens') { text = fixed; chk = chk2; }
+        }
+      }catch(e){ /* the first answer stands, marked below */ }
+      if(!chk.ok) contractFail = chk.problems.slice(0, 12);
+    }
+  }
+  return { text, usage: { input: inTok, output: outTok,
                           webSearches: (usage.server_tool_use && usage.server_tool_use.web_search_requests)||0 },
+           ...(contractFail ? { contractFail } : {}),
            /* Handed up rather than called here. What this marks as "told them"
               is only true once the result is somewhere they can read it, and
               that happens two levels up. */
@@ -1074,7 +1110,7 @@ function _autoRates(ek){
   const e = ek && ENGINES[ek];
   return { i: Math.max(3, e ? +e.inCost || 0 : 0), o: Math.max(15, e ? +e.outCost || 0 : 0) };
 }
-function _autoRunMaxUSD(free, isResearch, ek, noWeb){
+function _autoRunMaxUSD(free, isResearch, ek, noWeb, contract){
   const inTok  = free ? AUTO_FREE_EST_IN_TOK : AUTO_EST_IN_TOK;
   const outTok = free ? FREE_AUTO_MAX_TOKENS
                : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS);
@@ -1082,7 +1118,11 @@ function _autoRunMaxUSD(free, isResearch, ek, noWeb){
      run reserves its searches. A free one never searches. */
   const searches = (free || noWeb) ? 0 : AUTO_MAX_SEARCHES;
   const r = _autoRates(ek);
-  return (inTok / 1e6) * r.i + (outTok / 1e6) * r.o + searches * WEB_SEARCH_COST_USD;
+  /* An agent with an output contract may need one repair call: the same
+     instructions, its own answer and a short note in, at most the same
+     length out. Reserved as a whole second turn, never less. */
+  const repair = (contract && !free) ? ((inTok + outTok) / 1e6) * r.i + (outTok / 1e6) * r.o : 0;
+  return (inTok / 1e6) * r.i + (outTok / 1e6) * r.o + searches * WEB_SEARCH_COST_USD + repair;
 }
 function _autoCostUSD(usage, ek){
   const r = _autoRates(ek);
@@ -1902,7 +1942,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       const runFree = !!(budget && budget.free) || item.tier === 'free';
       const runResearch = item.kind === 'research' && !runFree;
       runEk = _autoEngineFor(agent, ent, runFree);
-      const runMax = _autoRunMaxUSD(runFree, runResearch, runEk, !!(agent && agent.web === false));
+      const runMax = _autoRunMaxUSD(runFree, runResearch, runEk, !!(agent && agent.web === false), !!(agent && agent.contract));
       /* The day's ceiling, booked for THIS run. Taken first so a refusal
          here costs nothing to unwind. */
       const gNow = await _reserveGlobalUSD(env, email, runMax, gCapAutoForRun, 86400000 * 2);
@@ -2054,7 +2094,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
        keep showing yesterday's request. */
     if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
 
-    let runFailed = false, stepOut = '';
+    let runFailed = false, stepOut = '', contractWhy = '';
     try{
       /* Tried properly rather than once: a transient fault costs this run
          a few seconds, where before it cost the whole day. The deadline is
@@ -2072,8 +2112,17 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         await releaseItem();
         throw { __quiet: true };
       }
-      const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
+      let out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
       stepOut = out;
+      /* A result without the shape its agent promises (AGENT-017) is kept and
+         shown, said to be off-form, and handed to nothing: a step built on it
+         would be guessing at what it meant. */
+      if(exec && Array.isArray(exec.contractFail) && exec.contractFail.length){
+        contractWhy = 'its result did not have the form its agent promises (' + exec.contractFail.join('; ') + ')';
+        out = '_This result does not have the form this agent promises: ' + exec.contractFail.join('; ') + '. '
+            + 'AMV asked for it to be put right once and it still was not, so nothing that builds on it was started._\n\n' + out;
+        stepOut = '';
+      }
       if(exec && exec.watch){ item.watch = exec.watch; item.lastCheckAt = now; }
       /* DID THIS RUN SAY ANYTHING NEW.
 
@@ -2131,6 +2180,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         approval: level,
         outcome,
         costUSD: Math.round(runCost * 1e6) / 1e6,
+        ...(exec && exec.contractFail ? { contract: { ok: false, problems: exec.contractFail.slice(0, 12) } } : {}),
         /* WHAT THEY CAN ACT ON, not just read about.
 
            Only ever cancellations AMV could address to a mailbox somebody
@@ -2154,7 +2204,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
          was down, or nothing linked yet. It is recorded so the job's row shows
          it, but it does not count toward the give-up counter: a bank having a
          bad week must not quietly switch off somebody's check-in. */
-      item.lastError = (exec && exec.soft) ? exec.soft : null;
+      item.lastError = (exec && exec.soft) ? exec.soft : (contractWhy ? 'last result did not have the form its agent promises' : null);
       ran++;
       // Deliver by approval mode. Auto-approve tasks complete on their
       // own (emailed if requested). Require-approval tasks stop before
@@ -2228,7 +2278,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
        time. A run that ended with nothing to show is not a result. */
     if(item.done){
       const made = !runFailed && String(stepOut || '').trim();
-      _autoSettleSteps(rec, item, !!made, stepOut, now, runFailed ? 'its runs failed' : 'it produced nothing');
+      _autoSettleSteps(rec, item, !!made, stepOut, now, runFailed ? 'its runs failed' : (contractWhy || 'it produced nothing'));
     }
     changed = true;
   }

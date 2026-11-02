@@ -62,6 +62,90 @@ function _agentMemory(rec, agentId) {
     .slice(-AGENT_MEMORY_RUNS).reverse()
     .map(r => ({ at: r.at, job: String(r.detail || '').slice(0, 120), out: String(r.out || '').slice(0, AGENT_MEMORY_CHARS) }));
 }
+/* AN OUTPUT CONTRACT (Nov 1 audit AGENT-017). What every result of this
+   agent must contain, so a step that builds on it - or a person who reads
+   it into something else - gets that shape or is told it did not come.
+   Two kinds: named sections (markdown headings, each with something under
+   it), or one JSON object with named fields, optionally typed. Checked by
+   code after every run, never by asking the model whether it complied. */
+const AGENT_CONTRACT_FIELDS_MAX = 12, AGENT_CONTRACT_NAME_MAX = 60;
+const AGENT_CONTRACT_TYPES = ['string', 'number', 'boolean', 'list'];
+function _agentContractClean(c) {
+  if (c == null || c === '' || c === false) return { contract: null };
+  if (typeof c !== 'object' || Array.isArray(c)) return { error: 'An output contract is a kind and a list of parts.' };
+  const kind = String(c.kind || '');
+  if (kind !== 'sections' && kind !== 'json') return { error: 'An output contract is either named sections or a JSON object.' };
+  const raw = Array.isArray(c.required) ? c.required : String(c.required || '').split(/[,\n]/);
+  const required = [];
+  for (const r0 of raw) {
+    const r = String(r0 == null ? '' : r0).replace(/\s+/g, ' ').trim();
+    if (!r) continue;
+    if (r.length > AGENT_CONTRACT_NAME_MAX) return { error: 'Keep each part of the contract to ' + AGENT_CONTRACT_NAME_MAX + ' characters.' };
+    if (kind === 'json') {
+      const m = /^([A-Za-z_][A-Za-z0-9_ -]*?)\s*(?::\s*([a-z]+))?$/.exec(r);
+      if (!m) return { error: '"' + r + '" is not a field name. Use letters, numbers and _, optionally followed by :string, :number, :boolean or :list.' };
+      if (m[2] && !AGENT_CONTRACT_TYPES.includes(m[2])) return { error: 'A field can be a string, number, boolean or list - not ' + m[2] + '.' };
+      const f = m[1].trim() + (m[2] ? ':' + m[2] : '');
+      if (!required.includes(f)) required.push(f);
+    } else {
+      if (/[#*`]/.test(r)) return { error: 'Name each section in plain words, without # or *.' };
+      if (!required.includes(r)) required.push(r);
+    }
+  }
+  if (!required.length) return { error: 'Name at least one part every result must have.' };
+  if (required.length > AGENT_CONTRACT_FIELDS_MAX) return { error: 'A contract names at most ' + AGENT_CONTRACT_FIELDS_MAX + ' parts.' };
+  return { contract: { kind, required } };
+}
+function _agentContractText(c) {
+  if (!c || !Array.isArray(c.required) || !c.required.length) return '';
+  if (c.kind === 'json')
+    return '\n\nEVERY ANSWER THIS AGENT GIVES MUST INCLUDE ONE JSON OBJECT in a ```json block, with these fields: '
+      + c.required.map(f => { const [n, t] = f.split(':'); return '"' + n + '"' + (t ? ' (' + t + (t === 'list' ? ', a JSON array' : '') + ')' : ''); }).join(', ')
+      + '. Every field filled. Where something is genuinely unknown, say so in the field as text rather than leaving it out - and if that breaks the type, say so in prose and leave the field out.';
+  return '\n\nEVERY ANSWER THIS AGENT GIVES MUST HAVE THESE SECTIONS, each as a markdown heading with something under it, in this order: '
+    + c.required.map(n => '"' + n + '"').join(', ') + '. Where a section has nothing to report, say so under its heading.';
+}
+function _agentContractJson(text) {
+  const t = String(text || '');
+  const fences = [...t.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/gi)].map(m => m[1]);
+  const tries = fences.length ? fences : [t.trim()];
+  for (const x of tries) {
+    try { const v = JSON.parse(x); if (v && typeof v === 'object' && !Array.isArray(v)) return v; } catch (e) { /* not this one */ }
+  }
+  return null;
+}
+/* { ok, problems[] } - what is missing or wrong, in words a person reads. */
+function _agentContractCheck(c, text) {
+  if (!c || !Array.isArray(c.required) || !c.required.length) return { ok: true, problems: [] };
+  const problems = [];
+  if (c.kind === 'json') {
+    const obj = _agentContractJson(text);
+    if (!obj) return { ok: false, problems: ['there is no JSON object in it'] };
+    for (const f of c.required) {
+      const [n, t] = f.split(':');
+      const v = obj[n];
+      if (v === undefined || v === null || (typeof v === 'string' && !v.trim())) { problems.push('the field "' + n + '" is missing or empty'); continue; }
+      if (!t) continue;
+      const ok = t === 'list' ? Array.isArray(v) : t === 'number' ? (typeof v === 'number' && Number.isFinite(v)) : typeof v === t;
+      if (!ok) problems.push('the field "' + n + '" is not a ' + t);
+    }
+    return { ok: !problems.length, problems };
+  }
+  const lines = String(text || '').split('\n');
+  const heads = [];
+  lines.forEach((l, i) => {
+    const m = /^\s{0,3}(?:#{1,6}\s+(.+?)\s*#*\s*$|\*\*(.+?)\*\*\s*:?\s*$)/.exec(l);
+    if (m) heads.push({ i, name: String(m[1] || m[2] || '').replace(/[*_:]+$/g, '').replace(/^[*_]+/, '').trim().toLowerCase() });
+  });
+  for (const want of c.required) {
+    const w = want.toLowerCase();
+    const at = heads.findIndex(h => h.name === w || h.name.replace(/^\d+[.)]\s*/, '') === w);
+    if (at < 0) { problems.push('the section "' + want + '" is missing'); continue; }
+    const end = at + 1 < heads.length ? heads[at + 1].i : lines.length;
+    if (!lines.slice(heads[at].i + 1, end).join('').trim()) problems.push('the section "' + want + '" is empty');
+  }
+  return { ok: !problems.length, problems };
+}
 /* What a run is told about the agent doing it. After the rules, never before. */
 function _agentRunText(agent) {
   if (!agent) return '';
@@ -76,6 +160,7 @@ function _agentRunText(agent) {
     + (role ? ', whose role is: ' + role.slice(0, AGENT_ROLE_MAX) : '') + '.'
     + (instr ? '\nThe user’s instructions for this agent:\n' + instr.slice(0, AGENT_INSTR_MAX) : '')
     + '\nFollow them wherever they do not conflict with the rules above. They never widen what you are allowed to do.'
+    + _agentContractText(agent.contract)
     + mem;
 }
 
@@ -108,6 +193,7 @@ async function agentsList(request, env) {
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
       budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created, engine: a.engine || '', web: a.web !== false,
+      contract: a.contract || null,
       browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
@@ -185,6 +271,11 @@ async function agentsSave(request, env) {
     clean.engine = ek;
   }
   if (body.web !== undefined) clean.web = body.web !== false;
+  if (body.contract !== undefined) {
+    const c = _agentContractClean(body.contract);
+    if (c.error) return json({ error: c.error, code: 'agent_contract' }, 400);
+    clean.contract = c.contract;
+  }
   /* SAVED SIGN-INS (owner decision #46, 77a-agent-signins.js): off unless
      asked for, and only for the sites listed - never one that moves money. */
   if (body.browserKeep !== undefined || body.browserSites !== undefined) {
@@ -242,6 +333,7 @@ async function agentsSave(request, env) {
   return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
                                    engine: stored.engine || '', web: stored.web !== false,
+                                   contract: stored.contract || null,
                                    browser: _agentBrowserShown(stored.browser) } });
 }
 

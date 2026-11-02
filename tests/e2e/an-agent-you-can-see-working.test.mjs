@@ -141,6 +141,26 @@ section('Its engine and whether it may search the web, chosen in the same dialog
   ok(a.engine === pick && a.web === false, 'saved on the server as chosen', { engine: a.engine, web: a.web });
 }
 
+section('The form of its results, chosen in the same dialog (Nov 1 audit AGENT-017)');
+{
+  await page.click('#mc-agents .mc-agent [data-dact="mcAgentEdit"]');
+  await page.waitForSelector('#ag-form');
+  await page.selectOption('#ag-form', 'sections');
+  await page.click('#ag-save');
+  await page.waitForFunction(() => /Name the parts/.test((document.getElementById('ag-msg') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  ok(/Name the parts/.test(await page.textContent('#ag-msg')), 'a form with no parts is refused in the dialog, before anything is sent');
+  await page.fill('#ag-parts', 'Summary\nSources');
+  await page.click('#ag-save');
+  await page.waitForFunction(() => !document.getElementById('ag-form'), null, { timeout: 15000 }).catch(() => {});
+  await new Promise(r => setTimeout(r, 300));
+  const a = (await agentsRec()).list[0];
+  ok(a.contract && a.contract.kind === 'sections' && a.contract.required.join('|') === 'Summary|Sources', 'saved on the server as chosen', a.contract);
+  await page.click('#mc-agents .mc-agent [data-dact="mcAgentEdit"]');
+  await page.waitForSelector('#ag-form');
+  ok(await page.inputValue('#ag-form') === 'sections' && /Summary\s+Sources/.test(await page.inputValue('#ag-parts')), 'and shown again when it is edited');
+  await page.click('#ag-cancel');
+}
+
 section('Deleting asks first, stops its job and takes the card away');
 {
   await page.click('#mc-agents [data-dact="mcAgentDelete"]');

@@ -51,11 +51,13 @@ const call = async (path, body, token = mine.token, method = 'POST') => {
 const rec = () => JSON.parse(store.get('auto:' + ME) || '{"items":[],"results":[]}');
 const put = (r) => store.set('auto:' + ME, JSON.stringify(r));
 
-let modelCalls = 0, lastSystem = '', systems = [], lastBody = null;
+let modelCalls = 0, lastSystem = '', systems = [], lastBody = null, bodies = [];
+const replies = [];
 globalThis.fetch = async (u, init) => {
   modelCalls++;
-  try { const b = JSON.parse(String((init && init.body) || '{}')); lastBody = b; lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); systems.push(lastSystem); } catch (e) {}
-  return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Three things changed in solar policy this week.' }], stop_reason: 'end_turn',
+  try { const b = JSON.parse(String((init && init.body) || '{}')); lastBody = b; bodies.push(b); lastSystem = typeof b.system === 'string' ? b.system : JSON.stringify(b.system || ''); systems.push(lastSystem); } catch (e) {}
+  const text = replies.length ? replies.shift() : 'Three things changed in solar policy this week.';
+  return new Response(JSON.stringify({ content: [{ type: 'text', text }], stop_reason: 'end_turn',
     usage: { input_tokens: 2000, output_tokens: 800 } }), { status: 200 });
 };
 
@@ -260,6 +262,74 @@ section('An agent can have its own engine, priced as that engine, and be kept of
   unthrottle();
   await call('/v1/agents/save', { id: agentId, engine: '', web: true });
   unthrottle();
+}
+
+section('An agent can promise the form of its results, and what lacks it is repaired once or built on by nothing (Nov 1 audit AGENT-017)');
+{
+  const unthrottle = () => { for (const k of [...store.keys()]) if (/agents:/.test(k) && /(^rl|act)/.test(k)) store.delete(k); };
+  unthrottle();
+  const badKind = await call('/v1/agents/save', { id: agentId, contract: { kind: 'xml', required: ['a'] } });
+  ok(badKind.status === 400 && badKind.d.code === 'agent_contract', 'a contract of an unknown kind is refused', badKind.d);
+  const badType = await call('/v1/agents/save', { id: agentId, contract: { kind: 'json', required: ['price:money'] } });
+  ok(badType.status === 400 && badType.d.code === 'agent_contract', 'a field of an unknown type is refused', badType.d);
+  const empty = await call('/v1/agents/save', { id: agentId, contract: { kind: 'sections', required: [' ', ''] } });
+  ok(empty.status === 400 && empty.d.code === 'agent_contract', 'a contract naming nothing is refused', empty.d);
+  unthrottle();
+  const set = await call('/v1/agents/save', { id: agentId, contract: { kind: 'sections', required: 'Summary, Sources' } });
+  ok(set.status === 200 && set.d.agent.contract && set.d.agent.contract.required.join('|') === 'Summary|Sources', 'saved, and read back as a list', set.d.agent);
+  const l = await call('/v1/agents', null, mine.token, 'GET');
+  ok((l.d.agents.find(a => a.id === agentId) || {}).contract?.kind === 'sections', 'and listed');
+
+  /* A run that leaves out a section is repaired once - from its own answer only. */
+  const good = '## Summary\nSpain cut its solar tariff.\n\n## Sources\n- boe.es';
+  replies.length = 0; replies.push('Spain cut its solar tariff. (no headings at all)', good);
+  due(); modelCalls = 0; bodies = []; lastSystem = '';
+  const before = +(await W.counter(env, W._agentCostKey(ME, agentId), { op: 'get' })).value || 0;
+  await W.runDueAutomations(env, Date.now() + 8);
+  ok(modelCalls === 2, 'the off-form answer gets exactly one repair call', modelCalls);
+  ok(/"Summary", "Sources"/.test(bodies[0] && bodies[0].system || ''), 'the run was told the form beforehand', (bodies[0] && bodies[0].system || '').slice(-300));
+  const fixCall = bodies[1] || {};
+  const fixText = (fixCall.messages || []).map(m => m.content).join('\n');
+  ok(!fixCall.tools && /section "Sources" is missing/.test(fixText) && /add no new facts/.test(fixText),
+    'the repair has no tools, names what is missing, and may add nothing', fixCall.messages);
+  const last = rec().results.filter(r => r.autoId && rec().items.find(i => i.id === r.autoId && i.agent === agentId)).slice(-1)[0];
+  ok(last && last.out === good && !last.contract, 'the repaired answer is the result', last);
+  const after = +(await W.counter(env, W._agentCostKey(ME, agentId), { op: 'get' })).value || 0;
+  ok(after - before > 0.03, 'and both calls are counted against the agent', after - before);
+
+  /* A step that stays off-form: kept, said so, and the step after it never runs. */
+  const w = await call('/v1/agents/save', { name: 'Briefer', instructions: 'Brief the board.' });
+  const briefer = w.d.agent.id;
+  const r = await call('/auto/create', { approval: 'auto', steps: [
+    { title: 'Gather', detail: 'Gather solar policy news', agent: agentId },
+    { title: 'Brief', detail: 'Brief the board on it', after: 0, agent: briefer } ] });
+  const g = r.d.group;
+  replies.length = 0; replies.push('Just prose, no form.', 'Still just prose.');
+  const x = rec(); x.items.forEach(i => { if (i.group === g && i.active && !i.waiting) i.next = Date.now() - 1000; }); put(x);
+  modelCalls = 0; systems = [];
+  await W.runDueAutomations(env, Date.now() + 9);
+  ok(modelCalls === 2, 'the first step ran and was asked to repair once, and nothing more', modelCalls);
+  const items = rec().items.filter(i => i.group === g);
+  const res = rec().results.filter(r => r.autoId === items[0].id).slice(-1)[0];
+  ok(res && res.contract && res.contract.ok === false && /Sources/.test(res.contract.problems.join(' ')), 'its result is kept and marked as off-form, naming what is missing', res);
+  ok(res && /does not have the form this agent promises/.test(res.out), 'and says so where it is read', res && res.out.slice(0, 160));
+  ok(res && /Just prose, no form\./.test(res.out) && !/Still just prose/.test(res.out), 'a repair that is still off-form does not replace the answer it was made from', res && res.out);
+  ok(items[1].done && !items[1].active && /form its agent promises/.test(items[1].lastError || ''), 'the step that would build on it is not started, and says why', items[1]);
+  ok(!systems.some(sy => /Brief the board\./.test(sy)), 'the second agent never ran', systems.length);
+  await call('/v1/agents/delete', { id: briefer });
+
+  /* A JSON contract is read as JSON: a field of the wrong type is not "there". */
+  unthrottle();
+  await call('/v1/agents/save', { id: agentId, contract: { kind: 'json', required: ['price:number', 'source'] } });
+  replies.length = 0; replies.push('```json\n{"price":"about 40","source":"omie.es"}\n```', '```json\n{"price":41.2,"source":"omie.es"}\n```');
+  due(); modelCalls = 0;
+  await W.runDueAutomations(env, Date.now() + 10);
+  const lj = rec().results.filter(r => rec().items.find(i => i.id === r.autoId && i.agent === agentId && !i.group)).slice(-1)[0];
+  ok(modelCalls === 2 && lj && /41\.2/.test(lj.out) && !lj.contract, 'a price given as words is repaired into a number', { modelCalls, out: lj && lj.out });
+  unthrottle();
+  const off = await call('/v1/agents/save', { id: agentId, contract: null });
+  ok(off.status === 200 && off.d.agent.contract === null, 'and a contract can be taken away', off.d.agent);
+  replies.length = 0; unthrottle();
 }
 
 section('Deleted, its jobs stop and their results stay');
