@@ -332,6 +332,39 @@ section('An agent can promise the form of its results, and what lacks it is repa
   replies.length = 0; unthrottle();
 }
 
+section('Its record is kept, and three bad runs in a row pause it (Nov 1 audit AGENT-007)');
+{
+  const unthrottle = () => { for (const k of [...store.keys()]) if (/agents:/.test(k) && /(^rl|act)/.test(k)) store.delete(k); };
+  unthrottle();
+  const l0 = await call('/v1/agents', null, mine.token, 'GET');
+  const a0 = l0.d.agents.find(x => x.id === agentId);
+  ok(a0 && a0.score && a0.score.runs >= 1 && a0.score.good + a0.score.failed + a0.score.offForm === a0.score.runs && a0.score.costUSD > 0,
+    'the list carries its last 30 days: runs, good, failed, off-form and cost', a0 && a0.score);
+  ok(a0 && a0.score.offForm >= 1 && a0.score.goodPct < 100 && a0.score.costPerGoodUSD > 0, 'an off-form result counts against it, and cost is per good result', a0 && a0.score);
+  /* Three failed runs, after it was last started. */
+  const job = rec().items.find(i => i.agent === agentId && !i.group);
+  await new Promise(r => setTimeout(r, 5));
+  const r0 = rec(); const t = Date.now();
+  for (let k = 0; k < 3; k++) r0.results.push({ id: 'bad' + k, autoId: job.id, detail: job.detail, at: t + k, kind: 'failed', outcome: 'failed', costUSD: 0, out: 'x' });
+  put(r0);
+  due(); modelCalls = 0;
+  await W.runDueAutomations(env, Date.now() + 11);
+  ok(modelCalls === 0, 'the next run does not happen', modelCalls);
+  const l1 = await call('/v1/agents', null, mine.token, 'GET');
+  const a1 = l1.d.agents.find(x => x.id === agentId);
+  ok(a1 && a1.paused === true && /last 3 runs failed/.test(a1.pausedWhy || ''), 'it is paused, saying why', a1 && { paused: a1.paused, why: a1.pausedWhy });
+  ok(/paused because its last 3 runs/.test(rec().items.find(i => i.id === job.id).lastError || ''), 'and its job says so too', rec().items.find(i => i.id === job.id).lastError);
+  /* Resumed by the person: a fresh start, so the old failures no longer trip it. */
+  unthrottle();
+  await new Promise(r => setTimeout(r, 10));
+  const res = await call('/v1/agents/save', { id: agentId, paused: false });
+  ok(res.status === 200 && res.d.agent.paused === false, 'resumed', res.status);
+  due(); modelCalls = 0;
+  await W.runDueAutomations(env, Date.now() + 12);
+  ok(modelCalls === 1, 'and it runs again - what went wrong before it was resumed does not pause it again', modelCalls);
+  unthrottle();
+}
+
 section('Deleted, its jobs stop and their results stay');
 {
   const before = rec().results.length;

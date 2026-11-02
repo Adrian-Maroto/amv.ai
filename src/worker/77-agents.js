@@ -146,6 +146,38 @@ function _agentContractCheck(c, text) {
   }
   return { ok: !problems.length, problems };
 }
+/* HOW IT IS DOING (Nov 1 audit AGENT-007). Read from the results it
+   actually produced, never from what it said about itself: a run counts as
+   good only if it finished, was not marked off-form by its contract, and was
+   not a failure. Over the last 30 days, with what it cost. */
+const AGENT_SCORE_DAYS = 30, AGENT_TRIP_RUNS = 3;
+function _agentRunsOf(rec, agentId){
+  const mine = new Set(((rec && rec.items) || []).filter(i => i && i.agent === agentId).map(i => i.id));
+  return ((rec && rec.results) || []).filter(r => r && mine.has(r.autoId));
+}
+function _agentRunBad(r){ return !!(r && (r.kind === 'failed' || r.outcome === 'failed' || (r.contract && r.contract.ok === false))); }
+function _agentScore(rec, agentId, now){
+  const since = (now || Date.now()) - AGENT_SCORE_DAYS * 86400e3;
+  const runs = _agentRunsOf(rec, agentId).filter(r => +r.at >= since);
+  const failed = runs.filter(r => r.kind === 'failed' || r.outcome === 'failed').length;
+  const offForm = runs.filter(r => r.contract && r.contract.ok === false).length;
+  const good = runs.length - failed - offForm;
+  const costUSD = Math.round(runs.reduce((n, r) => n + (+r.costUSD || 0), 0) * 100) / 100;
+  return { days: AGENT_SCORE_DAYS, runs: runs.length, good, failed, offForm, costUSD,
+           goodPct: runs.length ? Math.round(good / runs.length * 100) : null,
+           costPerGoodUSD: good ? Math.round(costUSD / good * 100) / 100 : null };
+}
+/* Whether its last AGENT_TRIP_RUNS results since it was last started were all
+   bad - then it is paused rather than left to keep spending on the same
+   failure. Only results after it was last resumed count, so resuming it
+   gives it a fresh start. */
+function _agentTripped(rec, agent){
+  if (!agent) return false;
+  const from = Math.max(+agent.resumedAt || 0, +agent.created || 0);
+  const runs = _agentRunsOf(rec, agent.id).filter(r => +r.at > from).sort((a, b) => a.at - b.at);
+  const tail = runs.slice(-AGENT_TRIP_RUNS);
+  return tail.length >= AGENT_TRIP_RUNS && tail.every(_agentRunBad);
+}
 /* What a run is told about the agent doing it. After the rules, never before. */
 function _agentRunText(agent) {
   if (!agent) return '';
@@ -192,7 +224,8 @@ async function agentsList(request, env) {
     const results = (auto.results || []).filter(r => r && ids.has(r.autoId)).slice(-3).reverse()
       .map(r => ({ at: r.at, outcome: r.outcome || '', costUSD: +r.costUSD || 0, out: String(r.out || '').slice(0, 400) }));
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
-      budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, created: a.created, engine: a.engine || '', web: a.web !== false,
+      budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, pausedWhy: a.paused ? (a.pausedWhy || '') : '', created: a.created, engine: a.engine || '', web: a.web !== false,
+      score: _agentScore(auto, a.id),
       contract: a.contract || null,
       browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
@@ -256,7 +289,13 @@ async function agentsSave(request, env) {
       return json({ error: 'A monthly budget is between $0 (no budget of its own) and $' + AGENT_BUDGET_MAX_USD + '.', code: 'agent_budget' }, 400);
     clean.budgetUSD = Math.round(b * 100) / 100;
   }
-  if (body.paused !== undefined) clean.paused = body.paused === true;
+  if (body.paused !== undefined) {
+    clean.paused = body.paused === true;
+    /* Paused by a person, or resumed: whatever paused it before no longer
+       stands, and a resumed agent starts its run of results afresh. */
+    clean.pausedWhy = '';
+    if (!clean.paused) clean.resumedAt = Date.now();
+  }
   /* Its own engine and whether it may search the web (Nov 1 audit
      AGENT-003/004). An engine is accepted only if the plan allows it now;
      each run checks again. '' is the everyday engine. */

@@ -1914,8 +1914,24 @@ async function _autoRunAccount(env, email, rec, now, deadline){
         item.active = false; item.lastError = 'stopped - its agent was deleted';
         changed = true; continue;
       }
+      /* THREE BAD RUNS IN A ROW PAUSE IT (AGENT-007): failed, or off the form
+         its contract promises. Paused on its own record, so every one of its
+         jobs stops and the card says why; resuming it is a fresh start. */
+      if(!agent.unreadable && !agent.paused && _agentTripped(rec, agent)){
+        const why = 'its last ' + AGENT_TRIP_RUNS + ' runs failed or came back without the form it promises';
+        let paused = false;
+        try{
+          await _withKind(env, 'agents', email, async (ar) => {
+            if(!ar) return;
+            const a = (ar.list || []).find(x => x && x.id === agent.id && !x.deleted);
+            if(a && !a.paused){ a.paused = true; a.pausedWhy = why; a.pausedAt = now; paused = true; }
+          });
+        }catch(e){ await _writeFailed(env, 'agent_trip', e); }
+        agent.paused = true; agent.pausedWhy = why;
+        if(paused) audit(env, 'agent_auto_paused', { email, agent: agent.id });
+      }
       if(agent.unreadable || agent.paused){
-        item.lastError = agent.paused ? 'not run - its agent is paused' : 'not run - its agent could not be read, so it will try again';
+        item.lastError = agent.paused ? (agent.pausedWhy ? 'not run - its agent was paused because ' + agent.pausedWhy : 'not run - its agent is paused') : 'not run - its agent could not be read, so it will try again';
         item.next = agentHold(item);
         changed = true; continue;
       }

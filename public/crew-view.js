@@ -623,6 +623,7 @@ function _mcAgentCard(a){
     + escH(a.paused ? T('Paused') : live.length ? T('Working') : T('Idle')) + '</span></div>'
     + (a.role ? '<p class="mc-agent-role">' + escH(a.role) + '</p>' : '')
     + '<p class="mc-agent-money' + (over ? ' over' : '') + '">' + escH(money) + (over ? ' · ' + escH(T('budget reached, its jobs wait for next month')) : '') + '</p>'
+    + _mcAgentScore(a)
     + jobs
     + _mcAgentSignIns(a)
     + (last ? '<div class="mc-agent-last"><span>' + escH(T('Latest result')) + ' · ' + escH(_dayLabel(last.at)) + '</span><p>' + escH(last.out.slice(0, 240)) + '</p></div>' : '')
@@ -632,6 +633,19 @@ function _mcAgentCard(a){
     + '<button class="btn mc-mini ghost" data-dact="mcAgentPause" data-darg="' + escH(a.id) + '|' + (a.paused ? 'resume' : 'pause') + '">' + escH(a.paused ? T('Resume') : T('Pause')) + '</button>'
     + '<button class="btn mc-mini ghost" data-dact="mcAgentDelete" data-darg="' + escH(a.id) + '">' + escH(T('Delete')) + '</button>'
     + '</div></article>';
+}
+/* HOW IT IS DOING (AGENT-007): counted by the server from what its runs
+   produced - good, failed, off the form it promises - with cost per good
+   result, and why it was paused when AMV paused it. */
+function _mcAgentScore(a){
+  const sc = a.score || null;
+  const why = a.paused && a.pausedWhy ? '<p class="mc-agent-err" role="status">' + escH(T('AMV paused it: {0}. Resume it to try again.').replace('{0}', T(a.pausedWhy))) + '</p>' : '';
+  if(!sc || !sc.runs) return why;
+  const parts = [T('{0} runs in 30 days').replace('{0}', String(sc.runs)), T('{0} good').replace('{0}', String(sc.good))];
+  if(sc.failed) parts.push(T('{0} failed').replace('{0}', String(sc.failed)));
+  if(sc.offForm) parts.push(T('{0} off-form').replace('{0}', String(sc.offForm)));
+  if(sc.costPerGoodUSD != null) parts.push(T('{0} per good result').replace('{0}', '$' + (+sc.costPerGoodUSD).toFixed(2)));
+  return '<p class="mc-agent-score">' + escH(parts.join(' · ')) + '</p>' + why;
 }
 /* SAVED SIGN-INS (owner decision #46): which sites it holds a sign-in for,
    until when, and Forget - never the sign-in itself, which the server keeps

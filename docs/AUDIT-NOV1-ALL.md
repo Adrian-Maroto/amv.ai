@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 71, Roadmap 52, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 72, Roadmap 51, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -51,7 +51,7 @@ Totals: Fixed 71, Roadmap 52, Owner 25, Already true 14, Not a defect here 7
 | AGENT-004 | High | P1 | Agents lack complete tool/connector allowlists | Fixed | web search per agent; unattended runs have no other tools, connector writes need a person |
 | AGENT-005 | High | P1 | Agents do not own an isolated durable workspace/browser profile by default | Roadmap | per-agent workspace/browser profile |
 | AGENT-006 | High | P1 | No first-class Agent-to-Agent handoff protocol | Roadmap | agent-to-agent handoff |
-| AGENT-007 | Medium | P2 | No Agent-specific eval and outcome scorecard | Roadmap | agent evals |
+| AGENT-007 | Medium | P2 | No Agent-specific eval and outcome scorecard | Fixed | each agent shows its last 30 days from what its runs produced - runs, good, failed, off its output contract, cost per good result - and three bad runs in a row pause it, saying why, until a person resumes it with a fresh start (an-agent-works-within-what-it-was-given) |
 | AGENT-008 | Critical | P0 | Disabling sign-in retention can falsely succeed when credential deletion fails | Fixed | revoked first, deletion read back, truth reported |
 | AGENT-009 | High | P0 | Forget-one-site endpoint reports success even when nothing was removed | Fixed | same |
 | AGENT-010 | Critical | P0 | One global CONNECT_KEY protects all saved Agent sign-ins | Fixed | per-agent key, destroyed on forget; KMS is OWNER-DECISIONS 17 |
