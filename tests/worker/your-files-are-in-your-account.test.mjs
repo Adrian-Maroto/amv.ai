@@ -94,6 +94,12 @@ section('A file is kept, listed, and opened again - from the storage itself');
   ok(g.body === 'the contract says 30 days', 'and opens exactly what was kept', g);
   const again = await jsonOf(await req(env, '/v1/library/put', file('notes.txt', 'the contract says 30 days'), tok));
   ok(again.existed === true && r2._m.size === 1, 'the same file sent twice is one file', [again, r2._m.size]);
+  /* Nov 1 audit FILE-005: the limit counts what the store holds - bytes - not characters. */
+  const text = 'é'.repeat(1000);            // 1,000 characters, 2,000 bytes
+  await req(env, '/v1/library/put', file('accents.txt', text), tok);
+  const rec = await W.DB.get(env, 'lib', 'a@example.com');
+  const f = rec.files.find(x => x.name === 'accents.txt');
+  ok(f && f.bytes === 2000 && f.chars === 1000, 'a file is counted by its stored bytes', f && { bytes: f.bytes, chars: f.chars });
 }
 
 section('Storage that says yes and keeps nothing is not "kept"');

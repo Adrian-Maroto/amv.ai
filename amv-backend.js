@@ -41438,7 +41438,10 @@ function _libMeta(f){
 }
 function _libUsage(rec){
   const files = (rec && Array.isArray(rec.files)) ? rec.files : [];
-  return { files: files.length, bytes: files.reduce((n, f) => n + (f.chars || 0), 0) };
+  /* What the object store holds (Nov 1 audit FILE-005): the body's UTF-8
+     bytes, recorded at upload. A file kept before that has only its character
+     count, which is the same for base64 and close for most text. */
+  return { files: files.length, bytes: files.reduce((n, f) => n + (f.bytes || f.chars || 0), 0) };
 }
 const _libOff = () => json({ ok: true, configured: false, files: [],
   message: 'Files are kept on each device on this AMV. Keeping them in your account is not switched on yet.' });
@@ -41539,7 +41542,7 @@ async function libPut(request, env){
   const id = 'lf' + now.toString(36) + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const meta = { id, sig, kind, name, size: Math.max(0, +b.size || 0), format: String(b.format || '').slice(0, 40),
                  summary: String(b.summary || '').slice(0, 300), mime: String(b.mime || '').slice(0, 100),
-                 chars: body.length, added: now, used: now, folder };
+                 chars: body.length, bytes: new TextEncoder().encode(body).length, added: now, used: now, folder };
 
   /* The same file sent twice is one entry. Decided under the lock, with the
      limit, so two tabs uploading at once cannot both pass the last check. */
@@ -41552,7 +41555,7 @@ async function libPut(request, env){
       const same = rec.files.find(f => f.sig === sig && !f.pending);
       if (same) { same.used = now; return { dup: _libMeta(same) }; }
       const u = _libUsage(rec);
-      if (u.files + 1 > limit.files || u.bytes + body.length > limit.bytes) return { full: u };
+      if (u.files + 1 > limit.files || u.bytes + meta.bytes > limit.bytes) return { full: u };
       rec.files.push(Object.assign({ pending: true }, meta));
       return { add: true };
     }, { files: [] });
