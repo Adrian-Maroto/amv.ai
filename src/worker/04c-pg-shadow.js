@@ -86,7 +86,7 @@ async function _pgShadowCompare(env, kind, email, raw){
     }
     const day = todayKey();
     try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) {}
-    if (!diff.length) return 'same';
+    if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     const fields = kind + ':' + diff.join(',');
     try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) {}
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${fields.slice(0, 200)} WHERE email = ${email}`;
@@ -123,8 +123,8 @@ async function pgShadowRoute(request, env){
   }
   const sql = await _pgClient(env);
   try {
-    const rows = await sql`SELECT email, mismatches, last_mismatch FROM migration_accounts WHERE mismatches > 0 ORDER BY mismatches DESC, email LIMIT 50`;
-    const n = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE mismatches > 0`;
+    const rows = await sql`SELECT email, mismatches, last_mismatch FROM migration_accounts WHERE last_mismatch IS NOT NULL ORDER BY mismatches DESC, email LIMIT 50`;
+    const n = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`;
     return json({ on: true, cohort, days, accountsDiffering: n[0].n,
       differing: rows.map(r => ({ email: r.email, mismatches: r.mismatches, last: r.last_mismatch })) });
   } finally {

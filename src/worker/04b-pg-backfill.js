@@ -42,8 +42,18 @@ const PG_BACKFILL_PREFIX = { acct: 'acct:', team: 'team:', wallet: 'wallet_tx:',
 const PG_BACKFILL_SLICE_MS = 20000;
 const PG_BACKFILL_PAGE = 100;
 
+/* Keys sorted at every level before hashing (Nov 1 audit DATA-012): the
+   same record written by two paths in a different key order is the same
+   record, and must hash the same. (Changing this once makes every stored
+   digest and read proof look stale: the backfill copies each account again
+   and each proof is made again - work, never a wrong answer.) */
+function _pgStable(v){
+  if (Array.isArray(v)) return '[' + v.map(x => _pgStable(x === undefined ? null : x)).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => JSON.stringify(k) + ':' + _pgStable(v[k])).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
 async function _pgDigest(value){
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const bytes = new TextEncoder().encode(_pgStable(value));
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -199,7 +209,9 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     const email = keyName.slice(5).toLowerCase();
     let diff = await _pgAccountDiff(sql, email, await _pgAccountKV(env, email));
     if (diff.length) diff = await _pgAccountDiff(sql, email, await _pgAccountKV(env, email));
-    if (!diff.length) return 'same';
+    /* Matching now clears what is CURRENTLY wrong; `mismatches` stays as the
+       history (Nov 1 audit DATA-010). */
+    if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${diff.join(',').slice(0, 200)} WHERE email = ${email}`;
     try { audit(env, 'pg_backfill_mismatch', { id: email, fields: diff.join(',') }); } catch (e) {}
     return 'mismatched';
@@ -262,7 +274,7 @@ async function runPgBackfill(env, opts){
     }
     if (!(await _pgBackfillSaveHeld(sql, me, '_run', 'done', 0))) { held = false; return { on: true, state: 'running', leaseLost: true, ...t }; }
     const left = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 });
-    const bad = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE mismatches > 0`;
+    const bad = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`;
     const clean = !(left.keys || []).length && !bad[0].n;
     try { await alertOnce(env, 'pg_backfill_done', clean
       ? 'The Postgres backfill finished: every account was read back and matches, and the repair list is empty. Step 4 (shadow reads) can start.'
@@ -295,7 +307,17 @@ async function pgBackfillRoute(request, env){
     const rows = await sql`SELECT kind, cursor, copied, updated_at FROM migration_cursor`;
     const by = Object.fromEntries(rows.map(r => [r.kind, r]));
     const count = async (q) => (await q)[0].n;
-    const left = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1000 });
+    /* The whole repair list, counted page by page and by kind (Nov 1 audit
+       DATA-011) - not the first thousand. Bounded in time; `exact` says
+       whether it reached the end. */
+    const backlog = { total: 0, byKind: {}, exact: true };
+    { const until = Date.now() + 8000; let cursor;
+      do {
+        const page = await env.AMV_KV.list({ prefix: 'pgrepair:', cursor, limit: 1000 });
+        for (const k of page.keys || []) { backlog.total++; const kind = k.name.split(':')[1] || '?'; backlog.byKind[kind] = (backlog.byKind[kind] || 0) + 1; }
+        cursor = page.list_complete ? undefined : page.cursor;
+        if (cursor && Date.now() > until) { backlog.exact = false; break; }
+      } while (cursor); }
     return json({
       on: true,
       state: (by._run && by._run.cursor) || 'not_started',
@@ -309,9 +331,10 @@ async function pgBackfillRoute(request, env){
         sellerLines: await count(sql`SELECT count(*)::int AS n FROM seller_ledger`),
         creditLines: await count(sql`SELECT count(*)::int AS n FROM credit_ledger`),
       },
-      accountsDiffering: await count(sql`SELECT count(*)::int AS n FROM migration_accounts WHERE mismatches > 0`),
-      repairsWaiting: (left.keys || []).length,
-      repairsMoreThanShown: !left.list_complete,
+      accountsDiffering: await count(sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`),
+      repairsWaiting: backlog.total,
+      repairsByKind: backlog.byKind,
+      repairsMoreThanShown: !backlog.exact,
       notCopied: 'Credit packs bought before step 2, and seller lines older than the 500 a history keeps.',
     });
   } finally {

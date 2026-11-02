@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -184,6 +184,13 @@ section('Run again from the start, it copies nothing twice and finds a row chang
   ok(q("select mismatches||'|'||last_mismatch from migration_accounts where email='p010@example.com'") === '1|name', 'and counted against that account');
   const s = await status();
   ok(s.accountsDiffering === 1, 'the status says so', s.accountsDiffering);
+  /* Nov 1 audit DATA-010: put right and checked again, it is no longer
+     counted as differing - and the history of having differed is kept. */
+  q("update accounts set name='Person 10' where email='p010@example.com'");
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  await runToEnd();
+  ok(q("select mismatches||'|'||coalesce(last_mismatch,'-') from migration_accounts where email='p010@example.com'") === '1|-', 'matching again clears what is wrong now, and keeps the count of what was', q("select mismatches||'|'||coalesce(last_mismatch,'-') from migration_accounts where email='p010@example.com'"));
+  ok((await status()).accountsDiffering === 0, 'and the status no longer counts it', (await status()).accountsDiffering);
 }
 
 section('One run at a time: a lease, taken over only from a run that went silent (Nov 1 audit DATA-008)');
@@ -335,6 +342,25 @@ section('Shadow reads: a share of everybody, by a hash of the address');
   await W._pgSettle();
   ok(compared() === before + 3, 'at 0%, none is');
   delete env.PG_SHADOW;
+}
+
+section('The repair backlog is counted whole, by kind (Nov 1 audit DATA-011)');
+{
+  for (let i = 0; i < 2300; i++) store.set('pgrepair:acct:bulk' + String(i).padStart(5, '0') + '@example.com', JSON.stringify({ at: 1, why: 't' }));
+  for (let i = 0; i < 7; i++) store.set('pgrepair:team:bulk' + i, JSON.stringify({ at: 1, why: 't' }));
+  const s = await status();
+  ok(s.repairsWaiting >= 2307 && s.repairsByKind.acct >= 2300 && s.repairsByKind.team >= 7 && s.repairsMoreThanShown === false,
+     'past the first thousand: the exact total, and how many of each kind', { waiting: s.repairsWaiting, byKind: s.repairsByKind });
+  for (const k of [...store.keys()]) if (/^pgrepair:(acct|team):bulk/.test(k)) store.delete(k);
+}
+
+section('The same record in a different key order has the same digest (Nov 1 audit DATA-012)');
+{
+  const a = await W._pgDigest({ b: 1, a: { y: [1, { q: 2, p: 3 }], x: null } });
+  const b = await W._pgDigest({ a: { x: null, y: [1, { p: 3, q: 2 }] }, b: 1 });
+  const c = await W._pgDigest({ a: { x: null, y: [1, { p: 3, q: 9 }] }, b: 1 });
+  ok(a === b, 'key order at any depth does not change the digest', [a.slice(0, 8), b.slice(0, 8)]);
+  ok(a !== c, 'and a changed value still does');
 }
 
 section('Without the binding, nothing is tried');
