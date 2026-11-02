@@ -145,6 +145,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           AMV_PROFILE: ${{ vars.AMV_LAUNCH_PROFILE }}
+          # How long the canary is watched (Nov 1 audit REL-004): two minutes
+          # unless the repository variable AMV_CANARY_SECONDS says longer -
+          # traffic that reaches a rare path needs time to arrive.
+          CANARY_WATCH_SECONDS: ${{ vars.AMV_CANARY_SECONDS || '120' }}
         run: |
           npm run predeploy
           node scripts/canary-deploy.mjs
