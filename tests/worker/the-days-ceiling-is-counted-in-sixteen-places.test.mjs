@@ -80,6 +80,22 @@ section('A full share spills to two others before anybody is refused');
   ok(r2.allowed, 'and again', r2);
 }
 
+section('Refused only when no share has room - never while others are empty (Nov 1 audit USAGE-003)');
+{
+  const env = mkEnv(320);                         // 16 shares of $20
+  const who = 'skewed@example.com';
+  /* Every payer happened to hash onto the same three shares, and filled them. */
+  const n = W._spendSharesFor(320);
+  const own = +W._spendNameFor(who, env).split(':s')[1];
+  for (const k of [own, (own + 5) % n, (own + 11) % n]) await W.counter(env, 'spend:' + W.todayKey() + ':s' + k, { op: 'incr', amount: 20 });
+  const r = await W._reserveGlobalUSD(env, who, 5, 320, 86400000);
+  ok(r.allowed, 'with three shares full and thirteen empty, the call is booked', r);
+  /* Everything full: then, and only then, refused. */
+  for (let k = 0; k < n; k++) { const name = 'spend:' + W.todayKey() + ':s' + k; const v = await value(env, name); if (v < 20) await W.counter(env, name, { op: 'incr', amount: 20 - v }); }
+  const full = await W._reserveGlobalUSD(env, who, 5, 320, 86400000);
+  ok(!full.allowed && Math.abs((await W._globalSpendToday(env)) - 320) < 0.001, 'with every share full it is refused, at exactly the ceiling', { full, total: await W._globalSpendToday(env) });
+}
+
 section('Settled and released on the share that was booked');
 {
   const env = mkEnv(500);

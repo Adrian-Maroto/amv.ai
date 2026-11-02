@@ -1966,9 +1966,15 @@ function _spendShardOf(who, n) {
 const _spendShardName = (k, day) => `spend:${day || todayKey()}:s${k}`;
 const _envSpendCap = (env) => parseFloat((env && env.GLOBAL_DAILY_USD_CAP) || '500');
 const _spendNameFor = (who, env) => _spendShardName(_spendShardOf(who, _spendSharesFor(_envSpendCap(env))));
+/* Its own share, two others, then - only when those are full - every other
+   share (Nov 1 audit USAGE-003): a call is refused only when no share has
+   room for it, never while capacity sits on shares the hash did not pick.
+   The long walk costs DO calls only on a nearly-full day. */
 const _spendTryOrder = (who, n) => {
   const k = _spendShardOf(who, n);
-  return [...new Set([k, (k + 5) % n, (k + 11) % n])];
+  const order = [k, (k + 5) % n, (k + 11) % n];
+  for (let i = 0; i < n; i++) order.push((k + i) % n);
+  return [...new Set(order)];
 };
 async function _reserveGlobalUSD(env, who, usd, cap, ttlMs) {
   /* The split follows the deployment's ceiling, not this caller's share of
