@@ -38,12 +38,14 @@ function rawToDer(raw){
   return Uint8Array.from([0x30, r.length + s.length, ...r, ...s]);
 }
 
-export async function makeAuthenticator({ kind = 'ec', counter = 0 } = {}){
+/* `credId`: an id to use instead of a random one - an attacker's own key under
+   somebody else's credential id. */
+export async function makeAuthenticator({ kind = 'ec', counter = 0, credId: fixedId } = {}){
   const pair = kind === 'ec'
     ? await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
     : await subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
   const jwk = await subtle.exportKey('jwk', pair.publicKey);
-  const credId = wc.getRandomValues(new Uint8Array(32));
+  const credId = fixedId ? new Uint8Array(Buffer.from(fixedId, 'base64url')) : wc.getRandomValues(new Uint8Array(32));
   let count = counter;
   const cose = kind === 'ec'
     ? new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, 'base64url')], [-3, Buffer.from(jwk.y, 'base64url')]])

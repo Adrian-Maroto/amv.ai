@@ -221,6 +221,30 @@ section('Turning it off, or anything else, needs proof; the last way in stays');
 
 }
 
+section('A passkey belongs to one account: its id cannot be taken by another (Nov 1 audit SEC-005)');
+{
+  /* Vera has a passkey. An attacker who learned its credential id makes a key
+     of their own under that id and registers it on their account. */
+  const mk = async (email) => { await W.DB.put(env, 'acct', email, { email, name: email[0], provider: 'passkey', createdAt: Date.now() });
+    return (await W.issueTokens(env, email, email[0], '')).token; };
+  const vTok = await mk('vera@example.com'), mTok = await mk('mallory@example.com');
+  const vk = await makeAuthenticator();
+  const vo = await call('/auth/passkey/options', { purpose: 'register' }, vTok);
+  const vr = await call('/auth/passkey/register', { cid: vo.d.cid, credential: await vk.create({ challenge: vo.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, vTok);
+  ok(vr.status === 200 && m.get('pkcred:' + vk.credId) === 'vera@example.com', 'Vera’s passkey is registered', vr.status);
+  const clone = await makeAuthenticator({ credId: vk.credId });
+  const o = await call('/auth/passkey/options', { purpose: 'register' }, mTok);
+  const r = await call('/auth/passkey/register', { cid: o.d.cid, credential: await clone.create({ challenge: o.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, mTok);
+  ok(r.status === 409 && r.d.code === 'passkey_exists', 'the same credential id is refused for another account', [r.status, r.d.code]);
+  ok(m.get('pkcred:' + vk.credId) === 'vera@example.com', 'and it still points at its own account', m.get('pkcred:' + vk.credId));
+  const so = await call('/auth/passkey/options', { purpose: 'signin' });
+  const own = await call('/auth/passkey/signin', { cid: so.d.cid, credential: await vk.get({ challenge: so.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  ok(own.status === 200 && own.d.token, 'the real passkey still signs its owner in', own.status);
+  const so2 = await call('/auth/passkey/options', { purpose: 'signin' });
+  const fake = await call('/auth/passkey/signin', { cid: so2.d.cid, credential: await clone.get({ challenge: so2.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  ok(fake.status === 401 && !fake.d.token, 'and the copy under the same id signs nobody in: it is checked against the key that was registered', fake.status);
+}
+
 section('The last way into an account is never removed');
 {
   /* An account with no password and no Google sign-in - only a passkey. Its
