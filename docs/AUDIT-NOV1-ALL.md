@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Roadmap 63, Fixed 61, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 64, Roadmap 60, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -46,9 +46,9 @@ Totals: Roadmap 63, Fixed 61, Owner 25, Already true 13, Not a defect here 7
 | COMP-014 | Medium | P2 | Environment reconstruction is not first-class | Roadmap | environment rebuild from a manifest |
 | COMP-015 | Medium | P2 | SIGTERM/checkpoint behavior needs explicit crash-safe handling | Fixed | in-use machine saved every ten minutes |
 | AGENT-001 | Medium | P1 | Persistent Agent IDs use Math.random | Fixed | no Math.random ids anywhere in the Worker |
-| AGENT-002 | High | P1 | Agents lack dedicated memory namespaces | Roadmap | per-agent memory |
-| AGENT-003 | High | P1 | Agents lack model and reasoning policy | Roadmap | per-agent model policy |
-| AGENT-004 | High | P1 | Agents lack complete tool/connector allowlists | Roadmap | per-agent tool allowlists |
+| AGENT-002 | High | P1 | Agents lack dedicated memory namespaces | Fixed | each run is told what that agent's own last runs found, fenced as data |
+| AGENT-003 | High | P1 | Agents lack model and reasoning policy | Fixed | agent engine, plan-checked at save and every run, charged at that engine's prices; chosen in the agent editor |
+| AGENT-004 | High | P1 | Agents lack complete tool/connector allowlists | Fixed | web search per agent; unattended runs have no other tools, connector writes need a person |
 | AGENT-005 | High | P1 | Agents do not own an isolated durable workspace/browser profile by default | Roadmap | per-agent workspace/browser profile |
 | AGENT-006 | High | P1 | No first-class Agent-to-Agent handoff protocol | Roadmap | agent-to-agent handoff |
 | AGENT-007 | Medium | P2 | No Agent-specific eval and outcome scorecard | Roadmap | agent evals |
