@@ -642,3 +642,21 @@ the repository.
     `CONNECT_KEY` only in Cloudflare's secret store, rotate it with
     `CONNECT_KEY_PREV` if it is ever exposed, and do not switch agent sign-ins
     on for a large audience.
+18. **An outside review of AMV's passkey code (Nov 1 audit SEC-005)**: the
+    passkey and authenticator checks are AMV's own code, not a library. A
+    seeded fuzz suite runs on every change and the attacks we could think of
+    are tested, but protocol code that guards sign-in deserves eyes that did
+    not write it. A security firm reviewing `src/worker/73-passkeys-and-mfa.js`
+    is a few days' work; it is your budget and your choice of firm. Recommended
+    before passkeys are the main way people sign in.
+19. **Cloud computer capacity (Nov 1 audit COMP-011)**: `cloud/wrangler.toml`
+    allows 50 machines at once, the account's container quota. Past that,
+    people wait or are refused. Ask Cloudflare to raise it before the cloud
+    computer is offered widely; only the account owner can.
+20. **Money from before Postgres (Nov 1 audit DATA-004/005, USAGE-006)**:
+    credit packs and seller lines older than the dual-write cannot be rebuilt
+    from AMV's own records. Money reads have never moved to Postgres, so
+    nothing reads the gap today. Before they do: export the payment history
+    from Stripe and PayPal (only you can), and AMV reconciles every account to
+    the cent against it and writes a signed opening balance. Until then, the
+    rule stands: money is read from KV.
