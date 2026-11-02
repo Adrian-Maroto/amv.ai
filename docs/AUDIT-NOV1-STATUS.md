@@ -87,3 +87,22 @@ empty agents record.
 | AGENT-014, DR-007 | Renewal and backup policy for agent sign-ins written down (`docs/AGENT-SIGN-INS.md`) |
 
 Left as is: TASK-006 / STATE-006 (addresses in queue bodies and KV keys) - both stores are Cloudflare's own, where the address already is; moving to opaque ids is a data-model change, not a fix.
+
+## Third batch (each with a test; guards mutation-checked)
+
+| Finding | What changed |
+|---|---|
+| AGENT-017 | An agent can promise named sections or a typed JSON object; code checks every result, repairs it once from its own text, otherwise marks it and starts nothing that builds on it |
+| AGENT-006 | A step owned by one agent hands the next only its checked result - never its memory, instructions or sign-ins |
+| AGENT-007 | Each agent shows runs, good, failed, off-form and cost per good result; three bad runs in a row pause it, saying why |
+| TASK-012 | A write on a connected account carries one Idempotency-Key; a lost answer is asked for again and gets the first answer, with nothing written twice |
+| TASK-013 | Work too long for one answer is handed to the servers to start now (`crew_add` "now", or steps) and the answer stops |
+| OPS-006 | A temporary chat sets up no background job, task, watch or standing instruction |
+| MODEL-002 | Near the context limit the provider's own token count decides, not a character estimate |
+| MODEL-004 | A cut-off answer keeps the part and offers Continue as a new turn carrying it |
+| RETR-004 | Every retrieved passage names its file, section and lines, and never crosses a heading |
+| OPS-003 | Every kind of record has a class in `docs/data-inventory.json`, checked against the code with the class rules enforced |
+| OPS-009 | Sign-in, money and privacy translations are approved by fingerprint in all 17 languages |
+| PROD-019 | Already true: the research panel keeps found, could-not-open, read and cited apart |
+
+Partly done, still listed as roadmap: USAGE-004 (job and agent budgets shown and enforced; browser and computer minutes are still per plan), MODEL-001 (limits are provider-counted; a full capability registry is not built).
