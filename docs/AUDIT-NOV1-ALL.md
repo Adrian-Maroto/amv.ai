@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 87, Roadmap 35, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 88, Roadmap 34, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -20,7 +20,7 @@ Totals: Fixed 87, Roadmap 35, Owner 25, Already true 14, Not a defect here 8
 | DATA-012 | Medium | P1 | Backfill digest is not canonically serialized | Fixed | digests independent of key order |
 | DATA-013 | High | P0 | Only account and entitlement reads can currently cut over | Roadmap | teams, keys and money move to Postgres one class at a time with the same proof model |
 | DATA-014 | High | P1 | Email is still used as a primary operational identity in many flows | Roadmap | email-as-id to account-id is a data-model migration |
-| DATA-015 | Medium | P2 | Generic D1, KV, and Postgres paths risk permanent triple-authority complexity | Roadmap | one store per class decided as each moves to Postgres |
+| DATA-015 | Medium | P2 | Generic D1, KV, and Postgres paths risk permanent triple-authority complexity | Fixed | the final architecture is declared (docs/DATA-TIER.md): Postgres control plane, Durable Objects for coordination, R2 for bytes, KV for what has not moved; each record kind names its one authority in docs/data-inventory.json, checked against the code; D1 is retired and a launch profile refuses it (every-record-has-a-class, a-comment-is-not-a-binding) |
 | DATA-016 | Medium | P1 | Migration observability is not sufficient for a cutover decision | Fixed | status reports current differences, backlog by kind, lease, read proofs |
 | DATA-017 | Medium | P2 | Financial amounts and currency semantics require stronger constraints | Already true | schema already numeric(18,6) with a currency domain; sign rules per reason are a schema change for the owner |
 | DATA-018 | Medium | P2 | No documented database region/failover/read-only degradation policy | Owner | database region/failover is a provider choice |

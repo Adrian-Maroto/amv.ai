@@ -22,7 +22,8 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-const inv = JSON.parse(readFileSync(join(ROOT, 'docs', 'data-inventory.json'), 'utf8')).kinds;
+const INV = JSON.parse(readFileSync(join(ROOT, 'docs', 'data-inventory.json'), 'utf8'));
+const inv = INV.kinds;
 const listBody = (name) => {
   const m = src.match(new RegExp(name + '\\s*=\\s*\\[(.*?)\\n\\];', 's'));
   return m ? new Set([...m[1].matchAll(/'([a-z_]+):'/g)].map(x => x[1])) : new Set();
@@ -59,6 +60,17 @@ section('What a class means, enforced');
   ok(moneyOut.length === 0, 'a lasting money record is always in the backup', moneyOut);
   for (const k of ['conn', 'agentjar', 'mailcfg', 'finlink']) ok(inv[k] && inv[k].class === 'credential', k + ' is a credential', inv[k]);
   for (const k of ['wallet', 'wallet_tx', 'withdraw', 'txn']) ok(inv[k] && inv[k].class === 'financial' && inv[k].backup, k + ' is financial and backed up', inv[k]);
+}
+
+section('Each kind has exactly one place that answers for it (Nov 1 audit DATA-015)');
+{
+  const noAuth = Object.entries(inv).filter(([, e]) => !/^kv\b/.test(e.authority || '')).map(([k]) => k);
+  ok(noAuth.length === 0, 'every record kind names its authority', noAuth);
+  const pg = Object.entries(inv).filter(([, e]) => /postgres/.test(e.authority)).map(([k]) => k).sort().join();
+  ok(pg === 'acct,ent', 'and only accounts and plans are answered by Postgres - the two classes that moved, with proof', pg);
+  ok(/^retired/.test((INV.elsewhere || {}).d1 || '') && INV.elsewhere['durable-object'] && INV.elsewhere.r2 && INV.elsewhere.postgres, 'what lives outside KV is named too, and D1 is retired', INV.elsewhere);
+  const pre = readFileSync(join(ROOT, 'preflight.mjs'), 'utf8');
+  ok(/D1 is retired as a store/.test(pre), 'and a launch that would make D1 the store is refused', true);
 }
 
 if (report('every-record-has-a-class') > 0) process.exitCode = 1;

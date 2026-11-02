@@ -485,6 +485,14 @@ if (toml) {
         `uncomment its block in wrangler.toml - GO-LIVE.md says what it needs first`);
     }
     if (!need.some(id => off.find(c => c.id === id))) ok(`every binding the ${PROFILE} launch needs is declared`);
+    /* ONE SOURCE OF TRUTH PER DATA CLASS (Nov 1 audit DATA-015,
+       docs/DATA-TIER.md): Postgres for the control plane, Durable Objects for
+       coordination, R2 for files, KV for what has not moved yet. D1 is
+       retired as an authority - a launch that makes it the store would add
+       a third answer for the same records. */
+    if (/^\s*DATA_STORE\s*=\s*"d1"/mi.test(toml))
+      err(`the ${PROFILE} launch sets DATA_STORE = "d1", and D1 is retired as a store`,
+        'remove DATA_STORE - the records stay in KV and move to Postgres one class at a time (docs/DATA-TIER.md)');
   }
   if (off.length && (!PROFILE || !LAUNCH_PROFILES[PROFILE] || off.some(c => !LAUNCH_PROFILES[PROFILE].includes(c.id))))
     warn('OFF on this deployment: ' + off.filter(c => !(PROFILE && (LAUNCH_PROFILES[PROFILE] || []).includes(c.id))).map(c => c.what).join('; '),

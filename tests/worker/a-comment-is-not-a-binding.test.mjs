@@ -91,6 +91,14 @@ section('A comment after a real line, or a # inside a string, is read the TOML w
   ok(/ON: searching by meaning/.test(run(quoted).out), 'a real block beside a comment holding a # is still ON');
 }
 
+section('A launch cannot make D1 the store (Nov 1 audit DATA-015)');
+{
+  const d1 = allOn + '\n[vars]\nDATA_STORE = "d1"\n';
+  ok(d1 !== allOn, 'the fixture sets it', true);
+  const r = run(d1, { AMV_PROFILE: 'consumer_full' }, '', cloudOn);
+  ok(r.code === 1 && /D1 is retired as a store/.test(r.out), 'a launch profile refuses it, saying why', r.out.slice(-300));
+}
+
 section('A profile that does not exist is refused');
 {
   const r = run(real, { AMV_PROFILE: 'consumer_ful' });

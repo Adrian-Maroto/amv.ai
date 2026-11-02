@@ -174,3 +174,18 @@ it can only be checked by step 5 having run clean at 100% for a period on the
 real database - which does not exist yet (the owner has not created it). Code
 written now for a step that cannot be measured is a guess shipped as a
 migration; it is built when step 5's numbers say it can be.
+
+## One source of truth for every data class (Nov 1 audit DATA-015)
+
+The final architecture, and where each class answers today:
+
+| Store | What it is the authority for |
+|---|---|
+| **Postgres** (Hyperdrive) | The control plane. Today it answers for accounts and plans only, and only rows proved equal to KV; ledgers, teams and keys move one class at a time with the same proof. |
+| **Durable Objects** | Coordination: every counter, limit, reservation, lock and lease, the sign-out-everywhere generation, the switchboard. |
+| **R2** | Bytes: library files, nightly backups, saved cloud workspaces. |
+| **KV** | Every record kind not yet moved - the authority for those until its class moves, then a cache. |
+| **D1** | Retired. Never an authority; a launch profile refuses `DATA_STORE = "d1"`. |
+
+Each record kind's authority is written in `docs/data-inventory.json`;
+`tests/worker/every-record-has-a-class` holds it to the code.
