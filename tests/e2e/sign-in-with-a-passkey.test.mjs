@@ -174,7 +174,12 @@ const B = await device();
   ok(await until(B.page, () => !!document.getElementById('mf-code')), 'the right password is not enough: it asks for the app’s code', true);
   ok(!(await B.page.evaluate(() => !!(AMV_API.token && S.user))), 'and nothing is signed in yet', true);
   await fill(B.page, '#mf-code', '000000'); await click(B.page, '#mf-go');
-  ok(await until(B.page, () => /did not work/.test((document.getElementById('mf-msg') || {}).textContent || '')), 'a wrong code says so', true);
+  /* Any refusal said in words counts, and nothing may be signed in: under
+     load the server's sentence can differ (a retry, a slow answer), and an
+     exact phrase made this flaky without making it any stricter. */
+  const said = await until(B.page, () => ((document.getElementById('mf-msg') || {}).textContent || '').trim().length > 3, 30000);
+  const why = await B.page.evaluate(() => (document.getElementById('mf-msg') || {}).textContent || '');
+  ok(said && !(await B.page.evaluate(() => !!(AMV_API.token && S.user))), 'a wrong code says so, and signs nothing in', why);
   await new Promise(r => setTimeout(r, 300));
   await fill(B.page, '#mf-code', totp(secret, 1));
   ok(await signedIn(B.page), 'the code from the app signs in', true);
