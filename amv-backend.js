@@ -41565,12 +41565,16 @@ async function libPut(request, env){
 
   /* The same file sent twice is one entry. Decided under the lock, with the
      limit, so two tabs uploading at once cannot both pass the last check. */
-  let decided;
+  let decided; const abandoned = [];
   try {
     decided = await _withKind(env, LIB_KIND, user.email, (rec) => {
       /* An upload that never finished (a Worker stopped mid-way) is cleared
          after ten minutes, so it cannot hold a place in the limit for ever. */
-      rec.files = (Array.isArray(rec.files) ? rec.files : []).filter(f => !f.pending || now - (f.added || 0) < 600000);
+      const all = Array.isArray(rec.files) ? rec.files : [];
+      /* Its bytes may have reached the store before the Worker stopped: they
+         are deleted below, not left behind unseen and uncounted (Nov 1 audit FILE-004). */
+      for (const f of all) if (f.pending && now - (f.added || 0) >= 600000) abandoned.push(f.id);
+      rec.files = all.filter(f => !f.pending || now - (f.added || 0) < 600000);
       const same = rec.files.find(f => f.sig === sig && !f.pending);
       if (same) { same.used = now; return { dup: _libMeta(same) }; }
       const u = _libUsage(rec);
@@ -41581,6 +41585,7 @@ async function libPut(request, env){
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Try again in a moment.' }, 503);
   }
+  for (const gone of abandoned) { try { await env.AMV_FILES.delete(prefix + gone); } catch (e) {} }
   if (decided && decided.dup) return json({ ok: true, file: decided.dup, verified: true, existed: true });
   if (decided && decided.full)
     return json({ error: 'library_full', used: decided.full, limit,

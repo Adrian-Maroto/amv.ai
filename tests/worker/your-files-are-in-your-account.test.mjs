@@ -100,6 +100,12 @@ section('A file is kept, listed, and opened again - from the storage itself');
   const rec = await W.DB.get(env, 'lib', 'a@example.com');
   const f = rec.files.find(x => x.name === 'accents.txt');
   ok(f && f.bytes === 2000 && f.chars === 1000, 'a file is counted by its stored bytes', f && { bytes: f.bytes, chars: f.chars });
+  /* Nov 1 audit FILE-004: an upload whose Worker stopped after storing the bytes leaves nothing behind. */
+  await W.DB.put(env, 'lib', 'a@example.com', Object.assign({}, rec, { files: rec.files.concat([{ id: 'lfdead', name: 'half.txt', pending: true, added: Date.now() - 11 * 60000, chars: 4, sig: 'x' }]) }));
+  const deadKey = [...r2._m.keys()][0].replace(/[^/]+$/, 'lfdead');
+  r2._m.set(deadKey, 'half');
+  await req(env, '/v1/library/put', file('later.txt', 'a later upload'), tok);
+  ok(!r2._m.has(deadKey) && !(await W.DB.get(env, 'lib', 'a@example.com')).files.some(x => x.id === 'lfdead'), 'an abandoned upload is cleared, its bytes too', [...r2._m.keys()]);
 }
 
 section('Storage that says yes and keeps nothing is not "kept"');
