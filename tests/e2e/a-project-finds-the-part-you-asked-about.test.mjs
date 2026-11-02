@@ -86,17 +86,17 @@ section('Larger than one message: the passage asked about is found, in the oldes
   ok(/2,750 euros/.test(ctx), 'the one sentence that answers it reaches the prompt', ctx.length);
   ok(/searched them for this message and these are the passages that match it best/.test(ctx) && /never guess at what the files say/.test(ctx),
      'and the model is told these are search results, with the rest not sent', ctx.slice(0, 0));
-  ok(/=== contract\.txt - passage \d+ of \d+ ===/.test(ctx), 'each passage says which file and which part it is', (ctx.match(/=== contract[^\n]*/) || [''])[0]);
+  ok(/=== contract\.txt - lines \d+-\d+ \(passage \d+ of \d+\) ===/.test(ctx), 'each passage says which file, which lines and which part it is', (ctx.match(/=== contract[^\n]*/) || [''])[0]);
   const files = await page.evaluate(() => window.__files.reduce((n, f) => n + f.text.length, 0));
   ok(ctx.length < 120000 + 6000 && files > 150000, 'within the same budget, from files well past it', { prompt: ctx.length, files });
-  const first = ctx.indexOf('=== contract.txt - passage');
+  const first = ctx.indexOf('=== contract.txt - lines');
   ok(first >= 0 && ctx.indexOf('2,750') > first, 'the answer sits inside a contract passage', first);
 }
 
 section('Every language: Chinese without spaces, an accent typed or not, a table row with its header');
 {
   const zh = await ask('预算是多少？');
-  ok(/预算批准为五百万元/.test(zh) && /=== 会议记录\.txt - passage/.test(zh) && /passages that match it best/.test(zh),
+  ok(/预算批准为五百万元/.test(zh) && /=== 会议记录\.txt - lines \d+-\d+ \(passage/.test(zh) && /passages that match it best/.test(zh),
      'a Chinese question finds the Chinese sentence - by matching it, not by sending the start of every file', (zh.match(/=== 会议[^\n]*/) || [''])[0]);
   /* Only the place name is a word the files have, and its accent is inside
      the first five letters, so nothing but folding the accent can find it. */
@@ -115,13 +115,32 @@ section('A follow-up still finds what the question before it was about');
   ok(/2,750 euros, payable by bank transfer/.test(ctx) && /passages that match it best/.test(ctx), 'the earlier question still counts, at half weight', ctx.length);
 }
 
+section('A passage is named by its section and its lines, and those lines are where it is (Nov 1 audit RETR-004)');
+{
+  const r = await page.evaluate(() => {
+    let body = '# Lease\n';
+    for (let k = 1; k <= 30; k++) body += '## Clause ' + k + '\n' + ('Ordinary terms about clause ' + k + ' and nothing else of note. ').repeat(40) + '\n';
+    body = body.replace('## Clause 17\n', '## Pets\nOne cat is allowed; dogs need written consent from the landlord.\n## Clause 17\n');
+    const f = { id: 'L1', name: 'lease.docx', text: body, added: 9 };
+    const found = amvProjectSearch([f], [{ text: 'are dogs allowed', weight: 1 }], 2500);
+    const p = found.passages.find(x => /dogs need written consent/.test(x.text));
+    const lines = body.split('\n');
+    return { p, said: found.said, span: p ? lines.slice(p.lines[0] - 1, p.lines[1]).join('\n') : '' };
+  });
+  ok(r.p && r.p.section === 'Pets', 'the passage knows the section it sits under', r.p && r.p.section);
+  ok(r.p && r.span.includes(r.p.text) && r.span.length < r.p.text.length + 2600, 'and its lines, counted from 1, are where its text is', { lines: r.p && r.p.lines });
+  ok(r.p && !/## Clause/.test(r.p.text), 'a passage does not run across into another section', r.p && r.p.text.slice(0, 120));
+  ok(/=== lease\.docx - "Pets" - lines \d+-\d+ \(passage \d+ of \d+\) ===/.test(r.said), 'the model is shown that label', (r.said.match(/=== lease[^\n]*/) || [''])[0]);
+  ok(/cite it that way/.test(r.said), 'and told to cite by it', true);
+}
+
 section('When nothing matches, it says the start of each file was sent');
 {
   const ctx = await ask('xyzzy plugh');
   ok(/nothing in them matched it, so these are the beginning of each file/.test(ctx), 'it does not claim a match it did not find', ctx.slice(0, 0));
   ok(ctx.length < 120000 + 6000, 'and it still stops at one message’s worth', ctx.length);
   for (const name of ['contract.txt', 'notes.txt', 'sales.csv', '会议记录.txt'])
-    ok(ctx.includes('=== ' + name + ' - passage 1 of'), 'the start of ' + name + ' is there', name);
+    ok(ctx.includes('=== ' + name + ' - lines 1-'), 'the start of ' + name + ' is there', name);
 }
 
 section('The real send path carries the passages to the model');

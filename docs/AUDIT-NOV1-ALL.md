@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 69, Roadmap 55, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 70, Roadmap 54, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -109,7 +109,7 @@ Totals: Fixed 69, Roadmap 55, Owner 25, Already true 13, Not a defect here 7
 | RETR-001 | High | P1 | Semantic meaning is on-demand reranking, not a persistent vector index | Roadmap | persistent vector index |
 | RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Roadmap | permission-filtered retrieval |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Roadmap | server-side past-chat index |
-| RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Roadmap | chunk source identity |
+| RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Fixed | every passage from a project, the library or an attached document is named by file, the section heading it sits under (documents, slides and sheets alike) and the lines it spans; passages never cross a heading; the model is told to cite by that label (a-project-finds-the-part-you-asked-about) |
 | MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Roadmap | provider-authoritative context limits |
 | MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Roadmap | tokenizer-based limits |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Owner | second model provider is commercial |

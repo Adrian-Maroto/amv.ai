@@ -59,7 +59,7 @@ section('A passage with no word in common is found, and labelled');
 {
   const out = await page.evaluate(() => window.amvProjectFileSearch({ query: 'revenue increase' }));
   ok(/Las ventas subieron un 14 por ciento/.test(out), 'the Spanish passage is found for an English question', out.slice(0, 300));
-  ok(/informe\.txt - passage \d+ of \d+ \(found by meaning - it does not use the words searched for\)/.test(out), 'and is labelled as found by meaning, not by the words', out.slice(0, 400));
+  ok(/informe\.txt - lines \d+-\d+ \(passage \d+ of \d+\) \(found by meaning - it does not use the words searched for\)/.test(out), 'and is labelled as found by meaning, not by the words', out.slice(0, 400));
   ok(!/harbour office opens at nine and the ferry leaves at ten\. The harbour office opens at nine and the ferry leaves at ten\. The harbour/.test(out.split('informe.txt')[0] || ''), 'filler about the harbour is not offered as a match');
 }
 

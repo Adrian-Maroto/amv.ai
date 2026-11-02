@@ -156,7 +156,7 @@ section('The same search with other phrasings finds the passage');
   const said = lastToolResult();
   ok(/Top-line revenue expansion reached 14 percent/.test(said), 'the passage that said it differently is found', said.slice(0, 200));
   ok(/for "annual earnings" \(and "revenue expansion", "top-line", "ingresos"\)/.test(said), 'and the result says exactly what was searched for', said.slice(0, 200));
-  ok(/=== board-pack\.txt - passage \d+ of \d+ ===/.test(said), 'named by file and passage', true);
+  ok(/=== board-pack\.txt( - "[^"]+")? - lines \d+-\d+ \(passage \d+ of \d+\) ===/.test(said), 'named by file, section, lines and passage', true);
   ok(!/search once more/.test(said), 'with no advice to retry once it has', true);
 }
 
