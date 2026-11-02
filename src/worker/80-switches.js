@@ -213,14 +213,26 @@ async function adminSwitch(request, env, gated) {
       else strong = 'failed';
     } catch (e) { strong = 'failed'; }
   }
+  /* NOT REPORTED AS DONE WHEN IT IS NOT (Nov 1 audit SEC-011). Switching
+     something back ON with the switchboard unreachable is refused outright:
+     the switchboard would still hold it off and servers would disagree.
+     Switching something OFF still goes to KV - an emergency stop that lands
+     within a minute beats one that never lands - but the answer says it is
+     not in force everywhere yet (202, ok:false), never a plain success. */
+  if (strong === 'failed' && !off) {
+    audit(env, 'switch_not_flipped', { name, off, why: 'switchboard unreachable' });
+    return json({ error: 'The switchboard could not be written, so ' + name + ' was left off. Try again in a minute.', code: 'switchboard_unavailable' }, 503);
+  }
   if (off) m[name] = { off: true, why, at: Date.now() };
   else delete m[name];
   await env.AMV_KV.put(SWITCH_KEY, JSON.stringify(m));
   _swCache = { at: Date.now(), map: m };          // this isolate knows at once
   audit(env, 'switch_flipped', { name, off, why });
   try { await alertOnce(env, 'switch:' + name + ':' + (off ? 'off' : 'on'), (off ? 'Switched OFF: ' : 'Switched back on: ') + name + (why ? ' - ' + why : ''), 1); } catch (e) {}
+  if (strong === 'failed') return json({ ok: false, pending: true, code: 'switchboard_unavailable', name, off, switches: m,
+    reaches: 'every server within about a minute: the switchboard could not be written, so until then some servers may still have it on' }, 202);
   return json({ ok: true, name, off, switches: m,
-    reaches: strong === 'ok' ? 'every server within seconds' : 'every server within about a minute (the switchboard could not be written)' });
+    reaches: strong === 'ok' ? 'every server within seconds' : 'every server within about a minute' });
 }
 async function adminSwitches(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }

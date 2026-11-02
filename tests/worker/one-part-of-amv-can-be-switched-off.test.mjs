@@ -54,6 +54,12 @@ function mkEnv(extra) {
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
         const cur = vals.get(n) || 0;
+        /* The switchboard, as the counter object keeps it. */
+        if (b.op === 'swGet' || b.op === 'swSet') {
+          const sb = vals.get('sw:' + n) || { v: 0, map: {} };
+          if (b.op === 'swSet') { if (b.off) sb.map[b.name] = { off: true, why: b.why || '', at: Date.now() }; else delete sb.map[b.name]; sb.v++; vals.set('sw:' + n, sb); }
+          return new Response(JSON.stringify({ v: sb.v, map: sb.map }));
+        }
         if (b.op === 'reserve') {
           if (b.cap != null && b.cap !== Infinity && cur + b.amount > b.cap) return new Response(JSON.stringify({ allowed: false, value: cur }));
           vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount }));
@@ -245,6 +251,16 @@ section('The switchboard: a flip reaches every server within seconds; unreachabl
   down = false; W._swStrongReset();
   ok(!(await W._switchedOff(B, 'write:slack.post')), 'with the switchboard back, writes nobody switched off go ahead again', null);
 
+  /* Nov 1 audit SEC-011: a flip the switchboard did not take is never a plain success. */
+  down = true; W._swStrongReset();
+  const offDown = await call(A, '/v1/admin/switch', { name: 'write:slack.post', off: true, why: 'test' }, ADMIN);
+  const od = await offDown.json();
+  ok(offDown.status === 202 && od.ok === false && od.pending && /about a minute/.test(od.reaches || ''), 'switching off with the switchboard down still lands in KV, and says it is not in force everywhere yet', od);
+  const onDown = await call(A, '/v1/admin/switch', { name: 'write:gmail.send', off: false }, ADMIN);
+  const ond = await onDown.json();
+  ok(onDown.status === 503 && ond.code === 'switchboard_unavailable' && /write:gmail\.send/.test(live.get('switches') || ''), 'switching back on with the switchboard down is refused, and nothing is changed', ond);
+  down = false; W._swStrongReset();
+  await call(A, '/v1/admin/switch', { name: 'write:slack.post', off: false }, ADMIN);
   W._swStrongReset();
   await call(A, '/v1/admin/switch', { name: 'write:gmail.send', off: false }, ADMIN);
   W._swCache.at = 0; W._swStrongReset();
