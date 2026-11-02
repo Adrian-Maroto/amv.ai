@@ -318,6 +318,29 @@ section('An agent can promise the form of its results, and what lacks it is repa
   ok(!systems.some(sy => /Brief the board\./.test(sy)), 'the second agent never ran', systems.length);
   await call('/v1/agents/delete', { id: briefer });
 
+  /* And when the form is kept, the next agent gets the dossier - and only
+     that: not the first agent's memory, instructions or sign-ins (AGENT-006). */
+  {
+    const w2 = await call('/v1/agents/save', { name: 'Seller', instructions: 'Write the pitch.' });
+    const seller = w2.d.agent.id;
+    const r2 = await call('/auto/create', { approval: 'auto', steps: [
+      { title: 'Research', detail: 'Research the solar market', agent: agentId },
+      { title: 'Pitch', detail: 'Write a pitch from the research', after: 0, agent: seller } ] });
+    const g2 = r2.d.group;
+    replies.length = 0; replies.push('## Summary\nDOSSIER-SUMMARY-LINE\n\n## Sources\n- ree.es', 'Pitch written.');
+    const tick2 = async (t) => { const x = rec(); x.items.forEach(i => { if (i.group === g2 && i.active && !i.waiting) i.next = t - 1000; }); put(x); await W.runDueAutomations(env, t); };
+    systems = []; bodies = [];
+    await tick2(Date.now() + 9.3);
+    if (systems.length < 2) await tick2(Date.now() + 9.6);
+    const second = bodies.find(b => /Write the pitch\./.test(b.system || '')) || {};
+    const turn = JSON.stringify(second.messages || []);
+    ok(/DOSSIER-SUMMARY-LINE/.test(turn), 'the next agent is handed the checked result', turn.slice(0, 200));
+    ok(!/Three things changed in solar policy/.test(second.system || '') && !/policy changes in Spain/.test(second.system || ''),
+      'and none of the first agent\u2019s memory or instructions', (second.system || '').slice(-300));
+    ok(!/"Summary", "Sources"/.test(second.system || ''), 'nor its contract', true);
+    await call('/v1/agents/delete', { id: seller });
+  }
+
   /* A JSON contract is read as JSON: a field of the wrong type is not "there". */
   unthrottle();
   await call('/v1/agents/save', { id: agentId, contract: { kind: 'json', required: ['price:number', 'source'] } });
