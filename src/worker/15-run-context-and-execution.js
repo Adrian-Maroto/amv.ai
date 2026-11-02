@@ -930,6 +930,9 @@ async function _autoExecute(env, item, budget, email, standing, never, agent){
     let pages = [];
     try{ pages = await _agentReadSites(env, email, agent, item.detail); }catch(e){ pages = []; }
     const read = pages.filter(p => p.text);
+    /* A page that could not be read signed in is named, like any source the
+       job needed and did not get - never quietly left out. */
+    for(const p of pages.filter(x => !x.text && x.error)) (acct.missing = acct.missing || []).push({ need: 'the signed-in page ' + p.url, why: p.error });
     if(read.length){
       const fenceTag = _dataFenceTag();
       userTurn += '\n\n' + _fenceUntrusted(read.map(p => 'PAGE ' + p.url + '\n' + p.text).join('\n\n'), fenceTag) + '\n'

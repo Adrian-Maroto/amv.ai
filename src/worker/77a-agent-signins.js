@@ -318,11 +318,24 @@ async function _agentReadSites(env, email, agent, detail){
   if(!urls.length) return [];
   const cookies = await _agentJarLoad(env, email, agent);
   if(!cookies.length) return [];
+  /* THE SIGN-IN MUST BE IN THE BROWSER BEFORE ANYTHING IS READ (Nov 1 audit
+     AGENT-013). A cookie that could not be set used to be ignored: the pages
+     were opened signed out - a login screen, read as though it were the
+     page - and the run was recorded as having used the sign-in. Now a
+     sign-in that cannot be applied opens nothing, says so on every page it
+     was for, and is recorded as not applied; "used" is recorded only for
+     pages actually read. */
+  const failAll = (why) => urls.map(u => ({ url: u, text: '', error: why }));
   let browser = null; const out = [];
   try{
     browser = await _webLaunch(env);
     const page = await browser.newPage();
-    if(typeof page.setCookie === 'function') await page.setCookie(...cookies).catch(() => {});
+    let applied = typeof page.setCookie === 'function';
+    if(applied){ try{ await page.setCookie(...cookies); }catch(e){ applied = false; } }
+    if(!applied){
+      audit(env, 'agent_signins_not_applied', { email, agent: agent.id });
+      return failAll('the saved sign-in could not be put into the browser, so this page was not opened');
+    }
     for(const u of urls){
       try{
         await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -330,8 +343,9 @@ async function _agentReadSites(env, email, agent, detail){
         out.push({ url: u, text: String(text || '').replace(/\s+\n/g, '\n').slice(0, AGENT_READ_CHARS_MAX) });
       }catch(e){ out.push({ url: u, text: '', error: 'could not be read' }); }
     }
-  }catch(e){ return []; }
+  }catch(e){ return failAll('the browser could not be started, so this page was not opened'); }
   finally{ try{ if(browser) await browser.close(); }catch(e){} }
-  audit(env, 'agent_signins_used', { email, agent: agent.id, sites: [...new Set(out.map(p => { try{ return _agentSiteOf(new URL(p.url).hostname, agent.browser.sites); }catch(e){ return ''; } }))] });
+  const read = out.filter(p => p.text);
+  if(read.length) audit(env, 'agent_signins_used', { email, agent: agent.id, sites: [...new Set(read.map(p => { try{ return _agentSiteOf(new URL(p.url).hostname, agent.browser.sites); }catch(e){ return ''; } }))] });
   return out;
 }

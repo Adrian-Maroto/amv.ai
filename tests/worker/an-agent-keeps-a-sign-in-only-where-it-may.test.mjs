@@ -110,6 +110,15 @@ section('Read unattended: only the listed pages its job names, and nothing but r
   ok(audits.some(a => a.event === 'agent_signins_used' && a.agent === AG) && !JSON.stringify(audits).includes('SECRET'), 'the use is on the record, with no cookie in it', audits.map(a => a.event));
   const none = await W._agentReadSites(env, ME, await agent(), 'Summarise the news.');
   ok(none.length === 0, 'a job that names none of its pages opens nothing', none.length);
+  /* Nov 1 audit AGENT-013: the sign-in could not be put into the browser. */
+  const realLaunch = BROWSER.launch;
+  BROWSER.launch = async () => { const b = await realLaunch(); const np = b.newPage; b.newPage = async () => { const p = await np(); p.setCookie = async () => { throw new Error('cookie refused'); }; return p; }; return b; };
+  calls.length = 0; audits.length = 0;
+  const failed = await W._agentReadSites(env, ME, await agent(), 'Read https://tracker.example.com/board/42 please.');
+  BROWSER.launch = realLaunch;
+  ok(failed.length === 1 && !failed[0].text && /could not be put into the browser/.test(failed[0].error || ''), 'a sign-in that cannot be applied reads nothing, and says so for the page', failed);
+  ok(!calls.some(c => c[0] === 'goto'), 'no page is opened signed out and read as though it were the real one', calls);
+  ok(!audits.some(a => a.event === 'agent_signins_used') && audits.some(a => a.event === 'agent_signins_not_applied'), 'and it is recorded as not applied - never as used', audits.map(a => a.event));
 }
 
 section('Expires on its own: 30 days after a watched run refreshed it');
