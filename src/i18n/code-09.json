@@ -1518,5 +1518,24 @@
   "it": "{0} di {1} spesi questo mese · restano {2}",
   "ko": "이번 달 {1} 중 {0} 사용 · {2} 남음",
   "ta": "இந்த மாதம் {1}-இல் {0} செலவு · {2} மீதம்"
+ },
+ "Manage your password and account security.": {
+  "es": "Gestiona tu contraseña y seguridad.",
+  "zh": "管理您的密码和账户安全。",
+  "hi": "अपना पासवर्ड प्रबंधित करें।",
+  "ar": "أدر كلمة المرور وأمان حسابك.",
+  "pt": "Gerencie sua senha e segurança.",
+  "fr": "Gérez votre mot de passe et sécurité.",
+  "de": "Verwalte Passwort und Kontosicherheit.",
+  "ja": "パスワードとセキュリティを管理。",
+  "ru": "Управляйте паролем и безопасностью.",
+  "id": "Kelola kata sandi dan keamanan akun Anda.",
+  "bn": "আপনার পাসওয়ার্ড ও অ্যাকাউন্টের নিরাপত্তা পরিচালনা করুন।",
+  "ur": "اپنا پاس ورڈ اور اکاؤنٹ کی حفاظت سنبھالیں۔",
+  "tr": "Parolanızı ve hesap güvenliğinizi yönetin.",
+  "vi": "Quản lý mật khẩu và bảo mật tài khoản.",
+  "it": "Gestisci la password e la sicurezza dell’account.",
+  "ko": "비밀번호와 계정 보안을 관리하세요.",
+  "ta": "உங்கள் கடவுச்சொல்லையும் கணக்குப் பாதுகாப்பையும் நிர்வகிக்கவும்."
  }
 }

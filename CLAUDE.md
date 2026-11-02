@@ -255,6 +255,10 @@ Companion docs (do not duplicate them here - read them):
   - never machine-translate a screen whose dictionary has not arrived. A MutationObserver translates content rendered after a language
   switch across `#app`, `#ovr`, and body-appended menus. Chat content is marked
   `data-no-i18n`. Never mistranslate live model output.
+  The translation of every sign-in, money and privacy sentence is APPROVED by
+  fingerprint in `docs/i18n-critical.json`: after changing one (or adding one),
+  read the new wording and run `node scripts/i18n-approve.mjs`, or
+  `critical-copy-is-approved-in-every-language` fails.
 
 ## Verify like this
 - `npm run check` is the shippability gate (syntax, worker load, build fresh,

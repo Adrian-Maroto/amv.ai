@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 74, Roadmap 49, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 75, Roadmap 48, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -173,5 +173,5 @@ Totals: Fixed 74, Roadmap 49, Owner 25, Already true 14, Not a defect here 7
 | OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Fixed | a temporary chat is not stored or synced, reads and writes no memory, and now sets up no background job, task in steps, watch or standing instruction (a-temporary-chat-leaves-nothing) |
 | OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Roadmap | abuse risk controls at scale |
 | OPS-008 | Medium | P2 | Marketplace supply-chain governance needs publisher and update controls | Roadmap | marketplace publisher controls |
-| OPS-009 | Medium | P2 | Large translation packs require quality/version governance | Roadmap | translation governance |
+| OPS-009 | Medium | P2 | Large translation packs require quality/version governance | Fixed | every sign-in, money and privacy sentence has its translation in all 17 languages approved by fingerprint (docs/i18n-critical.json, scripts/i18n-approve.mjs); a new one, a missing one, an English one or a changed one fails the gate until it is read and approved (critical-copy-is-approved-in-every-language); the build already refuses a pack entry missing a language |
 | OPS-010 | Medium | P2 | Dynamic/intelligent UI needs systematic accessibility testing | Already true | control size and dialog reach tested; more a11y suites to add |
