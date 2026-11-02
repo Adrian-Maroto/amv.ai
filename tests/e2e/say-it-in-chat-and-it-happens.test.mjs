@@ -137,13 +137,31 @@ async function armConsent() {
 }
 await armConsent();
 
+/* A PAGE CONTEXT LOST UNDER IT. On a loaded CI runner the move from Crew back
+   to chat can still be settling when a step evaluates in the page, and the
+   evaluate dies with "execution context was destroyed" - a failure of the
+   suite, not a finding (seen on CI, Nov 2). As in tell-chat-to-connect-anything:
+   wait for the page, re-arm the approval watcher (it lives in the page) and
+   try once more, saying where the page was. A second loss still fails. */
+async function inPage(fn, arg) {
+  try { return await page.evaluate(fn, arg); }
+  catch (e) {
+    if (!/Execution context was destroyed/.test(String(e && e.message))) throw e;
+    console.log('[context lost] at ' + page.url() + ' - waiting for the page and trying once more');
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await page.waitForFunction(() => typeof setTab === 'function' && !!document.getElementById('mta'), null, { timeout: 15000 }).catch(() => {});
+    await armConsent();
+    return await page.evaluate(fn, arg);
+  }
+}
+
 async function say(text, { approve = true } = {}) {
   /* A gap between messages, because AMV has a burst limiter and is right to.
      Sending these back to back tripped it, and the turn was answered with
      "too many requests in a few seconds" instead of reaching the model - which
      read exactly like a broken tool and was the protection working. */
   await page.waitForTimeout(3000);
-  await page.evaluate((yes) => {
+  await inPage((yes) => {
     window.__approve = yes;
     window.__consent = { seen: 0, title: '', body: '' };
   }, approve);
@@ -155,7 +173,7 @@ async function say(text, { approve = true } = {}) {
   await page.evaluate(() => setTab('chat')).catch(() => {});
   await page.waitForLoadState('domcontentloaded').catch(() => {});
   await page.waitForFunction(() => typeof setTab === 'function' && !!document.getElementById('mta'), null, { timeout: 15000 });
-  await page.evaluate(async (t) => {
+  await inPage(async (t) => {
     setTab('chat');
     await new Promise(x => setTimeout(x, 300));
     const box = document.getElementById('mta');
