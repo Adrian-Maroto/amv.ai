@@ -398,6 +398,31 @@ section('Its record is kept, and three bad runs in a row pause it (Nov 1 audit A
   unthrottle();
 }
 
+section('One edit at a time, and what it said before is kept (Nov 1 audit AGENT-016)');
+{
+  const unthrottle = () => { for (const k of [...store.keys()]) if (/agents:/.test(k) && /(^rl|act)/.test(k)) store.delete(k); };
+  unthrottle();
+  const l = await call('/v1/agents', null, mine.token, 'GET');
+  const a = l.d.agents.find(x => x.id === agentId);
+  const rev = a.rev;
+  ok(Number.isInteger(rev) && rev > 0, 'the agent carries a revision', rev);
+  const first = await call('/v1/agents/save', { id: agentId, rev, instructions: 'Lead with Portugal now.' });
+  ok(first.status === 200 && first.d.agent.rev === rev + 1, 'a save made from the current revision goes through, and moves it on', first.d.agent && first.d.agent.rev);
+  unthrottle();
+  const stale = await call('/v1/agents/save', { id: agentId, rev, instructions: 'An edit from a tab opened before that one.' });
+  ok(stale.status === 409 && stale.d.code === 'agent_changed', 'a save made from an older revision is refused, not written over the newer one', stale.status);
+  const after = (await call('/v1/agents', null, mine.token, 'GET')).d.agents.find(x => x.id === agentId);
+  ok(after.instructions === 'Lead with Portugal now.', 'and the newer edit is what stands', after.instructions);
+  ok(after.history.length >= 1 && after.history[0].was.instructions === 'Always lead with policy changes in Spain.', 'what it said before is kept', after.history[0]);
+  unthrottle();
+  const noRev = await call('/v1/agents/save', { id: agentId, paused: false });
+  ok(noRev.status === 200, 'a save that names no revision (pausing, resuming) still works', noRev.status);
+  unthrottle();
+  for (let i = 0; i < 12; i++) { await call('/v1/agents/save', { id: agentId, role: 'Role ' + i }); unthrottle(); }
+  const capped = (await call('/v1/agents', null, mine.token, 'GET')).d.agents.find(x => x.id === agentId);
+  ok(capped.history.length === 10, 'the last ten changes are kept, not every one forever', capped.history.length);
+}
+
 section('Deleted, its jobs stop and their results stay');
 {
   const before = rec().results.length;

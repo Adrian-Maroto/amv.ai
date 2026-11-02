@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 80, Roadmap 43, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 81, Roadmap 42, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -60,7 +60,7 @@ Totals: Fixed 80, Roadmap 43, Owner 25, Already true 14, Not a defect here 7
 | AGENT-013 | High | P1 | Cookie application failure is ignored, then use is audited | Fixed | unapplied sign-in reads nothing and says so |
 | AGENT-014 | Medium | P2 | Saved browser sessions have a fixed 30-day TTL without renewal policy clarity | Fixed | renewal policy written down |
 | AGENT-015 | High | P1 | Read-only unattended browsing is a strong safety choice but incomplete product parity | Roadmap | unattended writes stay off by design |
-| AGENT-016 | Medium | P2 | Agent records are account-aggregated rather than normalized | Roadmap | normalized agent records with DATA-013 |
+| AGENT-016 | Medium | P2 | Agent records are account-aggregated rather than normalized | Fixed | edits go through the account lock with an optimistic revision: a save from an older revision is refused (409) instead of overwriting, and every change keeps the previous wording, the last ten (an-agent-works-within-what-it-was-given); moving agent records into their own rows is part of DATA-013 |
 | AGENT-017 | Medium | P2 | Agents lack strict output schemas and completion contracts | Fixed | an agent can promise named sections or a typed JSON object; checked by code after every run, repaired once from its own answer, otherwise marked and no dependent step starts (an-agent-works-within-what-it-was-given) |
 | AGENT-018 | Strategic | P2 | AMV Companion is not yet a fully integrated persistent-agent experience | Roadmap | Companion integration |
 | TASK-001 | Critical | P0 | Timeout rebooking slice is off by one and catastrophically wrong at zero processed | Fixed | ticks book exactly the accounts not reached |

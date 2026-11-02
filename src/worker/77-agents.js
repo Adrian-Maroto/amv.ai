@@ -28,6 +28,8 @@ const AGENT_NAME_MAX = 60;
 const AGENT_ROLE_MAX = 160;
 const AGENT_INSTR_MAX = 4000;
 const AGENT_BUDGET_MAX_USD = 10000;
+const AGENT_HISTORY_MAX = 10;
+const AGENT_HISTORY_FIELDS = ['name', 'role', 'instructions', 'budgetUSD', 'engine', 'web', 'contract'];
 
 function _agentId() { return 'g' + Date.now().toString(36) + _randId(12); }
 function _agentIdOk(id) { return /^g[a-z0-9]{6,24}$/.test(String(id || '')); }
@@ -226,7 +228,8 @@ async function agentsList(request, env) {
     agents.push({ id: a.id, name: a.name, role: a.role || '', instructions: a.instructions || '',
       budgetUSD: +a.budgetUSD || 0, paused: !!a.paused, pausedWhy: a.paused ? (a.pausedWhy || '') : '', created: a.created, engine: a.engine || '', web: a.web !== false,
       score: _agentScore(auto, a.id),
-      contract: a.contract || null,
+      contract: a.contract || null, rev: +a.rev || 0,
+      history: (Array.isArray(a.history) ? a.history : []).slice(-AGENT_HISTORY_MAX).reverse(),
       browser: _agentBrowserShown(a.browser),
       signIns: await _agentSignInsShown(env, email, a).catch(() => []),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
@@ -338,6 +341,22 @@ async function agentsSave(request, env) {
     if (id) {
       const a = rec.list.find(x => x && x.id === id && !x.deleted);
       if (!a) { refused = json({ error: 'That agent does not exist.', code: 'agent_unknown' }, 404); return; }
+      /* ONE EDIT AT A TIME, AND WHAT IT WAS BEFORE (Nov 1 audit AGENT-016).
+         A save may name the revision it was made from; if somebody else saved
+         since - another tab, another device - it is refused rather than
+         silently overwriting their change. Every change keeps the agent's
+         previous wording, the last AGENT_HISTORY_MAX of them. */
+      const cur = +a.rev || 0;
+      if (body.rev !== undefined && body.rev !== null && Number(body.rev) !== cur) {
+        refused = json({ error: 'This agent was changed somewhere else since you opened it. Nothing was saved - open it again to see the change.', code: 'agent_changed', rev: cur }, 409);
+        return;
+      }
+      const was = {};
+      for (const k of AGENT_HISTORY_FIELDS) if (k in clean && JSON.stringify(clean[k]) !== JSON.stringify(a[k])) was[k] = a[k] === undefined ? null : a[k];
+      if (Object.keys(was).length) {
+        a.history = (Array.isArray(a.history) ? a.history : []).concat({ at: Date.now(), rev: cur, was }).slice(-AGENT_HISTORY_MAX);
+      }
+      a.rev = cur + 1;
       /* The browser settings are merged, never replaced: the agent's own key
          and its revocation stamps (77a) are not the page's to send, and
          dropping the stamps would make a fenced sign-in usable again. */
@@ -372,7 +391,7 @@ async function agentsSave(request, env) {
   return json({ ok: true, ...(signIns ? { signIns } : {}), agent: { id: stored.id, name: stored.name, role: stored.role, instructions: stored.instructions,
                                    budgetUSD: stored.budgetUSD, paused: !!stored.paused, created: stored.created,
                                    engine: stored.engine || '', web: stored.web !== false,
-                                   contract: stored.contract || null,
+                                   contract: stored.contract || null, rev: +stored.rev || 0,
                                    browser: _agentBrowserShown(stored.browser) } });
 }
 

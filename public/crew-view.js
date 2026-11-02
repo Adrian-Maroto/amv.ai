@@ -764,7 +764,9 @@ function mcAgentEdit(id){
         body.browserKeep = !!keepBox.checked;
         body.browserSites = String($('ag-sites').value || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
       }
-      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id } : {}, body));
+      /* The revision it was opened at, so a change made elsewhere since is
+         refused rather than overwritten (AGENT-016). */
+      await _autoApi('/v1/agents/save', Object.assign(a ? { id: a.id, rev: +a.rev || 0 } : {}, body));
       toast(a ? T('Saved.') : T('Agent created. Give it a job to start it working.'), 'success', 4000);
       await mcAgentsReload();
     });
