@@ -103,7 +103,7 @@ const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') +
 async function _recordTxn(env, tx) {
   try {
     const entry = {
-      id: tx.id || ('tx_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      id: tx.id || ('tx_' + Date.now().toString(36) + _randId(10)),
       ts: tx.ts || Date.now(),
       provider: tx.provider || 'unknown',
       email: (tx.email || '').toLowerCase(),

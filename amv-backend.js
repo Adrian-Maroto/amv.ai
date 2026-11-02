@@ -3150,7 +3150,7 @@ function _forwardSentry(env, ctx, e) {
     if (!env || !env.SENTRY_DSN) return;
     const s = _sentryEndpoint(env.SENTRY_DSN); if (!s) return;
     const payload = {
-      event_id: (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now()) + Math.random().toString(36).slice(2)),
+      event_id: (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now()) + _randId(12)),
       timestamp: new Date().toISOString(),
       platform: 'javascript',
       level: 'error',
@@ -3969,7 +3969,7 @@ const NONESSENTIAL_DAILY_WRITES = 150;
 const TALLY_SHARDS = 16;
 function _tallyShardOf(who) {
   let h = 2166136261;
-  const s = String(who == null ? Math.random() : who);
+  const s = String(who == null ? _randId(8) : who);
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0) % TALLY_SHARDS;
 }
@@ -8016,7 +8016,7 @@ async function autoCreate(request, env){
   }
   if(sched) next = _schedNextAt(sched, Date.now());
   const item = {
-    id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    id: 'a' + Date.now().toString(36) + _randId(11),
     detail, repeat: shapedRepeat, interval, next, kind: shapedKind, notify: effectiveNotify, approval, scope,
     ...(sched ? { sched } : {}),
     ...(shapedRepeat === 'once' ? { onceAt: next } : {}),
@@ -8146,8 +8146,8 @@ async function _autoCreateSteps(request, env, user, body){
   const notify = (body.notify === 'email' && await _emailReachesNow(env)) ? 'email' : 'app';
   const country = _jobCountry(body.country, request);
   const now = Date.now();
-  const group = 'g' + now.toString(36) + Math.random().toString(36).slice(2, 7);
-  const ids = steps.map((_, n) => 'a' + now.toString(36) + Math.random().toString(36).slice(2, 7) + n);
+  const group = 'g' + now.toString(36) + _randId(11);
+  const ids = steps.map((_, n) => 'a' + now.toString(36) + _randId(11) + n);
   const waitedOn = new Set(steps.flatMap(s => s.after));
   const items = steps.map((s, n) => {
     const waits = s.after.length > 0;
@@ -10349,7 +10349,7 @@ async function _fetchClassroom(token){
 function _dataFenceTag(){
   const r = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID().replace(/-/g, '')
-    : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    : (Date.now().toString(36) + _randId(12));
   return 'RUN-' + r.slice(0, 10).toUpperCase();
 }
 
@@ -12829,7 +12829,7 @@ async function deploySite(request, env){
     for(let i=0; i<40; i++){
       const taken = await DB.get(env, 'site', slug);
       if(!taken || taken.owner === owner) break;
-      slug = base + '-' + Math.random().toString(36).slice(2,6);
+      slug = base + '-' + _randId(10);
     }
   }
 
@@ -15186,7 +15186,7 @@ function _webActionFp(verb, label, url){
           host].join('|');
 }
 async function _webMintApproval(env, email, fp){
-  const id = 'wa' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const id = 'wa' + Date.now().toString(36) + _randId(14);
   await DB.put(env, 'webapproval', id,
     { email, fp, exp: Date.now() + WEB_APPROVAL_TTL_MS },
     { expirationTtl: Math.ceil(WEB_APPROVAL_TTL_MS / 1000) + 60 });
@@ -16249,7 +16249,7 @@ async function handoffCreate(request, env){
   const { title, context, to } = await request.json().catch(()=>({}));
   if(!title || !to) return json({ error:'title and recipient required' }, 400);
   const toEmail = String(to).toLowerCase().trim();
-  const id = 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  const id = 'h' + Date.now().toString(36) + _randId(10);
   const entry = { id, from_email: user.email, to_email: toEmail,
                   title: String(title).slice(0,300), context: String(context||'').slice(0,5000),
                   status: 'pending', at: Date.now() };
@@ -22595,7 +22595,7 @@ async function teamTaskCreate(request, env){
      be marked done. */
   if(asg && _role(team, asg) === 'viewer') return json({ error:'A viewer cannot work on tasks. Give it to a member, or change their role first.', code:'assignee_viewer' }, 400);
   const task = {
-    id: 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    id: 't'+Date.now().toString(36)+_randId(10),
     title: String(title).trim().slice(0, 300),
     notes: String(notes||'').slice(0, 4000),
     assignee: asg || null,
@@ -30063,7 +30063,7 @@ const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') +
 async function _recordTxn(env, tx) {
   try {
     const entry = {
-      id: tx.id || ('tx_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      id: tx.id || ('tx_' + Date.now().toString(36) + _randId(10)),
       ts: tx.ts || Date.now(),
       provider: tx.provider || 'unknown',
       email: (tx.email || '').toLowerCase(),
@@ -35124,7 +35124,7 @@ async function supportSubmit(request, env) {
      No conversation content: somebody reporting that chat is broken has not
      agreed to send us what they were chatting about. */
   const ticket = {
-    id: 'sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    id: 'sup_' + Date.now().toString(36) + _randId(12),
     kind, text, at: Date.now(),
     plan: String(body.plan || '').slice(0, 16),
     tab: String(body.tab || '').replace(/[^a-z_-]/gi, '').slice(0, 24),
@@ -44157,7 +44157,7 @@ const AGENT_ROLE_MAX = 160;
 const AGENT_INSTR_MAX = 4000;
 const AGENT_BUDGET_MAX_USD = 10000;
 
-function _agentId() { return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function _agentId() { return 'g' + Date.now().toString(36) + _randId(12); }
 function _agentIdOk(id) { return /^g[a-z0-9]{6,24}$/.test(String(id || '')); }
 /* A single job's spend this month, when it has a budget of its own. */
 function _jobCostKey(email, id) { return `jobcost:${String(email || '').toLowerCase()}:${id}:${monthKey()}`; }

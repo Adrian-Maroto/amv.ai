@@ -88,7 +88,7 @@ async function _fetchClassroom(token){
 function _dataFenceTag(){
   const r = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID().replace(/-/g, '')
-    : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    : (Date.now().toString(36) + _randId(12));
   return 'RUN-' + r.slice(0, 10).toUpperCase();
 }
 

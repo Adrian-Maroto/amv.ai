@@ -37,7 +37,7 @@ async function supportSubmit(request, env) {
      No conversation content: somebody reporting that chat is broken has not
      agreed to send us what they were chatting about. */
   const ticket = {
-    id: 'sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    id: 'sup_' + Date.now().toString(36) + _randId(12),
     kind, text, at: Date.now(),
     plan: String(body.plan || '').slice(0, 16),
     tab: String(body.tab || '').replace(/[^a-z_-]/gi, '').slice(0, 24),

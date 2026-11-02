@@ -103,7 +103,7 @@ function _forwardSentry(env, ctx, e) {
     if (!env || !env.SENTRY_DSN) return;
     const s = _sentryEndpoint(env.SENTRY_DSN); if (!s) return;
     const payload = {
-      event_id: (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now()) + Math.random().toString(36).slice(2)),
+      event_id: (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now()) + _randId(12)),
       timestamp: new Date().toISOString(),
       platform: 'javascript',
       level: 'error',

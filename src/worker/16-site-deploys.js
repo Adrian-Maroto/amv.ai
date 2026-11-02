@@ -94,7 +94,7 @@ async function deploySite(request, env){
     for(let i=0; i<40; i++){
       const taken = await DB.get(env, 'site', slug);
       if(!taken || taken.owner === owner) break;
-      slug = base + '-' + Math.random().toString(36).slice(2,6);
+      slug = base + '-' + _randId(10);
     }
   }
 

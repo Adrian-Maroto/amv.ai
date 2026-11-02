@@ -368,7 +368,7 @@ function _webActionFp(verb, label, url){
           host].join('|');
 }
 async function _webMintApproval(env, email, fp){
-  const id = 'wa' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const id = 'wa' + Date.now().toString(36) + _randId(14);
   await DB.put(env, 'webapproval', id,
     { email, fp, exp: Date.now() + WEB_APPROVAL_TTL_MS },
     { expirationTtl: Math.ceil(WEB_APPROVAL_TTL_MS / 1000) + 60 });

@@ -504,7 +504,7 @@ const NONESSENTIAL_DAILY_WRITES = 150;
 const TALLY_SHARDS = 16;
 function _tallyShardOf(who) {
   let h = 2166136261;
-  const s = String(who == null ? Math.random() : who);
+  const s = String(who == null ? _randId(8) : who);
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0) % TALLY_SHARDS;
 }

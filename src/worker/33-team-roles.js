@@ -863,7 +863,7 @@ async function teamTaskCreate(request, env){
      be marked done. */
   if(asg && _role(team, asg) === 'viewer') return json({ error:'A viewer cannot work on tasks. Give it to a member, or change their role first.', code:'assignee_viewer' }, 400);
   const task = {
-    id: 't'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    id: 't'+Date.now().toString(36)+_randId(10),
     title: String(title).trim().slice(0, 300),
     notes: String(notes||'').slice(0, 4000),
     assignee: asg || null,

@@ -227,7 +227,7 @@ async function handoffCreate(request, env){
   const { title, context, to } = await request.json().catch(()=>({}));
   if(!title || !to) return json({ error:'title and recipient required' }, 400);
   const toEmail = String(to).toLowerCase().trim();
-  const id = 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  const id = 'h' + Date.now().toString(36) + _randId(10);
   const entry = { id, from_email: user.email, to_email: toEmail,
                   title: String(title).slice(0,300), context: String(context||'').slice(0,5000),
                   status: 'pending', at: Date.now() };

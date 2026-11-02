@@ -961,7 +961,7 @@ async function autoCreate(request, env){
   }
   if(sched) next = _schedNextAt(sched, Date.now());
   const item = {
-    id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    id: 'a' + Date.now().toString(36) + _randId(11),
     detail, repeat: shapedRepeat, interval, next, kind: shapedKind, notify: effectiveNotify, approval, scope,
     ...(sched ? { sched } : {}),
     ...(shapedRepeat === 'once' ? { onceAt: next } : {}),
@@ -1091,8 +1091,8 @@ async function _autoCreateSteps(request, env, user, body){
   const notify = (body.notify === 'email' && await _emailReachesNow(env)) ? 'email' : 'app';
   const country = _jobCountry(body.country, request);
   const now = Date.now();
-  const group = 'g' + now.toString(36) + Math.random().toString(36).slice(2, 7);
-  const ids = steps.map((_, n) => 'a' + now.toString(36) + Math.random().toString(36).slice(2, 7) + n);
+  const group = 'g' + now.toString(36) + _randId(11);
+  const ids = steps.map((_, n) => 'a' + now.toString(36) + _randId(11) + n);
   const waitedOn = new Set(steps.flatMap(s => s.after));
   const items = steps.map((s, n) => {
     const waits = s.after.length > 0;
