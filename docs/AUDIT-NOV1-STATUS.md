@@ -72,3 +72,16 @@ empty agents record.
 | USAGE-002, REL-014, MODEL-003 | Spend ceilings and model capacity are commercial decisions |
 | FILE-002 | Malware scanning needs a scanning service |
 | TASK-002/004/008/011, AGENT-002..006, RETR-*, PROD-*, OPS-* | Product and platform work, each larger than a fix |
+
+## P1/P2, second batch (each with a test, mutation-checked)
+
+| Finding | What changed |
+|---|---|
+| USAGE-003 | The day's spend ceiling refuses a call only when no share has room |
+| COMP-015 | A cloud machine in use is saved every ten minutes, not only when it goes idle |
+| FILE-004 | An abandoned library upload is cleared along with its stored bytes |
+| FILE-005 | The library limit counts stored bytes, not characters |
+| SEC-007 | Audit events copied to an outside collector or analytics carry no address and no IP |
+| AGENT-014, DR-007 | Renewal and backup policy for agent sign-ins written down (`docs/AGENT-SIGN-INS.md`) |
+
+Left as is: TASK-006 / STATE-006 (addresses in queue bodies and KV keys) - both stores are Cloudflare's own, where the address already is; moving to opaque ids is a data-model change, not a fix.
