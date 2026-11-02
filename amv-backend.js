@@ -19163,6 +19163,7 @@ async function _route(request, env, ctx) {
     case '/admin/auto/release':  return autoQuarantineRelease(request, env);
     case '/admin/pg/shadow':     return pgShadowRoute(request, env);
     case '/admin/support/account': return supportAccount(request, env);
+    case '/admin/market/disable': return marketDisable(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
@@ -19235,6 +19236,7 @@ async function _route(request, env, ctx) {
     case '/v1/market/list':     return marketList(request, env);
     case '/v1/market/publish':  return marketPublish(request, env);
     case '/v1/market/install':  return marketInstall(request, env);
+    case '/v1/market/check':    return marketCheck(request, env);
     case '/v1/market/buy':      return marketBuy(request, env);
     case '/v1/market/purchases': return marketPurchases(request, env);
     case '/v1/market/mylistings': return marketMyListings(request, env);
@@ -32066,6 +32068,54 @@ async function marketInstall(request, env) {
   return json({ ok: true, counted: true });
 }
 
+
+/* ── A COMPROMISED PUBLISHER (Nov 1 audit OPS-008) ──────────────────────
+
+   POST /admin/market/disable { id?, seller?, reason }  (operator token)
+     A listing is taken down - hidden from the catalogue, refused to anybody
+     installing or buying it - and a seller can be suspended, which refuses
+     every new listing and every new version they publish. Nothing else in AMV
+     is touched.
+
+   POST /v1/market/check { ids: [] }
+     What a device holding plugins asks: which of these listings were taken
+     down, and why. The device switches each one off (skills.js), so a
+     package already installed stops working too - it is declarative, so
+     switched off means it says nothing to the engine. */
+async function marketDisable(request, env) {
+  const gate = await _adminGate(request, env, 'mktdisable', 20, 300);
+  if (gate) return gate;
+  const body = await request.json().catch(() => ({}));
+  const reason = String(body.reason || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (reason.length < 10) return json({ error: 'Say why - buyers are shown it.', code: 'reason_required' }, 400);
+  const out = {};
+  if (body.id) {
+    const id = String(body.id);
+    if (!/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
+    const rec = await _withKV(env, 'market', id, (r) => { if (r) { r.hidden = true; r.disabled = { at: Date.now(), reason }; } return r; });
+    if (!rec) return json({ error: 'There is no listing with that id.', code: 'not_found' }, 404);
+    try { await _marketCacheBust(env); } catch (e) {}
+    out.listing = id;
+  }
+  if (body.seller) {
+    const em = String(body.seller).trim().toLowerCase();
+    await _withKind(env, 'seller', em, (s) => { s.banned = true; s.bannedWhy = reason; s.bannedAt = Date.now(); return s; }, { strikes: 0, banned: false, verifiedFor: [] });
+    out.seller = em;
+  }
+  if (!out.listing && !out.seller) return json({ error: 'Name a listing, a seller, or both.', code: 'bad_request' }, 400);
+  audit(env, 'market_disabled', Object.assign({ reason: reason.slice(0, 120) }, out));
+  return json({ ok: true, ...out });
+}
+async function marketCheck(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter(x => /^[a-z0-9_]+$/i.test(x)).slice(0, 50);
+  const disabled = [];
+  for (const id of ids) {
+    let it = null; try { it = JSON.parse((await env.AMV_KV.get(`market:${id}`)) || 'null'); } catch (e) { it = null; }
+    if (it && it.disabled) disabled.push({ id, reason: it.disabled.reason || '', at: it.disabled.at || 0 });
+  }
+  return json({ ok: true, disabled });
+}
 /* =====================================================================
    MARKETPLACE ECONOMY - paid listings, 80/20 split, seller balance.
    ---------------------------------------------------------------------

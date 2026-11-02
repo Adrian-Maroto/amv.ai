@@ -371,8 +371,38 @@ async function _pluginAdd(raw, meta){
 }
 function _pluginSetOn(id, onOff){
   const list = _plAll(), p = list.find(a => a.id === id && !a.removed); if(!p) return;
+  /* Taken down by AMV (OPS-008): it stays off. */
+  if(onOff && p.takenDown){ toast(T('AMV took this plugin down, so it cannot be switched on.') + (p.takenDown.reason ? ' ' + p.takenDown.reason : ''), 'error', 7000); return; }
   p.on = !!onOff; p.updated = Date.now(); _plSave(list);
 }
+/* WHICH OF THESE WERE TAKEN DOWN (Nov 1 audit OPS-008). A plugin from the
+   marketplace whose listing AMV took down - a compromised or abusive
+   publisher - is switched off here too, saying why, so a copy already
+   installed stops saying anything to the engine. Asked when the plugins
+   are shown, at most every few hours. */
+const PL_TAKEDOWN_EVERY_MS = 6 * 3600e3;
+async function _plCheckTakedowns(force){
+  try{
+    if(!(window.AMV_API && AMV_API.live)) return 0;
+    const last = +(loadStr('amv_pl_takedown_at') || 0);
+    if(!force && Date.now() - last < PL_TAKEDOWN_EVERY_MS) return 0;
+    const live = _plLive().filter(p => p.listing);
+    if(!live.length) return 0;
+    const r = await AMV_API._fetch('/v1/market/check', { method: 'POST', body: JSON.stringify({ ids: live.map(p => p.listing) }) });
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !Array.isArray(d.disabled)) return 0;
+    saveStr('amv_pl_takedown_at', String(Date.now()));
+    const off = new Map(d.disabled.map(x => [x.id, x]));
+    const list = _plAll(); let n = 0;
+    for(const p of list){
+      if(p.removed || !p.listing || !off.has(p.listing) || p.takenDown) continue;
+      p.on = false; p.takenDown = { reason: String(off.get(p.listing).reason || '').slice(0, 300), at: Date.now() }; p.updated = Date.now(); n++;
+    }
+    if(n){ _plSave(list); toast(T('AMV took down a plugin you had installed and switched it off. See Plugins for why.'), 'info', 8000); }
+    return n;
+  }catch(e){ return 0; }
+}
+try{ window._plCheckTakedowns = _plCheckTakedowns; }catch(e){}
 async function _pluginRemove(id){
   const p = _plLive().find(a => a.id === id); if(!p) return false;
   const yes = await _askDestructive(T('Remove this plugin?'), '“' + p.name + '” ' + T('and everything it added - its skills and prompts - are removed. Apps you connected stay connected.')
@@ -443,13 +473,15 @@ function _plFind(app){
 /* The section under Skills. */
 function _pluginsPane(host){
   if(!host) return;
+  _plCheckTakedowns().then(n => { if(n) try{ _pluginsPane(host); }catch(e){} });
   const live = _plLive();
   const mode = s => s.mode === 'auto' ? T('When relevant') : T('Always on');
   const row = p => '<div class="pl-row" data-pl="' + escH(p.id) + '">'
     + '<div class="pl-row-h"><div class="skill-info"><div class="skill-name">' + escH(p.name) + (p.on !== false ? ' <span class="skill-on">' + escH(T('On')) + '</span>' : '') + '</div>'
       + '<div class="skill-desc">' + escH((p.third ? T('By') + ' ' + (p.author || T('someone else')) : T('By AMV')) + ' · ' + p.skills.length + ' ' + T(p.skills.length === 1 ? 'skill' : 'skills') + ' · ' + p.prompts.length + ' ' + T(p.prompts.length === 1 ? 'prompt' : 'prompts')
         + ((p.jobs || []).length ? ' · ' + p.jobs.length + ' ' + T(p.jobs.length === 1 ? 'job' : 'jobs') : '')) + '</div></div>'
-      + '<label class="sw"><input type="checkbox" data-pl-on="' + escH(p.id) + '" aria-label="' + escH(p.name) + '"' + (p.on !== false ? ' checked' : '') + '><span class="sw-sl"></span></label></div>'
+      + '<label class="sw"><input type="checkbox" data-pl-on="' + escH(p.id) + '" aria-label="' + escH(p.name) + '"' + (p.on !== false ? ' checked' : '') + (p.takenDown ? ' disabled' : '') + '><span class="sw-sl"></span></label></div>'
+    + (p.takenDown ? '<div class="skill-desc pl-down" role="status">' + escH(T('Taken down by AMV and switched off.') + (p.takenDown.reason ? ' ' + p.takenDown.reason : '')) + '</div>' : '')
     + '<details class="pl-in"><summary>' + escH(T('What is in it')) + '</summary>'
       + (p.desc ? '<p class="skill-desc">' + escH(p.desc) + '</p>' : '')
       + p.skills.map(s => '<div class="skill-hist"><div class="skill-hist-h">' + escH(s.name) + ' · ' + escH(mode(s)) + (s.mode === 'auto' ? ': ' + escH(s.when) : '') + '</div><pre class="skill-hist-t">' + escH(s.instr) + '</pre></div>').join('')

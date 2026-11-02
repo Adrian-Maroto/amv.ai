@@ -994,6 +994,7 @@ async function _route(request, env, ctx) {
     case '/admin/auto/release':  return autoQuarantineRelease(request, env);
     case '/admin/pg/shadow':     return pgShadowRoute(request, env);
     case '/admin/support/account': return supportAccount(request, env);
+    case '/admin/market/disable': return marketDisable(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);
     case '/api/approvals/act':   return crewApprovalAct(request, env);
@@ -1066,6 +1067,7 @@ async function _route(request, env, ctx) {
     case '/v1/market/list':     return marketList(request, env);
     case '/v1/market/publish':  return marketPublish(request, env);
     case '/v1/market/install':  return marketInstall(request, env);
+    case '/v1/market/check':    return marketCheck(request, env);
     case '/v1/market/buy':      return marketBuy(request, env);
     case '/v1/market/purchases': return marketPurchases(request, env);
     case '/v1/market/mylistings': return marketMyListings(request, env);

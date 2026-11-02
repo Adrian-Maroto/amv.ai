@@ -17435,3 +17435,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .brg-ws-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
 .brg-ws-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);padding:var(--sp-2) 0;border-top:1px solid var(--bd);font-size:var(--t-sm);color:var(--tx)}
 .brg-ws-row .btn{min-height:36px}
+
+/* LAYER: a plugin AMV took down says so on its row (Nov 1 audit OPS-008). */
+.pl-down{margin-top:var(--sp-2);color:var(--red)}

@@ -51,6 +51,7 @@ const EXEMPT = {
   '/admin/backup/nights':'operator: the nightly backups there are to restore from, admin token (INCIDENT-RUNBOOK section 3)',
   '/admin/pg/backfill':  'operator: starts and watches the Postgres backfill, admin token (docs/DATA-TIER.md step 3)',
   '/admin/pg/shadow':    'operator: what the Postgres shadow reads found, admin token (docs/DATA-TIER.md step 4)',
+  '/admin/market/disable': 'operator: takes a listing down and/or suspends its seller, a reason required, admin token (Nov 1 audit OPS-008)',
   '/admin/support/account': 'operator: an account\u2019s details without its content, a reason required, recorded where the person sees it, admin token (Nov 1 audit OPS-001)',
   '/admin/auto/release': 'operator: lets a quarantined account\u2019s background work run again, admin token (Nov 1 audit TASK-005)',
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
