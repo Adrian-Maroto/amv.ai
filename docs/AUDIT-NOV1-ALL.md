@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 77, Roadmap 46, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 78, Roadmap 45, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -110,7 +110,7 @@ Totals: Fixed 77, Roadmap 46, Owner 25, Already true 14, Not a defect here 7
 | RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Roadmap | permission-filtered retrieval |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Roadmap | server-side past-chat index |
 | RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Fixed | every passage from a project, the library or an attached document is named by file, the section heading it sits under (documents, slides and sheets alike) and the lines it spans; passages never cross a heading; the model is told to cite by that label (a-project-finds-the-part-you-asked-about) |
-| MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Roadmap | a capability registry per provider model (tools, vision, audio, cache, region) refreshed centrally; the part about limits is done - near the edge the provider count decides (MODEL-002) |
+| MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Fixed | one registry on the server (ENGINES and the partner list, which is confirmed against the partner's own model list every six hours) says what each engine reads (context, output), and whether it reads pictures and PDFs, uses tools, searches and thinks; the router obeys it (a partner engine without vision gets a note instead of the picture), near the limit the provider's count decides, and /v1/engines hands the same registry to the page, which keeps no list of its own (partner-engines-are-sold-as-amv, a-message-is-measured-against-its-engine) |
 | MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Fixed | near the limit the refusal or acceptance is by the provider's token count, not characters; far from it the per-script estimate is used and is harmless |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Owner | second model provider is commercial |
 | MODEL-004 | Medium | P2 | Streaming cannot transparently fail over after tokens are emitted | Fixed | a broken stream keeps what arrived, marked as cut off by the engine or the connection, and offers Continue: a new turn carrying the part, so the rest is written once (when-the-engine-fails-partway); a lost connection recovers the whole parked answer |

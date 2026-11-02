@@ -875,11 +875,14 @@ async function _loadPartnerEngines(){
          conversation's history is sized to the engine that will read it. */
       const known = e && MODEL_ORDER.find(k => MODELS[k] && MODELS[k].model === e.key);
       if(known && +e.context >= 8000) MODELS[known].ctx = +e.context;
+      /* What it can do, as the router says (MODEL-001). */
+      if(known && e.caps && typeof e.caps === 'object') MODELS[known].caps = e.caps;
       if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
       const label = String(e.label || e.key).slice(0, 40);
       MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key,
                         ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost:2,
-                        rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true };
+                        rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true,
+                        caps: (e.caps && typeof e.caps === 'object') ? e.caps : { vision:false, pdf:false, tools:true, webSearch:false } };
       MODEL_ORDER.push(e.key);
       ENGINE_LABEL[e.key] = label;
       n++;

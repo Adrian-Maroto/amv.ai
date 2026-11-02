@@ -693,12 +693,26 @@ async function reconcilePayments(env) {
    partner engines whose models the partner confirms. AMV names only; a
    partner's own model id never leaves the server. Public - it says what the
    product offers, nothing about who is asking. */
+function _engineCaps(e, partner){
+  /* A partner engine is translated to a chat-completions shape: pictures
+     only when it says it reads them, tools unless it says not, and no PDFs or
+     web search - those are AMV's primary supplier's. */
+  return partner
+    ? { vision: !!e.vision, pdf: false, tools: e.tools !== false, webSearch: false, thinking: !!e.reasoning }
+    : { vision: true, pdf: true, tools: true, webSearch: true, thinking: !!e.thinking };
+}
 async function enginesList(request, env) {
   /* With what each reads in one request and the most it writes, so the page
      sizes a conversation's history to the engine that will read it. */
-  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000 }));
+  /* AND WHAT EACH CAN DO (Nov 1 audit MODEL-001), from the one registry the
+     router itself obeys: whether it reads pictures and PDFs, can use tools,
+     search the web and think before answering. The page reads this rather
+     than keeping its own list, so it never offers an engine something the
+     router would drop. */
+  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000,
+    caps: _engineCaps(e, false) }));
   const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true,
-    context: d.context || 200000, maxOut: d.maxOut || 16000 }));
+    context: d.context || 200000, maxOut: d.maxOut || 16000, caps: _engineCaps(d, true) }));
   return json({ ok: true, engines: primary.concat(partners) });
 }
 

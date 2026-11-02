@@ -132,6 +132,11 @@ section('Each engine says how much it reads, so the page sizes history to it');
     { key: 'amv-odd', model: 'vendor-large-2', label: 'Odd', minPlan: 'pro', inCost: 1, outCost: 1, maxOut: 4000, context: 5 },
     { key: 'amv-none', model: 'vendor-large-2', label: 'None', minPlan: 'pro', inCost: 1, outCost: 1, maxOut: 4000 }]) }));
   ok(odd.length === 2 && odd.every(d => d.context === 200000), 'a context that is missing or not believable is 200,000, not taken on trust', odd.map(d => d.context));
+  /* Nov 1 audit MODEL-001: and what each can do, from the registry the router obeys. */
+  ok(by['amv-vega'].caps && by['amv-vega'].caps.vision === false && by['amv-vega'].caps.tools === true && by['amv-vega'].caps.pdf === false && by['amv-vega'].caps.webSearch === false,
+    'a partner engine says it reads no pictures or PDFs and cannot search, as configured', by['amv-vega'].caps);
+  ok(by['amv-core'].caps && by['amv-core'].caps.vision && by['amv-core'].caps.pdf && by['amv-core'].caps.tools && by['amv-core'].caps.webSearch,
+    'AMV\u2019s own engines say they do all four', by['amv-core'].caps);
 }
 
 section('A turn is translated there and back, and settled at the engine’s prices');
