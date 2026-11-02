@@ -204,9 +204,15 @@ jobs:
                   team) need="model email payments postgres job_queue nightly_backup backup_fresh" ;;
                   *) need="" ;;
                 esac
+                # No profile declared (Nov 1 audit REL-007): said on every run,
+                # never silent - an undeclared launch gates only on "ready".
+                if [ -z "$LAUNCH_PROFILE" ] || [ "$LAUNCH_PROFILE" = "pre_launch" ]; then
+                  echo "::warning title=No launch profile declared::AMV_LAUNCH_PROFILE is not set, so this deploy was checked for readiness only - not for the data tier, queue and backups a public launch needs. Set it to consumer_full, team or enterprise when AMV goes public (GO-LIVE.md)."
+                  echo "- Launch profile: **not declared** - readiness only (set AMV_LAUNCH_PROFILE when going public)" >> "$GITHUB_STEP_SUMMARY"
+                fi
                 case "$LAUNCH_PROFILE" in
                   consumer_full|team|enterprise)
-                    missing=""
+                    missing="
                     for c in $need; do [ "$(cap $c)" = yes ] || missing="$missing $c"; done
                     if [ -n "$missing" ]; then
                       echo "::error title=Not fit for the $LAUNCH_PROFILE launch profile::Off on production:$missing. The launch profile requires them."
