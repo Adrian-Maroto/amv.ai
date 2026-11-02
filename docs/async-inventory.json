@@ -1,0 +1,91 @@
+{
+ "_about": "Every piece of work AMV does without a person waiting on it: how it is started, which file owns it, and what happens when it fails. tests/worker/every-background-duty-has-an-owner checks this against the scheduled handler and the queue consumer (Nov 1 audit TASK-004).",
+ "cron": {
+  "minute": {
+   "what": "background jobs that are due now (quick pass over the due-hour index)",
+   "owner": "src/worker/15-run-context-and-execution.js",
+   "retry": "a failed run is retried up to three times inside the run with backoff; five failed runs switch the job off; the queue path retries with a growing delay and dead-letters after its max",
+   "runs": "runDueAutomations"
+  },
+  "reconcile": {
+   "what": "payment reconciliation against the provider",
+   "owner": "src/worker/34-chat-sync.js",
+   "retry": "idempotent by event id; the next tick re-reads what failed",
+   "runs": "reconcilePayments"
+  },
+  "outbox": {
+   "what": "mail waiting to be retried",
+   "owner": "src/worker/61-owner-digest.js",
+   "retry": "each message carries its own attempt count and next time; given up after three days, never resent twice (idempotency key to the mail provider)",
+   "runs": "_outboxDrain"
+  },
+  "digest": {
+   "what": "weekly digest emails",
+   "owner": "src/worker/61-owner-digest.js",
+   "retry": "once per account per week (claim); a failed send goes to the outbox",
+   "runs": "runWeeklyDigest"
+  },
+  "renewals": {
+   "what": "renewal reminders and lapsed plans",
+   "owner": "src/worker/47-renewal-sweep.js",
+   "retry": "cursor-based sweep, resumed from the cursor next tick; each account claimed once per period",
+   "runs": "runRenewalSweep"
+  },
+  "backup": {
+   "what": "the nightly backup, a slice at a time",
+   "owner": "src/worker/27a-nightly-backup.js",
+   "retry": "under a lease; each part checksummed; an unfinished night continues next tick",
+   "runs": "runNightlyBackup"
+  },
+  "agentjar": {
+   "what": "deleting agent sign-ins whose deletion could not be confirmed",
+   "owner": "src/worker/77a-agent-signins.js",
+   "retry": "the pending list is retried every tick until each delete is read back",
+   "runs": "runAgentJarCleanup"
+  },
+  "retention": {
+   "what": "deleting conversations past their chosen retention",
+   "owner": "src/worker/34a-retention.js",
+   "retry": "under a lease, a slice at a time, resumed from the index",
+   "runs": "runRetentionSweep"
+  },
+  "pgintent": {
+   "what": "Postgres writes whose mirror did not confirm",
+   "owner": "src/worker/04a-control-plane.js",
+   "retry": "an intent older than five minutes becomes a repair entry; repairs never expire",
+   "runs": "runPgIntentSweep"
+  },
+  "pgbackfill": {
+   "what": "copying and checking KV records into Postgres",
+   "owner": "src/worker/04b-pg-backfill.js",
+   "retry": "under a lease, cursor saved with each slice, mismatches kept as repair entries",
+   "runs": "runPgBackfill"
+  },
+  "batches": {
+   "what": "API batches, item by item",
+   "owner": "src/worker/35-batches.js",
+   "retry": "a stale running item is reported, never re-run - it may have been charged",
+   "runs": "runBatches"
+  },
+  "cohort": {
+   "what": "the heavy-user share check for the owner",
+   "owner": "src/worker/47-renewal-sweep.js",
+   "retry": "a measurement; the next tick recomputes it",
+   "runs": "runCohortCheck"
+  }
+ },
+ "queue": {
+  "auto": {
+   "what": "one account's due background jobs",
+   "owner": "src/worker/15a-job-queue.js",
+   "retry": "retried with a growing delay; after the queue's max retries it goes to the dead-letter queue, and a job dead-lettered twice in a day is quarantined until an operator releases it",
+   "runs": "_autoQueueConsume"
+  },
+  "outbox": {
+   "what": "one waiting email",
+   "owner": "src/worker/61-owner-digest.js",
+   "retry": "retried in five minutes; dead-lettered messages are acknowledged and recorded, the cron outbox still holds them",
+   "runs": "_outboxConsume"
+  }
+ }
+}

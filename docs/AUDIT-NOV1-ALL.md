@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 86, Roadmap 36, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 87, Roadmap 35, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -66,7 +66,7 @@ Totals: Fixed 86, Roadmap 36, Owner 25, Already true 14, Not a defect here 8
 | TASK-001 | Critical | P0 | Timeout rebooking slice is off by one and catastrophically wrong at zero processed | Fixed | ticks book exactly the accounts not reached |
 | TASK-002 | High | P0 | AMV has no real durable Workflow engine for long multi-step Tasks | Roadmap | durable workflow engine (Cloudflare Workflows) |
 | TASK-003 | High | P0 | AMV_JOBS is commented out by default | Fixed | launch gate requires the queue + dead letters for paid profiles |
-| TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Roadmap | more async work onto the queue |
+| TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Fixed | every piece of work done with nobody waiting - each scheduled duty and each queue message kind - is registered in docs/async-inventory.json with the function that runs it, its owning file and its retry rule, checked against the scheduled handler and the queue consumer both ways (every-background-duty-has-an-owner); per-account jobs and mail go through the queue with dead letters, sweeps run under leases with cursors |
 | TASK-005 | High | P1 | Poison jobs are automatically rebooked after exhausting retries | Fixed | poison jobs quarantined until released |
 | TASK-006 | Medium | P2 | Queue messages contain raw email | Fixed | queue messages and dead letters carry a sealed reference |
 | TASK-007 | Medium | P2 | Five-minute claim buckets generate duplicate delivery noise | Already true | execution lease prevents duplicate work; extra messages cost little |
