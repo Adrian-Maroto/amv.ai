@@ -13,6 +13,8 @@
      node amv-cli.mjs --count "..."              how many input tokens, without sending
      node amv-cli.mjs code "make the tests pass" AMV works in this folder, asking first
      node amv-cli.mjs batch submit requests.jsonl  many requests, answered in the background
+     node amv-cli.mjs tasks                      all your background work, one list
+     node amv-cli.mjs tasks cancel job:...       stop one: nothing more runs or is spent
 
    THE KEY IS READ FROM THE ENVIRONMENT AND NOWHERE ELSE. Not a flag: a key on
    the command line is in the shell's history and in every process listing
@@ -93,6 +95,7 @@ function parseArgs(argv) {
   if (o.count && o.chat) throw usage('--count counts one request; it does not start a conversation');
   if (o.words[0] === 'code') o.code = true;
   if (o.words[0] === 'batch') o.batch = true;
+  if (o.words[0] === 'tasks' && (o.words.length === 1 || ['list', 'cancel'].includes(o.words[1]))) o.tasks = true;
   if (o.count && o.code) throw usage('--count counts one request; it does not start work in a folder');
   if (!ENGINES.includes(o.model)) throw usage('unknown model "' + o.model + '" - one of ' + ENGINES.join(', '));
   if (!Number.isInteger(o.maxTokens) || o.maxTokens < 1 || o.maxTokens > 64000) throw usage('--max-tokens takes a whole number from 1 to 64000');
@@ -246,6 +249,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
     /* Before stdin is read as part of a question: here it carries the answers. */
     if (o.code) return await code(o, base, key, stdin, stdout, stderr, ctrl);
     if (o.batch) return await batch(o, base, key, stdout, stderr);
+    if (o.tasks) return await tasks(o, base, key, stdout, stderr);
 
     let piped = await readStdin(stdin);
     for (const t of o.withText) if (String(t).trim()) piped += (piped ? '\n\n' : '') + t;
@@ -559,6 +563,29 @@ async function batch(o, base, key, stdout, stderr) {
   if (verb === 'cancel') { stdout.write(show(await (await post('/v1/messages/batches/cancel', { id: arg })).json()) + '\n'); return 0; }
   if (verb === 'results') { stdout.write(await (await post('/v1/messages/batches/results', { id: arg })).text()); return 0; }
   throw usage('amv batch submit FILE | list | status ID | results ID | cancel ID');
+}
+
+/* ── amv tasks: every piece of background work, one list ──────────────────
+   Crew jobs, tasks in steps, agents' jobs and batches, in one shape, with one
+   way to stop any of them. */
+async function tasks(o, base, key, stdout, stderr) {
+  const [, verb, arg] = o.words;
+  const call = async (path, body) => {
+    let res;
+    try { res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION, 'AMV-API-Version': API_VERSION }, ...(body ? { body: JSON.stringify(body) } : {}) }); }
+    catch (e) { throw fail('could not reach ' + base + ' (' + (e.cause && e.cause.code || e.message) + ')'); }
+    if (!res.ok) throw await refusal(res);
+    return res.json();
+  };
+  const show = (t) => t.id + '  ' + t.status + '  ' + t.title.slice(0, 70) + (t.budget ? '  $' + (t.budget.spentUSD == null ? '?' : t.budget.spentUSD) + ' of $' + t.budget.usd : '') + (t.why ? '  (' + t.why + ')' : '');
+  if (!verb || verb === 'list') { const d = await call('/v1/tasks'); stdout.write(((d.tasks || []).map(show).join('\n') || 'No background work.') + '\n'); return 0; }
+  if (verb === 'cancel') {
+    if (!/^(job|batch):[A-Za-z0-9_-]{1,80}$/.test(String(arg || ''))) throw usage('which task? amv tasks cancel job:... (ids are in amv tasks)');
+    const d = await call('/v1/tasks/cancel', { id: arg });
+    stdout.write((d.task ? show(d.task) : arg + '  stopped') + '\n');
+    return 0;
+  }
+  throw usage('amv tasks | tasks cancel ID');
 }
 
 /* A conversation. The history lives in this process only: nothing is saved

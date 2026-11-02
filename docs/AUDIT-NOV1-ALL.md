@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 85, Roadmap 37, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 86, Roadmap 36, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -70,7 +70,7 @@ Totals: Fixed 85, Roadmap 37, Owner 25, Already true 14, Not a defect here 8
 | TASK-005 | High | P1 | Poison jobs are automatically rebooked after exhausting retries | Fixed | poison jobs quarantined until released |
 | TASK-006 | Medium | P2 | Queue messages contain raw email | Fixed | queue messages and dead letters carry a sealed reference |
 | TASK-007 | Medium | P2 | Five-minute claim buckets generate duplicate delivery noise | Already true | execution lease prevents duplicate work; extra messages cost little |
-| TASK-008 | High | P1 | No single canonical Task lifecycle across Chat, Crew, Jobs, Handoff, and Agents | Roadmap | one task lifecycle |
+| TASK-008 | High | P1 | No single canonical Task lifecycle across Chat, Crew, Jobs, Handoff, and Agents | Fixed | GET /v1/tasks is one view over every kind of background work - Crew jobs, tasks in steps, agents' jobs, triggered jobs and batches - in one shape (status vocabulary, budget with spent and left, latest evidence, whether it can be stopped); POST /v1/tasks/cancel stops any of them with one meaning; the command-line tool has amv tasks (all-background-work-is-one-list). The systems keep their own records, so there is no second truth |
 | TASK-009 | High | P1 | Steering applies to future runs but not a universal durable active-step protocol | Fixed | steering note applied to the next run (earlier batch) |
 | TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Fixed | each step of a task graph can be its own agent with its own engine, web access, budget, memory, sign-ins and output contract; steps that wait for nothing run side by side, a join receives every result under its step, a checker role verifies before answering, and an off-form result is joined by nothing (an-agent-works-within-what-it-was-given) |
 | TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Roadmap | push connectors instead of polling |
