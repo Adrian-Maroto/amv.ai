@@ -233,8 +233,8 @@ const SLO_TARGETS = [
   { id: 'chat_delivered', what: 'A chat answer is delivered whole', objective: 99.5, classes: ['chat', 'api'] },
   { id: 'background_runs', what: 'A background or agent run produces its result', objective: 99, classes: ['background', 'agent'] },
 ];
-async function _sloReport(env, month) {
-  const oc = await _outcomes(env, month).catch(() => ({}));
+async function _sloReport(env, month, opt) {
+  const oc = await _outcomes(env, month, opt).catch(() => ({}));
   const out = [];
   for (const t of SLO_TARGETS) {
     let good = 0, runs = 0;
@@ -247,7 +247,7 @@ async function _sloReport(env, month) {
   }
   /* How fast answers start: the share inside five seconds, from the buckets. */
   const per = await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(b =>
-    Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`).catch(() => 0))).then(v => v.reduce((a, c) => a + c, 0))));
+    Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`, opt).catch(() => 0))).then(v => v.reduce((a, c) => a + c, 0))));
   const n = per.reduce((a, c) => a + c, 0), fast = n - per[4];
   const share = n ? (fast / n) * 100 : null;
   out.push({ id: 'chat_starts_fast', what: 'A chat answer starts within 5 seconds', objective: 99.5, runs: n,
@@ -259,7 +259,7 @@ async function _sloReport(env, month) {
    the owner with the runbook to open. */
 async function runSloCheck(env) {
   const month = monthKey();
-  const slo = await _sloReport(env, month);
+  const slo = await _sloReport(env, month, { legacy: false });
   let told = 0;
   for (const o of slo) {
     if (o.status !== 'broken') continue;
@@ -503,7 +503,7 @@ async function adminStats(request, env) {
     speed,
     /* Actions on people's accounts this month, by what AMV could confirm -
        the measure of work actually done, not of messages sent. */
-    outcomes: await _actOutcomes(env, month),
+    actionOutcomes: await _actOutcomes(env, month),
     topSpenders,
   });
 }

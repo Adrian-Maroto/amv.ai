@@ -186,6 +186,18 @@ section('An empty deployment reports zero, not a division by nothing');
   ok(mrr === 0 && Number.isFinite(mrr), 'MRR is 0', mrr);
 }
 
+section('Two figures never share one name');
+{
+  /* Cost per good outcome and actions by what AMV could confirm were both
+     returned as "outcomes"; in one object literal the later silently won, so
+     the console's cost card showed nothing (Nov 2). */
+  const d = await stats(mkEnv());
+  ok(d.outcomes && typeof d.outcomes === 'object' && !('verifiedRatePct' in d.outcomes), 'outcomes are the cost-per-good-outcome classes', d.outcomes);
+  ok(d.actionOutcomes && 'verifiedRatePct' in d.actionOutcomes, 'and actions on accounts are their own figure', d.actionOutcomes);
+  const lit = (await import('fs')).readFileSync(new URL('../../src/worker/56-admin.js', import.meta.url), 'utf8');
+  ok((lit.match(/^    outcomes[,:]/gm) || []).length === 1, 'the stats answer names outcomes once', (lit.match(/^    outcomes[,:]/gm) || []).length);
+}
+
 section('And the numbers are the operator’s alone');
 {
   const env = mkEnv();

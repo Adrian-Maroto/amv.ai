@@ -17,11 +17,15 @@ const harness = join(__dir, '.build', 'slo.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _sloReport, runSloCheck, _outcomeAdd, _tallyAdd, monthKey, ENGINES };\n');
 const W = await import(harness + '?t=' + Date.now());
 
+const calls = { n: 0 };
 const mkEnv = () => { const kv = new Map(), vals = new Map(); const told = [];
   return { told, ALERT_WEBHOOK: 'https://hooks.example/owner',
     AMV_KV: { async get(k) { return kv.has(k) ? kv.get(k) : null; }, async put(k, v) { kv.set(k, v); }, async delete(k) { kv.delete(k); }, async list() { return { keys: [], list_complete: true }; } },
-    AMV_COUNTER: { idFromName: n => n, get: (n) => ({ async fetch(_u, init) { const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+    AMV_COUNTER: { idFromName: n => n, get: (n) => ({ async fetch(_u, init) { calls.n++; const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
+      /* The month's figures are fields of one object per shard, as the real counter keeps them. */
+      if (b.op === 'tallyMany') { const f = vals.get(n + '#tm') || {}; for (const [k, v] of Object.entries(b.fields || {})) f[k] = (f[k] || 0) + v; vals.set(n + '#tm', f); return new Response(JSON.stringify({ ok: true, many: true })); }
+      if (b.op === 'tallyFields') return new Response(JSON.stringify({ fields: vals.get(n + '#tm') || {} }));
       return new Response(JSON.stringify({ value: cur })); } }) } }; };
 const sent = [];
 globalThis.fetch = async (u, init) => { sent.push(String(init && init.body || '')); return new Response('{}'); };
@@ -54,6 +58,17 @@ section('A broken objective is told to the owner once a day, with its runbook');
   ok(/## An objective is broken/.test(runbook), 'the runbook section it names exists', true);
   const few = mkEnv(); await W._outcomeAdd(few, 'chat', 'u', false);
   ok((await W.runSloCheck(few)).told === 0, 'too few answers to judge is not called a breach', true);
+}
+
+section('The hourly check is a handful of calls, not a thousand');
+{
+  /* Read figure by figure it was 33 object calls a figure and about forty
+     figures - over a thousand calls in one cron run, which took the runtime
+     down (Nov 2). The month's fields come back one call per shard. */
+  const env = mkEnv();
+  calls.n = 0;
+  await W.runSloCheck(env);
+  ok(calls.n > 0 && calls.n <= 40, 'one cron check reads the month in a bounded number of calls', calls.n);
 }
 
 if (report('an-objective-is-measured-and-its-breach-said') > 0) process.exitCode = 1;

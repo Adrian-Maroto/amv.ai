@@ -15615,3 +15615,19 @@ regardless. The stand-ins now answer the revocation operations faithfully
 Rule: a stand-in answers what it knows and refuses or throws on what it does
 not. A default "yes" makes every new question the code asks pass silently,
 which is the opposite of what a test is for.
+
+## 622. A read that fans out has to be counted, and a key said twice keeps only the second
+
+Two things made the same mistake in one round, and only the workerd smoke
+noticed. The owner's month figures moved into fields of one object per shard
+(fewer calls per chat turn), but reading them stayed figure by figure: 33
+object calls a figure. The new hourly objective check reads about forty
+figures, so one cron run made ~950 calls and took the local runtime down -
+and the platform caps calls per run. Every unit suite passed, because each
+mock answered instantly and counted nothing. In the same commit series the
+admin stats answer gained a second `outcomes:` key; in an object literal the
+later one silently wins, so the new cost-per-good-outcome card never had
+data. The bundler printed a warning nobody reads.
+Rule: a read path that fans out is counted in calls by a test with a ceiling
+(an-objective-is-measured-and-its-breach-said), and a figure added to an
+answer is read back from that answer by name, not assumed present.

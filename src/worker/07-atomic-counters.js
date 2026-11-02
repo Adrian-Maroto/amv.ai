@@ -312,6 +312,9 @@ export class AMVCounter {
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + Number(body.ttlMs));
       return json({ ok: true, many: true });
     }
+    if (op === 'tallyFields') {
+      return json({ fields: (await this.state.storage.get('tm')) || {} });
+    }
     if (op === 'tallyField') {
       const f = (await this.state.storage.get('tm')) || {};
       return json({ value: +f[String(body.name || '')] || 0 });
@@ -564,12 +567,12 @@ function _outcomeName(cls, good) {
 async function _outcomeAdd(env, cls, who, good) {
   return _econAdd(env, who, [[_outcomeName(cls, good), 1]]);
 }
-async function _outcomes(env, month) {
+async function _outcomes(env, month, opt) {
   const out = {};
   for (const c of OUTCOME_CLASSES) {
-    const good = await _tallyGet(env, `outcome:${c}:${month}:good`).catch(() => 0);
-    const bad = await _tallyGet(env, `outcome:${c}:${month}:bad`).catch(() => 0);
-    const cost = await _tallyGet(env, `featcost:${c}:${month}`).catch(() => 0);
+    const good = await _tallyGet(env, `outcome:${c}:${month}:good`, opt).catch(() => 0);
+    const bad = await _tallyGet(env, `outcome:${c}:${month}:bad`, opt).catch(() => 0);
+    const cost = await _tallyGet(env, `featcost:${c}:${month}`, opt).catch(() => 0);
     if (!good && !bad && !cost) continue;
     out[c] = { runs: good + bad, good, goodPct: good + bad ? +((good / (good + bad)) * 100).toFixed(1) : null,
                costUSD: +(+cost).toFixed(2), costPerGoodUSD: good ? +(cost / good).toFixed(4) : null };
@@ -593,17 +596,39 @@ async function _econAdd(env, who, entries) {
   if (r && r.many === true) return;
   for (const [n, v] of list) await _tallyAdd(env, n, who, +v, ECON_TTL_MS);
 }
-async function _tallyGet(env, name) {
-  const names = [name];
-  for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
-  const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
-  let sum = vals.reduce((a, b) => a + b, 0);
+/* A MONTH'S FIGURES ARE SIXTEEN CALLS, NOT SIXTEEN PER FIGURE. Reading them
+   field by field cost 33 object calls a figure, and the hourly objective check
+   reads about forty figures - over a thousand calls in one cron run, which
+   took the local runtime down and would have run into the platform's per-run
+   call limit (Nov 2). Each shard's whole field map comes back in one call and
+   is reused for half a minute. */
+const ECON_SNAP_MS = 30000;
+const _econSnaps = new Map();
+async function _econMonth(env, month) {
+  const hit = _econSnaps.get(month);
+  if (hit && hit.env === env && Date.now() - hit.at < ECON_SNAP_MS) return hit.p;
+  const p = Promise.all(Array.from({ length: TALLY_SHARDS }, (_, k) =>
+    counter(env, _econName(month, k), { op: 'tallyFields' }).then(r => (r && r.fields) || {}).catch(() => ({}))))
+    .then(maps => { const sum = {}; for (const m of maps) for (const [k, v] of Object.entries(m)) sum[k] = (sum[k] || 0) + (+v || 0); return sum; });
+  _econSnaps.set(month, { env, at: Date.now(), p });
+  if (_econSnaps.size > 4) _econSnaps.delete(_econSnaps.keys().next().value);
+  return p;
+}
+/* Figures written before they became fields (the per-figure counters) are
+   still added in, for the month the switch happened in only - 17 calls a
+   figure - and never by the cron (opt.legacy === false). From December there
+   is nothing left to add. */
+const ECON_SINCE = '2026-11';
+async function _tallyGet(env, name, opt) {
   const month = ECON_RE.test(name) && (String(name).match(/\d{4}-\d{2}/) || [])[0];
-  if (month) {
-    const fv = await Promise.all(Array.from({ length: TALLY_SHARDS }, (_, k) =>
-      counter(env, _econName(month, k), { op: 'tallyField', name }).then(r => +(r && r.value) || 0).catch(() => 0)));
-    sum += fv.reduce((a, b) => a + b, 0);
+  let sum = 0;
+  if (!month || (month <= ECON_SINCE && !(opt && opt.legacy === false))) {
+    const names = [name];
+    for (let k = 0; k < TALLY_SHARDS; k++) names.push(name + ':s' + k);
+    const vals = await Promise.all(names.map(n => counter(env, n, { op: 'get' }).then(r => +(r && r.value) || 0).catch(() => 0)));
+    sum += vals.reduce((a, b) => a + b, 0);
   }
+  if (month) sum += +((await _econMonth(env, month))[name]) || 0;
   return sum;
 }
 async function _nonEssentialWrite(env, what) {

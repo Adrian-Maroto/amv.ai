@@ -69,6 +69,7 @@ export async function probe({ users = 200 } = {}) {
         if (b.op === 'rateCheck') return out({ allowed: true, count: 1 });
         if (b.op === 'claim') return out({ claimed: true });
         if (b.op === 'tallyMany') return out({ ok: true, many: true });
+        if (b.op === 'tallyFields') return out({ fields: {} });
         if (b.op && b.op.startsWith('auth')) return out({ seeded: true, epoch: 0, ended: false });
         return out({ allowed: true, value: cur });
       } }),
