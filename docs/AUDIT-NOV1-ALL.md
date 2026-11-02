@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 84, Roadmap 38, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 85, Roadmap 37, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -107,7 +107,7 @@ Totals: Fixed 84, Roadmap 38, Owner 25, Already true 14, Not a defect here 8
 | FILE-005 | Medium | P2 | Some quota calculations use encoded character size instead of canonical object bytes | Fixed | limit counts stored bytes |
 | FILE-006 | Medium | P2 | Large/private files need signed/range download design | Roadmap | signed range downloads |
 | RETR-001 | High | P1 | Semantic meaning is on-demand reranking, not a persistent vector index | Roadmap | persistent vector index |
-| RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Roadmap | permission-filtered retrieval |
+| RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Fixed | there is no shared index to filter: passages are searched on the device from the person's own files, account files are read only by their owner, a team project only by current members - removal is tested to cut off reading and listing - and the meaning ranker scores only what the caller sends and keeps nothing (a-team-edits-one-project-together, your-files-are-in-your-account, a-search-can-find-it-by-meaning) |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Roadmap | server-side past-chat index |
 | RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Fixed | every passage from a project, the library or an attached document is named by file, the section heading it sits under (documents, slides and sheets alike) and the lines it spans; passages never cross a heading; the model is told to cite by that label (a-project-finds-the-part-you-asked-about) |
 | MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Fixed | one registry on the server (ENGINES and the partner list, which is confirmed against the partner's own model list every six hours) says what each engine reads (context, output), and whether it reads pictures and PDFs, uses tools, searches and thinks; the router obeys it (a partner engine without vision gets a note instead of the picture), near the limit the provider's count decides, and /v1/engines hands the same registry to the page, which keeps no list of its own (partner-engines-are-sold-as-amv, a-message-is-measured-against-its-engine) |

@@ -181,6 +181,22 @@ section('Nobody outside the team reaches it');
   ok(rec.instructions === 'Answer in English.', 'the project is as its team left it', rec.instructions);
 }
 
+section('Removed from the team, a member reaches none of it any more (Nov 1 audit RETR-002)');
+{
+  const { env, id, tok } = shared;
+  const carlTok = await signup(env, 'carl@example.com', 'Carl');
+  const inv = await anInviteFor(env, tok, 'carl@example.com');
+  await post(env, '/team/join', { token: inv }, carlTok);
+  const before = await post(env, '/team/project/get', { id }, carlTok);
+  ok(before.status === 200, 'as a member he reads it', before.status);
+  const rm = await post(env, '/team/remove', { email: 'carl@example.com' }, tok);
+  ok(rm.body.ok !== false && !rm.body.error, 'he is removed', rm.body.error || 'ok');
+  const g = await post(env, '/team/project/get', { id }, carlTok);
+  const l = await post(env, '/team/project/list', {}, carlTok);
+  ok(g.status !== 200 && !JSON.stringify(g.body).includes('Answer in English') && (l.body.projects || []).length === 0,
+    'afterwards he can neither read it nor see it listed - not one passage of it', { g: g.status, l: (l.body.projects || []).length });
+}
+
 section('Only whoever shared it, or an admin, can stop sharing it');
 {
   const { env, id, tok, benTok } = shared;
