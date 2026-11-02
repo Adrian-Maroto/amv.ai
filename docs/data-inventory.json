@@ -1,0 +1,743 @@
+{
+ "_about": "Every kind of record AMV stores, its class (docs/DATA-CLASSIFICATION.md), what it holds and how long it is kept. Whether it is backed up comes from BACKUP_PREFIXES / BACKUP_NEVER and whether it is erased from the erasure lists; tests/worker/every-record-has-a-class checks this file against the code.",
+ "kinds": {
+  "abuse": {
+   "class": "operational",
+   "holds": "abuse assessments",
+   "kept": "as abuse handling requires",
+   "backup": true
+  },
+  "acct": {
+   "class": "security",
+   "holds": "password hash, salt, passkey and second-step state",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "agentjar": {
+   "class": "credential",
+   "holds": "an agent's saved sign-in, sealed",
+   "kept": "30 days after last sign-in",
+   "backup": false
+  },
+  "agentjarpend": {
+   "class": "credential",
+   "holds": "a sign-in waiting to be deleted again",
+   "kept": "until deleted",
+   "backup": false
+  },
+  "agents": {
+   "class": "content",
+   "holds": "agents and their instructions",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "apikey": {
+   "class": "security",
+   "holds": "an API key hash and its owner",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "apikeys": {
+   "class": "account",
+   "holds": "the list of a person's API keys",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "approvals": {
+   "class": "content",
+   "holds": "results waiting for approval",
+   "kept": "until answered",
+   "backup": true
+  },
+  "auto": {
+   "class": "content",
+   "holds": "background jobs and their results",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "autosweep": {
+   "class": "operational",
+   "holds": "where the job sweep is",
+   "kept": "minutes",
+   "backup": false
+  },
+  "batch": {
+   "class": "content",
+   "holds": "a batch of requests",
+   "kept": "days",
+   "backup": false
+  },
+  "batchidx": {
+   "class": "content",
+   "holds": "an index of batches",
+   "kept": "days",
+   "backup": false
+  },
+  "batchq": {
+   "class": "content",
+   "holds": "a queued batch item",
+   "kept": "until run",
+   "backup": false
+  },
+  "batchreq": {
+   "class": "content",
+   "holds": "a batch item request",
+   "kept": "days",
+   "backup": false
+  },
+  "batchres": {
+   "class": "content",
+   "holds": "a batch item result",
+   "kept": "days",
+   "backup": false
+  },
+  "billing": {
+   "class": "financial",
+   "holds": "billing details the person gave",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "bkdrill": {
+   "class": "operational",
+   "holds": "a restore drill result",
+   "kept": "days",
+   "backup": false
+  },
+  "cal": {
+   "class": "content",
+   "holds": "calendar data read for a job",
+   "kept": "minutes",
+   "backup": false
+  },
+  "clogo": {
+   "class": "operational",
+   "holds": "a cached connector logo",
+   "kept": "days",
+   "backup": false
+  },
+  "conn": {
+   "class": "credential",
+   "holds": "connected-account tokens, sealed",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "connstate": {
+   "class": "security",
+   "holds": "an account connection in progress",
+   "kept": "minutes",
+   "backup": false
+  },
+  "consent": {
+   "class": "account",
+   "holds": "what the person agreed to and when",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "creditpay": {
+   "class": "financial",
+   "holds": "a credit-pack payment",
+   "kept": "as payment rules require",
+   "backup": true
+  },
+  "creditpref": {
+   "class": "financial",
+   "holds": "how credits are used",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "crewjobs": {
+   "class": "content",
+   "holds": "Crew jobs",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "ctr": {
+   "class": "operational",
+   "holds": "a counter fallback",
+   "kept": "its window",
+   "backup": false
+  },
+  "custemail": {
+   "class": "financial",
+   "holds": "the address for a payment customer",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "data": {
+   "class": "content",
+   "holds": "chats, projects and settings",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "emailhealth": {
+   "class": "operational",
+   "holds": "whether an address bounces",
+   "kept": "days",
+   "backup": false
+  },
+  "ent": {
+   "class": "financial",
+   "holds": "plan and billing state",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "entitleitem": {
+   "class": "financial",
+   "holds": "a purchased item",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "errors": {
+   "class": "operational",
+   "holds": "error reports, no content",
+   "kept": "days",
+   "backup": false
+  },
+  "fam": {
+   "class": "account",
+   "holds": "a family plan membership",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "faminv": {
+   "class": "security",
+   "holds": "a family invitation",
+   "kept": "days",
+   "backup": false
+  },
+  "fin": {
+   "class": "financial",
+   "holds": "bank account data, read on the device or from the provider",
+   "kept": "until disconnected",
+   "backup": false
+  },
+  "finlink": {
+   "class": "credential",
+   "holds": "a bank link token, sealed",
+   "kept": "until disconnected",
+   "backup": false
+  },
+  "fraud": {
+   "class": "operational",
+   "holds": "fraud assessments",
+   "kept": "as abuse handling requires",
+   "backup": true
+  },
+  "game": {
+   "class": "content",
+   "holds": "a game result",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "gameown": {
+   "class": "content",
+   "holds": "games a person owns",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "goauth": {
+   "class": "credential",
+   "holds": "an older Google grant, sealed",
+   "kept": "until revoked",
+   "backup": false
+  },
+  "handoff": {
+   "class": "content",
+   "holds": "work handed between devices",
+   "kept": "days",
+   "backup": true
+  },
+  "hookdel": {
+   "class": "operational",
+   "holds": "a webhook delivery seen",
+   "kept": "days",
+   "backup": false
+  },
+  "ingest": {
+   "class": "content",
+   "holds": "what a watch job has already reported",
+   "kept": "days",
+   "backup": false
+  },
+  "invite": {
+   "class": "security",
+   "holds": "an invitation code",
+   "kept": "days",
+   "backup": false
+  },
+  "invsnap": {
+   "class": "financial",
+   "holds": "an investing snapshot",
+   "kept": "days",
+   "backup": false
+  },
+  "kyc": {
+   "class": "financial",
+   "holds": "an identity check verdict",
+   "kept": "as payment rules require",
+   "backup": true
+  },
+  "life": {
+   "class": "operational",
+   "holds": "lifetime usage tallies",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "link": {
+   "class": "security",
+   "holds": "a device-link code",
+   "kept": "minutes",
+   "backup": false
+  },
+  "links": {
+   "class": "account",
+   "holds": "linked devices",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "mailcfg": {
+   "class": "credential",
+   "holds": "mail credentials, sealed",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "market": {
+   "class": "public",
+   "holds": "a marketplace listing",
+   "kept": "until withdrawn",
+   "backup": true
+  },
+  "mcpcat": {
+   "class": "operational",
+   "holds": "a cached connector catalogue",
+   "kept": "hours",
+   "backup": false
+  },
+  "mfachal": {
+   "class": "security",
+   "holds": "a second-step challenge",
+   "kept": "ten minutes",
+   "backup": false
+  },
+  "mkrate": {
+   "class": "public",
+   "holds": "a listing rating",
+   "kept": "until withdrawn",
+   "backup": true
+  },
+  "mkreview": {
+   "class": "public",
+   "holds": "a listing review",
+   "kept": "until withdrawn",
+   "backup": true
+  },
+  "mktcache": {
+   "class": "operational",
+   "holds": "a cached marketplace page",
+   "kept": "minutes",
+   "backup": false
+  },
+  "mkthread": {
+   "class": "content",
+   "holds": "marketplace messages",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "mktinbox": {
+   "class": "content",
+   "holds": "marketplace inbox",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "mktmine": {
+   "class": "content",
+   "holds": "a seller's own listings",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "mktreport": {
+   "class": "operational",
+   "holds": "a report about a listing",
+   "kept": "as abuse handling requires",
+   "backup": true
+  },
+  "mktresv": {
+   "class": "financial",
+   "holds": "a marketplace reservation",
+   "kept": "minutes",
+   "backup": false
+  },
+  "mktsess": {
+   "class": "security",
+   "holds": "a marketplace checkout session",
+   "kept": "minutes",
+   "backup": false
+  },
+  "mktsnap": {
+   "class": "financial",
+   "holds": "what a buyer paid for, as it was",
+   "kept": "as long as the purchase",
+   "backup": true
+  },
+  "outbox": {
+   "class": "operational",
+   "holds": "mail waiting to be retried",
+   "kept": "three days",
+   "backup": false
+  },
+  "payoutyear": {
+   "class": "financial",
+   "holds": "a seller's yearly payout total",
+   "kept": "as tax rules require",
+   "backup": true
+  },
+  "pgintent": {
+   "class": "operational",
+   "holds": "a Postgres write in flight",
+   "kept": "minutes",
+   "backup": false
+  },
+  "pgok": {
+   "class": "operational",
+   "holds": "proof a Postgres row matches",
+   "kept": "until the next write",
+   "backup": false
+  },
+  "pgrepair": {
+   "class": "operational",
+   "holds": "a Postgres row to repair",
+   "kept": "until repaired",
+   "backup": false
+  },
+  "pkchal": {
+   "class": "security",
+   "holds": "a passkey challenge",
+   "kept": "five minutes",
+   "backup": false
+  },
+  "pkcred": {
+   "class": "security",
+   "holds": "a passkey public key",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "presence": {
+   "class": "operational",
+   "holds": "who is online",
+   "kept": "minutes",
+   "backup": false
+  },
+  "purchases": {
+   "class": "financial",
+   "holds": "marketplace purchases",
+   "kept": "as payment and tax rules require",
+   "backup": true
+  },
+  "push": {
+   "class": "account",
+   "holds": "a device's push subscription",
+   "kept": "until it lapses",
+   "backup": false
+  },
+  "refcode": {
+   "class": "financial",
+   "holds": "a referral code",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "refmine": {
+   "class": "financial",
+   "holds": "referrals made",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "refpend": {
+   "class": "financial",
+   "holds": "a pending referral reward",
+   "kept": "until settled",
+   "backup": true
+  },
+  "renewsweep": {
+   "class": "operational",
+   "holds": "where the renewal sweep is",
+   "kept": "minutes",
+   "backup": false
+  },
+  "reset": {
+   "class": "security",
+   "holds": "a password-reset token",
+   "kept": "one hour",
+   "backup": false
+  },
+  "resetcode": {
+   "class": "security",
+   "holds": "a password-reset code",
+   "kept": "one hour",
+   "backup": false
+  },
+  "resume": {
+   "class": "content",
+   "holds": "an answer parked for a dropped connection",
+   "kept": "fifteen minutes",
+   "backup": false
+  },
+  "retainidx": {
+   "class": "operational",
+   "holds": "which accounts the retention sweep must visit",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "retainteam": {
+   "class": "enterprise",
+   "holds": "a team's retention setting",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "rl": {
+   "class": "operational",
+   "holds": "a rate limit",
+   "kept": "its window",
+   "backup": false
+  },
+  "rmcp": {
+   "class": "credential",
+   "holds": "an app connector's tokens, sealed",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "rmcpcli": {
+   "class": "credential",
+   "holds": "an app connector client registration",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "rmcpstate": {
+   "class": "security",
+   "holds": "an app connector sign-in in progress",
+   "kept": "minutes",
+   "backup": false
+  },
+  "rtgrace": {
+   "class": "security",
+   "holds": "a refresh token grace window",
+   "kept": "minutes",
+   "backup": false
+  },
+  "saleref": {
+   "class": "financial",
+   "holds": "a sale reference",
+   "kept": "as payment and tax rules require",
+   "backup": true
+  },
+  "school": {
+   "class": "content",
+   "holds": "school data read for a job",
+   "kept": "minutes",
+   "backup": false
+  },
+  "seller": {
+   "class": "financial",
+   "holds": "a seller's payout account",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "ses": {
+   "class": "security",
+   "holds": "a session record",
+   "kept": "until it ends",
+   "backup": false
+  },
+  "sess": {
+   "class": "account",
+   "holds": "a signed-in session or device",
+   "kept": "until it ends",
+   "backup": false
+  },
+  "share": {
+   "class": "public",
+   "holds": "a share page the person published",
+   "kept": "until withdrawn",
+   "backup": true
+  },
+  "shares": {
+   "class": "content",
+   "holds": "the list of a person's share pages",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "signincode": {
+   "class": "security",
+   "holds": "an email sign-in code",
+   "kept": "minutes",
+   "backup": false
+  },
+  "site": {
+   "class": "content",
+   "holds": "a published site",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "sites": {
+   "class": "content",
+   "holds": "sites the person built",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "sms": {
+   "class": "account",
+   "holds": "the phone number used for messages",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "smsverify": {
+   "class": "security",
+   "holds": "a phone verification code",
+   "kept": "minutes",
+   "backup": false
+  },
+  "spendlimits": {
+   "class": "financial",
+   "holds": "spending limits the person set",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "ssodom": {
+   "class": "enterprise",
+   "holds": "a proved company domain",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "ssost": {
+   "class": "security",
+   "holds": "a company sign-in state and nonce",
+   "kept": "minutes",
+   "backup": false
+  },
+  "stats": {
+   "class": "operational",
+   "holds": "aggregate counts",
+   "kept": "months",
+   "backup": true
+  },
+  "stripecust": {
+   "class": "financial",
+   "holds": "the payment provider customer id",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "support": {
+   "class": "content",
+   "holds": "messages to support",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "team": {
+   "class": "enterprise",
+   "holds": "a team, its members and policies",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "teamlog": {
+   "class": "enterprise",
+   "holds": "a team's audit log",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "teamtasks": {
+   "class": "enterprise",
+   "holds": "a team's shared tasks",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "telegram": {
+   "class": "credential",
+   "holds": "a Telegram credential, sealed",
+   "kept": "account lifetime",
+   "backup": false
+  },
+  "tokepoch": {
+   "class": "security",
+   "holds": "the sign-out-everywhere generation",
+   "kept": "kept after deletion so old tokens stay dead",
+   "backup": true
+  },
+  "totpset": {
+   "class": "security",
+   "holds": "an authenticator secret being set up, sealed",
+   "kept": "ten minutes",
+   "backup": false
+  },
+  "tproj": {
+   "class": "enterprise",
+   "holds": "a team project",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "tprojidx": {
+   "class": "enterprise",
+   "holds": "an index of team projects",
+   "kept": "team lifetime",
+   "backup": true
+  },
+  "txn": {
+   "class": "financial",
+   "holds": "a payment event",
+   "kept": "as payment and tax rules require",
+   "backup": true
+  },
+  "userteam": {
+   "class": "account",
+   "holds": "which team a person is in",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "waitlist": {
+   "class": "account",
+   "holds": "a place on a waiting list",
+   "kept": "until removed",
+   "backup": true
+  },
+  "wallet": {
+   "class": "financial",
+   "holds": "credit balance",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "wallet_tx": {
+   "class": "financial",
+   "holds": "credit ledger entries",
+   "kept": "as payment and tax rules require",
+   "backup": true
+  },
+  "wdopen": {
+   "class": "financial",
+   "holds": "an open payout marker",
+   "kept": "until paid",
+   "backup": true
+  },
+  "webapproval": {
+   "class": "security",
+   "holds": "a pending approval for an action on a site",
+   "kept": "until answered",
+   "backup": false
+  },
+  "widget": {
+   "class": "account",
+   "holds": "website widget settings",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "widget_owner": {
+   "class": "account",
+   "holds": "who owns a widget",
+   "kept": "account lifetime",
+   "backup": true
+  },
+  "withdraw": {
+   "class": "financial",
+   "holds": "a payout request",
+   "kept": "as payment and tax rules require",
+   "backup": true
+  }
+ }
+}

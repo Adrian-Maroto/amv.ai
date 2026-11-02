@@ -14,6 +14,13 @@ The two lists that are the actual rules:
 `tests/worker/backup-covers-everything` and `erasure-covers-every-key` fail if
 a new kind of record is added without a decision in both.
 
+And every kind has its class written down in `docs/data-inventory.json` -
+what it holds, how long it is kept, and whether it is backed up.
+`tests/worker/every-record-has-a-class` checks that file against the code
+both ways and enforces what a class means where code can: no credential for
+another service is ever in a backup, no short-lived challenge is ever
+restored, and every lasting money record is backed up.
+
 ## The classes
 
 | Class | Examples (record kinds) | Where | Backed up | Erased with the account | In logs |

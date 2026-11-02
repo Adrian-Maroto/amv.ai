@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 73, Roadmap 50, Owner 25, Already true 14, Not a defect here 7
+Totals: Fixed 74, Roadmap 49, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -167,7 +167,7 @@ Totals: Fixed 73, Roadmap 50, Owner 25, Already true 14, Not a defect here 7
 | PROD-020 | Strategic | P2 | Trusted agency must be the product thesis, not feature count | Roadmap | product direction |
 | OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Roadmap | support tooling with break-glass |
 | OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Owner | live incident exercises |
-| OPS-003 | Medium | P2 | Data classification must become executable policy | Roadmap | executable data classification |
+| OPS-003 | Medium | P2 | Data classification must become executable policy | Fixed | every kind of record the Worker keeps has a class, what it holds and how long it is kept in docs/data-inventory.json; a test checks it against the code both ways and enforces the class rules: no credential in a backup, no short-lived challenge restored, every lasting money record backed up (every-record-has-a-class); erasure is enforced by erasure-covers-every-key |
 | OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Already true | erasure names everything it could not delete |
 | OPS-005 | Medium | P2 | Global KV/R2/provider architecture cannot promise region residency today | Owner | region residency is a provider choice |
 | OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Fixed | a temporary chat is not stored or synced, reads and writes no memory, and now sets up no background job, task in steps, watch or standing instruction (a-temporary-chat-leaves-nothing) |
