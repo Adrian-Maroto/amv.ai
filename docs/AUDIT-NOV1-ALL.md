@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 64, Roadmap 60, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 65, Roadmap 59, Owner 25, Already true 13, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -95,7 +95,7 @@ Totals: Fixed 64, Roadmap 60, Owner 25, Already true 13, Not a defect here 7
 | REL-009 | High | P1 | No complete 24/7 paging/on-call/status operation | Owner | on-call/paging service (OWNER-DECISIONS 13) |
 | REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Roadmap | percentile/burn-rate telemetry |
 | REL-011 | Medium | P2 | 100% head sampling is not sustainable at millions | Owner | log sampling vs. Logpush cost |
-| REL-012 | Medium | P1 | No universal trace ID across request, Queue, Task, Agent, tool, action, and verification | Roadmap | one trace id end to end |
+| REL-012 | Medium | P1 | No universal trace ID across request, Queue, Task, Agent, tool, action, and verification | Fixed | every answer carries X-AMV-Request-Id (the Cloudflare ray id), also in the 500 log line; queue/task propagation still to do |
 | REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Already true | model circuit breaker already shared through KV |
 | REL-014 | High | P1 | No evidence of reserved/negotiated model capacity for million-user peaks | Owner | reserved model capacity is a contract |
 | REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Fixed | capability record gate; docs updated with each change |

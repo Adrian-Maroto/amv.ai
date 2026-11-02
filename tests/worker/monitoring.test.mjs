@@ -83,6 +83,15 @@ ok(hook && ph, 'both the collector and analytics were sent the event', posts.map
 ok(!/@example\.(com|org)/.test(out) && !/203\.0\.113\.9/.test(out), 'no address, in any field or inside a sentence, and no IP', out.slice(0, 300));
 ok(hook && hook.body.email === hook.body.note.split(' ')[1] && /^u_/.test(hook.body.email) && hook.body.kind === 'password', 'the same address becomes the same pseudonym, and the rest is kept', hook && hook.body);
 
+/* Nov 1 audit REL-012: every answer names its request. */
+section('Every answer carries the request id the platform logs it under');
+{
+  const r1 = await W.default.fetch(new Request('https://api.amv.test/v1/health', { headers: { 'cf-ray': '8a1b2c3d4e5f6789-LHR' } }), { JWT_SECRET: 'x'.repeat(40) }, { waitUntil() {}, passThroughOnException() {} });
+  ok(r1.headers.get('X-AMV-Request-Id') === '8a1b2c3d4e5f6789-LHR', 'the ray id Cloudflare gave it', r1.headers.get('X-AMV-Request-Id'));
+  const r2 = await W.default.fetch(new Request('https://api.amv.test/v1/health'), { JWT_SECRET: 'x'.repeat(40) }, { waitUntil() {}, passThroughOnException() {} });
+  ok(/^[a-z0-9]{16}$/.test(r2.headers.get('X-AMV-Request-Id') || ''), 'or one of its own when there is none', r2.headers.get('X-AMV-Request-Id'));
+}
+
 globalThis.fetch = origFetch;
 report();
 done();

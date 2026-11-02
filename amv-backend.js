@@ -17962,6 +17962,110 @@ async function resetPage(request, env){
   });
 }
 
+async function _serveRequest(request, env, ctx, rid) {
+    /* AMV-046: so audit() can register its deliveries with waitUntil. It has no
+       ctx of its own and cannot be handed one without threading it through
+       several hundred call sites. */
+    _liveCtx = ctx;
+    const mounted = _mountRequest(request, env);
+    if (mounted) request = mounted;
+    /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
+    request = _cookiesFromAmvOnly(request, env);
+    try {
+      /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
+
+         Nothing bounded a request body. Every handler went straight to
+         `request.json()`, which reads the whole thing into memory before
+         anybody can object - so an unauthenticated POST of a hundred megabytes
+         of JSON to any endpoint was a hundred megabytes buffered and parsed
+         inside a Worker with a 128MB limit, for the price of uploading it. The
+         parse is the expensive part and it happens before the handler has even
+         decided the caller is allowed to be there.
+
+         Checked here rather than in each handler, for the reason AMV-028's CORS
+         was: there are a hundred and sixty routes and one place they all pass
+         through, and a rule applied in a hundred and sixty places is a rule
+         with a hole in it by next month. */
+      const tooBig = _bodyTooBig(request);
+      if (tooBig) return _applyCors(request, env, tooBig);
+
+      /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
+
+         Found by running this Worker in workerd with no secrets set, which is
+         exactly the state a first deploy is in until somebody remembers
+         `wrangler secret put`.
+
+         Signing fails closed without JWT_SECRET - deliberately, so a missing
+         secret can never become a public signing key. But issueTokens is the
+         LAST thing signup does. The account row was already written, the
+         counters already incremented, the growth already recorded; the throw
+         arrived after all of it and came back as a generic 500. So the account
+         existed, its owner had no token, and trying again answered "account
+         exists" with a 409. One forgotten secret and every person who signed up
+         is locked out of an address they own, permanently, with nothing on
+         either side saying why.
+
+         Checked here for the reason the body limit is: there are a hundred and
+         sixty routes and one place they all pass through. And checked BEFORE
+         the route runs, because the whole failure is that the work happened
+         first. */
+      const unconfigured = _deploymentCannotServe(request, env);
+      if (unconfigured) return _applyCors(request, env, unconfigured);
+
+      return _applyCors(request, env, _mountCookies(await _route(request, env, ctx), mounted));
+    } catch (err) {
+      /* A refusal decided deep in a call - a sign-in that cannot be confirmed
+         on a route that must be sure (_revocationMustBeSure) - is an answer,
+         not a fault. */
+      if (err && err.amvRefusal) return _applyCors(request, env, json(err.amvRefusal.body, err.amvRefusal.status, { 'Retry-After': '30' }));
+      // An unhandled exception reached the top level. Record it AND alert (both
+      // throttled + best-effort) so a broken endpoint pages you instead of
+      // silently 500ing until a user complains. Never let logging mask the 500.
+      try{
+        let path = 'request';
+        try{ path = new URL(request.url).pathname; }catch(_){}
+        /* SAY IT WHERE THE RUNTIME CAN HEAR IT.
+
+           _workerError writes the exception to KV and forwards it to Sentry,
+           and both are real - but KV is readable only through an admin route
+           that needs a token and a POST, and Sentry is inert until somebody
+           sets a DSN. Neither reaches the platform's own log, so a 500 arrived
+           in Workers Logs as an error event with no reason in it: the operator
+           could see THAT a request failed and had no way to learn WHY, which
+           is the whole thing they came to the log for.
+
+           The cron path had console.error from the start. The request path -
+           the one every user is on - did not. Scrubbed with the same function
+           the stored copy uses, because a log line is as public as a KV record
+           and an exception can quote a URL with a token in it. */
+        try{
+          console.error('[500] ' + path + ' rid=' + rid + ' :: '
+            + _errScrub(String((err && err.message) || err), 300) + ' :: '
+            + _errScrub(String((err && err.stack) || ''), 600));
+        }catch(_){}
+        ctx.waitUntil(_workerError(env, path, err));
+      }catch(_){}
+      /* The MESSAGE stays on the server. This returned err.message straight to
+         whoever made the request, which is the one thing this file is careful
+         about everywhere else - a provider's raw response is logged and the
+         caller told something generic, for exactly this reason. An exception message
+         is written for an engineer and can carry a key name, a storage path, a
+         query fragment or a stack-shaped hint; none of that belongs in an
+         answer to a stranger. It is recorded above, with an alert, so nothing
+         is lost by not saying it here. */
+      return _applyCors(request, env, json({ error: 'Something went wrong on our side. It has been logged.' }, 500));
+    }
+  }
+function _withRequestId(res, rid){
+  if (!res || res.status === 101 || res.webSocket) return res;
+  try {
+    const h = new Headers(res.headers);
+    h.set('X-AMV-Request-Id', rid);
+    const ex = h.get('Access-Control-Expose-Headers');
+    if (h.get('Access-Control-Allow-Origin') && !/x-amv-request-id/i.test(ex || '')) h.set('Access-Control-Expose-Headers', (ex ? ex + ', ' : '') + 'X-AMV-Request-Id');
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  } catch (e) { return res; }
+}
 export default {
   /* Cloudflare Queues: the background-work queue and its dead-letter queue
      (15a-job-queue.js). Called only when wrangler.toml names this Worker as
@@ -18173,99 +18277,15 @@ export default {
      a later `return` inside the router escaping the same way - including the
      four public GET routes, which were outside the try altogether. */
   async fetch(request, env, ctx) {
-    /* AMV-046: so audit() can register its deliveries with waitUntil. It has no
-       ctx of its own and cannot be handed one without threading it through
-       several hundred call sites. */
-    _liveCtx = ctx;
-    const mounted = _mountRequest(request, env);
-    if (mounted) request = mounted;
-    /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
-    request = _cookiesFromAmvOnly(request, env);
-    try {
-      /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
-
-         Nothing bounded a request body. Every handler went straight to
-         `request.json()`, which reads the whole thing into memory before
-         anybody can object - so an unauthenticated POST of a hundred megabytes
-         of JSON to any endpoint was a hundred megabytes buffered and parsed
-         inside a Worker with a 128MB limit, for the price of uploading it. The
-         parse is the expensive part and it happens before the handler has even
-         decided the caller is allowed to be there.
-
-         Checked here rather than in each handler, for the reason AMV-028's CORS
-         was: there are a hundred and sixty routes and one place they all pass
-         through, and a rule applied in a hundred and sixty places is a rule
-         with a hole in it by next month. */
-      const tooBig = _bodyTooBig(request);
-      if (tooBig) return _applyCors(request, env, tooBig);
-
-      /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
-
-         Found by running this Worker in workerd with no secrets set, which is
-         exactly the state a first deploy is in until somebody remembers
-         `wrangler secret put`.
-
-         Signing fails closed without JWT_SECRET - deliberately, so a missing
-         secret can never become a public signing key. But issueTokens is the
-         LAST thing signup does. The account row was already written, the
-         counters already incremented, the growth already recorded; the throw
-         arrived after all of it and came back as a generic 500. So the account
-         existed, its owner had no token, and trying again answered "account
-         exists" with a 409. One forgotten secret and every person who signed up
-         is locked out of an address they own, permanently, with nothing on
-         either side saying why.
-
-         Checked here for the reason the body limit is: there are a hundred and
-         sixty routes and one place they all pass through. And checked BEFORE
-         the route runs, because the whole failure is that the work happened
-         first. */
-      const unconfigured = _deploymentCannotServe(request, env);
-      if (unconfigured) return _applyCors(request, env, unconfigured);
-
-      return _applyCors(request, env, _mountCookies(await _route(request, env, ctx), mounted));
-    } catch (err) {
-      /* A refusal decided deep in a call - a sign-in that cannot be confirmed
-         on a route that must be sure (_revocationMustBeSure) - is an answer,
-         not a fault. */
-      if (err && err.amvRefusal) return _applyCors(request, env, json(err.amvRefusal.body, err.amvRefusal.status, { 'Retry-After': '30' }));
-      // An unhandled exception reached the top level. Record it AND alert (both
-      // throttled + best-effort) so a broken endpoint pages you instead of
-      // silently 500ing until a user complains. Never let logging mask the 500.
-      try{
-        let path = 'request';
-        try{ path = new URL(request.url).pathname; }catch(_){}
-        /* SAY IT WHERE THE RUNTIME CAN HEAR IT.
-
-           _workerError writes the exception to KV and forwards it to Sentry,
-           and both are real - but KV is readable only through an admin route
-           that needs a token and a POST, and Sentry is inert until somebody
-           sets a DSN. Neither reaches the platform's own log, so a 500 arrived
-           in Workers Logs as an error event with no reason in it: the operator
-           could see THAT a request failed and had no way to learn WHY, which
-           is the whole thing they came to the log for.
-
-           The cron path had console.error from the start. The request path -
-           the one every user is on - did not. Scrubbed with the same function
-           the stored copy uses, because a log line is as public as a KV record
-           and an exception can quote a URL with a token in it. */
-        try{
-          console.error('[500] ' + path + ' :: '
-            + _errScrub(String((err && err.message) || err), 300) + ' :: '
-            + _errScrub(String((err && err.stack) || ''), 600));
-        }catch(_){}
-        ctx.waitUntil(_workerError(env, path, err));
-      }catch(_){}
-      /* The MESSAGE stays on the server. This returned err.message straight to
-         whoever made the request, which is the one thing this file is careful
-         about everywhere else - a provider's raw response is logged and the
-         caller told something generic, for exactly this reason. An exception message
-         is written for an engineer and can carry a key name, a storage path, a
-         query fragment or a stack-shaped hint; none of that belongs in an
-         answer to a stranger. It is recorded above, with an alert, so nothing
-         is lost by not saying it here. */
-      return _applyCors(request, env, json({ error: 'Something went wrong on our side. It has been logged.' }, 500));
-    }
+    /* ONE ID PER REQUEST, ON THE ANSWER (Nov 1 audit REL-012). Cloudflare's
+       own ray id when there is one - the id Workers Logs already files the
+       request under - so a person quoting it from an error, the page's
+       report and the platform log all name the same request. */
+    const rid = String(request.headers.get('cf-ray') || '').slice(0, 64) || _randId(16);
+    const res = await _serveRequest(request, env, ctx, rid);
+    return _withRequestId(res, rid);
   },
+
 };
 
 /* AMV-029: the default ceiling on a request body, and the routes that are
