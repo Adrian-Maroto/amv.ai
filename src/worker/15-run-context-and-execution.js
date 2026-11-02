@@ -2061,7 +2061,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
          the tick's own, so a retry that would eat into somebody else's
          overdue job is not started. */
       const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
-                                            _neverList(rec), deadline, agent ? Object.assign({}, agent, { _ek: runEk }) : agent);
+                                            _neverList(rec), deadline, agent ? Object.assign({}, agent, { _ek: runEk, _memory: _agentMemory(rec, agent.id) }) : agent);
       const exec = tried.exec;
       item.attempts = (Number(item.attempts) || 0) + tried.attempts;
       if(exec && exec.quiet){

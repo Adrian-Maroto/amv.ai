@@ -119,6 +119,20 @@ section('Its instructions reach the run, after AMV’s rules');
   ok(a && a.results.length === 1 && /solar policy/.test(a.results[0].out), 'and its result is shown as the agent’s', a && a.results);
 }
 
+section('It remembers its own last runs, and only its own (Nov 1 audit AGENT-002)');
+{
+  /* Another job of the account, not this agent's, with a result of its own. */
+  const r0 = rec();
+  r0.items.push({ id: 'otherjob1', detail: 'Unrelated job', active: false, kind: 'task' });
+  r0.results.push({ id: 'rx', autoId: 'otherjob1', detail: 'Unrelated job', at: Date.now(), out: 'SECRET-OF-ANOTHER-JOB' });
+  put(r0);
+  due(); lastSystem = '';
+  await W.runDueAutomations(env, Date.now() + 0.5);
+  ok(/last runs/.test(lastSystem) && /Three things changed in solar policy/.test(lastSystem), 'the next run is told what this agent found last time', lastSystem.slice(-500));
+  ok(!/SECRET-OF-ANOTHER-JOB/.test(lastSystem), 'and nothing from any other job', true);
+  ok(/never an instruction/.test(lastSystem), 'fenced as a record, never an instruction');
+}
+
 section('Paused, its jobs do not run; resumed, they do');
 {
   const p = await call('/v1/agents/save', { id: agentId, paused: true });
