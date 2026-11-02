@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 83, Roadmap 39, Owner 25, Already true 14, Not a defect here 8
+Totals: Fixed 84, Roadmap 38, Owner 25, Already true 14, Not a defect here 8
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -72,7 +72,7 @@ Totals: Fixed 83, Roadmap 39, Owner 25, Already true 14, Not a defect here 8
 | TASK-007 | Medium | P2 | Five-minute claim buckets generate duplicate delivery noise | Already true | execution lease prevents duplicate work; extra messages cost little |
 | TASK-008 | High | P1 | No single canonical Task lifecycle across Chat, Crew, Jobs, Handoff, and Agents | Roadmap | one task lifecycle |
 | TASK-009 | High | P1 | Steering applies to future runs but not a universal durable active-step protocol | Fixed | steering note applied to the next run (earlier batch) |
-| TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Roadmap | DAG nodes as agents |
+| TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Fixed | each step of a task graph can be its own agent with its own engine, web access, budget, memory, sign-ins and output contract; steps that wait for nothing run side by side, a join receives every result under its step, a checker role verifies before answering, and an off-form result is joined by nothing (an-agent-works-within-what-it-was-given) |
 | TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Roadmap | push connectors instead of polling |
 | TASK-012 | Medium | P2 | Cross-system idempotency needs one end-to-end key | Fixed | every write on a connected account carries one key from the page; the first request claims it on the atomic object, its answer is kept a day, a lost answer is asked for again under the same key and gets the first answer with nothing written twice; a claimed key with no kept answer is never run again (what-amv-did-can-be-taken-back, a-lost-answer-is-asked-for-again-once). Unattended runs make no writes. |
 | TASK-013 | Medium | P2 | Interactive timeouts are healthy but not unified with Task promotion | Fixed | chat hands work too long for one answer to the servers: crew_add now (one job) or crew_steps (several) return a job id at once, start within a minute by the server clock, carry on with AMV closed and land in Crew; the answer says so and stops (a-job-that-runs-once, the-time-you-say-is-the-time-it-runs). The model decides which work is long - there is no separate duration predictor |

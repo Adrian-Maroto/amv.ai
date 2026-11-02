@@ -423,6 +423,35 @@ section('One edit at a time, and what it said before is kept (Nov 1 audit AGENT-
   ok(capped.history.length === 10, 'the last ten changes are kept, not every one forever', capped.history.length);
 }
 
+section('A graph of agents: two side by side, a checker joining them, each in its own context (Nov 1 audit TASK-010)');
+{
+  const unthrottle = () => { for (const k of [...store.keys()]) if (/agents:/.test(k) && /(^rl|act)/.test(k)) store.delete(k); };
+  unthrottle();
+  const mkA = async (name, instr, contract) => { unthrottle(); const r = await call('/v1/agents/save', { name, instructions: instr, ...(contract ? { contract } : {}) }); return r.d.agent.id; };
+  const r1 = await mkA('Prices', 'PRICES-AGENT-RULE', { kind: 'json', required: ['price:number', 'source'] });
+  const r2 = await mkA('Reviews', 'REVIEWS-AGENT-RULE', { kind: 'json', required: ['score:number', 'source'] });
+  const ck = await mkA('Checker', 'CHECKER-AGENT-RULE');
+  unthrottle();
+  const made = await call('/auto/create', { approval: 'auto', steps: [
+    { title: 'Prices', detail: 'Find the price', agent: r1 },
+    { title: 'Reviews', detail: 'Find the review score', agent: r2 },
+    { title: 'Check', detail: 'Check both and recommend', after: [0, 1], agent: ck, role: 'critic' } ] });
+  ok(made.status === 200 && made.d.items.length === 3, 'a graph of three steps, each its own agent', made.status);
+  const g = made.d.group;
+  replies.length = 0;
+  replies.push('```json\n{"price":41.5,"source":"shop-a"}\n```', '```json\n{"score":4.6,"source":"reviews-b"}\n```', 'Checked: both fine.');
+  bodies = [];
+  const tick = async (t) => { const x = rec(); x.items.forEach(i => { if (i.group === g && i.active && !i.waiting) i.next = t - 1000; }); put(x); await W.runDueAutomations(env, t); };
+  await tick(Date.now() + 13); if (bodies.length < 3) await tick(Date.now() + 14);
+  const sys = (rule) => bodies.find(b => (b.system || '').includes(rule)) || {};
+  const p = sys('PRICES-AGENT-RULE'), rv = sys('REVIEWS-AGENT-RULE'), c = sys('CHECKER-AGENT-RULE');
+  ok(p.system && rv.system && !p.system.includes('REVIEWS-AGENT-RULE') && !rv.system.includes('PRICES-AGENT-RULE'), 'the two side by side run apart, neither told the other\u2019s rules', [!!p.system, !!rv.system]);
+  const joined = JSON.stringify(c.messages || []);
+  ok(/41\.5/.test(joined) && /4\.6/.test(joined) && /From \\"Prices\\"/.test(joined) && /From \\"Reviews\\"/.test(joined), 'the checker is handed both typed results, each under its step', joined.slice(0, 300));
+  ok(/THE CHECKER/.test(joined) && !(c.system || '').includes('PRICES-AGENT-RULE'), 'as the checker, with its own rules only', true);
+  for (const id of [r1, r2, ck]) { unthrottle(); await call('/v1/agents/delete', { id }); }
+}
+
 section('Deleted, its jobs stop and their results stay');
 {
   const before = rec().results.length;
