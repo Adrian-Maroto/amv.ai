@@ -44,3 +44,31 @@ empty agents record.
 | AGENT-011 | Revocation is read from the agent's record and its key is destroyed on forget, so a stale copy cannot be opened anywhere. The record itself is KV. | Moving agent records to the Durable Object, with the rest of DATA-013. |
 | SEC-005 (review) | An outside review cannot be done from inside. | The owner commissions it (OWNER-DECISIONS). |
 | AGENT-010 (root key) | The key that seals agent keys lives in the Worker. | A key service (OWNER-DECISIONS 17). |
+
+## P1, fixed in code (each with a test, mutation-checked)
+
+| Finding | What changed |
+|---|---|
+| AGENT-001, SEC-002 | No Worker identifier comes from `Math.random`; a suite refuses it anywhere in Worker code |
+| AGENT-012 | Identity providers, government and health sites join money sites as places an agent never keeps a sign-in |
+| AGENT-013 | A sign-in that cannot be put into the browser reads nothing, names the page as missing, and is never recorded as used |
+| TASK-005 | A job that reaches the dead-letter queue twice in a day is quarantined until an operator releases it |
+| DR-002, STATE-003 | The nightly backup and the retention sweep each run one slice at a time, under a lease |
+| STATE-004 | The team pass of the retention sweep skips people the personal pass reached |
+| DR-003 | Every backup part has a checksum in the manifest (with DR-004) |
+| COMP-004, COMP-005 | A snapshot is re-read while files change and names those that never settle; a rollback saves the running work first (with the P0s) |
+| COMP-008 | Two workspace copies made in the same millisecond are both kept |
+| SEC-004 | `preview.html` renders only inside AMV's sandboxed frame and only for its parent - it was writing whatever any window posted, as AMV's origin; it was also missing from `public/` |
+| SEC-011 | A switch the switchboard did not take is never reported as done |
+| DATA-010, 011, 012 | Current vs past differences kept apart; the whole repair backlog counted by kind; digests independent of key order |
+
+## P1, not fixed in code, and why
+
+| Finding | Why |
+|---|---|
+| SEC-006 | Workers cap PBKDF2 at 100,000 iterations; the password pepper (owner step, done) is what makes a stolen store uncrackable |
+| SEC-007 | Hashing every address in the audit log changes how support and erasure find records; needs a design, not a patch |
+| SEC-001 | 2,347 empty catches: the gate already fails a swallowed money or permission write; the rest are reviewed area by area |
+| USAGE-002, REL-014, MODEL-003 | Spend ceilings and model capacity are commercial decisions |
+| FILE-002 | Malware scanning needs a scanning service |
+| TASK-002/004/008/011, AGENT-002..006, RETR-*, PROD-*, OPS-* | Product and platform work, each larger than a fix |
