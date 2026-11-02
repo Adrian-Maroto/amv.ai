@@ -399,6 +399,15 @@ function _admRenderTab(tab, backendLive, live){
         : _admPending('Cost split by feature, and what caching saved'))+
       /* COST PER GOOD OUTCOME (Nov 1 audit USAGE-005): by kind of work, how
          much of it came out right and what each good one cost. */
+      /* THE SERVICE OBJECTIVES (REL-010), measured from what happened. */
+      _admCard('Service objectives this month', live
+        ? ((live.slo||[]).length
+          ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Objective</th><th>Target</th><th>Actual</th><th>Budget spent</th></tr></thead><tbody>'
+            + live.slo.map(o=>'<tr><td>'+escH(o.what)+'</td><td>'+o.objective+'%</td><td>'+(o.actualPct==null?'-':o.actualPct+'%')+'</td><td>'
+              + (o.status==='too_few'?'too few to judge':(o.budgetUsedPct+'%'+(o.status==='broken'?' - over':o.status==='burning'?' - burning':'')))+'</td></tr>').join('')
+            + '</tbody></table></div>'
+          : '<div class="adm-empty">Nothing measured yet this month.</div>')
+        : _admPending('Each objective, what it actually was, and how much error budget is spent'))+
       _admCard('Cost per good outcome', live
         ? (Object.keys(live.outcomes||{}).length
           ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Work</th><th>Runs</th><th>Good</th><th>Cost</th><th>Per good one</th></tr></thead><tbody>'
