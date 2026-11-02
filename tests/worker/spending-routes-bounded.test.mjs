@@ -102,7 +102,8 @@ section('The cloud workspace\u2019s door is a bound, not just a name');
      and the monthly minutes are both in it, ahead of the machine. */
   const cc = bodyOf('_computerOpen');
   ok(/guardAction\(/.test(cc) && /_computerUsedSeconds\(/.test(cc), '_computerOpen limits how often and how long', true);
-  ok(cc.indexOf('guardAction(') < cc.indexOf('AMV_COMPUTER.get('), 'before it reaches for a machine', true);
+  const reach = cc.indexOf('_computerStub(');
+  ok(reach > 0 && cc.indexOf('guardAction(') < reach && cc.indexOf('_computerUsedSeconds(') < reach, 'before it reaches for a machine', reach);
 }
 
 section('The exemptions have not gone stale');
