@@ -105,4 +105,25 @@ Left as is: TASK-006 / STATE-006 (addresses in queue bodies and KV keys) - both 
 | OPS-009 | Sign-in, money and privacy translations are approved by fingerprint in all 17 languages |
 | PROD-019 | Already true: the research panel keeps found, could-not-open, read and cited apart |
 
-Partly done, still listed as roadmap: USAGE-004 (job and agent budgets shown and enforced; browser and computer minutes are still per plan), MODEL-001 (limits are provider-counted; a full capability registry is not built).
+Partly done at the time, since finished: MODEL-001 (below). USAGE-004 is enforced for jobs and agents including browser pages; computer minutes stay per plan.
+
+## Fourth batch (each with a test; guards mutation-checked)
+
+| Finding | What changed |
+|---|---|
+| MODEL-001 | One capability record per engine, served by `/v1/engines`; the page reads limits from it, not from constants |
+| USAGE-001 | A chat turn's month figures (cost, cost by feature, outcome, caching saved, time to first word) are one object call, not seven |
+| USAGE-005 | The owner console shows cost per good outcome |
+| REL-010 | Service objectives are measured hourly; a spent error budget raises an alert and shows in the owner console (`docs/SLO.md`) |
+| PROD-015 | The API names its version (`AMV-API-Version`); unknown or retired versions are refused; policy in `docs/API-VERSIONS.md` |
+| TASK-008 | One task list over jobs and batches, with one way to stop any of them (`/v1/tasks`, `amv tasks`) |
+| AGENT-016 | An agent edit made from an older revision is refused; the last ten revisions are kept |
+| DATA-015 | One authority per data class, written down; a launch profile refuses the retired D1 store |
+| COMP-014 | A restored workspace runs its own setup and check on a new machine image and records the result |
+| OPS-001 | Support sees an account's shape, never its content, and the person sees every look in Security |
+| OPS-008 | An operator takes a listing down with a reason: it leaves the catalogue, cannot be bought, its seller cannot publish, and installed copies switch off |
+
+## Still roadmap, and why
+
+Each of these is a platform change larger than a fix, or waits on infrastructure only the owner can add:
+DATA-009/013/014 and DR-006 (records move to Postgres, keyed by account id - needs the database), FILE-001/003/006 (direct-to-storage uploads, per-file rows and signed range downloads - need storage credentials and the same database), RETR-001/003 (a persistent index needs a vector store), TASK-002/011 (a durable workflow engine and push connectors), COMP-010/012 (larger disks and machine sizes are pricing), MODEL-005 (a large evaluation corpus), VOICE-001/002 (a realtime speech provider; meeting mode), AGENT-018, OPS-007, PROD-009/018 and the product-direction items.
