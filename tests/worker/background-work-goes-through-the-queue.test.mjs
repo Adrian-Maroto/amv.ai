@@ -152,6 +152,34 @@ section('A run that throws is retried, later each time; a dead letter is booked 
   ok(booked.length >= 1, 'and the account is booked into the due-work index for the next sweep', booked);
 }
 
+section('A job that dies twice in a day is quarantined until somebody releases it (Nov 1 audit TASK-005)');
+{
+  for (const k of [...store.keys()]) if (k.startsWith('duehour:')) store.delete(k);
+  audits.length = 0;
+  const dead2 = await deliver([{ email: ME }], 'amv-jobs-dead', 5);
+  const booked = [...store.keys()].filter(k => k.startsWith('duehour:') && String(store.get(k)).includes(ME));
+  ok(dead2[0].acked && store.has('autoquar:' + ME) && audits.some(a => a.event === 'auto_quarantined' && a.email === ME),
+     'a second dead letter the same day puts the account in quarantine, on the record', audits.map(a => a.event));
+  ok(booked.length === 0, 'and it is NOT booked back in - a poison job does not fail for ever', booked);
+  /* Due again, reached by the queue and by the tick: neither runs it. */
+  const r0 = JSON.parse(store.get('auto:' + ME)); r0.items[0].next = Date.now() - 1000; store.set('auto:' + ME, JSON.stringify(r0));
+  modelCalls = 0;
+  const q = await deliver([{ email: ME }]);
+  const t = await W.runDueAutomations(Object.assign({}, env, { AMV_JOBS: undefined }), Date.now());
+  ok(modelCalls === 0 && q[0].acked, 'in quarantine nothing runs, from the queue or from the tick', { modelCalls, tick: t });
+  /* Released by the operator: booked, and it runs again. */
+  const rel = (tok) => W.default.fetch(new Request('https://api.amv.test/admin/auto/release', { method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, tok ? { 'X-Admin-Token': tok } : {}), body: JSON.stringify({ email: ME }) }), env, ctx);
+  env.ADMIN_TOKEN = 'admin-token-for-the-test-0123456789';
+  const no = await rel('wrong-token');
+  ok((no.status === 401 || no.status === 403) && store.has('autoquar:' + ME), 'only the operator can release it', no.status);
+  const yes = await rel(env.ADMIN_TOKEN);
+  ok(yes.status === 200 && !store.has('autoquar:' + ME) && !store.has('autodead:' + ME), 'released: the quarantine and the strike are cleared', yes.status);
+  modelCalls = 0;
+  await deliver([{ email: ME }]);
+  ok(modelCalls >= 1, 'and its work runs again', modelCalls);
+}
+
 console.log = origLog;
 if (report('background-work-goes-through-the-queue') > 0) process.exitCode = 1;
 done();

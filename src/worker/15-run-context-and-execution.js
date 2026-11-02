@@ -1663,6 +1663,8 @@ async function runDueAutomations(env, atMs, opts){
    queue is bound (_autoQueueConsume). `deadline` is when it must stop
    starting new work. Returns what it scanned, ran and failed. */
 async function _autoRunAccount(env, email, rec, now, deadline){
+  /* In quarantine (15a-job-queue.js, TASK-005): nothing runs until released. */
+  if(await _autoQuarantined(env, email)) return { scanned: 0, ran: 0, failed: 0, quarantined: true };
   let scanned = 0, ran = 0, failed = 0;
   let changed = false;
   /* Held until the results this account produced are durable. See the end of

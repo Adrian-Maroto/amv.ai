@@ -914,6 +914,7 @@ async function _route(request, env, ctx) {
     case '/admin/backup/import': return backupImport(request, env);
     case '/admin/backup/nights': return backupNights(request, env);
     case '/admin/pg/backfill':   return pgBackfillRoute(request, env);
+    case '/admin/auto/release':  return autoQuarantineRelease(request, env);
     case '/admin/pg/shadow':     return pgShadowRoute(request, env);
     case '/api/jobs':            return crewJobs(request, env);
     case '/api/approvals':       return crewApprovals(request, env);

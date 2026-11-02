@@ -110,28 +110,70 @@ async function _autoQueueConsume(batch, env){
   }
 }
 
-/* THE DEAD-LETTER QUEUE: an account whose run failed every retry. Said once
-   an hour to the operator, put on the record, and booked back into the
-   due-work index so the hourly sweep tries it again - a dead letter is a job
-   that needs looking at, never a job silently dropped. */
+/* THE DEAD-LETTER QUEUE: an account whose run failed every retry.
+
+   ONE MORE CHANCE, THEN QUARANTINE (Nov 1 audit TASK-005). Every dead letter
+   used to be booked straight back into the due-work index, so a job that
+   fails the same way every time - a poison job - failed for ever, an hour at
+   a time, spending a retry budget each round. A dead letter is not always
+   the job's fault, though: a provider outage dead-letters healthy accounts
+   too. So the first dead letter in a day is booked back once (`autodead:`,
+   a day); a second within that day puts the account in quarantine
+   (`autoquar:`, no expiry): its background work does not run - wherever it
+   is reached from, the queue or the hourly sweep - until an operator
+   releases it (POST /admin/auto/release). Said to the operator, on the
+   record, never silently dropped. */
+const _autoQuarKey = (who) => { const email = String(who || '').toLowerCase(); return `autoquar:${email}`; };
+const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); return `autodead:${email}`; };
+async function _autoQuarantined(env, email){
+  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }catch(e){ return false; }
+}
+/* POST /admin/auto/release { email }: the operator's replay, after looking. */
+async function autoQuarantineRelease(request, env){
+  const gate = await _adminGate(request, env, 'autorelease', 10, 200);
+  if(gate) return gate;
+  let body = {}; try{ body = await request.json(); }catch(e){ body = {}; }
+  const email = String(body.email || '').toLowerCase().trim();
+  if(!email) return json({ error: 'Name the account: { email }.', code: 'bad_request' }, 400);
+  const held = await env.AMV_KV.get(_autoQuarKey(email));
+  if(!held) return json({ error: 'That account is not in quarantine.', code: 'not_quarantined' }, 404);
+  await env.AMV_KV.delete(_autoQuarKey(email));
+  await env.AMV_KV.delete(_autoDeadKey(email));
+  await _autoBucketAdd(env, email, Date.now());
+  audit(env, 'auto_quarantine_released', { email });
+  return json({ ok: true, released: email });
+}
 async function _autoQueueDead(batch, env){
-  const emails = [];
+  const emails = [], quarantined = [];
   for(const msg of (batch.messages || [])){
     /* A dead email pointer: the record is still in the outbox, and the tick
        sends it - nothing more to do here. */
     if(msg.body && msg.body.kind === 'outbox'){ audit(env, 'outbox_queue_dead', {}); msg.ack(); continue; }
     const email = String((msg.body && msg.body.email) || '').toLowerCase();
     if(email){
-      emails.push(email);
       audit(env, 'auto_queue_dead', { email, attempts: Number(msg.attempts) || 0 });
-      try{ await _autoBucketAdd(env, email, Date.now()); }catch(e){}
+      let before = null; try{ before = await env.AMV_KV.get(_autoDeadKey(email)); }catch(e){ before = null; }
+      if(before){
+        try{ await env.AMV_KV.put(_autoQuarKey(email), JSON.stringify({ at: Date.now(), attempts: Number(msg.attempts) || 0 })); }catch(e){}
+        audit(env, 'auto_quarantined', { email });
+        quarantined.push(email);
+      } else {
+        emails.push(email);
+        try{ await env.AMV_KV.put(_autoDeadKey(email), String(Date.now()), { expirationTtl: 86400 }); }catch(e){}
+        try{ await _autoBucketAdd(env, email, Date.now()); }catch(e){}
+      }
     }
     msg.ack();
+  }
+  if(quarantined.length){
+    try{ await alertOnce(env, 'auto_quarantined',
+      'Background work for ' + quarantined.length + ' account(s) reached the dead-letter queue twice in a day and is in quarantine: it will not run again until released '
+      + '(POST /admin/auto/release { email }). The errors are in the audit log as auto_queue_run_failed.', 60); }catch(e){}
   }
   if(emails.length){
     try{ await alertOnce(env, 'auto_queue_dead',
       'Background work for ' + emails.length + ' account(s) failed every retry and reached the dead-letter queue. '
-      + 'Each is booked to be tried again on the hourly sweep; the errors are in the audit log as auto_queue_run_failed.', 60); }catch(e){}
+      + 'Each is booked to be tried once more; a second failure within a day puts it in quarantine. The errors are in the audit log as auto_queue_run_failed.', 60); }catch(e){}
   }
 }
 
