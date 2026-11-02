@@ -142,6 +142,15 @@ export default {
         console.error('[cron] retention sweep failed', e && e.message);
         try{ await _workerError(env, 'cron.retention', e); }catch(_){}
       }
+      /* Postgres mirror writes whose background never finished
+         (04a-control-plane.js, DATA-007) go on the repair list. */
+      try{
+        const pi = await runPgIntentSweep(env);
+        if(pi && pi.moved) console.log('[cron] pg intents', JSON.stringify(pi));
+      }catch(e){
+        console.error('[cron] pg intent sweep failed', e && e.message);
+        try{ await _workerError(env, 'cron.pgintent', e); }catch(_){}
+      }
       /* The Postgres backfill (04b-pg-backfill.js), only once the owner has
          started it; a slice of about twenty seconds. Not skipped while paused:
          it calls no model and spends nothing. Its own try. */

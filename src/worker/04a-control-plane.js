@@ -39,15 +39,68 @@ async function _pgClient(env){
   return postgres(env.PG.connectionString, { max: 1, fetch_types: false, connect_timeout: 10, idle_timeout: 5, onnotice: () => {} });
 }
 
+/* A MIRROR WRITE THAT CANNOT VANISH (Nov 1 audit DATA-007). The mirror runs
+   in the background of the request, held open by whatever request context
+   _bg last saw - and a background promise can die with its isolate, leaving
+   Postgres a write behind with nothing anywhere saying so. So before the
+   record is written, an intent is (`pgintent:<kind>:<id>:<token>`, awaited):
+   the mirror deletes its own intent when Postgres has the row; a failure
+   turns it into a repair entry at once; and one still there after
+   PG_INTENT_STALE_MS - the background died - is turned into a repair entry
+   by the cron (runPgIntentSweep), which the backfill's repair phase copies
+   again from KV as it is then. Every mirrored write therefore ends either in
+   Postgres or on the repair list; none ends nowhere. */
+const PG_INTENT_STALE_MS = 5 * 60 * 1000;
+async function _pgIntent(env, kind, id){
+  if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return null;
+  const tok = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const k = 'pgintent:' + kind + ':' + String(id || '').toLowerCase() + ':' + tok;
+  try { await env.AMV_KV.put(k, JSON.stringify({ at: Date.now() }), { expirationTtl: 7 * 86400 }); return k; }
+  catch (e) {
+    /* No intent: put it straight on the repair list instead, so the write
+       still cannot be lost; if that fails too, say so loudly. */
+    try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why: 'intent not recorded' })); }
+    catch (_) { try { audit(env, 'pg_intent_failed', { kind, id }); } catch (__) {} }
+    return null;
+  }
+}
+async function _pgIntentDone(env, ik){ if (ik) { try { await env.AMV_KV.delete(ik); } catch (e) {} } }
+/* The cron's half: intents the background never finished become repairs. */
+async function runPgIntentSweep(env, atMs){
+  if (!_pgOn(env)) return { on: false };
+  const now = atMs || Date.now();
+  let cursor, moved = 0, open = 0;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'pgintent:', cursor, limit: 500 });
+    for (const k of (page.keys || [])) {
+      const parts = k.name.split(':');
+      if (parts.length < 4) { try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+      const kind = parts[1], id = parts.slice(2, -1).join(':');
+      let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; }
+      if (at && now - at < PG_INTENT_STALE_MS) { open++; continue; }
+      try {
+        await env.AMV_KV.put('pgrepair:' + kind + ':' + id, JSON.stringify({ at: now, why: 'the background mirror did not finish' }));
+        await env.AMV_KV.delete(k.name);
+        moved++;
+      } catch (e) { /* tried again at the next run */ }
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  if (moved) { try { audit(env, 'pg_intent_unfinished', { moved }); } catch (e) {} }
+  return { on: true, moved, open };
+}
+
 /* Called by DB.put / DB.del after KV has the write. Never throws, never
-   blocks the caller: it runs in the background of the request. */
-function _pgAfter(env, kind, id, obj){
+   blocks the caller: it runs in the background of the request. `ik` is the
+   intent written before it (_pgIntent), cleared here when Postgres has it. */
+function _pgAfter(env, kind, id, obj, ik){
   if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return;
   const p = _pgMirror(env, kind, String(id || '').toLowerCase(), obj)
+    .then(() => _pgIntentDone(env, ik))
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);
       try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
-      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {}
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); await _pgIntentDone(env, ik); } catch (_) {}
       try { await alertOnce(env, 'pg_mirror_failed',
         'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
         + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}

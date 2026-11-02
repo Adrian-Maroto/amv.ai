@@ -150,24 +150,27 @@ const DB = {
           throw new Error('The ' + kind + ' record is ' + bytes + ' bytes, over the database\'s ' + D1_ROW_MAX_BYTES + '-byte limit for one record. It has to be split before it can be stored here.');
         }
       }
+      const ik = await _pgIntent(env, kind, id);
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
-      _pgAfter(env, kind, id, obj);
+      _pgAfter(env, kind, id, obj, ik);
       return;
     }
     await _pgReadFence(env, kind, id);
+    const ik = await _pgIntent(env, kind, id);
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
     /* The Postgres row too, once the store has it (04a-control-plane.js) -
        before going on, for a record Postgres answers (04d-pg-read.js). */
-    if(!(await _pgWriteThrough(env, kind, id, obj))) _pgAfter(env, kind, id, obj);
+    if(await _pgWriteThrough(env, kind, id, obj)) await _pgIntentDone(env, ik); else _pgAfter(env, kind, id, obj, ik);
     /* This namespace is demonstrably not empty any more. */
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
-    if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null); return; }
+    if(this._hasD1(env)){ const ik = await _pgIntent(env, kind, id); await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null, ik); return; }
     await _pgReadFence(env, kind, id);
+    const ik = await _pgIntent(env, kind, id);
     await env.AMV_KV.delete(`${kind}:${id}`);
-    if(!(await _pgWriteThrough(env, kind, id, null))) _pgAfter(env, kind, id, null);
+    if(await _pgWriteThrough(env, kind, id, null)) await _pgIntentDone(env, ik); else _pgAfter(env, kind, id, null, ik);
     /* A delete can only make a namespace emptier - but "emptier" is not
        "empty", and the marker means ALL of them are gone. Only a completed
        scan may claim that, so drop the claim and let one prove it. */

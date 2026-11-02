@@ -185,6 +185,7 @@ const BACKUP_NEVER = [
      the backfill, which compares every account anyway, so losing it loses
      nothing - and restoring an old one would repair what is already right. */
   'pgrepair:',
+  'pgintent:',
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',

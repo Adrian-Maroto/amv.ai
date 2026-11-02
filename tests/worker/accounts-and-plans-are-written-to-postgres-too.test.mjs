@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx, runPgIntentSweep };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -246,6 +246,30 @@ section('Deleting the account leaves a tombstone with nothing personal on it');
   ok(q("select count(*) from migration_accounts where email='ana@example.com'") === '0', 'and the migration no longer names it');
   ok(q("select count(*) from api_keys") === '0' && q("select count(*) from entitlements e join accounts a on a.id=e.account_id where a.deleted_at is not null") === '0',
      'its keys and its plan are gone from the database too');
+}
+
+section('A mirror write ends in Postgres or on the repair list, never nowhere (Nov 1 audit DATA-007)');
+{
+  await W._pgSettle();
+  ok(![...store.keys()].some(k => k.startsWith('pgintent:')), 'every write mirrored so far left no intent behind');
+  /* The intent is on record before the record itself is written. */
+  await W.DB.put(env, 'acct', 'ivy@example.com', { name: 'Ivy', provider: 'email', createdAt: Date.now() });
+  await W._pgSettle();
+  const order = []; const realPut = env.AMV_KV.put;
+  env.AMV_KV.put = async (k, v, o) => { order.push(k.split(':')[0]); return realPut.call(env.AMV_KV, k, v, o); };
+  await W.DB.put(env, 'team', 'team_intent', { id: 'team_intent', name: 'Order', ownerEmail: 'ivy@example.com', members: [{ email: 'ivy@example.com', role: 'owner' }] });
+  env.AMV_KV.put = realPut;
+  ok(order.indexOf('pgintent') >= 0 && order.indexOf('pgintent') < order.indexOf('team'), 'the intent is written before the record', order);
+  await W._pgSettle();
+  ok(![...store.keys()].some(k => k.startsWith('pgintent:')) && !store.has('pgrepair:team:team_intent') && q("select count(*) from organizations where legacy_id='team_intent'") === '1', 'and cleared once Postgres has the row', [...store.keys()].filter(k => /^pg(intent|repair)/.test(k)));
+  /* The background died: its intent is still there after five minutes. */
+  store.set('pgintent:team:team_lost:abc123', JSON.stringify({ at: Date.now() - 6 * 60 * 1000 }));
+  store.set('pgintent:team:team_busy:def456', JSON.stringify({ at: Date.now() }));
+  const sw = await W.runPgIntentSweep(env);
+  ok(sw.moved === 1 && store.has('pgrepair:team:team_lost') && !store.has('pgintent:team:team_lost:abc123'),
+     'an intent the background never finished becomes a repair entry', sw);
+  ok(store.has('pgintent:team:team_busy:def456') && !store.has('pgrepair:team:team_busy'), 'one still within its time is left alone', [...store.keys()].filter(k => /^pg(intent|repair):team/.test(k)));
+  store.delete('pgintent:team:team_busy:def456'); store.delete('pgrepair:team:team_lost');
 }
 
 section('Without the binding, nothing is tried');
