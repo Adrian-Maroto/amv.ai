@@ -318,6 +318,24 @@ async function runBatches(env, ctx) {
    For AMV's own engines the count is the provider's, exact. A partner engine
    has no counting endpoint AMV can reach, so it gets AMV's own estimate, and
    says so (`estimate: true`) rather than passing one off as the other. */
+/* What the provider counts: the same engine, messages, system and tools that
+   would be sent. Shared by the count route and the proxy's edge check. */
+const CONTEXT_EXACT_FROM = 0.8;
+function _countPayload(eng, messages, system, tools){
+  const payload = { model: eng.model, messages, system: [{ type: 'text', text: system }] };
+  if (tools && tools.length) payload.tools = tools;
+  if (eng.thinking) payload.thinking = { type: 'adaptive' };
+  return payload;
+}
+async function _exactInputTokens(env, eng, body, user){
+  if (!_modelKey(env) || !eng || !eng.model) return null;
+  const tools = Array.isArray(body.tools) ? _safeTools(body.tools, { callerTools: !!(user && user.via === 'apikey') }) : [];
+  const r = await fetchDeadline(_modelBase(env) + '/v1/messages/count_tokens', { method: 'POST', headers: _modelHeaders(env),
+    body: JSON.stringify(_countPayload(eng, body.messages, _systemWithIdentity(body.system), tools)) }, 8000);
+  if (!r.ok) return null;
+  const d = await r.json().catch(() => ({}));
+  return typeof d.input_tokens === 'number' ? d.input_tokens : null;
+}
 async function aiCountTokens(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
@@ -346,9 +364,7 @@ async function aiCountTokens(request, env){
     return json({ error: 'AMV is not connected to a model on this deployment yet, so it cannot count. Nothing was charged.', code: 'needs_service' }, 503);
   }
   const eng = ENGINES[key];
-  const payload = { model: eng.model, messages: body.messages, system: [{ type: 'text', text: system }] };
-  if (tools.length) payload.tools = tools;
-  if (eng.thinking) payload.thinking = { type: 'adaptive' };
+  const payload = _countPayload(eng, body.messages, system, tools);
   let r, d;
   try {
     r = await fetchDeadline(_modelBase(env) + '/v1/messages/count_tokens', { method: 'POST', headers: _modelHeaders(env),
@@ -556,11 +572,22 @@ async function aiProxy(request, env, ctx, principal) {
   /* 1c) THE ENGINE CAN READ IT. Checked before anything is counted or booked,
      so a request too long for its engine costs nothing and says what to do. */
   const _tag = _usageTagOf(body, user, principal);
-  const fit = _fitsContext(body, eng);
+  let fit = _fitsContext(body, eng);
+  /* NEAR THE EDGE, THE PROVIDER'S OWN COUNT (Nov 1 audit MODEL-001/002). The
+     estimate above is characters over four - right for most text, wrong for
+     code, CJK and anything dense. Far from the limit that does not matter;
+     close to it, AMV asks the provider's tokenizer before sending, so a
+     request is refused for being too long by a count, not a guess, and one
+     the estimate would wrongly refuse is let through. Only AMV's own engines
+     can be counted; a count that fails leaves the estimate deciding. */
+  if (!partnerEng && fit.tokens > fit.room * CONTEXT_EXACT_FROM) {
+    const exact = await _exactInputTokens(env, eng, body, user).catch(() => null);
+    if (typeof exact === 'number') fit = { ok: exact <= fit.room, tokens: exact, room: fit.room, exact: true };
+  }
   if (!fit.ok) {
     return json({ error: 'That is more than ' + _engineTitle(key, eng) + ' can read in one request (about '
       + Math.round(fit.tokens / 1000) + 'k tokens against ' + Math.round(fit.room / 1000) + 'k). Start a new chat for it, or attach it as files so AMV can read it in parts.',
-      code: 'too_long_for_engine', tokens: fit.tokens, room: fit.room }, 413);
+      code: 'too_long_for_engine', tokens: fit.tokens, room: fit.room, counted: !!fit.exact }, 413);
   }
 
   // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.

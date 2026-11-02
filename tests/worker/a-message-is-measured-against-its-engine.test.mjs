@@ -34,7 +34,12 @@ const sse = () => 'data: {"type":"message_start","message":{"usage":{"input_toke
                 + 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\n'
                 + 'data: {"type":"message_delta","usage":{"output_tokens":10}}\n\n'
                 + 'data: {"type":"message_stop"}\n\n';
+let countCalls = 0, countSays = null;
 globalThis.fetch = async (url) => {
+  if (/count_tokens$/.test(String(url))) {
+    countCalls++;
+    return countSays == null ? new Response('{"error":{}}', { status: 529 }) : new Response(JSON.stringify({ input_tokens: countSays }), { status: 200 });
+  }
   if (!/model\.example/.test(String(url))) return { ok: true, status: 200, json: async () => ({}) };
   upstreamCalls++;
   return new Response(sse(), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
@@ -147,6 +152,29 @@ section('A picture counts by what it costs to read, not by its encoded size');
   ok(fn.ok && fn.tokens === 1800, 'and so is a picture inside a tool result, a screenshot', fn);
   ok(W._fitsContext({ messages: [{ role: 'user', content: 'hi' }] }, {}).room === 200000 - 16000 - 8000,
      'an engine that does not say falls back to 200,000');
+}
+
+section('Near the edge the provider counts it, and its count decides (Nov 1 audit MODEL-001/002)');
+{
+  const room = 1000000 - 16000 - 8000;
+  /* Far from the edge: estimated, never sent to be counted. */
+  { const env = mkEnv(); const tok = await signedIn(env); countCalls = 0; countSays = 5;
+    const r = await ask(env, tok, prose(400000)); await ctx.settle();
+    ok(r.status === 200 && countCalls === 0, 'a message well inside the room is not counted twice', { status: r.status, countCalls }); }
+  /* Estimated to fit, counted over: refused by the count. */
+  { const env = mkEnv(); const tok = await signedIn(env); countCalls = 0; countSays = room + 5000;
+    const r = await ask(env, tok, prose(3000000) + zh(60000)); await ctx.settle();
+    const d = await r.json().catch(() => ({}));
+    ok(r.status === 413 && d.counted === true && d.tokens === room + 5000, 'estimated to fit and counted over, it is refused with the provider\u2019s count', { status: r.status, d: { tokens: d.tokens, counted: d.counted } });
+    ok(upstreamCalls === 0 && booked(env) === 0, 'and nothing was sent or booked', { upstreamCalls, booked: booked(env) }); }
+  /* Estimated over, counted inside: served. */
+  { const env = mkEnv(); const tok = await signedIn(env); countCalls = 0; countSays = room - 50000;
+    const r = await ask(env, tok, zh(1100000)); await ctx.settle();
+    ok(countCalls === 1 && r.status === 200 && upstreamCalls === 1, 'estimated over and counted inside, it is served', { status: r.status, countCalls, upstreamCalls }); }
+  /* The count could not be made: the estimate decides. */
+  { const env = mkEnv(); const tok = await signedIn(env); countCalls = 0; countSays = null;
+    const r = await ask(env, tok, zh(1100000)); await ctx.settle();
+    ok(countCalls === 1 && r.status === 413 && upstreamCalls === 0, 'with no count, the estimate decides as before', { status: r.status, countCalls }); }
 }
 
 report();

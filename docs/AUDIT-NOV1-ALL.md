@@ -2,7 +2,7 @@
 
 Statuses: **Fixed** (code + test, guard mutation-checked), **Already true** (verified in code), **Owner** (money, accounts, providers or people only the owner can arrange), **Roadmap** (a feature or platform build, not a fix), **Not a defect here**, **Not done** (with why).
 
-Totals: Fixed 70, Roadmap 54, Owner 25, Already true 13, Not a defect here 7
+Totals: Fixed 71, Roadmap 52, Owner 25, Already true 14, Not a defect here 7
 
 | ID | Sev | Pri | Finding | Status | Note |
 |---|---|---|---|---|---|
@@ -110,8 +110,8 @@ Totals: Fixed 70, Roadmap 54, Owner 25, Already true 13, Not a defect here 7
 | RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Roadmap | permission-filtered retrieval |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Roadmap | server-side past-chat index |
 | RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Fixed | every passage from a project, the library or an attached document is named by file, the section heading it sits under (documents, slides and sheets alike) and the lines it spans; passages never cross a heading; the model is told to cite by that label (a-project-finds-the-part-you-asked-about) |
-| MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Roadmap | provider-authoritative context limits |
-| MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Roadmap | tokenizer-based limits |
+| MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Roadmap | a capability registry per provider model (tools, vision, audio, cache, region) refreshed centrally; the part about limits is done - near the edge the provider count decides (MODEL-002) |
+| MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Fixed | near the limit the refusal or acceptance is by the provider's token count, not characters; far from it the per-script estimate is used and is harmless |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Owner | second model provider is commercial |
 | MODEL-004 | Medium | P2 | Streaming cannot transparently fail over after tokens are emitted | Fixed | a broken stream keeps what arrived, marked as cut off by the engine or the connection, and offers Continue: a new turn carrying the part, so the rest is written once (when-the-engine-fails-partway); a lost connection recovers the whole parked answer |
 | MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Roadmap | quality-gated model canaries |
@@ -163,7 +163,7 @@ Totals: Fixed 70, Roadmap 54, Owner 25, Already true 13, Not a defect here 7
 | PROD-016 | Strategic | P2 | Declarative plugins are safe but limited | Roadmap | product direction |
 | PROD-017 | High | P1 | MCP/plugin success can weaken AMV’s verification promise | Already true | every connector tool call needs per-call consent; writes go through the action protocol with read-back |
 | PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Roadmap | structured shopping/travel results |
-| PROD-019 | Medium | P2 | Research Trail should distinguish found/opened/read/extracted/cited | Roadmap | research trail states |
+| PROD-019 | Medium | P2 | Research Trail should distinguish found/opened/read/extracted/cited | Already true | the research panel already keeps found (in search results), opened-but-could-not-read, read, and cited apart, per source and in the trail (a-source-is-found-read-and-cited); "extracted" is not a state AMV can observe separately, so it is not claimed |
 | PROD-020 | Strategic | P2 | Trusted agency must be the product thesis, not feature count | Roadmap | product direction |
 | OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Roadmap | support tooling with break-glass |
 | OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Owner | live incident exercises |
