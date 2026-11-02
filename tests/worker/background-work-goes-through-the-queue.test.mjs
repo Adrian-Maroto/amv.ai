@@ -25,7 +25,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'jobqueue.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens };
+export { runDueAutomations, issueTokens, _qOpen };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -95,7 +95,9 @@ section('With a queue, the tick sends one message per due account and runs nothi
   due(ME); due(TWO); modelCalls = 0; sent.length = 0;
   const r = await W.runDueAutomations(env, Date.now() + 10);
   ok(modelCalls === 0 && r.ran === 0, 'the tick spent nothing', { modelCalls, ran: r.ran });
-  ok(sent.length === 2 && new Set(sent.map(b => b.email)).size === 2 && r.enqueued === 2, 'one message for each account', sent);
+  for (const b of sent) b.who = await W._qOpen(env, b.ref);
+  ok(sent.length === 2 && new Set(sent.map(b => b.who)).size === 2 && r.enqueued === 2, 'one message for each account', sent);
+  ok(!JSON.stringify(sent.map(({ who, ...b }) => b)).includes('@'), 'and no message carries an address - only a sealed reference (Nov 1 audit TASK-006)', sent.map(b => b.ref.slice(0, 12)));
   const again = await W.runDueAutomations(env, Date.now() + 20);
   ok(sent.length === 2 && !again.enqueued, 'a second tick a moment later does not send them again', sent.length);
 }
@@ -103,18 +105,18 @@ section('With a queue, the tick sends one message per due account and runs nothi
 section('The consumer runs the account’s due job, once');
 {
   modelCalls = 0;
-  const msgs = await deliver([sent.find(b => b.email === ME)]);
+  const msgs = await deliver([sent.find(b => b.who === ME)]);
   ok(modelCalls >= 1 && msgs[0].acked, 'the job ran and the message was acknowledged', { modelCalls, acked: msgs[0].acked });
   ok(rec(ME).items[0].next > Date.now() && rec(ME).results.length >= 2, 'its next run moved on, and its result is kept', rec(ME).items[0].next);
   modelCalls = 0;
-  const twice = await deliver([sent.find(b => b.email === ME)]);
+  const twice = await deliver([sent.find(b => b.who === ME)]);
   ok(modelCalls === 0 && twice[0].acked, 'the same message delivered again runs nothing', modelCalls);
 }
 
 section('The kill switch and a paused account stop the consumer too');
 {
   store.set('GLOBAL_KILL', '1'); modelCalls = 0;
-  const k = await deliver([sent.find(b => b.email === TWO)]);
+  const k = await deliver([sent.find(b => b.who === TWO)]);
   ok(modelCalls === 0 && k[0].acked && !k[0].retried, 'killed: nothing runs, and it is not retried', { modelCalls });
   ok(rec(TWO).items[0].next <= Date.now(), 'and the job keeps its place for after', rec(TWO).items[0].next);
   store.delete('GLOBAL_KILL');

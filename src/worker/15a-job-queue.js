@@ -20,6 +20,32 @@
    not run - and the per-run lease (`autorun` claims) still means a job that
    is somehow both queued and run inline runs once. */
 
+/* NO ADDRESS IN A QUEUE MESSAGE (Nov 1 audit TASK-006, STATE-006). A message
+   names its account by a sealed reference - AES-GCM under a key derived
+   from JWT_SECRET - so what sits in the queue, its retries and its dead
+   letters, says nothing about who it is for. Messages already in flight with
+   a plain address are still read. */
+let _qKeyP = null;
+function _qKey(env){
+  if(!env || !env.JWT_SECRET) return null;
+  if(!_qKeyP) _qKeyP = crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-queue-ref\n' + env.JWT_SECRET))
+    .then(h => crypto.subtle.importKey('raw', h, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']));
+  return _qKeyP;
+}
+async function _qSeal(env, text){
+  const kp = _qKey(env); if(!kp) return null;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await kp, new TextEncoder().encode(String(text)));
+  return 'q1.' + _b64(iv) + '.' + _b64(ct);
+}
+async function _qOpen(env, ref){
+  const p = String(ref || '').split('.');
+  const kp = _qKey(env); if(!kp || p.length !== 3 || p[0] !== 'q1') return '';
+  try{ return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: _unb64(p[1]) }, await kp, _unb64(p[2]))); }catch(e){ return ''; }
+}
+/* What a message is for: its sealed reference, or (older messages) the address. */
+async function _qWho(env, body){ return String((body && body.ref) ? await _qOpen(env, body.ref) : (body && body.email) || '').toLowerCase(); }
+
 const AUTO_QUEUE_BATCH = 100;          // the provider's sendBatch ceiling
 const AUTO_QUEUE_CLAIM_S = 5 * 60;     // one message per account per five minutes
 const AUTO_QUEUE_RETRY_S = 60;         // first retry after a minute, then longer
@@ -54,7 +80,9 @@ async function _autoEnqueue(env, users, now){
   for(let i = 0; i < toSend.length; i += AUTO_QUEUE_BATCH){
     const slice = toSend.slice(i, i + AUTO_QUEUE_BATCH);
     try{
-      await env.AMV_JOBS.sendBatch(slice.map(u => ({ body: { email: u.id, due: u.soonest || now, at: now } })));
+      const bodies = [];
+      for(const u of slice){ const ref = await _qSeal(env, u.id); bodies.push({ body: Object.assign(ref ? { ref } : { email: u.id }, { due: u.soonest || now, at: now }) }); }
+      await env.AMV_JOBS.sendBatch(bodies);
       sent += slice.length;
     }catch(e){
       audit(env, 'auto_queue_send_failed', { count: slice.length, error: String((e && e.message) || e).slice(0, 160) });
@@ -88,7 +116,7 @@ async function _autoQueueConsume(batch, env){
       catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }
       continue;
     }
-    const email = String(body.email || '').toLowerCase();
+    const email = await _qWho(env, body);
     if(!email){ msg.ack(); continue; }
     /* Stopped on purpose: acknowledged, not retried. The job keeps its place
        and its next run, and the first tick after the switch is back on sends
@@ -149,7 +177,7 @@ async function _autoQueueDead(batch, env){
     /* A dead email pointer: the record is still in the outbox, and the tick
        sends it - nothing more to do here. */
     if(msg.body && msg.body.kind === 'outbox'){ audit(env, 'outbox_queue_dead', {}); msg.ack(); continue; }
-    const email = String((msg.body && msg.body.email) || '').toLowerCase();
+    const email = await _qWho(env, msg.body);
     if(email){
       audit(env, 'auto_queue_dead', { email, attempts: Number(msg.attempts) || 0 });
       let before = null; try{ before = await env.AMV_KV.get(_autoDeadKey(email)); }catch(e){ before = null; }

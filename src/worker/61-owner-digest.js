@@ -1074,14 +1074,15 @@ async function _outboxSendOne(env, key, now) {
    down, or a message that died, delays mail and never loses it. */
 async function _outboxPoint(env, key, delayMs) {
   if (!_jobQueueOn(env)) return;
-  try { await env.AMV_JOBS.sendBatch([{ body: { kind: 'outbox', key }, delaySeconds: Math.max(0, Math.min(43200, Math.round(delayMs / 1000))) }]); }
+  const ref = await _qSeal(env, key);
+  try { await env.AMV_JOBS.sendBatch([{ body: Object.assign({ kind: 'outbox' }, ref ? { ref } : { key }), delaySeconds: Math.max(0, Math.min(43200, Math.round(delayMs / 1000))) }]); }
   catch (e) { audit(env, 'outbox_queue_send_failed', { error: String((e && e.message) || e).slice(0, 120) }); }
 }
 
 /* The consumer's half: one message, one email. A pointer whose email is not
    due yet (the queue was early) is sent again for the time left. */
 async function _outboxConsume(env, msg) {
-  const key = String((msg.body && msg.body.key) || '');
+  const key = (msg.body && msg.body.ref) ? await _qOpen(env, msg.body.ref) : String((msg.body && msg.body.key) || '');
   if (!key.startsWith('outbox:') || !env.EMAIL_API_KEY) { msg.ack(); return; }
   const r = await _outboxSendOne(env, key);
   if (r === 'notyet') {
