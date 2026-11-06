@@ -2907,6 +2907,47 @@ async function pgBackfillRoute(request, env){
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
 }
+
+/* WHERE THE MOVE TO POSTGRES REALLY IS (Nov 3 audit REL-018). The readiness
+   flag `postgres_reads_all` meant only "the read cohort is 100%". A cutover
+   is more than a dial: the backfill finished, every account read back and
+   matched, every balance reconciled, nothing waiting to be repaired, no
+   write whose mirror died - and it says which classes Postgres answers for
+   at all. Answers { state, blockers, serves, notYet } - names and counts,
+   never a row. */
+const PG_SERVES = ['acct', 'ent'];
+const PG_NOT_YET = ['apikeys', 'team', 'credit_ledger', 'seller_ledger'];
+async function _pgCutover(env){
+  if (!_pgOn(env)) return { state: 'off', blockers: [], serves: [], notYet: PG_SERVES.concat(PG_NOT_YET) };
+  const blockers = [];
+  const bp = _pgReadCohort(env).basisPoints;
+  let sql;
+  try {
+    sql = await _pgClient(env);
+    const rows = await sql`SELECT kind, cursor FROM migration_cursor WHERE kind = '_run' OR kind IN ${sql(PG_BACKFILL_PHASES)}`;
+    const by = Object.fromEntries(rows.map(r => [r.kind, r.cursor]));
+    if (by._run !== 'done') blockers.push('backfill ' + (by._run || 'not started'));
+    const undone = PG_BACKFILL_PHASES.filter(p => by[p] !== 'done');
+    if (undone.length) blockers.push('phases not done: ' + undone.join(','));
+    const diff = (await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`)[0].n;
+    if (diff) blockers.push(diff + ' account(s) differ');
+    const money = (await sql`SELECT count(*)::int AS n FROM migration_cursor WHERE kind LIKE 'money:%'`)[0].n;
+    if (money) blockers.push(money + ' balance(s) do not reconcile');
+  } catch (e) {
+    blockers.push('postgres did not answer');
+  } finally {
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+  }
+  try { const r = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 }); if ((r.keys || []).length) blockers.push('repairs waiting'); } catch (e) { blockers.push('repair list unreadable'); }
+  try {
+    const r = await env.AMV_KV.list({ prefix: 'pgintent:', limit: 50 });
+    let stuck = 0;
+    for (const k of r.keys || []) { let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; } if (!at || Date.now() - at > PG_INTENT_STALE_MS) stuck++; }
+    if (stuck) blockers.push(stuck + ' mirror write(s) unfinished');
+  } catch (e) { blockers.push('intents unreadable'); }
+  const state = blockers.length ? (bp ? 'reading_with_blockers' : 'not_ready') : bp >= 10000 ? 'reading_all' : bp > 0 ? 'reading_some' : 'ready_to_read';
+  return { state, blockers, cohortPercent: bp / 100, serves: bp ? PG_SERVES : [], notYet: PG_NOT_YET };
+}
 /* ══════════════════════════════════════════════════════════════════════════
    THE CONTROL PLANE IN POSTGRES: STEP 4, SHADOW READS (docs/DATA-TIER.md).
 
@@ -17892,7 +17933,10 @@ async function _nightlyBackupSlice(env, atMs){
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
   if (!st) st = { day, prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
-  if (st.done || st.failed) return { on: true, day, done: st.done, failed: st.failed || undefined };
+  /* Done: the night is drilled on its own, slice by slice (REL-017) - a
+     backup nobody has read back is not one readiness may count. */
+  if (st.done) return Object.assign({ on: true, day, done: true }, await _nightlyDrillSlice(env, day));
+  if (st.failed) return { on: true, day, done: false, failed: st.failed };
 
   const save = () => env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
   let parts = 0;
@@ -17932,13 +17976,17 @@ async function _nightlyBackupSlice(env, atMs){
 
   if (st.prefix < BACKUP_PREFIXES.length) return { on: true, day, parts, count: st.count, more: true };
 
-  /* Written last: a night without a manifest is not a backup. */
-  await env.AMV_BACKUPS.put(_nightlyManifest(day), JSON.stringify({
+  /* Written last: a night without a manifest is not a backup. Signed (Nov 3
+     audit REL-017), so a manifest somebody edited in the bucket - or one
+     written by anything but this Worker - is not taken for a backup. */
+  const man = {
     _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part,
     partSha: Array.isArray(st.partSha) && st.partSha.length === st.part ? st.partSha : undefined,
     prefixes: BACKUP_PREFIXES, startedAt: st.startedAt, finishedAt: Date.now(),
     finishedISO: new Date().toISOString(),
-  }), { httpMetadata: { contentType: 'application/json' } });
+  };
+  man.sig = await _manifestSig(env, man);
+  await env.AMV_BACKUPS.put(_nightlyManifest(day), JSON.stringify(man), { httpMetadata: { contentType: 'application/json' } });
   st.done = true; await save();
   audit(env, 'nightly_backup', { day, keyCount: st.count, parts: st.part, bytes: st.bytes });
   await _nightlyPrune(env, now);
@@ -18002,6 +18050,61 @@ function _drillEntries(entries, t){
   }
 }
 
+/* The manifest's signature: HMAC-SHA256 over the manifest without it, under
+   the deployment's backup key (BACKUP_SIGNING_KEY, or the token secret). */
+async function _manifestSig(env, man){
+  const secret = String(env.BACKUP_SIGNING_KEY || env.JWT_SECRET || '');
+  if (!secret) return '';
+  const body = Object.assign({}, man); delete body.sig;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('amv-backup-manifest\n' + secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(JSON.stringify(body)));
+  return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function _manifestSigned(env, man){
+  if (!man || typeof man.sig !== 'string' || !man.sig) return false;
+  const want = await _manifestSig(env, man);
+  if (!want || want.length !== man.sig.length) return false;
+  let diff = 0; for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ man.sig.charCodeAt(i);
+  return diff === 0;
+}
+/* A night's drill, a slice at a time, from the cron. The drill is the same
+   one an operator runs ({ fromNight, mode: 'verify' }); it carries where it
+   got to in its own run record. A night found unsound is recorded as such,
+   alerted once, and not drilled again on every tick. */
+async function _nightlyDrillSlice(env, day){
+  let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
+  if (d) return { drill: d.sound ? 'sound' : 'unsound' };
+  let run = null; try { run = JSON.parse((await env.AMV_KV.get(_drillKey(day) + ':run')) || 'null'); } catch (e) { run = null; }
+  const r = await _restoreFromNight(env, day, (run && run.next) || 0, 'verify');
+  const body = await r.json().catch(() => ({}));
+  if (body.more) return { drill: 'partial', through: body.nextPart };
+  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) {} }
+  return { drill: body.ok ? 'sound' : 'unsound' };
+}
+/* WHAT "A RECENT BACKUP EXISTS" MEANS (Nov 3 audit REL-017). Not that a
+   status record says done: a manifest for last night (or tonight) is in the
+   bucket, complete, signed by this deployment, with a checksum for every
+   part; its last part is there; and a drill of THAT manifest read every part
+   back and found it sound. Answers { fresh, day } or { fresh: false, why }. */
+async function _backupProven(env, now){
+  if (!_nightlyOn(env)) return { fresh: false, why: 'off' };
+  let why = 'no complete backup';
+  for (const day of [_nightlyDay(now), _nightlyDay(now - 86400000)]) {
+    let man = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); if (o) man = JSON.parse(await o.text()); } catch (e) { man = null; }
+    if (!man || !man.complete) continue;
+    if (!(await _manifestSigned(env, man))) { why = 'manifest not signed'; continue; }
+    if (!Array.isArray(man.partSha) || man.partSha.length !== man.parts) { why = 'manifest without every checksum'; continue; }
+    if (man.parts > 0) {
+      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1)).catch(() => null);
+      if (!last) { why = 'a part is missing'; continue; }
+    }
+    let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
+    if (!d || !d.sound || d.parts !== man.parts || (d.sig || '') !== man.sig) { why = d && !d.sound ? 'drill found it unsound' : 'not drilled yet'; continue; }
+    return { fresh: true, day };
+  }
+  return { fresh: false, why };
+}
 async function _sha256Hex(text){
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -18024,6 +18127,11 @@ async function _restoreFromNight(env, day, fromPart, mode){
   let man = null;
   try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); if (o) man = JSON.parse(await o.text()); } catch (e) { man = null; }
   if (!man || !man.complete) return json({ error: 'There is no complete backup for ' + day + '.', code: 'no_backup' }, 404);
+  /* Signed by this deployment, or not a backup it trusts (REL-017). A night
+     from before manifests were signed can still be drilled, and is said to
+     be unsigned; it cannot be restored. */
+  const signed = await _manifestSigned(env, man);
+  if (!signed && mode !== 'verify') return json({ error: 'The ' + day + ' backup manifest is not signed by this deployment, so it is not restored.', code: 'manifest_unsigned' }, 409);
   const started = Date.now();
   const t = { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] };
   const drill = mode === 'verify';
@@ -18032,7 +18140,7 @@ async function _restoreFromNight(env, day, fromPart, mode){
   if (!drill) {
     let d = null;
     try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
-    if (!d || !d.sound || d.parts !== man.parts)
+    if (!d || !d.sound || d.parts !== man.parts || (d.sig || '') !== (man.sig || ''))
       return json({ error: 'Run a drill of the ' + day + ' backup first ({ fromNight, mode: "verify" }, until it answers more: false). A restore only starts once every part of the night has been read and checked, so nothing is written from a backup that would stop half way.', code: 'drill_required' }, 409);
   }
   let part = Math.max(0, parseInt(fromPart, 10) || 0);
@@ -18073,11 +18181,13 @@ async function _restoreFromNight(env, day, fromPart, mode){
     const base = { ok: sound, drill: true, parts: man.parts, expected: man.keyCount, verified: acc.verified, refused: acc.refused,
       unrestorable: acc.unrestorable, badParts: acc.badParts, checksums: !!sums, lost: t.lost, ms: Date.now() - started, snapshotFrom: man.finishedISO };
     if (part < man.parts) {
-      await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(acc), { expirationTtl: 86400 });
+      await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(Object.assign({}, acc, { next: part })), { expirationTtl: 86400 });
       return json({ ...base, more: true, nextPart: part }, 202);
     }
     try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
-    if (sound && (prior || !(parseInt(fromPart, 10) > 0))) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, at: Date.now() }), { expirationTtl: 40 * 86400 });
+    const whole = prior || !(parseInt(fromPart, 10) > 0);
+    if (sound && whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
+    else if (whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: false, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
     else await env.AMV_KV.delete(_drillKey(day));
     return json({ ...base, more: false }, sound ? 200 : 422);
   }
@@ -36613,7 +36723,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -36644,6 +36754,8 @@ function _readinessReport(env, seen) {
       effect: 'Step 5 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), an account and a plan are answered by Postgres, written there before the request goes on, and checked against KV in the background. A record that differs, or a write that did not land, is answered by KV again. Unset, KV answers everybody. Counts at GET /admin/pg/shadow.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
+    { id: 'backupSign', name: 'Backups: the signing key', env: 'BACKUP_SIGNING_KEY', set: _has(env, 'BACKUP_SIGNING_KEY'),
+      effect: 'Signs each nightly backup\u2019s manifest, so a manifest edited in the bucket - or written by anything but this Worker - is not counted or restored. Unset, the token secret signs them; set it to keep backups trusted across a change of that secret.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
@@ -36853,13 +36965,14 @@ async function healthReady(request, env) {
   /* STATE, NOT ONLY BINDINGS (Nov 1 audit REL-001/003): whether last night's
      backup (or tonight's) actually completed, and whether Postgres answers
      everybody's reads - not merely whether the bindings exist. */
-  let backupFresh = false;
-  if (_nightlyOn(env)) {
-    for (const d of [_nightlyDay(now), _nightlyDay(now - 86400000)]) {
-      try { const st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(d))) || 'null'); if (st && st.done) { backupFresh = true; break; } } catch (e) {}
-    }
-  }
-  const pgReadsAll = _pgOn(env) && _pgReadCohort(env).basisPoints >= 10000;
+  /* A backup counts only when it is proved (Nov 3 audit REL-017): signed,
+     whole, and drilled - not because a status record says done. */
+  let backupFresh = false, backupWhy = 'off';
+  try { const b = await _backupProven(env, now); backupFresh = !!b.fresh; backupWhy = b.fresh ? '' : b.why; } catch (e) { backupWhy = 'could not be checked'; }
+  /* Not "the cohort is 100%": a cutover with nothing in its way (REL-018). */
+  let pgCut = { state: 'off', blockers: [] };
+  if (_pgOn(env)) { try { pgCut = await _pgCutover(env); } catch (e) { pgCut = { state: 'unknown', blockers: ['could not be checked'] }; } }
+  const pgReadsAll = pgCut.state === 'reading_all';
   const body = {
     ready, ts: now, checks,
     capabilities: {
@@ -36879,6 +36992,11 @@ async function healthReady(request, env) {
       postgres: _pgOn(env),
       backup_fresh: backupFresh,
       postgres_reads_all: pgReadsAll,
+    },
+    /* Why a state flag is off, in words - names and counts, nothing else. */
+    state: {
+      backup: backupFresh ? 'proved' : backupWhy,
+      postgres: { state: pgCut.state, blockers: pgCut.blockers || [], serves: pgCut.serves || [], notYet: pgCut.notYet || [] },
     },
   };
   _readyMemo = { at: now, body };

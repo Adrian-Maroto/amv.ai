@@ -74,17 +74,20 @@ section('State, not only bindings: a backup that finished, and Postgres answerin
   const base = (extra) => Object.assign({ AMV_KV: kv(), AMV_COUNTER: okCounter(), JWT_SECRET: 'j', AMV_BACKUPS: BK }, extra || {});
   const none = await (await get(await load(), base())).json();
   ok(none.capabilities.nightly_backup === true && none.capabilities.backup_fresh === false, 'backups switched on but none finished: not fresh', none.capabilities);
+  /* Nov 3 audit REL-017: a status record saying "done" is not a backup. */
   const e1 = base(); await e1.AMV_KV.put('bkrun:' + day(Date.now() - 86400000), JSON.stringify({ done: true }));
   const y = await (await get(await load(), e1)).json();
-  ok(y.capabilities.backup_fresh === true, 'last night\u2019s backup finished: fresh', y.capabilities);
+  ok(y.capabilities.backup_fresh === false && /no complete backup/.test(y.state.backup), 'a record that says last night finished, with no manifest behind it: not fresh, and why', y.state);
   const e2 = base(); await e2.AMV_KV.put('bkrun:' + day(Date.now() - 3 * 86400000), JSON.stringify({ done: true }));
   await e2.AMV_KV.put('bkrun:' + day(Date.now()), JSON.stringify({ done: false }));
   const old = await (await get(await load(), e2)).json();
   ok(old.capabilities.backup_fresh === false, 'only an older one, and tonight\u2019s still running: not fresh', old.capabilities);
   const half = await (await get(await load(), base({ PG, PG_READ: '50%' }))).json();
   ok(half.capabilities.postgres === true && half.capabilities.postgres_reads_all === false, 'Postgres bound and answering half: not all', half.capabilities);
+  /* Nov 3 audit REL-018: the dial at 100% is not a cutover. This database
+     does not answer, so nothing about the move can be shown clean. */
   const all = await (await get(await load(), base({ PG, PG_READ: '100%' }))).json();
-  ok(all.capabilities.postgres_reads_all === true, 'answering everybody: all', all.capabilities);
+  ok(all.capabilities.postgres_reads_all === false && all.state.postgres.blockers.length > 0, 'the cohort at 100% with nothing proved: not all, and the blockers named', all.state.postgres);
   const unbound = await (await get(await load(), base({ PG_READ: '100%' }))).json();
   ok(unbound.capabilities.postgres_reads_all === false, 'the variable without a database is not "all"', unbound.capabilities);
 }

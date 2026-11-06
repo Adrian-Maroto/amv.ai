@@ -68,7 +68,10 @@ async function _nightlyBackupSlice(env, atMs){
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
   if (!st) st = { day, prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
-  if (st.done || st.failed) return { on: true, day, done: st.done, failed: st.failed || undefined };
+  /* Done: the night is drilled on its own, slice by slice (REL-017) - a
+     backup nobody has read back is not one readiness may count. */
+  if (st.done) return Object.assign({ on: true, day, done: true }, await _nightlyDrillSlice(env, day));
+  if (st.failed) return { on: true, day, done: false, failed: st.failed };
 
   const save = () => env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
   let parts = 0;
@@ -108,13 +111,17 @@ async function _nightlyBackupSlice(env, atMs){
 
   if (st.prefix < BACKUP_PREFIXES.length) return { on: true, day, parts, count: st.count, more: true };
 
-  /* Written last: a night without a manifest is not a backup. */
-  await env.AMV_BACKUPS.put(_nightlyManifest(day), JSON.stringify({
+  /* Written last: a night without a manifest is not a backup. Signed (Nov 3
+     audit REL-017), so a manifest somebody edited in the bucket - or one
+     written by anything but this Worker - is not taken for a backup. */
+  const man = {
     _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part,
     partSha: Array.isArray(st.partSha) && st.partSha.length === st.part ? st.partSha : undefined,
     prefixes: BACKUP_PREFIXES, startedAt: st.startedAt, finishedAt: Date.now(),
     finishedISO: new Date().toISOString(),
-  }), { httpMetadata: { contentType: 'application/json' } });
+  };
+  man.sig = await _manifestSig(env, man);
+  await env.AMV_BACKUPS.put(_nightlyManifest(day), JSON.stringify(man), { httpMetadata: { contentType: 'application/json' } });
   st.done = true; await save();
   audit(env, 'nightly_backup', { day, keyCount: st.count, parts: st.part, bytes: st.bytes });
   await _nightlyPrune(env, now);
@@ -178,6 +185,61 @@ function _drillEntries(entries, t){
   }
 }
 
+/* The manifest's signature: HMAC-SHA256 over the manifest without it, under
+   the deployment's backup key (BACKUP_SIGNING_KEY, or the token secret). */
+async function _manifestSig(env, man){
+  const secret = String(env.BACKUP_SIGNING_KEY || env.JWT_SECRET || '');
+  if (!secret) return '';
+  const body = Object.assign({}, man); delete body.sig;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('amv-backup-manifest\n' + secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(JSON.stringify(body)));
+  return [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function _manifestSigned(env, man){
+  if (!man || typeof man.sig !== 'string' || !man.sig) return false;
+  const want = await _manifestSig(env, man);
+  if (!want || want.length !== man.sig.length) return false;
+  let diff = 0; for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ man.sig.charCodeAt(i);
+  return diff === 0;
+}
+/* A night's drill, a slice at a time, from the cron. The drill is the same
+   one an operator runs ({ fromNight, mode: 'verify' }); it carries where it
+   got to in its own run record. A night found unsound is recorded as such,
+   alerted once, and not drilled again on every tick. */
+async function _nightlyDrillSlice(env, day){
+  let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
+  if (d) return { drill: d.sound ? 'sound' : 'unsound' };
+  let run = null; try { run = JSON.parse((await env.AMV_KV.get(_drillKey(day) + ':run')) || 'null'); } catch (e) { run = null; }
+  const r = await _restoreFromNight(env, day, (run && run.next) || 0, 'verify');
+  const body = await r.json().catch(() => ({}));
+  if (body.more) return { drill: 'partial', through: body.nextPart };
+  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) {} }
+  return { drill: body.ok ? 'sound' : 'unsound' };
+}
+/* WHAT "A RECENT BACKUP EXISTS" MEANS (Nov 3 audit REL-017). Not that a
+   status record says done: a manifest for last night (or tonight) is in the
+   bucket, complete, signed by this deployment, with a checksum for every
+   part; its last part is there; and a drill of THAT manifest read every part
+   back and found it sound. Answers { fresh, day } or { fresh: false, why }. */
+async function _backupProven(env, now){
+  if (!_nightlyOn(env)) return { fresh: false, why: 'off' };
+  let why = 'no complete backup';
+  for (const day of [_nightlyDay(now), _nightlyDay(now - 86400000)]) {
+    let man = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); if (o) man = JSON.parse(await o.text()); } catch (e) { man = null; }
+    if (!man || !man.complete) continue;
+    if (!(await _manifestSigned(env, man))) { why = 'manifest not signed'; continue; }
+    if (!Array.isArray(man.partSha) || man.partSha.length !== man.parts) { why = 'manifest without every checksum'; continue; }
+    if (man.parts > 0) {
+      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1)).catch(() => null);
+      if (!last) { why = 'a part is missing'; continue; }
+    }
+    let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
+    if (!d || !d.sound || d.parts !== man.parts || (d.sig || '') !== man.sig) { why = d && !d.sound ? 'drill found it unsound' : 'not drilled yet'; continue; }
+    return { fresh: true, day };
+  }
+  return { fresh: false, why };
+}
 async function _sha256Hex(text){
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -200,6 +262,11 @@ async function _restoreFromNight(env, day, fromPart, mode){
   let man = null;
   try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); if (o) man = JSON.parse(await o.text()); } catch (e) { man = null; }
   if (!man || !man.complete) return json({ error: 'There is no complete backup for ' + day + '.', code: 'no_backup' }, 404);
+  /* Signed by this deployment, or not a backup it trusts (REL-017). A night
+     from before manifests were signed can still be drilled, and is said to
+     be unsigned; it cannot be restored. */
+  const signed = await _manifestSigned(env, man);
+  if (!signed && mode !== 'verify') return json({ error: 'The ' + day + ' backup manifest is not signed by this deployment, so it is not restored.', code: 'manifest_unsigned' }, 409);
   const started = Date.now();
   const t = { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] };
   const drill = mode === 'verify';
@@ -208,7 +275,7 @@ async function _restoreFromNight(env, day, fromPart, mode){
   if (!drill) {
     let d = null;
     try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
-    if (!d || !d.sound || d.parts !== man.parts)
+    if (!d || !d.sound || d.parts !== man.parts || (d.sig || '') !== (man.sig || ''))
       return json({ error: 'Run a drill of the ' + day + ' backup first ({ fromNight, mode: "verify" }, until it answers more: false). A restore only starts once every part of the night has been read and checked, so nothing is written from a backup that would stop half way.', code: 'drill_required' }, 409);
   }
   let part = Math.max(0, parseInt(fromPart, 10) || 0);
@@ -249,11 +316,13 @@ async function _restoreFromNight(env, day, fromPart, mode){
     const base = { ok: sound, drill: true, parts: man.parts, expected: man.keyCount, verified: acc.verified, refused: acc.refused,
       unrestorable: acc.unrestorable, badParts: acc.badParts, checksums: !!sums, lost: t.lost, ms: Date.now() - started, snapshotFrom: man.finishedISO };
     if (part < man.parts) {
-      await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(acc), { expirationTtl: 86400 });
+      await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(Object.assign({}, acc, { next: part })), { expirationTtl: 86400 });
       return json({ ...base, more: true, nextPart: part }, 202);
     }
     try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
-    if (sound && (prior || !(parseInt(fromPart, 10) > 0))) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, at: Date.now() }), { expirationTtl: 40 * 86400 });
+    const whole = prior || !(parseInt(fromPart, 10) > 0);
+    if (sound && whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
+    else if (whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: false, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
     else await env.AMV_KV.delete(_drillKey(day));
     return json({ ...base, more: false }, sound ? 200 : 422);
   }

@@ -439,3 +439,44 @@ async function pgBackfillRoute(request, env){
     try { await sql.end({ timeout: 5 }); } catch (e) {}
   }
 }
+
+/* WHERE THE MOVE TO POSTGRES REALLY IS (Nov 3 audit REL-018). The readiness
+   flag `postgres_reads_all` meant only "the read cohort is 100%". A cutover
+   is more than a dial: the backfill finished, every account read back and
+   matched, every balance reconciled, nothing waiting to be repaired, no
+   write whose mirror died - and it says which classes Postgres answers for
+   at all. Answers { state, blockers, serves, notYet } - names and counts,
+   never a row. */
+const PG_SERVES = ['acct', 'ent'];
+const PG_NOT_YET = ['apikeys', 'team', 'credit_ledger', 'seller_ledger'];
+async function _pgCutover(env){
+  if (!_pgOn(env)) return { state: 'off', blockers: [], serves: [], notYet: PG_SERVES.concat(PG_NOT_YET) };
+  const blockers = [];
+  const bp = _pgReadCohort(env).basisPoints;
+  let sql;
+  try {
+    sql = await _pgClient(env);
+    const rows = await sql`SELECT kind, cursor FROM migration_cursor WHERE kind = '_run' OR kind IN ${sql(PG_BACKFILL_PHASES)}`;
+    const by = Object.fromEntries(rows.map(r => [r.kind, r.cursor]));
+    if (by._run !== 'done') blockers.push('backfill ' + (by._run || 'not started'));
+    const undone = PG_BACKFILL_PHASES.filter(p => by[p] !== 'done');
+    if (undone.length) blockers.push('phases not done: ' + undone.join(','));
+    const diff = (await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`)[0].n;
+    if (diff) blockers.push(diff + ' account(s) differ');
+    const money = (await sql`SELECT count(*)::int AS n FROM migration_cursor WHERE kind LIKE 'money:%'`)[0].n;
+    if (money) blockers.push(money + ' balance(s) do not reconcile');
+  } catch (e) {
+    blockers.push('postgres did not answer');
+  } finally {
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+  }
+  try { const r = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 }); if ((r.keys || []).length) blockers.push('repairs waiting'); } catch (e) { blockers.push('repair list unreadable'); }
+  try {
+    const r = await env.AMV_KV.list({ prefix: 'pgintent:', limit: 50 });
+    let stuck = 0;
+    for (const k of r.keys || []) { let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; } if (!at || Date.now() - at > PG_INTENT_STALE_MS) stuck++; }
+    if (stuck) blockers.push(stuck + ' mirror write(s) unfinished');
+  } catch (e) { blockers.push('intents unreadable'); }
+  const state = blockers.length ? (bp ? 'reading_with_blockers' : 'not_ready') : bp >= 10000 ? 'reading_all' : bp > 0 ? 'reading_some' : 'ready_to_read';
+  return { state, blockers, cohortPercent: bp / 100, serves: bp ? PG_SERVES : [], notYet: PG_NOT_YET };
+}

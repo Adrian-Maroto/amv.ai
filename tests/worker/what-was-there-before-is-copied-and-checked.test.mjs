@@ -46,7 +46,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest, _pgCutover };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -408,6 +408,31 @@ section('Money from before the ledger: one opening row per balance, reconciled t
   ok(st.moneyDiffering === 1 && st.moneyReconciled === false && q("select cursor from migration_cursor where kind='money:credit:p006@example.com'") === '-1', 'a balance that moved without its ledger row differs by exactly that much, and blocks money', st.moneyDiffering);
   ok(q("select count(*) from credit_ledger where idempotency_key='opening:credit:p006@example.com'") === '1', 'the opening is never rewritten to hide it');
   counters.set('creditspent:p006@example.com', 12.5);
+
+  /* WHAT "POSTGRES READS EVERYTHING" MEANS (Nov 3 audit REL-018): not the
+     dial at 100%, but a move with nothing in its way. */
+  const savedRead = env.PG_READ; env.PG_READ = '100%';
+  let c = await W._pgCutover(env);
+  ok(c.state !== 'reading_all' && c.blockers.some(b => /do not reconcile/.test(b)), 'the dial at 100% with a balance that does not reconcile is not a cutover', c);
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  await runToEnd(50);
+  c = await W._pgCutover(env);
+  ok(c.state !== 'reading_all' && c.blockers.includes('repairs waiting'), 'nor with a repair still waiting', c.blockers);
+  /* Put right what earlier sections left on purpose (an account changed
+     behind the backfill's back, repairs nobody could read). */
+  const left = [...store.entries()].filter(([k]) => k.startsWith('pgrepair:'));
+  for (const [k] of left) store.delete(k);
+  const diffs = q("select email from migration_accounts where last_mismatch is not null");
+  c = await W._pgCutover(env);
+  ok(diffs ? c.blockers.some(b => /differ/.test(b)) : true, 'an account that differs blocks it while it does', c.blockers);
+  q("update migration_accounts set last_mismatch = null");
+  c = await W._pgCutover(env);
+  ok(c.state === 'reading_all' && c.blockers.length === 0 && c.serves.join() === 'acct,ent' && c.notYet.includes('credit_ledger'), 'with everything clean it is - and it says which records Postgres answers for, and which not yet', c);
+  store.set('pgintent:ent:p001@example.com:abcd', JSON.stringify({ at: Date.now() - 3600000 }));
+  c = await W._pgCutover(env);
+  ok(c.state !== 'reading_all' && c.blockers.some(b => /unfinished/.test(b)), 'a mirror write whose background died blocks it too', c.blockers);
+  store.delete('pgintent:ent:p001@example.com:abcd'); for (const [k, v] of left) store.set(k, v);
+  env.PG_READ = savedRead;
 }
 
 section('Without the binding, nothing is tried');

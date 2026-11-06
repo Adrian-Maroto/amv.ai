@@ -496,7 +496,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -527,6 +527,8 @@ function _readinessReport(env, seen) {
       effect: 'Step 5 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), an account and a plan are answered by Postgres, written there before the request goes on, and checked against KV in the background. A record that differs, or a write that did not land, is answered by KV again. Unset, KV answers everybody. Counts at GET /admin/pg/shadow.' },
     { id: 'pgShadow', name: 'Postgres shadow reads: who is compared', env: 'PG_SHADOW', set: _has(env, 'PG_SHADOW'),
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
+    { id: 'backupSign', name: 'Backups: the signing key', env: 'BACKUP_SIGNING_KEY', set: _has(env, 'BACKUP_SIGNING_KEY'),
+      effect: 'Signs each nightly backup\u2019s manifest, so a manifest edited in the bucket - or written by anything but this Worker - is not counted or restored. Unset, the token secret signs them; set it to keep backups trusted across a change of that secret.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
@@ -736,13 +738,14 @@ async function healthReady(request, env) {
   /* STATE, NOT ONLY BINDINGS (Nov 1 audit REL-001/003): whether last night's
      backup (or tonight's) actually completed, and whether Postgres answers
      everybody's reads - not merely whether the bindings exist. */
-  let backupFresh = false;
-  if (_nightlyOn(env)) {
-    for (const d of [_nightlyDay(now), _nightlyDay(now - 86400000)]) {
-      try { const st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(d))) || 'null'); if (st && st.done) { backupFresh = true; break; } } catch (e) {}
-    }
-  }
-  const pgReadsAll = _pgOn(env) && _pgReadCohort(env).basisPoints >= 10000;
+  /* A backup counts only when it is proved (Nov 3 audit REL-017): signed,
+     whole, and drilled - not because a status record says done. */
+  let backupFresh = false, backupWhy = 'off';
+  try { const b = await _backupProven(env, now); backupFresh = !!b.fresh; backupWhy = b.fresh ? '' : b.why; } catch (e) { backupWhy = 'could not be checked'; }
+  /* Not "the cohort is 100%": a cutover with nothing in its way (REL-018). */
+  let pgCut = { state: 'off', blockers: [] };
+  if (_pgOn(env)) { try { pgCut = await _pgCutover(env); } catch (e) { pgCut = { state: 'unknown', blockers: ['could not be checked'] }; } }
+  const pgReadsAll = pgCut.state === 'reading_all';
   const body = {
     ready, ts: now, checks,
     capabilities: {
@@ -762,6 +765,11 @@ async function healthReady(request, env) {
       postgres: _pgOn(env),
       backup_fresh: backupFresh,
       postgres_reads_all: pgReadsAll,
+    },
+    /* Why a state flag is off, in words - names and counts, nothing else. */
+    state: {
+      backup: backupFresh ? 'proved' : backupWhy,
+      postgres: { state: pgCut.state, blockers: pgCut.blockers || [], serves: pgCut.serves || [], notYet: pgCut.notYet || [] },
     },
   };
   _readyMemo = { at: now, body };

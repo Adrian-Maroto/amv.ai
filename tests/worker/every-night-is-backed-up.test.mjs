@@ -26,7 +26,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'nightly.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { runNightlyBackup, backupImport, backupNights, BACKUP_MAX_VALUE_BYTES };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { runNightlyBackup, backupImport, backupNights, BACKUP_MAX_VALUE_BYTES, _backupProven };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const ADMIN = 'a-long-random-admin-token-for-nightly';
@@ -243,6 +243,33 @@ section('A night is put back only after a drill found all of it sound, through t
   ok(none.status === 404, 'a night with no complete backup is refused', none.status);
   const anon = await W.backupImport(new Request('https://api.amv.test/admin/backup/import', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ fromNight: DAY }) }), env);
   ok(anon.status === 401 || anon.status === 403, 'and without the owner’s token nothing is restored', anon.status);
+}
+
+section('A backup counts only when it is signed, whole and drilled - by the cron itself (Nov 3 audit REL-017)');
+{
+  const at = Date.parse(DAY + 'T12:00:00Z');
+  for (const k of [...env._m.keys()]) if (k.startsWith('bkdrill:')) env._m.delete(k);
+  ok((await W._backupProven(env, at)).fresh === false, 'a finished night nobody has drilled is not counted');
+  let r = null;
+  for (let i = 0; i < 40; i++) { r = await W.runNightlyBackup(env, at); if (r.drill === 'sound' || r.drill === 'unsound') break; }
+  ok(r && r.drill === 'sound', 'the cron drills the finished night on its own, slice by slice', r);
+  ok((await W._backupProven(env, at)).fresh === true, 'and then it is counted');
+  const mk = 'backups/' + DAY + '/manifest.json', orig = B.o.get(mk);
+  const edited = JSON.parse(orig); edited.keyCount += 1; B.o.set(mk, JSON.stringify(edited));
+  const p = await W._backupProven(env, at);
+  ok(p.fresh === false && /not signed/.test(p.why), 'a manifest edited in the bucket no longer verifies, and is not counted', p);
+  const rr = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
+  ok(rr.status === 409 && (await rr.json()).code === 'manifest_unsigned', 'nor restored');
+  B.o.set(mk, orig);
+  const dk = 'bkdrill:' + DAY, drillRec = env._m.get(dk);
+  env._m.set(dk, JSON.stringify(Object.assign(JSON.parse(drillRec), { sig: 'another manifest' })));
+  ok((await W._backupProven(env, at)).fresh === false, 'a drill of a different manifest does not count for this one');
+  env._m.set(dk, drillRec);
+  const parts = JSON.parse(orig).parts, last = 'backups/' + DAY + '/part-' + String(parts - 1).padStart(6, '0') + '.ndjson', lastBody = B.o.get(last);
+  B.o.delete(last);
+  ok((await W._backupProven(env, at)).fresh === false, 'nor a night whose last part has gone since');
+  B.o.set(last, lastBody);
+  ok((await W._backupProven(env, at)).fresh === true, 'put right, it is counted again');
 }
 
 section('One backup slice at a time (Nov 1 audit DR-002)');
