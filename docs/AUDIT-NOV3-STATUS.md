@@ -49,6 +49,7 @@ deciding fact in strongly consistent storage:
 | SEC-002 | Kept ids come from the cryptographic source |
 | SEC-004 | Every window message listener checks its sender, held by a test |
 | COMP-009 | A workspace copy is read back before it counts; earlier copies are pruned only after |
+| SEC-008 | Background work is held by the request it belongs to, not the most recent one |
 | TEST-001 | The Postgres suites run against a real Postgres here and in CI |
 
 ## Where a restore stands

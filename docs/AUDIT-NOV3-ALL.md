@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Not done yet 43, Resolved before 39, Fixed now 34, Owner 28, Roadmap 21, Partly done 19, Verified here 5
+Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21, Partly done 19, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -61,7 +61,7 @@ Totals: Not done yet 43, Resolved before 39, Fixed now 34, Owner 28, Roadmap 21,
 | AGENT-002 | High | P1 | Agents lack dedicated memory namespaces | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-003 | High | P1 | Agents lack model and reasoning policy | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-005 | High | P1 | Agents do not own an isolated durable workspace/browser profile by default | Partially fixed | Not done yet | not reached this round |
-| SEC-008 | High | P1 | Global _liveCtx is concurrency-brittle | Partially fixed | Not done yet | not reached this round |
+| SEC-008 | High | P1 | Global _liveCtx is concurrency-brittle | Partially fixed | Fixed now | each request, cron tick and queue batch runs in its own async-local context; background work is held by its own request (background-work-is-held-by-its-own-request) |
 | DR-002 | High | P1 | Nightly backup lacks a strong single-run lease | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-003 | High | P1 | Manifest counts do not provide per-part cryptographic inventory | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-010 | High | P1 | Restore-drill freshness is not independently bound to a signed backup manifest | Open | Fixed now | a drill record carries the signature of the manifest it read; readiness and restore need that exact one |

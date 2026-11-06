@@ -141,7 +141,7 @@ export default {
   /* Cloudflare Queues: the background-work queue and its dead-letter queue
      (15a-job-queue.js). Called only when wrangler.toml names this Worker as
      their consumer; until then nothing sends to it. */
-  async queue(batch, env, ctx) { return queueHandler(batch, env, ctx); },
+  async queue(batch, env, ctx) { return _withCtx(ctx, () => queueHandler(batch, env, ctx)); },
   /* Cloudflare Cron trigger. THIS is what makes automations real: it runs on
      Cloudflare's schedule whether or not anyone has the app open.
      Configure in wrangler.toml:
@@ -150,6 +150,7 @@ export default {
   */
   async scheduled(event, env, ctx) {
     _liveCtx = ctx;   // AMV-046: the tick logs too, and its events matter most
+    return _withCtx(ctx, async () => {   // its own context for _bg (SEC-008)
     /* THE EVERY-MINUTE TICK: background work starts within a minute.
 
        A second schedule, "* * * * *", that does ONE thing - runs jobs the
@@ -339,6 +340,7 @@ export default {
         try{ await _workerError(env, 'cron.slo', e); }catch(_){}
       }
     })());
+    });
   },
 
   /* ONE CATCH THAT ACTUALLY CATCHES.
@@ -380,7 +382,7 @@ export default {
     const ver = _apiVersionOf(request, API_VERSIONS);
     if (ver.refuse) return _withRequestId(_applyCors(request, env, json(ver.refuse.body, ver.refuse.status)), rid);
     if (ver.deprecated) { try { ctx.waitUntil(_tallyAdd(env, 'apiver:' + ver.version + ':' + monthKey(), rid, 1, 86400000 * 400)); } catch (e) {} }
-    const res = await _serveRequest(request, env, ctx, rid);
+    const res = await _withCtx(ctx, () => _serveRequest(request, env, ctx, rid));
     return _withApiVersion(_withRequestId(res, rid), ver);
   },
 

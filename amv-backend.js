@@ -3383,11 +3383,24 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
    request has already finished throws, and a logging call must never be the
    thing that breaks a request. */
 let _liveCtx = null;
+/* EACH REQUEST'S OWN CONTEXT (Nov 3 audit SEC-008). The most recent context
+   in a shared variable means that, with requests overlapping in one isolate,
+   background work - a mirror write, an audit delivery - can be held open by a
+   request that has already finished, and dropped with it. With the runtime's
+   async-local storage, every request (and cron tick, and queue batch) runs
+   inside its own context, and _bg uses the one it is running in. The shared
+   variable stays only as the fallback for code called outside any of them. */
+let _ctxStore = null;
+try { import('node:async_hooks').then((m) => { if (m && m.AsyncLocalStorage) _ctxStore = new m.AsyncLocalStorage(); }).catch(() => {}); } catch (e) {}
+/* Runs `fn` with `ctx` as its own context, when the runtime offers one. */
+function _withCtx(ctx, fn) { return _ctxStore ? _ctxStore.run(ctx, fn) : fn(); }
 function _bg(p) {
   if (!p || typeof p.then !== 'function') return;
   const settled = p.catch(() => {});
   try {
-    if (_liveCtx && typeof _liveCtx.waitUntil === 'function') { _liveCtx.waitUntil(settled); return; }
+    const own = _ctxStore && _ctxStore.getStore();
+    const c = own || _liveCtx;
+    if (c && typeof c.waitUntil === 'function') { c.waitUntil(settled); return; }
   } catch (e) { /* a finished context: the fallback below still applies */ }
   /* Nothing to hold it open. Better than throwing, and honest: this is the
      case where delivery really is best-effort. */
@@ -18836,7 +18849,7 @@ export default {
   /* Cloudflare Queues: the background-work queue and its dead-letter queue
      (15a-job-queue.js). Called only when wrangler.toml names this Worker as
      their consumer; until then nothing sends to it. */
-  async queue(batch, env, ctx) { return queueHandler(batch, env, ctx); },
+  async queue(batch, env, ctx) { return _withCtx(ctx, () => queueHandler(batch, env, ctx)); },
   /* Cloudflare Cron trigger. THIS is what makes automations real: it runs on
      Cloudflare's schedule whether or not anyone has the app open.
      Configure in wrangler.toml:
@@ -18845,6 +18858,7 @@ export default {
   */
   async scheduled(event, env, ctx) {
     _liveCtx = ctx;   // AMV-046: the tick logs too, and its events matter most
+    return _withCtx(ctx, async () => {   // its own context for _bg (SEC-008)
     /* THE EVERY-MINUTE TICK: background work starts within a minute.
 
        A second schedule, "* * * * *", that does ONE thing - runs jobs the
@@ -19034,6 +19048,7 @@ export default {
         try{ await _workerError(env, 'cron.slo', e); }catch(_){}
       }
     })());
+    });
   },
 
   /* ONE CATCH THAT ACTUALLY CATCHES.
@@ -19075,7 +19090,7 @@ export default {
     const ver = _apiVersionOf(request, API_VERSIONS);
     if (ver.refuse) return _withRequestId(_applyCors(request, env, json(ver.refuse.body, ver.refuse.status)), rid);
     if (ver.deprecated) { try { ctx.waitUntil(_tallyAdd(env, 'apiver:' + ver.version + ':' + monthKey(), rid, 1, 86400000 * 400)); } catch (e) {} }
-    const res = await _serveRequest(request, env, ctx, rid);
+    const res = await _withCtx(ctx, () => _serveRequest(request, env, ctx, rid));
     return _withApiVersion(_withRequestId(res, rid), ver);
   },
 
