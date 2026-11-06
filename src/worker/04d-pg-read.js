@@ -110,8 +110,28 @@ async function _pgReadRow(sql, kind, email){
        the write;
      - a row changed by anything but a proved write no longer matches its
        proof, and is never served unverified (DATA-001).
-   The proof has no expiry: a record is proved until a write removes it. */
-const _pgOkKey = (kind, email) => 'pgok:' + kind + ':' + email;
+   The proof has no expiry: a record is proved until a write removes it.
+
+   HELD WHERE IT CANNOT BE STALE (Nov 3 audit DATA-019/020/001/002). The
+   proof and its fence were KV keys, and KV is eventually consistent: a
+   region could go on reading a proof another region had already removed,
+   and serve the row the removal was for. They are now one strongly
+   consistent object per record (`pgproof:<kind>:<email>` on the counter
+   namespace, ops proofGet / proofFence / proofSet): a fence moves its epoch
+   and clears the digest everywhere at once, and a comparison may set a
+   proof only under the epoch it began in. Without the namespace bound,
+   Postgres never answers. */
+const _pgProofName = (kind, email) => 'pgproof:' + kind + ':' + email;
+async function _pgProofGet(env, kind, email){
+  if (!env.AMV_COUNTER) return null;
+  const r = await counter(env, _pgProofName(kind, email), { op: 'proofGet' });
+  if (!r || r.unavailable || typeof r.epoch !== 'number') return null;
+  return r;
+}
+async function _pgProofSet(env, kind, email, epoch, digest){
+  const r = await counter(env, _pgProofName(kind, email), { op: 'proofSet', epoch, digest });
+  return !!(r && r.ok);
+}
 async function _pgProofOf(kind, value){ return (await _pgDigest(_pgCanon(kind, value))).slice(0, 40); }
 async function _pgReadTally(env, what, email){
   try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) {}
@@ -122,8 +142,10 @@ async function _pgReadTally(env, what, email){
 async function _pgReadServe(env, kind, id){
   const email = _pgReadApplies(env, kind, id);
   if (!email || !(await _pgReadIn(env, email))) return undefined;
-  let proof = null;
-  try { proof = await env.AMV_KV.get(_pgOkKey(kind, email)); } catch (e) { return undefined; }
+  let pf = null;
+  try { pf = await _pgProofGet(env, kind, email); } catch (e) { pf = null; }
+  if (!pf) { await _pgReadTally(env, 'unproved', email); return undefined; }
+  const proof = pf.digest;
   if (!proof) { _pgReadVerify(env, kind, email); await _pgReadTally(env, 'unproved', email); return undefined; }
   let value, sql;
   try {
@@ -137,9 +159,14 @@ async function _pgReadServe(env, kind, id){
     if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
   }
   if ((await _pgProofOf(kind, value)) !== proof) {
-    /* The row is not the one that was proved. Not served; proof gone; KV
-       answers; the comparison says whether it was Postgres or KV that moved. */
-    try { await env.AMV_KV.delete(_pgOkKey(kind, email)); } catch (e) {}
+    /* The row is not the one that was proved. Not served; KV answers; the
+       comparison says whether it was Postgres or KV that moved. The proof
+       is withdrawn under its own epoch (DATA-020): if that cannot be done
+       it is said - and the proof still serves nothing, because a row is
+       served only when it equals the digest, and this one does not. */
+    let withdrawn = false;
+    try { const r = await counter(env, _pgProofName(kind, email), { op: 'proofFence' }); withdrawn = !!(r && r.ok); } catch (e) { withdrawn = false; }
+    if (!withdrawn) { try { audit(env, 'pg_proof_not_withdrawn', { kind, id: email }); } catch (e) {} }
     await _pgReadTally(env, 'differed', email);
     try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch (e) {}
     _pgReadVerify(env, kind, email);
@@ -159,6 +186,10 @@ function _pgReadVerify(env, kind, email){
   if (_pgReadChecked.size > 5000) _pgReadChecked.clear();
   _pgReadChecked.set(key, now);
   const p = (async () => {
+    /* The epoch the comparison begins in: a write fences it, so a proof for
+       copies that changed meanwhile is refused by the object itself. */
+    const pf = await _pgProofGet(env, kind, email);
+    if (!pf) return;
     const kvRaw = await env.AMV_KV.get(kind + ':' + email);
     const kvVal = kvRaw ? JSON.parse(kvRaw) : null;
     const sql = await _pgClient(env);
@@ -169,7 +200,7 @@ function _pgReadVerify(env, kind, email){
          proof it would otherwise be written over. */
       const again = await env.AMV_KV.get(kind + ':' + email);
       if (again !== kvRaw) return;
-      await env.AMV_KV.put(_pgOkKey(kind, email), await _pgProofOf(kind, pgVal));
+      await _pgProofSet(env, kind, email, pf.epoch, await _pgProofOf(kind, pgVal));
       return;
     }
     await _pgReadTally(env, 'differed', email);
@@ -187,9 +218,15 @@ function _pgReadVerify(env, kind, email){
    cannot be removed, this throws and the write does not happen - a record
    whose proof outlived its change is the one thing that may not exist. */
 async function _pgReadFence(env, kind, id){
+  /* Every write of a record Postgres may answer for is fenced - inside the
+     read cohort or not - so a proof left from a time the record was in it
+     cannot outlive a write made while it was out. */
   const email = _pgReadApplies(env, kind, id);
-  if (!email || !(await _pgReadIn(env, email))) return;
-  await env.AMV_KV.delete(_pgOkKey(kind, email));
+  if (!email) return undefined;
+  if (!env.AMV_COUNTER) return undefined;
+  const r = await counter(env, _pgProofName(kind, email), { op: 'proofFence' });
+  if (!r || !r.ok) throw new Error('pg_proof_fence_unavailable');
+  return r.epoch;
 }
 
 /* Called by DB.put / DB.del after KV has the write, INSTEAD of the background
@@ -198,7 +235,11 @@ async function _pgReadFence(env, kind, id){
    as what was written gets a proof. Anything else leaves no proof (KV
    answers) and goes on the repair list. Answers whether this path handled
    the record at all. */
-async function _pgWriteThrough(env, kind, id, obj){
+/* Answers false (not handled), or { ok }: ok - Postgres has it and it is
+   proved; not ok - KV has it, there is no proof, and `queued` says whether
+   the repair entry was written. When it was not, the caller keeps the write's
+   intent, which the cron turns into a repair (Nov 3 audit DATA-003/021). */
+async function _pgWriteThrough(env, kind, id, obj, epoch){
   const email = _pgReadApplies(env, kind, id);
   if (!email || !(await _pgReadIn(env, email))) return false;
   let why = '';
@@ -208,14 +249,17 @@ async function _pgWriteThrough(env, kind, id, obj){
     let back;
     try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
     if (_pgCanon(kind, back) === _pgCanon(kind, obj)) {
-      await env.AMV_KV.put(_pgOkKey(kind, email), await _pgProofOf(kind, back));
-      return true;
+      /* Proved under the epoch this write's own fence moved to: if another
+         write fenced since, the object refuses and the comparison decides. */
+      if (typeof epoch === 'number') await _pgProofSet(env, kind, email, epoch, await _pgProofOf(kind, back));
+      return { ok: true };
     }
     why = 'read back differs';
   } catch (e) {
     why = String((e && e.message) || e).slice(0, 160);
   }
-  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); } catch (_) {}
-  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why }); } catch (_) {}
-  return true;
+  let queued = false;
+  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); queued = true; } catch (_) {}
+  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why, queued }); } catch (_) {}
+  return { ok: false, queued };
 }

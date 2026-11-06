@@ -149,13 +149,18 @@ shape as `PG_SHADOW`, and the share uses the same hash, so 5% read is inside
 Postgres, rebuilt from their rows. Three rules make it safe to grow:
 
 - **proved, or not served** (Nov 1 forensic audit DATA-001/002/003): a row
-  answers only if it matches a proof (`pgok:<kind>:<email>`, a digest of
-  the record) written after the two copies were compared and found the same,
+  answers only if it matches a proof (a digest of the record, held in a
+  strongly consistent object per record, `pgproof:<kind>:<email>` - never in
+  KV, where one region could still read a proof another had removed; Nov 3
+  audit DATA-019) written after the two copies were compared and found the same,
   or after a write-through read its own row back. With no proof, KV answers
   and the comparison runs in the background - so a wrong row is never served
   even once, and a comparison that fails simply leaves no proof;
-- a write removes the proof BEFORE KV changes (if it cannot, the write
-  fails), reaches Postgres before the request goes on, is read back, and is
+- a write moves the proof's epoch BEFORE KV changes - in the read cohort or
+  not (if it cannot, the write fails), and a comparison may set a proof only
+  under the epoch it began in; a write whose intent and repair entry both
+  cannot be recorded does not happen (DATA-021). The write reaches Postgres
+  before the request goes on, is read back, and is
   proved only if the row reads back as written; otherwise no proof, KV
   answers, and it goes on the repair list (no expiry - an unresolved
   difference does not become fine because time passed);

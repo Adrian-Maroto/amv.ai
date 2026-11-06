@@ -73,6 +73,8 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
   AMV_KV: { async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } } };
 const ctx = { waitUntil(){}, passThroughOnException(){} };
+/* The proof lives in its own object now (Nov 3 audit DATA-019), not in KV. */
+const proof = (k) => { const [, kind, email] = k.split(':'); const p = env.AMV_COUNTER._objects.get('pf|pgproof:' + kind + ':' + email); return p && p.digest ? p.digest : null; };
 let ip = 1;
 const post = async (path, body, tok) => {
   const r = await W.default.fetch(new Request('https://api.amv.test' + path, { method: 'POST',
@@ -102,18 +104,18 @@ section('Outside the cohort, KV answers exactly as before');
 section('Unproved, KV answers; the comparison writes the proof; then Postgres answers (Nov 1 audit DATA-001)');
 {
   /* Rows were mirrored before the cohort existed: there is no proof yet. */
-  ok(!store.has('pgok:acct:in@example.com') && !store.has('pgok:ent:in@example.com'), 'no record starts out proved');
+  ok(!proof('pgok:acct:in@example.com') && !proof('pgok:ent:in@example.com'), 'no record starts out proved');
   q("update entitlements set plan = 'free' where account_id = (select id from accounts where email='in@example.com')");
   const first = await W.DB.get(env, 'ent', 'in@example.com');
   await settle();
   ok(first.plan === 'pro', 'a Postgres row that is WRONG is never served, not even once: KV answered the unproved record', first);
-  ok(!store.has('pgok:ent:in@example.com'), 'and the comparison found them different, so no proof was written');
+  ok(!proof('pgok:ent:in@example.com'), 'and the comparison found them different, so no proof was written');
   ok(alerts.some(a => /differs from KV/.test(a)), 'and the owner is told', alerts);
   q("update entitlements set plan = 'pro' where account_id = (select id from accounts where email='in@example.com')");
   const fresh = await import(harness + '?t=' + Date.now() + 'p');
   await fresh.DB.get(env, 'acct', 'in@example.com'); await fresh.DB.get(env, 'ent', 'in@example.com');
   await fresh._pgSettle();
-  ok(store.has('pgok:acct:in@example.com') && store.has('pgok:ent:in@example.com'), 'once both copies agree, each record gets its proof');
+  ok(!!proof('pgok:acct:in@example.com') && !!proof('pgok:ent:in@example.com'), 'once both copies agree, each record gets its proof');
   /* Proof that Postgres is the one answering: the KV copy is taken away
      behind its back, and the proved row still answers. */
   const kvAcct = store.get('acct:in@example.com');
@@ -137,18 +139,18 @@ section('A row changed behind the proof is not served, and loses its proof');
   const r = await fresh.DB.get(env, 'ent', 'in@example.com');
   await fresh._pgSettle();
   ok(r.plan === 'pro', 'the changed row did not match its proof, so KV answered - the paid plan, not the wrong row', r);
-  ok(!store.has('pgok:ent:in@example.com'), 'and the proof is gone until the copies agree again');
+  ok(!proof('pgok:ent:in@example.com'), 'and the proof is gone until the copies agree again');
   q("update entitlements set plan = 'pro' where account_id = (select id from accounts where email='in@example.com')");
   const again = await import(harness + '?t=' + Date.now() + 'r');
   await again.DB.get(env, 'ent', 'in@example.com'); await again._pgSettle();
-  ok(store.has('pgok:ent:in@example.com'), 'then it is proved again');
+  ok(!!proof('pgok:ent:in@example.com'), 'then it is proved again');
 }
 
 section('A write reaches Postgres before the request goes on, is read back, and is proved');
 {
   await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 1 }));
   ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='in@example.com'") === 'ultra', 'the row has it with nothing left in flight');
-  const before = store.get('pgok:ent:in@example.com');
+  const before = proof('pgok:ent:in@example.com');
   ok(!!before, 'and the row it read back is proved');
   const kvEnt = store.get('ent:in@example.com'); store.delete('ent:in@example.com');
   ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'so the next read is answered by Postgres, with the new plan');
@@ -160,20 +162,22 @@ section('A write Postgres cannot hold faithfully is not proved');
   /* A date stored as text, which the timestamp column cannot round-trip. */
   const odd = Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 3, renewedAt: '2026-10-01' });
   await W.DB.put(env, 'ent', 'in@example.com', odd);
-  ok(!store.has('pgok:ent:in@example.com') && /read back differs/.test(store.get('pgrepair:ent:in@example.com') || ''), 'the row read back is not what was written, so there is no proof and it is on the repair list', store.get('pgrepair:ent:in@example.com'));
+  ok(!proof('pgok:ent:in@example.com') && /read back differs/.test(store.get('pgrepair:ent:in@example.com') || ''), 'the row read back is not what was written, so there is no proof and it is on the repair list', store.get('pgrepair:ent:in@example.com'));
   ok((await W.DB.get(env, 'ent', 'in@example.com')).renewedAt === '2026-10-01', 'and KV answers, exactly as written');
   store.delete('pgrepair:ent:in@example.com');
   await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 4 }));
-  ok(store.has('pgok:ent:in@example.com'), 'a faithful write is proved again');
+  ok(!!proof('pgok:ent:in@example.com'), 'a faithful write is proved again');
 }
 
 section('A write whose proof cannot be removed does not happen (DATA-003)');
 {
-  const realDel = env.AMV_KV.delete;
-  env.AMV_KV.delete = async (k) => { if (k.startsWith('pgok:')) throw new Error('store down'); return realDel.call(env.AMV_KV, k); };
+  /* The proof's object cannot be reached, so its fence cannot be moved. */
+  const realNs = env.AMV_COUNTER;
+  env.AMV_COUNTER = Object.assign({}, realNs, { get: (id) => { const inner = realNs.get(id); return { fetch: async (u, init) => {
+    if (JSON.parse(init.body).op === 'proofFence') throw new Error('object unreachable'); return inner.fetch(u, init); } }; } });
   let threw = false;
   try { await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 9 })); } catch (e) { threw = true; }
-  env.AMV_KV.delete = realDel;
+  env.AMV_COUNTER = realNs;
   ok(threw, 'the put fails');
   ok(JSON.parse(store.get('ent:in@example.com')).plan === 'ultra', 'and KV was not changed underneath a proof that would still vouch for the old row');
 }
@@ -191,11 +195,90 @@ section('Postgres down: KV answers, sign-in works, and it is counted');
 section('A write that cannot reach Postgres leaves no proof, so the old row is never served (DATA-003)');
 {
   await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 2 }));
-  ok(!store.has('pgok:ent:in@example.com') && store.has('pgrepair:ent:in@example.com'), 'no proof, and on the repair list the moment the put returns');
+  ok(!proof('pgok:ent:in@example.com') && store.has('pgrepair:ent:in@example.com'), 'no proof, and on the repair list the moment the put returns');
   /* Even if the repair marker could not be written, the missing proof alone keeps the old row from answering. */
   env.PG = { connectionString: GOOD };
   ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'elite', 'with Postgres back, the next read is KV’s new plan, never the old row');
   ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='in@example.com'") === 'ultra', '(the row Postgres still holds is the old one)');
+  await settle();
+}
+
+section('The proof lives where it cannot be stale, and a comparison cannot outlive a write (Nov 3 audit DATA-019/020)');
+{
+  /* The real object, not the stand-in: a proof is set only under the epoch
+     its comparison began in, and every fence moves the epoch. */
+  const st = new Map();
+  const obj = new W.AMVCounter({ storage: { async get(k) { return st.get(k); }, async put(k, v) { st.set(k, v); }, async delete(k) { st.delete(k); }, async deleteAll() { st.clear(); }, async setAlarm() {} } }, {});
+  const call = async (b) => (await obj.fetch(new Request('https://do/counter', { method: 'POST', body: JSON.stringify(b) }))).json();
+  const began = await call({ op: 'proofGet' });
+  await call({ op: 'proofFence' });                                   // a write lands during the comparison
+  const late = await call({ op: 'proofSet', epoch: began.epoch, digest: 'abc' });
+  ok(late.ok === false && !(await call({ op: 'proofGet' })).digest, 'a comparison that began before a write cannot set its proof');
+  const now = await call({ op: 'proofGet' });
+  ok((await call({ op: 'proofSet', epoch: now.epoch, digest: 'abc' })).ok && (await call({ op: 'proofGet' })).digest === 'abc', 'one that began after it can');
+  await call({ op: 'proofFence' });
+  ok(!(await call({ op: 'proofGet' })).digest, 'and the next fence removes it at once, for every reader');
+
+  /* The audit's sequence: a region still holds the OLD proof (as KV could),
+     a write moves the record while Postgres misses it, and the old row
+     would match that old proof exactly. */
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'pro', updatedAt: ENT.updatedAt + 30 }));
+  await settle();
+  await W.DB.get(env, 'ent', 'in@example.com'); await settle();
+  for (let i = 0; i < 3 && !proof('pgok:ent:in@example.com'); i++) { await new Promise(r => setTimeout(r, 1100)); await W.DB.get(env, 'ent', 'in@example.com'); await settle(); }
+  const oldProof = proof('pgok:ent:in@example.com');
+  ok(!!oldProof, 'the record is proved (Postgres holds plan pro)');
+  store.set('pgok:ent:in@example.com', oldProof);                 // a stale copy of the proof, where the old design kept it
+  env.PG = { connectionString: `postgres://${user}@127.0.0.1:1/postgres` };
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 31 }));
+  env.PG = { connectionString: GOOD };
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'elite', 'the old row is not served, however stale a copy of its proof somewhere is');
+  await settle();
+
+  /* Written while the record was OUT of the read cohort: the proof is still
+     fenced, so putting it back in does not revive the old row. */
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'pro', updatedAt: ENT.updatedAt + 32 }));
+  await settle();
+  for (let i = 0; i < 3 && !proof('pgok:ent:in@example.com'); i++) { await new Promise(r => setTimeout(r, 1100)); await W.DB.get(env, 'ent', 'in@example.com'); await settle(); }
+  ok(!!proof('pgok:ent:in@example.com'), 'proved again');
+  env.PG_READ = 'someone-else@example.com';
+  env.PG = { connectionString: `postgres://${user}@127.0.0.1:1/postgres` };
+  try { await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 33 })); } catch (e) {}
+  await settle();
+  env.PG = { connectionString: GOOD };
+  env.PG_READ = 'in@example.com';
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'a write made outside the cohort still fences the proof');
+  await settle();
+
+  /* The proof's object cannot be asked: Postgres does not answer. */
+  const realNs = env.AMV_COUNTER;
+  env.AMV_COUNTER = Object.assign({}, realNs, { get: (id) => { const inner = realNs.get(id); return { fetch: async (u, init) => {
+    if (JSON.parse(init.body).op === 'proofGet') throw new Error('object unreachable'); return inner.fetch(u, init); } }; } });
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === JSON.parse(store.get('ent:in@example.com')).plan, 'with the proof unreadable, KV answers');
+  env.AMV_COUNTER = realNs;
+  await settle();
+}
+
+section('A write that cannot be recorded for Postgres does not happen (Nov 3 audit DATA-021/003)');
+{
+  const realPut = env.AMV_KV.put;
+  env.AMV_KV.put = async (k, v, o) => { if (k.startsWith('pgintent:') || k.startsWith('pgrepair:')) throw new Error('store down'); return realPut.call(env.AMV_KV, k, v, o); };
+  const before = store.get('ent:in@example.com');
+  let threw = false;
+  try { await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 40 })); } catch (e) { threw = /pg_write_unrecorded/.test(e.message); }
+  env.AMV_KV.put = realPut;
+  ok(threw && store.get('ent:in@example.com') === before, 'with neither an intent nor a repair entry possible, the write is refused and nothing changes');
+
+  /* Postgres refuses the write and the repair entry cannot be written: the
+     intent stays, for the cron to turn into a repair - it is not cleared as
+     though Postgres had it. */
+  env.PG = { connectionString: `postgres://${user}@127.0.0.1:1/postgres` };
+  env.AMV_KV.put = async (k, v, o) => { if (k.startsWith('pgrepair:')) throw new Error('store down'); return realPut.call(env.AMV_KV, k, v, o); };
+  for (const k of [...store.keys()]) if (k.startsWith('pgintent:')) store.delete(k);
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'elite', updatedAt: ENT.updatedAt + 41 }));
+  env.AMV_KV.put = realPut;
+  env.PG = { connectionString: GOOD };
+  ok([...store.keys()].some(k => k.startsWith('pgintent:ent:in@example.com')), 'a failed write-through with no repair entry keeps its intent');
   await settle();
 }
 

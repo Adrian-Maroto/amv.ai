@@ -32,6 +32,8 @@ authObjectOp._store = new Map();
 export function withAuthOps(ns) {
   const store = new Map();
   return Object.assign({}, ns, {
+    /* What the objects hold, for a suite that asserts on it. */
+    _objects: store,
     idFromName: ns.idFromName ? ns.idFromName.bind(ns) : (n) => n,
     get: (id) => {
       const inner = ns.get(id);
@@ -60,6 +62,16 @@ export function withAuthOps(ns) {
           store.set(k, f); return new Response(JSON.stringify({ ok: true, many: true }));
         }
         if (b.op === 'tallyFields') return new Response(JSON.stringify({ fields: Object.assign({}, store.get('tm|' + String(id)) || {}) }));
+        /* A Postgres row's proof, as the object keeps it: one epoch, moved by
+           every fence; a proof set only under the epoch it was read in. */
+        if (b.op === 'proofGet' || b.op === 'proofFence' || b.op === 'proofSet') {
+          const k = 'pf|' + String(id); const p = store.get(k) || { epoch: 0, digest: null };
+          const out = (o) => new Response(JSON.stringify(o));
+          if (b.op === 'proofGet') return out({ epoch: p.epoch, digest: p.digest });
+          if (b.op === 'proofFence') { store.set(k, { epoch: p.epoch + 1, digest: null }); return out({ ok: true, epoch: p.epoch + 1 }); }
+          if (p.epoch !== Number(b.epoch)) return out({ ok: false, epoch: p.epoch });
+          store.set(k, { epoch: p.epoch, digest: String(b.digest || '') || null }); return out({ ok: true, epoch: p.epoch });
+        }
         return inner.fetch(u, init);
       } };
     },

@@ -58,9 +58,15 @@ async function _pgIntent(env, kind, id){
   try { await env.AMV_KV.put(k, JSON.stringify({ at: Date.now() }), { expirationTtl: 7 * 86400 }); return k; }
   catch (e) {
     /* No intent: put it straight on the repair list instead, so the write
-       still cannot be lost; if that fails too, say so loudly. */
+       still cannot be lost. If that fails too, THE WRITE DOES NOT HAPPEN
+       (Nov 3 audit DATA-021): it used to go ahead with nothing anywhere
+       saying Postgres would miss it. This runs before the record is
+       written, so refusing here changes nothing. */
     try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why: 'intent not recorded' })); }
-    catch (_) { try { audit(env, 'pg_intent_failed', { kind, id }); } catch (__) {} }
+    catch (_) {
+      try { audit(env, 'pg_intent_failed', { kind, id }); } catch (__) {}
+      throw new Error('pg_write_unrecorded');
+    }
     return null;
   }
 }

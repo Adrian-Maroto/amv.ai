@@ -312,6 +312,29 @@ export class AMVCounter {
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + Number(body.ttlMs));
       return json({ ok: true, many: true });
     }
+    /* A POSTGRES ROW'S PROOF (Nov 3 audit DATA-019). The proof that a
+       Postgres row equals the record it mirrors, and the fence that removes
+       it before a write, used to live in KV - eventually consistent, so one
+       region could still see a proof another had removed. Here they are one
+       object per record: strongly consistent, one writer. `epoch` moves on
+       every fence; a proof is set only under the epoch its comparison began
+       in, so a write that landed during the comparison wins. */
+    if (op === 'proofGet') {
+      const p = (await this.state.storage.get('pf')) || { epoch: 0, digest: null };
+      return json({ epoch: p.epoch || 0, digest: p.digest || null });
+    }
+    if (op === 'proofFence') {
+      const p = (await this.state.storage.get('pf')) || { epoch: 0, digest: null };
+      const next = { epoch: (p.epoch || 0) + 1, digest: null };
+      await this.state.storage.put('pf', next);
+      return json({ ok: true, epoch: next.epoch });
+    }
+    if (op === 'proofSet') {
+      const p = (await this.state.storage.get('pf')) || { epoch: 0, digest: null };
+      if ((p.epoch || 0) !== Number(body.epoch)) return json({ ok: false, epoch: p.epoch || 0 });
+      await this.state.storage.put('pf', { epoch: p.epoch || 0, digest: String(body.digest || '') || null });
+      return json({ ok: true, epoch: p.epoch || 0 });
+    }
     if (op === 'tallyFields') {
       return json({ fields: (await this.state.storage.get('tm')) || {} });
     }
@@ -398,6 +421,12 @@ async function counter(env, name, payload) {
        be an error instead, so the payment provider's retry can finish it. */
     if (env.AMV_COUNTER && payload.strict) throw e;
     /* A revision that cannot be checked is a write that does not happen. */
+    /* A proof that cannot be asked about is no proof; a fence that cannot
+       be moved stops the write. Never answered from KV. */
+    if (env.AMV_COUNTER && (payload.op === 'proofGet' || payload.op === 'proofFence' || payload.op === 'proofSet')) {
+      audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
+      return { ok: false, unavailable: true, code: 'atomic_unavailable' };
+    }
     if (env.AMV_COUNTER && payload.op === 'revCas') {
       audit(env, 'atomic_unavailable', { op: 'revCas', name: String(name).slice(0, 120) });
       return { ok: false, unavailable: true, code: 'atomic_unavailable' };
