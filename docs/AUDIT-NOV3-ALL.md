@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Not done yet 44, Resolved before 39, Fixed now 33, Owner 28, Roadmap 21, Partly done 19, Verified here 5
+Totals: Not done yet 43, Resolved before 39, Fixed now 34, Owner 28, Roadmap 21, Partly done 19, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -117,7 +117,7 @@ Totals: Not done yet 44, Resolved before 39, Fixed now 33, Owner 28, Roadmap 21,
 | SEC-012 | Medium | P1 | Brownout coordination uses KV state and sequential switch changes | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Open | Not done yet | not reached this round |
 | COMP-008 | Medium | P1 | Timestamp-only version identifiers can collide | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| COMP-009 | Medium | P1 | Version copy/prune operations are not transactional | Partially fixed | Not done yet | not reached this round |
+| COMP-009 | Medium | P1 | Version copy/prune operations are not transactional | Partially fixed | Fixed now | a copy is read back at full size before it counts, and earlier copies are pruned only after it is confirmed |
 | TEST-004 | Medium | P1 | Overall worker coverage is strong but masks low-risk distribution | Open | Not done yet | not reached this round |
 | USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Partially fixed | Partly done | month figures are one object call per turn (Nov 2); the limit and money calls remain separate by design |
 | FILE-003 | Medium | P1 | Library metadata is too account-aggregated for 25k+ files | Open | Not done yet | not reached this round |

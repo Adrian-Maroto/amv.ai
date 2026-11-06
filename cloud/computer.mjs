@@ -154,6 +154,10 @@ export class AMVComputer extends Container {
       sha ? Object.assign(verify ? { sha256: sha } : {}, { customMetadata: Object.assign({}, obj.customMetadata, { sha256: sha }) })
         : (obj.customMetadata ? { customMetadata: Object.assign({}, obj.customMetadata) } : {})));
     await done;
+    /* Read back before it counts (Nov 3 audit COMP-009): the copy is there,
+       at its full size, or this did not happen. */
+    const back = typeof this.env.WORKSPACES.head === 'function' ? await this.env.WORKSPACES.head(to) : await this.env.WORKSPACES.get(to);
+    if (!back || +back.size !== +obj.size) return false;
     return true;
   }
   async _wsVersions() {
@@ -175,6 +179,9 @@ export class AMVComputer extends Container {
        COMP-008) - the second used to overwrite the first. */
     const key = this._wsVerPrefix() + Date.now() + '-' + [...crypto.getRandomValues(new Uint8Array(4))].map(b => b.toString(16).padStart(2, '0')).join('') + '.tgz';
     const kept = await this._wsCopy(this._wsKey(), key, opts);
+    /* Older copies are pruned only once the new one is confirmed: a copy
+       that did not land must not cost the person their oldest good one. */
+    if (!kept) return false;
     const all = await this._wsVersions();
     for (const v of all.slice(WS_VERSIONS)) await this.env.WORKSPACES.delete(v.key);
     return kept;

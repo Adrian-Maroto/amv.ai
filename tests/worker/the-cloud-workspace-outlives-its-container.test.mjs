@@ -407,6 +407,20 @@ section('Restored onto a newer machine image, the workspace rebuilds its own too
   ok(none.ran === false && none.why === 'no_setup', 'a workspace with no setup script runs nothing', none);
 }
 
+section('An earlier copy is pruned only after the new one is confirmed (Nov 3 audit COMP-009)');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  for (let i = 0; i < 6; i++) await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  const before = [...env.WORKSPACES.m.keys()].filter(k => k.includes('/versions/') || /\d{13}-[0-9a-f]{8}\.tgz$/.test(k)).sort();
+  /* The bucket loses the next earlier copy: it reads back short. */
+  const realHead = env.WORKSPACES.head;
+  env.WORKSPACES.head = async (k) => { const h = await realHead.call(env.WORKSPACES, k); return /\d{13}-[0-9a-f]{8}\.tgz$/.test(k) && !before.includes(k) && h ? { size: h.size - 1 } : h; };
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  env.WORKSPACES.head = realHead;
+  const after = [...env.WORKSPACES.m.keys()].filter(k => /\d{13}-[0-9a-f]{8}\.tgz$/.test(k)).sort();
+  ok(before.every(k => after.includes(k)), 'a copy that did not land whole costs no earlier copy', { before: before.length, after: after.length });
+}
+
 section('A call token carries only its own call, and once - even across a restart (Nov 3 audit COMP-018)');
 {
   const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };

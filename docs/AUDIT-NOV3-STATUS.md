@@ -48,6 +48,7 @@ deciding fact in strongly consistent storage:
 | SUPPORT-001 | Support access log is append-only |
 | SEC-002 | Kept ids come from the cryptographic source |
 | SEC-004 | Every window message listener checks its sender, held by a test |
+| COMP-009 | A workspace copy is read back before it counts; earlier copies are pruned only after |
 | TEST-001 | The Postgres suites run against a real Postgres here and in CI |
 
 ## Where a restore stands
