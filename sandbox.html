@@ -10,7 +10,7 @@
      The build puts that script inside this page and replaces 'self' below
      with its hash: Safari matches 'self' against the frame's opaque origin
      and refused the file (build.mjs, emitSandbox). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Sq66Ywc+aZfW/EIV97ZsW3+bFez+k4WzH1nUr4h7qq4=' blob: 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src https://cdn.jsdelivr.net; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-lnfNrvydqrmTfyRnH8W+104oUvjM7UwpmhVogO1LwKQ=' blob: 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src https://cdn.jsdelivr.net; base-uri 'none'; form-action 'none'">
 <meta name="robots" content="noindex">
 <title>AMV sandbox</title>
 <script>/* AMV'S CODE SANDBOX - where programs AMV runs for somebody actually run.
@@ -86,7 +86,7 @@
   }
   function runJS(job) {
     return new Promise((resolve) => {
-      const id = 'js_' + Math.random().toString(36).slice(2);
+      const id = 'js_' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
       const t0 = now();
       const ms = () => Math.round(now() - t0);
       let done = false, worker = null, url = '', timer = null;
@@ -170,7 +170,7 @@
          job has touched. */
       try { w = pyWarm || pyNewWorker(); pyWarm = null; }
       catch (e) { resolve({ ok: false, stdout: '', stderr: 'Python sandbox unavailable: ' + ((e && e.message) || e), result: '', ms: 0 }); return; }
-      const id = 'py_' + Math.random().toString(36).slice(2);
+      const id = 'py_' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
       const t0 = now();
       let done = false, timer = null;
       const finish = (r) => {

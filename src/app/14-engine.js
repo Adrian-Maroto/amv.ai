@@ -74,7 +74,7 @@ window._aiBackendReady=_aiBackendReady;
    that lands, through the same _stopTurnThenCut chat uses.
 
    Between requests there is no turn, and the cut is immediate. */
-function _aiTurnId(){ return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function _aiTurnId(){ return 'r' + Date.now().toString(36) + _rid(6); }
 function _aiStopLink(outer){
   const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   let turn = '';
@@ -747,7 +747,7 @@ async function _sbxRun(lang, code, timeoutMs, onStatus){
   let f;
   try{ f = await _sbxStart(); }
   catch(e){ return { ok:false, stdout:'', stderr:(e && e.message) || 'The code sandbox could not start.', result:'', ms:0 }; }
-  const id = 'j' + (++_SBX.seq) + '_' + Math.random().toString(36).slice(2, 8);
+  const id = 'j' + (++_SBX.seq) + '_' + _rid(6);
   return new Promise((resolve) => {
     const job = { resolve, onStatus, backstop: null };
     /* The frame enforces the time limit itself. This is the backstop for a

@@ -495,7 +495,7 @@ async function _sectionTool(name, input){
     if(_memList().some(m => String(m.text||'').trim().toLowerCase() === text.toLowerCase()))
       return { text:'AMV already remembers exactly that. Nothing to do - say so rather than confirming a second save.', render:null };
     try{
-      S.memory = [{ id:'m'+Date.now()+Math.random().toString(36).slice(2,5), text, added: Date.now() }].concat(_memList());
+      S.memory = [{ id:'m'+Date.now()+_rid(3), text, added: Date.now() }].concat(_memList());
     }catch(e){ return { text:_sectionErr(e), render:null }; }
     _memRepaint();
     return { text:'Remembered, and it is in the Memory tab where they can edit or delete it. From now on it is included in every conversation.', render:null };

@@ -143,7 +143,7 @@ function _projAddMemory(ws, facts){
   const known = new Set((ws.memory || []).map(m => String(m.text || '').toLowerCase().trim()));
   const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memDuplicate(f, known)).slice(0, 5);
   if(!fresh.length) return 0;
-  ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + Math.random().toString(36).slice(2, 5), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
+  ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + _rid(3), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
     .concat(ws.memory || []).slice(0, PROJ_MEM_MAX);
   _wsTouch(ws);
   return fresh.length;
@@ -216,7 +216,7 @@ function _renderProjectPanel(id){
   on($('pj-lib'), 'click', () => openFileLibrary({ only: 'text', pick: f => {
     const list = _projFiles(id);
     if(list.length >= PROJ_FILES_MAX && !list.some(x => x.name === f.name)){ toast(T('A project holds up to') + ' ' + PROJ_FILES_MAX + ' ' + T('files.'), 'error', 6000); return; }
-    const next = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: f.format || '', summary: f.summary || '', text: f.data, added: Date.now() }]
+    const next = [{ id: 'pf' + Date.now() + _rid(3), name: f.name, format: f.format || '', summary: f.summary || '', text: f.data, added: Date.now() }]
       .concat(list.filter(x => x.name !== f.name));
     if(!_projSaveFiles(id, next)){ toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000); return; }
     openProjectPanel(id);
@@ -229,7 +229,7 @@ function _renderProjectPanel(id){
       const r = await amvReadFile(f);
       if(r.kind === 'refused'){ toast(r.reason, 'error', 9000); continue; }
       if(r.kind !== 'text'){ toast('“' + f.name + '” ' + T('is a picture or PDF. Project files are read as text - attach those in a chat instead.'), 'error', 9000); continue; }
-      list = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: r.format || '', summary: r.summary || '', text: r.data, added: Date.now() }]
+      list = [{ id: 'pf' + Date.now() + _rid(3), name: f.name, format: r.format || '', summary: r.summary || '', text: r.data, added: Date.now() }]
         .concat(list.filter(x => x.name !== f.name));
     }
     if(!_projSaveFiles(id, list)) toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000);
@@ -370,7 +370,7 @@ function _assistantSectionWire(ws, id){
    the engine as a third party's (see _projectContext). */
 function assistantFromListing(item){
   const a = item && item.assistant && typeof item.assistant === 'object' ? item.assistant : {};
-  const ws = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(item.title || T('Assistant')).slice(0, 80),
+  const ws = { id: 'w' + Date.now().toString(36) + _rid(4), name: String(item.title || T('Assistant')).slice(0, 80),
     icon: item.icon || '\u2728', instructions: String(item.text || '').slice(0, PROJ_INSTR_MAX),
     starters: (Array.isArray(a.starters) ? a.starters : []).map(x => String(x || '').slice(0, ASSIST_STARTER_MAX)).filter(Boolean).slice(0, ASSIST_STARTERS),
     engine: MODELS[a.engine] && a.engine !== 'auto' ? a.engine : '', third: true,
@@ -379,7 +379,7 @@ function assistantFromListing(item){
   S.workspaces = [ws].concat(S.workspaces || []);
   _saveWorkspaces(S.workspaces);
   const files = (Array.isArray(item.files) ? item.files : []).filter(f => f && typeof f.data === 'string' && /^text\//.test(String(f.type || '')))
-    .slice(0, PROJ_FILES_MAX).map(f => ({ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: String(f.name || 'file').slice(0, 120), text: f.data, added: Date.now() }));
+    .slice(0, PROJ_FILES_MAX).map(f => ({ id: 'pf' + Date.now() + _rid(3), name: String(f.name || 'file').slice(0, 120), text: f.data, added: Date.now() }));
   if(files.length) _projSaveFiles(ws.id, files);
   return ws;
 }

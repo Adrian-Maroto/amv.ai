@@ -69,7 +69,7 @@ function _memImportPlan(cands){
 
 function _memImportCommit(texts){
   const now = Date.now();
-  const fresh = texts.map((t, i) => ({ id: 'm' + now + '_' + i + Math.random().toString(36).slice(2, 5), text: t, added: now, imported: true }));
+  const fresh = texts.map((t, i) => ({ id: 'm' + now + '_' + i + _rid(3), text: t, added: now, imported: true }));
   S.memory = [...fresh, ...(S.memory || [])].slice(0, MEM_TOTAL_MAX);
   return fresh.length;
 }

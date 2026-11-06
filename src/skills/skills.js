@@ -27,7 +27,7 @@ function _skillSave(id, patch){
 }
 function _skillNew(o){
   const now=Date.now();
-  return { id:'sk_'+now+Math.random().toString(36).slice(2,5), name:String(o.name||'').slice(0,60), when:String(o.when||'').slice(0,200),
+  return { id:'sk_'+now+_rid(3), name:String(o.name||'').slice(0,60), when:String(o.when||'').slice(0,200),
            instr:String(o.instr||'').slice(0,SKILL_INSTR_MAX), mode:o.mode==='auto'?'auto':'always', desc:String(o.when||o.instr||'').slice(0,80),
            v:1, created:now, updated:now, history:[] };
 }
@@ -362,7 +362,7 @@ async function _pluginAdd(raw, meta){
   if(!was && live.length >= PL_MAX){ toast(T('You have') + ' ' + PL_MAX + ' ' + T('plugins. Remove one before adding another.'), 'error', 7000); return null; }
   if(!(await _plAsk(pkg, m))) return null;
   const now = Date.now();
-  const rec = Object.assign({ id: was ? was.id : 'pl_' + now.toString(36) + Math.random().toString(36).slice(2, 6) }, pkg,
+  const rec = Object.assign({ id: was ? was.id : 'pl_' + now.toString(36) + _rid(4) }, pkg,
     { on: was ? was.on !== false : true, third: m.third, author: m.author, listing: m.listing, preset: m.preset, added: was ? was.added : now, updated: now,
       setUp: was && was.setUp && typeof was.setUp === 'object' ? was.setUp : {} });
   _plSave(_plAll().filter(a => a.id !== rec.id).concat([rec]));

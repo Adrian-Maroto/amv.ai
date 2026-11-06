@@ -1342,7 +1342,7 @@ async function _maybeExtractMemory(msgs){
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
     const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
-      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+Math.random().toString(36).slice(2,5),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
+      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
       if(typeof renderMemList==='function' && S.tab==='memory') renderMemList();
     }
   }catch(e){ /* extraction is best-effort */ }

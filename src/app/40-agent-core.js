@@ -163,7 +163,7 @@ function _amvHash(s) {
 
 function _amvId(p) {
   const r = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID()
-          : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+          : (Date.now().toString(36) + _rid(8));
   return String(p || 'id') + '_' + r;
 }
 

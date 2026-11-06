@@ -801,7 +801,7 @@ const AMVMarket = {
       if(d.error) throw new Error(_refusalText(d)); return d.item;
     }
     // local mode: save on device (files travel as data URLs inside the listing)
-    const clean={ ...item, id:'usr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    const clean={ ...item, id:'usr_'+Date.now().toString(36)+_rid(3),
       author:this._meName(), authorEmail:this._me(), installs:0, sales:0, rating:0, ratings:0,
       status:'active', views:0, files:Array.isArray(item.files)?item.files:[], createdAt:Date.now() };
     const list=this._localListings(); list.unshift(clean); this._saveLocalListings(list);

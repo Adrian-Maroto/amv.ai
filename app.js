@@ -1,4 +1,9 @@
 "use strict";
+/* RANDOM IDS FROM THE BROWSER'S CRYPTOGRAPHIC SOURCE (Nov 3 audit SEC-002).
+   Conversation, project, file and memory ids are kept and synced: two made
+   in the same millisecond on two devices must not collide, and none should be
+   guessable. Math.random is neither. Base-36, `n` characters. */
+function _rid(n){ const a = new Uint8Array(n); crypto.getRandomValues(a); let s = ''; for (const b of a) s += (b % 36).toString(36); return s; }
 
 const $ = id => document.getElementById(id);
 // Bind an event listener. To make setup/render functions safe to run repeatedly
@@ -1941,7 +1946,7 @@ function _lazyLoad(file, here){
    again; a screen left meanwhile is not drawn over. */
 function _lazyScreen(file, standIn, name){
   const vc = $('vc'); if(!vc) return;
-  const tag = 'lz' + Math.random().toString(36).slice(2, 8);
+  const tag = 'lz' + _rid(6);
   vc.innerHTML = '<div class="lab-placeholder" data-lazy="' + tag + '" role="status" aria-live="polite">' + escH(T('Loading\u2026')) + '</div>';
   _lazyLoad(file, () => window[name] !== standIn).then(ok => {
     const ph = vc.querySelector('[data-lazy="' + tag + '"]'); if(!ph) return;
@@ -3593,7 +3598,7 @@ function track(event, props){
     if(ep){ try{ navigator.sendBeacon(ep, JSON.stringify({ event, props:props||{}, ts:Date.now(), anon:_anonId() })); }catch(e){} }
   }catch(e){}
 }
-function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+Math.random().toString(36).slice(2,12); saveStr('amv_anon_id',id); } return id; }
+function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+_rid(10); saveStr('amv_anon_id',id); } return id; }
 try{ window.track=track; window._anonId=_anonId; }catch(e){}
 
 /* ============================================================
@@ -4570,7 +4575,7 @@ function _sessTouch(kind){
     let id=_activeSession[kind];
     let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
     if(!rec){
-      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      id='sess_'+Date.now().toString(36)+_rid(3);
       rec={ id, kind, title:'', updated:0, state:{} };
       _SESSIONS.push(rec);
       _activeSession[kind]=id;
@@ -4594,7 +4599,7 @@ function _sessFlush(kind){
     let id=_activeSession[kind];
     let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
     if(!rec){
-      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      id='sess_'+Date.now().toString(36)+_rid(3);
       rec={ id, kind, title:'', updated:0, state:{} };
       _SESSIONS.push(rec);
       _activeSession[kind]=id;
@@ -4899,7 +4904,7 @@ function _syncBootstrap(){
 }
 try{ window._syncBootstrap=_syncBootstrap; }catch(e){}
 function newConvObj(title) {
-  return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
+  return { id:'c'+Date.now()+_rid(4), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
 }
 
 /* "PLEASE COMPLETE THE VERIFICATION" IS THE WRONG THING TO SAY TO SOMEBODY
@@ -8414,7 +8419,7 @@ function _artifactStore(raw, lang, isHtml){
   window._artifacts = window._artifacts || {};
   // reuse an existing artifact with identical content (stable across re-renders)
   for(const k in window._artifacts){ if(window._artifacts[k].raw===raw) return window._artifacts[k]; }
-  const id='art'+(++_artifactSeq)+Math.random().toString(36).slice(2,5);
+  const id='art'+(++_artifactSeq)+_rid(3);
   const meta=_artifactMeta(raw, lang, isHtml);
   const lines=raw.split('\n').length;
   const rec={ id, raw, lang:lang||'', isHtml:!!isHtml, ...meta, lines };
@@ -8663,7 +8668,7 @@ function _mdRemoteImg(url, alt){
   if(_MD_IMG_OK.has(real)) return '<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">';
   let host = '';
   try{ host = new URL(real).hostname; }catch(e){ return _mdAttr(alt || 'image'); }
-  const id = 'mdimg-' + Math.random().toString(36).slice(2, 10);
+  const id = 'mdimg-' + _rid(8);
   return '<button type="button" class="md-img-ask" id="'+id+'" data-dact="_mdShowImg" data-darg="'+id+'"'
        + ' data-src="'+_mdAttr(url)+'" data-alt="'+_mdAttr(alt)+'">'
        + 'Show image from <b>'+_mdAttr(host)+'</b>'+(alt ? ' <span class="md-img-alt">('+alt+')</span>' : '')
@@ -8715,7 +8720,7 @@ function md(text) {  if(!text) return '';
       const art=_artifactStore(raw, lang, isFullHtml);
       return _artifactCardHTML(art);
     }
-    const id='cc'+Math.random().toString(36).slice(2,8);
+    const id='cc'+_rid(6);
     const lb=lang?'<span>'+escH(lang.toUpperCase())+'</span>':'';
     window._codeBlocks=window._codeBlocks||{};
     window._codeBlocks[id]=raw;
@@ -9448,7 +9453,7 @@ async function _callAITurn(msgs, _opts) {
        produced the answer, the server has it parked under this id and we can
        fetch it back instead of paying to generate the whole thing again
        (AMV-070). */
-    const _turnId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const _turnId = 'r' + Date.now().toString(36) + _rid(6);
     const _headers = Object.assign({}, _aiHeaders(), { 'X-AMV-Request-Id': _turnId });
     /* WHAT THE MODEL ACTUALLY GETS TO REMEMBER.
 
@@ -12946,7 +12951,7 @@ function _officeKeep(name, buf, format, note){
   if(!/^(docx|xlsx|pptx)$/.test(format || '')) return null;
   const key = String(name || '').toLowerCase();
   const held = _OFFICE_FILES.get(key) || { name: String(name || 'file'), format, versions: [] };
-  held.versions.push({ id: 'of' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), buf, note: note || '', at: Date.now() });
+  held.versions.push({ id: 'of' + Date.now().toString(36) + _rid(5), buf, note: note || '', at: Date.now() });
   _OFFICE_FILES.delete(key); _OFFICE_FILES.set(key, held);
   const size = () => { let n = 0; for(const h of _OFFICE_FILES.values()) for(const v of h.versions) n += v.buf.byteLength; return n; };
   while(_OFFICE_FILES.size > 1 && (_OFFICE_FILES.size > _OFFICE_KEEP_FILES || size() > _OFFICE_KEEP_BYTES)) _OFFICE_FILES.delete(_OFFICE_FILES.keys().next().value);
@@ -13209,7 +13214,7 @@ async function _libKeep(att, opts){
     if(!a || !a.name || !_libBody(a)) continue;
     const sig = _libSig(a), old = bySig.get(sig);
     put.push(old ? Object.assign({}, old, { used: now })
-      : { id: 'lf' + now + Math.random().toString(36).slice(2, 7), sig, kind: a.kind, name: String(a.name).slice(0, 240),
+      : { id: 'lf' + now + _rid(5), sig, kind: a.kind, name: String(a.name).slice(0, 240),
           size: a.size || 0, format: a.format || '', summary: a.summary || '', mime: a.mime || '',
           data: a.kind === 'text' ? a.data : undefined, b64: a.kind !== 'text' ? a.b64 : undefined,
           chars: _libBody(a).length, added: now, used: now });
@@ -14696,7 +14701,7 @@ const AMVMarket = {
       if(d.error) throw new Error(_refusalText(d)); return d.item;
     }
     // local mode: save on device (files travel as data URLs inside the listing)
-    const clean={ ...item, id:'usr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    const clean={ ...item, id:'usr_'+Date.now().toString(36)+_rid(3),
       author:this._meName(), authorEmail:this._me(), installs:0, sales:0, rating:0, ratings:0,
       status:'active', views:0, files:Array.isArray(item.files)?item.files:[], createdAt:Date.now() };
     const list=this._localListings(); list.unshift(clean); this._saveLocalListings(list);
@@ -16427,7 +16432,7 @@ async function _maybeExtractMemory(msgs){
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
     const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
-      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+Math.random().toString(36).slice(2,5),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
+      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
       if(typeof renderMemList==='function' && S.tab==='memory') renderMemList();
     }
   }catch(e){ /* extraction is best-effort */ }
@@ -16831,7 +16836,7 @@ function _projAddMemory(ws, facts){
   const known = new Set((ws.memory || []).map(m => String(m.text || '').toLowerCase().trim()));
   const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memDuplicate(f, known)).slice(0, 5);
   if(!fresh.length) return 0;
-  ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + Math.random().toString(36).slice(2, 5), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
+  ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + _rid(3), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
     .concat(ws.memory || []).slice(0, PROJ_MEM_MAX);
   _wsTouch(ws);
   return fresh.length;
@@ -16904,7 +16909,7 @@ function _renderProjectPanel(id){
   on($('pj-lib'), 'click', () => openFileLibrary({ only: 'text', pick: f => {
     const list = _projFiles(id);
     if(list.length >= PROJ_FILES_MAX && !list.some(x => x.name === f.name)){ toast(T('A project holds up to') + ' ' + PROJ_FILES_MAX + ' ' + T('files.'), 'error', 6000); return; }
-    const next = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: f.format || '', summary: f.summary || '', text: f.data, added: Date.now() }]
+    const next = [{ id: 'pf' + Date.now() + _rid(3), name: f.name, format: f.format || '', summary: f.summary || '', text: f.data, added: Date.now() }]
       .concat(list.filter(x => x.name !== f.name));
     if(!_projSaveFiles(id, next)){ toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000); return; }
     openProjectPanel(id);
@@ -16917,7 +16922,7 @@ function _renderProjectPanel(id){
       const r = await amvReadFile(f);
       if(r.kind === 'refused'){ toast(r.reason, 'error', 9000); continue; }
       if(r.kind !== 'text'){ toast('“' + f.name + '” ' + T('is a picture or PDF. Project files are read as text - attach those in a chat instead.'), 'error', 9000); continue; }
-      list = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: r.format || '', summary: r.summary || '', text: r.data, added: Date.now() }]
+      list = [{ id: 'pf' + Date.now() + _rid(3), name: f.name, format: r.format || '', summary: r.summary || '', text: r.data, added: Date.now() }]
         .concat(list.filter(x => x.name !== f.name));
     }
     if(!_projSaveFiles(id, list)) toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000);
@@ -17058,7 +17063,7 @@ function _assistantSectionWire(ws, id){
    the engine as a third party's (see _projectContext). */
 function assistantFromListing(item){
   const a = item && item.assistant && typeof item.assistant === 'object' ? item.assistant : {};
-  const ws = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(item.title || T('Assistant')).slice(0, 80),
+  const ws = { id: 'w' + Date.now().toString(36) + _rid(4), name: String(item.title || T('Assistant')).slice(0, 80),
     icon: item.icon || '\u2728', instructions: String(item.text || '').slice(0, PROJ_INSTR_MAX),
     starters: (Array.isArray(a.starters) ? a.starters : []).map(x => String(x || '').slice(0, ASSIST_STARTER_MAX)).filter(Boolean).slice(0, ASSIST_STARTERS),
     engine: MODELS[a.engine] && a.engine !== 'auto' ? a.engine : '', third: true,
@@ -17067,7 +17072,7 @@ function assistantFromListing(item){
   S.workspaces = [ws].concat(S.workspaces || []);
   _saveWorkspaces(S.workspaces);
   const files = (Array.isArray(item.files) ? item.files : []).filter(f => f && typeof f.data === 'string' && /^text\//.test(String(f.type || '')))
-    .slice(0, PROJ_FILES_MAX).map(f => ({ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: String(f.name || 'file').slice(0, 120), text: f.data, added: Date.now() }));
+    .slice(0, PROJ_FILES_MAX).map(f => ({ id: 'pf' + Date.now() + _rid(3), name: String(f.name || 'file').slice(0, 120), text: f.data, added: Date.now() }));
   if(files.length) _projSaveFiles(ws.id, files);
   return ws;
 }
@@ -17306,7 +17311,7 @@ const AMVFraud = {
       : '';
 
     return {
-      id:'fr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      id:'fr_'+Date.now().toString(36)+_rid(4),
       ts:Date.now(),
       subject:ev.subject||ev.userEmail||'-',
       type:ev.type||'event',
@@ -25580,7 +25585,7 @@ const _STUDIO = { html:'', prompt:'', history:[],
   openWip:false };
 function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
 function _studioNewArtifact(name, type, brief){
-  const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
+  const id='art_'+Date.now().toString(36)+_rid(2);
   const a={ id, name:name||('Design '+(_STUDIO.artifacts.length+1)), type:type||'page', html:'', brief:brief||'', history:[] };
   _STUDIO.artifacts.push(a); _STUDIO.activeId=id;
   // Land in Recents IMMEDIATELY. This used to wait for the AI to return HTML,
@@ -28553,7 +28558,7 @@ async function _sectionTool(name, input){
     if(_memList().some(m => String(m.text||'').trim().toLowerCase() === text.toLowerCase()))
       return { text:'AMV already remembers exactly that. Nothing to do - say so rather than confirming a second save.', render:null };
     try{
-      S.memory = [{ id:'m'+Date.now()+Math.random().toString(36).slice(2,5), text, added: Date.now() }].concat(_memList());
+      S.memory = [{ id:'m'+Date.now()+_rid(3), text, added: Date.now() }].concat(_memList());
     }catch(e){ return { text:_sectionErr(e), render:null }; }
     _memRepaint();
     return { text:'Remembered, and it is in the Memory tab where they can edit or delete it. From now on it is included in every conversation.', render:null };
@@ -35934,7 +35939,7 @@ window._aiBackendReady=_aiBackendReady;
    that lands, through the same _stopTurnThenCut chat uses.
 
    Between requests there is no turn, and the cut is immediate. */
-function _aiTurnId(){ return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function _aiTurnId(){ return 'r' + Date.now().toString(36) + _rid(6); }
 function _aiStopLink(outer){
   const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   let turn = '';
@@ -36607,7 +36612,7 @@ async function _sbxRun(lang, code, timeoutMs, onStatus){
   let f;
   try{ f = await _sbxStart(); }
   catch(e){ return { ok:false, stdout:'', stderr:(e && e.message) || 'The code sandbox could not start.', result:'', ms:0 }; }
-  const id = 'j' + (++_SBX.seq) + '_' + Math.random().toString(36).slice(2, 8);
+  const id = 'j' + (++_SBX.seq) + '_' + _rid(6);
   return new Promise((resolve) => {
     const job = { resolve, onStatus, backstop: null };
     /* The frame enforces the time limit itself. This is the backstop for a
@@ -45855,7 +45860,7 @@ async function bridgeExec(command, opts){
      surface asked. */
   const refused = neverRunRefusal('run_command', { command });
   if(refused){ const e = new Error(refused); e.code = 'never_run'; throw e; }
-  const job = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const job = 'j' + Date.now().toString(36) + _rid(8);
   _BRIDGE_RUNNING.add(job);
   try{
     return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout, job },
@@ -48832,7 +48837,7 @@ function _amvHash(s) {
 
 function _amvId(p) {
   const r = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID()
-          : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+          : (Date.now().toString(36) + _rid(8));
   return String(p || 'id') + '_' + r;
 }
 

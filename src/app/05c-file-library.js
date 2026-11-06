@@ -87,7 +87,7 @@ async function _libKeep(att, opts){
     if(!a || !a.name || !_libBody(a)) continue;
     const sig = _libSig(a), old = bySig.get(sig);
     put.push(old ? Object.assign({}, old, { used: now })
-      : { id: 'lf' + now + Math.random().toString(36).slice(2, 7), sig, kind: a.kind, name: String(a.name).slice(0, 240),
+      : { id: 'lf' + now + _rid(5), sig, kind: a.kind, name: String(a.name).slice(0, 240),
           size: a.size || 0, format: a.format || '', summary: a.summary || '', mime: a.mime || '',
           data: a.kind === 'text' ? a.data : undefined, b64: a.kind !== 'text' ? a.b64 : undefined,
           chars: _libBody(a).length, added: now, used: now });

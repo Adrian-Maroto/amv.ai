@@ -551,7 +551,7 @@ function track(event, props){
     if(ep){ try{ navigator.sendBeacon(ep, JSON.stringify({ event, props:props||{}, ts:Date.now(), anon:_anonId() })); }catch(e){} }
   }catch(e){}
 }
-function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+Math.random().toString(36).slice(2,12); saveStr('amv_anon_id',id); } return id; }
+function _anonId(){ let id=loadStr('amv_anon_id'); if(!id){ id='a_'+_rid(10); saveStr('amv_anon_id',id); } return id; }
 try{ window.track=track; window._anonId=_anonId; }catch(e){}
 
 /* ============================================================

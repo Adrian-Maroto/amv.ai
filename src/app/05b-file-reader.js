@@ -549,7 +549,7 @@ function _officeKeep(name, buf, format, note){
   if(!/^(docx|xlsx|pptx)$/.test(format || '')) return null;
   const key = String(name || '').toLowerCase();
   const held = _OFFICE_FILES.get(key) || { name: String(name || 'file'), format, versions: [] };
-  held.versions.push({ id: 'of' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), buf, note: note || '', at: Date.now() });
+  held.versions.push({ id: 'of' + Date.now().toString(36) + _rid(5), buf, note: note || '', at: Date.now() });
   _OFFICE_FILES.delete(key); _OFFICE_FILES.set(key, held);
   const size = () => { let n = 0; for(const h of _OFFICE_FILES.values()) for(const v of h.versions) n += v.buf.byteLength; return n; };
   while(_OFFICE_FILES.size > 1 && (_OFFICE_FILES.size > _OFFICE_KEEP_FILES || size() > _OFFICE_KEEP_BYTES)) _OFFICE_FILES.delete(_OFFICE_FILES.keys().next().value);

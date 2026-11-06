@@ -772,7 +772,7 @@ const _STUDIO = { html:'', prompt:'', history:[],
   openWip:false };
 function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
 function _studioNewArtifact(name, type, brief){
-  const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
+  const id='art_'+Date.now().toString(36)+_rid(2);
   const a={ id, name:name||('Design '+(_STUDIO.artifacts.length+1)), type:type||'page', html:'', brief:brief||'', history:[] };
   _STUDIO.artifacts.push(a); _STUDIO.activeId=id;
   // Land in Recents IMMEDIATELY. This used to wait for the AI to return HTML,

@@ -435,7 +435,7 @@ async function bridgeExec(command, opts){
      surface asked. */
   const refused = neverRunRefusal('run_command', { command });
   if(refused){ const e = new Error(refused); e.code = 'never_run'; throw e; }
-  const job = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const job = 'j' + Date.now().toString(36) + _rid(8);
   _BRIDGE_RUNNING.add(job);
   try{
     return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout, job },

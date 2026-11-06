@@ -175,7 +175,7 @@ function _artifactStore(raw, lang, isHtml){
   window._artifacts = window._artifacts || {};
   // reuse an existing artifact with identical content (stable across re-renders)
   for(const k in window._artifacts){ if(window._artifacts[k].raw===raw) return window._artifacts[k]; }
-  const id='art'+(++_artifactSeq)+Math.random().toString(36).slice(2,5);
+  const id='art'+(++_artifactSeq)+_rid(3);
   const meta=_artifactMeta(raw, lang, isHtml);
   const lines=raw.split('\n').length;
   const rec={ id, raw, lang:lang||'', isHtml:!!isHtml, ...meta, lines };
@@ -424,7 +424,7 @@ function _mdRemoteImg(url, alt){
   if(_MD_IMG_OK.has(real)) return '<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">';
   let host = '';
   try{ host = new URL(real).hostname; }catch(e){ return _mdAttr(alt || 'image'); }
-  const id = 'mdimg-' + Math.random().toString(36).slice(2, 10);
+  const id = 'mdimg-' + _rid(8);
   return '<button type="button" class="md-img-ask" id="'+id+'" data-dact="_mdShowImg" data-darg="'+id+'"'
        + ' data-src="'+_mdAttr(url)+'" data-alt="'+_mdAttr(alt)+'">'
        + 'Show image from <b>'+_mdAttr(host)+'</b>'+(alt ? ' <span class="md-img-alt">('+alt+')</span>' : '')
@@ -476,7 +476,7 @@ function md(text) {  if(!text) return '';
       const art=_artifactStore(raw, lang, isFullHtml);
       return _artifactCardHTML(art);
     }
-    const id='cc'+Math.random().toString(36).slice(2,8);
+    const id='cc'+_rid(6);
     const lb=lang?'<span>'+escH(lang.toUpperCase())+'</span>':'';
     window._codeBlocks=window._codeBlocks||{};
     window._codeBlocks[id]=raw;
@@ -1209,7 +1209,7 @@ async function _callAITurn(msgs, _opts) {
        produced the answer, the server has it parked under this id and we can
        fetch it back instead of paying to generate the whole thing again
        (AMV-070). */
-    const _turnId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const _turnId = 'r' + Date.now().toString(36) + _rid(6);
     const _headers = Object.assign({}, _aiHeaders(), { 'X-AMV-Request-Id': _turnId });
     /* WHAT THE MODEL ACTUALLY GETS TO REMEMBER.
 

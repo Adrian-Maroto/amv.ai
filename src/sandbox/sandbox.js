@@ -71,7 +71,7 @@
   }
   function runJS(job) {
     return new Promise((resolve) => {
-      const id = 'js_' + Math.random().toString(36).slice(2);
+      const id = 'js_' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
       const t0 = now();
       const ms = () => Math.round(now() - t0);
       let done = false, worker = null, url = '', timer = null;
@@ -155,7 +155,7 @@
          job has touched. */
       try { w = pyWarm || pyNewWorker(); pyWarm = null; }
       catch (e) { resolve({ ok: false, stdout: '', stderr: 'Python sandbox unavailable: ' + ((e && e.message) || e), result: '', ms: 0 }); return; }
-      const id = 'py_' + Math.random().toString(36).slice(2);
+      const id = 'py_' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
       const t0 = now();
       let done = false, timer = null;
       const finish = (r) => {

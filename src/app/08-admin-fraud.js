@@ -232,7 +232,7 @@ const AMVFraud = {
       : '';
 
     return {
-      id:'fr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      id:'fr_'+Date.now().toString(36)+_rid(4),
       ts:Date.now(),
       subject:ev.subject||ev.userEmail||'-',
       type:ev.type||'event',

@@ -1,4 +1,9 @@
 "use strict";
+/* RANDOM IDS FROM THE BROWSER'S CRYPTOGRAPHIC SOURCE (Nov 3 audit SEC-002).
+   Conversation, project, file and memory ids are kept and synced: two made
+   in the same millisecond on two devices must not collide, and none should be
+   guessable. Math.random is neither. Base-36, `n` characters. */
+function _rid(n){ const a = new Uint8Array(n); crypto.getRandomValues(a); let s = ''; for (const b of a) s += (b % 36).toString(36); return s; }
 
 const $ = id => document.getElementById(id);
 // Bind an event listener. To make setup/render functions safe to run repeatedly
@@ -1941,7 +1946,7 @@ function _lazyLoad(file, here){
    again; a screen left meanwhile is not drawn over. */
 function _lazyScreen(file, standIn, name){
   const vc = $('vc'); if(!vc) return;
-  const tag = 'lz' + Math.random().toString(36).slice(2, 8);
+  const tag = 'lz' + _rid(6);
   vc.innerHTML = '<div class="lab-placeholder" data-lazy="' + tag + '" role="status" aria-live="polite">' + escH(T('Loading\u2026')) + '</div>';
   _lazyLoad(file, () => window[name] !== standIn).then(ok => {
     const ph = vc.querySelector('[data-lazy="' + tag + '"]'); if(!ph) return;

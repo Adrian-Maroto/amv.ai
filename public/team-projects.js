@@ -176,7 +176,7 @@ async function _tpTeamList(el){
 function _tpOpen(id, summary){
   let ws = (S.workspaces || []).find(w => w && w.team && w.team.id === id);
   if(!ws){
-    ws = { id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: (summary && summary.name) || T('Shared project'),
+    ws = { id: 'w' + Date.now().toString(36) + _rid(4), name: (summary && summary.name) || T('Shared project'),
       icon: (summary && summary.icon) || '📁', instructions: '', memory: [], convs: [], created: Date.now(), updated: Date.now(),
       team: { id, rev: 0, synced: { instructions: '', files: '' } } };
     S.workspaces = [ws].concat(S.workspaces || []);

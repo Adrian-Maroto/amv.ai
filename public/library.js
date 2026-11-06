@@ -18,7 +18,7 @@ async function _libCloudRefresh(){
 async function _libCloudFetch(meta){
   const d = await AMV_API.libraryGet(meta.id);
   const keep = Object.assign({}, meta); delete keep.remote;   /* a copy HERE is not the account's row */
-  const f = Object.assign(keep, { id: 'lf' + Date.now() + Math.random().toString(36).slice(2, 7),
+  const f = Object.assign(keep, { id: 'lf' + Date.now() + _rid(5),
     data: meta.kind === 'text' ? d.body : undefined, b64: meta.kind !== 'text' ? d.body : undefined, used: Date.now() });
   try{ const db = await _libDb(); if(db) await _libTx(db, 'readwrite', st => { st.put(f); }); }catch(e){}
   return f;

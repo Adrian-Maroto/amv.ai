@@ -76,7 +76,7 @@ function _sessTouch(kind){
     let id=_activeSession[kind];
     let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
     if(!rec){
-      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      id='sess_'+Date.now().toString(36)+_rid(3);
       rec={ id, kind, title:'', updated:0, state:{} };
       _SESSIONS.push(rec);
       _activeSession[kind]=id;
@@ -100,7 +100,7 @@ function _sessFlush(kind){
     let id=_activeSession[kind];
     let rec=id ? _SESSIONS.find(s=>s.id===id) : null;
     if(!rec){
-      id='sess_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+      id='sess_'+Date.now().toString(36)+_rid(3);
       rec={ id, kind, title:'', updated:0, state:{} };
       _SESSIONS.push(rec);
       _activeSession[kind]=id;
@@ -405,7 +405,7 @@ function _syncBootstrap(){
 }
 try{ window._syncBootstrap=_syncBootstrap; }catch(e){}
 function newConvObj(title) {
-  return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
+  return { id:'c'+Date.now()+_rid(4), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
 }
 
 /* "PLEASE COMPLETE THE VERIFICATION" IS THE WRONG THING TO SAY TO SOMEBODY
