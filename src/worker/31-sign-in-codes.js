@@ -1705,6 +1705,8 @@ async function authDeleteAccount(request, env) {
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
                         `revblob:data:${email}:`,
+                        /* Each time support looked (83-support.js), one key a look. */
+                        `accesslog:${email}:`,
                         /* Answers to writes kept under their Idempotency-Key (connAct). */
                         `actidem:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a

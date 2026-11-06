@@ -22297,6 +22297,8 @@ async function authDeleteAccount(request, env) {
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
                         `revblob:data:${email}:`,
+                        /* Each time support looked (83-support.js), one key a look. */
+                        `accesslog:${email}:`,
                         /* Answers to writes kept under their Idempotency-Key (connAct). */
                         `actidem:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
@@ -47047,13 +47049,27 @@ async function tasksCancel(request, env){
    the operator's whole-namespace backup, which exists for disaster
    recovery, is bounded to ten a minute, and is audited.
    ===================================================================== */
-const ACCESS_LOG_MAX = 50;
+/* APPEND-ONLY (Nov 3 audit SUPPORT-001). The record of looks was one list,
+   read, changed and written back: two looks at once lost one, a failed read
+   started the list again from nothing, and anything that could write the
+   list could rewrite it. Each look is now a key of its own, written once
+   and never changed (`accesslog:<email>:<when>-<random>`), so a look can be
+   added and never taken away by another write. An older single list is
+   still read alongside. */
 async function _accessLogAdd(env, email, entry){
-  const k = `accesslog:${email}`;
-  let list = [];
-  try { list = JSON.parse((await env.AMV_KV.get(k)) || '[]'); } catch (e) { list = []; }
-  list.push(entry);
-  await env.AMV_KV.put(k, JSON.stringify(list.slice(-ACCESS_LOG_MAX)), { expirationTtl: 400 * 86400 });
+  const id = String(Date.now()).padStart(13, '0') + '-' + [...crypto.getRandomValues(new Uint8Array(4))].map(b => b.toString(16).padStart(2, '0')).join('');
+  await env.AMV_KV.put(`accesslog:${email}:${id}`, JSON.stringify(entry), { expirationTtl: 400 * 86400 });
+}
+async function _accessLogRead(env, email){
+  const out = [];
+  try { const old = JSON.parse((await env.AMV_KV.get(`accesslog:${email}`)) || '[]'); if (Array.isArray(old)) out.push(...old); } catch (e) {}
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: `accesslog:${email}:`, cursor, limit: 1000 });
+    for (const k of page.keys || []) { try { const v = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); if (v) out.push(v); } catch (e) {} }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor && out.length < 500);
+  return out.sort((a, b) => (+a.at || 0) - (+b.at || 0));
 }
 
 async function supportAccount(request, env){
@@ -47093,7 +47109,8 @@ async function supportAccount(request, env){
 async function accountAccessLog(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  let list = [];
-  try { list = JSON.parse((await env.AMV_KV.get(`accesslog:${String(user.email).toLowerCase()}`)) || '[]'); } catch (e) { list = []; }
+  let list;
+  try { list = await _accessLogRead(env, String(user.email).toLowerCase()); }
+  catch (e) { return json({ error: 'Your record of support access could not be read right now. Try again in a moment.', code: 'unavailable' }, 503); }
   return json({ ok: true, access: list.slice().reverse() });
 }

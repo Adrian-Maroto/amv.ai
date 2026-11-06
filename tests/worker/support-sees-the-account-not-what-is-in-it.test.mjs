@@ -67,5 +67,14 @@ section('Every look is recorded where the person sees it, first');
   ok(c.status === 503 && !c.d.account, 'a look that cannot be recorded shows nothing', c.status);
 }
 
+section('Each look is its own record: two at once both stay, and none rewrites another (Nov 3 audit SUPPORT-001)');
+{
+  await Promise.all([admin({ email: ME, reason: 'look one at the same moment' }), admin({ email: ME, reason: 'look two at the same moment' })]);
+  const a = await access(mine.token);
+  ok(a.d.access.some(x => /look one/.test(x.reason)) && a.d.access.some(x => /look two/.test(x.reason)) && a.d.access.length === 3, 'two looks at the same moment are both recorded, beside the first', a.d.access.map(x => x.reason));
+  const keys = [...store.keys()].filter(k => k.startsWith('accesslog:' + ME + ':'));
+  ok(keys.length === 3 && keys.every(k => /:\d{13}-[0-9a-f]{8}$/.test(k)), 'one key a look, never one list written back', keys);
+}
+
 if (report('support-sees-the-account-not-what-is-in-it') > 0) process.exitCode = 1;
 done();
