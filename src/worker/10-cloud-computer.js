@@ -47,10 +47,15 @@ async function _computerCall(env, stub, path, init){
   const id = String(stub._amvId || stub.id || '');
   const exp = String(Date.now() + 60000);
   const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+  /* Signed over the method and the body's SHA-256 too (Nov 3 audit COMP-018),
+     so a token can carry only the call it was made for. */
+  const method = String((init && init.method) || 'POST').toUpperCase();
+  const body = typeof (init && init.body) === 'string' ? init.body : '';
+  const bodySha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(env.AMV_COMPUTER_KEY)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(['amv-computer-call', 'v1', id, path, exp, nonce].join('\n'))))]
+  const sig = [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(['amv-computer-call', 'v2', id, method, path, bodySha, exp, nonce].join('\n'))))]
     .map(b => b.toString(16).padStart(2, '0')).join('');
-  const headers = Object.assign({}, (init && init.headers) || {}, { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY), 'X-AMV-Computer-Call': ['v1', exp, nonce, sig].join('.') });
+  const headers = Object.assign({}, (init && init.headers) || {}, { 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY), 'X-AMV-Computer-Call': ['v2', exp, nonce, sig].join('.') });
   return stub.fetch(new Request('http://amv-computer' + path, Object.assign({ method: 'POST' }, init || {}, { headers })));
 }
 /* Erasing an account: the computer Worker deletes the saved workspace and

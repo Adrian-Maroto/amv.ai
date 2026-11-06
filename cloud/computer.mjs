@@ -80,7 +80,6 @@ export class AMVComputer extends Container {
     super(ctx, env);
     /* The bridge key is filled in (_machineKey) before the container starts. */
     this.envVars = { PORT: '8080' };
-    this._used = new Map();
   }
 
   async _kv(k) { const s = this.ctx && this.ctx.storage; if (s && typeof s.get === 'function') return s.get(k); return (this._mem || {})[k]; }
@@ -98,20 +97,30 @@ export class AMVComputer extends Container {
     }
     return this._key;
   }
-  /* A call from the main Worker: signed for this machine, this path, within
-     the minute, and not seen before. */
+  /* A call from the main Worker: signed for this machine, this path, THIS
+     METHOD AND BODY, within the minute, and not seen before (Nov 3 audit
+     COMP-018). The token used to cover the path alone, so one captured in
+     the minute it lived could carry a different command; and the record of
+     tokens already used was in memory, so a restart forgot it. The body's
+     SHA-256 and the method are signed now, and a used token is kept in this
+     object's own storage until it expires. */
   async _callOk(request, path) {
     const root = String((this.env && this.env.AMV_COMPUTER_KEY) || '');
     if (root.length < 32) return false;
     const t = String(request.headers.get('X-AMV-Computer-Call') || '').split('.');
-    if (t.length !== 4 || t[0] !== 'v1' || !/^\d{13}$/.test(t[1]) || !/^[0-9a-f]{32}$/.test(t[2]) || !/^[0-9a-f]{64}$/.test(t[3])) return false;
+    if (t.length !== 4 || t[0] !== 'v2' || !/^\d{13}$/.test(t[1]) || !/^[0-9a-f]{32}$/.test(t[2]) || !/^[0-9a-f]{64}$/.test(t[3])) return false;
     const exp = +t[1], now = Date.now();
     if (exp < now || exp > now + CALL_TTL_MS + 5000) return false;
-    const want = await _hmacHex(root, ['amv-computer-call', 'v1', this.ctx.id.toString(), path, t[1], t[2]].join('\n'));
+    let body = '';
+    try { body = await request.clone().text(); } catch (e) { return false; }
+    const bodySha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', _enc.encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
+    const want = await _hmacHex(root, ['amv-computer-call', 'v2', this.ctx.id.toString(), String(request.method || 'POST').toUpperCase(), path, bodySha, t[1], t[2]].join('\n'));
     if (!_sameHex(want, t[3])) return false;
-    for (const [n, e] of this._used) if (e < now) this._used.delete(n);
-    if (this._used.has(t[2])) return false;
-    this._used.set(t[2], exp);
+    const used = (await this._kv('call_used')) || {};
+    for (const n of Object.keys(used)) if (used[n] < now) delete used[n];
+    if (used[t[2]]) return false;
+    used[t[2]] = exp;
+    await this._kvPut('call_used', used);
     return true;
   }
 

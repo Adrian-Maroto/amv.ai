@@ -35,9 +35,12 @@ const KEY = 'w'.repeat(16) + 'workspace-key-for-this-suite-0123';
 const hmacHex = (k, m) => createHmac('sha256', k).update(m).digest('hex');
 const MKEY = hmacHex(KEY, 'amv-computer-machine\nv1\na1b2c3d4\n0');
 /* A call the main Worker signs for one machine and one path. */
-const signed = async (path, forId, at, root) => {
+/* Signed as the main Worker signs (Nov 3 audit COMP-018): the machine, the
+   method, the path and the body's SHA-256. */
+const sha = (t) => createHash('sha256').update(t).digest('hex');
+const signed = async (path, forId, at, root, body = '', method = 'POST') => {
   const exp = String((at || Date.now()) + 60000), nonce = randomBytes(16).toString('hex');
-  return { 'X-AMV-Computer-Call': ['v1', exp, nonce, hmacHex(root || KEY, ['amv-computer-call', 'v1', forId || 'a1b2c3d4', path, exp, nonce].join('\n'))].join('.') };
+  return { 'X-AMV-Computer-Call': ['v2', exp, nonce, hmacHex(root || KEY, ['amv-computer-call', 'v2', forId || 'a1b2c3d4', method, path, sha(body), exp, nonce].join('\n'))].join('.') };
 };
 const running = [];
 process.on('exit', () => { for (const c of running) try { c.kill('SIGKILL'); } catch (e) {} });
@@ -189,13 +192,13 @@ section('A snapshot that fails never replaces the last good copy');
   const told = await ask();
   ok(told.state && told.state.unsavedHeld && told.state.unsavedHeld.tries === 5 && !told.state.lostUnsaved, 'the person is told the work could not be saved and is being kept', told.state);
   /* Only their decision stops it. */
-  const disc = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY) }));
+  const disc = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY, '{}') }));
   const dd = await disc.json();
   ok(disc.status === 200 && dd.discarded === true && m.destroyed, 'discarding - their choice - tries once more, then stops the machine', dd);
   const after = await ask();
   ok(after.state.lostUnsaved && after.state.lostUnsaved.chosen && !after.state.unsavedHeld, 'and the record says it was their choice', after.state);
   ok(!(await ask()).state.lostUnsaved, 'told once, not every time they look');
-  const none = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY) }));
+  const none = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY, '{}') }));
   ok(none.status === 409, 'with nothing waiting there is nothing to discard', none.status);
 }
 
@@ -223,9 +226,9 @@ section('A copy without a checksum never becomes the copy, and an old one is not
   await m.onStart();
   const v = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
   ok(v.state.restoreFailed && v.state.restoreFailed.unverified && events.includes('workspace_restore_held'), 'an unchecked copy is held back and the person is told', v.state);
-  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
   ok(work.status === 409, 'and nothing runs on the empty disk meanwhile', work.status);
-  const t = await m.fetch(new Request('http://amv-computer/amv-workspace/trust', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/trust') }));
+  const t = await m.fetch(new Request('http://amv-computer/amv-workspace/trust', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/trust', null, null, null, '{}') }));
   ok(t.status === 200 && (await t.json()).trusted, 'the person can choose to use it anyway');
   const m2 = new AMVComputer({ id, container: Object.assign(portTo(F.base), { running: true }), storage }, env);
   await m2.onStart();
@@ -313,37 +316,37 @@ section('A machine holds a key of its own, and a call opens only the machine it 
     const box1 = { running: false, getTcpPort: () => ({ fetch: async () => new Response('{}') }) };
     const storage = memStorage();
     const m = new AMVComputer({ id, container: box1, storage }, env);
-    const r1 = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: Object.assign({ 'X-AMV-Bridge-Token': KEY }, await signed('/amv-bridge/exec')) }));
+    const r1 = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: Object.assign({ 'X-AMV-Bridge-Token': KEY }, await signed('/amv-bridge/exec', null, null, null, '{}')) }));
     ok(r1.status === 200 && seen && /^[0-9a-f]{64}$/.test(seen.key) && seen.key !== KEY, 'the container is started with a key of its own, never the root key', seen && { key: seen.key.slice(0, 8) });
     ok(seen.token === seen.key && seen.token !== KEY && !seen.call, 'and what reaches it carries that key - the root key and the call token that came in are not passed on', seen);
     const first = seen.key;
     ok(first === hmacHex(KEY, 'amv-computer-machine\nv1\na1b2c3d4\n1'), 'derived from the root for this machine’s id and its start counter', first.slice(0, 8));
     /* While it runs the key stays; the next container to start gets a new one. */
     box1.running = true;
-    await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+    await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
     ok(seen.key === first, 'a running machine keeps its key');
     box1.running = false;
-    await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+    await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
     ok(seen.key !== first && seen.key === hmacHex(KEY, 'amv-computer-machine\nv1\na1b2c3d4\n2'), 'a machine that starts again gets a new key: one read out of the last container no longer opens it', seen.key.slice(0, 8));
     const restarted = new AMVComputer({ id, container: Object.assign({}, box1, { running: true }), storage }, env);
-    await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+    await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
     ok(seen.key === hmacHex(KEY, 'amv-computer-machine\nv1\na1b2c3d4\n2'), 'and the counter outlives the object being restarted', seen.key.slice(0, 8));
     /* The calls that must be refused. */
     seen = null;
     const other = new AMVComputer({ id: { toString: () => 'b2c3d4e5' }, container: box1, storage: memStorage() }, env);
     const statuses = {};
     statuses.rootOnly = (await other.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: { 'X-AMV-Bridge-Token': KEY } }))).status;
-    statuses.forA = (await other.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', 'a1b2c3d4') }))).status;
+    statuses.forA = (await other.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', 'a1b2c3d4', null, null, '{}') }))).status;
     statuses.forAWorkspace = (await other.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: await signed('/amv-workspace/forget', 'a1b2c3d4') }))).status;
     ok(statuses.rootOnly === 401 && statuses.forA === 401 && statuses.forAWorkspace === 401 && seen === null,
        'a call signed for one person’s machine is refused by another, and the bare root key opens nothing', statuses);
     const otherPath = (await m.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).status;
-    const stale = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, Date.now() - 120000) }))).status;
-    const far = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, Date.now() + 3600000) }))).status;
-    const h = await signed('/amv-bridge/exec');
+    const stale = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, Date.now() - 120000, null, '{}') }))).status;
+    const far = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, Date.now() + 3600000, null, '{}') }))).status;
+    const h = await signed('/amv-bridge/exec', null, null, null, '{}');
     const once = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: h }))).status;
     const twice = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: h }))).status;
-    const forged = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, 'f'.repeat(48)) }))).status;
+    const forged = (await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, 'f'.repeat(48), '{}') }))).status;
     ok(otherPath === 401 && stale === 401 && far === 401 && once === 200 && twice === 401 && forged === 401,
        'and a call is good for its own path, within its minute, and once; one signed with any other key is refused', { otherPath, stale, far, once, twice, forged });
   } finally { lib.fetch = libFetch; }
@@ -357,7 +360,7 @@ section('A machine in use is saved every few minutes, not only when it goes idle
     const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
     const storage = memStorage();
     const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }), storage }, env);
-    const go = async () => m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+    const go = async () => m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
     await go();
     ok(!env.WORKSPACES.m.has('ws/a1b2c3d4.tgz') && +(await storage.get('ws_saved_at')) > 0, 'the first request starts the clock and saves nothing', [...env.WORKSPACES.m.keys()]);
     await go();
@@ -404,6 +407,24 @@ section('Restored onto a newer machine image, the workspace rebuilds its own too
   ok(none.ran === false && none.why === 'no_setup', 'a workspace with no setup script runs nothing', none);
 }
 
+section('A call token carries only its own call, and once - even across a restart (Nov 3 audit COMP-018)');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  const storage = memStorage();
+  const m = new AMVComputer({ id, container: portTo(A.base), storage }, env);
+  const h = await signed('/amv-workspace/versions', null, null, null, '');
+  const ok1 = await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: h }));
+  ok(ok1.status === 200, 'the call it was made for goes through', ok1.status);
+  const again = await new AMVComputer({ id, container: portTo(A.base), storage }, env).fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: h }));
+  ok(again.status === 401, 'the same token again is refused - by a restarted object too, because the used ones are in its storage', again.status);
+  const h2 = await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: '' }));
+  const swapped = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', body: JSON.stringify({ id: '1793000000000' }), headers: h2 }));
+  ok(swapped.status === 401, 'a token made for one body does not carry another', swapped.status);
+  const h3 = await signed('/amv-workspace/versions', null, null, null, '', 'GET');
+  const meth = await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: h3 }));
+  ok(meth.status === 401, 'nor one made for another method', meth.status);
+}
+
 section('Erasing the account deletes the saved workspace and stops the machine - on AMV’s key only');
 {
   const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
@@ -445,13 +466,13 @@ section('Each save keeps the copy it replaces, the newest five are kept, and one
   const list = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
   ok(list.current && list.versions.length === 5 && list.versions[0].id > list.versions[4].id && list.versions.every(v => v.bytes > 0 && !('key' in v)),
      'listed newest first, with when and how big, and no storage key', list);
-  const bad = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback'), body: JSON.stringify({ id: '../../x' }) }));
-  const gone = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback'), body: JSON.stringify({ id: '1000000000000' }) }));
+  const bad = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: '../../x' })), body: JSON.stringify({ id: '../../x' }) }));
+  const gone = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: '1000000000000' })), body: JSON.stringify({ id: '1000000000000' }) }));
   ok(bad.status === 400 && gone.status === 404, 'a malformed or unknown copy is refused', [bad.status, gone.status]);
   /* The oldest kept copy holds "version 2" (saves 2..6 replaced 1..5 copies; the copy itself is version 7). */
   writeFileSync(join(one, 'notes.md'), 'unsaved work on the running machine\n');
   const oldest = list.versions[list.versions.length - 1].id;
-  const back = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback'), body: JSON.stringify({ id: oldest }) }));
+  const back = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: oldest })), body: JSON.stringify({ id: oldest }) }));
   const bd = await back.json();
   ok(back.status === 200 && bd.restored && m.destroyed, 'putting one back stops the running machine', bd);
   const four = join(box, 'four'); mkdirSync(four, { recursive: true });
@@ -484,14 +505,14 @@ section('A restore that fails stops the machine working, and never saves over th
   const storage = memStorage();
   const m = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage }, env);
   await m.onStart();
-  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
   const wd = await work.json().catch(() => ({}));
   ok(work.status === 409 && wd.code === 'workspace_restore_failed', 'the machine refuses work on a disk that is not the person\u2019s workspace', wd);
   writeFileSync(join(five, 'stray.txt'), 'written on the empty disk\n');
   await m.onActivityExpired();
   ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), good) === 0, 'and going idle does not save the empty disk over the good copy');
   const restarted = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage }, env);
-  const still = await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+  const still = await restarted.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
   ok(still.status === 409, 'a restart does not forget it - the state is in the object\u2019s own storage', still.status);
   const v = await (await restarted.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
   ok(v.state && v.state.restoreFailed, 'the saved-copies list says what happened', v.state);
@@ -504,7 +525,7 @@ section('A restore that fails stops the machine working, and never saves over th
     await env2.WORKSPACES.put('ws/a1b2c3d4.v/1700000000000.tgz', new Blob([good]).stream(), {});
     const st2 = memStorage(); await st2.put('ws_state', { restoreFailed: { at: 1, why: 'test' } });
     const m2 = new AMVComputer({ id, container: Object.assign(portTo(E.base), { running: true }), storage: st2 }, env2);
-    const rb = await m2.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback'), body: JSON.stringify({ id: '1700000000000' }) }));
+    const rb = await m2.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: '1700000000000' })), body: JSON.stringify({ id: '1700000000000' }) }));
     const rbd = await rb.json();
     ok(rb.status === 200 && rbd.restored && Buffer.compare(Buffer.from(env2.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), good) === 0, 'putting back an earlier copy is the other remedy, and it works', rbd);
     ok(!(await st2.get('ws_state')).restoreFailed, 'and clears the failed state');
@@ -532,7 +553,7 @@ section('A rollback does not throw away running work it could not save');
   /* The running machine's snapshot fails: its bridge answers with a key it does not accept. */
   const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }), storage: memStorage() }, Object.assign({}, env, { AMV_COMPUTER_KEY: KEY }));
   m._bridge = async () => new Response('no', { status: 500 });
-  const r = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback'), body: JSON.stringify({ id: list.versions[0].id }) }));
+  const r = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: list.versions[0].id })), body: JSON.stringify({ id: list.versions[0].id }) }));
   const d = await r.json();
   ok(r.status === 409 && d.code === 'save_failed', 'refused, saying why', d);
   ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), cur) === 0 && !m.destroyed, 'nothing was put back and the machine was not stopped');
@@ -548,7 +569,7 @@ section('Deleting an account reaches the computer Worker');
   const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ALLOWED_ORIGIN: 'https://amv.test',
     AMV_COMPUTER_KEY: KEY,
     AMV_COMPUTER: { idFromName: (n) => n, get: (n) => ({ async fetch(req) {
-      asked.push({ name: n, url: req.url, key: req.headers.get('X-AMV-Bridge-Token'), call: req.headers.get('X-AMV-Computer-Call') });
+      asked.push({ name: n, url: req.url, key: req.headers.get('X-AMV-Bridge-Token'), call: req.headers.get('X-AMV-Computer-Call'), method: req.method, body: await req.clone().text() });
       return new Response(JSON.stringify({ forgotten: true }), { headers: { 'Content-Type': 'application/json' } }); } }) },
     AMV_KV: { async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
       async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } } };
@@ -574,8 +595,8 @@ section('Deleting an account reaches the computer Worker');
   ok(f && /^u:[0-9a-f]{48}$/.test(f.name), 'the machine it asked is named by a hash of the account, never the address', f && f.name);
   /* COMP-006: each call carries a token signed for that machine and that path - verified here as the machine verifies it. */
   const valid = (a) => { const t = String(a.call || '').split('.'); const path = new URL(a.url).pathname;
-    return t.length === 4 && t[0] === 'v1' && +t[1] > Date.now() && +t[1] <= Date.now() + 61000
-      && t[3] === hmacHex(KEY, ['amv-computer-call', 'v1', a.name, path, t[1], t[2]].join('\n')); };
+    return t.length === 4 && t[0] === 'v2' && +t[1] > Date.now() && +t[1] <= Date.now() + 61000
+      && t[3] === hmacHex(KEY, ['amv-computer-call', 'v2', a.name, a.method, path, sha(a.body), t[1], t[2]].join('\n')); };
   ok(asked.length >= 3 && asked.every(valid), 'every call it made carries a token signed for that machine and that path', asked.map(a => [new URL(a.url).pathname, valid(a)]));
   ok(new Set(asked.map(a => String(a.call).split('.')[2])).size === asked.length, 'each with a nonce of its own');
 }
