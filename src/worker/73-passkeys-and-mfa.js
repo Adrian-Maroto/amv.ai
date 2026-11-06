@@ -348,7 +348,7 @@ async function _pkSpend(env, id, purpose, email){
      is written as `kind:id`, and `pkchal:id` is the challenge itself - which
      would then read as already claimed, every time. */
   if(!(await _claimOnce(env, 'pkspent', id, PK_CHALLENGE_S))) return null;
-  try{ await env.AMV_KV.delete('pkchal:' + id); }catch(e){}
+  try{ await env.AMV_KV.delete('pkchal:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   return rec;
 }
 
@@ -565,7 +565,7 @@ async function passkeySignin(request, env){
     return json(FAIL, 401);
   }
   const acct = await DB.get(env, 'acct', em);
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in', { via: 'passkey', name: used.name });
   audit(env, 'passkey_signin', { email: em });
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, (acct && acct.name) || '', await _sessOpen(env, request, em)));
@@ -607,7 +607,7 @@ async function passkeyRemove(request, env){
     a.passkeys = a.passkeys.filter(x => x.id !== id);
   });
   if(r && r.error) return json({ error: r.error === 'last_way_in' ? 'That is the only way into this account, so it cannot be removed. Add another first.' : 'That passkey is not on this account.', code: r.error }, r.status);
-  try{ await env.AMV_KV.delete('pkcred:' + id); }catch(e){}
+  try{ await env.AMV_KV.delete('pkcred:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'passkey_removed', { email: em });
   await _userEvent(env, request, em, 'passkey_removed', { name });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -673,7 +673,7 @@ async function totpConfirm(request, env){
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
   await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
-  try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){}
+  try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });
   return json({ ok: true, recovery: codes, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -733,8 +733,8 @@ async function authLoginMfa(request, env){
   const ok = typeof body.recovery === 'string' ? await _recoverySpend(env, em, body.recovery)
            : await _totpSpend(env, em, String(body.code || ''));
   if(!ok){ audit(env, 'auth_fail', { email: em, reason: 'mfa_wrong' }); return json(FAIL, 401); }
-  try{ await env.AMV_KV.delete('mfachal:' + id); }catch(e){}
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await env.AMV_KV.delete('mfachal:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in', { via: typeof body.recovery === 'string' ? 'recovery code' : 'authenticator app' });
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, rec.name || '', await _sessOpen(env, request, em)));
 }

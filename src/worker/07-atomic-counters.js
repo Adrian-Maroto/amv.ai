@@ -396,7 +396,7 @@ async function counter(env, name, payload) {
     // degradation of a security/cost counter to non-atomic KV - do not do it
     // silently. Alert operators (throttled) so a transient/fault condition that
     // weakens quota enforcement is visible instead of a transparent downgrade.
-    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
+    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) { /* logging: the next lines decide */ }
     /* AMV-032: AND FOR THE OPS WHERE ATOMICITY IS THE WHOLE POINT, DO NOT.
 
        Alerting was the right first step and it is not enough on its own,
@@ -484,7 +484,7 @@ async function _runAlone(env, name, ttlMs) {
 }
 async function _runAloneEnd(env, name, lease) {
   if (!lease || !lease.held || !lease.owner) return;
-  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (e) {}
+  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (_) { /* logging: the audit after it says the same */ }
 }
 async function _counterKVFallback(env, name, payload) {
   const op = payload.op;
@@ -498,7 +498,7 @@ async function _counterKVFallback(env, name, payload) {
      `unavailable` and decide for themselves. */
   const kv = env && env.AMV_KV;
   if (!kv || typeof kv.get !== 'function' || typeof kv.put !== 'function') {
-    try { await alertOnce(env, 'counter_unavailable', 'No counter storage is bound (AMV_COUNTER and AMV_KV are both unusable) - limits and caps cannot be enforced.', 15); } catch (_) {}
+    try { await alertOnce(env, 'counter_unavailable', 'No counter storage is bound (AMV_COUNTER and AMV_KV are both unusable) - limits and caps cannot be enforced.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { allowed: false, value: 0, count: 0, unavailable: true };
   }
   if (op === 'rateCheck') {
@@ -527,7 +527,7 @@ async function _counterKVFallback(env, name, payload) {
     return { allowed: true, value: next };
   }
   if (op === 'lifeAdd' || op === 'lifeGet') {
-    let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) {}
+    let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     if (op === 'lifeGet') return { tally: t };
     t = _lifeApply(t, payload);
     await env.AMV_KV.put('life:' + name, JSON.stringify(t));
@@ -537,7 +537,7 @@ async function _counterKVFallback(env, name, payload) {
   if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
     const now = Date.now();
     const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);
-    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) {}
+    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     const save = (s) => env.AMV_KV.put('ses:' + name, JSON.stringify(s), { expirationTtl: Math.ceil(windowMs / 1000) + 3600 });
     if (op === 'sessionRelease') {
       if (ses && ses.start === payload.start) { ses.count = Math.max(0, ses.count - (Number(payload.amount) || 0)); await save(ses); }
@@ -700,7 +700,7 @@ async function _nonEssentialWrite(env, what) {
         'The daily ceiling on non-essential writes (' + cap + ') is used up, so ' + what +
         ' is being refused to keep sign-ups, sessions and saves working. Either traffic is far ' +
         'higher than expected or somebody is pushing on a public endpoint.', 720);
-    } catch (e) {}
+    } catch (e) { /* logging: it never decides anything */ }
     return false;
   }
   return true;

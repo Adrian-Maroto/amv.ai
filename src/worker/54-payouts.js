@@ -113,7 +113,7 @@ async function _recordPaidForTax(env, email, amount, when) {
        how a filing comes out short, so it is both audited and alerted. */
     audit(env, 'tax_year_write_failed', { email: em, amount: amt, year, error: String((e && e.message) || e) });
     try { await alertOnce(env, 'tax_year_write',
-      'A payout was sent but its calendar-year total could not be updated. The withdraw: record is still the source of truth - reconcile before filing.', 60); } catch (_) {}
+      'A payout was sent but its calendar-year total could not be updated. The withdraw: record is still the source of truth - reconcile before filing.', 60); } catch (_) { /* logging: it never decides anything */ }
     return null;
   }
 }
@@ -286,12 +286,16 @@ async function adminPayouts(request, env) {
   const out = [];
   let cursor;
   let truncated = false;
+  /* A record that does not parse is NAMED in the answer (Nov 3 audit
+     SEC-001): a payout or tax row silently left out of an operator's list
+     is a filing short by exactly that row, with nothing to say so. */
+  const unreadable = [];
   do {
     const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
     for (const k of (page.keys || [])) {
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { out.push(JSON.parse(raw)); } catch (e) {}
+      try { out.push(JSON.parse(raw)); } catch (e) { unreadable.push(k.name); try { audit(env, 'record_corrupt', { key: k.name }); } catch (_) { /* logging */ } }
     }
     cursor = page.list_complete ? undefined : page.cursor;
     if (cursor && out.length >= ADMIN_PAYOUT_SCAN_MAX) { truncated = true; break; }
@@ -314,7 +318,7 @@ async function adminPayouts(request, env) {
     for (const k of (page.keys || [])) {
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { taxRows.push(JSON.parse(raw)); } catch (e) {}
+      try { taxRows.push(JSON.parse(raw)); } catch (e) { unreadable.push(k.name); }
     }
     taxCursor = page.list_complete ? undefined : page.cursor;
     if (taxCursor && taxRows.length >= ADMIN_PAYOUT_SCAN_MAX) { taxTruncated = true; break; }
@@ -369,6 +373,10 @@ async function adminPayouts(request, env) {
         ? 'More sellers were paid this year than this scan reads, so these totals are a floor. The payoutyear: records are complete - raise the scan limit or read them directly before filing.'
         : undefined,
     },
+    /* Records that would not parse, by key - so no total above is taken for
+       complete while one is missing from it. */
+    unreadable: unreadable.slice(0, 50),
+    unreadableCount: unreadable.length,
     autoMaxUSD: PAYOUT_AUTO_MAX_USD,
     kycThresholdUSD: PAYOUT_KYC_THRESHOLD_USD,
     reservePct: PAYOUT_RESERVE_PCT,
@@ -501,7 +509,7 @@ async function adminPayoutMark(request, env) {
            payout after it, which is how the notice stops being read. */
         audit(env, 'tax_threshold_crossed', { seller: rec.seller, year: tax.year, paid: tax.paid });
         try { await notify(env, `${rec.seller} has passed $${TAX_REPORT_THRESHOLD_USD} in payouts for ${tax.year}`
-          + ` ($${tax.paid.toFixed(2)}). Their taxpayer details are needed for reporting.`); } catch (_) {}
+          + ` ($${tax.paid.toFixed(2)}). Their taxpayer details are needed for reporting.`); } catch(_) { /* the tax rows themselves are written; the notice is a convenience */ }
       }
     }
     audit(env, 'payout_settled', { id, seller: rec.seller, amount: rec.amount, status });
@@ -570,7 +578,7 @@ async function _refundRejectedPayout(env, rec) {
         'A rejected payout could not be returned to the seller, so they are still short the amount that was '
         + 'debited when they asked for it. The payout record carries refundDue and settling it again completes '
         + 'the refund without repeating it.', 15);
-    } catch (_) {}
+    } catch (_) { /* logging: it never decides anything */ }
     return false;
   }
   if (landed) delete rec.refundDue;
@@ -750,7 +758,7 @@ async function marketRate(request, env) {
   const preHashed = new Map();
   {
     let seed = {};
-    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch {}
+    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     for (const who of Object.keys(seed)) {
       if (!IS_HASH.test(who)) preHashed.set(who, await _errHash(String(who).toLowerCase()));
     }

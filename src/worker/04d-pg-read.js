@@ -134,7 +134,7 @@ async function _pgProofSet(env, kind, email, epoch, digest){
 }
 async function _pgProofOf(kind, value){ return (await _pgDigest(_pgCanon(kind, value))).slice(0, 40); }
 async function _pgReadTally(env, what, email){
-  try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) {}
+  try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
 }
 
 /* Called by DB.get / DB.getStrict before KV. Returns the record's text when
@@ -152,11 +152,11 @@ async function _pgReadServe(env, kind, id){
     sql = await _pgClient(env);
     value = await _pgReadRow(sql, kind, email);
   } catch (e) {
-    try { audit(env, 'pg_read_fell_back', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
+    try { audit(env, 'pg_read_fell_back', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ }
     await _pgReadTally(env, 'fellback', email);
     return undefined;
   } finally {
-    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
   if ((await _pgProofOf(kind, value)) !== proof) {
     /* The row is not the one that was proved. Not served; KV answers; the
@@ -166,9 +166,9 @@ async function _pgReadServe(env, kind, id){
        served only when it equals the digest, and this one does not. */
     let withdrawn = false;
     try { const r = await counter(env, _pgProofName(kind, email), { op: 'proofFence' }); withdrawn = !!(r && r.ok); } catch (e) { withdrawn = false; }
-    if (!withdrawn) { try { audit(env, 'pg_proof_not_withdrawn', { kind, id: email }); } catch (e) {} }
+    if (!withdrawn) { try { audit(env, 'pg_proof_not_withdrawn', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ } }
     await _pgReadTally(env, 'differed', email);
-    try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch (e) {}
+    try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ }
     _pgReadVerify(env, kind, email);
     return undefined;
   }
@@ -194,7 +194,7 @@ function _pgReadVerify(env, kind, email){
     const kvVal = kvRaw ? JSON.parse(kvRaw) : null;
     const sql = await _pgClient(env);
     let pgVal;
-    try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
     if (_pgCanon(kind, pgVal) === _pgCanon(kind, kvVal)) {
       /* Re-read KV: a write that landed during the comparison removed the
          proof it would otherwise be written over. */
@@ -204,14 +204,14 @@ function _pgReadVerify(env, kind, email){
       return;
     }
     await _pgReadTally(env, 'differed', email);
-    try { audit(env, 'pg_read_differed', { kind, id: email }); } catch (e) {}
+    try { audit(env, 'pg_read_differed', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ }
     try { await alertOnce(env, 'pg_read_differed',
       'Postgres holds an ' + kind + ' record that differs from KV. KV is answering for it, and the step must not grow until every '
-      + 'difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) {}
-  })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+      + 'difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) { /* logging: it never decides anything */ }
+  })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ } })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 /* Called by DB.put / DB.del BEFORE KV is written: the proof goes first. If it
@@ -247,7 +247,7 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
     await _pgMirror(env, kind, email, obj);
     const sql = await _pgClient(env);
     let back;
-    try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
     if (_pgCanon(kind, back) === _pgCanon(kind, obj)) {
       /* Proved under the epoch this write's own fence moved to: if another
          write fenced since, the object refuses and the comparison decides. */
@@ -259,7 +259,7 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
     why = String((e && e.message) || e).slice(0, 160);
   }
   let queued = false;
-  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); queued = true; } catch (_) {}
-  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why, queued }); } catch (_) {}
+  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); queued = true; } catch(_) { /* the intent stays and the cron turns it into a repair */ }
+  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why, queued }); } catch(_) { /* logging: it never decides anything */ }
   return { ok: false, queued };
 }

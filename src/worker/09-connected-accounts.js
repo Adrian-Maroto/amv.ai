@@ -743,7 +743,7 @@ async function connUse(env, email, need, jobId, opts){
       try{ await alertOnce(env, 'connect_key_retired',
         'A stored connection is sealed under a CONNECT_KEY that is no longer configured, so it cannot be '
         + 'read. Put the previous value in CONNECT_KEY_PREV until every connection has been used once, '
-        + 'then remove it. Nothing is lost while the old key exists.', 60); }catch(_a){}
+        + 'then remove it. Nothing is lost while the old key exists.', 60); }catch(_a){ /* logging: it never decides anything */ }
     }
     return { ok:false, code:'unreadable' };
   }
@@ -753,7 +753,7 @@ async function connUse(env, email, need, jobId, opts){
      itself as connections get used, rather than needing a migration job that
      would have to hold every token in memory to run. */
   let reseal = false, refreshed = false;
-  try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){}
+  try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){ /* not resealed now; the next use reseals it */ }
 
   /* Refreshed with a minute to spare, so a token does not expire between this
      check and the request it is about to be used for. */
@@ -780,7 +780,7 @@ async function connUse(env, email, need, jobId, opts){
             const t2 = await connOpen(env, cur.sealed);
             if(t2.access !== tok.access && (!t2.exp || t2.exp - 60000 > Date.now())){ won = { cur, t2 }; break; }
           }
-        }catch(_w){}
+        }catch(_w) { /* not marked now; the next use finds the same answer */ }
       }
       if(!won){
         /* A refresh that fails usually means the person revoked it at the
@@ -788,7 +788,7 @@ async function connUse(env, email, need, jobId, opts){
            a job failing silently every morning for a fortnight - and marked on
            the record as it is now, only if it is still the one that failed. */
         const why = String(d.error||'refresh_failed').slice(0,60);
-        try{ await _connMerge(env, email, (rec) => { if(rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }); }catch(_m){}
+        try{ await _connMerge(env, email, (rec) => { if(rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }); }catch(_m) { /* not marked now; the next use finds the same answer */ }
         audit(env, 'conn_refresh_failed', { by:email, id, why });
         return { ok:false, code:'refresh_failed', id, why };
       }
@@ -1301,7 +1301,7 @@ const CONN_ACTIONS = {
         const after = _docText(await _gJson(token, 'https://docs.googleapis.com/v1/documents/' + id + '?fields=body', 'docs'));
         verified = counts.every((c, i) => !c.count || !reps[i].to || after.includes(reps[i].to))
                 && (!append || after.includes(append.trim()));
-      }catch(e){}
+      }catch(e){ /* not read back: verified stays null, reported as unconfirmed */ }
       return { id, replaced: counts, appended: !!append, verified,
                link: 'https://docs.google.com/document/d/' + id + '/edit' };
     },
@@ -1361,7 +1361,7 @@ const CONN_ACTIONS = {
           const g = (got[i] || [])[j];
           return String(c) === '' ? (g == null || String(g) === '') : String(g) === String(c);
         }));
-      }catch(e){}
+      }catch(e){ /* not read back: verified stays null, reported as unconfirmed */ }
       return { id, range: res.updatedRange || range, updatedCells: +res.updatedCells || 0, verified,
                link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit', _prior: prior, _wrote: clean };
     },
@@ -1536,7 +1536,7 @@ const CONN_ACTIONS = {
         const g = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(branch), { headers: H }, 15000);
         if(g.status === 404) verified = false;
         else if(g.ok) verified = ((await g.json().catch(()=>({}))).object || {}).sha === commit.sha;
-      }catch(e){}
+      }catch(e) { /* not read back: the push is reported as unconfirmed */ }
       return { repo, branch, base, files: files.length, deleted: deletes.length, from: startSha.slice(0, 7), commit: commit.sha.slice(0, 7),
                url: 'https://github.com/' + repo + '/tree/' + branch, verified, _sha: commit.sha };
     },

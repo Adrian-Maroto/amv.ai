@@ -212,7 +212,7 @@ async function _referralMaybeConvert(env, email) {
   if (!pend || !pend.referrer || !pend.code) { await _referralClearPending(env, em); return null; }
 
   const drop = async (reason) => {
-    try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) {}
+    try { await env.AMV_KV.delete(`refpend:${em}`); } catch(e) { /* the pending referral is cleared just below too */ }
     await _referralClearPending(env, em);
     audit(env, 'referral_rejected', { referrer: pend.referrer, reason });
     return null;
@@ -254,7 +254,7 @@ async function _referralMaybeConvert(env, email) {
   await _referralClearPending(env, em);
   const paidReferrer = await _referralGrant(env, pend.referrer, 'invited');
   const paidJoiner   = await _referralGrant(env, em, 'joined');
-  try { await _recordGrowth(env, 'referral'); } catch (e) {}
+  try { await _recordGrowth(env, 'referral'); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
   audit(env, 'referral_converted', { referrer: pend.referrer, email: em, paidReferrer, paidJoiner });
   return { paidReferrer, paidJoiner, tokens: REFERRAL_REWARD_TOKENS };
 }
@@ -668,7 +668,7 @@ async function setEntitlement(env, email, plan, extra = {}) {
     if (_planPriceUSD(_planOf(ent), ent.custom) > 0 && _planPriceUSD(_planOf(prev), prev.custom) === 0) {
       await _funnelMark(env, em, 'paid');
     }
-  } catch (e) {}
+  } catch(e) { /* a count for the owner's figures: never decides access or money */ }
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -

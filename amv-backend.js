@@ -1024,10 +1024,10 @@ async function _revRead(env, kind, id, raw){
   let blob = null;
   try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; }
   if(blob != null && (await _revDigest(blob)) === st.digest){
-    try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) {}
+    try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
   }
-  try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) {}
+  try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) { /* logging: it never decides anything */ }
   return raw;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
@@ -1101,7 +1101,7 @@ const DB = {
           'A stored ' + kind + ' record could not be parsed, so it reads as missing. '
           + 'Something wrote invalid JSON - a truncated write, or a restore from a bad export. '
           + 'The account behind it will behave as though the record does not exist until it is repaired.', 30);
-      } catch (_) {}
+      } catch(_) { /* logging: it never decides anything */ }
       return null;
     }
   },
@@ -1148,7 +1148,7 @@ const DB = {
           'A stored ' + kind + ' record could not be parsed. This one decides whether somebody is allowed '
           + 'something, so it is being treated as unreadable rather than as absent - the request was refused '
           + 'instead of being granted by default. Repair the record.', 30);
-      } catch (_) {}
+      } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`${kind}:${id}`, 'invalid JSON');
     }
   },
@@ -1159,7 +1159,7 @@ const DB = {
       if(j.length * 3 > D1_ROW_MAX_BYTES){
         const bytes = new TextEncoder().encode(j).length;
         if(bytes > D1_ROW_MAX_BYTES){
-          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch (e) {}
+          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch(e) { /* logging: it never decides anything */ }
           throw new Error('The ' + kind + ' record is ' + bytes + ' bytes, over the database\'s ' + D1_ROW_MAX_BYTES + '-byte limit for one record. It has to be split before it can be stored here.');
         }
       }
@@ -1248,17 +1248,17 @@ const DB = {
       await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
       const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
       if(!cas || !cas.ok){
-        try { await env.AMV_KV.delete(blob); } catch(_) {}
+        try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
         return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
       }
       /* Committed. The copy is for readers; if it cannot be written, the
          committed value is kept with no expiry until a reader repairs it. */
       try { await env.AMV_KV.put(`${kind}:${id}`, j); }
       catch(e){
-        try { await env.AMV_KV.put(blob, j); } catch(_) {}
-        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) {}
+        try { await env.AMV_KV.put(blob, j); } catch(_) { /* said by the audit on the next line */ }
+        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
       }
-      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) {} }
+      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
       await _forgetKindEmpty(env, kind);
       return { ok: true, guarded: true };
     }
@@ -1292,7 +1292,7 @@ const DB = {
       try { out.push({ id, value: JSON.parse(raw) }); }
       catch (e) {
         unreadable++;
-        try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes: String(raw).length, where: 'scan' }); } catch (_) {}
+        try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes: String(raw).length, where: 'scan' }); } catch(_) { /* logging: it never decides anything */ }
       }
     };
     if(this._hasD1(env)){
@@ -1345,13 +1345,13 @@ const DB = {
     if(this._hasD1(env)){
       const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
       const rs = rows.results || [];
-      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch (e) {} }
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
       return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
     }
     const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
     for(const k of page.keys){
       const raw = await env.AMV_KV.get(k.name);
-      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch (e) {} }
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
     }
     return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
   },
@@ -1514,7 +1514,7 @@ async function scan(env, kind, limit, what) {
         + 'so everything past that point was not looked at. Whatever this scan is responsible for has NOT '
         + 'been done for those records, and will not be on the next run either - the cut-off is in the same '
         + 'place every time. Raise the limit for this scan or page it.', 12 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
   }
   /* Only a walk that found nothing may claim the namespace is empty.
 
@@ -1537,7 +1537,7 @@ async function scan(env, kind, limit, what) {
         + 'would not parse, so they were skipped. They still EXIST - whatever this scan does has not been '
         + 'done for them, and a backup taken now will not contain them. Check the audit log for '
         + 'record_corrupt entries naming this kind.', 12 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
   }
   /* Only a walk that found nothing may claim the namespace is empty - and a
      walk that skipped something did not find nothing. Without this, a kind
@@ -1929,7 +1929,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
     try {
       await alertOnce(env, 'spend_gate_blind',
         'The spend counter is unreachable, so the daily ceiling is not being enforced. Paid work is still running; free work is being refused until it recovers.', 30);
-    } catch (_) {}
+    } catch (_) { /* logging: it never decides anything */ }
     if (!paying) {
       await _releaseSpendGate(env, book);
       return json({ error: 'AMV is at capacity for free accounts right now. Paid plans are running normally - please try again shortly.',
@@ -1947,7 +1947,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
                   code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   audit(env, 'global_cap_hit', { what, value: res && res.value, cap });
-  try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) {}
+  try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) { /* logging: it never decides anything */ }
   return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
               { 'Retry-After': _retryAfterMidnight() });
 }
@@ -2150,8 +2150,8 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
    recorded and the operator told, so it can be put right. The gate's
    "no money or permission write swallowed silently" stage keeps it that way. */
 async function _writeFailed(env, where, e) {
-  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
-  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) {}
+  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ }
+  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) { /* logging: it never decides anything */ }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2219,13 +2219,13 @@ async function _pgIntent(env, kind, id){
        written, so refusing here changes nothing. */
     try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why: 'intent not recorded' })); }
     catch (_) {
-      try { audit(env, 'pg_intent_failed', { kind, id }); } catch (__) {}
+      try { audit(env, 'pg_intent_failed', { kind, id }); } catch(__) { /* logging: it never decides anything */ }
       throw new Error('pg_write_unrecorded');
     }
     return null;
   }
 }
-async function _pgIntentDone(env, ik){ if (ik) { try { await env.AMV_KV.delete(ik); } catch (e) {} } }
+async function _pgIntentDone(env, ik){ if (ik) { try { await env.AMV_KV.delete(ik); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } } }
 /* The cron's half: intents the background never finished become repairs. */
 async function runPgIntentSweep(env, atMs){
   if (!_pgOn(env)) return { on: false };
@@ -2235,7 +2235,7 @@ async function runPgIntentSweep(env, atMs){
     const page = await env.AMV_KV.list({ prefix: 'pgintent:', cursor, limit: 500 });
     for (const k of (page.keys || [])) {
       const parts = k.name.split(':');
-      if (parts.length < 4) { try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+      if (parts.length < 4) { try { await env.AMV_KV.delete(k.name); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } continue; }
       const kind = parts[1], id = parts.slice(2, -1).join(':');
       let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; }
       if (at && now - at < PG_INTENT_STALE_MS) { open++; continue; }
@@ -2247,7 +2247,7 @@ async function runPgIntentSweep(env, atMs){
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
-  if (moved) { try { audit(env, 'pg_intent_unfinished', { moved }); } catch (e) {} }
+  if (moved) { try { audit(env, 'pg_intent_unfinished', { moved }); } catch(e) { /* logging: it never decides anything */ } }
   return { on: true, moved, open };
 }
 
@@ -2260,15 +2260,15 @@ function _pgAfter(env, kind, id, obj, ik){
     .then(() => _pgIntentDone(env, ik))
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);
-      try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
-      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); await _pgIntentDone(env, ik); } catch (_) {}
+      try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch(_) { /* logging: it never decides anything */ }
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); await _pgIntentDone(env, ik); } catch(_) { /* the intent stays and the cron turns it into a repair */ }
       try { await alertOnce(env, 'pg_mirror_failed',
         'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
-        + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}
+        + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) { /* logging: it never decides anything */ }
     })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 /* For tests and for the backfill: wait for every mirror write in flight. */
 async function _pgSettle(){ while (_pgInFlight.size) await Promise.allSettled([..._pgInFlight]); }
@@ -2331,7 +2331,7 @@ async function _pgMirror(env, kind, email, obj, sqlIn){
       return;
     }
   } finally {
-    if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
 }
 
@@ -2412,15 +2412,15 @@ function _pgLedger(env, row){
   const p = (async () => {
     const sql = await _pgClient(env);
     try { return await _pgLedgerInsert(sql, row); }
-    finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
-    try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
-    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch (_) {}
-    try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) {}
+    try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch(_) { /* logging: it never decides anything */ }
+    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch(_) { /* the intent stays and the cron turns it into a repair */ }
+    try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) { /* logging: it never decides anything */ }
   }).finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 /* The one INSERT for a ledger row, live and in the backfill alike: a row
@@ -2461,7 +2461,7 @@ function _pgSellerLedgerRow(email, tx){
 function _pgSellerRow(env, email, tx){
   const row = _pgSellerLedgerRow(email, tx);
   if (!row) return;
-  if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch (e) {} return; }
+  if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch(e) { /* logging: it never decides anything */ } return; }
   _pgLedger(env, row);
 }
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2746,7 +2746,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     await _pgLedgerInsert(sql, kind === 'credit'
       ? { table: 'credit', email: w.email, currency: 'USD', amount, reason: 'correction', key, note: 'subject:' + w.who + ' opening' }
       : { table: 'seller', email: w.email, currency: 'USD', amount, reason: 'correction', key });
-    try { audit(env, 'pg_money_opening', { kind, id: w.who, amount }); } catch (e) {}
+    try { audit(env, 'pg_money_opening', { kind, id: w.who, amount }); } catch(e) { /* logging: it never decides anything */ }
     return 'copied';
   }
   if (phase === 'reconcredit' || phase === 'reconseller') {
@@ -2759,7 +2759,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     if (Math.abs(live - led) < PG_MONEY_TOLERANCE[kind]) { await sql`DELETE FROM migration_cursor WHERE kind = ${tag}`; return 'same'; }
     await sql`INSERT INTO migration_cursor (kind, cursor, copied, updated_at) VALUES (${tag}, ${String(_pgR6(live - led))}, 0, now())
               ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = now()`;
-    try { audit(env, 'pg_money_differs', { kind, id: w.who, live, ledger: led }); } catch (e) {}
+    try { audit(env, 'pg_money_differs', { kind, id: w.who, live, ledger: led }); } catch(e) { /* logging: it never decides anything */ }
     return 'mismatched';
   }
   if (phase === 'verify') {
@@ -2770,7 +2770,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
        history (Nov 1 audit DATA-010). */
     if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${diff.join(',').slice(0, 200)} WHERE email = ${email}`;
-    try { audit(env, 'pg_backfill_mismatch', { id: email, fields: diff.join(',') }); } catch (e) {}
+    try { audit(env, 'pg_backfill_mismatch', { id: email, fields: diff.join(',') }); } catch(e) { /* logging: it never decides anything */ }
     return 'mismatched';
   }
   return 'skipped';
@@ -2806,13 +2806,13 @@ async function runPgBackfill(env, opts){
           } catch (e) {
             t.failed++;
             const why = String((e && e.message) || e).slice(0, 160);
-            try { audit(env, 'pg_backfill_failed', { phase, key: k.name, error: why }); } catch (_) {}
+            try { audit(env, 'pg_backfill_failed', { phase, key: k.name, error: why }); } catch(_) { /* logging: it never decides anything */ }
             /* A record that would not copy goes on the repair list, which is
                worked after it - so one bad record never stops the run. A
                repair that fails again stays where it is. */
             if (phase !== 'repair' && phase !== 'verify') {
               const kind = phase === 'wallet' ? null : phase;
-              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {} }
+              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch(_) { /* the intent stays and the cron turns it into a repair */ } }
             }
           }
         }
@@ -2822,7 +2822,7 @@ async function runPgBackfill(env, opts){
         cur = { cursor: finished ? 'done' : page.cursor, copied: cur.copied + n };
         if (!(await _pgBackfillSaveHeld(sql, me, phase, cur.cursor, n))) {
           held = false;
-          try { audit(env, 'pg_backfill_lease_lost', { phase }); } catch (_) {}
+          try { audit(env, 'pg_backfill_lease_lost', { phase }); } catch(_) { /* logging: it never decides anything */ }
           return { on: true, state: 'running', leaseLost: true, ...t };
         }
         if (finished || Date.now() - started >= sliceMs) break;
@@ -2836,11 +2836,11 @@ async function runPgBackfill(env, opts){
     const clean = !(left.keys || []).length && !bad[0].n && !money[0].n;
     try { await alertOnce(env, 'pg_backfill_done', clean
       ? 'The Postgres backfill finished: every account was read back and matches, every balance reconciles to the cent, and the repair list is empty. Step 4 (shadow reads) can start.'
-      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ, ' + money[0].n + ' balance(s) do not reconcile, and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait; a restart measures balances that moved again.', 60); } catch (e) {}
+      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ, ' + money[0].n + ' balance(s) do not reconcile, and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait; a restart measures balances that moved again.', 60); } catch(e) { /* logging: it never decides anything */ }
     return { on: true, state: 'done', clean, ...t };
   } finally {
-    if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) {} }
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) { /* a lock that expires on its own if this fails */ } }
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -2902,7 +2902,7 @@ async function pgBackfillRoute(request, env){
       notCopied: 'Credit packs bought before step 2 and seller lines older than the 500 a history keeps are not copied line by line: each balance has one opening row instead, reconciled to the cent.',
     });
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -2934,7 +2934,7 @@ async function _pgCutover(env){
   } catch (e) {
     blockers.push('postgres did not answer');
   } finally {
-    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
   try { const r = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 }); if ((r.keys || []).length) blockers.push('repairs waiting'); } catch (e) { blockers.push('repair list unreadable'); }
   try {
@@ -3009,10 +3009,10 @@ function _pgShadowRead(env, kind, id, raw){
   if (_pgShadowSeen.size > 5000) _pgShadowSeen.clear();
   _pgShadowSeen.set(key, now);
   const p = _pgShadowCompare(env, kind, email, raw)
-    .catch((e) => { try { audit(env, 'pg_shadow_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+    .catch((e) => { try { audit(env, 'pg_shadow_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ } })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 const _pgShadowAs = (kind, value) => kind === 'acct' ? { acct: value } : kind === 'ent' ? { ent: value } : { keys: value };
@@ -3033,18 +3033,18 @@ async function _pgShadowCompare(env, kind, email, raw){
       diff = await _pgAccountDiff(sql, email, _pgShadowAs(kind, await _pgShadowKV(env, kind, email)), [kind]);
     }
     const day = todayKey();
-    try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) {}
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
     if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     const fields = kind + ':' + diff.join(',');
-    try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) {}
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${fields.slice(0, 200)} WHERE email = ${email}`;
-    try { audit(env, 'pg_shadow_mismatch', { kind, id: email, fields: diff.join(',') }); } catch (e) {}
+    try { audit(env, 'pg_shadow_mismatch', { kind, id: email, fields: diff.join(',') }); } catch(e) { /* logging: it never decides anything */ }
     try { await alertOnce(env, 'pg_shadow_mismatch',
       'A shadow read found Postgres differing from KV (' + fields + '). Nobody saw it - KV answered - but step 5 must not start until '
-      + 'every difference is explained. GET /admin/pg/shadow lists them.', 60); } catch (e) {}
+      + 'every difference is explained. GET /admin/pg/shadow lists them.', 60); } catch (e) { /* logging: it never decides anything */ }
     return 'differed';
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -3076,7 +3076,7 @@ async function pgShadowRoute(request, env){
     return json({ on: true, cohort, days, accountsDiffering: n[0].n,
       differing: rows.map(r => ({ email: r.email, mismatches: r.mismatches, last: r.last_mismatch })) });
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3215,7 +3215,7 @@ async function _pgProofSet(env, kind, email, epoch, digest){
 }
 async function _pgProofOf(kind, value){ return (await _pgDigest(_pgCanon(kind, value))).slice(0, 40); }
 async function _pgReadTally(env, what, email){
-  try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) {}
+  try { await _tallyAdd(env, 'pgread:' + todayKey() + ':' + what, email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
 }
 
 /* Called by DB.get / DB.getStrict before KV. Returns the record's text when
@@ -3233,11 +3233,11 @@ async function _pgReadServe(env, kind, id){
     sql = await _pgClient(env);
     value = await _pgReadRow(sql, kind, email);
   } catch (e) {
-    try { audit(env, 'pg_read_fell_back', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
+    try { audit(env, 'pg_read_fell_back', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ }
     await _pgReadTally(env, 'fellback', email);
     return undefined;
   } finally {
-    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
   if ((await _pgProofOf(kind, value)) !== proof) {
     /* The row is not the one that was proved. Not served; KV answers; the
@@ -3247,9 +3247,9 @@ async function _pgReadServe(env, kind, id){
        served only when it equals the digest, and this one does not. */
     let withdrawn = false;
     try { const r = await counter(env, _pgProofName(kind, email), { op: 'proofFence' }); withdrawn = !!(r && r.ok); } catch (e) { withdrawn = false; }
-    if (!withdrawn) { try { audit(env, 'pg_proof_not_withdrawn', { kind, id: email }); } catch (e) {} }
+    if (!withdrawn) { try { audit(env, 'pg_proof_not_withdrawn', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ } }
     await _pgReadTally(env, 'differed', email);
-    try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch (e) {}
+    try { audit(env, 'pg_read_unproved_row', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ }
     _pgReadVerify(env, kind, email);
     return undefined;
   }
@@ -3275,7 +3275,7 @@ function _pgReadVerify(env, kind, email){
     const kvVal = kvRaw ? JSON.parse(kvRaw) : null;
     const sql = await _pgClient(env);
     let pgVal;
-    try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    try { pgVal = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
     if (_pgCanon(kind, pgVal) === _pgCanon(kind, kvVal)) {
       /* Re-read KV: a write that landed during the comparison removed the
          proof it would otherwise be written over. */
@@ -3285,14 +3285,14 @@ function _pgReadVerify(env, kind, email){
       return;
     }
     await _pgReadTally(env, 'differed', email);
-    try { audit(env, 'pg_read_differed', { kind, id: email }); } catch (e) {}
+    try { audit(env, 'pg_read_differed', { kind, id: email }); } catch(e) { /* logging: it never decides anything */ }
     try { await alertOnce(env, 'pg_read_differed',
       'Postgres holds an ' + kind + ' record that differs from KV. KV is answering for it, and the step must not grow until every '
-      + 'difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) {}
-  })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+      + 'difference is explained. GET /admin/pg/shadow counts them.', 60); } catch (e) { /* logging: it never decides anything */ }
+  })().catch((e) => { try { audit(env, 'pg_read_verify_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ } })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 /* Called by DB.put / DB.del BEFORE KV is written: the proof goes first. If it
@@ -3328,7 +3328,7 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
     await _pgMirror(env, kind, email, obj);
     const sql = await _pgClient(env);
     let back;
-    try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
     if (_pgCanon(kind, back) === _pgCanon(kind, obj)) {
       /* Proved under the epoch this write's own fence moved to: if another
          write fenced since, the object refuses and the comparison decides. */
@@ -3340,8 +3340,8 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
     why = String((e && e.message) || e).slice(0, 160);
   }
   let queued = false;
-  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); queued = true; } catch (_) {}
-  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why, queued }); } catch (_) {}
+  try { await env.AMV_KV.put('pgrepair:' + kind + ':' + email, JSON.stringify({ at: Date.now(), why })); queued = true; } catch(_) { /* the intent stays and the cron turns it into a repair */ }
+  try { audit(env, 'pg_write_through_failed', { kind, id: email, error: why, queued }); } catch(_) { /* logging: it never decides anything */ }
   return { ok: false, queued };
 }
 /* =====================================================================
@@ -4195,7 +4195,7 @@ async function counter(env, name, payload) {
     // degradation of a security/cost counter to non-atomic KV - do not do it
     // silently. Alert operators (throttled) so a transient/fault condition that
     // weakens quota enforcement is visible instead of a transparent downgrade.
-    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) {}
+    try { if (env.AMV_COUNTER) await alertOnce(env, 'counter_degraded', 'Atomic counter DO failed - falling back to non-atomic KV, quota enforcement is weakened: ' + String((e && e.message) || e), 15); } catch (_) { /* logging: the next lines decide */ }
     /* AMV-032: AND FOR THE OPS WHERE ATOMICITY IS THE WHOLE POINT, DO NOT.
 
        Alerting was the right first step and it is not enough on its own,
@@ -4283,7 +4283,7 @@ async function _runAlone(env, name, ttlMs) {
 }
 async function _runAloneEnd(env, name, lease) {
   if (!lease || !lease.held || !lease.owner) return;
-  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (e) {}
+  try { await counter(env, 'lease:' + name, { op: 'release', owner: lease.owner }); } catch (_) { /* logging: the audit after it says the same */ }
 }
 async function _counterKVFallback(env, name, payload) {
   const op = payload.op;
@@ -4297,7 +4297,7 @@ async function _counterKVFallback(env, name, payload) {
      `unavailable` and decide for themselves. */
   const kv = env && env.AMV_KV;
   if (!kv || typeof kv.get !== 'function' || typeof kv.put !== 'function') {
-    try { await alertOnce(env, 'counter_unavailable', 'No counter storage is bound (AMV_COUNTER and AMV_KV are both unusable) - limits and caps cannot be enforced.', 15); } catch (_) {}
+    try { await alertOnce(env, 'counter_unavailable', 'No counter storage is bound (AMV_COUNTER and AMV_KV are both unusable) - limits and caps cannot be enforced.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { allowed: false, value: 0, count: 0, unavailable: true };
   }
   if (op === 'rateCheck') {
@@ -4326,7 +4326,7 @@ async function _counterKVFallback(env, name, payload) {
     return { allowed: true, value: next };
   }
   if (op === 'lifeAdd' || op === 'lifeGet') {
-    let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) {}
+    let t = null; try { t = JSON.parse(await env.AMV_KV.get('life:' + name) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     if (op === 'lifeGet') return { tally: t };
     t = _lifeApply(t, payload);
     await env.AMV_KV.put('life:' + name, JSON.stringify(t));
@@ -4336,7 +4336,7 @@ async function _counterKVFallback(env, name, payload) {
   if (op === 'session' || op === 'sessionGet' || op === 'sessionRelease') {
     const now = Date.now();
     const windowMs = Math.max(60000, Number(payload.windowMs) || 5 * 3600000);
-    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) {}
+    let ses = null; try { ses = JSON.parse(await env.AMV_KV.get('ses:' + name) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     const save = (s) => env.AMV_KV.put('ses:' + name, JSON.stringify(s), { expirationTtl: Math.ceil(windowMs / 1000) + 3600 });
     if (op === 'sessionRelease') {
       if (ses && ses.start === payload.start) { ses.count = Math.max(0, ses.count - (Number(payload.amount) || 0)); await save(ses); }
@@ -4499,7 +4499,7 @@ async function _nonEssentialWrite(env, what) {
         'The daily ceiling on non-essential writes (' + cap + ') is used up, so ' + what +
         ' is being refused to keep sign-ups, sessions and saves working. Either traffic is far ' +
         'higher than expected or somebody is pushing on a public endpoint.', 720);
-    } catch (e) {}
+    } catch (e) { /* logging: it never decides anything */ }
     return false;
   }
   return true;
@@ -5592,7 +5592,7 @@ async function connUse(env, email, need, jobId, opts){
       try{ await alertOnce(env, 'connect_key_retired',
         'A stored connection is sealed under a CONNECT_KEY that is no longer configured, so it cannot be '
         + 'read. Put the previous value in CONNECT_KEY_PREV until every connection has been used once, '
-        + 'then remove it. Nothing is lost while the old key exists.', 60); }catch(_a){}
+        + 'then remove it. Nothing is lost while the old key exists.', 60); }catch(_a){ /* logging: it never decides anything */ }
     }
     return { ok:false, code:'unreadable' };
   }
@@ -5602,7 +5602,7 @@ async function connUse(env, email, need, jobId, opts){
      itself as connections get used, rather than needing a migration job that
      would have to hold every token in memory to run. */
   let reseal = false, refreshed = false;
-  try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){}
+  try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){ /* not resealed now; the next use reseals it */ }
 
   /* Refreshed with a minute to spare, so a token does not expire between this
      check and the request it is about to be used for. */
@@ -5629,7 +5629,7 @@ async function connUse(env, email, need, jobId, opts){
             const t2 = await connOpen(env, cur.sealed);
             if(t2.access !== tok.access && (!t2.exp || t2.exp - 60000 > Date.now())){ won = { cur, t2 }; break; }
           }
-        }catch(_w){}
+        }catch(_w) { /* not marked now; the next use finds the same answer */ }
       }
       if(!won){
         /* A refresh that fails usually means the person revoked it at the
@@ -5637,7 +5637,7 @@ async function connUse(env, email, need, jobId, opts){
            a job failing silently every morning for a fortnight - and marked on
            the record as it is now, only if it is still the one that failed. */
         const why = String(d.error||'refresh_failed').slice(0,60);
-        try{ await _connMerge(env, email, (rec) => { if(rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }); }catch(_m){}
+        try{ await _connMerge(env, email, (rec) => { if(rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }); }catch(_m) { /* not marked now; the next use finds the same answer */ }
         audit(env, 'conn_refresh_failed', { by:email, id, why });
         return { ok:false, code:'refresh_failed', id, why };
       }
@@ -6150,7 +6150,7 @@ const CONN_ACTIONS = {
         const after = _docText(await _gJson(token, 'https://docs.googleapis.com/v1/documents/' + id + '?fields=body', 'docs'));
         verified = counts.every((c, i) => !c.count || !reps[i].to || after.includes(reps[i].to))
                 && (!append || after.includes(append.trim()));
-      }catch(e){}
+      }catch(e){ /* not read back: verified stays null, reported as unconfirmed */ }
       return { id, replaced: counts, appended: !!append, verified,
                link: 'https://docs.google.com/document/d/' + id + '/edit' };
     },
@@ -6210,7 +6210,7 @@ const CONN_ACTIONS = {
           const g = (got[i] || [])[j];
           return String(c) === '' ? (g == null || String(g) === '') : String(g) === String(c);
         }));
-      }catch(e){}
+      }catch(e){ /* not read back: verified stays null, reported as unconfirmed */ }
       return { id, range: res.updatedRange || range, updatedCells: +res.updatedCells || 0, verified,
                link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit', _prior: prior, _wrote: clean };
     },
@@ -6385,7 +6385,7 @@ const CONN_ACTIONS = {
         const g = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(branch), { headers: H }, 15000);
         if(g.status === 404) verified = false;
         else if(g.ok) verified = ((await g.json().catch(()=>({}))).object || {}).sha === commit.sha;
-      }catch(e){}
+      }catch(e) { /* not read back: the push is reported as unconfirmed */ }
       return { repo, branch, base, files: files.length, deleted: deletes.length, from: startSha.slice(0, 7), commit: commit.sha.slice(0, 7),
                url: 'https://github.com/' + repo + '/tree/' + branch, verified, _sha: commit.sha };
     },
@@ -6693,7 +6693,7 @@ const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 
 /* How long a write's answer is kept under its Idempotency-Key (connAct). */
 const ACT_IDEM_TTL_S = 86400;
 async function _actCount(env, outcome, who){
-  try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) {}
+  try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
 }
 async function _actOutcomes(env, month){
   const out = {};
@@ -7531,7 +7531,7 @@ async function authSsoFinish(request, env){
   const acct = fed.acct, created = fed.created;
   if(created){
     try{ await _tallyAdd(env, 'popaccounts', email, 1); }catch(e){ /* best-effort: a public count of accounts */ }
-    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
+    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){ /* logging: it never decides anything */ } }
   }
   /* Into the company's team, if there is a seat. No seat is a refusal, not a
      personal account: the company is paying for these, and somebody signing in
@@ -7556,7 +7556,7 @@ async function authSsoFinish(request, env){
       await env.AMV_KV.put('userteam:' + email, team.id);
       await _setUserTeam(env, email, team.id);
     }catch(e){
-      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){}
+      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){ audit(env, 'team_join_rollback_failed', { team: team.id, email, via: 'sso' }); }
       return json({ error:'AMV could not finish signing you in. Nothing was changed - please try again.', code:'join_incomplete' }, 503);
     }
     if(joined && joined.joined) await _teamAudit(env, team, email, 'member_joined', { via:'sso' });
@@ -17606,7 +17606,7 @@ async function backupExport(request, env){
         try { await alertOnce(env, 'backup_failed',
           'A backup export failed part-way through and was abandoned rather than saved short. '
           + (failed.length ? 'Could not read: ' + failed.join(', ') + '. ' : '')
-          + 'There is no usable backup from this attempt.', 30); } catch (_) {}
+          + 'There is no usable backup from this attempt.', 30); } catch (_) { /* logging: it never decides anything */ }
         /* Errors the stream. A download that stops mid-file is a download the
            operator can SEE failed - which a quietly short one is not. */
         controller.error(e);
@@ -17681,7 +17681,7 @@ async function _restoreEntries(env, entries, mode, t){
          empty would leave them unscanned until the marker aged out. An hour of
          lateness rather than lost work, but a restore is run during an
          incident, which is the worst hour to add one to. */
-      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
+      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){ /* the empty marker ages out within the hour, as said above */ }
     restored++;
   }
   Object.assign(t, { restored, skipped, refused, unrestorable, heldForward });
@@ -17816,7 +17816,7 @@ async function backupImport(request, env){
     try { await alertOnce(env, 'restore_incomplete',
       'A backup restore finished with ' + unrestorable + ' record(s) that could NOT be written: '
       + lost.slice(0, 5).join(', ') + (lost.length > 5 ? ' and more' : '')
-      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) {}
+      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) { /* logging: it never decides anything */ }
     return json({ ok:false, code:'restore_incomplete', mode, restored, skipped,
       refused, unrestorable, lost, heldForward,
       error: unrestorable + ' record(s) in this snapshot could not be restored, so the store is '
@@ -17943,7 +17943,7 @@ async function _nightlyBackupSlice(env, atMs){
     if (!y || !y.done) {
       try { await alertOnce(env, 'nightly_backup_late',
         'Last night’s backup (' + yesterday + ') did not finish' + (y && y.failed ? ': ' + y.failed : '') + '. '
-        + 'The newest complete one is still in the backups bucket; tonight’s starts on its own.', 12 * 60); } catch (e) {}
+        + 'The newest complete one is still in the backups bucket; tonight’s starts on its own.', 12 * 60); } catch (e) { /* logging: it never decides anything */ }
     }
   }
 
@@ -17970,7 +17970,7 @@ async function _nightlyBackupSlice(env, atMs){
         audit(env, 'nightly_backup_failed', { day, key: k.name, bytes: raw.length });
         try { await alertOnce(env, 'nightly_backup_failed',
           'Tonight’s backup was abandoned: ' + st.failed + ', so it could not have been restored in full. '
-          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) {}
+          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
         return { on: true, day, failed: st.failed };
       }
       lines.push(JSON.stringify({ k: k.name, v: raw }));
@@ -18095,7 +18095,7 @@ async function _nightlyDrillSlice(env, day){
   const r = await _restoreFromNight(env, day, (run && run.next) || 0, 'verify');
   const body = await r.json().catch(() => ({}));
   if (body.more) return { drill: 'partial', through: body.nextPart };
-  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) {} }
+  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) { /* logging: it never decides anything */ } }
   return { drill: body.ok ? 'sound' : 'unsound' };
 }
 /* WHAT "A RECENT BACKUP EXISTS" MEANS (Nov 3 audit REL-017). Not that a
@@ -18241,15 +18241,15 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
     const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part));
     if (!o) {
       /* The night is no longer whole: whatever drill said otherwise is void. */
-      try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
-      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' is missing from the bucket.', 5); } catch (e) {}
+      try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' is missing from the bucket.', 5); } catch (e) { /* logging: it never decides anything */ }
       return json({ ok: false, code: 'restore_incomplete', error: 'Part ' + part + ' of the ' + day + ' backup is missing, so the restore stopped there. ' + (drill ? 'Run the drill again once it is back.' : 'Parts before it were restored; run a drill again before continuing.'), ...t, nextPart: part }, 422);
     }
     const text = await o.text();
     if (sums && (await _sha256Hex(text)) !== sums[part]) {
       if (drill) { t.badParts.push(part); continue; }
-      try { await env.AMV_KV.delete(_drillKey(day)); } catch (e) {}
-      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' no longer matches its checksum.', 5); } catch (e) {}
+      try { await env.AMV_KV.delete(_drillKey(day)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' no longer matches its checksum.', 5); } catch (e) { /* logging: it never decides anything */ }
       return json({ ok: false, code: 'restore_checksum', error: 'Part ' + part + ' of the ' + day + ' backup no longer matches its checksum, so the restore stopped there.', ...t, nextPart: part }, 422);
     }
     const entries = [];
@@ -18284,7 +18284,7 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
       await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(Object.assign({}, acc, { next: part })), { expirationTtl: 86400 });
       return json({ ...base, more: true, nextPart: part }, 202);
     }
-    try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
+    try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     const whole = prior || !(parseInt(fromPart, 10) > 0);
     if (sound && whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
     else if (whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: false, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
@@ -18415,7 +18415,7 @@ async function authResetCode(request, env) {
       try { await alertOnce(env, 'reset_delivery',
         'Password reset codes are not being delivered - the email provider refused or did not answer. '
         + 'Nobody can reset a password until this is fixed, and the reset screen cannot say so, '
-        + 'because saying so would tell strangers which addresses have accounts.', 30); } catch (e) {}
+        + 'because saying so would tell strangers which addresses have accounts.', 30); } catch (e) { /* logging: it never decides anything */ }
     }
   }
 
@@ -18506,7 +18506,7 @@ async function authResetVerify(request, env) {
   audit(env, 'reset_code_ok', { email });
   /* What the new password must be, for THIS account, so the screen says it. */
   let min = PASSWORD_MIN_ALONE;
-  try { min = _passwordMinFor(await DB.get(env, 'acct', email)); } catch (e) {}
+  try { min = _passwordMinFor(await DB.get(env, 'acct', email)); } catch (e) { /* what the screen shows; the confirm step enforces the account's own minimum */ }
   return json({ ok: true, token, min });
 }
 
@@ -18602,7 +18602,7 @@ async function resetPage(request, env){
   try {
     const t = token ? JSON.parse((await env.AMV_KV.get('reset:' + token)) || 'null') : null;
     if (t && t.email) min = _passwordMinFor(await DB.get(env, 'acct', t.email));
-  } catch (e) {}
+  } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   const appUrl = (env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
 
   const html = `<!DOCTYPE html>
@@ -20172,7 +20172,7 @@ async function _pwMatches(env, acct, password){
     const sec = await _pepperFor(env, acct.pwPep);
     if(!sec){
       audit(env, 'password_pepper_missing', { pep: acct.pwPep });
-      try{ await alertOnce(env, 'pepper_missing:' + acct.pwPep, 'A password was checked against an account hashed with a pepper (' + acct.pwPep + ') that is neither PASSWORD_PEPPER nor PASSWORD_PEPPER_PREVIOUS, so the check FAILED. If the secret was changed, put the old value back as PASSWORD_PEPPER_PREVIOUS.', 60); }catch(e){}
+      try{ await alertOnce(env, 'pepper_missing:' + acct.pwPep, 'A password was checked against an account hashed with a pepper (' + acct.pwPep + ') that is neither PASSWORD_PEPPER nor PASSWORD_PEPPER_PREVIOUS, so the check FAILED. If the secret was changed, put the old value back as PASSWORD_PEPPER_PREVIOUS.', 60); }catch(e){ /* logging: it never decides anything */ }
       return false;
     }
     cand = await _pepperWrap(sec, h);
@@ -20220,7 +20220,7 @@ async function _verifyCaptcha(env, token, request){
     try { await alertOnce(env, 'turnstile_unset',
       'Turnstile is not configured, so sign-up and sign-in have no captcha. Only the honeypot and the '
       + 'per-address rate limit stand in front of account creation, and every account carries a free '
-      + 'allowance and a scheduled job. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET.', 60 * 24); } catch (e) {}
+      + 'allowance and a scheduled job. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET.', 60 * 24); } catch (e) { /* logging: it never decides anything */ }
     return true;
   }
   if (!env.TURNSTILE_SITE_KEY) {
@@ -20229,7 +20229,7 @@ async function _verifyCaptcha(env, token, request){
        because a silent security downgrade is its own failure. */
     audit(env, 'captcha_misconfigured', { why: 'TURNSTILE_SECRET set without TURNSTILE_SITE_KEY' });
     try { await alertOnce(env, 'turnstile_halfset',
-      'Turnstile is half-configured: TURNSTILE_SECRET is set but TURNSTILE_SITE_KEY is not, so no browser can produce a token. Captcha is being SKIPPED. Set TURNSTILE_SITE_KEY to switch it on.'); } catch (e) {}
+      'Turnstile is half-configured: TURNSTILE_SECRET is set but TURNSTILE_SITE_KEY is not, so no browser can produce a token. Captcha is being SKIPPED. Set TURNSTILE_SITE_KEY to switch it on.'); } catch (e) { /* logging: it never decides anything */ }
     return true;
   }
   if (!token) return false;
@@ -20382,10 +20382,10 @@ async function _accountCreated(env, request, em, safeName, body){
      and the conversion rate read low for ever. Sibling of AMV-SP-01: the same
      wrong variable at the same call, throwing in one path and silently
      miscounting in the other. */
-  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){}
+  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
-  try{ await _referralCapture(env, request, em, (body || {}).ref); }catch(e){}
+  try{ await _referralCapture(env, request, em, (body || {}).ref); }catch(e) { /* a count for the owner's figures: never decides access or money */ }
   /* NO EMAIL ON SIGN-UP (the owner's decision, Oct 26): creating an account
      signs the person straight in. The emailed code is for signing in on a
      new device, which is where it protects somebody. The one email kept here
@@ -20426,7 +20426,7 @@ async function _signinFails(env, em) {
   } catch (e) { return Infinity; }
 }
 async function _signinFailsClear(env, em) {
-  try { await counter(env, _signinFailName(em), { op: 'clear', strict: true }); } catch (e) {}
+  try { await counter(env, _signinFailName(em), { op: 'clear', strict: true }); } catch(e) { /* the run of wrong guesses ages out on its own */ }
 }
 
 async function authLogin(request, env) {
@@ -20560,7 +20560,7 @@ async function authLogin(request, env) {
     return json(SAME_ANSWER, 401);
   }
   // success - clear the failure counter
-  try{ await env.AMV_KV.delete(rlKey); }catch(e){}
+  try{ await env.AMV_KV.delete(rlKey); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   // transparent upgrade: below the current count, or not under the current
   // pepper, re-hash now with the password that just proved itself
   if(await _pwNeedsUpgrade(env, acct)){
@@ -20600,7 +20600,7 @@ async function authLogin(request, env) {
     if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason, body.lang); if (c) return c; }
   }
   await _signinFailsClear(env, em);
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in');
   /* Trust is counted from the LAST sign-in, not the first code: somebody who
      signs in every week should not be asked for a code every thirty days. */
@@ -20653,7 +20653,7 @@ function _readCookieNamed(request, name) {
       const i = part.indexOf('=');
       if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
     }
-  } catch (e) {}
+  } catch(e) { /* a cookie that does not parse is no cookie */ }
   return '';
 }
 function _deviceCookie(value, maxAgeS) {
@@ -20684,7 +20684,7 @@ async function _deviceTrustState(env, request, body, email) {
       if (String(p.email || '').toLowerCase() !== email) continue;
       if (p.exp && p.exp * 1000 < Date.now()) reason = 'expired';
       else if (reason !== 'expired') reason = 'revoked';
-    } catch (e) {}
+    } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   }
   return { trusted: false, reason };
 }
@@ -20741,7 +20741,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
   const sent = await _sendSignInCodeEmail(env, email, code, why, lang);
   if (!sent) {
     audit(env, 'signin_code_not_sent', { email, why });
-    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     /* THE PROVIDER REFUSED THE SENDER ITSELF - NOT A HICCUP.
 
        "The amv.homes domain is not verified" is a fact about the deployment,
@@ -20759,7 +20759,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
          the caller answers "account exists" exactly as before claims existed. */
       if (why === 'claim') return null;
       audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
-      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) {}
+      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) { /* logging: it never decides anything */ }
       return null;
     }
     /* The daily allowance for this address used up is not "try again in a
@@ -20770,7 +20770,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
       if (used && +used.value >= EMAIL_DAY_CAP.signin)
         return json({ error: 'AMV has sent the most sign-in codes it sends to one address in a day. Use the newest code you received, or try again tomorrow.',
                       code: 'code_daily_limit' }, 429);
-    } catch (e) {}
+    } catch (e) { /* the general answer below is still true */ }
     return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   }
   audit(env, 'signin_code_sent', { email, why });
@@ -20805,7 +20805,7 @@ async function authLoginVerify(request, env) {
   }
   if (!verdict || verdict.gone) return json({ error: 'That code has expired. Sign in again to get a new one.', code: 'code_expired' }, 400);
   if (verdict.exhausted) {
-    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     return json({ error: 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_exhausted' }, 429);
   }
   if (verdict.wrong) {
@@ -20815,7 +20815,7 @@ async function authLoginVerify(request, env) {
       ? 'That code isn\u2019t right. ' + left + ' attempt' + (left === 1 ? '' : 's') + ' left.'
       : 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_wrong' }, 400);
   }
-  try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+  try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   const em = verdict.email;
   /* A challenge is keyed by its id, so erasing an account cannot find the
      ones in flight. One sent a minute before the account was deleted would
@@ -20830,7 +20830,7 @@ async function authLoginVerify(request, env) {
      code is now what confirms an account - and a confirmed account is one a
      stranger signing up with the address can no longer claim. */
   if (verdict.why === 'signup' || (verdict.why !== 'claim' && !acct.emailVerifiedAt)) {
-    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch(e) { /* the address is marked verified at the next sign-in */ }
   }
   /* The inbox answered a sign-up on an unconfirmed account: the password that
      waited in the challenge becomes the account's, and every session issued
@@ -20846,12 +20846,12 @@ async function authLoginVerify(request, env) {
         a.emailVerifiedAt = Date.now();
         applied = true;
       });
-    } catch (e) {}
+    } catch(e) { /* `applied` stays false and the next line refuses */ }
     if (!applied) return json({ error: 'AMV could not finish that just now. Please sign up again.', code: 'claim_failed' }, 503);
     try { await revokeUserTokens(env, em); } catch (e) { await _writeFailed(env, 'claim_revoke', e); }
     audit(env, 'account_claimed', { email: em });
   }
-  try { await _markActive(env, em); } catch (e) {}
+  try { await _markActive(env, em); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
   await _signinFailsClear(env, em);   // the code proved it; the run of wrong guesses is over
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || '', await _sessOpen(env, request, em)));
@@ -20955,10 +20955,10 @@ async function adminUsers(request, env) {
         env.AMV_KV.get(`purchases:${email}`).catch(()=>null),
       ]);
       let monthCost=0, monthTok=0;
-      try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
-      try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
-      let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e){}
-      let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e){}
+      try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e) { /* shown as zero on the export, which is said to be an estimate */ }
+      try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e) { /* shown as zero on the export, which is said to be an estimate */ }
+      let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
+      let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const plan = (ent && ent.plan) ? _planOf(ent) : (a.plan || 'free');
       return {
         email, name:a.name||'', plan, provider:a.provider||'email',
@@ -20988,7 +20988,7 @@ async function adminUsers(request, env) {
        whether anything is left. "Nothing here" and "I could not look" have to
        be different answers, and only one of them is true. */
     audit(env, 'admin_user_list_failed', { why: String((e && e.message) || e).slice(0, 120) });
-    try{ await _workerError(env, 'adminUsers', e); }catch(_){}
+    try{ await _workerError(env, 'adminUsers', e); }catch(_){ /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read the account list just now, so this screen is not showing one. '
                        + 'This is a read failure, not an empty database - nothing has been lost.',
                   code: 'listing_unavailable' }, 503);
@@ -21099,8 +21099,8 @@ async function authGoogle(request, env) {
          path did and this one did not - so the two providers now agree. */
       try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
       try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }
-      catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
-      try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
+      catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){ /* logging: it never decides anything */ } }
+      try{ await _referralCapture(env, request, em, body.ref); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
     }
     /* Google proves the address; an authenticator app the account turned on
        is still asked for on a device that has not proved itself, or Google
@@ -21123,7 +21123,7 @@ const REFRESH_GRACE_MS = 30 * 1000;
 /* Marks a refresh token as retired by sign-out (see authRefresh). Two minutes,
    which covers any renewal already in flight; a use after that is a replay. */
 async function _retiredBySignOut(env, jti) {
-  try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch (e) {}
+  try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch(e) { /* without the mark a late renewal is treated as a replay, which only signs out more */ }
 }
 async function authRefresh(request, env) {
   const body = await request.json().catch(()=>({}));
@@ -21161,10 +21161,10 @@ async function authRefresh(request, env) {
     if (claim.unavailable)
       return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
     if (claim.claimed) {
-      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch (e) {}
+      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* without the mark a second renewal is treated as a replay, which only signs out more */ }
     } else {
       let mark = null;
-      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) {}
+      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace: treated as a replay, which signs everything out */ }
       /* Spent by its own device signing out, moments ago: a renewal that was
          already on its way from that device. Refused - the session is over -
          but not as a theft, which would sign out every other device too. */
@@ -21178,7 +21178,7 @@ async function authRefresh(request, env) {
       audit(env, 'refresh_overlap', { email: data.email });
     }
   }
-  try{ await _markActive(env, data.email); }catch(e){}
+  try{ await _markActive(env, data.email); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   /* The session continues under the same id; a token from before sessions were
      recorded starts one now, so it appears in the device list from here on. */
   let sid = data.sid || '';
@@ -21295,7 +21295,7 @@ async function sessionsEnd(request, env) {
   if (user.sid && id === user.sid) return json({ error: 'That is this device. Use Sign out to end it.', code: 'this_device' }, 400);
   const key = _sessKey(user.email, id);
   let rec = null;
-  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) {}
+  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   if (!rec) return json({ ok: true, already: true });
   await _sessEnd(env, user.email, id);
   await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
@@ -21526,7 +21526,7 @@ async function accountExport(request, env) {
     audit(env, 'account_export_partial', { email, missing: unreadable.length });
     try { await alertOnce(env, 'export_partial',
       'A data export came back incomplete - ' + unreadable.length + ' record(s) could not be read. '
-      + 'The person was told, but this is a storage fault worth looking at.', 60); } catch (e) {}
+      + 'The person was told, but this is a storage fault worth looking at.', 60); } catch (e) { /* logging: it never decides anything */ }
   }
   audit(env, 'account_exported', { email, kinds: Object.keys(records).length, complete });
   return json({
@@ -21636,7 +21636,7 @@ async function _payoutsInFlight(env, email) {
       } while (cursor);
       if (!idx) {
         idx = { ids: found, built: Date.now() };
-        try { await env.AMV_KV.put(`wdopen:${em}`, JSON.stringify(idx)); } catch (e) {}
+        try { await env.AMV_KV.put(`wdopen:${em}`, JSON.stringify(idx)); } catch(e) { /* an index rebuilt from the scan next time */ }
       }
     }
     const ids = idx.ids || [];
@@ -21873,7 +21873,7 @@ async function authDeleteAccount(request, env) {
        the person was told it was done while a membership row still named them. */
     _eraseFailed('team membership');
     try { await alertOnce(env, 'erase_team:' + email,
-      'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
+      'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) { /* logging: it never decides anything */ }
   }
 
   /* Their files in object storage - every one, checked gone afterwards. */
@@ -22067,7 +22067,7 @@ async function authDeleteAccount(request, env) {
       await alertOnce(env, 'delete_cancel_fail_' + email,
         'Account deleted but a subscription could not be cancelled for ' + email +
         '. Cancel it in Stripe or PayPal now - this customer is still being charged.', 1);
-    } catch {}
+    } catch { /* logging: it never decides anything */ }
   }
   audit(env, 'account_delete_billing', { email, cancelled, cancelFailed });
 
@@ -22357,7 +22357,7 @@ async function authDeleteAccount(request, env) {
   try {
     const lr = await counter(env, `life:${email}`, { op: 'lifeGet' });
     const teams = (lr && lr.tally && Array.isArray(lr.tally.teams)) ? lr.tally.teams : [];
-    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch (e) {}
+    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch(e) { /* the lifetime record above names the teams too */ }
     if (tid && teams.indexOf(tid) < 0) teams.push(tid);
     for (const t of teams) {
       const r = await counter(env, `tmuse:${t}:${email}`, { op: 'clear' });
@@ -22388,7 +22388,7 @@ async function authDeleteAccount(request, env) {
         'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
         + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
         + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
-    } catch (e) {}
+    } catch (e) { /* logging: it never decides anything */ }
     return json({
       ok: false,
       incomplete: true,
@@ -22870,7 +22870,7 @@ async function teamJoin(request, env){
      So the claim is given back on every path where nobody joined. Re-claiming
      is safe: the invite record itself is what proves they were invited, and it
      is only deleted at the end, on success. */
-  const _unspend = async () => { try { await _releaseClaim(env, 'inviteused', token); } catch (_) {} };
+  const _unspend = async () => { try { await _releaseClaim(env, 'inviteused', token); } catch (_) { /* a lock that expires on its own if this fails */ } };
   const team0 = await DB.get(env, 'team', inv.teamId);
   if(!team0) { await _unspend(); return json({ error:'team gone' }, 404); }
   let team = team0;
@@ -22931,7 +22931,11 @@ async function teamJoin(request, env){
         if (!fresh) return;
         fresh.members = (fresh.members || []).filter(m => String(m.email||'').toLowerCase() !== String(user.email||'').toLowerCase());
       });
-    } catch (_) {}
+    } catch (_) {
+      /* Said (Nov 3 audit SEC-001): "nothing was changed" is only true if this took. */
+      audit(env, 'team_join_rollback_failed', { team: team.id, email: user.email });
+      try { await alertOnce(env, 'team_join_rollback_failed', 'A team join was rolled back and the rollback did not take: a member may be listed who was told they were not added. See team_join_rollback_failed in the audit log.', 60); } catch (e) { /* logging */ }
+    }
     await _unspend();
     audit(env, 'team_join_rolled_back', { team: team.id, email: user.email });
     return json({ error: 'AMV could not finish adding you to the team. Nothing was changed - please try the invite again.',
@@ -23873,7 +23877,7 @@ async function syncPush(request, env){
       'Sync writes on this deployment are merged, not arbitrated: KV has no conditional write, so two devices saving the '
       + 'same record in the same instant can overwrite each other. The cure is a D1 database - but do NOT just bind one: '
       + 'the moment DB is bound every read goes to D1 alone and every existing account would read as missing. It needs a '
-      + 'migration (copy KV into D1, read through to KV until verified) first.', 7 * 24 * 60); }catch(e){}
+      + 'migration (copy KV into D1, read through to KV until verified) first.', 7 * 24 * 60); }catch(e) { /* logging: it never decides anything */ }
   }
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
@@ -24283,11 +24287,11 @@ function _stripeSessionPaid(session) {
 
 async function _pendStart(env, id, data) {
   if (!id) return;
-  try { await DB.put(env, PEND_KIND, String(id), Object.assign({ at: Date.now() }, data || {})); } catch (e) {}
+  try { await DB.put(env, PEND_KIND, String(id), Object.assign({ at: Date.now() }, data || {})); } catch(e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
 }
 async function _pendDone(env, id) {
   if (!id) return;
-  try { await DB.del(env, PEND_KIND, String(id)); } catch (e) {}
+  try { await DB.del(env, PEND_KIND, String(id)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
 }
 
 async function reconcilePayments(env) {
@@ -28242,12 +28246,12 @@ async function _authState(env, email, sid) {
   } catch (e) { why = String((e && e.message) || e); s = null; }
   const kv = await kvP;
   if (!s) {
-    try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch (_) {}
-    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) {}
+    try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch(_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
-    try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch (e) {}
+    try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch(e) { /* seeded at the next read; the answer below already takes the higher epoch */ }
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
@@ -28283,7 +28287,7 @@ async function _tokenEpoch(env, email) { return (await _authState(env, email)).e
    within about a minute, which is how it worked before. */
 async function _sessEnd(env, email, sid) {
   if (!email || !sid) return;
-  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) {}
+  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   if (env.AMV_COUNTER) {
     try {
       await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
@@ -28320,7 +28324,7 @@ async function _revokeOrSay(env, email, where) {
   catch (e) {
     audit(env, 'token_revoke_failed', { email, where, error: String((e && e.message) || e) });
     try { await alertOnce(env, 'token_revoke_failed',
-      'A password change could not sign existing sessions out. Storage may be unhealthy; sessions issued before the change are still valid.', 30); } catch (_) {}
+      'A password change could not sign existing sessions out. Storage may be unhealthy; sessions issued before the change are still valid.', 30); } catch (_) { /* logging: it never decides anything */ }
     return false;
   }
 }
@@ -28347,13 +28351,14 @@ async function revokeUserTokens(env, email) {
   }
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
-  try { await _sessDropAll(env, email); } catch (e) {}
-  /* And every sign-in an agent was holding for this account (owner decision
-     #46): "sign out everywhere" means the agents too. */
-  try { await _agentJarForgetAll(env, email); } catch (e) {}
-  /* A phone that was lost is exactly why somebody signs out everywhere: it
-     stops being told about their work too. */
-  try { await _pushForgetAll(env, email); } catch (e) {}
+  /* Each of these failing is SAID (Nov 3 audit SEC-001) - the tokens are
+     already dead by the epoch above, but a device list, an agent's sign-in or
+     a phone still being told is exactly what somebody signing out everywhere
+     needs to know about. Agent sign-ins queue their own retry. */
+  try { await _sessDropAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'sessions' }); }
+  try { const r = await _agentJarForgetAll(env, email); if (r && !r.removed) audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins', queued: true }); }
+  catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins' }); }
+  try { await _pushForgetAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'notifications' }); }
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────
@@ -28402,7 +28407,7 @@ async function _sessList(env, email) {
   do {
     const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
     for (const k of page.keys) {
-      try { const r = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); if (r && r.sid) out.push(r); } catch (e) {}
+      try { const r = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); if (r && r.sid) out.push(r); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       if (out.length >= 100) break;
     }
     cursor = page.list_complete ? null : page.cursor;
@@ -28413,7 +28418,7 @@ async function _sessDropAll(env, email) {
   let cursor;
   do {
     const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
-    for (const k of page.keys) { try { await env.AMV_KV.delete(k.name); } catch (e) {} }
+    for (const k of page.keys) { try { await env.AMV_KV.delete(k.name); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);
 }
@@ -28499,7 +28504,7 @@ function _refreshCookie(env, value, maxAgeS) {
 function _cookieRequestFromAmv(request, env) {
   const allowed = [_originOf(env && env.ALLOWED_ORIGIN), _originOf(env && env.APP_URL)].filter(o => o && o !== '*');
   if (!allowed.length) return true;
-  try { allowed.push(new URL(request.url).origin); } catch (e) {}
+  try { allowed.push(new URL(request.url).origin); } catch (e) { /* an unparseable URL adds no origin, so less is allowed */ }
   const origin = request.headers.get('Origin');
   if (origin) return allowed.includes(_originOf(origin));
   const site = request.headers.get('Sec-Fetch-Site');
@@ -28513,7 +28518,7 @@ function _cookiesFromAmvOnly(request, env) {
     if (!new URL(request.url).pathname.startsWith('/auth/')) return request;
     if (_cookieRequestFromAmv(request, env)) return request;
     const h = new Headers(request.headers); h.delete('Cookie');
-    try { audit(env, 'cross_site_cookies_ignored', { path: new URL(request.url).pathname, origin: String(request.headers.get('Origin') || request.headers.get('Sec-Fetch-Site') || '').slice(0, 80) }); } catch (e) {}
+    try { audit(env, 'cross_site_cookies_ignored', { path: new URL(request.url).pathname, origin: String(request.headers.get('Origin') || request.headers.get('Sec-Fetch-Site') || '').slice(0, 80) }); } catch(e) { /* logging: it never decides anything */ }
     const out = new Request(request, { headers: h });
     if (_mountedAt.has(request)) _mountedAt.set(out, _mountedAt.get(request));
     return out;
@@ -28527,7 +28532,7 @@ function _readRefreshCookie(request) {
       if (i < 0) continue;
       if (part.slice(0, i).trim() === REFRESH_COOKIE) return part.slice(i + 1).trim();
     }
-  } catch (e) {}
+  } catch(e) { /* a cookie that does not parse is no cookie */ }
   return '';
 }
 /* The tokens, plus the cookie that carries the long one. Returns a Response so
@@ -29691,7 +29696,7 @@ async function _referralMaybeConvert(env, email) {
   if (!pend || !pend.referrer || !pend.code) { await _referralClearPending(env, em); return null; }
 
   const drop = async (reason) => {
-    try { await env.AMV_KV.delete(`refpend:${em}`); } catch (e) {}
+    try { await env.AMV_KV.delete(`refpend:${em}`); } catch(e) { /* the pending referral is cleared just below too */ }
     await _referralClearPending(env, em);
     audit(env, 'referral_rejected', { referrer: pend.referrer, reason });
     return null;
@@ -29733,7 +29738,7 @@ async function _referralMaybeConvert(env, email) {
   await _referralClearPending(env, em);
   const paidReferrer = await _referralGrant(env, pend.referrer, 'invited');
   const paidJoiner   = await _referralGrant(env, em, 'joined');
-  try { await _recordGrowth(env, 'referral'); } catch (e) {}
+  try { await _recordGrowth(env, 'referral'); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
   audit(env, 'referral_converted', { referrer: pend.referrer, email: em, paidReferrer, paidJoiner });
   return { paidReferrer, paidJoiner, tokens: REFERRAL_REWARD_TOKENS };
 }
@@ -30147,7 +30152,7 @@ async function setEntitlement(env, email, plan, extra = {}) {
     if (_planPriceUSD(_planOf(ent), ent.custom) > 0 && _planPriceUSD(_planOf(prev), prev.custom) === 0) {
       await _funnelMark(env, em, 'paid');
     }
-  } catch (e) {}
+  } catch(e) { /* a count for the owner's figures: never decides access or money */ }
   audit(env, 'entitlement_set', { email, plan });
   /* Also on the account's own activity log. A plan change nobody made is how a
      compromised account usually announces itself. There is no request here -
@@ -30462,7 +30467,7 @@ async function runRenewalSweep(env, now = Date.now()) {
       await env.AMV_KV.put('renewsweep:pass', JSON.stringify(pass), { expirationTtl: 7 * 86400 });
       return { ran: true, partial: true, paid: pass.paid, stale: pass.staleCount, truncated: false };
     }
-    try { await env.AMV_KV.delete('renewsweep:pass'); } catch (e) {}
+    try { await env.AMV_KV.delete('renewsweep:pass'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     const paid = pass.paid, truncated = false;
     /* Held back a share of the list for memory, so the decision uses the count. */
     const stale = pass.stale;
@@ -30487,7 +30492,7 @@ async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
         + 'cancellations and failed payments are also not reaching AMV, so plans are not being revoked either. '
         + 'Check STRIPE_WEBHOOK_SECRET and the endpoint in the Stripe dashboard (and PAYPAL_WEBHOOK_ID).',
         6 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
     return { ran: true, paid, stale: staleCount, systemic: true, marked: 0, truncated };
   }
 
@@ -30504,7 +30509,7 @@ async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
       + stale.map(s => s.email).slice(0, 10).join(', ')
       + '. They keep full access for the grace period and are told we could not confirm the renewal, not that their '
       + 'card failed - because we do not know that.', 12 * 60);
-  } catch (e) {}
+  } catch(e) { /* logging: it never decides anything */ }
   return { ran: true, paid, stale: stale.length, marked: stale.length, truncated };
 }
 
@@ -30534,7 +30539,7 @@ async function getEntitlement(request, env) {
      failure here must never stop someone seeing their plan. */
   let converted = null;
   const ent0 = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
-  if (ent0.refPending) { try { converted = await _referralMaybeConvert(env, user.email); } catch (e) {} }
+  if (ent0.refPending) { try { converted = await _referralMaybeConvert(env, user.email); } catch (e) { /* a count for the owner's figures: never decides access or money */ } }
   const ent = converted ? ((await DB.get(env, 'ent', user.email)) || { plan: 'free' }) : ent0;
   // The effective plan is what the client must reflect; `sold` and `billing`
   // explain a mismatch so the app can ask them to fix their card.
@@ -30986,7 +30991,7 @@ async function stripeAutoRenew(request, env) {
                   code: 'needs_service' }, 503);
 
   let body = {};
-  try { body = await request.json(); } catch (e) {}
+  try { body = await request.json(); } catch (e) { /* a body that does not parse is an empty request, refused by the checks after it */ }
   /* Explicit, both ways. A missing field is not "off" - it is a caller that
      did not say, and guessing either way changes somebody's billing. */
   if (typeof body.on !== 'boolean')
@@ -31090,7 +31095,7 @@ async function _recordTxn(env, tx) {
        and would make every replay look new. */
     if (tx.id) {
       const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { try { return JSON.parse(seen); } catch (e) {} }
+      if (seen) { try { return JSON.parse(seen); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
       const legacy = await env.AMV_KV.get('txn:log');
       if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return old; }
     }
@@ -31124,11 +31129,11 @@ async function _readTxnLog(env, limit = 200) {
       if (!r || r.list_complete || !r.cursor) break;
       cursor = r.cursor;
     }
-  } catch (e) {}
+  } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   try {
     const raw = await env.AMV_KV.get('txn:log');
     if (raw) { const have = new Set(out.map((e) => e.id)); for (const e of JSON.parse(raw) || []) if (e && !have.has(e.id)) out.push(e); }
-  } catch (e) {}
+  } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   out.sort((x, y) => (y.ts || 0) - (x.ts || 0));
   return out.slice(0, limit);
 }
@@ -31373,7 +31378,7 @@ async function _onceOrRetry(env, kind, id, ttlSec, work){
     const value = await work();
     return { claimed: true, value };
   }catch(e){
-    try{ await _releaseClaim(env, kind, id); }catch(_){}
+    try{ await _releaseClaim(env, kind, id); }catch(_){ /* a lock that expires on its own if this fails */ }
     audit(env, 'claim_released_after_failure', { kind, id: String(id).slice(0, 120),
                                                  error: String((e && e.message) || e).slice(0, 160) });
     throw e;
@@ -31398,14 +31403,14 @@ async function _releaseClaim(env, kind, id){
           try{ await alertOnce(env, 'lock_lease_expired:' + kind,
             'A lock on ' + kind + ' expired while the work it was protecting was still running, so another '
             + 'writer took it. Two writers were briefly inside the same critical section. If this recurs, the '
-            + 'lease is too short for what it is guarding.', 60); }catch(_){}
+            + 'lease is too short for what it is guarding.', 60); }catch(_){ /* logging: it never decides anything */ }
         }
-      }catch(e){}
+      }catch(e) { /* a lock that expires on its own if this fails */ }
     }
     if(DB._hasD1(env)){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
     } else { await env.AMV_KV.delete(`${kind}:${id}`); }
-  }catch(e){}
+  }catch(e) { /* a lock that expires on its own if this fails */ }
 }
 
 /* ══ EXTRA USAGE: PREPAID CREDIT FOR WHEN A PLAN RUNS OUT ════════════════════
@@ -31917,7 +31922,7 @@ async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
       await alertOnce(env, 'supersede_cancel_fail_' + email,
         'A superseded subscription could not be cancelled for ' + email +
         '. Cancel it in Stripe now - this customer is being charged for two plans.', 1);
-    } catch {}
+    } catch { /* logging: it never decides anything */ }
   }
   return { cancelled, failed };
 }
@@ -32742,7 +32747,7 @@ async function _sellerListingIds(env, email) {
       scanned++;
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { const it = JSON.parse(raw); if (it && it.authorEmail === em) ids.push(it.id || k.name.slice(7)); } catch (e) {}
+      try { const it = JSON.parse(raw); if (it && it.authorEmail === em) ids.push(it.id || k.name.slice(7)); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     }
     cursor = page.list_complete ? undefined : page.cursor;
     if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
@@ -32752,7 +32757,7 @@ async function _sellerListingIds(env, email) {
      the seller would lose the listings past the cap permanently, which is
      worse than the slow page it replaces. */
   if (!truncated) {
-    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
+    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch(e) { /* an index rebuilt from the scan next time */ }
   } else {
     audit(env, 'seller_index_partial', { email: em, scanned });
   }
@@ -32840,7 +32845,7 @@ async function _wallet(env, email) {
   if (raw != null) {
     try { return JSON.parse(raw); }
     catch (e) {
-      try { audit(env, 'record_corrupt', { key: `wallet:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `wallet:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`wallet:${email}`, 'invalid JSON');
     }
   }
@@ -32925,7 +32930,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
   audit(env, 'record_lock_timeout', { kind, id: key });
   try { await alertOnce(env, 'record_lock:' + kind,
     'A ' + kind + ' record could not be locked to apply a change, so the change was NOT made. '
-    + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) {}
+    + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) { /* logging: it never decides anything */ }
   const busy = new Error(kind + ' is busy');
   busy.code = 'record_busy';
   throw busy;
@@ -32953,7 +32958,7 @@ async function _withWallet(env, email, mutate) {
   /* Loud. A credit that cannot be applied is somebody's money, and the one
      thing that must not happen is for it to disappear quietly. */
   audit(env, 'wallet_lock_timeout', { email: em });
-  try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) {}
+  try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) { /* logging: it never decides anything */ }
   throw lastErr || new Error('wallet is busy');
 }
 
@@ -33045,7 +33050,7 @@ async function _withKV(env, name, key, mutate, empty) {
       try {
         return JSON.parse(raw);
       } catch (err) {
-        try { audit(env, 'record_corrupt', { key: id, bytes: String(raw).length }); } catch (_) {}
+        try { audit(env, 'record_corrupt', { key: id, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
         throw new UnreadableRecordError(id, 'invalid JSON');
       }
     },
@@ -33129,7 +33134,7 @@ async function _walletTx(env, email) {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? v : [];
     } catch (e) {
-      try { audit(env, 'record_corrupt', { key: `wallet_tx:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `wallet_tx:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`wallet_tx:${email}`, 'invalid JSON');
     }
   }
@@ -33312,7 +33317,7 @@ async function marketBuy(request, env) {
   if (!r.ok) {
     /* No checkout exists, so nothing is being paid for and the item goes back
        on the market now rather than when the hold expires. */
-    if (/^usr_/.test(id)) { try { await _releaseClaim(env, 'mktresv', id); } catch (e) {} }
+    if (/^usr_/.test(id)) { try { await _releaseClaim(env, 'mktresv', id); } catch (e) { /* a lock that expires on its own if this fails */ } }
     return json({ error: d.error?.message || 'stripe error' }, 502);
   }
   /* Remembered until the webhook completes it. If that delivery never
@@ -33411,7 +33416,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
   }, []);
   // AMV-037: snapshot the deliverable at purchase time. The buyer paid for THIS
   // content - a later seller edit or delete must never revoke their access.
-  if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
+  if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) { audit(env, 'market_snapshot_not_kept', { buyer, item: itemId }); } }
   // credit the seller 80%
   let credited = false;
   if (sellerEmail) {
@@ -33529,7 +33534,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
         /* Carried so a reversal can release exactly this sale's hold. */
         ref, at: Date.now(),
       }), { expirationTtl: 400 * 86400 });
-    } catch (e) {}
+    } catch(e) { /* a lock that expires on its own if this fails */ }
   }
   audit(env, 'market_sale', { item: itemId, buyer, seller: sellerEmail, price });
 }
@@ -33564,7 +33569,7 @@ async function _reverseSale(env, ref, reason) {
   if (rawRef != null) {
     try { rec = JSON.parse(rawRef); }
     catch (e) {
-      try { audit(env, 'record_corrupt', { key: `saleref:${ref}`, bytes: String(rawRef).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `saleref:${ref}`, bytes: String(rawRef).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`saleref:${ref}`, 'invalid JSON');
     }
   }
@@ -33605,7 +33610,7 @@ async function _reverseSaleWork(env, rec, reason) {
      the access records above are what actually decide whether the buyer keeps
      the item. */
   await env.AMV_KV.delete(`entitleitem:${rec.buyer}:${rec.itemId}`);
-  try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch (e) {}
+  try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch(e) { /* a snapshot of an item no longer owned grants nothing: ownership is checked first */ }
   await _withKV(env, 'purchases', rec.buyer, (list) => {
     const keep = list.filter(p => p && p.id !== rec.itemId);
     list.length = 0;
@@ -33660,7 +33665,7 @@ async function _reverseSaleWork(env, rec, reason) {
         if (/^usr_/.test(rec.itemId) && cur.status === 'sold') cur.status = 'active';
       });
     }
-  } catch (e) {}
+  } catch(e) { /* a sales count on the listing, shown only to its seller */ }
 
   // 4. The buyer is recorded, because doing this repeatedly is the attack.
   await _abuseRecord(env, rec.buyer, reason === 'dispute' ? 'dispute' : 'refund',
@@ -33682,7 +33687,7 @@ async function _purchasesList(env, email) {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? v : [];
     } catch (e) {
-      try { audit(env, 'record_corrupt', { key: `purchases:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `purchases:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`purchases:${email}`, 'invalid JSON');
     }
   }
@@ -33700,7 +33705,7 @@ async function marketPurchases(request, env) {
   try { list = await _purchasesList(env, user.email); }
   catch (e) {
     if (!(e instanceof UnreadableRecordError)) throw e;
-    try { await alertOnce(env, 'purchases_corrupt', 'A buyer purchase record is unreadable, so their library cannot be listed. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    try { await alertOnce(env, 'purchases_corrupt', 'A buyer purchase record is unreadable, so their library cannot be listed. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read your library right now, so it will not tell you it is empty. Nothing has been lost - everything you have bought is still yours. This has been reported.',
                   code: 'purchases_unreadable' }, 503);
   }
@@ -33769,7 +33774,7 @@ async function marketEarnings(request, env) {
   try { w = await _wallet(env, user.email); }
   catch (e) {
     if (!(e instanceof UnreadableRecordError)) throw e;
-    try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so their balance cannot be shown. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so their balance cannot be shown. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read your balance right now, so it will not guess at it. Nothing has changed - your money is where it was. This has been reported.',
                   code: 'wallet_unreadable' }, 503);
   }
@@ -33896,7 +33901,7 @@ async function marketWithdraw(request, env) {
     try { w = await _wallet(env, user.email); }
     catch (e) {
       if (!(e instanceof UnreadableRecordError)) throw e;
-      try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so a withdrawal was refused. Check the audit log for record_corrupt.', 60); } catch (_) {}
+      try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so a withdrawal was refused. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
       return json({ error: 'AMV could not read your balance, so it will not process a withdrawal against a number it does not have. Nothing has been debited and your money is untouched. This has been reported.',
                     code: 'wallet_unreadable' }, 503);
     }
@@ -34147,7 +34152,7 @@ async function _recordPaidForTax(env, email, amount, when) {
        how a filing comes out short, so it is both audited and alerted. */
     audit(env, 'tax_year_write_failed', { email: em, amount: amt, year, error: String((e && e.message) || e) });
     try { await alertOnce(env, 'tax_year_write',
-      'A payout was sent but its calendar-year total could not be updated. The withdraw: record is still the source of truth - reconcile before filing.', 60); } catch (_) {}
+      'A payout was sent but its calendar-year total could not be updated. The withdraw: record is still the source of truth - reconcile before filing.', 60); } catch (_) { /* logging: it never decides anything */ }
     return null;
   }
 }
@@ -34320,12 +34325,16 @@ async function adminPayouts(request, env) {
   const out = [];
   let cursor;
   let truncated = false;
+  /* A record that does not parse is NAMED in the answer (Nov 3 audit
+     SEC-001): a payout or tax row silently left out of an operator's list
+     is a filing short by exactly that row, with nothing to say so. */
+  const unreadable = [];
   do {
     const page = await env.AMV_KV.list({ prefix: 'withdraw:', cursor, limit: 1000 });
     for (const k of (page.keys || [])) {
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { out.push(JSON.parse(raw)); } catch (e) {}
+      try { out.push(JSON.parse(raw)); } catch (e) { unreadable.push(k.name); try { audit(env, 'record_corrupt', { key: k.name }); } catch (_) { /* logging */ } }
     }
     cursor = page.list_complete ? undefined : page.cursor;
     if (cursor && out.length >= ADMIN_PAYOUT_SCAN_MAX) { truncated = true; break; }
@@ -34348,7 +34357,7 @@ async function adminPayouts(request, env) {
     for (const k of (page.keys || [])) {
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { taxRows.push(JSON.parse(raw)); } catch (e) {}
+      try { taxRows.push(JSON.parse(raw)); } catch (e) { unreadable.push(k.name); }
     }
     taxCursor = page.list_complete ? undefined : page.cursor;
     if (taxCursor && taxRows.length >= ADMIN_PAYOUT_SCAN_MAX) { taxTruncated = true; break; }
@@ -34403,6 +34412,10 @@ async function adminPayouts(request, env) {
         ? 'More sellers were paid this year than this scan reads, so these totals are a floor. The payoutyear: records are complete - raise the scan limit or read them directly before filing.'
         : undefined,
     },
+    /* Records that would not parse, by key - so no total above is taken for
+       complete while one is missing from it. */
+    unreadable: unreadable.slice(0, 50),
+    unreadableCount: unreadable.length,
     autoMaxUSD: PAYOUT_AUTO_MAX_USD,
     kycThresholdUSD: PAYOUT_KYC_THRESHOLD_USD,
     reservePct: PAYOUT_RESERVE_PCT,
@@ -34535,7 +34548,7 @@ async function adminPayoutMark(request, env) {
            payout after it, which is how the notice stops being read. */
         audit(env, 'tax_threshold_crossed', { seller: rec.seller, year: tax.year, paid: tax.paid });
         try { await notify(env, `${rec.seller} has passed $${TAX_REPORT_THRESHOLD_USD} in payouts for ${tax.year}`
-          + ` ($${tax.paid.toFixed(2)}). Their taxpayer details are needed for reporting.`); } catch (_) {}
+          + ` ($${tax.paid.toFixed(2)}). Their taxpayer details are needed for reporting.`); } catch(_) { /* the tax rows themselves are written; the notice is a convenience */ }
       }
     }
     audit(env, 'payout_settled', { id, seller: rec.seller, amount: rec.amount, status });
@@ -34604,7 +34617,7 @@ async function _refundRejectedPayout(env, rec) {
         'A rejected payout could not be returned to the seller, so they are still short the amount that was '
         + 'debited when they asked for it. The payout record carries refundDue and settling it again completes '
         + 'the refund without repeating it.', 15);
-    } catch (_) {}
+    } catch (_) { /* logging: it never decides anything */ }
     return false;
   }
   if (landed) delete rec.refundDue;
@@ -34784,7 +34797,7 @@ async function marketRate(request, env) {
   const preHashed = new Map();
   {
     let seed = {};
-    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch {}
+    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     for (const who of Object.keys(seed)) {
       if (!IS_HASH.test(who)) preHashed.set(who, await _errHash(String(who).toLowerCase()));
     }
@@ -44293,7 +44306,7 @@ async function _pkSpend(env, id, purpose, email){
      is written as `kind:id`, and `pkchal:id` is the challenge itself - which
      would then read as already claimed, every time. */
   if(!(await _claimOnce(env, 'pkspent', id, PK_CHALLENGE_S))) return null;
-  try{ await env.AMV_KV.delete('pkchal:' + id); }catch(e){}
+  try{ await env.AMV_KV.delete('pkchal:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   return rec;
 }
 
@@ -44510,7 +44523,7 @@ async function passkeySignin(request, env){
     return json(FAIL, 401);
   }
   const acct = await DB.get(env, 'acct', em);
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in', { via: 'passkey', name: used.name });
   audit(env, 'passkey_signin', { email: em });
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, (acct && acct.name) || '', await _sessOpen(env, request, em)));
@@ -44552,7 +44565,7 @@ async function passkeyRemove(request, env){
     a.passkeys = a.passkeys.filter(x => x.id !== id);
   });
   if(r && r.error) return json({ error: r.error === 'last_way_in' ? 'That is the only way into this account, so it cannot be removed. Add another first.' : 'That passkey is not on this account.', code: r.error }, r.status);
-  try{ await env.AMV_KV.delete('pkcred:' + id); }catch(e){}
+  try{ await env.AMV_KV.delete('pkcred:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'passkey_removed', { email: em });
   await _userEvent(env, request, em, 'passkey_removed', { name });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -44618,7 +44631,7 @@ async function totpConfirm(request, env){
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
   await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
-  try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){}
+  try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });
   return json({ ok: true, recovery: codes, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -44678,8 +44691,8 @@ async function authLoginMfa(request, env){
   const ok = typeof body.recovery === 'string' ? await _recoverySpend(env, em, body.recovery)
            : await _totpSpend(env, em, String(body.code || ''));
   if(!ok){ audit(env, 'auth_fail', { email: em, reason: 'mfa_wrong' }); return json(FAIL, 401); }
-  try{ await env.AMV_KV.delete('mfachal:' + id); }catch(e){}
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await env.AMV_KV.delete('mfachal:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in', { via: typeof body.recovery === 'string' ? 'recovery code' : 'authenticator app' });
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, rec.name || '', await _sessOpen(env, request, em)));
 }
@@ -46058,17 +46071,17 @@ async function _agentJarForgetAll(env, email){
     try{ page = await env.AMV_KV.list({ prefix, cursor }); }
     catch(e){ listed = false; break; }
     for(const k of (page.keys || [])){
-      try{ await env.AMV_KV.delete(k.name); }catch(e){}
+      try{ await env.AMV_KV.delete(k.name); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
       try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
   for(const k of left){
-    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
   }
   if(!listed){
     /* `*` for every agent: the retry runs this whole forget again. */
-    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
     audit(env, 'agent_signin_list_failed', { email: em });
   }
   if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
@@ -46089,7 +46102,7 @@ async function runAgentJarCleanup(env){
         continue;
       }
       let site = '';
-      try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e){}
+      try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const key = _agentJarKey(email, id);
       try{
         if(!site) await env.AMV_KV.delete(key);
@@ -46177,7 +46190,7 @@ async function _agentReadSites(env, email, agent, detail){
       }catch(e){ out.push({ url: u, text: '', error: 'could not be read' }); }
     }
   }catch(e){ return failAll('the browser could not be started, so this page was not opened'); }
-  finally{ try{ if(browser) await browser.close(); }catch(e){} }
+  finally{ try{ if(browser) await browser.close(); }catch(e){ /* cleanup: nothing depends on it */ } }
   const read = out.filter(p => p.text);
   if(read.length) audit(env, 'agent_signins_used', { email, agent: agent.id, sites: [...new Set(read.map(p => { try{ return _agentSiteOf(new URL(p.url).hostname, agent.browser.sites); }catch(e){ return ''; } }))] });
   return out;
@@ -47080,11 +47093,11 @@ async function _accessLogAdd(env, email, entry){
 }
 async function _accessLogRead(env, email){
   const out = [];
-  try { const old = JSON.parse((await env.AMV_KV.get(`accesslog:${email}`)) || '[]'); if (Array.isArray(old)) out.push(...old); } catch (e) {}
+  try { const old = JSON.parse((await env.AMV_KV.get(`accesslog:${email}`)) || '[]'); if (Array.isArray(old)) out.push(...old); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   let cursor;
   do {
     const page = await env.AMV_KV.list({ prefix: `accesslog:${email}:`, cursor, limit: 1000 });
-    for (const k of page.keys || []) { try { const v = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); if (v) out.push(v); } catch (e) {} }
+    for (const k of page.keys || []) { try { const v = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); if (v) out.push(v); } catch (e) { out.push({ at: +(k.name.split(':').pop() || '').slice(0, 13) || 0, who: 'AMV support', what: 'a look whose record could not be read', reason: '' }); } }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor && out.length < 500);
   return out.sort((a, b) => (+a.at || 0) - (+b.at || 0));

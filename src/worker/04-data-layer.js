@@ -64,10 +64,10 @@ async function _revRead(env, kind, id, raw){
   let blob = null;
   try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; }
   if(blob != null && (await _revDigest(blob)) === st.digest){
-    try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) {}
+    try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
   }
-  try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) {}
+  try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) { /* logging: it never decides anything */ }
   return raw;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
@@ -141,7 +141,7 @@ const DB = {
           'A stored ' + kind + ' record could not be parsed, so it reads as missing. '
           + 'Something wrote invalid JSON - a truncated write, or a restore from a bad export. '
           + 'The account behind it will behave as though the record does not exist until it is repaired.', 30);
-      } catch (_) {}
+      } catch(_) { /* logging: it never decides anything */ }
       return null;
     }
   },
@@ -188,7 +188,7 @@ const DB = {
           'A stored ' + kind + ' record could not be parsed. This one decides whether somebody is allowed '
           + 'something, so it is being treated as unreadable rather than as absent - the request was refused '
           + 'instead of being granted by default. Repair the record.', 30);
-      } catch (_) {}
+      } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`${kind}:${id}`, 'invalid JSON');
     }
   },
@@ -199,7 +199,7 @@ const DB = {
       if(j.length * 3 > D1_ROW_MAX_BYTES){
         const bytes = new TextEncoder().encode(j).length;
         if(bytes > D1_ROW_MAX_BYTES){
-          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch (e) {}
+          try { audit(env, 'record_too_large_for_d1', { kind, bytes }); } catch(e) { /* logging: it never decides anything */ }
           throw new Error('The ' + kind + ' record is ' + bytes + ' bytes, over the database\'s ' + D1_ROW_MAX_BYTES + '-byte limit for one record. It has to be split before it can be stored here.');
         }
       }
@@ -288,17 +288,17 @@ const DB = {
       await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
       const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
       if(!cas || !cas.ok){
-        try { await env.AMV_KV.delete(blob); } catch(_) {}
+        try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
         return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
       }
       /* Committed. The copy is for readers; if it cannot be written, the
          committed value is kept with no expiry until a reader repairs it. */
       try { await env.AMV_KV.put(`${kind}:${id}`, j); }
       catch(e){
-        try { await env.AMV_KV.put(blob, j); } catch(_) {}
-        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) {}
+        try { await env.AMV_KV.put(blob, j); } catch(_) { /* said by the audit on the next line */ }
+        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
       }
-      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) {} }
+      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
       await _forgetKindEmpty(env, kind);
       return { ok: true, guarded: true };
     }
@@ -332,7 +332,7 @@ const DB = {
       try { out.push({ id, value: JSON.parse(raw) }); }
       catch (e) {
         unreadable++;
-        try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes: String(raw).length, where: 'scan' }); } catch (_) {}
+        try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes: String(raw).length, where: 'scan' }); } catch(_) { /* logging: it never decides anything */ }
       }
     };
     if(this._hasD1(env)){
@@ -385,13 +385,13 @@ const DB = {
     if(this._hasD1(env)){
       const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
       const rs = rows.results || [];
-      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch (e) {} }
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
       return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
     }
     const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
     for(const k of page.keys){
       const raw = await env.AMV_KV.get(k.name);
-      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch (e) {} }
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
     }
     return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
   },
@@ -554,7 +554,7 @@ async function scan(env, kind, limit, what) {
         + 'so everything past that point was not looked at. Whatever this scan is responsible for has NOT '
         + 'been done for those records, and will not be on the next run either - the cut-off is in the same '
         + 'place every time. Raise the limit for this scan or page it.', 12 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
   }
   /* Only a walk that found nothing may claim the namespace is empty.
 
@@ -577,7 +577,7 @@ async function scan(env, kind, limit, what) {
         + 'would not parse, so they were skipped. They still EXIST - whatever this scan does has not been '
         + 'done for them, and a backup taken now will not contain them. Check the audit log for '
         + 'record_corrupt entries naming this kind.', 12 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
   }
   /* Only a walk that found nothing may claim the namespace is empty - and a
      walk that skipped something did not find nothing. Without this, a kind
@@ -969,7 +969,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
     try {
       await alertOnce(env, 'spend_gate_blind',
         'The spend counter is unreachable, so the daily ceiling is not being enforced. Paid work is still running; free work is being refused until it recovers.', 30);
-    } catch (_) {}
+    } catch (_) { /* logging: it never decides anything */ }
     if (!paying) {
       await _releaseSpendGate(env, book);
       return json({ error: 'AMV is at capacity for free accounts right now. Paid plans are running normally - please try again shortly.',
@@ -987,7 +987,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
                   code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   audit(env, 'global_cap_hit', { what, value: res && res.value, cap });
-  try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) {}
+  try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) { /* logging: it never decides anything */ }
   return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
               { 'Retry-After': _retryAfterMidnight() });
 }
@@ -1190,6 +1190,6 @@ async function _recordSpend(env, subject, usd, what, period, reserved) {
    recorded and the operator told, so it can be put right. The gate's
    "no money or permission write swallowed silently" stage keeps it that way. */
 async function _writeFailed(env, where, e) {
-  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {}
-  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) {}
+  try { audit(env, 'write_failed', { where, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ }
+  try { await alertOnce(env, 'write_failed_' + where, 'A money or permission write failed (' + where + '): ' + String((e && e.message) || e).slice(0, 160), 60); } catch (_) { /* logging: it never decides anything */ }
 }

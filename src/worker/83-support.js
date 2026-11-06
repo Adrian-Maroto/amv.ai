@@ -29,11 +29,11 @@ async function _accessLogAdd(env, email, entry){
 }
 async function _accessLogRead(env, email){
   const out = [];
-  try { const old = JSON.parse((await env.AMV_KV.get(`accesslog:${email}`)) || '[]'); if (Array.isArray(old)) out.push(...old); } catch (e) {}
+  try { const old = JSON.parse((await env.AMV_KV.get(`accesslog:${email}`)) || '[]'); if (Array.isArray(old)) out.push(...old); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   let cursor;
   do {
     const page = await env.AMV_KV.list({ prefix: `accesslog:${email}:`, cursor, limit: 1000 });
-    for (const k of page.keys || []) { try { const v = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); if (v) out.push(v); } catch (e) {} }
+    for (const k of page.keys || []) { try { const v = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); if (v) out.push(v); } catch (e) { out.push({ at: +(k.name.split(':').pop() || '').slice(0, 13) || 0, who: 'AMV support', what: 'a look whose record could not be read', reason: '' }); } }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor && out.length < 500);
   return out.sort((a, b) => (+a.at || 0) - (+b.at || 0));

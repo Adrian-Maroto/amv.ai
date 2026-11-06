@@ -139,7 +139,7 @@ async function runRenewalSweep(env, now = Date.now()) {
       await env.AMV_KV.put('renewsweep:pass', JSON.stringify(pass), { expirationTtl: 7 * 86400 });
       return { ran: true, partial: true, paid: pass.paid, stale: pass.staleCount, truncated: false };
     }
-    try { await env.AMV_KV.delete('renewsweep:pass'); } catch (e) {}
+    try { await env.AMV_KV.delete('renewsweep:pass'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     const paid = pass.paid, truncated = false;
     /* Held back a share of the list for memory, so the decision uses the count. */
     const stale = pass.stale;
@@ -164,7 +164,7 @@ async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
         + 'cancellations and failed payments are also not reaching AMV, so plans are not being revoked either. '
         + 'Check STRIPE_WEBHOOK_SECRET and the endpoint in the Stripe dashboard (and PAYPAL_WEBHOOK_ID).',
         6 * 60);
-    } catch (e) {}
+    } catch(e) { /* logging: it never decides anything */ }
     return { ran: true, paid, stale: staleCount, systemic: true, marked: 0, truncated };
   }
 
@@ -181,7 +181,7 @@ async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
       + stale.map(s => s.email).slice(0, 10).join(', ')
       + '. They keep full access for the grace period and are told we could not confirm the renewal, not that their '
       + 'card failed - because we do not know that.', 12 * 60);
-  } catch (e) {}
+  } catch(e) { /* logging: it never decides anything */ }
   return { ran: true, paid, stale: stale.length, marked: stale.length, truncated };
 }
 
@@ -211,7 +211,7 @@ async function getEntitlement(request, env) {
      failure here must never stop someone seeing their plan. */
   let converted = null;
   const ent0 = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
-  if (ent0.refPending) { try { converted = await _referralMaybeConvert(env, user.email); } catch (e) {} }
+  if (ent0.refPending) { try { converted = await _referralMaybeConvert(env, user.email); } catch (e) { /* a count for the owner's figures: never decides access or money */ } }
   const ent = converted ? ((await DB.get(env, 'ent', user.email)) || { plan: 'free' }) : ent0;
   // The effective plan is what the client must reflect; `sold` and `billing`
   // explain a mismatch so the app can ask them to fix their card.

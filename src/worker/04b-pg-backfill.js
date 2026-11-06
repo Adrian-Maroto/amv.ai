@@ -280,7 +280,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     await _pgLedgerInsert(sql, kind === 'credit'
       ? { table: 'credit', email: w.email, currency: 'USD', amount, reason: 'correction', key, note: 'subject:' + w.who + ' opening' }
       : { table: 'seller', email: w.email, currency: 'USD', amount, reason: 'correction', key });
-    try { audit(env, 'pg_money_opening', { kind, id: w.who, amount }); } catch (e) {}
+    try { audit(env, 'pg_money_opening', { kind, id: w.who, amount }); } catch(e) { /* logging: it never decides anything */ }
     return 'copied';
   }
   if (phase === 'reconcredit' || phase === 'reconseller') {
@@ -293,7 +293,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     if (Math.abs(live - led) < PG_MONEY_TOLERANCE[kind]) { await sql`DELETE FROM migration_cursor WHERE kind = ${tag}`; return 'same'; }
     await sql`INSERT INTO migration_cursor (kind, cursor, copied, updated_at) VALUES (${tag}, ${String(_pgR6(live - led))}, 0, now())
               ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = now()`;
-    try { audit(env, 'pg_money_differs', { kind, id: w.who, live, ledger: led }); } catch (e) {}
+    try { audit(env, 'pg_money_differs', { kind, id: w.who, live, ledger: led }); } catch(e) { /* logging: it never decides anything */ }
     return 'mismatched';
   }
   if (phase === 'verify') {
@@ -304,7 +304,7 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
        history (Nov 1 audit DATA-010). */
     if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${diff.join(',').slice(0, 200)} WHERE email = ${email}`;
-    try { audit(env, 'pg_backfill_mismatch', { id: email, fields: diff.join(',') }); } catch (e) {}
+    try { audit(env, 'pg_backfill_mismatch', { id: email, fields: diff.join(',') }); } catch(e) { /* logging: it never decides anything */ }
     return 'mismatched';
   }
   return 'skipped';
@@ -340,13 +340,13 @@ async function runPgBackfill(env, opts){
           } catch (e) {
             t.failed++;
             const why = String((e && e.message) || e).slice(0, 160);
-            try { audit(env, 'pg_backfill_failed', { phase, key: k.name, error: why }); } catch (_) {}
+            try { audit(env, 'pg_backfill_failed', { phase, key: k.name, error: why }); } catch(_) { /* logging: it never decides anything */ }
             /* A record that would not copy goes on the repair list, which is
                worked after it - so one bad record never stops the run. A
                repair that fails again stays where it is. */
             if (phase !== 'repair' && phase !== 'verify') {
               const kind = phase === 'wallet' ? null : phase;
-              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch (_) {} }
+              if (kind) { try { await env.AMV_KV.put('pgrepair:' + kind + ':' + k.name.slice(kind.length + 1).toLowerCase(), JSON.stringify({ at: Date.now(), why })); } catch(_) { /* the intent stays and the cron turns it into a repair */ } }
             }
           }
         }
@@ -356,7 +356,7 @@ async function runPgBackfill(env, opts){
         cur = { cursor: finished ? 'done' : page.cursor, copied: cur.copied + n };
         if (!(await _pgBackfillSaveHeld(sql, me, phase, cur.cursor, n))) {
           held = false;
-          try { audit(env, 'pg_backfill_lease_lost', { phase }); } catch (_) {}
+          try { audit(env, 'pg_backfill_lease_lost', { phase }); } catch(_) { /* logging: it never decides anything */ }
           return { on: true, state: 'running', leaseLost: true, ...t };
         }
         if (finished || Date.now() - started >= sliceMs) break;
@@ -370,11 +370,11 @@ async function runPgBackfill(env, opts){
     const clean = !(left.keys || []).length && !bad[0].n && !money[0].n;
     try { await alertOnce(env, 'pg_backfill_done', clean
       ? 'The Postgres backfill finished: every account was read back and matches, every balance reconciles to the cent, and the repair list is empty. Step 4 (shadow reads) can start.'
-      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ, ' + money[0].n + ' balance(s) do not reconcile, and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait; a restart measures balances that moved again.', 60); } catch (e) {}
+      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ, ' + money[0].n + ' balance(s) do not reconcile, and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait; a restart measures balances that moved again.', 60); } catch(e) { /* logging: it never decides anything */ }
     return { on: true, state: 'done', clean, ...t };
   } finally {
-    if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) {} }
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) { /* a lock that expires on its own if this fails */ } }
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -436,7 +436,7 @@ async function pgBackfillRoute(request, env){
       notCopied: 'Credit packs bought before step 2 and seller lines older than the 500 a history keeps are not copied line by line: each balance has one opening row instead, reconciled to the cent.',
     });
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -468,7 +468,7 @@ async function _pgCutover(env){
   } catch (e) {
     blockers.push('postgres did not answer');
   } finally {
-    if (sql) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (sql) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
   try { const r = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 }); if ((r.keys || []).length) blockers.push('repairs waiting'); } catch (e) { blockers.push('repair list unreadable'); }
   try {

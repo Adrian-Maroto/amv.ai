@@ -61,10 +61,10 @@ function _pgShadowRead(env, kind, id, raw){
   if (_pgShadowSeen.size > 5000) _pgShadowSeen.clear();
   _pgShadowSeen.set(key, now);
   const p = _pgShadowCompare(env, kind, email, raw)
-    .catch((e) => { try { audit(env, 'pg_shadow_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch (_) {} })
+    .catch((e) => { try { audit(env, 'pg_shadow_failed', { kind, id: email, error: String((e && e.message) || e).slice(0, 160) }); } catch(_) { /* logging: it never decides anything */ } })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 const _pgShadowAs = (kind, value) => kind === 'acct' ? { acct: value } : kind === 'ent' ? { ent: value } : { keys: value };
@@ -85,18 +85,18 @@ async function _pgShadowCompare(env, kind, email, raw){
       diff = await _pgAccountDiff(sql, email, _pgShadowAs(kind, await _pgShadowKV(env, kind, email)), [kind]);
     }
     const day = todayKey();
-    try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) {}
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':compared', email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
     if (!diff.length) { await sql`UPDATE migration_accounts SET last_mismatch = NULL WHERE email = ${email} AND last_mismatch IS NOT NULL`; return 'same'; }
     const fields = kind + ':' + diff.join(',');
-    try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) {}
+    try { await _tallyAdd(env, 'pgshadow:' + day + ':differed', email, 1, 40 * 86400000); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
     await sql`UPDATE migration_accounts SET mismatches = mismatches + 1, last_mismatch = ${fields.slice(0, 200)} WHERE email = ${email}`;
-    try { audit(env, 'pg_shadow_mismatch', { kind, id: email, fields: diff.join(',') }); } catch (e) {}
+    try { audit(env, 'pg_shadow_mismatch', { kind, id: email, fields: diff.join(',') }); } catch(e) { /* logging: it never decides anything */ }
     try { await alertOnce(env, 'pg_shadow_mismatch',
       'A shadow read found Postgres differing from KV (' + fields + '). Nobody saw it - KV answered - but step 5 must not start until '
-      + 'every difference is explained. GET /admin/pg/shadow lists them.', 60); } catch (e) {}
+      + 'every difference is explained. GET /admin/pg/shadow lists them.', 60); } catch (e) { /* logging: it never decides anything */ }
     return 'differed';
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }
 
@@ -128,6 +128,6 @@ async function pgShadowRoute(request, env){
     return json({ on: true, cohort, days, accountsDiffering: n[0].n,
       differing: rows.map(r => ({ email: r.email, mismatches: r.mismatches, last: r.last_mismatch })) });
   } finally {
-    try { await sql.end({ timeout: 5 }); } catch (e) {}
+    try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ }
   }
 }

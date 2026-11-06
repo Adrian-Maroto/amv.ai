@@ -559,7 +559,7 @@ async function backupExport(request, env){
         try { await alertOnce(env, 'backup_failed',
           'A backup export failed part-way through and was abandoned rather than saved short. '
           + (failed.length ? 'Could not read: ' + failed.join(', ') + '. ' : '')
-          + 'There is no usable backup from this attempt.', 30); } catch (_) {}
+          + 'There is no usable backup from this attempt.', 30); } catch (_) { /* logging: it never decides anything */ }
         /* Errors the stream. A download that stops mid-file is a download the
            operator can SEE failed - which a quietly short one is not. */
         controller.error(e);
@@ -634,7 +634,7 @@ async function _restoreEntries(env, entries, mode, t){
          empty would leave them unscanned until the marker aged out. An hour of
          lateness rather than lost work, but a restore is run during an
          incident, which is the worst hour to add one to. */
-      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
+      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){ /* the empty marker ages out within the hour, as said above */ }
     restored++;
   }
   Object.assign(t, { restored, skipped, refused, unrestorable, heldForward });
@@ -769,7 +769,7 @@ async function backupImport(request, env){
     try { await alertOnce(env, 'restore_incomplete',
       'A backup restore finished with ' + unrestorable + ' record(s) that could NOT be written: '
       + lost.slice(0, 5).join(', ') + (lost.length > 5 ? ' and more' : '')
-      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) {}
+      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) { /* logging: it never decides anything */ }
     return json({ ok:false, code:'restore_incomplete', mode, restored, skipped,
       refused, unrestorable, lost, heldForward,
       error: unrestorable + ' record(s) in this snapshot could not be restored, so the store is '

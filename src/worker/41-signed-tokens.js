@@ -92,12 +92,12 @@ async function _authState(env, email, sid) {
   } catch (e) { why = String((e && e.message) || e); s = null; }
   const kv = await kvP;
   if (!s) {
-    try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch (_) {}
-    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) {}
+    try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch(_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
-    try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch (e) {}
+    try { await counter(env, _authName(email), { op: 'authSeed', floor: kv, strict: true }); } catch(e) { /* seeded at the next read; the answer below already takes the higher epoch */ }
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
@@ -133,7 +133,7 @@ async function _tokenEpoch(env, email) { return (await _authState(env, email)).e
    within about a minute, which is how it worked before. */
 async function _sessEnd(env, email, sid) {
   if (!email || !sid) return;
-  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) {}
+  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   if (env.AMV_COUNTER) {
     try {
       await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
@@ -170,7 +170,7 @@ async function _revokeOrSay(env, email, where) {
   catch (e) {
     audit(env, 'token_revoke_failed', { email, where, error: String((e && e.message) || e) });
     try { await alertOnce(env, 'token_revoke_failed',
-      'A password change could not sign existing sessions out. Storage may be unhealthy; sessions issued before the change are still valid.', 30); } catch (_) {}
+      'A password change could not sign existing sessions out. Storage may be unhealthy; sessions issued before the change are still valid.', 30); } catch (_) { /* logging: it never decides anything */ }
     return false;
   }
 }
@@ -197,13 +197,14 @@ async function revokeUserTokens(env, email) {
   }
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
-  try { await _sessDropAll(env, email); } catch (e) {}
-  /* And every sign-in an agent was holding for this account (owner decision
-     #46): "sign out everywhere" means the agents too. */
-  try { await _agentJarForgetAll(env, email); } catch (e) {}
-  /* A phone that was lost is exactly why somebody signs out everywhere: it
-     stops being told about their work too. */
-  try { await _pushForgetAll(env, email); } catch (e) {}
+  /* Each of these failing is SAID (Nov 3 audit SEC-001) - the tokens are
+     already dead by the epoch above, but a device list, an agent's sign-in or
+     a phone still being told is exactly what somebody signing out everywhere
+     needs to know about. Agent sign-ins queue their own retry. */
+  try { await _sessDropAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'sessions' }); }
+  try { const r = await _agentJarForgetAll(env, email); if (r && !r.removed) audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins', queued: true }); }
+  catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins' }); }
+  try { await _pushForgetAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'notifications' }); }
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────
@@ -252,7 +253,7 @@ async function _sessList(env, email) {
   do {
     const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
     for (const k of page.keys) {
-      try { const r = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); if (r && r.sid) out.push(r); } catch (e) {}
+      try { const r = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); if (r && r.sid) out.push(r); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       if (out.length >= 100) break;
     }
     cursor = page.list_complete ? null : page.cursor;
@@ -263,7 +264,7 @@ async function _sessDropAll(env, email) {
   let cursor;
   do {
     const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
-    for (const k of page.keys) { try { await env.AMV_KV.delete(k.name); } catch (e) {} }
+    for (const k of page.keys) { try { await env.AMV_KV.delete(k.name); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);
 }
@@ -349,7 +350,7 @@ function _refreshCookie(env, value, maxAgeS) {
 function _cookieRequestFromAmv(request, env) {
   const allowed = [_originOf(env && env.ALLOWED_ORIGIN), _originOf(env && env.APP_URL)].filter(o => o && o !== '*');
   if (!allowed.length) return true;
-  try { allowed.push(new URL(request.url).origin); } catch (e) {}
+  try { allowed.push(new URL(request.url).origin); } catch (e) { /* an unparseable URL adds no origin, so less is allowed */ }
   const origin = request.headers.get('Origin');
   if (origin) return allowed.includes(_originOf(origin));
   const site = request.headers.get('Sec-Fetch-Site');
@@ -363,7 +364,7 @@ function _cookiesFromAmvOnly(request, env) {
     if (!new URL(request.url).pathname.startsWith('/auth/')) return request;
     if (_cookieRequestFromAmv(request, env)) return request;
     const h = new Headers(request.headers); h.delete('Cookie');
-    try { audit(env, 'cross_site_cookies_ignored', { path: new URL(request.url).pathname, origin: String(request.headers.get('Origin') || request.headers.get('Sec-Fetch-Site') || '').slice(0, 80) }); } catch (e) {}
+    try { audit(env, 'cross_site_cookies_ignored', { path: new URL(request.url).pathname, origin: String(request.headers.get('Origin') || request.headers.get('Sec-Fetch-Site') || '').slice(0, 80) }); } catch(e) { /* logging: it never decides anything */ }
     const out = new Request(request, { headers: h });
     if (_mountedAt.has(request)) _mountedAt.set(out, _mountedAt.get(request));
     return out;
@@ -377,7 +378,7 @@ function _readRefreshCookie(request) {
       if (i < 0) continue;
       if (part.slice(0, i).trim() === REFRESH_COOKIE) return part.slice(i + 1).trim();
     }
-  } catch (e) {}
+  } catch(e) { /* a cookie that does not parse is no cookie */ }
   return '';
 }
 /* The tokens, plus the cookie that carries the long one. Returns a Response so

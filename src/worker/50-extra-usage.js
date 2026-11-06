@@ -507,7 +507,7 @@ async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
       await alertOnce(env, 'supersede_cancel_fail_' + email,
         'A superseded subscription could not be cancelled for ' + email +
         '. Cancel it in Stripe now - this customer is being charged for two plans.', 1);
-    } catch {}
+    } catch { /* logging: it never decides anything */ }
   }
   return { cancelled, failed };
 }

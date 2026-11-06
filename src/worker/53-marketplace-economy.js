@@ -74,7 +74,7 @@ async function _sellerListingIds(env, email) {
       scanned++;
       const raw = await env.AMV_KV.get(k.name);
       if (!raw) continue;
-      try { const it = JSON.parse(raw); if (it && it.authorEmail === em) ids.push(it.id || k.name.slice(7)); } catch (e) {}
+      try { const it = JSON.parse(raw); if (it && it.authorEmail === em) ids.push(it.id || k.name.slice(7)); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
     }
     cursor = page.list_complete ? undefined : page.cursor;
     if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
@@ -84,7 +84,7 @@ async function _sellerListingIds(env, email) {
      the seller would lose the listings past the cap permanently, which is
      worse than the slow page it replaces. */
   if (!truncated) {
-    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
+    try { await env.AMV_KV.put(`mktmine:${em}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch(e) { /* an index rebuilt from the scan next time */ }
   } else {
     audit(env, 'seller_index_partial', { email: em, scanned });
   }
@@ -172,7 +172,7 @@ async function _wallet(env, email) {
   if (raw != null) {
     try { return JSON.parse(raw); }
     catch (e) {
-      try { audit(env, 'record_corrupt', { key: `wallet:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `wallet:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`wallet:${email}`, 'invalid JSON');
     }
   }
@@ -257,7 +257,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
   audit(env, 'record_lock_timeout', { kind, id: key });
   try { await alertOnce(env, 'record_lock:' + kind,
     'A ' + kind + ' record could not be locked to apply a change, so the change was NOT made. '
-    + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) {}
+    + 'If this is `ent` somebody may be on the wrong plan; if it is `acct` a password change may not have taken.', 30); } catch (e) { /* logging: it never decides anything */ }
   const busy = new Error(kind + ' is busy');
   busy.code = 'record_busy';
   throw busy;
@@ -285,7 +285,7 @@ async function _withWallet(env, email, mutate) {
   /* Loud. A credit that cannot be applied is somebody's money, and the one
      thing that must not happen is for it to disappear quietly. */
   audit(env, 'wallet_lock_timeout', { email: em });
-  try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) {}
+  try { await alertOnce(env, 'wallet_lock', 'A wallet could not be locked to apply a change - a sale credit or reversal may not have been recorded. Check the reconciliation sweep.', 30); } catch (e) { /* logging: it never decides anything */ }
   throw lastErr || new Error('wallet is busy');
 }
 
@@ -377,7 +377,7 @@ async function _withKV(env, name, key, mutate, empty) {
       try {
         return JSON.parse(raw);
       } catch (err) {
-        try { audit(env, 'record_corrupt', { key: id, bytes: String(raw).length }); } catch (_) {}
+        try { audit(env, 'record_corrupt', { key: id, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
         throw new UnreadableRecordError(id, 'invalid JSON');
       }
     },
@@ -461,7 +461,7 @@ async function _walletTx(env, email) {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? v : [];
     } catch (e) {
-      try { audit(env, 'record_corrupt', { key: `wallet_tx:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `wallet_tx:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`wallet_tx:${email}`, 'invalid JSON');
     }
   }
@@ -644,7 +644,7 @@ async function marketBuy(request, env) {
   if (!r.ok) {
     /* No checkout exists, so nothing is being paid for and the item goes back
        on the market now rather than when the hold expires. */
-    if (/^usr_/.test(id)) { try { await _releaseClaim(env, 'mktresv', id); } catch (e) {} }
+    if (/^usr_/.test(id)) { try { await _releaseClaim(env, 'mktresv', id); } catch (e) { /* a lock that expires on its own if this fails */ } }
     return json({ error: d.error?.message || 'stripe error' }, 502);
   }
   /* Remembered until the webhook completes it. If that delivery never
@@ -743,7 +743,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
   }, []);
   // AMV-037: snapshot the deliverable at purchase time. The buyer paid for THIS
   // content - a later seller edit or delete must never revoke their access.
-  if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) {} }
+  if (it) { try { await DB.put(env, 'mktsnap', `${buyer}:${itemId}`, { ...it, _boughtAt: Date.now() }); } catch (e) { audit(env, 'market_snapshot_not_kept', { buyer, item: itemId }); } }
   // credit the seller 80%
   let credited = false;
   if (sellerEmail) {
@@ -861,7 +861,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
         /* Carried so a reversal can release exactly this sale's hold. */
         ref, at: Date.now(),
       }), { expirationTtl: 400 * 86400 });
-    } catch (e) {}
+    } catch(e) { /* a lock that expires on its own if this fails */ }
   }
   audit(env, 'market_sale', { item: itemId, buyer, seller: sellerEmail, price });
 }
@@ -896,7 +896,7 @@ async function _reverseSale(env, ref, reason) {
   if (rawRef != null) {
     try { rec = JSON.parse(rawRef); }
     catch (e) {
-      try { audit(env, 'record_corrupt', { key: `saleref:${ref}`, bytes: String(rawRef).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `saleref:${ref}`, bytes: String(rawRef).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`saleref:${ref}`, 'invalid JSON');
     }
   }
@@ -937,7 +937,7 @@ async function _reverseSaleWork(env, rec, reason) {
      the access records above are what actually decide whether the buyer keeps
      the item. */
   await env.AMV_KV.delete(`entitleitem:${rec.buyer}:${rec.itemId}`);
-  try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch (e) {}
+  try { await DB.del(env, 'mktsnap', `${rec.buyer}:${rec.itemId}`); } catch(e) { /* a snapshot of an item no longer owned grants nothing: ownership is checked first */ }
   await _withKV(env, 'purchases', rec.buyer, (list) => {
     const keep = list.filter(p => p && p.id !== rec.itemId);
     list.length = 0;
@@ -992,7 +992,7 @@ async function _reverseSaleWork(env, rec, reason) {
         if (/^usr_/.test(rec.itemId) && cur.status === 'sold') cur.status = 'active';
       });
     }
-  } catch (e) {}
+  } catch(e) { /* a sales count on the listing, shown only to its seller */ }
 
   // 4. The buyer is recorded, because doing this repeatedly is the attack.
   await _abuseRecord(env, rec.buyer, reason === 'dispute' ? 'dispute' : 'refund',
@@ -1014,7 +1014,7 @@ async function _purchasesList(env, email) {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? v : [];
     } catch (e) {
-      try { audit(env, 'record_corrupt', { key: `purchases:${email}`, bytes: String(raw).length }); } catch (_) {}
+      try { audit(env, 'record_corrupt', { key: `purchases:${email}`, bytes: String(raw).length }); } catch(_) { /* logging: it never decides anything */ }
       throw new UnreadableRecordError(`purchases:${email}`, 'invalid JSON');
     }
   }
@@ -1032,7 +1032,7 @@ async function marketPurchases(request, env) {
   try { list = await _purchasesList(env, user.email); }
   catch (e) {
     if (!(e instanceof UnreadableRecordError)) throw e;
-    try { await alertOnce(env, 'purchases_corrupt', 'A buyer purchase record is unreadable, so their library cannot be listed. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    try { await alertOnce(env, 'purchases_corrupt', 'A buyer purchase record is unreadable, so their library cannot be listed. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read your library right now, so it will not tell you it is empty. Nothing has been lost - everything you have bought is still yours. This has been reported.',
                   code: 'purchases_unreadable' }, 503);
   }
@@ -1101,7 +1101,7 @@ async function marketEarnings(request, env) {
   try { w = await _wallet(env, user.email); }
   catch (e) {
     if (!(e instanceof UnreadableRecordError)) throw e;
-    try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so their balance cannot be shown. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so their balance cannot be shown. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read your balance right now, so it will not guess at it. Nothing has changed - your money is where it was. This has been reported.',
                   code: 'wallet_unreadable' }, 503);
   }
@@ -1228,7 +1228,7 @@ async function marketWithdraw(request, env) {
     try { w = await _wallet(env, user.email); }
     catch (e) {
       if (!(e instanceof UnreadableRecordError)) throw e;
-      try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so a withdrawal was refused. Check the audit log for record_corrupt.', 60); } catch (_) {}
+      try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so a withdrawal was refused. Check the audit log for record_corrupt.', 60); } catch (_) { /* logging: it never decides anything */ }
       return json({ error: 'AMV could not read your balance, so it will not process a withdrawal against a number it does not have. Nothing has been debited and your money is untouched. This has been reported.',
                     code: 'wallet_unreadable' }, 503);
     }

@@ -61,7 +61,7 @@ const ACT_OUTCOMES = ['verified', 'unchecked', 'not_confirmed', 'unverifiable', 
 /* How long a write's answer is kept under its Idempotency-Key (connAct). */
 const ACT_IDEM_TTL_S = 86400;
 async function _actCount(env, outcome, who){
-  try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) {}
+  try { await _tallyAdd(env, 'actout:' + monthKey() + ':' + outcome, who, 1, 86400000 * 400); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
 }
 async function _actOutcomes(env, month){
   const out = {};

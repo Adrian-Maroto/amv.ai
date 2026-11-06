@@ -349,17 +349,17 @@ async function _agentJarForgetAll(env, email){
     try{ page = await env.AMV_KV.list({ prefix, cursor }); }
     catch(e){ listed = false; break; }
     for(const k of (page.keys || [])){
-      try{ await env.AMV_KV.delete(k.name); }catch(e){}
+      try{ await env.AMV_KV.delete(k.name); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
       try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
   for(const k of left){
-    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
   }
   if(!listed){
     /* `*` for every agent: the retry runs this whole forget again. */
-    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
     audit(env, 'agent_signin_list_failed', { email: em });
   }
   if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
@@ -380,7 +380,7 @@ async function runAgentJarCleanup(env){
         continue;
       }
       let site = '';
-      try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e){}
+      try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const key = _agentJarKey(email, id);
       try{
         if(!site) await env.AMV_KV.delete(key);
@@ -468,7 +468,7 @@ async function _agentReadSites(env, email, agent, detail){
       }catch(e){ out.push({ url: u, text: '', error: 'could not be read' }); }
     }
   }catch(e){ return failAll('the browser could not be started, so this page was not opened'); }
-  finally{ try{ if(browser) await browser.close(); }catch(e){} }
+  finally{ try{ if(browser) await browser.close(); }catch(e){ /* cleanup: nothing depends on it */ } }
   const read = out.filter(p => p.text);
   if(read.length) audit(env, 'agent_signins_used', { email, agent: agent.id, sites: [...new Set(read.map(p => { try{ return _agentSiteOf(new URL(p.url).hostname, agent.browser.sites); }catch(e){ return ''; } }))] });
   return out;

@@ -64,13 +64,13 @@ async function _pgIntent(env, kind, id){
        written, so refusing here changes nothing. */
     try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why: 'intent not recorded' })); }
     catch (_) {
-      try { audit(env, 'pg_intent_failed', { kind, id }); } catch (__) {}
+      try { audit(env, 'pg_intent_failed', { kind, id }); } catch(__) { /* logging: it never decides anything */ }
       throw new Error('pg_write_unrecorded');
     }
     return null;
   }
 }
-async function _pgIntentDone(env, ik){ if (ik) { try { await env.AMV_KV.delete(ik); } catch (e) {} } }
+async function _pgIntentDone(env, ik){ if (ik) { try { await env.AMV_KV.delete(ik); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } } }
 /* The cron's half: intents the background never finished become repairs. */
 async function runPgIntentSweep(env, atMs){
   if (!_pgOn(env)) return { on: false };
@@ -80,7 +80,7 @@ async function runPgIntentSweep(env, atMs){
     const page = await env.AMV_KV.list({ prefix: 'pgintent:', cursor, limit: 500 });
     for (const k of (page.keys || [])) {
       const parts = k.name.split(':');
-      if (parts.length < 4) { try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+      if (parts.length < 4) { try { await env.AMV_KV.delete(k.name); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } continue; }
       const kind = parts[1], id = parts.slice(2, -1).join(':');
       let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; }
       if (at && now - at < PG_INTENT_STALE_MS) { open++; continue; }
@@ -92,7 +92,7 @@ async function runPgIntentSweep(env, atMs){
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
-  if (moved) { try { audit(env, 'pg_intent_unfinished', { moved }); } catch (e) {} }
+  if (moved) { try { audit(env, 'pg_intent_unfinished', { moved }); } catch(e) { /* logging: it never decides anything */ } }
   return { on: true, moved, open };
 }
 
@@ -105,15 +105,15 @@ function _pgAfter(env, kind, id, obj, ik){
     .then(() => _pgIntentDone(env, ik))
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);
-      try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch (_) {}
-      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); await _pgIntentDone(env, ik); } catch (_) {}
+      try { audit(env, 'pg_mirror_failed', { kind, id, error: why }); } catch(_) { /* logging: it never decides anything */ }
+      try { await env.AMV_KV.put('pgrepair:' + kind + ':' + String(id || '').toLowerCase(), JSON.stringify({ at: Date.now(), why })); await _pgIntentDone(env, ik); } catch(_) { /* the intent stays and the cron turns it into a repair */ }
       try { await alertOnce(env, 'pg_mirror_failed',
         'Writes to the Postgres control plane are failing (' + kind + ': ' + why + '). Nothing has gone wrong for anybody - KV is still the record - '
-        + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) {}
+        + 'and each one is listed for the backfill to repair. The migration must not move past step 2 until this is zero.', 60); } catch (_) { /* logging: it never decides anything */ }
     })
     .finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 /* For tests and for the backfill: wait for every mirror write in flight. */
 async function _pgSettle(){ while (_pgInFlight.size) await Promise.allSettled([..._pgInFlight]); }
@@ -176,7 +176,7 @@ async function _pgMirror(env, kind, email, obj, sqlIn){
       return;
     }
   } finally {
-    if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
 }
 
@@ -257,15 +257,15 @@ function _pgLedger(env, row){
   const p = (async () => {
     const sql = await _pgClient(env);
     try { return await _pgLedgerInsert(sql, row); }
-    finally { try { await sql.end({ timeout: 5 }); } catch (e) {} }
+    finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
-    try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch (_) {}
-    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch (_) {}
-    try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) {}
+    try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch(_) { /* logging: it never decides anything */ }
+    try { await env.AMV_KV.put('pgrepair:ledger:' + row.key, JSON.stringify({ at: Date.now(), why, row })); } catch(_) { /* the intent stays and the cron turns it into a repair */ }
+    try { await alertOnce(env, 'pg_mirror_failed', 'A money row could not be written to the Postgres ledger (' + why + '). KV and the counters are still the record; the exact row is kept for the backfill.', 60); } catch (_) { /* logging: it never decides anything */ }
   }).finally(() => _pgInFlight.delete(p));
   _pgInFlight.add(p);
-  try { _bg(p); } catch (e) {}
+  try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
 
 /* The one INSERT for a ledger row, live and in the backfill alike: a row
@@ -306,6 +306,6 @@ function _pgSellerLedgerRow(email, tx){
 function _pgSellerRow(env, email, tx){
   const row = _pgSellerLedgerRow(email, tx);
   if (!row) return;
-  if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch (e) {} return; }
+  if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch(e) { /* logging: it never decides anything */ } return; }
   _pgLedger(env, row);
 }

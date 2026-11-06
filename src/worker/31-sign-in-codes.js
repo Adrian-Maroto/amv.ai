@@ -43,7 +43,7 @@ function _readCookieNamed(request, name) {
       const i = part.indexOf('=');
       if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
     }
-  } catch (e) {}
+  } catch(e) { /* a cookie that does not parse is no cookie */ }
   return '';
 }
 function _deviceCookie(value, maxAgeS) {
@@ -74,7 +74,7 @@ async function _deviceTrustState(env, request, body, email) {
       if (String(p.email || '').toLowerCase() !== email) continue;
       if (p.exp && p.exp * 1000 < Date.now()) reason = 'expired';
       else if (reason !== 'expired') reason = 'revoked';
-    } catch (e) {}
+    } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   }
   return { trusted: false, reason };
 }
@@ -131,7 +131,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
   const sent = await _sendSignInCodeEmail(env, email, code, why, lang);
   if (!sent) {
     audit(env, 'signin_code_not_sent', { email, why });
-    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     /* THE PROVIDER REFUSED THE SENDER ITSELF - NOT A HICCUP.
 
        "The amv.homes domain is not verified" is a fact about the deployment,
@@ -149,7 +149,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
          the caller answers "account exists" exactly as before claims existed. */
       if (why === 'claim') return null;
       audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
-      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) {}
+      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) { /* logging: it never decides anything */ }
       return null;
     }
     /* The daily allowance for this address used up is not "try again in a
@@ -160,7 +160,7 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
       if (used && +used.value >= EMAIL_DAY_CAP.signin)
         return json({ error: 'AMV has sent the most sign-in codes it sends to one address in a day. Use the newest code you received, or try again tomorrow.',
                       code: 'code_daily_limit' }, 429);
-    } catch (e) {}
+    } catch (e) { /* the general answer below is still true */ }
     return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   }
   audit(env, 'signin_code_sent', { email, why });
@@ -195,7 +195,7 @@ async function authLoginVerify(request, env) {
   }
   if (!verdict || verdict.gone) return json({ error: 'That code has expired. Sign in again to get a new one.', code: 'code_expired' }, 400);
   if (verdict.exhausted) {
-    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     return json({ error: 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_exhausted' }, 429);
   }
   if (verdict.wrong) {
@@ -205,7 +205,7 @@ async function authLoginVerify(request, env) {
       ? 'That code isn\u2019t right. ' + left + ' attempt' + (left === 1 ? '' : 's') + ' left.'
       : 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_wrong' }, 400);
   }
-  try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+  try { await env.AMV_KV.delete('signincode:' + id); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   const em = verdict.email;
   /* A challenge is keyed by its id, so erasing an account cannot find the
      ones in flight. One sent a minute before the account was deleted would
@@ -220,7 +220,7 @@ async function authLoginVerify(request, env) {
      code is now what confirms an account - and a confirmed account is one a
      stranger signing up with the address can no longer claim. */
   if (verdict.why === 'signup' || (verdict.why !== 'claim' && !acct.emailVerifiedAt)) {
-    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+    try { await _withAcct(env, em, (a) => { if (a && !a.emailVerifiedAt) a.emailVerifiedAt = Date.now(); }); } catch(e) { /* the address is marked verified at the next sign-in */ }
   }
   /* The inbox answered a sign-up on an unconfirmed account: the password that
      waited in the challenge becomes the account's, and every session issued
@@ -236,12 +236,12 @@ async function authLoginVerify(request, env) {
         a.emailVerifiedAt = Date.now();
         applied = true;
       });
-    } catch (e) {}
+    } catch(e) { /* `applied` stays false and the next line refuses */ }
     if (!applied) return json({ error: 'AMV could not finish that just now. Please sign up again.', code: 'claim_failed' }, 503);
     try { await revokeUserTokens(env, em); } catch (e) { await _writeFailed(env, 'claim_revoke', e); }
     audit(env, 'account_claimed', { email: em });
   }
-  try { await _markActive(env, em); } catch (e) {}
+  try { await _markActive(env, em); } catch (e) { /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
   await _signinFailsClear(env, em);   // the code proved it; the run of wrong guesses is over
   return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || '', await _sessOpen(env, request, em)));
@@ -345,10 +345,10 @@ async function adminUsers(request, env) {
         env.AMV_KV.get(`purchases:${email}`).catch(()=>null),
       ]);
       let monthCost=0, monthTok=0;
-      try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
-      try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e){}
-      let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e){}
-      let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e){}
+      try{ monthCost = (await counter(env, `cost:${email}:${month}`, { op:'get' })).value || 0; }catch(e) { /* shown as zero on the export, which is said to be an estimate */ }
+      try{ monthTok = (await counter(env, `tok:${email}:${month}`, { op:'get' })).value || 0; }catch(e) { /* shown as zero on the export, which is said to be an estimate */ }
+      let walletBal=0; try{ if(wallet){ walletBal=(JSON.parse(wallet).balance)||0; } }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
+      let purchaseCount=0; try{ if(purchases){ purchaseCount=(JSON.parse(purchases)||[]).length; } }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const plan = (ent && ent.plan) ? _planOf(ent) : (a.plan || 'free');
       return {
         email, name:a.name||'', plan, provider:a.provider||'email',
@@ -378,7 +378,7 @@ async function adminUsers(request, env) {
        whether anything is left. "Nothing here" and "I could not look" have to
        be different answers, and only one of them is true. */
     audit(env, 'admin_user_list_failed', { why: String((e && e.message) || e).slice(0, 120) });
-    try{ await _workerError(env, 'adminUsers', e); }catch(_){}
+    try{ await _workerError(env, 'adminUsers', e); }catch(_){ /* logging: it never decides anything */ }
     return json({ error: 'AMV could not read the account list just now, so this screen is not showing one. '
                        + 'This is a read failure, not an empty database - nothing has been lost.',
                   code: 'listing_unavailable' }, 503);
@@ -489,8 +489,8 @@ async function authGoogle(request, env) {
          path did and this one did not - so the two providers now agree. */
       try{ await _tallyAdd(env, 'popaccounts', em, 1); }catch(e){ /* best-effort: a public count of accounts */ }
       try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }
-      catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
-      try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
+      catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){ /* logging: it never decides anything */ } }
+      try{ await _referralCapture(env, request, em, body.ref); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
     }
     /* Google proves the address; an authenticator app the account turned on
        is still asked for on a device that has not proved itself, or Google
@@ -513,7 +513,7 @@ const REFRESH_GRACE_MS = 30 * 1000;
 /* Marks a refresh token as retired by sign-out (see authRefresh). Two minutes,
    which covers any renewal already in flight; a use after that is a replay. */
 async function _retiredBySignOut(env, jti) {
-  try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch (e) {}
+  try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch(e) { /* without the mark a late renewal is treated as a replay, which only signs out more */ }
 }
 async function authRefresh(request, env) {
   const body = await request.json().catch(()=>({}));
@@ -551,10 +551,10 @@ async function authRefresh(request, env) {
     if (claim.unavailable)
       return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
     if (claim.claimed) {
-      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch (e) {}
+      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* without the mark a second renewal is treated as a replay, which only signs out more */ }
     } else {
       let mark = null;
-      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) {}
+      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace: treated as a replay, which signs everything out */ }
       /* Spent by its own device signing out, moments ago: a renewal that was
          already on its way from that device. Refused - the session is over -
          but not as a theft, which would sign out every other device too. */
@@ -568,7 +568,7 @@ async function authRefresh(request, env) {
       audit(env, 'refresh_overlap', { email: data.email });
     }
   }
-  try{ await _markActive(env, data.email); }catch(e){}
+  try{ await _markActive(env, data.email); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   /* The session continues under the same id; a token from before sessions were
      recorded starts one now, so it appears in the device list from here on. */
   let sid = data.sid || '';
@@ -685,7 +685,7 @@ async function sessionsEnd(request, env) {
   if (user.sid && id === user.sid) return json({ error: 'That is this device. Use Sign out to end it.', code: 'this_device' }, 400);
   const key = _sessKey(user.email, id);
   let rec = null;
-  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) {}
+  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   if (!rec) return json({ ok: true, already: true });
   await _sessEnd(env, user.email, id);
   await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
@@ -916,7 +916,7 @@ async function accountExport(request, env) {
     audit(env, 'account_export_partial', { email, missing: unreadable.length });
     try { await alertOnce(env, 'export_partial',
       'A data export came back incomplete - ' + unreadable.length + ' record(s) could not be read. '
-      + 'The person was told, but this is a storage fault worth looking at.', 60); } catch (e) {}
+      + 'The person was told, but this is a storage fault worth looking at.', 60); } catch (e) { /* logging: it never decides anything */ }
   }
   audit(env, 'account_exported', { email, kinds: Object.keys(records).length, complete });
   return json({
@@ -1026,7 +1026,7 @@ async function _payoutsInFlight(env, email) {
       } while (cursor);
       if (!idx) {
         idx = { ids: found, built: Date.now() };
-        try { await env.AMV_KV.put(`wdopen:${em}`, JSON.stringify(idx)); } catch (e) {}
+        try { await env.AMV_KV.put(`wdopen:${em}`, JSON.stringify(idx)); } catch(e) { /* an index rebuilt from the scan next time */ }
       }
     }
     const ids = idx.ids || [];
@@ -1263,7 +1263,7 @@ async function authDeleteAccount(request, env) {
        the person was told it was done while a membership row still named them. */
     _eraseFailed('team membership');
     try { await alertOnce(env, 'erase_team:' + email,
-      'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
+      'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) { /* logging: it never decides anything */ }
   }
 
   /* Their files in object storage - every one, checked gone afterwards. */
@@ -1457,7 +1457,7 @@ async function authDeleteAccount(request, env) {
       await alertOnce(env, 'delete_cancel_fail_' + email,
         'Account deleted but a subscription could not be cancelled for ' + email +
         '. Cancel it in Stripe or PayPal now - this customer is still being charged.', 1);
-    } catch {}
+    } catch { /* logging: it never decides anything */ }
   }
   audit(env, 'account_delete_billing', { email, cancelled, cancelFailed });
 
@@ -1747,7 +1747,7 @@ async function authDeleteAccount(request, env) {
   try {
     const lr = await counter(env, `life:${email}`, { op: 'lifeGet' });
     const teams = (lr && lr.tally && Array.isArray(lr.tally.teams)) ? lr.tally.teams : [];
-    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch (e) {}
+    let tid = null; try { tid = await env.AMV_KV.get(`userteam:${email}`); } catch(e) { /* the lifetime record above names the teams too */ }
     if (tid && teams.indexOf(tid) < 0) teams.push(tid);
     for (const t of teams) {
       const r = await counter(env, `tmuse:${t}:${email}`, { op: 'clear' });
@@ -1778,7 +1778,7 @@ async function authDeleteAccount(request, env) {
         'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
         + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
         + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
-    } catch (e) {}
+    } catch (e) { /* logging: it never decides anything */ }
     return json({
       ok: false,
       incomplete: true,

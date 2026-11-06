@@ -171,7 +171,7 @@ async function teamJoin(request, env){
      So the claim is given back on every path where nobody joined. Re-claiming
      is safe: the invite record itself is what proves they were invited, and it
      is only deleted at the end, on success. */
-  const _unspend = async () => { try { await _releaseClaim(env, 'inviteused', token); } catch (_) {} };
+  const _unspend = async () => { try { await _releaseClaim(env, 'inviteused', token); } catch (_) { /* a lock that expires on its own if this fails */ } };
   const team0 = await DB.get(env, 'team', inv.teamId);
   if(!team0) { await _unspend(); return json({ error:'team gone' }, 404); }
   let team = team0;
@@ -232,7 +232,11 @@ async function teamJoin(request, env){
         if (!fresh) return;
         fresh.members = (fresh.members || []).filter(m => String(m.email||'').toLowerCase() !== String(user.email||'').toLowerCase());
       });
-    } catch (_) {}
+    } catch (_) {
+      /* Said (Nov 3 audit SEC-001): "nothing was changed" is only true if this took. */
+      audit(env, 'team_join_rollback_failed', { team: team.id, email: user.email });
+      try { await alertOnce(env, 'team_join_rollback_failed', 'A team join was rolled back and the rollback did not take: a member may be listed who was told they were not added. See team_join_rollback_failed in the audit log.', 60); } catch (e) { /* logging */ }
+    }
     await _unspend();
     audit(env, 'team_join_rolled_back', { team: team.id, email: user.email });
     return json({ error: 'AMV could not finish adding you to the team. Nothing was changed - please try the invite again.',

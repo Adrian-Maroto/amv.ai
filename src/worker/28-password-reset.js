@@ -113,7 +113,7 @@ async function authResetCode(request, env) {
       try { await alertOnce(env, 'reset_delivery',
         'Password reset codes are not being delivered - the email provider refused or did not answer. '
         + 'Nobody can reset a password until this is fixed, and the reset screen cannot say so, '
-        + 'because saying so would tell strangers which addresses have accounts.', 30); } catch (e) {}
+        + 'because saying so would tell strangers which addresses have accounts.', 30); } catch (e) { /* logging: it never decides anything */ }
     }
   }
 
@@ -204,7 +204,7 @@ async function authResetVerify(request, env) {
   audit(env, 'reset_code_ok', { email });
   /* What the new password must be, for THIS account, so the screen says it. */
   let min = PASSWORD_MIN_ALONE;
-  try { min = _passwordMinFor(await DB.get(env, 'acct', email)); } catch (e) {}
+  try { min = _passwordMinFor(await DB.get(env, 'acct', email)); } catch (e) { /* what the screen shows; the confirm step enforces the account's own minimum */ }
   return json({ ok: true, token, min });
 }
 
@@ -300,7 +300,7 @@ async function resetPage(request, env){
   try {
     const t = token ? JSON.parse((await env.AMV_KV.get('reset:' + token)) || 'null') : null;
     if (t && t.email) min = _passwordMinFor(await DB.get(env, 'acct', t.email));
-  } catch (e) {}
+  } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   const appUrl = (env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
 
   const html = `<!DOCTYPE html>

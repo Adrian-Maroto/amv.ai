@@ -357,7 +357,7 @@ async function authSsoFinish(request, env){
   const acct = fed.acct, created = fed.created;
   if(created){
     try{ await _tallyAdd(env, 'popaccounts', email, 1); }catch(e){ /* best-effort: a public count of accounts */ }
-    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
+    try{ await _recordGrowth(env, 'signup', email); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){ /* logging: it never decides anything */ } }
   }
   /* Into the company's team, if there is a seat. No seat is a refusal, not a
      personal account: the company is paying for these, and somebody signing in
@@ -382,7 +382,7 @@ async function authSsoFinish(request, env){
       await env.AMV_KV.put('userteam:' + email, team.id);
       await _setUserTeam(env, email, team.id);
     }catch(e){
-      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){}
+      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){ audit(env, 'team_join_rollback_failed', { team: team.id, email, via: 'sso' }); }
       return json({ error:'AMV could not finish signing you in. Nothing was changed - please try again.', code:'join_incomplete' }, 503);
     }
     if(joined && joined.joined) await _teamAudit(env, team, email, 'member_joined', { via:'sso' });

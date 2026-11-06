@@ -156,7 +156,7 @@ async function syncPush(request, env){
       'Sync writes on this deployment are merged, not arbitrated: KV has no conditional write, so two devices saving the '
       + 'same record in the same instant can overwrite each other. The cure is a D1 database - but do NOT just bind one: '
       + 'the moment DB is bound every read goes to D1 alone and every existing account would read as missing. It needs a '
-      + 'migration (copy KV into D1, read through to KV until verified) first.', 7 * 24 * 60); }catch(e){}
+      + 'migration (copy KV into D1, read through to KV until verified) first.', 7 * 24 * 60); }catch(e) { /* logging: it never decides anything */ }
   }
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
@@ -566,11 +566,11 @@ function _stripeSessionPaid(session) {
 
 async function _pendStart(env, id, data) {
   if (!id) return;
-  try { await DB.put(env, PEND_KIND, String(id), Object.assign({ at: Date.now() }, data || {})); } catch (e) {}
+  try { await DB.put(env, PEND_KIND, String(id), Object.assign({ at: Date.now() }, data || {})); } catch(e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
 }
 async function _pendDone(env, id) {
   if (!id) return;
-  try { await DB.del(env, PEND_KIND, String(id)); } catch (e) {}
+  try { await DB.del(env, PEND_KIND, String(id)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
 }
 
 async function reconcilePayments(env) {

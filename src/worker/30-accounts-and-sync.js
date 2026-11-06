@@ -311,7 +311,7 @@ async function _pwMatches(env, acct, password){
     const sec = await _pepperFor(env, acct.pwPep);
     if(!sec){
       audit(env, 'password_pepper_missing', { pep: acct.pwPep });
-      try{ await alertOnce(env, 'pepper_missing:' + acct.pwPep, 'A password was checked against an account hashed with a pepper (' + acct.pwPep + ') that is neither PASSWORD_PEPPER nor PASSWORD_PEPPER_PREVIOUS, so the check FAILED. If the secret was changed, put the old value back as PASSWORD_PEPPER_PREVIOUS.', 60); }catch(e){}
+      try{ await alertOnce(env, 'pepper_missing:' + acct.pwPep, 'A password was checked against an account hashed with a pepper (' + acct.pwPep + ') that is neither PASSWORD_PEPPER nor PASSWORD_PEPPER_PREVIOUS, so the check FAILED. If the secret was changed, put the old value back as PASSWORD_PEPPER_PREVIOUS.', 60); }catch(e){ /* logging: it never decides anything */ }
       return false;
     }
     cand = await _pepperWrap(sec, h);
@@ -359,7 +359,7 @@ async function _verifyCaptcha(env, token, request){
     try { await alertOnce(env, 'turnstile_unset',
       'Turnstile is not configured, so sign-up and sign-in have no captcha. Only the honeypot and the '
       + 'per-address rate limit stand in front of account creation, and every account carries a free '
-      + 'allowance and a scheduled job. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET.', 60 * 24); } catch (e) {}
+      + 'allowance and a scheduled job. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET.', 60 * 24); } catch (e) { /* logging: it never decides anything */ }
     return true;
   }
   if (!env.TURNSTILE_SITE_KEY) {
@@ -368,7 +368,7 @@ async function _verifyCaptcha(env, token, request){
        because a silent security downgrade is its own failure. */
     audit(env, 'captcha_misconfigured', { why: 'TURNSTILE_SECRET set without TURNSTILE_SITE_KEY' });
     try { await alertOnce(env, 'turnstile_halfset',
-      'Turnstile is half-configured: TURNSTILE_SECRET is set but TURNSTILE_SITE_KEY is not, so no browser can produce a token. Captcha is being SKIPPED. Set TURNSTILE_SITE_KEY to switch it on.'); } catch (e) {}
+      'Turnstile is half-configured: TURNSTILE_SECRET is set but TURNSTILE_SITE_KEY is not, so no browser can produce a token. Captcha is being SKIPPED. Set TURNSTILE_SITE_KEY to switch it on.'); } catch (e) { /* logging: it never decides anything */ }
     return true;
   }
   if (!token) return false;
@@ -521,10 +521,10 @@ async function _accountCreated(env, request, em, safeName, body){
      and the conversion rate read low for ever. Sibling of AMV-SP-01: the same
      wrong variable at the same call, throwing in one path and silently
      miscounting in the other. */
-  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){}
+  try{ await _recordGrowth(env, 'signup', em); await _funnelMark(env, em, 'signup'); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
-  try{ await _referralCapture(env, request, em, (body || {}).ref); }catch(e){}
+  try{ await _referralCapture(env, request, em, (body || {}).ref); }catch(e) { /* a count for the owner's figures: never decides access or money */ }
   /* NO EMAIL ON SIGN-UP (the owner's decision, Oct 26): creating an account
      signs the person straight in. The emailed code is for signing in on a
      new device, which is where it protects somebody. The one email kept here
@@ -565,7 +565,7 @@ async function _signinFails(env, em) {
   } catch (e) { return Infinity; }
 }
 async function _signinFailsClear(env, em) {
-  try { await counter(env, _signinFailName(em), { op: 'clear', strict: true }); } catch (e) {}
+  try { await counter(env, _signinFailName(em), { op: 'clear', strict: true }); } catch(e) { /* the run of wrong guesses ages out on its own */ }
 }
 
 async function authLogin(request, env) {
@@ -699,7 +699,7 @@ async function authLogin(request, env) {
     return json(SAME_ANSWER, 401);
   }
   // success - clear the failure counter
-  try{ await env.AMV_KV.delete(rlKey); }catch(e){}
+  try{ await env.AMV_KV.delete(rlKey); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   // transparent upgrade: below the current count, or not under the current
   // pepper, re-hash now with the password that just proved itself
   if(await _pwNeedsUpgrade(env, acct)){
@@ -739,7 +739,7 @@ async function authLogin(request, env) {
     if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason, body.lang); if (c) return c; }
   }
   await _signinFailsClear(env, em);
-  try{ await _markActive(env, em); }catch(e){}
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
   await _userEvent(env, request, em, 'signed_in');
   /* Trust is counted from the LAST sign-in, not the first code: somebody who
      signs in every week should not be asked for a code every thirty days. */

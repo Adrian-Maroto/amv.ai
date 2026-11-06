@@ -16,7 +16,7 @@ async function stripeAutoRenew(request, env) {
                   code: 'needs_service' }, 503);
 
   let body = {};
-  try { body = await request.json(); } catch (e) {}
+  try { body = await request.json(); } catch (e) { /* a body that does not parse is an empty request, refused by the checks after it */ }
   /* Explicit, both ways. A missing field is not "off" - it is a caller that
      did not say, and guessing either way changes somebody's billing. */
   if (typeof body.on !== 'boolean')
@@ -120,7 +120,7 @@ async function _recordTxn(env, tx) {
        and would make every replay look new. */
     if (tx.id) {
       const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { try { return JSON.parse(seen); } catch (e) {} }
+      if (seen) { try { return JSON.parse(seen); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
       const legacy = await env.AMV_KV.get('txn:log');
       if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return old; }
     }
@@ -154,11 +154,11 @@ async function _readTxnLog(env, limit = 200) {
       if (!r || r.list_complete || !r.cursor) break;
       cursor = r.cursor;
     }
-  } catch (e) {}
+  } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   try {
     const raw = await env.AMV_KV.get('txn:log');
     if (raw) { const have = new Set(out.map((e) => e.id)); for (const e of JSON.parse(raw) || []) if (e && !have.has(e.id)) out.push(e); }
-  } catch (e) {}
+  } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   out.sort((x, y) => (y.ts || 0) - (x.ts || 0));
   return out.slice(0, limit);
 }
@@ -403,7 +403,7 @@ async function _onceOrRetry(env, kind, id, ttlSec, work){
     const value = await work();
     return { claimed: true, value };
   }catch(e){
-    try{ await _releaseClaim(env, kind, id); }catch(_){}
+    try{ await _releaseClaim(env, kind, id); }catch(_){ /* a lock that expires on its own if this fails */ }
     audit(env, 'claim_released_after_failure', { kind, id: String(id).slice(0, 120),
                                                  error: String((e && e.message) || e).slice(0, 160) });
     throw e;
@@ -428,13 +428,13 @@ async function _releaseClaim(env, kind, id){
           try{ await alertOnce(env, 'lock_lease_expired:' + kind,
             'A lock on ' + kind + ' expired while the work it was protecting was still running, so another '
             + 'writer took it. Two writers were briefly inside the same critical section. If this recurs, the '
-            + 'lease is too short for what it is guarding.', 60); }catch(_){}
+            + 'lease is too short for what it is guarding.', 60); }catch(_){ /* logging: it never decides anything */ }
         }
-      }catch(e){}
+      }catch(e) { /* a lock that expires on its own if this fails */ }
     }
     if(DB._hasD1(env)){
       await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
     } else { await env.AMV_KV.delete(`${kind}:${id}`); }
-  }catch(e){}
+  }catch(e) { /* a lock that expires on its own if this fails */ }
 }
 

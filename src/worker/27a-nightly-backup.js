@@ -61,7 +61,7 @@ async function _nightlyBackupSlice(env, atMs){
     if (!y || !y.done) {
       try { await alertOnce(env, 'nightly_backup_late',
         'Last night’s backup (' + yesterday + ') did not finish' + (y && y.failed ? ': ' + y.failed : '') + '. '
-        + 'The newest complete one is still in the backups bucket; tonight’s starts on its own.', 12 * 60); } catch (e) {}
+        + 'The newest complete one is still in the backups bucket; tonight’s starts on its own.', 12 * 60); } catch (e) { /* logging: it never decides anything */ }
     }
   }
 
@@ -88,7 +88,7 @@ async function _nightlyBackupSlice(env, atMs){
         audit(env, 'nightly_backup_failed', { day, key: k.name, bytes: raw.length });
         try { await alertOnce(env, 'nightly_backup_failed',
           'Tonight’s backup was abandoned: ' + st.failed + ', so it could not have been restored in full. '
-          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) {}
+          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
         return { on: true, day, failed: st.failed };
       }
       lines.push(JSON.stringify({ k: k.name, v: raw }));
@@ -213,7 +213,7 @@ async function _nightlyDrillSlice(env, day){
   const r = await _restoreFromNight(env, day, (run && run.next) || 0, 'verify');
   const body = await r.json().catch(() => ({}));
   if (body.more) return { drill: 'partial', through: body.nextPart };
-  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) {} }
+  if (!body.ok) { try { await alertOnce(env, 'backup_drill_failed', 'The drill of the ' + day + ' backup found it unsound (' + (body.code || (body.badParts && body.badParts.length ? 'parts that do not match their checksum' : 'records that would not restore')) + '). It is not counted as a backup. Run the drill by hand to see which parts.', 12 * 60); } catch (e) { /* logging: it never decides anything */ } }
   return { drill: body.ok ? 'sound' : 'unsound' };
 }
 /* WHAT "A RECENT BACKUP EXISTS" MEANS (Nov 3 audit REL-017). Not that a
@@ -359,15 +359,15 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
     const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part));
     if (!o) {
       /* The night is no longer whole: whatever drill said otherwise is void. */
-      try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
-      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' is missing from the bucket.', 5); } catch (e) {}
+      try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' is missing from the bucket.', 5); } catch (e) { /* logging: it never decides anything */ }
       return json({ ok: false, code: 'restore_incomplete', error: 'Part ' + part + ' of the ' + day + ' backup is missing, so the restore stopped there. ' + (drill ? 'Run the drill again once it is back.' : 'Parts before it were restored; run a drill again before continuing.'), ...t, nextPart: part }, 422);
     }
     const text = await o.text();
     if (sums && (await _sha256Hex(text)) !== sums[part]) {
       if (drill) { t.badParts.push(part); continue; }
-      try { await env.AMV_KV.delete(_drillKey(day)); } catch (e) {}
-      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' no longer matches its checksum.', 5); } catch (e) {}
+      try { await env.AMV_KV.delete(_drillKey(day)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try { await alertOnce(env, 'restore_incomplete', 'A restore from the ' + day + ' backup stopped: part ' + part + ' no longer matches its checksum.', 5); } catch (e) { /* logging: it never decides anything */ }
       return json({ ok: false, code: 'restore_checksum', error: 'Part ' + part + ' of the ' + day + ' backup no longer matches its checksum, so the restore stopped there.', ...t, nextPart: part }, 422);
     }
     const entries = [];
@@ -402,7 +402,7 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
       await env.AMV_KV.put(_drillKey(day) + ':run', JSON.stringify(Object.assign({}, acc, { next: part })), { expirationTtl: 86400 });
       return json({ ...base, more: true, nextPart: part }, 202);
     }
-    try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) {}
+    try { await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
     const whole = prior || !(parseInt(fromPart, 10) > 0);
     if (sound && whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: true, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
     else if (whole) await env.AMV_KV.put(_drillKey(day), JSON.stringify({ sound: false, parts: man.parts, sig: man.sig || '', at: Date.now() }), { expirationTtl: 40 * 86400 });
