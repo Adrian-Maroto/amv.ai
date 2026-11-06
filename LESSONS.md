@@ -15631,3 +15631,16 @@ data. The bundler printed a warning nobody reads.
 Rule: a read path that fans out is counted in calls by a test with a ceiling
 (an-objective-is-measured-and-its-breach-said), and a figure added to an
 answer is read back from that answer by name, not assumed present.
+
+## 623. A safety mechanism is only as consistent as where it keeps its answer
+
+The Nov 3 audit found the same mistake six times: a fence, a proof, a
+revocation, a revision, a migration intent and a "backup is fresh" flag, each
+built carefully and each keeping its deciding fact in KV, which another region
+can read stale for a minute or more. A proof another region had removed could
+still vouch for a row; a forgotten sign-in could be saved again by a run that
+started before the forget; a revision could move without its value.
+Rule: the fact that decides whether something is safe lives in strongly
+consistent storage (a Durable Object, or a database transaction with the
+data). KV may cache it or hold the bulk it points at, never be the only place
+that answers "is this allowed".
