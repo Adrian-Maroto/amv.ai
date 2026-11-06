@@ -71,12 +71,22 @@ else works. Nothing is quietly replaced by something else. Switching off
   each against the checksum the manifest recorded, and writes nothing; a
   restore without a sound drill of that night is refused (`drill_required`),
   and a part that changed since is refused again at restore time
-  (`restore_checksum`). Then restore it
+  (`restore_checksum`). The cron drills every finished night on its own, and
+  readiness counts a backup only once its signed manifest has a sound drill.
+  Before restoring, PAUSE EVERY CHANGE: `POST /v1/admin/switch
+  {"name":"feature:writes","off":true,"why":"restoring"}` - people are told
+  changes are paused and nothing is lost, the cron stops, and only the owner's
+  console writes; a restore is refused without it (`freeze_required`). Then restore it
   with `POST /admin/backup/import {"fromNight":"YYYY-MM-DD","mode":"missing"}`
   - `missing` puts back only what is gone and never overwrites newer data;
   `merge` writes the whole night over what is there. A large night answers
   `202` with `nextPart`: call again with `"fromPart": <nextPart>` until it
-  answers `200`. A restore never undoes a revocation, a block or a sign-out
+  answers `200`, carrying the `runId` from the first answer each time. What
+  each part replaced is kept in the bucket first (`restores/<day>/<runId>/`),
+  so the whole restore can be taken back exactly with
+  `{"fromNight":"YYYY-MM-DD","rollbackRun":"<runId>"}` (same pause, same
+  slices). Check the result, then switch `feature:writes` back on. A restore
+  never undoes a revocation, a block or a sign-out
   that happened after the night was taken, and says how many it held forward.
   When D1 is the store, use D1 Time Travel instead (thirty days, to the minute).
 

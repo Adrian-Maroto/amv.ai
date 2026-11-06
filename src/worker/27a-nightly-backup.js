@@ -256,7 +256,67 @@ async function _sha256Hex(text){
    control plane lives there (docs/DATA-TIER.md). */
 const _drillKey = (day) => 'bkdrill:' + day;
 
-async function _restoreFromNight(env, day, fromPart, mode){
+/* A RESTORE THAT CAN BE TAKEN BACK, WITH NOTHING ELSE WRITING (Nov 3 audit
+   DR-009/DR-004). A KV store has no switch to flip between two whole copies,
+   so a restore is still applied record by record. What changes is what that
+   is allowed to mean:
+     - nothing else writes while it runs: a restore is refused unless the
+       owner has switched off `feature:writes` (every change by people and by
+       API is paused, honestly, until it is back on), so the store is never a
+       mix of the backup and writes that landed half way through;
+     - every record's value BEFORE the restore is kept in the bucket first,
+       part by part (`restores/<day>/<run>/before-NNNNNN.ndjson`), so the
+       whole restore can be taken back ({ rollbackRun }) to exactly what was
+       there - the old state is retained, not overwritten;
+     - a run is named (`runId`), and each later slice must carry it.
+   The true point-in-time switch is the Postgres provider's, once the control
+   plane lives there (docs/DATA-TIER.md). */
+const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
+/* Asked fresh, never from a cache: is everything else paused RIGHT NOW. */
+async function _restoreFrozen(env){
+  let m = null;
+  if (env.AMV_COUNTER) { try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true }); if (r && r.map && typeof r.map === 'object') m = r.map; } catch (e) { return false; } }
+  if (!m) { try { m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); } catch (e) { return false; } }
+  return !!(m && m['feature:writes'] && m['feature:writes'].off);
+}
+async function _restoreJournal(env, day, run, part, entries){
+  const lines = [];
+  for (const [key] of entries) {
+    let before = null;
+    try { before = await env.AMV_KV.get(key); } catch (e) { throw new Error('a record could not be read before it was replaced: ' + key); }
+    lines.push(JSON.stringify({ k: key, v: before }));
+  }
+  await env.AMV_BACKUPS.put(_restoreRunBase(day, run) + 'before-' + String(part).padStart(6, '0') + '.ndjson', lines.join('\n') + '\n');
+}
+/* Taken back: every journaled record put back as it was before the restore
+   (absent ones deleted), newest part first. Same freeze, same slices. */
+async function _restoreRollback(env, day, run, fromPart){
+  if (!/^[0-9a-f]{16}$/.test(String(run || ''))) return json({ error: 'Name the restore run to take back.', code: 'bad_request' }, 400);
+  if (!(await _restoreFrozen(env))) return json({ error: 'Switch off feature:writes first, so nothing changes while the restore is taken back.', code: 'freeze_required' }, 409);
+  const base = _restoreRunBase(day, run);
+  let st = null; try { const o = await env.AMV_BACKUPS.get(base + 'state.json'); if (o) st = JSON.parse(await o.text()); } catch (e) { st = null; }
+  if (!st) return json({ error: 'There is no restore run ' + run + ' for ' + day + '.', code: 'not_found' }, 404);
+  const started = Date.now();
+  let part = fromPart != null ? parseInt(fromPart, 10) : (st.journaled || 0) - 1;
+  let put = 0;
+  for (; part >= 0; part--) {
+    if (Date.now() - started > NIGHTLY_SLICE_MS) break;
+    const o = await env.AMV_BACKUPS.get(base + 'before-' + String(part).padStart(6, '0') + '.ndjson');
+    if (!o) continue;
+    for (const line of (await o.text()).split('\n')) {
+      if (!line) continue;
+      const r = JSON.parse(line);
+      if (r.v == null) await env.AMV_KV.delete(r.k); else await env.AMV_KV.put(r.k, r.v);
+      put++;
+    }
+  }
+  audit(env, 'backup_rollback', { day, run, put, through: part });
+  if (part >= 0) return json({ ok: true, more: true, nextPart: part, put }, 202);
+  st.rolledBack = Date.now();
+  await env.AMV_BACKUPS.put(base + 'state.json', JSON.stringify(st));
+  return json({ ok: true, more: false, put, note: 'Every record is back as it was before the restore. Switch feature:writes back on.' });
+}
+async function _restoreFromNight(env, day, fromPart, mode, runIn){
   if (!_nightlyOn(env)) return json({ error: 'Nightly backups are not switched on here.', code: 'needs_service' }, 503);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) return json({ error: 'Name the night as YYYY-MM-DD.', code: 'bad_request' }, 400);
   let man = null;
@@ -272,13 +332,28 @@ async function _restoreFromNight(env, day, fromPart, mode){
   const drill = mode === 'verify';
   if (drill) { t.verified = 0; t.badParts = []; }
   const sums = Array.isArray(man.partSha) && man.partSha.length === man.parts ? man.partSha : null;
+  let run = '', runSt = null;
   if (!drill) {
+    if (!(await _restoreFrozen(env)))
+      return json({ error: 'Switch off feature:writes first (POST /v1/admin/switch), so nothing else changes while the restore runs - then switch it back on when it is done.', code: 'freeze_required' }, 409);
     let d = null;
     try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
     if (!d || !d.sound || d.parts !== man.parts || (d.sig || '') !== (man.sig || ''))
       return json({ error: 'Run a drill of the ' + day + ' backup first ({ fromNight, mode: "verify" }, until it answers more: false). A restore only starts once every part of the night has been read and checked, so nothing is written from a backup that would stop half way.', code: 'drill_required' }, 409);
   }
   let part = Math.max(0, parseInt(fromPart, 10) || 0);
+  if (!drill) {
+    /* The run: made at the first slice, required for every later one. */
+    if (part === 0 && !runIn) {
+      run = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
+      runSt = { day, run, startedAt: Date.now(), journaled: 0, applied: 0 };
+      await env.AMV_BACKUPS.put(_restoreRunBase(day, run) + 'state.json', JSON.stringify(runSt));
+    } else {
+      run = String(runIn || '');
+      try { const o = /^[0-9a-f]{16}$/.test(run) ? await env.AMV_BACKUPS.get(_restoreRunBase(day, run) + 'state.json') : null; if (o) runSt = JSON.parse(await o.text()); } catch (e) { runSt = null; }
+      if (!runSt || runSt.rolledBack) return json({ error: 'Carry on a restore by naming its run (runId from its first answer).', code: 'run_required' }, 409);
+    }
+  }
   for (; part < man.parts; part++) {
     if (Date.now() - started > NIGHTLY_SLICE_MS) break;
     const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part));
@@ -302,7 +377,15 @@ async function _restoreFromNight(env, day, fromPart, mode){
       if (r && typeof r.k === 'string') entries.push([r.k, r.v]);
     }
     if (drill) _drillEntries(entries, t);
-    else await _restoreEntries(env, entries, mode, t);
+    else {
+      /* What was there first, kept - then applied. */
+      await _restoreJournal(env, day, run, part, entries);
+      runSt.journaled = part + 1;
+      await env.AMV_BACKUPS.put(_restoreRunBase(day, run) + 'state.json', JSON.stringify(runSt));
+      await _restoreEntries(env, entries, mode, t);
+      runSt.applied = part + 1;
+      await env.AMV_BACKUPS.put(_restoreRunBase(day, run) + 'state.json', JSON.stringify(runSt));
+    }
   }
   if (drill) {
     audit(env, 'backup_drill', { from: 'night:' + day, verified: t.verified, refused: t.refused, unrestorable: t.unrestorable, through: part });
@@ -328,9 +411,10 @@ async function _restoreFromNight(env, day, fromPart, mode){
   }
   audit(env, 'backup_import', { mode, from: 'night:' + day, ...t, lost: t.lost.join(',') || undefined, through: part });
   const ok = !t.unrestorable;
-  if (part < man.parts) return json({ ok, more: true, nextPart: part, parts: man.parts, ...t,
-    note: 'Restored parts up to ' + part + ' of ' + man.parts + '. Call again with fromPart: ' + part + ' to go on.' }, ok ? 202 : 422);
-  return json({ ok, more: false, parts: man.parts, ...t, snapshotFrom: man.finishedISO,
-    note: t.heldForward ? t.heldForward + ' record(s) were restored WITHOUT undoing a revocation, block or sign-out that happened after this backup was taken.' : null },
+  if (part < man.parts) return json({ ok, more: true, nextPart: part, parts: man.parts, runId: run, ...t,
+    note: 'Restored parts up to ' + part + ' of ' + man.parts + '. Call again with fromPart: ' + part + ' and runId: ' + run + ' to go on. To take it all back: { fromNight, rollbackRun: ' + run + ' }.' }, ok ? 202 : 422);
+  return json({ ok, more: false, parts: man.parts, runId: run, ...t, snapshotFrom: man.finishedISO,
+    note: (t.heldForward ? t.heldForward + ' record(s) were restored WITHOUT undoing a revocation, block or sign-out that happened after this backup was taken. ' : '')
+      + 'Check it, then switch feature:writes back on - or take it back with { fromNight, rollbackRun: ' + run + ' }.' },
     ok ? 200 : 422);
 }

@@ -43,6 +43,9 @@ const SWITCH_FEATURES = {
   sms:         { what: 'Text messages',                 prefixes: ['/sms/'] },
   api:         { what: 'The AMV API (API keys)',        prefixes: [] },          // by credential, see _switchForRequest
   automations: { what: 'Background jobs',               prefixes: ['/auto/create'] }, // and the scheduler itself
+  /* Every change, by anybody: what a restore runs under (27a-nightly-backup.js,
+     Nov 3 audit DR-009). Reading, signing in and the owner's console go on. */
+  writes:      { what: 'Saving changes',                prefixes: [] },          // by method, see _switchForRequest
 };
 let _swCache = { at: 0, map: null };
 async function _switches(env) {
@@ -120,6 +123,14 @@ function _switchForRequest(request, path) {
   return null;
 }
 async function _switchGate(request, env, path) {
+  /* Any change, while a restore runs (feature:writes): refused, honestly,
+     whoever makes it - a payment provider's webhook retries later. The
+     owner's console is the only thing that writes. */
+  if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS'
+      && !path.startsWith('/admin/') && !path.startsWith('/v1/admin/')) {
+    const w = await _switchedOff(env, 'feature:writes');
+    if (w) return json({ error: 'AMV is being restored from a backup, so changes are paused for a few minutes. Nothing you had is lost - try again shortly.', code: 'paused', switch: w.name }, 503, { 'Retry-After': '300' });
+  }
   const f = _switchForRequest(request, path);
   if (!f) return null;
   const hit = await _switchedOff(env, f.name);

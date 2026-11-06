@@ -165,7 +165,7 @@ export default {
       ctx.waitUntil((async()=>{
         let killed = false;
         try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
-        if(killed) return;
+        if(killed || await _restoreFrozen(env)) return;
         try{
           const r = await runDueAutomations(env, 0, { quick: true });
           if(r.ran || r.failed || r.deferred) console.log('[cron:minute] automations', JSON.stringify(r));
@@ -195,6 +195,11 @@ export default {
          operator is trying to stop. */
       let killed = false;
       try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){}
+      /* A RESTORE IS RUNNING (feature:writes off, Nov 3 audit DR-009): the
+         cron writes too - jobs, sweeps, backups - and a write landing in the
+         middle of a restore is exactly the mixed store the pause exists to
+         prevent. Nothing runs until it is switched back on. */
+      if(await _restoreFrozen(env)){ console.log('[cron] paused: a restore is running (feature:writes off)'); return; }
 
       if(killed){
         console.log('[cron] paused by GLOBAL_KILL - automations skipped');

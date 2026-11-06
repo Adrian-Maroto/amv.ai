@@ -731,7 +731,8 @@ async function backupImport(request, env){
      mode 'verify' is the restore DRILL: every part read and every record
      checked as a restore would check it, nothing written - so it can be run
      against production on any day without changing anybody's data. */
-  if (body.fromNight) return _restoreFromNight(env, body.fromNight, body.fromPart, body.mode === 'verify' ? 'verify' : mode);
+  if (body.fromNight && body.rollbackRun) return _restoreRollback(env, body.fromNight, body.rollbackRun, body.fromPart);
+  if (body.fromNight) return _restoreFromNight(env, body.fromNight, body.fromPart, body.mode === 'verify' ? 'verify' : mode, body.runId);
   if (body.mode === 'verify') return json({ error: 'A drill reads a nightly backup: name it with fromNight.', code: 'bad_request' }, 400);
 
   if(!snap || snap._amv_backup !== 1 || !snap.data || typeof snap.data !== 'object')

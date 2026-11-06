@@ -107,12 +107,16 @@ async function drillAll(){
   } while (body.more && rounds < 20);
   return Object.assign(body, { res, verified });
 }
+/* A restore runs with every other change paused (Nov 3 audit DR-009). */
+const freeze = (on) => env._m.set('switches', JSON.stringify(on ? { 'feature:writes': { off: true, why: 'restore' } } : {}));
 async function restoreAll(){
-  let res, body, from = 0, rounds = 0;
+  let res, body, from = 0, rounds = 0, runId;
+  freeze(true);
   do {
-    res = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: from }), env);
-    body = await res.json(); from = body.nextPart; rounds++;
+    res = await W.backupImport(admin('/admin/backup/import', Object.assign({ fromNight: DAY, fromPart: from }, runId ? { runId } : {})), env);
+    body = await res.json(); from = body.nextPart; runId = body.runId || runId; rounds++;
   } while (body.more && rounds < 20);
+  freeze(false);
   return Object.assign(body, { res });
 }
 
@@ -216,6 +220,9 @@ section('A night is put back only after a drill found all of it sound, through t
 {
   for (const k of [...env._m.keys()]) if (k.startsWith('acct:')) env._m.delete(k);
   for (const k of [...env._m.keys()]) if (k.startsWith('bkdrill:')) env._m.delete(k);
+  const notFrozen = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
+  ok(notFrozen.status === 409 && (await notFrozen.json()).code === 'freeze_required', 'a restore with other changes still possible is refused before anything is read (Nov 3 audit DR-009)');
+  freeze(true);
   const early = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
   const e = await early.json();
   ok(early.status === 409 && e.code === 'drill_required' && ![...env._m.keys()].some(k => k.startsWith('acct:')), 'without a sound drill of that night, nothing is restored at all', e);
@@ -226,6 +233,7 @@ section('A night is put back only after a drill found all of it sound, through t
   const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
   B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
   env._m.set('GLOBAL_KILL', '0');
+  freeze(true);
   const t = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
   const tb = await t.json();
   ok(t.status === 422 && tb.code === 'restore_checksum' && env._m.get('GLOBAL_KILL') === '0', 'a part changed since the drill stops the restore before it is applied', tb);
@@ -236,6 +244,7 @@ section('A night is put back only after a drill found all of it sound, through t
   const d = await drillAll();
   ok(d.res.status === 422 && d.code === 'restore_incomplete', 'a missing part fails the drill and says where', d);
   for (const k of [...env._m.keys()]) if (k.startsWith('acct:')) env._m.delete(k);
+  freeze(true);
   const r2 = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY }), env);
   ok(r2.status === 409 && ![...env._m.keys()].some(k => k.startsWith('acct:')), 'and with no sound drill since, the restore writes nothing - no half-restored store', r2.status);
   B.o.set(p1, orig1);
@@ -243,6 +252,37 @@ section('A night is put back only after a drill found all of it sound, through t
   ok(none.status === 404, 'a night with no complete backup is refused', none.status);
   const anon = await W.backupImport(new Request('https://api.amv.test/admin/backup/import', { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ fromNight: DAY }) }), env);
   ok(anon.status === 401 || anon.status === 403, 'and without the owner’s token nothing is restored', anon.status);
+}
+
+section('A restore keeps what was there first, and can be taken back exactly (Nov 3 audit DR-009)');
+{
+  freeze(false);
+  await drillAll();
+  await restoreAll();                                   // the accounts back, as the night had them
+  /* The store as it is now - some accounts changed since the backup, one new. */
+  const accts = [...env._m.keys()].filter(k => k.startsWith('acct:')).sort();
+  env._m.set(accts[0], JSON.stringify({ email: 'changed@after', note: 'changed after the backup' }));
+  env._m.set('acct:new-after-backup@example.com', JSON.stringify({ email: 'new-after-backup@example.com' }));
+  env._m.delete(accts[1]);                               // and one deleted since: the restore brings it back, taking it back deletes it again
+  const before = JSON.stringify([...env._m.entries()].filter(([k]) => k.startsWith('acct:')).sort());
+  const body = await restoreAll();
+  ok(body.ok && /^[0-9a-f]{16}$/.test(body.runId), 'the restore runs under a named run', body.runId);
+  ok(JSON.parse(env._m.get(accts[0])).note !== 'changed after the backup', 'the backup is applied');
+  const journal = [...B.o.keys()].filter(k => k.startsWith('restores/' + DAY + '/' + body.runId + '/before-'));
+  ok(journal.length === body.parts, 'what each part replaced was kept first, part by part', journal.length);
+  const cont = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: 1 }), env);
+  freeze(true);
+  const cont2 = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, fromPart: 1 }), env);
+  ok(cont.status === 409 && cont2.status === 409 && (await cont2.json()).code === 'run_required', 'a later slice must name its run');
+  freeze(false);
+  const unfrozen = await W.backupImport(admin('/admin/backup/import', { fromNight: DAY, rollbackRun: body.runId }), env);
+  ok(unfrozen.status === 409, 'taking it back needs the same pause', unfrozen.status);
+  freeze(true);
+  let rb, rounds = 0, from;
+  do { rb = await (await W.backupImport(admin('/admin/backup/import', Object.assign({ fromNight: DAY, rollbackRun: body.runId }, from != null ? { fromPart: from } : {})), env)).json(); from = rb.nextPart; rounds++; } while (rb.more && rounds < 20);
+  freeze(false);
+  const after = JSON.stringify([...env._m.entries()].filter(([k]) => k.startsWith('acct:')).sort());
+  ok(rb.ok && after === before, 'taken back, every account is exactly as it was before the restore - the change after the backup included', [rb.ok, after.length, before.length]);
 }
 
 section('A backup counts only when it is signed, whole and drilled - by the cron itself (Nov 3 audit REL-017)');

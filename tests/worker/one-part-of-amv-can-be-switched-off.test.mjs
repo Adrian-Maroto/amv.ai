@@ -119,6 +119,27 @@ section('One feature off: exactly that feature stops');
   ok(r2.status !== 503, 'switched back on, it answers again', r2.status);
 }
 
+section('Saving changes off - what a restore runs under: every change waits, reading and the console go on (Nov 3 audit DR-009)');
+{
+  const env = mkEnv({ AMV_FILES: { async get() { return null; }, async put() {}, async delete() {}, async list() { return { objects: [] }; } } });
+  const tok = await signedIn(env);
+  const f = await flipSwitch(env, 'feature:writes', true, 'restoring from a backup');
+  ok(f.status === 200, 'the owner pauses every change from the console');
+  const w = await call(env, '/sync/push', { data: { convs: [] }, baseRev: 0 }, { Authorization: 'Bearer ' + tok });
+  const wd = await w.json();
+  ok(w.status === 503 && wd.code === 'paused' && /restored from a backup/.test(wd.error), 'a change is refused, and the person is told why and that nothing is lost', wd);
+  const s = await call(env, '/auth/signup', { email: 'late@example.com', name: 'L', password: PW });
+  ok(s.status === 503, 'a new account waits too - nothing is written between the backup and what it replaces', s.status);
+  const r = await call(env, '/v1/library', undefined, { Authorization: 'Bearer ' + tok });
+  ok(r.status !== 503, 'reading still works', r.status);
+  const list = await call(env, '/v1/admin/switches', undefined, ADMIN);
+  ok(list.status === 200, 'and the owner\u2019s console still answers');
+  const back = await flipSwitch(env, 'feature:writes', false);
+  ok(back.status === 200, 'and can switch it back on - the console is never paused');
+  const w2 = await call(env, '/sync/push', { data: { convs: [] }, baseRev: 0 }, { Authorization: 'Bearer ' + tok });
+  ok(w2.status !== 503, 'after which changes are saved again', w2.status);
+}
+
 section('One engine off: refused by name, never swapped; the others run');
 {
   const env = mkEnv();
