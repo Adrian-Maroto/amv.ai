@@ -44,6 +44,7 @@ process.on('exit', () => { try { stop(); } catch (e) {} try { rmSync(dir, { recu
 const PSQL = existsSync(join(BIN, 'psql')) ? join(BIN, 'psql') : 'psql';
 const q = (sql) => execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At', '-q', '-c', sql], { stdio: 'pipe' }).toString().trim();
 execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-f', SCHEMA], { stdio: 'pipe' });
+execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-f', SCHEMA.replace('0001_control_plane', '0002_money_constraints')], { stdio: 'pipe' });
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgread.' + process.pid + '.harness.mjs');

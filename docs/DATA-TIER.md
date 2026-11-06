@@ -52,7 +52,7 @@ Before anything was applied, the schema had a second pass:
    which returns an id. The connection string never enters this repository: it
    is given to Hyperdrive once, in the terminal or the dashboard.
 3. The id is then added to wrangler.toml as `[[hyperdrive]] binding = "PG"`,
-   and the schema applied once with `psql -f migrations/postgres/0001_control_plane.sql`.
+   and the schema applied once with `psql -f migrations/postgres/0001_control_plane.sql` and then `0002_money_constraints.sql` (supported currencies, non-zero bounded amounts, seller money in whole minor units).
 
 Nothing changes for anybody until step 4 of the migration below.
 

@@ -55,6 +55,10 @@ if (started) {
     try { execFileSync(PSQL, ['-h', dir, '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-f', SQL], { stdio: 'pipe' }); }
     catch (e) { applied = false; err = String(e.stderr || e.message); }
     ok(applied, 'migrations/postgres/0001_control_plane.sql applies cleanly', err.slice(0, 400));
+    let applied2 = true, err2 = '';
+    try { execFileSync(PSQL, ['-h', dir, '-p', String(PORT), '-U', user, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-f', SQL.replace('0001_control_plane', '0002_money_constraints')], { stdio: 'pipe' }); }
+    catch (e) { applied2 = false; err2 = String(e.stderr || e.message); }
+    ok(applied2, 'and 0002_money_constraints.sql on top of it', err2.slice(0, 400));
     const tables = q("select count(*) from information_schema.tables where table_schema='public'").out;
     ok(+tables >= 12, 'and creates the control-plane tables', tables);
   }
@@ -142,6 +146,27 @@ if (started) {
     ok(usd === '9.700000', '10 - 0.1 - 0.2 dollars is exactly 9.70 (numeric, not float)', usd);
     const eur = q(`select sum(amount)::text from credit_ledger where account_id='${ANA}' and currency='EUR'`).out;
     ok(eur === '5.000000', 'and the euros are their own balance, never added to the dollars', eur);
+  }
+}
+
+if (started) {
+  section('What a money row must be (Nov 3 audit DATA-017)');
+  {
+    const ANA = q("select id from accounts where email='ana@new.example'").out;
+    const L = (who, cur, amt, reason, key) => q(`insert into credit_ledger(account_id,currency,amount,reason,idempotency_key) values ('${who}','${cur}',${amt},'${reason}','${key}')`);
+    const S = (cur, amt, reason, key) => q(`insert into seller_ledger(account_id,currency,amount,reason,idempotency_key) values ('${ANA}','${cur}',${amt},'${reason}','${key}')`);
+    const unk = L(ANA, 'XYZ', 5, 'purchase', 'pi_xyz');
+    ok(!unk.ok && /foreign key/.test(unk.err), 'a currency AMV does not support is refused', unk.err && unk.err.slice(0, 100));
+    const zero = L(ANA, 'USD', 0, 'purchase', 'pi_zero');
+    ok(!zero.ok && /amount_nonzero/.test(zero.err), 'a purchase of nothing is refused', zero.err && zero.err.slice(0, 100));
+    ok(L(ANA, 'USD', 0, 'correction', 'opening:credit:ana').ok, 'an opening row at zero is the one zero there may be');
+    const huge = L(ANA, 'USD', 5000000000, 'purchase', 'pi_huge');
+    ok(!huge.ok && /amount_bounded/.test(huge.err), 'an amount past any real payment is refused', huge.err && huge.err.slice(0, 100));
+    ok(S('USD', 12.34, 'sale', 'seller:sale:1').ok, 'a sale in whole cents is written');
+    const frac = S('USD', 12.345, 'sale', 'seller:sale:2');
+    ok(!frac.ok && /minor units/.test(frac.err), 'seller money that is not whole cents is refused - it is paid out', frac.err && frac.err.slice(0, 100));
+    ok(S('JPY', 1200, 'sale', 'seller:sale:3').ok && !S('JPY', 1200.5, 'sale', 'seller:sale:4').ok, 'and whole yen in yen');
+    ok(L(ANA, 'USD', -0.000123, 'spend', 'spend:tiny').ok, 'a credit spend below a cent is kept exactly - usage is metered that finely');
   }
 }
 

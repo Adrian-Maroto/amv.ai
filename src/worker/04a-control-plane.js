@@ -270,20 +270,38 @@ function _pgLedger(env, row){
 
 /* The one INSERT for a ledger row, live and in the backfill alike: a row
    whose key is already there is the same event, and is left as it was. */
+/* What a money row must be before it is sent (Nov 3 audit DATA-017): a
+   finite, bounded amount in a three-letter currency, written as an exact
+   decimal string - never a float the database would have to round. Seller
+   money is whole cents. The database refuses the same things on its own
+   (migrations/postgres/0002_money_constraints.sql). */
+function _pgMoneyAmount(row){
+  const a = Number(row.amount);
+  if (!Number.isFinite(a) || Math.abs(a) >= 1e9) throw new Error('money_amount_invalid');
+  const cur = String(row.currency || 'USD').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(cur)) throw new Error('money_currency_invalid');
+  if (row.table === 'seller') {
+    const cents = Math.round(a * 100);
+    if (Math.abs(cents / 100 - a) > 1e-9) throw new Error('money_not_whole_cents');
+    return { currency: cur, amount: (cents / 100).toFixed(2) };
+  }
+  return { currency: cur, amount: a.toFixed(6) };
+}
 async function _pgLedgerInsert(sql, row){
+  const money = _pgMoneyAmount(row);
   const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
   if (!acct.length) throw new Error('no_account_row');
   if (row.table === 'seller') {
     await sql`
       INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
-      VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+      VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
               ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
       ON CONFLICT (idempotency_key) DO NOTHING`;
     return;
   }
   await sql`
     INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
-    VALUES (${acct[0].id}, ${String(row.currency || 'USD').toUpperCase()}, ${String(Number(row.amount).toFixed(6))},
+    VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
             ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
     ON CONFLICT (idempotency_key) DO NOTHING`;
 }
