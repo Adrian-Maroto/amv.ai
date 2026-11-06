@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agentjar.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind, _autoCostUSD, _autoRunMaxUSD, BROWSER_PAGE_USD, AGENT_READ_PAGES_MAX };\n');
+  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentJarForget, _agentJarForgetAll, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind, _autoCostUSD, _autoRunMaxUSD, BROWSER_PAGE_USD, AGENT_READ_PAGES_MAX };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const kv = new Map(); const vals = new Map(); const audits = [];
@@ -93,9 +93,14 @@ section('Opt-in, listed sites only, never a site that moves money');
      'two sites, kept as their plain names', set.d.agent && set.d.agent.browser);
 }
 
+/* A watched run begins by loading the agent's sign-ins (which reads the
+   generation it runs under) and ends by keeping them - as the browser route
+   does. */
+const watched = async (a, cookies) => { await W._agentJarLoad(env, ME, a); return W._agentJarSave(env, ME, a, cookies); };
+
 section('Kept from a watched run: only its sites, sealed');
 {
-  const kept = await W._agentJarSave(env, ME, await agent(), [
+  const kept = await watched(await agent(), [
     cookie('tracker.example.com', 'TRACKER-SECRET-1'), cookie('.wiki.example.org', 'WIKI-SECRET-2'),
     cookie('other.example.net', 'OTHER-SECRET-3'), cookie('chase.com', 'BANK-SECRET-4')]);
   ok(kept.sort().join() === 'tracker.example.com,wiki.example.org', 'the cookies of its two sites are kept, nothing else', kept);
@@ -153,13 +158,13 @@ section('Forgotten: one site, when switched off, with the agent, and on sign out
 {
   const f = await call('/v1/agents/signins/forget', { id: AG, site: 'wiki.example.org' }, tok);
   ok(f.status === 200 && !f.d.signIns.some(s => s.site === 'wiki.example.org'), 'one site forgotten from the card', f.d.signIns);
-  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'TRACKER-SECRET-5')]);
+  await watched(await agent(), [cookie('tracker.example.com', 'TRACKER-SECRET-5')]);
   await call('/v1/agents/save', { id: AG, browserKeep: false, browserSites: [] }, tok);
   ok(!kv.has('agentjar:' + ME + ':' + AG), 'switching it off deletes what it held');
   await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com'] }, tok);
-  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'TRACKER-SECRET-6')]);
+  await watched(await agent(), [cookie('tracker.example.com', 'TRACKER-SECRET-6')]);
   const two = (await call('/v1/agents/save', { name: 'Second', browserKeep: true, browserSites: ['wiki.example.org'] }, tok)).d.agent;
-  await W._agentJarSave(env, ME, await W._agentFind(env, ME, two.id), [cookie('wiki.example.org', 'WIKI-SECRET-7')]);
+  await watched(await W._agentFind(env, ME, two.id), [cookie('wiki.example.org', 'WIKI-SECRET-7')]);
   await call('/v1/agents/delete', { id: two.id }, tok);
   ok(!kv.has('agentjar:' + ME + ':' + two.id) && kv.has('agentjar:' + ME + ':' + AG), 'deleting an agent deletes its sign-ins, and only its own');
   await W.revokeUserTokens(env, ME);
@@ -170,7 +175,7 @@ section('A forget that cannot delete says so, fences the sign-in, and finishes l
 {
   const tok3 = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
   await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, tok3);
-  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'T-8'), cookie('wiki.example.org', 'W-8')]);
+  await watched(await agent(), [cookie('tracker.example.com', 'T-8'), cookie('wiki.example.org', 'W-8')]);
   const none = await call('/v1/agents/signins/forget', { id: AG, site: 'nothing.example.net' }, tok3);
   ok(none.status === 404 && none.d.code === 'not_held', 'forgetting a site it does not hold is not reported as done', none.d);
   /* The store refuses every write to the jar: the delete "succeeds" at the
@@ -191,7 +196,7 @@ section('A forget that cannot delete says so, fences the sign-in, and finishes l
   ok(c.done === 1 && !kv.has(jarKey) && !kv.has('agentjarpend:' + ME + ':' + AG), 'the retry deletes it and clears the queue once the store answers', c);
   /* A new sign-in kept after the forget is not caught by the fence. */
   await new Promise(r => setTimeout(r, 2));
-  await W._agentJarSave(env, ME, await agent(), [cookie('tracker.example.com', 'T-9')]);
+  await watched(await agent(), [cookie('tracker.example.com', 'T-9')]);
   ok((await W._agentJarLoad(env, ME, await agent())).some(x => x.value === 'T-9'), 'a sign-in kept afterwards works again');
   /* Deleting the agent while the store refuses: deleted, and honest about the rest. */
   env.AMV_KV.delete = async (k) => { if (k === jarKey) throw new Error('store down'); return realDel.call(env.AMV_KV, k); };
@@ -207,8 +212,8 @@ section('Each agent seals with a key of its own, and forgetting destroys it (Nov
   const t = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
   const mk = async (name, site) => (await call('/v1/agents/save', { name, browserKeep: true, browserSites: [site] }, t)).d.agent;
   const A1 = await mk('Alpha', 'tracker.example.com'), B1 = await mk('Beta', 'tracker.example.com');
-  await W._agentJarSave(env, ME, await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-SECRET')]);
-  await W._agentJarSave(env, ME, await W._agentFind(env, ME, B1.id), [cookie('tracker.example.com', 'BETA-SECRET')]);
+  await watched(await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-SECRET')]);
+  await watched(await W._agentFind(env, ME, B1.id), [cookie('tracker.example.com', 'BETA-SECRET')]);
   const ra = await W._agentFind(env, ME, A1.id), rb = await W._agentFind(env, ME, B1.id);
   ok(ra.browser.dek && rb.browser.dek && ra.browser.dek !== rb.browser.dek, 'each agent has a key of its own', [!!ra.browser.dek, !!rb.browser.dek]);
   const jarA = kv.get('agentjar:' + ME + ':' + A1.id);
@@ -228,7 +233,7 @@ section('Each agent seals with a key of its own, and forgetting destroys it (Nov
   /* Editing an agent keeps its key and its fences. */
   await call('/v1/agents/signins/forget', { id: A1.id, site: 'tracker.example.com' }, t);
   await new Promise(r => setTimeout(r, 2));
-  await W._agentJarSave(env, ME, await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-2')]);
+  await watched(await W._agentFind(env, ME, A1.id), [cookie('tracker.example.com', 'ALPHA-2')]);
   const before = await W._agentFind(env, ME, A1.id);
   const ed = await call('/v1/agents/save', { id: A1.id, name: 'Alpha renamed', browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, t);
   const after = await W._agentFind(env, ME, A1.id);
@@ -266,6 +271,81 @@ section('No key to seal with: no sign-in is kept');
   const r = await call('/v1/agents/save', { id: AG, browserKeep: true, browserSites: ['tracker.example.com'] }, tok2);
   ok(r.status === 503 && r.d.code === 'needs_service', 'refused, and says why', [r.status, r.d.code]);
   env.CONNECT_KEY = saved;
+}
+
+section('Unknown is not absent, and a forget during a run is not undone by it (Nov 3 audit)');
+{
+  const tok4 = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
+  const G = (await call('/v1/agents/save', { name: 'Gamma', browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, tok4)).d.agent.id;
+  const ag = () => W._agentFind(env, ME, G);
+  await watched(await ag(), [cookie('tracker.example.com', 'T-10')]);
+  const jarKey = 'agentjar:' + ME + ':' + G;
+
+  /* AGENT-019: the store cannot be read. The audit's proof got
+     {held:false, removed:true} here - "nothing to forget" while it stayed. */
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (k === jarKey) throw new Error('regional storage outage'); return realGet.call(env.AMV_KV, k); };
+  const r = await W._agentJarForget(env, ME, G, '');
+  ok(r.held === 'unknown' && r.removed === false, 'an unreadable store is "unknown", never "nothing held, removed"', r);
+  const viaRoute = await call('/v1/agents/signins/forget', { id: G }, tok4);
+  ok(viaRoute.status === 200 && viaRoute.d.removed === false, 'and the person is told it is not gone yet - not that there was nothing', [viaRoute.status, viaRoute.d.code]);
+  env.AMV_KV.get = realGet;
+  ok(kv.has(jarKey) && (await W._agentJarLoad(env, ME, await ag())).length === 0, 'the copy that could not be read is fenced: nothing in it is used');
+  ok(kv.has('agentjarpend:' + ME + ':' + G), 'and its deletion is queued');
+  await W.runAgentJarCleanup(env);
+  ok(!kv.has(jarKey), 'the retry removes it once the store answers');
+
+  /* AGENT-020: a watched run began, the person forgot the sign-in, then the
+     run finished and tried to keep its cookies. */
+  await watched(await ag(), [cookie('tracker.example.com', 'T-11')]);
+  const run = await ag();
+  await W._agentJarLoad(env, ME, run);                 // the run begins
+  const f = await call('/v1/agents/signins/forget', { id: G }, tok4);
+  ok(f.status === 200, 'forgotten while the run was going', f.status);
+  await new Promise(res => setTimeout(res, 3));
+  const kept = await W._agentJarSave(env, ME, run, [cookie('tracker.example.com', 'T-RESURRECTED')]);
+  ok(kept.length === 0, 'the run that began before the forget keeps nothing when it ends', kept);
+  ok(!(await W._agentJarLoad(env, ME, await ag())).some(c => c.value === 'T-RESURRECTED'), 'so the forgotten sign-in is not brought back');
+
+  /* One site forgotten mid-run: only that site is refused. */
+  await watched(await ag(), [cookie('tracker.example.com', 'T-12'), cookie('wiki.example.org', 'W-12')]);
+  const run2 = await ag();
+  await W._agentJarLoad(env, ME, run2);
+  await call('/v1/agents/signins/forget', { id: G, site: 'wiki.example.org' }, tok4);
+  const kept2 = await W._agentJarSave(env, ME, run2, [cookie('tracker.example.com', 'T-13'), cookie('wiki.example.org', 'W-13')]);
+  ok(kept2.join() === 'tracker.example.com', 'a site forgotten during the run is not kept; the others are', kept2);
+
+  /* A stale copy of the agent record (the revocation stamp not yet seen in
+     this region) does not make a forgotten sign-in usable: the generation
+     is read from the strong object, not from the record. */
+  await watched(await ag(), [cookie('tracker.example.com', 'T-20'), cookie('wiki.example.org', 'W-20')]);
+  const copy = kv.get(jarKey);
+  await call('/v1/agents/signins/forget', { id: G, site: 'wiki.example.org' }, tok4);
+  kv.set(jarKey, copy);                                  // a copy that outlived the delete
+  const stale = JSON.parse(JSON.stringify(await ag()));
+  delete stale.browser.revokedAt; delete stale.browser.revokedSites;   // and a record that has not seen the stamp
+  const used = (await W._agentJarLoad(env, ME, stale)).map(c => c.value);
+  ok(used.includes('T-20') && !used.includes('W-20'), 'a stale record without the stamp still uses nothing forgotten - the generation decides', used);
+
+  /* The generation cannot be read: nothing is used, nothing is kept. */
+  await watched(await ag(), [cookie('tracker.example.com', 'T-21')]);
+  ok((await W._agentJarLoad(env, ME, await ag())).some(c => c.value === 'T-21'), 'a usable sign-in is in place');
+  const realCounter = env.AMV_COUNTER;
+  env.AMV_COUNTER = { idFromName: n => n, get: () => ({ async fetch() { throw new Error('object unreachable'); } }) };
+  ok((await W._agentJarLoad(env, ME, await ag())).length === 0, 'with the generation unreadable no sign-in is used');
+  let threw = false; try { await W._agentJarForget(env, ME, G, ''); } catch (e) { threw = true; }
+  ok(threw, 'and a forget that cannot move the generation does not claim success');
+  env.AMV_COUNTER = realCounter;
+
+  /* AGENT-021: the listing fails during "forget everything". */
+  const realList = env.AMV_KV.list;
+  env.AMV_KV.list = async () => { throw new Error('list unavailable'); };
+  const all = await W._agentJarForgetAll(env, ME);
+  ok(all.removed === false && all.listed === false, 'forget-all whose listing failed does not say everything was removed', all);
+  ok(kv.has('agentjarpend:' + ME + ':*'), 'and queues the whole forget to run again');
+  env.AMV_KV.list = realList;
+  await W.runAgentJarCleanup(env);
+  ok(!kv.has('agentjarpend:' + ME + ':*') && ![...kv.keys()].some(k => k.startsWith('agentjar:' + ME + ':')), 'which removes everything once the store answers');
 }
 
 console.log = origLog;

@@ -52,6 +52,14 @@ export function withAuthOps(ns) {
           store.set(k, set);
           return new Response(JSON.stringify({ ok: true }));
         }
+        /* Fields of one object (tallyMany / tallyFields), as the object keeps
+           them: the owner's month figures and an agent's sign-in generation. */
+        if (b.op === 'tallyMany') {
+          const k = 'tm|' + String(id); const f = store.get(k) || {};
+          for (const [n, v] of Object.entries(b.fields || {})) f[n] = (f[n] || 0) + (+v || 0);
+          store.set(k, f); return new Response(JSON.stringify({ ok: true, many: true }));
+        }
+        if (b.op === 'tallyFields') return new Response(JSON.stringify({ fields: Object.assign({}, store.get('tm|' + String(id)) || {}) }));
         return inner.fetch(u, init);
       } };
     },

@@ -132,12 +132,50 @@ async function _agentJarOpen(key, email, id, raw){
     return JSON.parse(new TextDecoder().decode(pt));
   }catch(e){ return null; }
 }
+/* THREE ANSWERS, NOT TWO (Nov 3 audit AGENT-019). `state` is 'absent' (the
+   store said there is nothing), 'present' (something is stored - `rec` is its
+   contents when they opened, null when they did not) or 'unknown' (the store
+   or the key could not be asked). A read that failed used to come back as
+   "nothing here", and a forget then told the person no sign-in existed while
+   the sealed copy stayed stored. */
 async function _agentJarRead(env, email, id){
-  const raw = await env.AMV_KV.get(_agentJarKey(email, id));
-  if(!raw) return { raw: null, rec: null, key: null };
-  let key = null; try{ key = await _agentDek(env, email, id, false); }catch(e){ key = null; }
-  return { raw, rec: await _agentJarOpen(key, email, id, raw), key };
+  let raw;
+  try{ raw = await env.AMV_KV.get(_agentJarKey(email, id)); }
+  catch(e){ return { state: 'unknown', raw: null, rec: null, key: null }; }
+  if(!raw) return { state: 'absent', raw: null, rec: null, key: null };
+  let key = null, keyUnknown = false;
+  try{ key = await _agentDek(env, email, id, false); }catch(e){ key = null; keyUnknown = true; }
+  return { state: 'present', raw, rec: await _agentJarOpen(key, email, id, raw), key, keyUnknown };
 }
+
+/* THE GENERATION, IN STRONG STORAGE (Nov 3 audit AGENT-011/020). Every forget
+   moves a number on the agent's own counter object - strongly consistent, one
+   writer - before it touches anything else: `all` for every site, `s:<site>`
+   for one. A kept sign-in is stamped with the numbers it was kept under and
+   is used only while they are still current. So:
+     - a stale copy of the agent's record anywhere in the world cannot make a
+       forgotten sign-in usable, because the number is not read from it;
+     - a watched run that started before the forget and finishes after it
+       keeps nothing - it carries the generation it began with, and saving
+       under a generation that has moved is refused;
+     - a number that cannot be read is a sign-in that is not used. */
+const _agentGenName = (email, id) => 'agentgen:' + String(email || '').toLowerCase() + ':' + id;
+async function _agentGen(env, email, id){
+  const r = await counter(env, _agentGenName(email, id), { op: 'tallyFields' });
+  if(!r || !r.fields || typeof r.fields !== 'object') throw new Error('agent_generation_unknown');
+  return r.fields;
+}
+async function _agentGenBump(env, email, id, site){
+  const r = await counter(env, _agentGenName(email, id), { op: 'tallyMany', fields: { [site ? 's:' + site : 'all']: 1 } });
+  if(!r || !r.many) throw new Error('agent_generation_unwritten');
+}
+const _agentGenOf = (gen, site) => ({ g: +((gen || {}).all) || 0, sg: +((gen || {})['s:' + site]) || 0 });
+function _agentGenCurrent(gen, site, v){
+  const want = _agentGenOf(gen, site);
+  return (+(v && v.g) || 0) === want.g && (+(v && v.sg) || 0) === want.sg;
+}
+/* The generation a run began with, by the agent object it was given. */
+const _agentRunGen = new WeakMap();
 
 /* The agent's saved sign-ins, as cookies to put in a browser: only its listed
    sites, only unexpired, nothing at all when it does not keep sign-ins or the
@@ -147,7 +185,8 @@ async function _agentJarRead(env, email, id){
    the record lock - with when it was revoked; a jar entry saved at or before
    that moment is never used again, wherever in the world a stale copy of the
    jar is still being read and even if deleting it failed. */
-function _agentJarRevoked(agent, site, v){
+function _agentJarRevoked(agent, site, v, gen){
+  if(gen && !_agentGenCurrent(gen, site, v)) return true;
   const b = (agent && agent.browser) || {};
   const at = +(v && v.at) || 0;
   if(at <= (+b.revokedAt || 0)) return true;
@@ -155,13 +194,16 @@ function _agentJarRevoked(agent, site, v){
 }
 async function _agentJarLoad(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
+  let gen;
+  try{ gen = await _agentGen(env, email, agent.id); }catch(e){ return []; }
+  _agentRunGen.set(agent, gen);
   let rec = null; try{ rec = (await _agentJarRead(env, email, agent.id)).rec; }catch(e){ rec = null; }
   if(!rec || !rec.sites) return [];
   const now = Date.now(), out = [];
   for(const [site, v] of Object.entries(rec.sites)){
     if(!(agent.browser.sites || []).includes(site)) continue;
     if(!v || !(v.at > 0) || now - v.at > AGENT_JAR_TTL_S * 1000) continue;
-    if(_agentJarRevoked(agent, site, v)) continue;
+    if(_agentJarRevoked(agent, site, v, gen)) continue;
     for(const c of _webJarIn(v.cookies)) if(_agentSiteOf(c.domain, [site])) out.push(c);
   }
   return out;
@@ -178,7 +220,19 @@ async function _agentJarSave(env, email, agent, cookies){
     if(!s || _agentSiteRisk(String(c.domain || '').replace(/^\./, ''))) continue;
     (bySite[s] = bySite[s] || []).push(c);
   }
-  const kept = Object.keys(bySite);
+  let kept = Object.keys(bySite);
+  if(!kept.length) return [];
+  /* Kept only under the generation the run began with. A forget since then
+     (of everything, or of one site) means that site is not kept - the run
+     carried a sign-in the person has taken back. */
+  const began = _agentRunGen.get(agent);
+  let now;
+  try{ now = await _agentGen(env, email, agent.id); }catch(e){ throw new Error('agent_generation_unknown'); }
+  if(!began || _agentGenOf(now, '').g !== _agentGenOf(began, '').g){
+    audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: began ? 'forgotten_during_run' : 'no_generation' });
+    return [];
+  }
+  kept = kept.filter(s => _agentGenOf(now, s).sg === _agentGenOf(began, s).sg);
   if(!kept.length) return [];
   const key = await _agentDek(env, email, agent.id, true);
   if(!key) return [];
@@ -186,7 +240,7 @@ async function _agentJarSave(env, email, agent, cookies){
   try{ const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); if(raw) rec = (await _agentJarOpen(key, email, agent.id, raw)) || rec; }catch(e){ rec = { sites: {} }; }
   rec.sites = rec.sites || {};
   for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
-  for(const s of kept) rec.sites[s] = { at: Date.now(), cookies: bySite[s] };
+  for(const s of kept) rec.sites[s] = Object.assign({ at: Date.now(), cookies: bySite[s] }, _agentGenOf(began, s));
   await env.AMV_KV.put(_agentJarKey(email, agent.id), await _agentJarSeal(key, email, agent.id, rec), { expirationTtl: AGENT_JAR_TTL_S });
   audit(env, 'agent_signins_kept', { email, agent: agent.id, sites: kept });
   return kept;
@@ -195,12 +249,16 @@ async function _agentJarSave(env, email, agent, cookies){
    cookies themselves. */
 async function _agentSignInsShown(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
-  let rec = null;
+  let rec = null, gen = null;
+  try{ gen = await _agentGen(env, email, agent.id); }catch(e){ gen = null; }
   try{ rec = (await _agentJarRead(env, email, agent.id)).rec; }catch(e){ rec = null; }
   if(!rec || !rec.sites) return [];
   const now = Date.now();
+  /* With the generation unreadable a sign-in is not used (_agentJarLoad), so
+     it is not shown as usable either. */
+  if(!gen) return [];
   return Object.entries(rec.sites)
-    .filter(([s, v]) => (agent.browser.sites || []).includes(s) && v && now - v.at <= AGENT_JAR_TTL_S * 1000 && !_agentJarRevoked(agent, s, v))
+    .filter(([s, v]) => (agent.browser.sites || []).includes(s) && v && now - v.at <= AGENT_JAR_TTL_S * 1000 && !_agentJarRevoked(agent, s, v, gen))
     .map(([s, v]) => ({ site: s, savedAt: v.at, expiresAt: v.at + AGENT_JAR_TTL_S * 1000 }));
 }
 /* The stamp itself, under the agents record lock. Throws if it cannot be
@@ -208,6 +266,13 @@ async function _agentSignInsShown(env, email, agent){
 async function _agentJarRevoke(env, email, ids, site){
   const now = Date.now();
   const want = ids ? new Set(ids) : null;
+  /* The strong fence first: if it cannot be moved, this throws and nothing
+     claims to be forgotten. */
+  if(ids) for(const id of ids) await _agentGenBump(env, email, id, site);
+  else {
+    const all = await DB.get(env, 'agents', String(email).toLowerCase());
+    for(const a of ((all && all.list) || [])) if(a && a.id) await _agentGenBump(env, email, a.id, site);
+  }
   await _withKind(env, 'agents', String(email).toLowerCase(), (rec) => {
     for(const a of (rec && rec.list) || []){
       if(!a || (want && !want.has(a.id))) continue;
@@ -227,12 +292,22 @@ async function _agentJarRevoke(env, email, ids, site){
    (`agentjarpend:`), which the cron retries until it is gone. */
 async function _agentJarForget(env, email, id, site){
   const key = _agentJarKey(email, id);
-  const j = await _agentJarRead(env, email, id).catch(() => ({ raw: null, rec: null, key: null }));
+  const j = await _agentJarRead(env, email, id).catch(() => ({ state: 'unknown', raw: null, rec: null, key: null }));
   /* The whole jar: held if anything is stored, opened or not - with its key
-     destroyed below it is unreadable either way. One site: only if it is in it. */
-  const held = site ? !!(j.rec && j.rec.sites && j.rec.sites[site]) : !!j.raw;
+     destroyed below it is unreadable either way. One site: only if it is in
+     it, and unknown when the jar is stored but could not be opened.
+     UNKNOWN IS NOT ABSENT (AGENT-019): the store or the key could not be
+     asked, so the sign-in is fenced and its deletion queued exactly as if it
+     were held, and the answer says pending - never "nothing here". */
+  const unknown = j.state === 'unknown' || (site && j.state === 'present' && !j.rec);
+  const held = unknown ? 'unknown' : (site ? !!(j.rec && j.rec.sites && j.rec.sites[site]) : !!j.raw);
   if(!held) return { held: false, removed: true };
   await _agentJarRevoke(env, email, [id], site);
+  if(unknown){
+    const queued = await _agentJarQueue(env, email, id, site);
+    audit(env, 'agent_signin_delete_pending', { email, agent: id, site: site || 'all', why: 'unreadable' });
+    return { held: 'unknown', removed: false, queued };
+  }
   try{
     if(!site || Object.keys(j.rec.sites || {}).length <= 1) await env.AMV_KV.delete(key);
     else { delete j.rec.sites[site]; await env.AMV_KV.put(key, await _agentJarSeal(j.key, email, id, j.rec), { expirationTtl: AGENT_JAR_TTL_S }); }
@@ -243,23 +318,36 @@ async function _agentJarForget(env, email, id, site){
     if(!raw) gone = true;
     else if(site){ const after = await _agentJarOpen(j.key, email, id, raw); gone = !(after && after.sites && after.sites[site]); }
   }catch(e){ gone = false; }
+  let queued = true;
   if(!gone){
-    try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); }catch(e){}
+    queued = await _agentJarQueue(env, email, id, site);
     audit(env, 'agent_signin_delete_pending', { email, agent: id, site: site || 'all' });
   }
-  return { held: true, removed: gone };
+  return { held: true, removed: gone, queued };
+}
+/* The retry's entry. Answers whether it was written: when it was not, the
+   sign-in is still fenced by its generation, and the answer says the copy
+   could not be queued so nobody is told it will be gone shortly. */
+async function _agentJarQueue(env, email, id, site){
+  try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); return true; }
+  catch(e){ audit(env, 'agent_signin_queue_failed', { email, agent: id }); return false; }
 }
 /* Every agent's, at once: "sign out everywhere" and erasing the account.
    Fenced first for every agent, then deleted and checked; what is left is
    queued. Answers { removed } - false when anything is still stored. */
 async function _agentJarForgetAll(env, email){
   const em = String(email || '').toLowerCase();
-  try{ await _agentJarRevoke(env, em, null, ''); }catch(e){ audit(env, 'agent_signin_revoke_failed', { email: em }); }
+  /* (AGENT-021) A fence that could not be moved, or a listing that could not
+     be finished, is not "all removed". */
+  let fenced = true;
+  try{ await _agentJarRevoke(env, em, null, ''); }catch(e){ fenced = false; audit(env, 'agent_signin_revoke_failed', { email: em }); }
   const prefix = 'agentjar:' + em + ':';
   const left = [];
-  let cursor;
+  let cursor, listed = true;
   do {
-    const page = await env.AMV_KV.list({ prefix, cursor });
+    let page;
+    try{ page = await env.AMV_KV.list({ prefix, cursor }); }
+    catch(e){ listed = false; break; }
     for(const k of (page.keys || [])){
       try{ await env.AMV_KV.delete(k.name); }catch(e){}
       try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
@@ -269,8 +357,13 @@ async function _agentJarForgetAll(env, email){
   for(const k of left){
     try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
   }
+  if(!listed){
+    /* `*` for every agent: the retry runs this whole forget again. */
+    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e){}
+    audit(env, 'agent_signin_list_failed', { email: em });
+  }
   if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
-  return { removed: !left.length };
+  return { removed: fenced && listed && !left.length, fenced, listed, left: left.length };
 }
 /* The retry, from the cron: every forget that could not be confirmed is
    tried again until the stored copy is gone. Already fenced meanwhile. */
@@ -282,6 +375,10 @@ async function runAgentJarCleanup(env){
       const rest = k.name.slice('agentjarpend:'.length);
       const i = rest.lastIndexOf(':');
       const email = rest.slice(0, i), id = rest.slice(i + 1);
+      if(id === '*'){
+        try{ const r = await _agentJarForgetAll(env, email); if(r.removed){ await env.AMV_KV.delete(k.name); done++; } else left++; }catch(e){ left++; }
+        continue;
+      }
       let site = '';
       try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e){}
       const key = _agentJarKey(email, id);
@@ -320,7 +417,9 @@ async function agentSignInsForget(request, env){
   audit(env, 'agent_signins_forgotten', { email, agent: agent.id, site: site || 'all', removed: r.removed });
   const fresh = await _agentFind(env, email, agent.id) || agent;
   return json({ ok: true, removed: r.removed,
-    note: r.removed ? undefined : 'It can no longer be used. The stored copy is being deleted and will be gone shortly.',
+    note: r.removed ? undefined : r.queued === false
+      ? 'It can no longer be used. The stored copy could not be deleted or queued for deletion yet; AMV will keep trying when you open this again.'
+      : 'It can no longer be used. The stored copy is being deleted and will be gone shortly.',
     signIns: await _agentSignInsShown(env, email, fresh) });
 }
 
