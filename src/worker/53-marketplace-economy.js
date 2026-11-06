@@ -223,6 +223,13 @@ const WALLET_LOCK_TRIES = 6;
    `mutate` receives the CURRENT record, read inside the lock. Return a value to
    pass it back out. Failing to take the lock throws rather than writing
    anyway - a lost entitlement or a reverted password must not happen quietly. */
+/* A REFUSAL WRITES NOTHING (Nov 3 audit SEC-015). The contract below - and
+   the callers that rely on it - said a mutate returning `{ error, status,
+   code }` refuses without writing; the helper saved the record anyway, so a
+   refusal that had already touched the record committed the touch. Now a
+   result that refuses - `{ commit: false }`, or an error with a status or a
+   code - skips the save. Throwing still skips it too. */
+const _mutRefuses = (o) => !!(o && typeof o === 'object' && (o.commit === false || (typeof o.error === 'string' && (o.status != null || o.code != null))));
 async function _withRecord(env, kind, id, load, save, mutate) {
   /* The key is used AS GIVEN. It used to be lowercased here, which is right for
      an email and silently wrong for a record id: a team id that is not already
@@ -237,7 +244,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
       try {
         const rec = await load(env, key);
         const out = await mutate(rec);
-        await save(env, key, rec);
+        if (!_mutRefuses(out)) await save(env, key, rec);
         return out;
       } finally { await _releaseClaim(env, 'rmut:' + kind, key); }
     }
@@ -268,7 +275,7 @@ async function _withWallet(env, email, mutate) {
       try {
         const w = await _wallet(env, em);
         const out = await mutate(w);
-        await _saveWallet(env, em, w);
+        if (!_mutRefuses(out)) await _saveWallet(env, em, w);
         return out;
       } catch (e) { lastErr = e; throw e; }
       finally { await _releaseClaim(env, 'wmut', em); }
