@@ -60,10 +60,20 @@ it runs and that it can be taken back to exactly what was there. The atomic
 point-in-time switch the audit asks for is the database provider's, once the
 records it covers live in Postgres.
 
-## Not done yet
+## What is left
 
-44 findings, mostly P1 and P2: retrieval at scale (vector index, past-chat
-index), direct-to-storage uploads, the durable workflow engine, the email to
-account-id migration, auditing the empty catches and innerHTML assignments
-one by one, structured shopping and travel results, meeting mode and others.
-Each is listed in `docs/AUDIT-NOV3-ALL.md` with its status.
+- **Roadmap (52):** platform and product builds larger than a fix, each named
+  in the ledger: retrieval at scale (vector index, past-chat index),
+  direct-to-storage uploads and per-file rows, the durable workflow engine,
+  the email to account-id migration, agent-to-agent handoff and per-agent
+  workspaces, onboarding, structured shopping and travel results, meeting
+  mode, sampled tracing, globally coordinated circuit breaking.
+- **Owner (29):** a key service for root keys, provider settings (Postgres
+  point-in-time recovery, R2 versioning, container quota), the launch profile,
+  reserved model capacity, a second model provider, legal and privacy
+  operations, on-call and support staffing, an outside security review.
+- **Partly done (20):** fixed in earlier rounds, with the remaining part named.
+- **Not done yet (9):** reviews that are line-by-line work across the codebase:
+  the empty catches and innerHTML assignments one by one, raw addresses in
+  audit lines, more failure-mode and accessibility tests, device performance
+  budgets, money amount constraints, and documentation drift.

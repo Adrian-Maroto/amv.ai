@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21, Partly done 19, Verified here 5
+Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, Not done yet 9, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -52,15 +52,15 @@ Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21,
 | REL-018 | High | P0 | postgres_reads_all means 100% cohort, not a clean or complete Postgres cutover | Open | Fixed now | postgres_reads_all = 100% cohort AND nothing in the way; readiness names the blockers and which records Postgres serves |
 | STATE-005 | High | P0 | Critical revocation still has KV fallback paths | Partially fixed | Roadmap | revocation is strong with fail-closed routes since Oct 26; the remaining KV reads are listed for the Postgres move |
 | STATE-002 | High | P0 | Chat sync knowingly operates without arbitration in KV mode | Partially fixed | Fixed now | chat sync goes through the same commit |
-| OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Partially fixed | Not done yet | not reached this round |
+| OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Partially fixed | Roadmap | durable cross-system deletion orchestration |
 | AGENT-013 | High | P1 | Cookie application failure is ignored, then use is audited | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| AGENT-015 | High | P1 | Read-only unattended browsing is a strong safety choice but incomplete product parity | Open | Not done yet | not reached this round |
+| AGENT-015 | High | P1 | Read-only unattended browsing is a strong safety choice but incomplete product parity | Open | Roadmap | unattended browsing that acts, under approval |
 | AGENT-012 | High | P1 | Financial-site hostname regex is not a complete risk policy | Partially fixed | Partly done | money, identity, government and health sites refused by host words; not a complete risk policy |
-| AGENT-006 | High | P1 | No first-class Agent-to-Agent handoff protocol | Open | Not done yet | not reached this round |
+| AGENT-006 | High | P1 | No first-class Agent-to-Agent handoff protocol | Open | Roadmap | agent-to-agent handoff protocol |
 | AGENT-004 | High | P1 | Agents lack complete tool/connector allowlists | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-002 | High | P1 | Agents lack dedicated memory namespaces | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-003 | High | P1 | Agents lack model and reasoning policy | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| AGENT-005 | High | P1 | Agents do not own an isolated durable workspace/browser profile by default | Partially fixed | Not done yet | not reached this round |
+| AGENT-005 | High | P1 | Agents do not own an isolated durable workspace/browser profile by default | Partially fixed | Roadmap | an isolated workspace and browser profile per agent |
 | SEC-008 | High | P1 | Global _liveCtx is concurrency-brittle | Partially fixed | Fixed now | each request, cron tick and queue batch runs in its own async-local context; background work is held by its own request (background-work-is-held-by-its-own-request) |
 | DR-002 | High | P1 | Nightly backup lacks a strong single-run lease | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-003 | High | P1 | Manifest counts do not provide per-part cryptographic inventory | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
@@ -72,55 +72,55 @@ Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21,
 | COMP-019 | High | P1 | Hostname deny patterns are not a complete private-network egress boundary | Open | Roadmap | product direction |
 | COMP-004 | High | P1 | Snapshot accepts tar exit code 1 | Partially fixed | Partly done | files still changing after re-reads are named with the copy; tar exit 1 kept for exactly that case |
 | COMP-005 | High | P1 | Rollback can proceed without preserving current state | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| COMP-007 | High | P1 | Workspace identity is derived from mutable email | Partially fixed | Not done yet | not reached this round |
-| COMP-010 | High | P1 | Single archive cap does not scale to real development/data work | Open | Not done yet | not reached this round |
+| COMP-007 | High | P1 | Workspace identity is derived from mutable email | Partially fixed | Roadmap | machine identity moves with the email to account-id migration (DATA-014) |
+| COMP-010 | High | P1 | Single archive cap does not scale to real development/data work | Open | Roadmap | larger workspaces need volume storage |
 | REL-007 | High | P1 | Launch profile is optional | Partially fixed | Owner | same as REL-002 |
 | TASK-005 | High | P1 | Poison jobs are automatically rebooked after exhausting retries | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | SEC-011 | High | P1 | Dangerous switch changes can fall back to eventual KV and still return success | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | REL-005 | High | P1 | No mature staging environment equivalent to production | Partially fixed | Owner | needs a provider, a contract, people or a decision |
 | SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Open | Not done yet | not reached this round |
-| TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Open | Not done yet | not reached this round |
+| TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Open | Roadmap | push connectors instead of polling |
 | FILE-002 | High | P1 | No full quarantine/malware pipeline before availability | Open | Owner | needs a provider, a contract, people or a decision |
-| FILE-001 | High | P1 | Large files still traverse Worker JSON/base64 paths | Open | Not done yet | not reached this round |
-| OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Open | Not done yet | not reached this round |
+| FILE-001 | High | P1 | Large files still traverse Worker JSON/base64 paths | Open | Roadmap | direct signed uploads to storage |
+| OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Open | Roadmap | abuse risk controls at scale |
 | SEC-003 | High | P1 | 599 innerHTML assignments require centralized trust guarantees | Open | Not done yet | not reached this round |
-| OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Open | Owner | needs a provider, a contract, people or a decision |
+| OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Open | Owner | live incident exercises are people and a schedule |
 | PROD-013 | High | P1 | Production legal and privacy operations must match the product’s data reach | Open | Owner | needs a provider, a contract, people or a decision |
 | MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Partially fixed | Partly done | one capability record per engine from /v1/engines (Nov 2); provider-pulled limits are next |
 | SEC-015 | High | P1 | The shared record mutation helper commits even when a callback returns an error result | Open | Fixed now | a mutate that refuses ({commit:false} or an error with a status or code) writes nothing (a-refusal-writes-nothing) |
-| PROD-009 | High | P1 | Feature breadth exceeds onboarding/activation design | Open | Not done yet | not reached this round |
+| PROD-009 | High | P1 | Feature breadth exceeds onboarding/activation design | Open | Roadmap | onboarding and activation design |
 | REL-009 | High | P1 | No complete 24/7 paging/on-call/status operation | Open | Owner | needs a provider, a contract, people or a decision |
-| DATA-009 | High | P1 | Backfill throughput is unsuitable for very large migrations | Partially fixed | Not done yet | not reached this round |
-| DATA-014 | High | P1 | Email is still used as a primary operational identity in many flows | Partially fixed | Not done yet | not reached this round |
+| DATA-009 | High | P1 | Backfill throughput is unsuitable for very large migrations | Partially fixed | Roadmap | backfill throughput bounded by KV list paging |
+| DATA-014 | High | P1 | Email is still used as a primary operational identity in many flows | Partially fixed | Roadmap | email to account-id is a data-model migration, done with the Postgres move |
 | DATA-010 | High | P1 | Mismatch counters do not clearly represent current unresolved state | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | REL-014 | High | P1 | No evidence of reserved/negotiated model capacity for million-user peaks | Open | Owner | needs a provider, a contract, people or a decision |
-| REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Partially fixed | Not done yet | not reached this round |
+| REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Partially fixed | Roadmap | globally coordinated circuit breaking |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Open | Owner | needs a provider, a contract, people or a decision |
-| TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Partially fixed | Not done yet | not reached this round |
+| TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Partially fixed | Roadmap | more async work through the queue |
 | DR-005 | High | P1 | Nightly backup permits up to roughly 24 hours RPO for KV-backed state | Open | Owner | a shorter RPO needs Postgres as the record (DR-001) |
 | REL-019 | High | P1 | Production readiness does not execute end-to-end capability synthetics | Open | Roadmap | same as REL-003 |
 | STATE-003 | High | P1 | Retention sweep has no strong global lease | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TEST-003 | High | P1 | Bubblewrap security tests fail closed when the environment lacks bubblewrap | Environment-blocked / unverified | Verified here | bubblewrap is installed by the session setup and in CI; the fence suites pass in the gate |
-| RETR-001 | High | P1 | Semantic meaning is on-demand reranking, not a persistent vector index | Open | Not done yet | not reached this round |
-| RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Open | Not done yet | not reached this round |
+| RETR-001 | High | P1 | Semantic meaning is on-demand reranking, not a persistent vector index | Open | Roadmap | persistent vector index |
+| RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Open | Roadmap | ACL-filtered vector retrieval, with RETR-001 |
 | USAGE-002 | High | P1 | Global daily spend ceiling can become a global outage switch | Partially fixed | Owner | needs a provider, a contract, people or a decision |
 | PROD-012 | High | P1 | Customer support infrastructure is not yet ready for mass paid launch | Partially fixed | Owner | needs a provider, a contract, people or a decision |
 | OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Partially fixed | Partly done | support sees shape not content, every look recorded append-only and shown to the person; break-glass dual control not built |
 | SUPPORT-001 | High | P1 | Support-access history is a mutable read-modify-write record, not an append-only audit log | Open | Fixed now | one key a look, written once; nothing rewrites another |
 | TASK-008 | High | P1 | No single canonical Task lifecycle across Chat, Crew, Jobs, Handoff, and Agents | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TASK-009 | High | P1 | Steering applies to future runs but not a universal durable active-step protocol | Partially fixed | Partly done | steering reaches future runs and each step's next prompt |
-| PROD-017 | High | P1 | MCP/plugin success can weaken AMV’s verification promise | Open | Not done yet | not reached this round |
+| PROD-017 | High | P1 | MCP/plugin success can weaken AMV’s verification promise | Open | Roadmap | verification for third-party connector results |
 | PROD-011 | High | P1 | Operational abuse/safety system is not yet company-scale | Open | Owner | needs a provider, a contract, people or a decision |
 | USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-001 | Medium | P1 | Persistent Agent IDs use Math.random | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | SEC-007 | Medium | P1 | Audit logs include raw email despite “PII minimized” language | Partially fixed | Not done yet | not reached this round |
 | SEC-012 | Medium | P1 | Brownout coordination uses KV state and sequential switch changes | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Open | Not done yet | not reached this round |
+| RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Open | Roadmap | server-side past-chat index |
 | COMP-008 | Medium | P1 | Timestamp-only version identifiers can collide | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | COMP-009 | Medium | P1 | Version copy/prune operations are not transactional | Partially fixed | Fixed now | a copy is read back at full size before it counts, and earlier copies are pruned only after it is confirmed |
 | TEST-004 | Medium | P1 | Overall worker coverage is strong but masks low-risk distribution | Open | Not done yet | not reached this round |
 | USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Partially fixed | Partly done | month figures are one object call per turn (Nov 2); the limit and money calls remain separate by design |
-| FILE-003 | Medium | P1 | Library metadata is too account-aggregated for 25k+ files | Open | Not done yet | not reached this round |
+| FILE-003 | Medium | P1 | Library metadata is too account-aggregated for 25k+ files | Open | Roadmap | one metadata row per file (Postgres) |
 | SEC-002 | Medium | P1 | 50 Math.random uses include persistent/server identifiers | Partially fixed | Fixed now | kept ids from crypto.getRandomValues; only a retry jitter uses Math.random |
 | SEC-004 | Medium | P1 | Wildcard postMessage needs source/nonce/schema checks | Partially fixed | Fixed now | every window listener checks its sender, and only three posts target any origin - held by a test |
 | REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Partially fixed | Partly done | objectives measured hourly with error budgets and an alert (Nov 2); p95/p99 latency telemetry not built |
@@ -132,7 +132,7 @@ Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21,
 | STATE-004 | Medium | P1 | A user can be processed twice through personal and team indexes | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TEST-005 | Medium | P1 | Acorn-based undefined-call test did not run in this audit environment | Environment-blocked / unverified | Verified here | the undefined-call stage runs in the gate |
 | SUPPORT-002 | Medium | P1 | Support tooling lacks case workflow, dual-control break glass, and scoped elevation | Open | Owner | needs a provider, a contract, people or a decision |
-| TASK-014 | Medium | P1 | The unified Tasks surface does not include every asynchronous AMV operation | Open | Roadmap | product direction |
+| TASK-014 | Medium | P1 | The unified Tasks surface does not include every asynchronous AMV operation | Open | Roadmap | every async operation in the Tasks list |
 | MODEL-002 | Medium | P1 | 3.2M character ceiling is not a tokenizer | Partially fixed | Partly done | near the limit the provider's own token count decides (Nov 2) |
 | REL-012 | Medium | P1 | No universal trace ID across request, Queue, Task, Agent, tool, action, and verification | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | PROD-002 | Strategic | P1 | AMV needs a coherent proactive daily assistant surface | Strategic roadmap | Roadmap | product direction |
@@ -146,29 +146,29 @@ Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21,
 | AGENT-007 | Medium | P2 | No Agent-specific eval and outcome scorecard | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-016 | Medium | P2 | Agent records are account-aggregated rather than normalized | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | PROD-010 | Medium | P2 | Messages are the wrong north-star metric | Partially fixed | Owner | needs a provider, a contract, people or a decision |
-| DR-006 | Medium | P2 | KV list/export strategy will become expensive at millions | Open | Not done yet | not reached this round |
+| DR-006 | Medium | P2 | KV list/export strategy will become expensive at millions | Open | Roadmap | list/export cost at millions of records |
 | REL-016 | Medium | P2 | Dependency vulnerability audit could not complete in this audit environment | Environment-blocked / unverified | Verified here | the dependency stage runs in check:fast and the gate; CI adds SBOM and CodeQL |
-| SEC-009 | Medium | P2 | Public/API wildcard CORS paths require strict separation from cookie APIs | Partially fixed | Not done yet | not reached this round |
-| COMP-012 | Medium | P2 | One machine class cannot fit all workloads | Open | Not done yet | not reached this round |
+| SEC-009 | Medium | P2 | Public/API wildcard CORS paths require strict separation from cookie APIs | Partially fixed | Partly done | session routes answer their own origin only; API-key and widget routes are open and carry no cookies (Oct 26) |
+| COMP-012 | Medium | P2 | One machine class cannot fit all workloads | Open | Roadmap | machine sizes are a plan and pricing decision |
 | COMP-015 | Medium | P2 | SIGTERM/checkpoint behavior needs explicit crash-safe handling | Partially fixed | Partly done | a machine in use is saved every ten minutes; a platform stop can lose only minutes |
 | COMP-014 | Medium | P2 | Environment reconstruction is not first-class | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-007 | Medium | P2 | Backup policy for Agent/browser credentials is undefined | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | OPS-003 | Medium | P2 | Data classification must become executable policy | Partially fixed | Partly done | every record kind has a class checked against the code (Nov 2); per-class enforcement in more places is next |
 | OPS-005 | Medium | P2 | Global KV/R2/provider architecture cannot promise region residency today | Open | Owner | needs a provider, a contract, people or a decision |
 | PROD-015 | Medium | P2 | SDK/API need stable production governance | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| DR-008 | Medium | P2 | Restore drills are not yet full-system game days | Open | Not done yet | not reached this round |
+| DR-008 | Medium | P2 | Restore drills are not yet full-system game days | Open | Owner | full-system game days are people and a schedule |
 | REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Partially fixed | Not done yet | not reached this round |
-| FILE-006 | Medium | P2 | Large/private files need signed/range download design | Open | Not done yet | not reached this round |
-| PROD-014 | Medium | P2 | SCIM/OIDC foundation needs custom RBAC and policy gateway | Partially fixed | Roadmap | product direction |
-| PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Open | Not done yet | not reached this round |
+| FILE-006 | Medium | P2 | Large/private files need signed/range download design | Open | Roadmap | signed range downloads |
+| PROD-014 | Medium | P2 | SCIM/OIDC foundation needs custom RBAC and policy gateway | Partially fixed | Roadmap | custom RBAC and a policy gateway on top of SCIM/OIDC |
+| PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Open | Roadmap | structured shopping, travel and places results |
 | FILE-005 | Medium | P2 | Some quota calculations use encoded character size instead of canonical object bytes | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | SEC-013 | Medium | P2 | No multi-party approval for the most consequential global controls | Open | Owner | needs a provider, a contract, people or a decision |
-| STATE-006 | Medium | P2 | PII is embedded in KV keys and Queue bodies | Partially fixed | Not done yet | not reached this round |
+| STATE-006 | Medium | P2 | PII is embedded in KV keys and Queue bodies | Partially fixed | Roadmap | opaque ids in KV keys and queue bodies (with DATA-014) |
 | OPS-009 | Medium | P2 | Large translation packs require quality/version governance | Open | Partly done | critical copy approved by fingerprint in 17 languages (Nov 2) |
-| TEST-007 | Medium | P2 | The 200-user load probe is architectural, not production capacity evidence | Open | Not done yet | not reached this round |
-| REL-011 | Medium | P2 | 100% head sampling is not sustainable at millions | Open | Not done yet | not reached this round |
+| TEST-007 | Medium | P2 | The 200-user load probe is architectural, not production capacity evidence | Open | Roadmap | a production-scale load test needs a production-like environment |
+| REL-011 | Medium | P2 | 100% head sampling is not sustainable at millions | Open | Roadmap | sampled tracing at scale |
 | OPS-008 | Medium | P2 | Marketplace supply-chain governance needs publisher and update controls | Partially fixed | Partly done | operator takedown, seller freeze, installed copies switch off (Nov 2); signed updates not built |
-| MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Partially fixed | Not done yet | not reached this round |
+| MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Partially fixed | Roadmap | a large versioned eval corpus gating model changes |
 | TEST-008 | Medium | P2 | Frontend bundle and runtime performance need device-level budgets | Open | Not done yet | not reached this round |
 | DATA-015 | Medium | P2 | Generic D1, KV, and Postgres paths risk permanent triple-authority complexity | Partially fixed | Partly done | one authority per data class written down; D1 retired and refused under a launch profile |
 | DATA-018 | Medium | P2 | No documented database region/failover/read-only degradation policy | Open | Owner | needs a provider, a contract, people or a decision |
@@ -179,19 +179,19 @@ Totals: Not done yet 42, Resolved before 39, Fixed now 35, Owner 28, Roadmap 21,
 | PROD-019 | Medium | P2 | Research Trail should distinguish found/opened/read/extracted/cited | Partially fixed | Partly done | the research panel keeps found / could-not-open / read / cited apart |
 | RETR-004 | Medium | P2 | Every retrieved chunk needs stable source/page/section identity | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TASK-013 | Medium | P2 | Interactive timeouts are healthy but not unified with Task promotion | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| SEC-010 | Medium | P2 | Shell execution remains a permanent high-risk boundary | Open | Not done yet | not reached this round |
-| SEC-014 | Medium | P2 | Secrets/configuration remain operationally complex across main/cloud Workers | Open | Not done yet | not reached this round |
+| SEC-010 | Medium | P2 | Shell execution remains a permanent high-risk boundary | Open | Roadmap | shell execution stays fenced and consented; a permanent boundary, not a defect to close |
+| SEC-014 | Medium | P2 | Secrets/configuration remain operationally complex across main/cloud Workers | Open | Roadmap | one configuration schema across the main and cloud Workers |
 | USAGE-003 | Medium | P2 | Sharded global spend reservation may reject while aggregate capacity remains | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | MODEL-004 | Medium | P2 | Streaming cannot transparently fail over after tokens are emitted | Partially fixed | Partly done | a cut stream keeps its part and offers Continue (Nov 2); transparent mid-stream failover is not possible once tokens are shown |
-| TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Open | Not done yet | not reached this round |
+| TASK-010 | Medium | P2 | DAG nodes are not yet full tool-capable isolated Agents | Open | Roadmap | tool-capable isolated agents as graph nodes |
 | TASK-012 | Medium | P2 | Cross-system idempotency needs one end-to-end key | Partially fixed | Partly done | connected-account writes carry one Idempotency-Key end to end (Nov 2) |
 | USAGE-005 | Medium | P2 | AMV does not yet operate on cost per verified outcome as a first-class metric | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | FILE-004 | Medium | P2 | Quota reservation and orphan cleanup need explicit protocol | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| VOICE-002 | Medium | P2 | Meeting/diarization workflow is incomplete | Open | Not done yet | not reached this round |
+| VOICE-002 | Medium | P2 | Meeting/diarization workflow is incomplete | Open | Roadmap | meeting mode with diarization |
 | PROD-006 | Strategic | P2 | AMV needs living collaborative Docs/Sheets/Slides | Strategic roadmap | Roadmap | product direction |
 | PROD-007 | Strategic | P2 | General-purpose image generation/editing is absent | Strategic roadmap | Roadmap | product direction |
 | PROD-020 | Strategic | P2 | Trusted agency must be the product thesis, not feature count | Strategic roadmap | Roadmap | product direction |
 | PROD-016 | Strategic | P2 | Declarative plugins are safe but limited | Strategic roadmap | Roadmap | product direction |
 | AGENT-018 | Strategic | P2 | AMV Companion is not yet a fully integrated persistent-agent experience | Strategic roadmap | Roadmap | product direction |
-| PROD-005 | Strategic | P2 | Recorded workflows remain instruction-like rather than robust executable skills | Partially fixed | Roadmap | product direction |
+| PROD-005 | Strategic | P2 | Recorded workflows remain instruction-like rather than robust executable skills | Partially fixed | Roadmap | recorded workflows as executable skills |
 | VOICE-001 | Strategic | P2 | Voice remains STT→text model→TTS rather than native speech-to-speech | Strategic roadmap | Roadmap | product direction |
