@@ -15,7 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'revone.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _revCommitRestored };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (String(a[0]).startsWith('AUDIT')) return; quiet(...a); };
 
@@ -83,13 +83,24 @@ section('Deleted is committed: a remaining copy is never read back');
   ok((await W.DB.putIfRev(env, 'data', ME, rec(1, 'new life'), 0)).ok && (await W.DB.get(env, 'data', ME)).note === 'new life', 'and a new one can be written after it');
 }
 
+section('A restore is what readers see afterwards, byte for byte');
+{
+  ok((await W.DB.putIfRev(env, 'data', ME, rec(2, 'before restore'), 1)).ok, 'a committed value');
+  const restored = JSON.stringify(rec(7, 'from the backup'));
+  kv.set(MAIN, restored);                                   // what a restore writes
+  await W._revCommitRestored(env, 'data', ME, restored);
+  ok((await W.DB.get(env, 'data', ME)).note === 'from the backup' && kv.get(MAIN) === restored, 'readers get the restored value, unchanged - not the copy committed before it');
+  ok((await W.DB.putIfRev(env, 'data', ME, rec(8, 'after'), 7)).ok, 'and the next write goes on from the restored revision');
+}
+
 section('No object to commit with: nothing is written');
 {
   const real = env.AMV_COUNTER;
+  const was = (await W.DB.get(env, 'data', ME)).note;
   env.AMV_COUNTER = { idFromName: n => n, get: () => ({ async fetch() { throw new Error('object unreachable'); } }) };
-  const r = await W.DB.putIfRev(env, 'data', ME, rec(2, 'unguarded'), 1);
+  const r = await W.DB.putIfRev(env, 'data', ME, rec(9, 'unguarded'), 8);
   env.AMV_COUNTER = real;
-  ok(!r.ok && r.unavailable && (await W.DB.get(env, 'data', ME)).note === 'new life', 'refused and said, never written unguarded');
+  ok(!r.ok && r.unavailable && (await W.DB.get(env, 'data', ME)).note === was, 'refused and said, never written unguarded');
 }
 
 console.log = quiet;

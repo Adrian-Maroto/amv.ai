@@ -614,10 +614,10 @@ async function _restoreEntries(env, entries, mode, t){
        Revocation only moves one way. */
       const merged = await _restoreMerge(env, key, val);
       if (merged.held) heldForward++;
+      await env.AMV_KV.put(key, merged.value);
       /* A record read as committed (STATE-007) is committed as restored, or
          readers would go on answering with the value from before. */
-      if (key.startsWith('data:')) merged.value = await _revCommitRestored(env, 'data', key.slice(5), merged.value);
-      await env.AMV_KV.put(key, merged.value);
+      if (key.startsWith('data:')) await _revCommitRestored(env, 'data', key.slice(5), merged.value);
       /* The epoch's authority is the account's revocation object now, so a
          higher one from the snapshot is carried there too (it only ever
          rises). Failing is said: the restore otherwise holds. */

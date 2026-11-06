@@ -76,19 +76,14 @@ async function _revCommitAbsent(env, kind, id){
   const r = await counter(env, _revName(kind, id), { op: 'revReset', absent: true });
   if(!r || !r.ok) throw new Error('rev_commit_unavailable');
 }
-/* A value written outside putIfRev on purpose (a restore): committed as the
-   next revision, so readers take it and devices see something newer. */
+/* A value written outside putIfRev on purpose (a restore), committed as it
+   is - byte for byte, at its own revision - once the usual key holds it, so
+   readers take it and the next write goes on from that revision. */
 async function _revCommitRestored(env, kind, id, value){
-  if(!env.AMV_COUNTER) return value;
-  const cur = await counter(env, _revName(kind, id), { op: 'revGet' });
-  if(!cur || cur.unavailable) throw new Error('rev_commit_unavailable');
-  let v; try { v = JSON.parse(value); } catch(e) { return value; }
-  v._rev = Math.max(+(cur.rev || 0), +(v._rev || 0)) + 1;
-  const j = JSON.stringify(v);
-  await env.AMV_KV.put(_revBlobKey(kind, id, v._rev), j);
-  const r = await counter(env, _revName(kind, id), { op: 'revReset', rev: v._rev, digest: await _revDigest(j) });
+  if(!env.AMV_COUNTER) return;
+  let rev = 0; try { rev = +(JSON.parse(value)._rev) || 0; } catch(e) { rev = 0; }
+  const r = await counter(env, _revName(kind, id), { op: 'revReset', rev, digest: await _revDigest(value) });
   if(!r || !r.ok) throw new Error('rev_commit_unavailable');
-  return j;
 }
 
 const DB = {
