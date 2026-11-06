@@ -18,10 +18,10 @@ import { Container } from '@cloudflare/containers';
 export { ContainerProxy } from '@cloudflare/containers';
 
 const WS_VERSIONS = 5;
-/* How many times an idle machine whose save failed is kept up to try again
-   before it is stopped anyway (Nov 1 audit COMP-001). Each try is one more
-   sleepAfter window of awake time, which the provider bills - so it is
-   bounded, and a stop without a save is recorded and told, never silent. */
+/* How many failed idle saves in a row before the machine is HELD and the
+   person told (Nov 3 audit COMP-016). It is never stopped with work it could
+   not save: it keeps trying at every idle window until a save works or the
+   person chooses to discard the work. Its awake time is metered as always. */
 const WS_SAVE_TRIES = 3;
 /* A CHECKPOINT WHILE IT IS IN USE (Nov 1 audit COMP-015). The idle save is
    the only save if nothing else happens - but the platform can stop a
@@ -203,6 +203,17 @@ export class AMVComputer extends Container {
       const obj = await this.env.WORKSPACES.get(this._wsKey());
       if (!obj) { await this._setSt({ restoreFailed: null }); return; }
       const sha = obj.customMetadata && obj.customMetadata.sha256;
+      /* A copy saved before checksums (COMP-017) is not trusted silently: it
+         is held back, the person is told, and it is unpacked only when they
+         choose to use it anyway (`/amv-workspace/trust`). Saved again, it
+         gets its checksum. */
+      if (!sha && !(await this._st()).trustOnce) {
+        try { await obj.body.cancel(); } catch (e) {}
+        await this._setSt({ restoreFailed: { at: Date.now(), why: 'saved without a checksum', unverified: true } });
+        console.log(JSON.stringify({ event: 'workspace_restore_held', why: 'no_checksum' }));
+        return;
+      }
+      if (!sha) await this._setSt({ trustOnce: null });
       const r = await this._bridge('restore', { method: 'PUT', body: obj.body, headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(obj.size), ...(sha ? { 'X-AMV-SHA256': sha } : {}) } });
       console.log(JSON.stringify({ event: r.ok ? 'workspace_restored' : 'workspace_restore_failed', status: r.status, bytes: obj.size }));
       if (r.ok) {
@@ -256,18 +267,27 @@ export class AMVComputer extends Container {
            stays), and the restore checks it again before unpacking. */
         const sha = String(r.headers.get('X-AMV-SHA256') || '').toLowerCase();
         const ok = /^[0-9a-f]{64}$/.test(sha);
+        /* NEVER A COPY WITHOUT ITS CHECKSUM (Nov 3 audit COMP-017). A snapshot
+           the bridge sent without a valid SHA-256 used to be stored anyway,
+           and restored later with nothing to check it against. It is not
+           saved: the last good copy stays, and this counts as a failed save. */
+        if (!ok) {
+          try { await r.body.cancel(); } catch (e) {}
+          console.log(JSON.stringify({ event: 'workspace_not_saved', why: 'no_checksum' }));
+          return false;
+        }
         /* Files that kept changing on every try while it was read (Nov 1
            audit COMP-004): kept with the copy, so it says which may be torn. */
         const changing = String(r.headers.get('X-AMV-Changing') || '').slice(0, 2000);
         /* The image it was running on, so a restore onto another one knows
            to rebuild the workspace's tools (COMP-014). */
         const image = String(r.headers.get('X-AMV-Image') || '').slice(0, 60);
-        const meta = Object.assign(ok ? { sha256: sha } : {}, changing ? { changing } : {}, image ? { image } : {});
+        const meta = Object.assign({ sha256: sha }, changing ? { changing } : {}, image ? { image } : {});
         /* The copy about to be replaced becomes an earlier copy. Failing to
            keep it is logged and does not stop today's save. */
         try { await this._wsKeepCurrent(); } catch (e) { console.log(JSON.stringify({ event: 'workspace_version_not_kept', error: String((e && e.message) || e).slice(0, 160) })); }
         await this.env.WORKSPACES.put(this._wsKey(), readable, Object.assign({ httpMetadata: { contentType: 'application/gzip' } },
-          Object.assign(ok ? { sha256: sha } : {}, Object.keys(meta).length ? { customMetadata: meta } : {})));
+          { sha256: sha, customMetadata: meta }));
         await done;
         console.log(JSON.stringify(Object.assign({ event: 'workspace_saved', bytes: size }, changing ? { changing: true } : {})));
         saved = true;
@@ -301,23 +321,28 @@ export class AMVComputer extends Container {
   async onActivityExpired() {
     if (this._wsOn() && this.container.running && !(await this._st()).restoreFailed) {
       if (await this._wsSave()) {
-        await this._setSt({ saveFails: null });
+        await this._setSt({ saveFails: null, unsavedHeld: null });
         await this._kvPut('ws_saved_at', Date.now());
       } else {
-        /* NOT STOPPED ON A FAILED SAVE (COMP-001): the disk holds work the
-           saved copy does not. Kept up for another idle window to try again;
-           after WS_SAVE_TRIES it is stopped anyway - a machine that can never
-           save would otherwise run, and bill, for ever - and that loss is
-           recorded for the person to be told, with the last good copy kept. */
+        /* NEVER STOPPED WITH WORK IT COULD NOT SAVE (COMP-001, Nov 3 audit
+           COMP-016). The disk holds work the saved copy does not, and stopping
+           the machine throws that work away. It used to be stopped after
+           three failed tries anyway; now, after WS_SAVE_TRIES, it is HELD:
+           kept running, still tried at every idle window, and the person is
+           told - with the machine still there to copy their work out of.
+           It stops only when a save works, or when the person chooses to
+           discard the unsaved work (`/amv-workspace/discard`). Its awake time
+           is metered against their plan as always. */
         const st = await this._setSt({ saveFails: ((await this._st()).saveFails || 0) + 1 });
-        if (st.saveFails < WS_SAVE_TRIES) {
-          console.log(JSON.stringify({ event: 'workspace_save_retry', tries: st.saveFails }));
-          return;
-        }
-        await this._setSt({ saveFails: null, lostUnsaved: { at: Date.now(), tries: st.saveFails } });
-        console.log(JSON.stringify({ event: 'workspace_stopped_unsaved', tries: st.saveFails }));
+        if (st.saveFails >= WS_SAVE_TRIES && !st.unsavedHeld) {
+          await this._setSt({ unsavedHeld: { since: Date.now(), tries: st.saveFails } });
+          console.log(JSON.stringify({ event: 'workspace_held_unsaved', tries: st.saveFails }));
+        } else console.log(JSON.stringify({ event: 'workspace_save_retry', tries: st.saveFails }));
+        if (st.unsavedHeld) await this._setSt({ unsavedHeld: Object.assign({}, st.unsavedHeld, { tries: st.saveFails, lastTry: Date.now() }) });
+        return;
       }
     }
+    await this._setSt({ unsavedHeld: null });
     await this.stop();
   }
 
@@ -338,7 +363,8 @@ export class AMVComputer extends Container {
     }
     /* The earlier copies, and putting one back. AMV's key only - the main
        Worker reaches this with the person's sign-in checked, never the page. */
-    if (url.pathname === '/amv-workspace/versions' || url.pathname === '/amv-workspace/rollback' || url.pathname === '/amv-workspace/fresh') {
+    if (url.pathname === '/amv-workspace/versions' || url.pathname === '/amv-workspace/rollback' || url.pathname === '/amv-workspace/fresh'
+        || url.pathname === '/amv-workspace/discard' || url.pathname === '/amv-workspace/trust') {
       const reply = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'Content-Type': 'application/json' } });
       if (!(await this._callOk(request, url.pathname)))
         return reply({ error: 'not_allowed' }, 401);
@@ -352,7 +378,34 @@ export class AMVComputer extends Container {
            the machine stopped without its last save. Seen once, then gone. */
         if (st.lostUnsaved) await this._setSt({ lostUnsaved: null });
         return reply({ current, versions: (await this._wsVersions()).map(({ id, at, bytes, changing }) => Object.assign({ id, at, bytes }, changing ? { changing } : {})),
-          state: { restoreFailed: st.restoreFailed || null, lostUnsaved: st.lostUnsaved || null, setup: st.setup || null } });
+          state: { restoreFailed: st.restoreFailed || null, lostUnsaved: st.lostUnsaved || null, unsavedHeld: st.unsavedHeld || null, setup: st.setup || null } });
+      }
+      /* THE PERSON'S DECISION, NOT A TIMER'S (COMP-016): a machine held
+         because its work could not be saved is stopped - and that work lost -
+         only when they say so. Tried once more first. */
+      if (url.pathname === '/amv-workspace/discard') {
+        const st0 = await this._st();
+        if (!st0.unsavedHeld) return reply({ error: 'Nothing is waiting to be saved.', code: 'not_needed' }, 409);
+        if (this.container.running && await this._wsSave()) {
+          await this._setSt({ saveFails: null, unsavedHeld: null });
+          await this._kvPut('ws_saved_at', Date.now());
+          try { await this.stop(); } catch (e) {}
+          return reply({ discarded: false, saved: true });
+        }
+        await this._setSt({ saveFails: null, unsavedHeld: null, lostUnsaved: { at: Date.now(), tries: st0.unsavedHeld.tries || 0, chosen: true } });
+        try { if (this.container.running) await this.destroy(); } catch (e) {}
+        console.log(JSON.stringify({ event: 'workspace_discarded_unsaved' }));
+        return reply({ discarded: true });
+      }
+      /* A copy saved before checksums, used anyway because the person chose
+         to: unpacked at the next start, then saved again with its checksum. */
+      if (url.pathname === '/amv-workspace/trust') {
+        const st0 = await this._st();
+        if (!(st0.restoreFailed && st0.restoreFailed.unverified)) return reply({ error: 'There is no unchecked copy waiting.', code: 'not_needed' }, 409);
+        await this._setSt({ restoreFailed: null, trustOnce: true });
+        try { if (this.container.running) await this.destroy(); } catch (e) {}
+        console.log(JSON.stringify({ event: 'workspace_trusted_unverified' }));
+        return reply({ trusted: true });
       }
       /* START FRESH after a failed restore, on purpose: the copy that could
          not be put back is kept as an earlier copy first, then the machine

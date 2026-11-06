@@ -178,12 +178,59 @@ section('A snapshot that fails never replaces the last good copy');
   await m.onActivityExpired();
   ok(!m.stopped, 'nor on the second');
   await m.onActivityExpired();
-  ok(m.stopped && events.includes('workspace_stopped_unsaved'), 'on the third it is stopped, because a machine that can never save would bill for ever', events.slice(-3));
+  /* Nov 3 audit COMP-016: after the third it used to be stopped anyway -
+     throwing the unsaved work away. It is HELD now: kept running, still
+     tried, and the person told. */
+  ok(!m.stopped && events.includes('workspace_held_unsaved'), 'nor on the third: it is held running, because stopping would throw the work away', events.slice(-3));
+  await m.onActivityExpired(); await m.onActivityExpired();
+  ok(!m.stopped, 'and it stays held however many idle windows pass, still trying each time');
   ok(String(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')) === 'the last good copy', 'the last good copy still stands');
-  const told = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions', null, null, env.AMV_COMPUTER_KEY) }))).json();
-  ok(told.state && told.state.lostUnsaved && told.state.lostUnsaved.tries === 3, 'and the person is told the last session could not be saved', told.state);
-  const again = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions', null, null, env.AMV_COMPUTER_KEY) }))).json();
-  ok(!again.state.lostUnsaved, 'once, not every time they look');
+  const ask = async () => (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions', null, null, env.AMV_COMPUTER_KEY) }))).json();
+  const told = await ask();
+  ok(told.state && told.state.unsavedHeld && told.state.unsavedHeld.tries === 5 && !told.state.lostUnsaved, 'the person is told the work could not be saved and is being kept', told.state);
+  /* Only their decision stops it. */
+  const disc = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY) }));
+  const dd = await disc.json();
+  ok(disc.status === 200 && dd.discarded === true && m.destroyed, 'discarding - their choice - tries once more, then stops the machine', dd);
+  const after = await ask();
+  ok(after.state.lostUnsaved && after.state.lostUnsaved.chosen && !after.state.unsavedHeld, 'and the record says it was their choice', after.state);
+  ok(!(await ask()).state.lostUnsaved, 'told once, not every time they look');
+  const none = await m.fetch(new Request('http://amv-computer/amv-workspace/discard', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/discard', null, null, env.AMV_COMPUTER_KEY) }));
+  ok(none.status === 409, 'with nothing waiting there is nothing to discard', none.status);
+}
+
+section('A copy without a checksum never becomes the copy, and an old one is not trusted silently (Nov 3 audit COMP-017)');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  env.WORKSPACES.m.set('ws/a1b2c3d4.tgz', Buffer.from('the last good copy'));
+  env.WORKSPACES.meta.set('ws/a1b2c3d4.tgz', { sha256: createHash('sha256').update('the last good copy').digest('hex') });
+  /* A bridge that sends a snapshot with no checksum, or a malformed one. */
+  for (const sha of [null, 'not-a-checksum']) {
+    const bare = { running: true, getTcpPort: () => ({ fetch: async () => new Response('unchecked bytes', { headers: Object.assign({ 'Content-Length': '15' }, sha ? { 'X-AMV-SHA256': sha } : {}) }) }) };
+    const m = new AMVComputer({ id, container: bare, storage: memStorage() }, env);
+    await m.onActivityExpired();
+    ok(String(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')) === 'the last good copy' && events.includes('workspace_not_saved') && !m.stopped,
+       'a snapshot with ' + (sha ? 'a malformed' : 'no') + ' checksum is not saved, the good copy stands, and the machine is not stopped');
+  }
+  /* A copy kept before checksums: held back, not unpacked silently. A real
+     workspace, saved, then with its checksum taken off as an old one had. */
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  env.WORKSPACES.meta.set('ws/a1b2c3d4.tgz', {});
+  const storage = memStorage();
+  const six = join(box, 'six'); mkdirSync(six, { recursive: true });
+  const F = await bridge(six);
+  const m = new AMVComputer({ id, container: Object.assign(portTo(F.base), { running: true }), storage }, env);
+  await m.onStart();
+  const v = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
+  ok(v.state.restoreFailed && v.state.restoreFailed.unverified && events.includes('workspace_restore_held'), 'an unchecked copy is held back and the person is told', v.state);
+  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec') }));
+  ok(work.status === 409, 'and nothing runs on the empty disk meanwhile', work.status);
+  const t = await m.fetch(new Request('http://amv-computer/amv-workspace/trust', { method: 'POST', body: '{}', headers: await signed('/amv-workspace/trust') }));
+  ok(t.status === 200 && (await t.json()).trusted, 'the person can choose to use it anyway');
+  const m2 = new AMVComputer({ id, container: Object.assign(portTo(F.base), { running: true }), storage }, env);
+  await m2.onStart();
+  const v2 = await (await m2.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
+  ok(!v2.state.restoreFailed && events.includes('workspace_restored'), 'and then it is unpacked at the next start', v2.state);
 }
 
 section('An archive that climbs out of the workspace writes nothing outside it');

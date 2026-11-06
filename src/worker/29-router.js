@@ -889,6 +889,8 @@ async function _route(request, env, ctx) {
     case '/v1/computer/versions': return computerVersions(request, env, 'versions');
     case '/v1/computer/rollback': return computerVersions(request, env, 'rollback');
     case '/v1/computer/fresh': return computerVersions(request, env, 'fresh');
+    case '/v1/computer/discard': return computerVersions(request, env, 'discard');
+    case '/v1/computer/trust': return computerVersions(request, env, 'trust');
     case '/v1/computer/exec': case '/v1/computer/exec/cancel': case '/v1/computer/read':
     case '/v1/computer/write': case '/v1/computer/list': case '/v1/computer/delete':
     case '/v1/computer/revoke': case '/v1/computer/status':

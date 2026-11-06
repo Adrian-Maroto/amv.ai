@@ -31,9 +31,17 @@ async function _wsCopiesLoad(box){
     + '<button class="btn bs" type="button" data-ws-back="' + escH(v.id) + '">' + escH(T('Put back')) + '</button></li>').join('');
   const st = d.state || {};
   /* What went wrong, said first (Nov 1 audit COMP-001/002). */
-  const warn = st.restoreFailed
+  const warn = st.restoreFailed && st.restoreFailed.unverified
+      ? '<p class="brg-p brg-warn"><b>' + escH(T('Your saved workspace was kept without a checksum, so AMV cannot check it is intact.')) + '</b> ' + escH(T('It has not been unpacked. Use it anyway, put back one of the copies below, or start fresh - nothing is deleted.')) + '</p>'
+        + '<div class="brg-acts"><button class="btn bs" type="button" id="brg-ws-trust">' + escH(T('Use it anyway')) + '</button> <button class="btn bs" type="button" id="brg-ws-fresh">' + escH(T('Start fresh')) + '</button></div>'
+    : st.restoreFailed
       ? '<p class="brg-p brg-warn"><b>' + escH(T('Your saved workspace could not be put back.')) + '</b> ' + escH(T('The machine is not running anything until it is. Put back one of the copies below, or start fresh - the copy that failed is kept.')) + '</p>'
         + '<div class="brg-acts"><button class="btn bs" type="button" id="brg-ws-fresh">' + escH(T('Start fresh')) + '</button></div>'
+    : st.unsavedHeld
+      ? '<p class="brg-p brg-warn"><b>' + escH(T('Your workspace could not be saved.')) + '</b> ' + escH(T('AMV keeps the machine running so nothing is lost, and keeps trying. You can copy your work out of it now. Discarding stops the machine and loses everything since the last saved copy.')) + '</p>'
+        + '<div class="brg-acts"><button class="btn bs" type="button" id="brg-ws-discard">' + escH(T('Discard unsaved work')) + '</button></div>'
+    : st.lostUnsaved && st.lostUnsaved.chosen
+      ? '<p class="brg-p brg-warn">' + escH(T('You discarded the work that could not be saved. The saved copies below are intact.')) + '</p>'
     : st.lostUnsaved
       ? '<p class="brg-p brg-warn"><b>' + escH(T('The last session could not be saved.')) + '</b> ' + escH(T('The workspace stopped after several tries, so work since the last saved copy was lost. The saved copies below are intact.')) + '</p>'
       : '';
@@ -47,6 +55,19 @@ async function _wsCopiesLoad(box){
     else toast((d2 && d2.error) || T('That could not be done. Nothing changed.'), 'error', 7000);
     await _wsCopiesLoad(box);
   }, { confirm: T('Start fresh') }));
+  const choice = (id, path, title, text, label, done, field) => {
+    const el = box.querySelector(id);
+    if(el) on(el, 'click', () => confirmModal(title, text, async () => {
+      let r3, d3;
+      try{ r3 = await AMV_API._fetch(path, { method: 'POST', body: '{}', timeout: 120000 }); d3 = await r3.json().catch(() => null); }catch(e){ d3 = null; }
+      if(r3 && r3.ok && d3 && d3.saved) toast(T('It saved after all. Nothing was lost.'), 'success', 6000);
+      else if(r3 && r3.ok && d3 && d3[field]) toast(done, 'success', 6000);
+      else toast((d3 && d3.error) || T('That could not be done. Nothing changed.'), 'error', 7000);
+      await _wsCopiesLoad(box);
+    }, { confirm: label }));
+  };
+  choice('#brg-ws-discard', '/v1/computer/discard', T('Discard unsaved work?'), T('AMV tries to save once more. If that fails, the machine stops and everything since the last saved copy is lost. This cannot be undone.'), T('Discard unsaved work'), T('The unsaved work was discarded and the machine stopped.'), 'discarded');
+  choice('#brg-ws-trust', '/v1/computer/trust', T('Use the unchecked copy?'), T('AMV cannot confirm this copy is intact. It is unpacked the next time the workspace starts, and saved again with a checksum.'), T('Use it anyway'), T('The copy is used the next time the workspace starts.'), 'trusted');
   box.querySelectorAll('[data-ws-back]').forEach(b => on(b, 'click', () => {
     const id = b.getAttribute('data-ws-back');
     confirmModal(T('Put this copy back?'), T('What is in the workspace now is kept as a saved copy first, and the workspace restarts with the one you chose.'), () => _wsCopiesPutBack(box, id), { confirm: T('Put back') });

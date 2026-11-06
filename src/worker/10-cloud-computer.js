@@ -103,7 +103,9 @@ async function _computerOpen(request, env, route){
   if(limited) return { res: limited };
   /* Spent: nothing more reaches the machine, because anything that reaches it
      keeps it awake. Disconnecting still goes through - it stops what runs. */
-  if(route !== 'revoke'){
+  /* Discarding unsaved work is also how a held machine is stopped, so it is
+     never refused for minutes spent (Nov 3 audit COMP-016). */
+  if(route !== 'revoke' && route !== 'discard'){
     const used = await _computerUsedSeconds(env, user.email);
     if(used >= cap * 60)
       return { res: json({ error: `You have used this month’s ${cap} minutes of cloud workspace time. It starts again next month, or upgrade for more.`,
@@ -123,7 +125,7 @@ async function computerVersions(request, env, which){
   if(open.res) return open.res;
   const { user, stub } = open;
   const body = which === 'rollback' ? await request.json().catch(() => ({})) : {};
-  const path = which === 'rollback' ? 'rollback' : which === 'fresh' ? 'fresh' : 'versions';
+  const path = which === 'rollback' ? 'rollback' : which === 'fresh' ? 'fresh' : which === 'discard' ? 'discard' : which === 'trust' ? 'trust' : 'versions';
   let r, d;
   try{
     r = await _computerCall(env, stub, '/amv-workspace/' + path, {
@@ -133,6 +135,8 @@ async function computerVersions(request, env, which){
   if(!d) return json({ error: 'The saved copies could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503);
   if(which === 'rollback' && d.restored) audit(env, 'computer_rolled_back', { by: user.email, to: d.id });
   if(which === 'fresh' && d.fresh) audit(env, 'computer_started_fresh', { by: user.email });
+  if(which === 'discard' && d.discarded) audit(env, 'computer_discarded_unsaved', { by: user.email });
+  if(which === 'trust' && d.trusted) audit(env, 'computer_trusted_unverified', { by: user.email });
   return json(Object.assign({ ok: r.ok }, d), r.status);
 }
 async function computerRoute(request, env, route){
