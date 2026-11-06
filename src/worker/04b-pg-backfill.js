@@ -32,13 +32,66 @@
                counted on migration_accounts (mismatches, last_mismatch).
    `_run` is the switch: cursor 'running', 'stopped' or 'done'.
 
-   Not copied, and said so in the status: credit packs bought before step 2
-   (their record is the payment provider's and the per-pack KV record; the
-   live ledger starts at step 2), and seller lines older than the 500 the
-   history keeps. */
+   MONEY FROM BEFORE THE LEDGER (Nov 3 audit DATA-004/005, USAGE-006).
+   Credit packs bought before step 2, and seller lines older than the 500 a
+   history keeps, have no ledger rows of their own - so the ledger alone
+   would show less money than people have. Two more phases close that:
+     opencredit / openseller - one OPENING row per credit balance (every
+               subject a pack was ever paid for, from `creditpay:`) and per
+               seller (`wallet:`): the balance AMV holds now, less what the
+               ledger already has for it, measured with the ledger read on both
+               sides of the balance so a sale landing meanwhile is not counted
+               twice (moved: tried again on the next pass). Keyed
+               `opening:<kind>:<who>`, so it is written once, ever.
+     reconcredit / reconseller - every balance compared with its ledger sum to
+               the cent; each that differs is kept as `money:<kind>:<who>` on
+               migration_cursor, cleared when it agrees. The status shows how
+               many: money may not be read from Postgres while it is not zero. */
 
-const PG_BACKFILL_PHASES = ['acct', 'team', 'wallet', 'repair', 'verify'];
-const PG_BACKFILL_PREFIX = { acct: 'acct:', team: 'team:', wallet: 'wallet_tx:', repair: 'pgrepair:', verify: 'acct:' };
+const PG_BACKFILL_PHASES = ['acct', 'team', 'wallet', 'repair', 'opencredit', 'openseller', 'verify', 'reconcredit', 'reconseller'];
+const PG_BACKFILL_PREFIX = { acct: 'acct:', team: 'team:', wallet: 'wallet_tx:', repair: 'pgrepair:', verify: 'acct:',
+  opencredit: 'creditpay:', openseller: 'wallet:', reconcredit: 'creditpay:', reconseller: 'wallet:' };
+const _pgR6 = (x) => Math.round(Number(x) * 1e6) / 1e6;
+/* What AMV holds now: a credit balance is its two counters (bought less
+   spent, exact); a seller's is their wallet. */
+async function _pgMoneyLive(env, kind, who){
+  if (kind === 'credit') { const st = await _creditState(env, who); return _pgR6(st.bought - st.spent); }
+  const w = await _wallet(env, who);
+  return _pgR6(+w.balance || 0);
+}
+/* What the ledger has for it: a credit row names its subject first in its
+   note ('subject:<who>' ...); a seller row is the seller's account. */
+async function _pgMoneyLedger(sql, kind, who){
+  const r = kind === 'credit'
+    ? await sql`SELECT COALESCE(SUM(amount), 0)::text AS s FROM credit_ledger WHERE split_part(note, ' ', 1) = ${'subject:' + who}`
+    : await sql`SELECT COALESCE(SUM(l.amount), 0)::text AS s FROM seller_ledger l JOIN accounts a ON a.id = l.account_id WHERE a.email = ${who}`;
+  return _pgR6(r[0].s);
+}
+const PG_MONEY_TOLERANCE = { credit: 0.0001, seller: 0.005 };
+/* The balances a waiting money repair belongs to, read once per run. */
+async function _pgMoneyPending(env, t){
+  if (t._pending) return t._pending;
+  const out = new Set(); let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'pgrepair:ledger:', cursor, limit: 1000 });
+    for (const k of page.keys || []) {
+      let kept = null; try { kept = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); } catch (e) { kept = null; }
+      const row = kept && kept.row; if (!row) continue;
+      if (row.table === 'seller') out.add('seller:' + String(row.email || '').toLowerCase());
+      else { const m = /^subject:(\S+)/.exec(String(row.note || '')); out.add('credit:' + (m ? m[1] : String(row.email || '')).toLowerCase()); }
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  Object.defineProperty(t, '_pending', { value: out, enumerable: false });
+  return out;
+}
+async function _pgMoneyWho(env, kind, keyName){
+  if (kind === 'seller') { const em = keyName.slice(7).toLowerCase(); return { who: em, email: em }; }
+  let rec = null; try { rec = JSON.parse((await env.AMV_KV.get(keyName)) || 'null'); } catch (e) { rec = null; }
+  if (!rec || !rec.subject) return null;
+  const who = String(rec.subject).toLowerCase();
+  return { who, email: String(who.includes('@') ? who : (rec.email || '')).toLowerCase() };
+}
 const PG_BACKFILL_SLICE_MS = 20000;
 const PG_BACKFILL_PAGE = 100;
 
@@ -205,6 +258,44 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
     await env.AMV_KV.delete(keyName);
     return 'copied';
   }
+  if (phase === 'opencredit' || phase === 'openseller') {
+    const kind = phase === 'opencredit' ? 'credit' : 'seller';
+    const w = await _pgMoneyWho(env, kind, keyName);
+    if (!w || !w.email) { t.unreadable++; return 'skipped'; }
+    const key = 'opening:' + kind + ':' + w.who;
+    const have = kind === 'credit' ? await sql`SELECT 1 FROM credit_ledger WHERE idempotency_key = ${key}` : await sql`SELECT 1 FROM seller_ledger WHERE idempotency_key = ${key}`;
+    if (have.length) return 'same';
+    /* A money row for this balance still waiting on the repair list would be
+       counted twice - once in the opening, once when it is repaired. Not
+       yet, then. (A repair entry nobody can read is for a person, and
+       blocks nothing.) */
+    if ((await _pgMoneyPending(env, t)).has(kind + ':' + w.who)) { t.moved = (t.moved || 0) + 1; return 'skipped'; }
+    const before = await _pgMoneyLedger(sql, kind, w.who);
+    const live = await _pgMoneyLive(env, kind, w.who);
+    const after = await _pgMoneyLedger(sql, kind, w.who);
+    if (before !== after) { t.moved = (t.moved || 0) + 1; return 'skipped'; }
+    const amount = _pgR6(live - after);
+    /* Written even when it is zero: the row is the record that this balance
+       was measured, and its key makes it the only one. */
+    await _pgLedgerInsert(sql, kind === 'credit'
+      ? { table: 'credit', email: w.email, currency: 'USD', amount, reason: 'correction', key, note: 'subject:' + w.who + ' opening' }
+      : { table: 'seller', email: w.email, currency: 'USD', amount, reason: 'correction', key });
+    try { audit(env, 'pg_money_opening', { kind, id: w.who, amount }); } catch (e) {}
+    return 'copied';
+  }
+  if (phase === 'reconcredit' || phase === 'reconseller') {
+    const kind = phase === 'reconcredit' ? 'credit' : 'seller';
+    const w = await _pgMoneyWho(env, kind, keyName);
+    if (!w) { t.unreadable++; return 'skipped'; }
+    const live = await _pgMoneyLive(env, kind, w.who);
+    const led = await _pgMoneyLedger(sql, kind, w.who);
+    const tag = 'money:' + kind + ':' + w.who;
+    if (Math.abs(live - led) < PG_MONEY_TOLERANCE[kind]) { await sql`DELETE FROM migration_cursor WHERE kind = ${tag}`; return 'same'; }
+    await sql`INSERT INTO migration_cursor (kind, cursor, copied, updated_at) VALUES (${tag}, ${String(_pgR6(live - led))}, 0, now())
+              ON CONFLICT (kind) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = now()`;
+    try { audit(env, 'pg_money_differs', { kind, id: w.who, live, ledger: led }); } catch (e) {}
+    return 'mismatched';
+  }
   if (phase === 'verify') {
     const email = keyName.slice(5).toLowerCase();
     let diff = await _pgAccountDiff(sql, email, await _pgAccountKV(env, email));
@@ -227,7 +318,7 @@ async function runPgBackfill(env, opts){
   if (DB._hasD1(env)) return { on: false, why: 'd1' };
   const started = Date.now();
   const sql = await _pgClient(env);
-  const t = { phase: '', copied: 0, same: 0, mismatched: 0, skipped: 0, failed: 0, lines: 0, unkeyed: 0, unreadable: 0 };
+  const t = { phase: '', copied: 0, same: 0, mismatched: 0, skipped: 0, failed: 0, lines: 0, unkeyed: 0, unreadable: 0, moved: 0 };
   const me = 'run:' + [...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('');
   let held = false;
   try {
@@ -275,10 +366,11 @@ async function runPgBackfill(env, opts){
     if (!(await _pgBackfillSaveHeld(sql, me, '_run', 'done', 0))) { held = false; return { on: true, state: 'running', leaseLost: true, ...t }; }
     const left = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 });
     const bad = await sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`;
-    const clean = !(left.keys || []).length && !bad[0].n;
+    const money = await sql`SELECT count(*)::int AS n FROM migration_cursor WHERE kind LIKE 'money:%'`;
+    const clean = !(left.keys || []).length && !bad[0].n && !money[0].n;
     try { await alertOnce(env, 'pg_backfill_done', clean
-      ? 'The Postgres backfill finished: every account was read back and matches, and the repair list is empty. Step 4 (shadow reads) can start.'
-      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait.', 60); } catch (e) {}
+      ? 'The Postgres backfill finished: every account was read back and matches, every balance reconciles to the cent, and the repair list is empty. Step 4 (shadow reads) can start.'
+      : 'The Postgres backfill finished with work left: ' + bad[0].n + ' account(s) differ, ' + money[0].n + ' balance(s) do not reconcile, and the repair list is ' + ((left.keys || []).length ? 'not ' : '') + 'empty. See GET /admin/pg/backfill. Step 4 must wait; a restart measures balances that moved again.', 60); } catch (e) {}
     return { on: true, state: 'done', clean, ...t };
   } finally {
     if (held) { try { await _pgLeaseRelease(sql, me); } catch (e) {} }
@@ -332,10 +424,16 @@ async function pgBackfillRoute(request, env){
         creditLines: await count(sql`SELECT count(*)::int AS n FROM credit_ledger`),
       },
       accountsDiffering: await count(sql`SELECT count(*)::int AS n FROM migration_accounts WHERE last_mismatch IS NOT NULL`),
+      /* Balances whose ledger does not add up to what AMV holds, to the cent
+         (DATA-004/005). Money is read from Postgres only when this is zero
+         and both reconcile phases are done. */
+      moneyDiffering: await count(sql`SELECT count(*)::int AS n FROM migration_cursor WHERE kind LIKE 'money:%'`),
+      moneyReconciled: !!(by.reconcredit && by.reconcredit.cursor === 'done' && by.reconseller && by.reconseller.cursor === 'done')
+        && (await count(sql`SELECT count(*)::int AS n FROM migration_cursor WHERE kind LIKE 'money:%'`)) === 0,
       repairsWaiting: backlog.total,
       repairsByKind: backlog.byKind,
       repairsMoreThanShown: !backlog.exact,
-      notCopied: 'Credit packs bought before step 2, and seller lines older than the 500 a history keeps.',
+      notCopied: 'Credit packs bought before step 2 and seller lines older than the 500 a history keeps are not copied line by line: each balance has one opening row instead, reconciled to the cent.',
     });
   } finally {
     try { await sql.end({ timeout: 5 }); } catch (e) {}

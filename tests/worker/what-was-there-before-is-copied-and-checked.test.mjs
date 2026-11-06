@@ -121,7 +121,7 @@ section('Nothing happens until the owner starts it, and only the owner can');
   const bad = await W.pgBackfillRoute(admin('POST', { action: 'go' }), env);
   ok(bad.status === 400, 'an action it does not know is refused', bad.status);
   const s = await (await W.pgBackfillRoute(admin('POST', { action: 'start' }), env)).json();
-  ok(s.state === 'running' && s.phases.length === 5 && s.phases.every(p => !p.done), 'started, every phase still to do', s.state);
+  ok(s.state === 'running' && s.phases.length === 9 && s.phases.every(p => !p.done), 'started, every phase still to do', s.state);
 }
 
 section('It stops between pages and goes on from where it was');
@@ -168,7 +168,7 @@ section('Every account was read back, and they match');
 {
   const s = await status();
   ok(s.accountsDiffering === 0 && s.rows.accounts === N && s.phases.every(p => p.done), 'none differ, every phase done', s);
-  ok(s.repairsWaiting === 2 && /Credit packs bought before step 2/.test(s.notCopied), 'and it says what is left, and what it does not copy', s.repairsWaiting);
+  ok(s.repairsWaiting === 2 && /opening row/.test(s.notCopied), 'and it says what is left, and how older money is carried', s.repairsWaiting);
 }
 
 section('Run again from the start, it copies nothing twice and finds a row changed behind its back');
@@ -361,6 +361,53 @@ section('The same record in a different key order has the same digest (Nov 1 aud
   const c = await W._pgDigest({ a: { x: null, y: [1, { p: 3, q: 9 }] }, b: 1 });
   ok(a === b, 'key order at any depth does not change the digest', [a.slice(0, 8), b.slice(0, 8)]);
   ok(a !== c, 'and a changed value still does');
+}
+
+section('Money from before the ledger: one opening row per balance, reconciled to the cent (Nov 3 audit DATA-004/005)');
+{
+  /* A seller whose whole history is older than the 500 lines kept; one whose
+     kept lines explain only part of the balance; a credit pack bought before
+     step 2, partly spent; one whose purchase is already a ledger row; and a
+     seller with a money row still waiting to be repaired. */
+  store.set('wallet:p005@example.com', JSON.stringify({ balance: 30, lifetime: 30, currency: 'usd', holds: [] }));
+  store.set('wallet:p002@example.com', JSON.stringify({ balance: 12, lifetime: 16, currency: 'usd', holds: [] }));
+  store.set('creditpay:pi_old', JSON.stringify({ subject: 'p006@example.com', email: 'p006@example.com', usd: 50, at: Date.UTC(2026, 0, 2) }));
+  counters.set('creditbuy:p006@example.com', 50); counters.set('creditspent:p006@example.com', 12.5);
+  store.set('creditpay:pi_pack_7', JSON.stringify({ subject: 'p003@example.com', email: 'p003@example.com', usd: 20, at: Date.UTC(2026, 4, 1) }));
+  counters.set('creditbuy:p003@example.com', 20);
+  store.set('wallet:p007@example.com', JSON.stringify({ balance: 10, lifetime: 10, currency: 'usd', holds: [] }));
+  store.set('pgrepair:ledger:seller:sale:pi_7:itm_7', JSON.stringify({ at: 1, why: 'timeout', row: { table: 'seller', email: 'p007@example.com', currency: 'USD', amount: 10, reason: 'sale', key: 'seller:sale:pi_7:itm_7' } }));
+  /* Run while that repair waits: it is measured later, never twice. */
+  const origList = env.AMV_KV.list;
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  /* the repair phase would copy it; hold it back for this run */
+  env.AMV_KV.list = async (o) => { const r = await origList.call(env.AMV_KV, o); if (o && o.prefix === 'pgrepair:') r.keys = (r.keys || []).filter(k => !k.name.includes('pi_7')); return r; };
+  await runToEnd(50);
+  env.AMV_KV.list = origList;
+  const opening = (k) => q(`select coalesce((select amount::text from seller_ledger where idempotency_key='${k}'), (select amount::text from credit_ledger where idempotency_key='${k}'), 'none')`);
+  ok(opening('opening:seller:p005@example.com') === '30.000000', 'a seller with no lines kept gets one opening row for their whole balance', opening('opening:seller:p005@example.com'));
+  ok(opening('opening:seller:p002@example.com') === '7.000000', 'one whose lines explain part of it gets the rest: 12 held, 5 in lines, 7 opening', opening('opening:seller:p002@example.com'));
+  ok(opening('opening:credit:p006@example.com') === '37.500000', 'a pack bought before the ledger: what is left of it, exactly', opening('opening:credit:p006@example.com'));
+  ok(opening('opening:credit:p003@example.com') === '0.000000', 'one already in the ledger is measured and opens at zero - never counted twice', opening('opening:credit:p003@example.com'));
+  ok(opening('opening:seller:p007@example.com') === 'none', 'a balance with a money row still waiting to be repaired is not opened yet');
+  let st = await status();
+  ok(st.moneyDiffering === 1 && st.moneyReconciled === false, 'and it is the one balance that does not reconcile, so money is not ready', [st.moneyDiffering, st.moneyReconciled]);
+
+  /* The repair lands; a restart opens it at zero and everything reconciles. */
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  await runToEnd(50);
+  st = await status();
+  ok(opening('opening:seller:p007@example.com') === '0.000000' && st.moneyDiffering === 0 && st.moneyReconciled === true, 'repaired, then measured: every balance reconciles to the cent', [opening('opening:seller:p007@example.com'), st.moneyDiffering]);
+  ok(q("select count(*) from credit_ledger where idempotency_key like 'opening:%'") === '2', 'and no opening row was written twice');
+
+  /* Money moves outside the ledger: found, and said. */
+  counters.set('creditspent:p006@example.com', 13.5);
+  await W.pgBackfillRoute(admin('POST', { action: 'restart' }), env);
+  await runToEnd(50);
+  st = await status();
+  ok(st.moneyDiffering === 1 && st.moneyReconciled === false && q("select cursor from migration_cursor where kind='money:credit:p006@example.com'") === '-1', 'a balance that moved without its ledger row differs by exactly that much, and blocks money', st.moneyDiffering);
+  ok(q("select count(*) from credit_ledger where idempotency_key='opening:credit:p006@example.com'") === '1', 'the opening is never rewritten to hide it');
+  counters.set('creditspent:p006@example.com', 12.5);
 }
 
 section('Without the binding, nothing is tried');
