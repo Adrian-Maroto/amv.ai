@@ -1704,6 +1704,7 @@ async function authDeleteAccount(request, env) {
                            above in this same scan, and a delete that fails there is
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
+                        `revblob:data:${email}:`,
                         /* Answers to writes kept under their Idempotency-Key (connAct). */
                         `actidem:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a

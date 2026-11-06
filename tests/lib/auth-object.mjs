@@ -45,6 +45,16 @@ export function withAuthOps(ns) {
            ahead only from the current revision; one never seen is taken as
            given; undo puts it back. Faithful enough that a suite exercising
            sync sees real conflicts, not a stand-in that says no to all. */
+        /* The commit (revCommit/revGet/revReset), as the object keeps it:
+           revision and digest together, refused when it holds a newer one. */
+        if (b.op === 'revCommit' || b.op === 'revGet' || b.op === 'revReset') {
+          const k = 'rc|' + String(id); const cur = store.get(k);
+          const out = (o) => new Response(JSON.stringify(o));
+          if (b.op === 'revGet') return out(cur ? { committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent } : { committed: false, rev: 0 });
+          if (b.op === 'revReset') { store.set(k, b.absent ? { rev: (cur && cur.rev) || 0, absent: true } : { rev: +b.rev || 0, digest: String(b.digest || '') }); return out({ ok: true }); }
+          if (cur && !cur.absent && cur.rev > (+b.expect || 0)) return out({ ok: false, cur: cur.rev });
+          store.set(k, { rev: +b.set || 0, digest: String(b.digest || '') }); return out({ ok: true });
+        }
         if (b.op === 'revCas') {
           const k = 'rev|' + String(id);
           const cur = store.get(k);

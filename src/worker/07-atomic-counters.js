@@ -133,6 +133,29 @@ export class AMVCounter {
        died between this and its KV write - is overtaken after REV_STUCK_MS,
        longer than KV takes to show a write everywhere. `undo` puts it back
        when the KV write fails. */
+    /* THE COMMIT (Nov 3 audit STATE-007). The revision and the digest of the
+       value at that revision, moved together: the value was written under a
+       key of its own first, so a commit is never ahead of its value, and
+       there is no timer that lets a stale writer overtake one. Refused when
+       this holds a newer revision than the writer read. */
+    if (op === 'revCommit') {
+      const cur = await this.state.storage.get('rev');
+      const expect = +body.expect || 0, set = +body.set || 0;
+      if (cur && !cur.absent && cur.rev > expect) return json({ ok: false, cur: cur.rev });
+      await this.state.storage.put('rev', { rev: set, digest: String(body.digest || ''), at: Date.now() });
+      return json({ ok: true });
+    }
+    if (op === 'revGet') {
+      const cur = await this.state.storage.get('rev');
+      if (!cur) return json({ committed: false, rev: 0 });
+      return json({ committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent });
+    }
+    if (op === 'revReset') {
+      const cur = (await this.state.storage.get('rev')) || { rev: 0 };
+      await this.state.storage.put('rev', body.absent ? { rev: cur.rev || 0, absent: true, at: Date.now() }
+        : { rev: +body.rev || 0, digest: String(body.digest || ''), at: Date.now() });
+      return json({ ok: true });
+    }
     if (op === 'revCas') {
       const now = Date.now();
       const cur = await this.state.storage.get('rev');
@@ -424,6 +447,10 @@ async function counter(env, name, payload) {
     /* A proof that cannot be asked about is no proof; a fence that cannot
        be moved stops the write. Never answered from KV. */
     if (env.AMV_COUNTER && (payload.op === 'proofGet' || payload.op === 'proofFence' || payload.op === 'proofSet')) {
+      audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
+      return { ok: false, unavailable: true, code: 'atomic_unavailable' };
+    }
+    if (env.AMV_COUNTER && (payload.op === 'revCommit' || payload.op === 'revGet' || payload.op === 'revReset')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       return { ok: false, unavailable: true, code: 'atomic_unavailable' };
     }

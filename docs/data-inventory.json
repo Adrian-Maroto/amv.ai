@@ -20,7 +20,7 @@
    "holds": "password hash, salt, passkey and second-step state",
    "kept": "account lifetime",
    "backup": true,
-   "authority": "kv, mirrored to postgres - postgres answers only rows proved equal"
+   "authority": "kv, mirrored to postgres - postgres answers only rows proved equal (proof held in a durable object)"
   },
   "agentjar": {
    "class": "credential",
@@ -202,7 +202,7 @@
    "holds": "chats, projects and settings",
    "kept": "account lifetime",
    "backup": true,
-   "authority": "kv"
+   "authority": "kv value, committed by revision and digest in a durable object"
   },
   "emailhealth": {
    "class": "operational",
@@ -216,7 +216,7 @@
    "holds": "plan and billing state",
    "kept": "account lifetime",
    "backup": true,
-   "authority": "kv, mirrored to postgres - postgres answers only rows proved equal"
+   "authority": "kv, mirrored to postgres - postgres answers only rows proved equal (proof held in a durable object)"
   },
   "entitleitem": {
    "class": "financial",
@@ -582,6 +582,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "revblob": {
+   "class": "content",
+   "holds": "a committed copy of synced data under its own key, until the usual key holds it",
+   "kept": "two days, or until repaired",
+   "backup": false,
+   "authority": "kv"
+  },
   "rl": {
    "class": "operational",
    "holds": "a rate limit",
@@ -871,7 +878,7 @@
   }
  },
  "elsewhere": {
-  "durable-object": "every counter, limit, reservation, lock and lease; the sign-out-everywhere generation; the switchboard; lifetime usage totals (src/worker/07-atomic-counters.js)",
+  "durable-object": "every counter, limit, reservation, lock and lease; the sign-out-everywhere generation; each agent sign-in generation; each Postgres row proof; each synced record committed revision and digest; the switchboard; lifetime usage totals (src/worker/07-atomic-counters.js)",
   "r2": "the bytes of library files, nightly backups and saved cloud workspaces (src/worker/68-cloud-library.js, 27a-nightly-backup.js, cloud/)",
   "postgres": "the mirror of accounts and plans and the ledgers it will own, reached through Hyperdrive (docs/DATA-TIER.md)",
   "d1": "retired - never an authority; a launch profile refuses DATA_STORE = d1 (preflight.mjs)"

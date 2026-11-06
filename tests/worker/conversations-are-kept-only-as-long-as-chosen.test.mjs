@@ -62,6 +62,10 @@ const stored = (email) => JSON.parse(m.get('data:' + email) || '{}');
 
 const ana = await account('ana@example.com');
 
+/* A stored copy put there directly - as one written before revisions were
+   committed (Nov 3 audit STATE-007): no commit, so it is read as it is. */
+const plant = (email, obj) => { env.AMV_COUNTER._objects.delete('rc|rev:data:' + email); m.set('data:' + email, JSON.stringify(obj)); };
+
 section('With no period chosen, nothing is removed');
 {
   const p = await call('/sync/push', { data: { convs: [conv('old', 400), conv('new', 1)] }, baseRev: 0 }, ana);
@@ -92,7 +96,7 @@ section('A device still holding an old conversation cannot put it back');
 
 section('A pull never hands out anything older, even before the stored copy is trimmed');
 {
-  const s = stored('ana@example.com'); s.convs.push(conv('planted', 200)); m.set('data:ana@example.com', JSON.stringify(s));
+  const s = stored('ana@example.com'); s.convs.push(conv('planted', 200)); plant('ana@example.com', s);
   const p = await call('/sync/pull', {}, ana);
   ok(p.status === 200 && !p.d.data.convs.some(c => c.id === 'planted'), 'the old one is not in the answer');
   ok(p.d.retention && p.d.retention.days === 30 && p.d.retention.by === 'you', 'and the answer carries the period for the app');
@@ -127,8 +131,8 @@ section('A team’s period applies to every member, and the shorter one wins');
 
 section('The nightly sweep trims people who never come back');
 {
-  m.set('data:ana@example.com', JSON.stringify({ _rev: 50, convs: [conv('a-gone', 100), conv('a-stays', 3)] }));
-  m.set('data:bo@example.com', JSON.stringify({ _rev: 50, convs: [conv('b-gone', 100), conv('b-stays', 3)] }));
+  plant('ana@example.com', { _rev: 50, convs: [conv('a-gone', 100), conv('a-stays', 3)] });
+  plant('bo@example.com', { _rev: 50, convs: [conv('b-gone', 100), conv('b-stays', 3)] });
   m.set('retainidx:ghost@example.com', '1');
   const r = await W.runRetentionSweep(env, now);
   ok(r.done && r.trimmed === 2, 'one conversation each, for the person and for the team member', r);

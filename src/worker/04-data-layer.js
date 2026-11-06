@@ -36,6 +36,59 @@
 /* D1's own ceiling is 2,000,000 bytes a row; this leaves room for the other
    columns rather than finding the edge exactly. */
 const D1_ROW_MAX_BYTES = 1900000;
+/* Records whose writes go through putIfRev, and are read as committed. */
+const REV_KINDS = new Set(['data']);
+const REV_BLOB_TTL_S = 2 * 86400;
+const _revName = (kind, id) => 'rev:' + kind + ':' + id;
+const _revBlobKey = (kind, id, rev) => 'revblob:' + kind + ':' + id + ':' + rev;
+async function _revDigest(text){
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
+  return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/* The committed copy of a record (STATE-007). The object says which revision
+   and digest are committed; the usual key answers if it matches, else the
+   committed value under its own key (and the usual key is repaired). Nothing
+   committed yet - a record from before this, or no object bound - is read as
+   it always was. A committed value that cannot be found anywhere this region
+   can see is answered from the usual key, marked `_revStale`, so a writer
+   building on it is refused by the commit rather than overwriting. */
+async function _revRead(env, kind, id, raw){
+  if(!env.AMV_COUNTER) return raw;
+  let st = null;
+  try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+  if(!st || st.unavailable || !st.committed) return raw;
+  if(st.absent) return null;
+  if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
+  let blob = null;
+  try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; }
+  if(blob != null && (await _revDigest(blob)) === st.digest){
+    try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) {}
+    return blob;
+  }
+  try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) {}
+  return raw;
+}
+/* A delete, committed: readers then answer "absent" whatever copies remain. */
+async function _revCommitAbsent(env, kind, id){
+  if(!env.AMV_COUNTER) return;
+  const r = await counter(env, _revName(kind, id), { op: 'revReset', absent: true });
+  if(!r || !r.ok) throw new Error('rev_commit_unavailable');
+}
+/* A value written outside putIfRev on purpose (a restore): committed as the
+   next revision, so readers take it and devices see something newer. */
+async function _revCommitRestored(env, kind, id, value){
+  if(!env.AMV_COUNTER) return value;
+  const cur = await counter(env, _revName(kind, id), { op: 'revGet' });
+  if(!cur || cur.unavailable) throw new Error('rev_commit_unavailable');
+  let v; try { v = JSON.parse(value); } catch(e) { return value; }
+  v._rev = Math.max(+(cur.rev || 0), +(v._rev || 0)) + 1;
+  const j = JSON.stringify(v);
+  await env.AMV_KV.put(_revBlobKey(kind, id, v._rev), j);
+  const r = await counter(env, _revName(kind, id), { op: 'revReset', rev: v._rev, digest: await _revDigest(j) });
+  if(!r || !r.ok) throw new Error('rev_commit_unavailable');
+  return j;
+}
+
 const DB = {
   _d1Bound(env){ return !!(env && env.DB && typeof env.DB.prepare === 'function'); },
   _hasD1(env){ return this._d1Bound(env) && String(env.DATA_STORE || '').toLowerCase() === 'd1'; },
@@ -70,6 +123,9 @@ const DB = {
       const pg = await _pgReadServe(env, kind, id);
       if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
       raw = await env.AMV_KV.get(`${kind}:${id}`);
+      /* A record written by revision (putIfRev) is answered as COMMITTED:
+         the object's revision and digest decide which copy is current. */
+      if(REV_KINDS.has(kind)) raw = await _revRead(env, kind, id, raw);
     }
     /* Absent is an answer too, and compared like one: Postgres still having a
        plan KV removed is exactly the difference step 4 is for. */
@@ -172,6 +228,9 @@ const DB = {
     if(this._hasD1(env)){ const ik = await _pgIntent(env, kind, id); await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null, ik); return; }
     const epoch = await _pgReadFence(env, kind, id);
     const ik = await _pgIntent(env, kind, id);
+    /* Deleted is committed too: a reader must not find the last value under
+       its revision and answer with it (an erased account's conversations). */
+    if(REV_KINDS.has(kind)) await _revCommitAbsent(env, kind, id);
     await env.AMV_KV.delete(`${kind}:${id}`);
     const wt = await _pgWriteThrough(env, kind, id, null, epoch);
     if(wt){ if(wt.ok || wt.queued) await _pgIntentDone(env, ik); } else _pgAfter(env, kind, id, null, ik);
@@ -213,15 +272,35 @@ const DB = {
        is refused rather than putting it back over a newer write. Without the
        object bound (a development machine) the write is unguarded and says
        so, as it always did. */
+    /* ONE AUTHORITY, NOT TWO (Nov 3 audit STATE-007/001/002). The revision
+       was moved in the object and the value written to KV separately: a
+       writer that died between the two left the revision ahead of the value,
+       a later writer overtook it after a timeout, and a reader in another
+       region could see either. Now the value is written first, under a key
+       of its own that is never changed (`revblob:<kind>:<id>:<rev>`), and
+       the object commits revision AND digest in one step - the commit is the
+       write. The usual key is a copy of the committed value; a reader takes
+       whichever copy matches the committed digest (_revRead), so a copy that
+       failed, or a region that has not seen it yet, never answers as current.
+       Nothing is ever overtaken by a timer. */
     if(env.AMV_COUNTER){
       const nextRev = +obj._rev || 0;
-      const cas = await counter(env, 'rev:' + kind + ':' + id, { op: 'revCas', expect: +expectedRev || 0, set: nextRev });
-      if(!cas || !cas.ok) return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
+      const digest = await _revDigest(j);
+      const blob = _revBlobKey(kind, id, nextRev);
+      await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
+      const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
+      if(!cas || !cas.ok){
+        try { await env.AMV_KV.delete(blob); } catch(_) {}
+        return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
+      }
+      /* Committed. The copy is for readers; if it cannot be written, the
+         committed value is kept with no expiry until a reader repairs it. */
       try { await env.AMV_KV.put(`${kind}:${id}`, j); }
       catch(e){
-        try { await counter(env, 'rev:' + kind + ':' + id, { op: 'revCas', expect: +expectedRev || 0, set: nextRev, undo: true }); } catch(_) {}
-        throw e;
+        try { await env.AMV_KV.put(blob, j); } catch(_) {}
+        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) {}
       }
+      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) {} }
       await _forgetKindEmpty(env, kind);
       return { ok: true, guarded: true };
     }
