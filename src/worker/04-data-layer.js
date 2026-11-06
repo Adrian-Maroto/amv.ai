@@ -41,6 +41,8 @@ const REV_KINDS = new Set(['data']);
 const REV_BLOB_TTL_S = 2 * 86400;
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
 const _revBlobKey = (kind, id, rev) => 'revblob:' + kind + ':' + id + ':' + rev;
+/* The only shape such a key has: a known kind, an id with no spaces, a revision. */
+const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}$/.test(String(k));
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -287,6 +289,7 @@ const DB = {
       const nextRev = +obj._rev || 0;
       const digest = await _revDigest(j);
       const blob = _revBlobKey(kind, id, nextRev);
+      if(!_revBlobKeyOK(blob)) throw new Error('bad_record_key');
       await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
       const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
       if(!cas || !cas.ok){
