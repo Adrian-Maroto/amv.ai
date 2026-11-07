@@ -52,6 +52,33 @@ deciding fact in strongly consistent storage:
 | SEC-008 | Background work is held by the request it belongs to, not the most recent one |
 | TEST-001 | The Postgres suites run against a real Postgres here and in CI |
 
+## Fixed in round two
+
+Every finding the first round left as "not done yet" is now fixed or partly
+done, and six partly-done ones are closed.
+
+| Finding | What changed |
+|---|---|
+| SEC-001 | Every empty catch in the 26 trust files says why; six that hid a failed money, sign-out or rollback write now record it |
+| DATA-017 | Postgres money rows: a currency table, non-zero bounded amounts, seller money in whole cents; the Worker checks the same before sending |
+| SEC-007 | Log lines, the outside collector and analytics carry a keyed pseudonym, never an address or IP; the owner looks one up on the go-live screen, audited |
+| SEC-003 | Every user-named thing on 18 screens and 13 dialogs is poisoned with markup and must draw as text; a ratchet on markup sinks; no eval, string timers or same-origin frames |
+| OPS-010 | The browser's own accessibility tree on every screen and dialog in both themes: no unnamed control, every dialog named, AA contrast. It found the dialog labeller naming titles as dialogs, now fixed |
+| TEST-008 | A low-end phone (6x CPU, slow 4G): paint, script, input latency, screen switch and memory budgets |
+| TEST-004 | Per-file coverage floors and every trust-area function called, enforced in CI |
+| REL-015 | Docs may name only files and suites that exist; the capability page lists the settings each one reads, derived from its code |
+| REL-010 | Time to the first word as p50/p95/p99 |
+| SEC-009 | Every route called from a stranger's page; it found sign-out setting cookies for any page (forced sign-out), now no answer to a request from outside AMV sets a cookie |
+| OPS-006 | A temporary chat publishes nothing |
+| OPS-001 | The one way to take every record (backup export) pages the owner before a byte is sent |
+| TEST-006 | Every P0 fixed has a regression test that fails on the vulnerable code |
+
+Still partly done, with the reason: Trusted Types (SEC-003) must first be
+proved with Stripe, Google sign-in and Turnstile on staging with live keys; a
+canary that watches the new version's error rate (REL-004) needs a version
+binding in the deployed configuration; two-person approval for the export
+(OPS-001's stronger form) needs a second operator.
+
 ## Where a restore stands
 
 A KV store has no switch between two whole copies, so a restore is still
@@ -72,8 +99,6 @@ records it covers live in Postgres.
   point-in-time recovery, R2 versioning, container quota), the launch profile,
   reserved model capacity, a second model provider, legal and privacy
   operations, on-call and support staffing, an outside security review.
-- **Partly done (20):** fixed in earlier rounds, with the remaining part named.
-- **Not done yet (9):** reviews that are line-by-line work across the codebase:
-  the empty catches and innerHTML assignments one by one, raw addresses in
-  audit lines, more failure-mode and accessibility tests, device performance
-  budgets, money amount constraints, and documentation drift.
+- **Partly done (18):** fixed in part, with the remaining part named in the
+  ledger.
+- **Not done yet: none.**

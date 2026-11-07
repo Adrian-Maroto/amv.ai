@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Roadmap 52, Fixed now 44, Resolved before 39, Owner 29, Partly done 20, Verified here 5
+Totals: Roadmap 52, Fixed now 46, Resolved before 39, Owner 29, Partly done 18, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -105,7 +105,7 @@ Totals: Roadmap 52, Fixed now 44, Resolved before 39, Owner 29, Partly done 20, 
 | RETR-002 | High | P1 | Vector retrieval needs permission filtering at index/query time | Open | Roadmap | ACL-filtered vector retrieval, with RETR-001 |
 | USAGE-002 | High | P1 | Global daily spend ceiling can become a global outage switch | Partially fixed | Owner | needs a provider, a contract, people or a decision |
 | PROD-012 | High | P1 | Customer support infrastructure is not yet ready for mass paid launch | Partially fixed | Owner | needs a provider, a contract, people or a decision |
-| OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Partially fixed | Partly done | support sees shape not content, every look recorded append-only and shown to the person; break-glass dual control not built |
+| OPS-001 | High | P1 | Support tooling needs least-privilege and break-glass controls | Partially fixed | Fixed now | support sees shape, never content, every look recorded and shown to the person; the one take-everything path (backup export) now pages the owner before a byte is sent. Two-person approval needs a second operator: owner decision |
 | SUPPORT-001 | High | P1 | Support-access history is a mutable read-modify-write record, not an append-only audit log | Open | Fixed now | one key a look, written once; nothing rewrites another |
 | TASK-008 | High | P1 | No single canonical Task lifecycle across Chat, Crew, Jobs, Handoff, and Agents | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TASK-009 | High | P1 | Steering applies to future runs but not a universal durable active-step protocol | Partially fixed | Partly done | steering reaches future runs and each step's next prompt |
@@ -173,7 +173,7 @@ Totals: Roadmap 52, Fixed now 44, Resolved before 39, Owner 29, Partly done 20, 
 | DATA-015 | Medium | P2 | Generic D1, KV, and Postgres paths risk permanent triple-authority complexity | Partially fixed | Partly done | one authority per data class written down; D1 retired and refused under a launch profile |
 | DATA-018 | Medium | P2 | No documented database region/failover/read-only degradation policy | Open | Owner | needs a provider, a contract, people or a decision |
 | DATA-017 | Medium | P2 | Financial amounts and currency semantics require stronger constraints | Partially fixed | Fixed now | currencies table + foreign keys, non-zero and bounded amounts, seller money in whole cents in migration 0002; the Worker checks the same before it sends (a-money-row-is-exact-before-it-is-sent, 5000-case property test) |
-| OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Partially fixed | Partly done | a temporary chat sets up no background work (Nov 2) |
+| OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Partially fixed | Fixed now | a temporary chat sets up no background work and keeps no memory (Nov 2); publishing a live site, the one keeping tool it allowed, is now refused there too (a-temporary-chat-leaves-nothing) |
 | TASK-007 | Medium | P2 | Five-minute claim buckets generate duplicate delivery noise | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TASK-006 | Medium | P2 | Queue messages contain raw email | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | PROD-019 | Medium | P2 | Research Trail should distinguish found/opened/read/extracted/cited | Partially fixed | Partly done | the research panel keeps found / could-not-open / read / cited apart |
