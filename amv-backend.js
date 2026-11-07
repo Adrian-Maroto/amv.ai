@@ -20087,6 +20087,7 @@ async function _route(request, env, ctx) {
     case '/v1/admin/switch':    return adminSwitch(request, env);
     case '/v1/admin/switches':  return adminSwitches(request, env);
     case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
+    case '/admin/invites':   return adminInvitesCreate(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
     // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---
@@ -20563,6 +20564,8 @@ async function authSignup(request, env){
   if (sBlock) return sBlock;
   const capOk = await _verifyCaptcha(env, body.captchaToken, request);
   if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
+  /* Invite-only beta (86-invite-beta.js): checked before anything is made. */
+  { const inv = await _inviteGate(env, body.ref, 'password'); if (inv) return inv; }
   const em = String(email||'').toLowerCase().trim();
   // Strict format: exactly one @, no whitespace/colons/control chars, sane length.
   // Emails go into KV key structures and audit logs - keep them clean by construction.
@@ -21368,6 +21371,9 @@ async function authGoogle(request, env) {
     if(!em) return json({ error:'no email in token' }, 401);
     { const sso = await _ssoRequiredFor(env, em); if(sso) return _ssoRequiredJson(sso); }
     const name = claims.name || em.split('@')[0];
+    /* A first Google sign-in makes an account, so the beta asks for an invite
+       here too; an account that already exists signs in as always. */
+    if(_inviteOnly(env) && !(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'google'); if(inv) return inv; }
     let fed;
     try{ fed = await _federatedAccount(env, em, { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) }); }
     catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
@@ -37453,7 +37459,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -37488,6 +37494,8 @@ function _readinessReport(env, seen) {
       effect: 'Signs each nightly backup\u2019s manifest, so a manifest edited in the bucket - or written by anything but this Worker - is not counted or restored. Unset, the token secret signs them; set it to keep backups trusted across a change of that secret.' },
     { id: 'auditIdKey', name: 'Logs: the pseudonym key', env: 'AUDIT_ID_KEY', set: _has(env, 'AUDIT_ID_KEY'),
       effect: 'Keys the u_… pseudonym that stands for each address in the audit log and analytics, so the logs never carry an address. Unset, the token secret keys it; set it to keep the same pseudonyms across a change of that secret. Look one up with POST /admin/audit/pid.' },
+    { id: 'inviteOnly', name: 'Sign-up: invite only', env: 'SIGNUP_INVITE_ONLY', set: _inviteOnly(env),
+      effect: 'Set to 1 for an invite-only beta: a new account needs an invite code made in the owner console, or an existing person\u2019s referral link. Signing in is never affected. Unset, anybody can sign up.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
@@ -45153,6 +45161,7 @@ async function _passkeySignupFinish(request, env, site, body){
     audit(env, 'passkey_refused', { email: em, why: String(e && e.message || e).slice(0, 40), at: 'signup' });
     return json({ error: /not_verified/.test(String(e && e.message)) ? 'That passkey was made without a fingerprint, face or PIN, so it cannot be used to sign in.' : 'That passkey could not be verified, so no account was made. Try again, or use a password.', code: 'passkey_refused' }, 400);
   }
+  if(!(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'passkey'); if(inv) return inv; }
   if(!(await _pkCredReserve(env, made.credId, em))) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
   const sipHash = await _ipHash(env, request);
   const name = String(rec.name || '');
@@ -48032,4 +48041,64 @@ async function _synthProved(env, now) {
   for (const [id, r] of Object.entries(rec.results || {})) proved[id] = r.ok === true ? true : r.ok === false ? false : null;
   return { state: rec.failed && rec.failed.length ? 'failing' : 'ok', ageMin: Math.round(age / 60000), proved, failed: rec.failed || [],
            why: Object.fromEntries(Object.entries(rec.results || {}).filter(([, r]) => r.ok === false).map(([id, r]) => [id, r.why])) };
+}
+/* AN INVITE-ONLY BETA THAT GROWS BY ITSELF (owner yes, Nov 7).
+
+   With SIGNUP_INVITE_ONLY=1 a new account needs a code, and two kinds count:
+     - one the owner made (POST /admin/invites), good for a set number of
+       sign-ups - the seed;
+     - any existing person's referral code - so everybody in the beta can
+       bring people in, and every new account is credited to who brought it
+       (the referral record does that, as it always has).
+   Off, sign-up is open exactly as before. Signing in to an account that
+   exists is never affected, and company sign-in (SSO) is not gated: a team
+   that set it up is already invited. The code travels the way a referral
+   link always has (?ref=CODE, sent as `ref`), so the page needs nothing new. */
+const BETA_INV_MAX_PER_CALL = 200;
+const BETA_INV_MAX_USES = 50;
+function _inviteOnly(env){ return String((env && env.SIGNUP_INVITE_ONLY) || '') === '1'; }
+const _inviteCode = (raw) => String(raw || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
+
+/* Whether a code lets somebody in: 'beta', 'ref', or '' - and a beta code's
+   use is taken here, atomically, so fifty people cannot share one ten-use
+   code by arriving at once. */
+async function _inviteTake(env, raw){
+  const code = _inviteCode(raw);
+  if(!code) return '';
+  let beta = null;
+  try { beta = JSON.parse((await env.AMV_KV.get('betainv:' + code)) || 'null'); } catch (e) { beta = null; }
+  if(beta && +beta.uses > 0){
+    const r = await counter(env, 'betainvuse:' + code, { op: 'reserve', amount: 1, cap: +beta.uses, ttlMs: 400 * 86400000 });
+    return r && r.allowed ? 'beta' : '';
+  }
+  try { if(await env.AMV_KV.get('refcode:' + code)) return 'ref'; } catch (e) { return ''; }
+  return '';
+}
+/* Null when the sign-up may go ahead; otherwise the refusal. */
+async function _inviteGate(env, raw, where){
+  if(!_inviteOnly(env)) return null;
+  const kind = await _inviteTake(env, raw).catch(() => '');
+  if(kind){ audit(env, 'invite_used', { kind, where }); return null; }
+  audit(env, 'invite_refused', { where });
+  return json({ error: 'AMV is invite-only for now. Open the invite link somebody sent you, or ask a friend who uses AMV for theirs.', code: 'invite_required' }, 403);
+}
+
+/* POST /admin/invites { count, uses } -> { codes, links } */
+async function adminInvitesCreate(request, env){
+  const gate = await _adminGate(request, env, 'invites', 10, 100);
+  if(gate) return gate;
+  const body = await request.json().catch(() => ({}));
+  const count = Math.max(1, Math.min(BETA_INV_MAX_PER_CALL, parseInt(body.count, 10) || 1));
+  const uses = Math.max(1, Math.min(BETA_INV_MAX_USES, parseInt(body.uses, 10) || 1));
+  const origin = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
+  const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const codes = [];
+  for(let i = 0; i < count; i++){
+    const b = crypto.getRandomValues(new Uint8Array(9));
+    const code = 'B' + [...b].map(x => ALPHA[x % ALPHA.length]).join('');
+    await env.AMV_KV.put('betainv:' + code, JSON.stringify({ uses, at: Date.now() }));
+    codes.push(code);
+  }
+  audit(env, 'invites_created', { count, uses });
+  return json({ ok: true, uses, codes, links: origin ? codes.map(c => origin + '/?ref=' + c) : [] });
 }

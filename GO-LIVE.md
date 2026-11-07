@@ -250,6 +250,7 @@ one except the two in the first table.
 | Which features are actually used | `POSTHOG_KEY` | PostHog has a free tier. Nothing is collected until you set it. |
 | An off-site copy of the audit trail | `AUDIT_WEBHOOK` | Depends where you point it. |
 | The same log pseudonyms after a change of the token secret | `AUDIT_ID_KEY` | Nothing. The audit log and analytics carry `u_...` for every address, keyed by this or by the token secret; the owner looks one up with `POST /admin/audit/pid` and `{"email": ...}`. |
+| An invite-only beta | `SIGNUP_INVITE_ONLY` = `1` | Nothing. A new account needs an invite link from the owner console (Growth tab, Invite links) or an existing person's referral link; signing in is never affected. Remove it to open sign-up. |
 | A human to escalate to | `SUPPORT_EMAIL` | Nothing. |
 
 ### Knobs with working defaults - change only if you mean to

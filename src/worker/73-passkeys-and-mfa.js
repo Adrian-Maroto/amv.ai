@@ -569,6 +569,7 @@ async function _passkeySignupFinish(request, env, site, body){
     audit(env, 'passkey_refused', { email: em, why: String(e && e.message || e).slice(0, 40), at: 'signup' });
     return json({ error: /not_verified/.test(String(e && e.message)) ? 'That passkey was made without a fingerprint, face or PIN, so it cannot be used to sign in.' : 'That passkey could not be verified, so no account was made. Try again, or use a password.', code: 'passkey_refused' }, 400);
   }
+  if(!(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'passkey'); if(inv) return inv; }
   if(!(await _pkCredReserve(env, made.credId, em))) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
   const sipHash = await _ipHash(env, request);
   const name = String(rec.name || '');

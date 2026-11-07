@@ -472,6 +472,9 @@ async function authGoogle(request, env) {
     if(!em) return json({ error:'no email in token' }, 401);
     { const sso = await _ssoRequiredFor(env, em); if(sso) return _ssoRequiredJson(sso); }
     const name = claims.name || em.split('@')[0];
+    /* A first Google sign-in makes an account, so the beta asks for an invite
+       here too; an account that already exists signs in as always. */
+    if(_inviteOnly(env) && !(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'google'); if(inv) return inv; }
     let fed;
     try{ fed = await _federatedAccount(env, em, { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) }); }
     catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }

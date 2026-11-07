@@ -1141,6 +1141,7 @@ async function _route(request, env, ctx) {
     case '/v1/admin/switch':    return adminSwitch(request, env);
     case '/v1/admin/switches':  return adminSwitches(request, env);
     case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
+    case '/admin/invites':   return adminInvitesCreate(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
     // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---

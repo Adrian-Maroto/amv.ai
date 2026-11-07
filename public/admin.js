@@ -573,11 +573,27 @@ function _admRenderTab(tab, backendLive, live){
       _admCard('Who signs up, and who stays', live ? (f ? funnel : '<div class="adm-empty">Nothing counted yet.</div>') : _admPending('Sign-up, first answer, coming back and paying, across everybody'))
       + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'))
       + _admCard('What brought people back', live ? brought : _admPending('Opened from a notification or a result email, and how many of those were returns'))
+      + _admCard('Invite links', '<p class="adm-note">With SIGNUP_INVITE_ONLY=1, a new account needs one of these or an existing person\u2019s referral link.</p>'
+        + '<div class="adm-stats"><label class="adm-note" for="adm-inv-n">How many</label> <input id="adm-inv-n" type="number" min="1" max="200" value="10" style="width:70px"> '
+        + '<label class="adm-note" for="adm-inv-u">Uses each</label> <input id="adm-inv-u" type="number" min="1" max="50" value="1" style="width:70px"> '
+        + '<button class="btn bp" type="button" id="adm-inv-go">Make links</button></div><pre id="adm-inv-out" class="adm-note" style="white-space:pre-wrap"></pre>')
       + _admCard('What one active person costs', live ? perActive : _admPending('This month\u2019s AI cost and revenue per person who used AMV'));
   }
 
 }
 /* An amount in its own currency, written the way that currency is written. */
+/* Owner: make invite links for the beta (POST /admin/invites). */
+async function _admMakeInvites(){
+  const out = document.getElementById('adm-inv-out'); if(!out) return;
+  const n = +(document.getElementById('adm-inv-n')||{}).value || 1, u = +(document.getElementById('adm-inv-u')||{}).value || 1;
+  out.textContent = 'Making\u2026';
+  try{
+    const r = await AMV_API._fetch('/admin/invites', { method:'POST', body: JSON.stringify({ count: n, uses: u }) });
+    const d = await r.json().catch(()=>({}));
+    out.textContent = r.ok && d.ok ? ((d.links && d.links.length ? d.links : d.codes) || []).join('\n') : (d.error || 'The links could not be made.');
+  }catch(e){ out.textContent = 'The links could not be made. Check the connection and try again.'; }
+}
+document.addEventListener('click', (e) => { if(e.target && e.target.id === 'adm-inv-go') _admMakeInvites(); });
 function _admMoney(n,cur){ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:String(cur||'USD').toUpperCase()}).format(+n||0); }catch(e){ return String(cur||'')+' '+(+n||0).toLocaleString(); } }
 function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
 function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
