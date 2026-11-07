@@ -313,13 +313,17 @@ function _admRenderTab(tab, backendLive, live){
     } else if(f.configured===false){
       totalsHtml = '<div class="adm-fin-note">Stripe isn\u2019t connected yet. Set STRIPE_SECRET_KEY to see real transactions here.</div>';
     } else {
+      /* Each currency on its own row: a euro and a dollar are not two of
+         anything, so nothing here adds them (Nov 7 audit FIN-022). */
       const t=f.totals||{};
-      totalsHtml='<div class="adm-stats">'+
-        _admStat('$'+(t.gross||0).toLocaleString(),'Gross received')+
-        _admStat('$'+(t.refunded||0).toLocaleString(),'Refunded', (t.refunded>0?'#e0b341':''))+
-        _admStat('$'+(t.net||0).toLocaleString(),'Net', '#4ade80')+
-        _admStat((t.count||0).toLocaleString(),'Transactions')+
-      '</div>';
+      const money=_admMoney;
+      const by=f.byCurrency||{ [t.currency||'USD']: t };
+      totalsHtml=Object.keys(by).map(cur=>{ const b=by[cur]||{}; return '<div class="adm-stats">'+
+        _admStat(escH(money(b.gross,cur)),'Gross received'+(Object.keys(by).length>1?' ('+escH(cur)+')':''))+
+        _admStat(escH(money(b.refunded,cur)),'Refunded', (b.refunded>0?'#e0b341':''))+
+        _admStat(escH(money(b.net,cur)),'Net', '#4ade80')+
+        _admStat((b.count||0).toLocaleString(),'Transactions')+
+      '</div>'; }).join('')+(t.scope==='page'?'<p class="adm-note">These totals cover the transactions on this page, not all time.</p>':'');
     }
     let tableHtml='';
     if(f && f.configured!==false && (f.transactions||[]).length){
@@ -329,7 +333,7 @@ function _admRenderTab(tab, backendLive, live){
           '<td>'+new Date(tx.date).toLocaleDateString()+'</td>'+
           '<td class="adm-fin-email">'+escH(tx.email||'-')+'</td>'+
           '<td><span class="adm-fin-prov p-'+escH(tx.provider||'')+'">'+escH((tx.provider||'-').replace(/^\w/,c=>c.toUpperCase()))+'</span></td>'+
-          '<td class="adm-fin-amt">$'+(tx.amount||0).toFixed(2)+(tx.refunded>0?' <span class="adm-fin-ref">-$'+tx.refunded.toFixed(2)+'</span>':'')+'</td>'+
+          '<td class="adm-fin-amt">'+escH(_admMoney(tx.amount,tx.currency))+(tx.refunded>0?' <span class="adm-fin-ref">-'+escH(_admMoney(tx.refunded,tx.currency))+'</span>':'')+'</td>'+
           '<td><span class="adm-fin-status s-'+escH(tx.status||'')+'">'+escH(tx.status||'')+'</span></td>'+
           '<td>'+(tx.last4?('\u2022\u2022\u2022\u2022 '+escH(tx.last4)):'-')+'</td>'+
           '<td>'+(safeUrl(tx.receipt)?'<a href="'+escH(safeUrl(tx.receipt))+'" target="_blank" rel="noopener noreferrer" class="adm-fin-rc">Receipt</a>':'')+'</td>'+
@@ -573,6 +577,8 @@ function _admRenderTab(tab, backendLive, live){
   }
 
 }
+/* An amount in its own currency, written the way that currency is written. */
+function _admMoney(n,cur){ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:String(cur||'USD').toUpperCase()}).format(+n||0); }catch(e){ return String(cur||'')+' '+(+n||0).toLocaleString(); } }
 function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
 function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
 function getConvsCount(){ try{ return (S.convs||[]).length; }catch(e){ return 0; } }

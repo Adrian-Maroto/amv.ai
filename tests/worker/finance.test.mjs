@@ -164,6 +164,27 @@ section('Everything recorded before the move is still on the statement');
   ok((await W._readTxnLog(baseEnv, 500)).length === 2, 'and an id already in the old record is not recorded again', true);
 }
 
+section('Each currency is counted in its own units and never added to another (Nov 7 audit FIN-022/023)');
+{
+  clearLedger();
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('/v1/charges') ? { ok: true, status: 200, json: async () => ({ has_more: false, data: [
+    { id: 'ch_u', created: 1700000000, amount: 2000, amount_refunded: 0, paid: true, status: 'succeeded', currency: 'usd' },
+    { id: 'ch_e', created: 1700000100, amount: 1500, amount_refunded: 500, paid: true, status: 'succeeded', currency: 'eur' },
+    { id: 'ch_y', created: 1700000200, amount: 1000, amount_refunded: 0, paid: true, status: 'succeeded', currency: 'jpy' },
+    { id: 'ch_k', created: 1700000300, amount: 12345, amount_refunded: 0, paid: true, status: 'succeeded', currency: 'kwd' },
+  ] }) } : { ok: true, status: 200, json: async () => ({}) };
+  const f = await (await W.adminFinance(adminReq(), { ...baseEnv, STRIPE_SECRET_KEY: 'sk_test' })).json();
+  globalThis.fetch = real;
+  const by = Object.fromEntries(f.transactions.map(t => [t.id, t]));
+  ok(by.ch_y.amount === 1000, 'a yen charge of 1000 is 1000 yen, not 10', by.ch_y.amount);
+  ok(by.ch_k.amount === 12.345, 'a dinar has three decimals', by.ch_k.amount);
+  ok(f.byCurrency.USD.gross === 20 && f.byCurrency.EUR.gross === 15 && f.byCurrency.EUR.net === 10 && f.byCurrency.JPY.gross === 1000, 'each currency has totals of its own', f.byCurrency);
+  ok(f.totals.currency === 'USD', 'with one charge in each, the main figure is dollars - 1000 yen does not outrank 20 dollars by being a bigger number', f.totals.currency);
+  ok(f.totals.gross === f.byCurrency[f.totals.currency].gross && f.totals.otherCurrencies.length === 3, 'and the main figure is one currency\u2019s, saying the others exist - never a sum across them', f.totals);
+  ok(f.totals.scope === 'page', 'it says it covers this page, not all time');
+}
+
 section('A reused transaction id with different money is refused, not absorbed (Nov 7 audit FIN-024)');
 {
   clearLedger();

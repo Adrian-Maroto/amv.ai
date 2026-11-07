@@ -107,7 +107,7 @@ async function _recordTxn(env, tx) {
       ts: tx.ts || Date.now(),
       provider: tx.provider || 'unknown',
       email: (tx.email || '').toLowerCase(),
-      amount: +(+tx.amount || 0).toFixed(2),
+      amount: _moneyRound(tx.amount, tx.currency),
       currency: (tx.currency || 'USD').toUpperCase(),
       kind: tx.kind || '',           // e.g. 'subscription', 'plan', 'marketplace'
       status: tx.status || 'succeeded',
@@ -180,6 +180,38 @@ async function _readTxnLog(env, limit = 200) {
    Owner-only (admin token). Pulls actual charges from Stripe so you see real
    money in, refunds, and net - not estimates. Honestly returns empty + a
    configured:false flag when Stripe isn't set up yet. ---- */
+/* MONEY IN ITS OWN UNITS (Nov 7 audit FIN-022, FIN-023). Stripe sends an
+   amount in the currency's smallest unit, and not every currency has
+   cents: a yen charge of 1000 is 1000 yen, not 10, and a dinar has three
+   decimals. And totals summed every currency into one number labelled with
+   whichever came last - a euro and a dollar are not two of anything. */
+const ZERO_DECIMAL = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
+const THREE_DECIMAL = new Set(['BHD','JOD','KWD','OMR','TND']);
+function _minorDigits(cur){ const c = String(cur || 'USD').toUpperCase(); return ZERO_DECIMAL.has(c) ? 0 : THREE_DECIMAL.has(c) ? 3 : 2; }
+function _fromMinor(n, cur){ const d = _minorDigits(cur); return +((+n || 0) / Math.pow(10, d)).toFixed(d); }
+function _moneyRound(n, cur){ const d = _minorDigits(cur); return +(+n || 0).toFixed(d); }
+/* Totals per currency, never across them. `totals` stays the figure for the
+   main currency and says when there are
+   others, so a screen reading only it is told it is not the whole story.
+   The main currency is the one most transactions are in. */
+function _totalsByCurrency(rows, paidOf){
+  const by = {};
+  for (const t of rows) {
+    const cur = String(t.currency || 'USD').toUpperCase();
+    const b = by[cur] = by[cur] || { count: 0, gross: 0, refunded: 0 };
+    b.count++;
+    if (paidOf(t)) b.gross += +t.amount || 0;
+    b.refunded += +t.refunded || 0;
+  }
+  for (const [cur, b] of Object.entries(by)) { b.gross = _moneyRound(b.gross, cur); b.refunded = _moneyRound(b.refunded, cur); b.net = _moneyRound(b.gross - b.refunded, cur); }
+  /* By how many transactions, not by amount: amounts in different currencies
+     do not compare either (1000 yen is not more than 20 dollars). */
+  const main = Object.keys(by).sort((a, b) => (by[b].count - by[a].count) || ((b === 'USD') - (a === 'USD')))[0] || 'USD';
+  const m = by[main] || { count: 0, gross: 0, refunded: 0, net: 0 };
+  const others = Object.keys(by).filter(c => c !== main);
+  return { totals: { count: rows.length, gross: m.gross, refunded: m.refunded, net: m.net, currency: main,
+                     ...(others.length ? { otherCurrencies: others } : {}), scope: 'page' }, byCurrency: by };
+}
 async function adminFinance(request, env) {
   /* AMV-052: through the SAME gate as every other admin route. This was a bare
      token comparison with no rate limit, so three of the sixteen admin routes
@@ -196,10 +228,9 @@ async function adminFinance(request, env) {
 
   if (!env.STRIPE_SECRET_KEY) {
     // No Stripe, but we may still have PayPal / marketplace transactions.
-    let gross = 0, refunded = 0;
-    for (const t of ledgerTx) { if (t.status === 'succeeded') gross += t.amount; refunded += t.refunded; }
+    const sum = _totalsByCurrency(ledgerTx, (t) => t.status === 'succeeded');
     return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx,
-      totals: { count: ledgerTx.length, gross: +gross.toFixed(2), refunded: +refunded.toFixed(2), net: +(gross - refunded).toFixed(2), currency: 'USD' },
+      totals: sum.totals, byCurrency: sum.byCurrency,
       note: ledgerTx.length ? 'Stripe not connected - showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
   }
   const url = new URL(request.url);
@@ -217,8 +248,8 @@ async function adminFinance(request, env) {
     id: c.id,
     date: (c.created || 0) * 1000,
     email: c.billing_details?.email || c.receipt_email || (c.metadata && c.metadata.email) || '-',
-    amount: (c.amount || 0) / 100,
-    refunded: (c.amount_refunded || 0) / 100,
+    amount: _fromMinor(c.amount, c.currency),
+    refunded: _fromMinor(c.amount_refunded, c.currency),
     currency: (c.currency || 'usd').toUpperCase(),
     status: c.refunded ? 'refunded' : (c.disputed ? 'disputed' : c.status),
     // was this a real captured payment? (true even if later refunded - gross = money that came in)
@@ -235,22 +266,15 @@ async function adminFinance(request, env) {
   // webhook also logged.
   const ledgerNonStripe = ledgerTx.filter(t => t.provider !== 'stripe');
   const transactions = [...stripeTx, ...ledgerNonStripe].sort((a, b) => b.date - a.date);
-  let gross = 0, refunded = 0, currency = 'USD';
-  for (const t of transactions) {
-    // gross = all money that came in (paid), refunds tracked separately as net.
-    const camePaid = t._paid != null ? t._paid : (t.status === 'succeeded' || t.status === 'paid' || t.status === 'refunded');
-    if (camePaid) gross += t.amount;
-    refunded += t.refunded;
-    currency = t.currency || currency;
-    delete t._paid;
-  }
-  const net = +(gross - refunded).toFixed(2);
+  // gross = all money that came in (paid), refunds tracked separately as net.
+  const sum = _totalsByCurrency(transactions, (t) => t._paid != null ? t._paid : (t.status === 'succeeded' || t.status === 'paid' || t.status === 'refunded'));
+  for (const t of transactions) delete t._paid;
   return json({
     ok: true, configured: true,
     transactions,
     hasMore: !!d.has_more,
     nextCursor: stripeTx.length ? stripeTx[stripeTx.length - 1].id : null,
-    totals: { count: transactions.length, gross: +gross.toFixed(2), refunded: +refunded.toFixed(2), net, currency },
+    totals: sum.totals, byCurrency: sum.byCurrency,
   });
 }
 
