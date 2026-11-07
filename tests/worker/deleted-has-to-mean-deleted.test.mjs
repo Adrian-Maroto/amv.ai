@@ -32,7 +32,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'erasehonest.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, PER_USER_KINDS };\n');
+writeFileSync(harness, src + '\nexport { DB, PER_USER_KINDS, runPendingErasures, ERASE_RETRY_MAX };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -174,14 +174,21 @@ section('Everything that COULD go, still went');
   ok(stillThere.length === 0, 'along with everything else that could go', stillThere);
 }
 
-section('Somebody is told, because the person cannot fix it themselves');
+section('What is left is kept to be finished, and somebody is told when it cannot be');
 {
+  /* The person cannot fix it themselves. AMV now finishes it: the erasure is
+     run again by the cron (an-erasure-that-did-not-finish-is-finished), and a
+     person is paged only when it still has not finished after the retries. */
   const env = mkEnv(['fin', 'data']);
   const tok = await anAccountWithThings(env);
   await post(env, '/auth/delete', { confirm: 'DELETE', password: PW }, tok);
   await ctx.settle();
+  const pend = JSON.parse((await env.AMV_KV.get('erasepend:' + USER)) || 'null');
+  ok(pend && /fin|data/.test(JSON.stringify(pend.failed)), 'the note says what is still there', pend);
+  for (let i = 1; i < W.ERASE_RETRY_MAX; i++) await W.runPendingErasures(env, 5);
+  await ctx.settle();
 
-  ok(alerts.length > 0, 'an operator is paged', alerts.length);
+  ok(alerts.length > 0, 'an operator is paged once the retries are spent', alerts.length);
   const blob = alerts.join(' ');
   ok(/eras|delet/i.test(blob), 'about an erasure', blob.slice(0, 120));
   ok(/fin|data/.test(blob), 'naming what is still there to be removed by hand', blob.slice(0, 200));

@@ -161,7 +161,9 @@ section('Disconnecting revokes, rather than forgetting');
 
 section('Closing an account ends every grant it held');
 {
-  const seg = fn('authDeleteAccount');
+  /* The route confirms and checks payouts; the erasure itself is its own
+     routine, so the cron can finish one that left something behind. */
+  const seg = fn('_eraseAccount');
   ok(seg.length > 500, 'the deletion routine was found to read', seg.length);
   ok(/conn_revoked_on_erasure/.test(seg), 'deletion revokes connected accounts');
   ok(/conn_revoke_failed_on_erasure/.test(seg),

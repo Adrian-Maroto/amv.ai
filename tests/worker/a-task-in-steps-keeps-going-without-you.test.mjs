@@ -340,7 +340,8 @@ section('The every-minute tick starts booked work, and never scans everybody');
 section('The schedule: every minute for background work, standing aside on the five-minute marks');
 {
   const toml = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8');
-  ok(/crons\s*=\s*\[\s*"\*\/5 \* \* \* \*"\s*,\s*"\* \* \* \* \*"\s*\]/.test(toml), 'both schedules are configured', (toml.match(/crons.*$/m) || [''])[0]);
+  const crons = ((toml.match(/^\s*crons\s*=\s*\[([^\]]*)\]/m) || [, ''])[1].match(/"[^"]*"/g) || []).map(x => x.slice(1, -1));
+  ok(crons.includes('*/5 * * * *') && crons.includes('* * * * *'), 'both schedules are configured', crons);
   const fire = async (minute) => {
     put({ items: [], results: [] });
     await post('/auto/create', { steps: STEPS.slice(0, 2), approval: 'auto' });
