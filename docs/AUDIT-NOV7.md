@@ -24,6 +24,13 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | CONN-030 | Critical | A non-4xx failure on a write returns outcome_unknown and asks the person to look before retrying. |
 | COMP-022 | High | The cloud computer's root key rotates without downtime (AMV_COMPUTER_KEY_PREVIOUS); per-machine keys and per-call tokens were already there. Steps in GO-LIVE.md. |
 | AUTH-020 | Critical | A passkey credential is claimed, indexed, then written to the account; an account not saved takes its index back. |
+| FIN-022 | High | Finance totals are kept per currency; the main figure names its currency and lists the others; totals say they cover the page shown. |
+| FIN-023 | High | Amounts use each currency's minor units (zero-, two- and three-decimal) - a 1000-yen charge is 1000 yen. |
+| FIN-020 | High | A transaction's id is written first, pending and holding its time, so a retry finishes the same line instead of adding one. |
+| LOCK-001 | Critical | A record or wallet lock commits only while its 15-second lease has 4 seconds left; past that it saves nothing and says busy. |
+| DATA-038 | High | Cutover readiness reads every page of unfinished mirror writes; too many to count is a blocker. |
+| READY-020 | Critical | Same fix as DATA-038. |
+| (CI) | - | Mirror writes of one record run in write order; an older copy finishing last no longer deletes newer API keys or members (found by CI). |
 
 ## Checked, and already bounded
 
@@ -71,24 +78,18 @@ Open or partly fixed P0 items not yet changed here:
 - DATA-033 (High): Seller currency validation assumes two decimal places
 - DATA-036 (High): Migration intent and repair records still share the eventually consistent KV failure domain
 - DATA-037 (High): Canonical revision blobs expire before all stale paths are impossible
-- DATA-038 (High): Cutover scans only a limited first page of pending intents
-- LOCK-001 (Critical): Record mutation leases do not fence the final commit
 - LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
 - AUTH-022 (High): Accounts with no local factor can pass step-up on session possession alone
 - DR-011 (Critical): Restore write freeze can fall back to eventually consistent state
 - DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
 - REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
 - AUDIT-010 (Critical): Background financial/audit work can fall back to a mutable global request context
-- FIN-020 (High): Internal transaction recording is non-atomic across id marker and log entry
-- FIN-022 (High): Admin finance totals aggregate different currencies into one number
-- FIN-023 (High): Transaction helpers round all currencies to two decimals
 - FIN-026 (High): Credit grants can update balance before a durable financial receipt exists
 - CONN-031 (High): Idempotency keys are not mandatory for every external mutation
 - CONN-032 (High): Action claim and result are not stored in one strong transaction
 - CONN-033 (High): MCP/plugin mutations do not inherit AMV’s independent verify/Undo contract
 - CONN-034 (High): Public-looking DNS names are not fully resolved/reevaluated against private targets
 - FILE-031 (High): Uploaded objects lack a complete quarantine and malware-scanning state machine
-- READY-020 (Critical): Postgres cutover readiness can miss pending work beyond the first limited page
 - READY-021 (High): Critical synthetics do not exercise the real Queue, browser and semantic-search path
 - READY-022 (High): Model synthetic proves model listing/configuration rather than a real inference round trip
 - READY-025 (High): /health/ready can return HTTP 200 while the consumer product is operationally incomplete
