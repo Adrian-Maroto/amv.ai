@@ -31776,9 +31776,18 @@ async function _creditReverse(env, ref, why, refundedUSD){
    own messages may spend it. An API key cannot answer a question, so for a
    key "ask" means stop. */
 const CREDIT_MODES = ['auto', 'ask', 'stop'];
+/* NOT KNOWING IS NOT PERMISSION (Nov 7 audit USAGE-011). A preference that
+   could not be read - the store failed, or the record is unreadable - read as
+   "auto", so the one moment AMV could not tell what somebody chose was the
+   moment it spent their money without asking. Unknown is now "ask": nothing is
+   spent until they say so (and for an API key, which cannot be asked, stop).
+   No record at all is still "auto": that is the default people were told. */
 async function _creditModeOf(env, email){
-  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
-  catch (e) { return 'auto'; }
+  let p = null;
+  try { p = await DB.getStrict(env, 'creditpref', String(email || '').toLowerCase()); }
+  catch (e) { try { audit(env, 'credit_mode_unknown', { why: String((e && e.message) || e).slice(0, 80) }); } catch(_) { /* logging: it never decides anything */ } return 'ask'; }
+  if (!p) return 'auto';
+  return CREDIT_MODES.indexOf(p.mode) >= 0 ? p.mode : 'ask';
 }
 /* Whether the person has ever said - the purchase screen asks before the first
    pack rather than ticking "keep going" for them (audit Oct 26 #15). */
@@ -44994,9 +45003,28 @@ async function passkeyRemove(request, env){
 }
 
 /* ── The authenticator app ─────────────────────────────────────────────── */
+/* A SECRET THAT CANNOT BE OPENED IS NOT A WRONG CODE (Nov 7 audit AUTH-023).
+   A failed unseal - a rotated or missing key, a damaged record - read as "no
+   secret", so the right code was answered "that code does not match" for
+   ever, and nobody was told the account's second factor had stopped working.
+   Now it is said as what it is: a short unavailability that names the other
+   ways in, and the owner is told. */
+class TotpUnavailableError extends Error {
+  constructor(){
+    super('the authenticator secret could not be opened'); this.name = 'TotpUnavailableError';
+    this.amvRefusal = { status: 503, body: { error: 'Codes from your authenticator app cannot be checked right now. Use a recovery code or a passkey, or try again shortly.', code: 'totp_unavailable' } };
+  }
+}
 async function _totpSecretOf(env, acct){
   if(!acct || !acct.totp || !acct.totp.sealed) return null;
-  try{ const o = await connOpen(env, acct.totp.sealed); return o && o.t === 'totp' ? o.s : null; }catch(e){ return null; }
+  let o = null;
+  try{ o = await connOpen(env, acct.totp.sealed); }catch(e){ o = null; }
+  if(o && o.t === 'totp' && typeof o.s === 'string' && o.s) return o.s;
+  try{
+    audit(env, 'totp_secret_unopenable', {});
+    await alertOnce(env, 'totp_unopenable', 'An account has an authenticator app that AMV cannot open the secret for (the sealing key changed or the record is damaged). Its codes are refused as unavailable, not as wrong, and recovery codes and passkeys still work.', 60);
+  }catch(e){ /* logging: the refusal below is the answer either way */ }
+  throw new TotpUnavailableError();
 }
 /* A code checked and SPENT: the step it matched is recorded under the lock,
    so the same code cannot be used twice, from two places at once or later. */
@@ -45045,14 +45073,24 @@ async function totpConfirm(request, env){
   const body = await request.json().catch(() => ({}));
   const lim = await limitAction(env, 'totpset:' + em, 10, 60);
   if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
-  let pend = null; try{ pend = await connOpen(env, await env.AMV_KV.get('totpset:' + em) || ''); }catch(e){ pend = null; }
+  const pendRaw = await env.AMV_KV.get('totpset:' + em) || '';
+  let pend = null; try{ pend = await connOpen(env, pendRaw); }catch(e){ pend = null; }
   if(!pend || pend.t !== 'totpset') return json({ error: 'That setup has expired. Start again.', code: 'totp_expired' }, 400);
   const step = await _totpCheck(pend.s, body.code, null);
   if(step < 0) return json({ error: 'That code does not match. Check the time on your phone and try the newest code.', code: 'totp_wrong' }, 400);
+  /* ONE SETUP, CONFIRMED ONCE (Nov 7 audit AUTH-021). Two confirmations at
+     once both passed the check above, both wrote a set of recovery codes and
+     both showed theirs - and the set the first one showed was overwritten
+     the moment the second landed, so somebody wrote down ten codes that
+     never worked. The setup is spent before any codes are made. */
+  const setupId = (await _pkSha256(new TextEncoder().encode(pendRaw))).slice(0, 24);
+  if(!(await _claimOnce(env, 'totpsetspent', _b64u.enc(setupId), 900)))
+    return json({ error: 'This setup has already been confirmed. Your recovery codes are the ones shown then.', code: 'totp_confirmed' }, 409);
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
-  await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
+  const w = await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
+  if(w && w.error) return json({ error: 'The authenticator app could not be turned on. Nothing was changed - start again.', code: 'totp_not_saved' }, w.status || 503);
   try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });

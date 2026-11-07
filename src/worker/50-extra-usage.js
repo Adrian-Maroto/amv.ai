@@ -124,9 +124,18 @@ async function _creditReverse(env, ref, why, refundedUSD){
    own messages may spend it. An API key cannot answer a question, so for a
    key "ask" means stop. */
 const CREDIT_MODES = ['auto', 'ask', 'stop'];
+/* NOT KNOWING IS NOT PERMISSION (Nov 7 audit USAGE-011). A preference that
+   could not be read - the store failed, or the record is unreadable - read as
+   "auto", so the one moment AMV could not tell what somebody chose was the
+   moment it spent their money without asking. Unknown is now "ask": nothing is
+   spent until they say so (and for an API key, which cannot be asked, stop).
+   No record at all is still "auto": that is the default people were told. */
 async function _creditModeOf(env, email){
-  try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return (p && CREDIT_MODES.indexOf(p.mode) >= 0) ? p.mode : 'auto'; }
-  catch (e) { return 'auto'; }
+  let p = null;
+  try { p = await DB.getStrict(env, 'creditpref', String(email || '').toLowerCase()); }
+  catch (e) { try { audit(env, 'credit_mode_unknown', { why: String((e && e.message) || e).slice(0, 80) }); } catch(_) { /* logging: it never decides anything */ } return 'ask'; }
+  if (!p) return 'auto';
+  return CREDIT_MODES.indexOf(p.mode) >= 0 ? p.mode : 'ask';
 }
 /* Whether the person has ever said - the purchase screen asks before the first
    pack rather than ticking "keep going" for them (audit Oct 26 #15). */

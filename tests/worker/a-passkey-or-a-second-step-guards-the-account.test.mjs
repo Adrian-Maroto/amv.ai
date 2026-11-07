@@ -340,5 +340,33 @@ section('Google is not a way round the second step');
   globalThis.fetch = real; delete env.GOOGLE_CLIENT_ID;
 }
 
+section('One setup is confirmed once: the recovery codes shown are the ones that work (Nov 7 audit AUTH-021)');
+{
+  const EM = 'twice@example.com', P = 'another long passphrase here';
+  const t = (await call('/auth/signup', { email: EM, name: 'T', password: P })).d.token;
+  const st = await call('/auth/totp/start', { proof: { password: P } }, t);
+  const c = await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000));
+  const both = await Promise.all([call('/auth/totp/confirm', { code: c }, t), call('/auth/totp/confirm', { code: c }, t)]);
+  const won = both.filter(r => r.status === 200), lost = both.filter(r => r.status !== 200);
+  ok(won.length === 1 && lost.length === 1 && lost[0].status === 409 && lost[0].d.code === 'totp_confirmed', 'two confirmations at once: one turns it on, the other is told it already was', both.map(r => r.status));
+  const pw = await call('/auth/login', { email: EM, password: P });
+  const rc = await call('/auth/login/mfa', { challenge: pw.d.challenge, recovery: won[0].d.recovery[3] });
+  ok(rc.status === 200 && !!rc.d.token, 'and the codes that one showed are the codes that work', rc.status);
+}
+
+section('A secret that cannot be opened is said to be, not called a wrong code (Nov 7 audit AUTH-023)');
+{
+  const EM = 'sealed@example.com', P = 'yet another long passphrase';
+  const t = (await call('/auth/signup', { email: EM, name: 'S', password: P })).d.token;
+  const st = await call('/auth/totp/start', { proof: { password: P } }, t);
+  const on = await call('/auth/totp/confirm', { code: await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000)) }, t);
+  const a = await W.DB.get(env, 'acct', EM); a.totp.sealed = 'damaged' + a.totp.sealed.slice(7); await W.DB.put(env, 'acct', EM, a);
+  const pw = await call('/auth/login', { email: EM, password: P });
+  const r = await call('/auth/login/mfa', { challenge: pw.d.challenge, code: await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000) + 1) });
+  ok(r.status === 503 && r.d.code === 'totp_unavailable' && /recovery code|passkey/.test(r.d.error), 'the right code is answered "cannot be checked right now", with the other ways in', r);
+  const rc = await call('/auth/login/mfa', { challenge: pw.d.challenge, recovery: on.d.recovery[0] });
+  ok(rc.status === 200 && !!rc.d.token, 'and a recovery code still signs in', rc.status);
+}
+
 if (report('a-passkey-or-a-second-step-guards-the-account') > 0) process.exitCode = 1;
 done();

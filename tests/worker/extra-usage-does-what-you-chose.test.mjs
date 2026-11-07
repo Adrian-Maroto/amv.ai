@@ -184,6 +184,20 @@ section('With no credit at all, nothing is said about it');
   ok(r.status === 429 && !r.d.credit, 'a plain refusal - there is nothing to offer', r.d);
 }
 
+section('A choice that cannot be read is not a yes (Nov 7 audit USAGE-011)');
+{
+  const key = 'creditpref:' + EMAIL;
+  const kept = env.AMV_KV._map.get(key);
+  env.AMV_KV._map.set(key, '{not json');
+  ok((await bal(env, tok)).mode === 'ask', 'an unreadable choice reads as ask - nothing is spent without saying so', (await bal(env, tok)).mode);
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k, ...a) => { if (String(k) === key) throw new Error('store down'); return realGet.call(env.AMV_KV, k, ...a); };
+  const b = await bal(env, tok).catch(() => ({}));
+  env.AMV_KV.get = realGet;
+  ok(b.mode === 'ask', 'and so does one the store could not answer for', b.mode);
+  env.AMV_KV._map.set(key, kept);
+}
+
 section('The choice leaves with the account');
 {
   ok(env.AMV_KV._map.has('creditpref:' + EMAIL), 'it is stored for the account');
