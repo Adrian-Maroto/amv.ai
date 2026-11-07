@@ -31,6 +31,8 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | DATA-038 | High | Cutover readiness reads every page of unfinished mirror writes; too many to count is a blocker. |
 | READY-020 | Critical | Same fix as DATA-038. |
 | (CI) | - | Mirror writes of one record run in write order; an older copy finishing last no longer deletes newer API keys or members (found by CI). |
+| AUTH-022 | High | An account with no factor of its own passes step-up only with a sign-in made in the last ten minutes; otherwise reauth_required. |
+| FIN-026 | High | A credit pack's add to the balance carries a once-only key kept with the value, so a retried webhook cannot add it twice. |
 
 ## Checked, and already bounded
 
@@ -79,12 +81,10 @@ Open or partly fixed P0 items not yet changed here:
 - DATA-036 (High): Migration intent and repair records still share the eventually consistent KV failure domain
 - DATA-037 (High): Canonical revision blobs expire before all stale paths are impossible
 - LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
-- AUTH-022 (High): Accounts with no local factor can pass step-up on session possession alone
 - DR-011 (Critical): Restore write freeze can fall back to eventually consistent state
 - DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
 - REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
 - AUDIT-010 (Critical): Background financial/audit work can fall back to a mutable global request context
-- FIN-026 (High): Credit grants can update balance before a durable financial receipt exists
 - CONN-031 (High): Idempotency keys are not mandatory for every external mutation
 - CONN-032 (High): Action claim and result are not stored in one strong transaction
 - CONN-033 (High): MCP/plugin mutations do not inherit AMV’s independent verify/Undo contract
