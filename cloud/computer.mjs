@@ -92,7 +92,13 @@ export class AMVComputer extends Container {
     if (fresh || !this._key) {
       let epoch = +(await this._kv('key_epoch')) || 0;
       if (fresh) { epoch += 1; await this._kvPut('key_epoch', epoch); }
-      this._key = await _hmacHex(root, 'amv-computer-machine\nv1\n' + this.ctx.id.toString() + '\n' + epoch);
+      /* The key the running container was started with is kept, so a root
+         rotated while it runs (below) does not lock this object out of its
+         own machine; the next start derives one from the new root. */
+      const kept = !fresh ? await this._kv('machine_key') : null;
+      this._key = kept && kept.epoch === epoch && typeof kept.key === 'string' ? kept.key
+        : await _hmacHex(root, 'amv-computer-machine\nv1\n' + this.ctx.id.toString() + '\n' + epoch);
+      if (!kept || kept.key !== this._key) await this._kvPut('machine_key', { epoch, key: this._key });
       this.envVars = Object.assign({}, this.envVars, { AMV_CLOUD_KEY: this._key });
     }
     return this._key;
@@ -104,9 +110,17 @@ export class AMVComputer extends Container {
      tokens already used was in memory, so a restart forgot it. The body's
      SHA-256 and the method are signed now, and a used token is kept in this
      object's own storage until it expires. */
+  /* THE ROOT CAN BE ROTATED WITHOUT STOPPING THE FLEET (Nov 7 audit
+     COMP-022). A call signed with the previous root is accepted while
+     AMV_COMPUTER_KEY_PREVIOUS is set: put the new root here first, the old
+     one as PREVIOUS, then the new one in the main Worker, then remove
+     PREVIOUS. A leaked root stops working the moment PREVIOUS is removed,
+     and no running machine has to be replaced to get there. */
   async _callOk(request, path) {
     const root = String((this.env && this.env.AMV_COMPUTER_KEY) || '');
     if (root.length < 32) return false;
+    const prev = String((this.env && this.env.AMV_COMPUTER_KEY_PREVIOUS) || '');
+    const roots = prev.length >= 32 && prev !== root ? [root, prev] : [root];
     const t = String(request.headers.get('X-AMV-Computer-Call') || '').split('.');
     if (t.length !== 4 || t[0] !== 'v2' || !/^\d{13}$/.test(t[1]) || !/^[0-9a-f]{32}$/.test(t[2]) || !/^[0-9a-f]{64}$/.test(t[3])) return false;
     const exp = +t[1], now = Date.now();
@@ -114,8 +128,10 @@ export class AMVComputer extends Container {
     let body = '';
     try { body = await request.clone().text(); } catch (e) { return false; }
     const bodySha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', _enc.encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
-    const want = await _hmacHex(root, ['amv-computer-call', 'v2', this.ctx.id.toString(), String(request.method || 'POST').toUpperCase(), path, bodySha, t[1], t[2]].join('\n'));
-    if (!_sameHex(want, t[3])) return false;
+    const msg = ['amv-computer-call', 'v2', this.ctx.id.toString(), String(request.method || 'POST').toUpperCase(), path, bodySha, t[1], t[2]].join('\n');
+    let signed = false;
+    for (const r of roots) if (_sameHex(await _hmacHex(r, msg), t[3])) { signed = true; break; }
+    if (!signed) return false;
     const used = (await this._kv('call_used')) || {};
     for (const n of Object.keys(used)) if (used[n] < now) delete used[n];
     if (used[t[2]]) return false;

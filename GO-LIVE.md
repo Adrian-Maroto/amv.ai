@@ -597,6 +597,24 @@ To switch it on (about ten minutes, once):
    `cloud/` once more so it has this: until then it still hands every machine
    the shared key.
 
+   **Changing the key** (if it may have leaked, or once a year) takes no
+   downtime and replaces no machine. In this order:
+
+   ```
+   cd cloud
+   npx wrangler secret put AMV_COMPUTER_KEY_PREVIOUS   # the OLD key
+   npx wrangler secret put AMV_COMPUTER_KEY            # the NEW key
+   cd ..
+   npx wrangler secret put AMV_COMPUTER_KEY            # the NEW key, main Worker
+   cd cloud
+   npx wrangler secret delete AMV_COMPUTER_KEY_PREVIOUS
+   ```
+
+   While PREVIOUS is set the cloud computer accepts either key, so nothing
+   fails between the two Workers' changes. Once it is deleted the old key
+   opens nothing. Machines already running keep working; each takes a key
+   made from the new one the next time it starts.
+
 5. Optional, and recommended: keep each person's workspace when their machine
    sleeps. Without it, files in the cloud workspace last only as long as the
    container - a few idle minutes. With it, the workspace is saved before the

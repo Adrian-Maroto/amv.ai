@@ -632,6 +632,19 @@ section('A save whose earlier copy could not be kept says so, instead of promisi
   ok(/d\.current\.priorNotKept \? T\('Saved \{0\}\. The copy before it could not be kept/.test(page), 'which the screen tells the person, instead of "the five copies before it are kept"');
 }
 
+section('The root can be rotated without stopping the fleet (Nov 7 audit COMP-022)');
+{
+  const NEW = 'n'.repeat(48), OTHER = 'o'.repeat(48);
+  const ask = async (env, root) => (await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env)
+    .fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions', null, null, root) }))).status;
+  const during = { AMV_COMPUTER_KEY: NEW, AMV_COMPUTER_KEY_PREVIOUS: KEY, WORKSPACES: bucket() };
+  ok(await ask(during, KEY) === 200, 'while the old root is still PREVIOUS, a call signed with it is accepted - the main Worker can be switched second');
+  ok(await ask(during, NEW) === 200, 'and so is one signed with the new root');
+  ok(await ask(during, OTHER) !== 200, 'one signed with anything else is not');
+  const after = { AMV_COMPUTER_KEY: NEW, WORKSPACES: bucket() };
+  ok(await ask(after, KEY) !== 200, 'once PREVIOUS is removed, the old root opens nothing');
+}
+
 console.log = quiet;
 for (const c of running) try { c.kill('SIGKILL'); } catch (e) {}
 try { rmSync(box, { recursive: true, force: true }); } catch (e) {}
