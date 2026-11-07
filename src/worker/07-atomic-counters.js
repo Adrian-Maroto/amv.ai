@@ -74,9 +74,17 @@ export class AMVCounter {
     }
     if (op === 'incr') {
       const cur = (await this.state.storage.get('v')) || 0;
+      /* ONCE, WHEN IT IS MONEY (Nov 7 audit FIN-026). An add named by the
+         payment it is for (`once`) happens once: the answer to the first can
+         be lost after it landed, and the retry that follows must not add the
+         pack a second time. The name is kept with the value, in this
+         object's own storage, so both move together. */
+      const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
+      if (onceKey && (await this.state.storage.get(onceKey))) return json({ value: cur, replay: true });
       // never let a refund drive the counter negative
       const next = Math.max(0, cur + (body.amount || 0));
-      await this.state.storage.put('v', next);
+      if (onceKey) await this.state.storage.put({ v: next, [onceKey]: 1 });
+      else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: next });

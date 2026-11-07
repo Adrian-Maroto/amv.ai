@@ -25,7 +25,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'creditrev.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { stripeWebhook, _creditGrant, _creditState };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { stripeWebhook, _creditGrant, _creditState, _creditBuyName };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 function mkEnv() {
@@ -110,6 +110,32 @@ section('A partial refund, then the rest');
   ok(await left(env) === 30, 'a $20 refund takes $20', await left(env));
   await stripe(env, 'charge.refunded', { id: 'ch_c', payment_intent: 'pi_c', amount: 5000, amount_refunded: 5000 });
   ok(await left(env) === 0, 'the full refund later takes the other $30, not $50 more', await left(env));
+}
+
+section('A pack whose answer was lost is added once, however often it is retried (Nov 7 audit FIN-026)');
+{
+  /* The real counter object: the add lands, then its answer is lost - the
+     webhook fails, Stripe sends it again. */
+  const env = mkEnv();
+  const objs = new Map();
+  const real = (name) => { if (!objs.has(name)) { const st = new Map(); objs.set(name, new W.AMVCounter({ storage: {
+    async get(k) { return st.get(k); }, async put(k, v) { if (typeof k === 'object') { for (const [a, b] of Object.entries(k)) st.set(a, b); } else st.set(k, v); },
+    async delete(k) { st.delete(k); }, async deleteAll() { st.clear(); }, async setAlarm() {}, async deleteAlarm() {} } }, {})); } return objs.get(name); };
+  const standIn = env.AMV_COUNTER;
+  let loseOnce = true;
+  env.AMV_COUNTER = { idFromName: (x) => x, get: (x) => ({ async fetch(u, init) {
+    const b = JSON.parse(init.body);
+    if (b.op !== 'incr') return standIn.get(x).fetch(u, init);
+    const r = await real(x).fetch(new Request('https://do/c', init));
+    if (loseOnce && b.once) { loseOnce = false; throw new Error('the answer was lost'); }
+    return r;
+  } }) };
+  const SUBJ2 = 'u:lost@example.com';
+  let first = null; try { await W._creditGrant(env, { subject: SUBJ2, email: 'lost@example.com', usd: 25, ref: 'pi_lost' }); } catch (e) { first = e; }
+  ok(!!first, '(the first try fails after the add landed)');
+  ok(await W._creditGrant(env, { subject: SUBJ2, email: 'lost@example.com', usd: 25, ref: 'pi_lost' }) === true, 'the retry goes through');
+  const v = await (await real(W._creditBuyName(SUBJ2)).fetch(new Request('https://do/c', { method: 'POST', body: JSON.stringify({ op: 'get' }) }))).json();
+  ok(v.value === 25, 'and the pack is $25 of credit, not $50', v.value);
 }
 
 if (report('a-refund-takes-a-pack-back-once') > 0) process.exitCode = 1;

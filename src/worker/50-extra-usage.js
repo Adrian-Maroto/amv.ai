@@ -69,7 +69,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!subject || !(usd > 0) || !ref) return false;
   const once = await _onceOrRetry(env, 'creditref', ref, CLAIM_ONCE_TTL_S, async () => {
     await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
-    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true });
+    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true, once: 'buy:' + ref });
   });
   if(!once.claimed) return false;
   /* The Postgres ledger's row for it (04a-control-plane.js), keyed by the
@@ -101,7 +101,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true });
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + (already + take).toFixed(2) });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
       /* Each part taken back is its own row, keyed by how much had been taken

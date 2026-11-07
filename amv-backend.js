@@ -4018,9 +4018,17 @@ export class AMVCounter {
     }
     if (op === 'incr') {
       const cur = (await this.state.storage.get('v')) || 0;
+      /* ONCE, WHEN IT IS MONEY (Nov 7 audit FIN-026). An add named by the
+         payment it is for (`once`) happens once: the answer to the first can
+         be lost after it landed, and the retry that follows must not add the
+         pack a second time. The name is kept with the value, in this
+         object's own storage, so both move together. */
+      const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
+      if (onceKey && (await this.state.storage.get(onceKey))) return json({ value: cur, replay: true });
       // never let a refund drive the counter negative
       const next = Math.max(0, cur + (body.amount || 0));
-      await this.state.storage.put('v', next);
+      if (onceKey) await this.state.storage.put({ v: next, [onceKey]: 1 });
+      else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ value: next });
@@ -31853,7 +31861,7 @@ async function _creditGrant(env, { subject, email, usd, ref }){
   if(!subject || !(usd > 0) || !ref) return false;
   const once = await _onceOrRetry(env, 'creditref', ref, CLAIM_ONCE_TTL_S, async () => {
     await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
-    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true });
+    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, keep: true, strict: true, once: 'buy:' + ref });
   });
   if(!once.claimed) return false;
   /* The Postgres ledger's row for it (04a-control-plane.js), keyed by the
@@ -31885,7 +31893,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true });
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + (already + take).toFixed(2) });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
       /* Each part taken back is its own row, keyed by how much had been taken
