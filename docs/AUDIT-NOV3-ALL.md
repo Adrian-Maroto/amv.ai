@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Roadmap 52, Fixed now 42, Resolved before 39, Owner 29, Partly done 22, Verified here 5
+Totals: Roadmap 52, Fixed now 44, Resolved before 39, Owner 29, Partly done 20, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -123,7 +123,7 @@ Totals: Roadmap 52, Fixed now 42, Resolved before 39, Owner 29, Partly done 22, 
 | FILE-003 | Medium | P1 | Library metadata is too account-aggregated for 25k+ files | Open | Roadmap | one metadata row per file (Postgres) |
 | SEC-002 | Medium | P1 | 50 Math.random uses include persistent/server identifiers | Partially fixed | Fixed now | kept ids from crypto.getRandomValues; only a retry jitter uses Math.random |
 | SEC-004 | Medium | P1 | Wildcard postMessage needs source/nonce/schema checks | Partially fixed | Fixed now | every window listener checks its sender, and only three posts target any origin - held by a test |
-| REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Partially fixed | Partly done | objectives measured hourly with error budgets and an alert (Nov 2); p95/p99 latency telemetry not built |
+| REL-010 | Medium | P1 | SLOs are not backed by complete p50/p95/p99 and burn-rate telemetry | Partially fixed | Fixed now | objectives measured hourly with error budgets and an alert (Nov 2); time to first word now as p50/p95/p99 from a histogram that no longer ends at 5s (an-objective-is-measured-and-its-breach-said) |
 | SEC-006 | Medium | P1 | PBKDF2 work factor remains below current OWASP reference | Open | Owner | Workers cap PBKDF2 at 100,000; the pepper is the mitigation |
 | DATA-011 | Medium | P1 | Repair status is truncated to the first 1,000 KV keys | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DATA-012 | Medium | P1 | Backfill digest is not canonically serialized | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
@@ -157,7 +157,7 @@ Totals: Roadmap 52, Fixed now 42, Resolved before 39, Owner 29, Partly done 22, 
 | OPS-005 | Medium | P2 | Global KV/R2/provider architecture cannot promise region residency today | Open | Owner | needs a provider, a contract, people or a decision |
 | PROD-015 | Medium | P2 | SDK/API need stable production governance | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-008 | Medium | P2 | Restore drills are not yet full-system game days | Open | Owner | full-system game days are people and a schedule |
-| REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Partially fixed | Partly done | docs may name only files and suites that exist (a-doc-names-only-what-exists); CONTEXT.md architecture rewritten; capabilities do not yet declare the setting each needs |
+| REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Partially fixed | Fixed now | docs may name only files and suites that exist; the capability page lists the settings each one reads, derived from its code on every build, each shown on the go-live screen (a-doc-names-only-what-exists) |
 | FILE-006 | Medium | P2 | Large/private files need signed/range download design | Open | Roadmap | signed range downloads |
 | PROD-014 | Medium | P2 | SCIM/OIDC foundation needs custom RBAC and policy gateway | Partially fixed | Roadmap | custom RBAC and a policy gateway on top of SCIM/OIDC |
 | PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Open | Roadmap | structured shopping, travel and places results |

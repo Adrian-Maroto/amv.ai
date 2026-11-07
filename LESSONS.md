@@ -15644,3 +15644,28 @@ Rule: the fact that decides whether something is safe lives in strongly
 consistent storage (a Durable Object, or a database transaction with the
 data). KV may cache it or hold the bulk it points at, never be the only place
 that answers "is this allowed".
+
+## 624. A sweep finds the route nobody picked, and a checker that is wrong looks like a defect
+
+Round two of the Nov 3 audit added four sweeps - every screen poisoned with
+markup, every screen and dialog read through the browser's accessibility
+tree, every route called from a stranger's origin, every doc's references
+checked - and each found something the representative tests had walked past.
+The dialog labeller fell back to a panel's first child, which for half the
+dialogs was the title, so "My live sites" was the dialog and its controls were
+outside it. Sign-out sent clearing cookies to any page that asked, which a
+browser stores even when it will not let the page read the answer: a forced
+sign-out from any site. Neither was in a file anybody was looking at.
+
+The same round produced a wrong finding, and it is worth as much. The contrast
+check said the Research Watch disclaimer was 1.17:1 after I "fixed" it to full
+text colour - because `color-mix()` resolves to `color(srgb 0.93 ...)`, channels
+from 0 to 1, and I parsed them as 0 to 255. The panel read as black. My first
+fix was to change the product to satisfy the checker.
+
+**Rules.** Sweep the whole surface - the defect is in the route, screen or
+dialog nobody chose as the example. Before changing the product to satisfy a
+new check, read the raw values the check saw on the real page; a check that
+has not been shown a passing case it should pass is not yet a check. And give
+each sweep a case it must flag and a case it must not, so the next false
+alarm is caught by the suite rather than by a person.
