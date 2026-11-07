@@ -15669,3 +15669,27 @@ new check, read the raw values the check saw on the real page; a check that
 has not been shown a passing case it should pass is not yet a check. And give
 each sweep a case it must flag and a case it must not, so the next false
 alarm is caught by the suite rather than by a person.
+
+## 625. A new duty on a shared tick is a change to every test of that tick
+
+The hourly capability checks went onto the five-minute cron tick behind an
+hour flag. Six suites that run one tick and count what it calls failed:
+the checks' model-list request landed on the same host they count as "the
+model was called", so "the job ran once" read as twice. Every suite was
+right - the tick they were written for now did something else too.
+
+The fix was not to teach six suites about the new calls. It was to give the
+checks a trigger of their own (17 past the hour), which is also the better
+design: nothing on the tick waits behind five outside calls.
+
+The same night, splitting the account erasure into a routine of its own (so
+the cron can finish one that left something behind) blinded four suites that
+read the ROUTE's body - cross-account writes, spending routes, the order of
+confirmation and deletion. Each now reads the route plus the routine it hands
+off to, by name.
+
+**Rules.** Before adding work to a shared schedule, ask what already counts
+that schedule's effects; prefer a trigger of its own. And when code moves out
+of a function that suites read by name, find every reader (`grep` for the
+name in tests) before the gate does - a check that reads an empty body
+passes or fails for the wrong reason.
