@@ -462,6 +462,19 @@ async function backupExport(request, env){
      draining the store through a token they should not have. */
   const gate = await _adminGate(request, env, 'backup', 10, 100);
   if (gate) return gate;
+  /* BREAK GLASS IS LOUD (Nov 3 audit OPS-001). Support sees the shape of an
+     account and never its content; this route is the one way to take every
+     record AMV holds, and the operator token is all it asks for. So the owner
+     is told every time it starts - before a byte is sent, so an export that
+     is abandoned part-way was still announced - with where it came from. A
+     token the owner did not use is a compromised token, and the message says
+     what to do. Two-person approval would need a second operator, which is
+     the owner's decision. */
+  try {
+    await notify(env, 'A full export of every record AMV holds has just started, using the operator token, from '
+      + String(request.headers.get('CF-Connecting-IP') || 'an unknown address').slice(0, 64)
+      + '. If this was not you, rotate ADMIN_TOKEN now - see docs/INCIDENT-RUNBOOK.md, "An account is compromised".');
+  } catch (e) { audit(env, 'backup_export_not_announced', { why: String((e && e.message) || e).slice(0, 120) }); }
 
   /* AMV-038: STREAMED, AND HONEST ABOUT WHAT IT COULD NOT READ.
 

@@ -94,6 +94,20 @@ section('A backup is produced and is a real file');
      'and a key count that matches what is actually there', { said: snap.keyCount, real: Object.keys(snap.data).length });
 }
 
+section('Taking everything is announced to the owner before it starts (Nov 3 audit OPS-001)');
+{
+  const env = { ...mkEnv(), ALERT_WEBHOOK: 'https://hooks.example/owner' };
+  await W.DB.put(env, 'acct', 'a@example.com', { email: 'a@example.com', name: 'A' });
+  const told = []; const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { if (String(u) === 'https://hooks.example/owner') told.push(JSON.parse(init.body).text); return new Response('{}'); };
+  const r = await W.backupExport(adminReq(), env);
+  const toldBeforeBody = told.length;
+  await r.text();
+  globalThis.fetch = realFetch;
+  ok(toldBeforeBody === 1 && /full export of every record/.test(told[0]) && /2\.4\.6\.8/.test(told[0]) && /rotate ADMIN_TOKEN/.test(told[0]),
+     'the owner is told, with where it came from and what to do if it was not them, before a byte is sent', told);
+}
+
 section('THE FINDING: it is written as it is read, not built up in memory first');
 {
   /* The property that fails at scale: a whole store accumulated into one object

@@ -117,6 +117,12 @@ it there). Both take effect on every server at once (the account's
 revocation object), and API keys revoked by the person stop at once too.
 A password reset does the same.
 
+If the account is AMV's own - you were told "A full export of every record AMV
+holds has just started" and it was not you - the operator token is in someone
+else's hands: set a new `ADMIN_TOKEN` in Cloudflare at once (the old one stops
+the moment the Worker reloads), then read the `backup_export` and
+`admin_*` lines in Workers Logs for what else it was used for.
+
 ## 7. Payments look wrong
 
 Payment webhooks keep working through a pause. A payment that succeeded and
