@@ -33287,7 +33287,7 @@ const WALLET_LOCK_TRIES = 6;
    only once the damage was done. A writer now commits only while its lease
    still has a margin left; past it, nothing is saved and the change is
    refused as busy, which every caller already turns into "try again". */
-const RMUT_LEASE_S = 15;
+/* The lease itself is the 15 written in each claim below; commits stop 4s before it. */
 const RMUT_COMMIT_BY_MS = 11000;
 function _leaseOver(started){ return Date.now() - started > RMUT_COMMIT_BY_MS; }
 function _leaseLost(env, kind, key){
@@ -33305,7 +33305,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
   const key = String(id || '');
   if (!key) return null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'rmut:' + kind, key, RMUT_LEASE_S)) {
+    if (await _claimOnce(env, 'rmut:' + kind, key, 15)) {
       const started = Date.now();
       try {
         const rec = await load(env, key);
@@ -33340,7 +33340,7 @@ async function _withWallet(env, email, mutate) {
   if (!em) return null;
   let lastErr = null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'wmut', em, RMUT_LEASE_S)) {
+    if (await _claimOnce(env, 'wmut', em, 15)) {
       const started = Date.now();
       try {
         const w = await _wallet(env, em);
