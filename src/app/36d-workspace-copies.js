@@ -45,7 +45,9 @@ async function _wsCopiesLoad(box){
     : st.lostUnsaved
       ? '<p class="brg-p brg-warn"><b>' + escH(T('The last session could not be saved.')) + '</b> ' + escH(T('The workspace stopped after several tries, so work since the last saved copy was lost. The saved copies below are intact.')) + '</p>'
       : '';
-  box.innerHTML = warn + '<p class="brg-p">' + escH(d.current ? T('Saved {0}. The five copies before it are kept.').replace('{0}', when(d.current.at)) : T('Nothing has been saved yet. The workspace is saved each time it goes to sleep.')) + '</p>'
+  box.innerHTML = warn + '<p class="brg-p">' + escH(!d.current ? T('Nothing has been saved yet. The workspace is saved each time it goes to sleep.')
+      : d.current.priorNotKept ? T('Saved {0}. The copy before it could not be kept, so it is not among the ones below.').replace('{0}', when(d.current.at))
+      : T('Saved {0}. The five copies before it are kept.').replace('{0}', when(d.current.at))) + '</p>'
     + (rows ? '<ul class="brg-ws-list">' + rows + '</ul>' : '<p class="brg-p">' + escH(T('No earlier copies yet.')) + '</p>');
   const fresh = box.querySelector('#brg-ws-fresh');
   if(fresh) on(fresh, 'click', () => confirmModal(T('Start fresh?'), T('The workspace starts empty. The copy that could not be put back is kept with the saved copies, so you can try it again later.'), async () => {

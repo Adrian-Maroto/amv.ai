@@ -300,8 +300,16 @@ export class AMVComputer extends Container {
         const image = String(r.headers.get('X-AMV-Image') || '').slice(0, 60);
         const meta = Object.assign({ sha256: sha }, changing ? { changing } : {}, image ? { image } : {});
         /* The copy about to be replaced becomes an earlier copy. Failing to
-           keep it is logged and does not stop today's save. */
-        try { await this._wsKeepCurrent(); } catch (e) { console.log(JSON.stringify({ event: 'workspace_version_not_kept', error: String((e && e.message) || e).slice(0, 160) })); }
+           keep it does not stop today's save - refusing would throw away the
+           newest work to protect an older copy - but it is no longer silent
+           (Nov 7 audit COMP-023): the new copy is marked as having no earlier
+           copy behind it, and the screen says so instead of promising the
+           five before it are kept. */
+        try { await this._wsKeepCurrent(); }
+        catch (e) {
+          meta.priorNotKept = '1';
+          console.log(JSON.stringify({ event: 'workspace_version_not_kept', error: String((e && e.message) || e).slice(0, 160) }));
+        }
         await this.env.WORKSPACES.put(this._wsKey(), readable, Object.assign({ httpMetadata: { contentType: 'application/gzip' } },
           { sha256: sha, customMetadata: meta }));
         await done;
@@ -387,7 +395,8 @@ export class AMVComputer extends Container {
       if (!this._wsOn()) return reply({ error: 'Saved copies are not switched on for this deployment.', code: 'needs_service' }, 503);
       if (url.pathname === '/amv-workspace/versions') {
         const cur = await this.env.WORKSPACES.get(this._wsKey());
-        const current = cur ? Object.assign({ bytes: cur.size, at: cur.uploaded ? new Date(cur.uploaded).toISOString() : null }, _wsChanging(cur.customMetadata)) : null;
+        const current = cur ? Object.assign({ bytes: cur.size, at: cur.uploaded ? new Date(cur.uploaded).toISOString() : null }, _wsChanging(cur.customMetadata),
+          cur.customMetadata && cur.customMetadata.priorNotKept === '1' ? { priorNotKept: true } : {}) : null;
         if (cur) try { await cur.body.cancel(); } catch (e) {}
         const st = await this._st();
         /* What the person must be told: the copy could not be put back, or

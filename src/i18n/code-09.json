@@ -1993,5 +1993,24 @@
   "it": "AMV non è riuscito a verificare ora gli accessi salvati di questo agente. Dimentica funziona ancora; riprova tra poco per vederli.",
   "ko": "AMV가 지금 이 에이전트의 저장된 로그인을 확인하지 못했습니다. 잊기는 계속 작동합니다. 잠시 후 다시 시도해 확인하세요.",
   "ta": "AMV இப்போது இந்த முகவரின் சேமித்த உள்நுழைவுகளைச் சரிபார்க்க முடியவில்லை. மறத்தல் இன்னும் வேலை செய்கிறது; அவற்றைப் பார்க்கச் சிறிது நேரத்தில் மீண்டும் முயலவும்."
+ },
+ "Saved {0}. The copy before it could not be kept, so it is not among the ones below.": {
+  "es": "Guardado {0}. La copia anterior no se pudo conservar, así que no está entre las de abajo.",
+  "zh": "已于 {0} 保存。之前的副本未能保留，因此不在下方列表中。",
+  "hi": "{0} को सहेजा गया। इससे पहले की प्रति रखी नहीं जा सकी, इसलिए वह नीचे वालों में नहीं है।",
+  "ar": "حُفظ في {0}. تعذّر الاحتفاظ بالنسخة السابقة، لذا فهي ليست ضمن النسخ أدناه.",
+  "pt": "Salvo {0}. A cópia anterior não pôde ser mantida, então não está entre as de baixo.",
+  "fr": "Enregistré {0}. La copie précédente n’a pas pu être conservée ; elle ne figure donc pas ci-dessous.",
+  "de": "Gespeichert {0}. Die Kopie davor konnte nicht behalten werden und ist daher nicht unten aufgeführt.",
+  "ja": "{0} に保存しました。その前のコピーは保持できなかったため、下の一覧にはありません。",
+  "ru": "Сохранено {0}. Предыдущую копию сохранить не удалось, поэтому её нет в списке ниже.",
+  "id": "Disimpan {0}. Salinan sebelumnya tidak dapat disimpan, jadi tidak ada di antara yang di bawah.",
+  "bn": "{0}-এ সংরক্ষিত। এর আগের কপিটি রাখা যায়নি, তাই সেটি নিচের তালিকায় নেই।",
+  "ur": "{0} کو محفوظ کیا گیا۔ اس سے پہلے کی کاپی رکھی نہیں جا سکی، اس لیے وہ نیچے والوں میں نہیں ہے۔",
+  "tr": "{0} tarihinde kaydedildi. Önceki kopya saklanamadı, bu yüzden aşağıdakiler arasında değil.",
+  "vi": "Đã lưu {0}. Không giữ được bản trước đó, nên nó không có trong danh sách bên dưới.",
+  "it": "Salvato {0}. La copia precedente non è stata conservata, quindi non è tra quelle qui sotto.",
+  "ko": "{0}에 저장했습니다. 그 이전 사본은 보관하지 못해 아래 목록에 없습니다.",
+  "ta": "{0} அன்று சேமிக்கப்பட்டது. அதற்கு முந்தைய நகலை வைத்திருக்க முடியவில்லை, எனவே அது கீழே உள்ளவற்றில் இல்லை."
  }
 }

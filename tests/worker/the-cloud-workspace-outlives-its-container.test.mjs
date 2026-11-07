@@ -615,6 +615,23 @@ section('Deleting an account reaches the computer Worker');
   ok(new Set(asked.map(a => String(a.call).split('.')[2])).size === asked.length, 'each with a nonce of its own');
 }
 
+section('A save whose earlier copy could not be kept says so, instead of promising five (Nov 7 audit COMP-023)');
+{
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  const realPut = env.WORKSPACES.put.bind(env.WORKSPACES);
+  env.WORKSPACES.put = async (k, v, o) => { if (String(k).includes('.v/')) throw new Error('bucket refused'); return realPut(k, v, o); };
+  events.length = 0;
+  const m = new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env);
+  await m.onActivityExpired();
+  env.WORKSPACES.put = realPut;
+  ok(events.includes('workspace_version_not_kept') && events.includes('workspace_saved'), 'the newest work is still saved - not thrown away to protect an older copy', events);
+  const v = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
+  ok(v.current && v.current.priorNotKept === true, 'and the copy says it has no earlier copy behind it', v.current);
+  const page = readFileSync(join(ROOT, 'src', 'app', '36d-workspace-copies.js'), 'utf8');
+  ok(/d\.current\.priorNotKept \? T\('Saved \{0\}\. The copy before it could not be kept/.test(page), 'which the screen tells the person, instead of "the five copies before it are kept"');
+}
+
 console.log = quiet;
 for (const c of running) try { c.kill('SIGKILL'); } catch (e) {}
 try { rmSync(box, { recursive: true, force: true }); } catch (e) {}
