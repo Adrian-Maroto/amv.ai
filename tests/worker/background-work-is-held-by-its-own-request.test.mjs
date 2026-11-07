@@ -17,7 +17,16 @@ const harness = join(__dir, '.build', 'ownctx.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _bg, _withCtx };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (String(a[0]).startsWith('AUDIT')) return; quiet(...a); };
-await new Promise(r => setTimeout(r, 20));   // the runtime's async-local storage is loaded on first use
+
+/* Nov 7 audit AUDIT-010: the very first request in a new isolate - nothing
+   waited for, no tick passed - is already held by its own context. */
+section('The first request of a new isolate is held by its own context');
+{
+  const first = { held: [], waitUntil(p) { this.held.push(p); } }, other = { held: [], waitUntil(p) { this.held.push(p); } };
+  await W.default.fetch(new Request('https://api.amv.test/v1/health'), { AMV_KV: { async get() { return null; }, async put() {}, async delete() {}, async list() { return { keys: [], list_complete: true }; } } }, other);
+  W._withCtx(first, () => { W._bg(Promise.resolve('first')); });
+  ok(first.held.length === 1, 'its background work is held by itself, not by the request before it', { first: first.held.length, other: other.held.length });
+}
 
 const mkCtx = (name) => ({ name, held: [], waitUntil(p) { this.held.push(p); }, passThroughOnException() {} });
 const env = { AMV_KV: { async get() { return null; }, async put() {}, async delete() {}, async list() { return { keys: [], list_complete: true }; } } };

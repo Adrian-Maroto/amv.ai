@@ -39,8 +39,14 @@ let _liveCtx = null;
    async-local storage, every request (and cron tick, and queue batch) runs
    inside its own context, and _bg uses the one it is running in. The shared
    variable stays only as the fallback for code called outside any of them. */
-let _ctxStore = null;
-try { import('node:async_hooks').then((m) => { if (m && m.AsyncLocalStorage) _ctxStore = new m.AsyncLocalStorage(); }).catch(() => {}); } catch (e) {}
+/* LOADED BEFORE THE FIRST REQUEST (Nov 7 audit AUDIT-010). It was imported
+   asynchronously, so the first requests of every new isolate - at scale, a
+   steady stream - ran before it existed and their background work (audit
+   delivery, ledger mirrors) fell back to whichever request had set the
+   shared context last. A static import is there from the start; nodejs_compat
+   is on in wrangler.toml. */
+import { AsyncLocalStorage as _AmvALS } from 'node:async_hooks';
+const _ctxStore = new _AmvALS();
 /* Runs `fn` with `ctx` as its own context, when the runtime offers one. */
 function _withCtx(ctx, fn) { return _ctxStore ? _ctxStore.run(ctx, fn) : fn(); }
 function _bg(p) {
