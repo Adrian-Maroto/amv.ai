@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Roadmap 49, Fixed now 48, Resolved before 39, Owner 29, Partly done 18, Verified here 6
+Totals: Fixed now 49, Roadmap 46, Resolved before 39, Owner 30, Partly done 18, Verified here 7
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -52,7 +52,7 @@ Totals: Roadmap 49, Fixed now 48, Resolved before 39, Owner 29, Partly done 18, 
 | REL-018 | High | P0 | postgres_reads_all means 100% cohort, not a clean or complete Postgres cutover | Open | Fixed now | postgres_reads_all = 100% cohort AND nothing in the way; readiness names the blockers and which records Postgres serves |
 | STATE-005 | High | P0 | Critical revocation still has KV fallback paths | Partially fixed | Roadmap | revocation is strong with fail-closed routes since Oct 26; the remaining KV reads are listed for the Postgres move |
 | STATE-002 | High | P0 | Chat sync knowingly operates without arbitration in KV mode | Partially fixed | Fixed now | chat sync goes through the same commit |
-| OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Partially fixed | Roadmap | durable cross-system deletion orchestration |
+| OPS-004 | High | P1 | Cross-system deletion needs durable orchestration and proof | Partially fixed | Fixed now | an erasure that leaves something behind is recorded and finished by the cron (every phase is a delete, so a re-run is safe); the record and the address go when it completes; the owner is told after twelve tries (an-erasure-that-did-not-finish-is-finished) |
 | AGENT-013 | High | P1 | Cookie application failure is ignored, then use is audited | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-015 | High | P1 | Read-only unattended browsing is a strong safety choice but incomplete product parity | Open | Roadmap | unattended browsing that acts, under approval |
 | AGENT-012 | High | P1 | Financial-site hostname regex is not a complete risk policy | Partially fixed | Partly done | money, identity, government and health sites refused by host words; not a complete risk policy |
@@ -81,7 +81,7 @@ Totals: Roadmap 49, Fixed now 48, Resolved before 39, Owner 29, Partly done 18, 
 | SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Open | Fixed now | every empty catch in the 26 trust files says why; six that hid a failed money, sign-out or rollback write now audit it; ceiling on the rest (an-empty-catch-in-trust-code-says-why) |
 | TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Open | Roadmap | push connectors instead of polling |
 | FILE-002 | High | P1 | No full quarantine/malware pipeline before availability | Open | Owner | needs a provider, a contract, people or a decision |
-| FILE-001 | High | P1 | Large files still traverse Worker JSON/base64 paths | Open | Roadmap | direct signed uploads to storage |
+| FILE-001 | High | P1 | Large files still traverse Worker JSON/base64 paths | Open | Owner | direct signed uploads need R2 S3 access keys issued by the owner; until then files are capped at 12MB and content-checked on the way in |
 | OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Open | Roadmap | abuse risk controls at scale |
 | SEC-003 | High | P1 | 599 innerHTML assignments require centralized trust guarantees | Open | Partly done | fuzz poisons every user-named thing on 18 screens and 13 dialogs (catches a removed escape); ratchet on sinks; eval/new Function/allow-same-origin absent; CSP proven to keep injected script inert. Trusted Types enforcement not switched on: Stripe, Google sign-in and Turnstile must be proved under it on staging with live keys first |
 | OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Open | Owner | live incident exercises are people and a schedule |
@@ -94,7 +94,7 @@ Totals: Roadmap 49, Fixed now 48, Resolved before 39, Owner 29, Partly done 18, 
 | DATA-014 | High | P1 | Email is still used as a primary operational identity in many flows | Partially fixed | Roadmap | email to account-id is a data-model migration, done with the Postgres move |
 | DATA-010 | High | P1 | Mismatch counters do not clearly represent current unresolved state | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | REL-014 | High | P1 | No evidence of reserved/negotiated model capacity for million-user peaks | Open | Owner | needs a provider, a contract, people or a decision |
-| REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Partially fixed | Roadmap | globally coordinated circuit breaking |
+| REL-013 | High | P1 | Circuit breaker/health knowledge is not globally coordinated enough | Partially fixed | Verified here | decided: the breaker is per server with a shared expiring hint; a strongly global one would put one object in front of every chat - a single point of failure worse than up to a minute of propagation |
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Open | Owner | needs a provider, a contract, people or a decision |
 | TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Partially fixed | Roadmap | more async work through the queue |
 | DR-005 | High | P1 | Nightly backup permits up to roughly 24 hours RPO for KV-backed state | Open | Owner | a shorter RPO needs Postgres as the record (DR-001) |
