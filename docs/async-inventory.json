@@ -81,7 +81,7 @@
   },
   "synthetics": {
    "what": "each configured capability doing one real, harmless operation, kept for readiness",
-   "owner": "src/worker/15a-job-queue.js",
+   "owner": "src/worker/85-synthetics.js",
    "runs": "runCapabilitySynthetics",
    "retry": "its own hourly trigger (17 * * * *); a run that fails is reported and readiness shows the last result as stale after two hours; each failing capability is told once a day"
   },
