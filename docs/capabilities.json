@@ -328,6 +328,10 @@
   { "id": "task.critic", "status": "built", "name": "A step of a Task can be the critic that checks the steps it waits for, and one question can become two researchers and a critic",
     "code": [["src/worker/12-app-connectors.js", "second_opinion"], ["src/worker/15-run-context-and-execution.js", "THE CHECKER"]],
     "tests": ["tests/worker/a-task-in-steps-keeps-going-without-you.test.mjs"],
-    "says": ["second opinion", "critic"] }
+    "says": ["second opinion", "critic"] },
+  { "id": "ops.synthetics", "status": "built", "name": "Every configured capability proves it works once an hour - model, Postgres, storage, email, payments - and readiness reports proved, not just configured",
+    "code": [["src/worker/85-synthetics.js", "runCapabilitySynthetics"], ["src/worker/85-synthetics.js", "_synthProved"]],
+    "tests": ["tests/worker/configured-is-not-the-same-as-working.test.mjs"],
+    "says": ["proved working", "configured and broken"] }
  ]
 }

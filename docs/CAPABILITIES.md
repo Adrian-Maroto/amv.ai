@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-80 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
+81 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -125,6 +125,7 @@
 | A new backend version serves a tenth of requests and must answer ready before it serves everybody | `scripts/canary-deploy.mjs`, `.github/workflows/deploy.yml` | - | `worker/a-new-version-serves-a-few-before-everybody.test.mjs` |
 | A deployed version that is not ready is rolled back without waiting for anybody | `.github/workflows/deploy.yml` | - | `worker/a-new-version-serves-a-few-before-everybody.test.mjs` |
 | The cloud computer's image is scanned for known vulnerabilities and fails on any that a rebuild can fix | `.github/workflows/image-scan.yml` | - | `worker/the-cloud-image-is-scanned.test.mjs` |
+| Every configured capability proves it works once an hour - model, Postgres, storage, email, payments - and readiness reports proved, not just configured | `src/worker/85-synthetics.js` | - | `worker/configured-is-not-the-same-as-working.test.mjs` |
 
 ## Projects
 

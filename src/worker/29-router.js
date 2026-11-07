@@ -325,6 +325,19 @@ export default {
         console.error('[cron] cohort check failed', e && e.message);
         try{ await _workerError(env, 'cron.cohort', e); }catch(_){}
       }
+      /* EACH CONFIGURED CAPABILITY, PROVED (REL-003): once an hour, one real
+         harmless operation each - readiness reports what it found. */
+      try{
+        const synthFlag = 'synthcheck:' + new Date().toISOString().slice(0, 13);
+        if(!killed && !(await env.AMV_KV.get(synthFlag))){
+          await env.AMV_KV.put(synthFlag, '1', { expirationTtl: 7200 });
+          const r = await runCapabilitySynthetics(env);
+          if(r.failed.length) console.log('[cron] synthetics failed', JSON.stringify(r.failed));
+        }
+      }catch(e){
+        console.error('[cron] synthetics failed to run', e && e.message);
+        try{ await _workerError(env, 'cron.synthetics', e); }catch(_){}
+      }
       /* THE SERVICE OBJECTIVES (REL-010): measured once an hour - it reads
          every shard of the month's counts - and the owner told when one is
          over its error budget. */

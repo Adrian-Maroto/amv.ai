@@ -764,6 +764,9 @@ async function healthReady(request, env) {
   let pgCut = { state: 'off', blockers: [] };
   if (_pgOn(env)) { try { pgCut = await _pgCutover(env); } catch (e) { pgCut = { state: 'unknown', blockers: ['could not be checked'] }; } }
   const pgReadsAll = pgCut.state === 'reading_all';
+  /* Configured is not working (REL-003): the hourly capability checks. */
+  let synth = { state: 'unknown' };
+  try { synth = await _synthProved(env, now); } catch (e) { synth = { state: 'unknown', why: 'could not be read' }; }
   const body = {
     ready, ts: now, checks,
     capabilities: {
@@ -784,9 +787,14 @@ async function healthReady(request, env) {
       backup_fresh: backupFresh,
       postgres_reads_all: pgReadsAll,
     },
+    /* Which configured capabilities did their real, harmless operation in the
+       last hourly check: true, false (configured and broken), or null (not
+       configured, or not exercised). Booleans and the check's age only. */
+    proved: synth.proved || null,
     /* Why a state flag is off, in words - names and counts, nothing else. */
     state: {
       backup: backupFresh ? 'proved' : backupWhy,
+      synthetics: { state: synth.state, ageMin: synth.ageMin == null ? null : synth.ageMin, failed: synth.failed || [] },
       postgres: { state: pgCut.state, blockers: pgCut.blockers || [], serves: pgCut.serves || [], notYet: pgCut.notYet || [] },
     },
   };

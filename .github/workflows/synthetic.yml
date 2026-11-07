@@ -61,6 +61,13 @@ jobs:
           on=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('/tmp/ready','utf8')).capabilities||{};console.log(Object.entries(c).map(([k,v])=>k+': '+(v?'on':'off')).join(', '))}catch(e){console.log('not reported')}")
           row "Switched on" "$on" "-"
           echo "Switched on: $on"
+          # Proved, not only switched on (REL-003): the Worker's hourly check
+          # has each configured capability do one real, harmless thing. A
+          # capability that is configured and failed it fails this run.
+          proved=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/tmp/ready','utf8'));const p=d.proved||{};const s=(d.state&&d.state.synthetics)||{};const bad=Object.entries(p).filter(([,v])=>v===false).map(([k])=>k);console.log((bad.length?'FAIL ':'')+'['+(s.state||'unknown')+(s.ageMin!=null?', '+s.ageMin+' min old':'')+'] '+Object.entries(p).map(([k,v])=>k+': '+(v===true?'proved':v===false?'BROKEN':'-')).join(', '))}catch(e){console.log('not reported')}")
+          row "Proved working" "$proved" "-"
+          echo "Proved: $proved"
+          case "$proved" in FAIL*) fail=1;; esac
 
           # 3. Does the page itself load? (the page a visitor downloads)
           out=$(curl -sS -o /tmp/page -w '%{http_code} %{time_total}' --max-time 20 "$SITE/" || echo "000 0")
