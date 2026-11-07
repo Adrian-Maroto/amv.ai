@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Roadmap 52, Fixed now 46, Resolved before 39, Owner 29, Partly done 18, Verified here 5
+Totals: Roadmap 49, Fixed now 48, Resolved before 39, Owner 29, Partly done 18, Verified here 6
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -40,14 +40,14 @@ Totals: Roadmap 52, Fixed now 46, Resolved before 39, Owner 29, Partly done 18, 
 | REL-002 | High | P0 | Deploy workflow enforces only model, email, and payments | Partially fixed | Owner | set the repository variable AMV_LAUNCH_PROFILE - the deploy then enforces it |
 | TASK-002 | High | P0 | AMV has no real durable Workflow engine for long multi-step Tasks | Open | Roadmap | a durable workflow engine (Cloudflare Workflows) for long tasks |
 | USAGE-006 | High | P0 | Credits and entitlements must be authoritative in strong append-only storage before cutover | Open | Fixed now | money stays read from the live counters; Postgres money is only "ready" when every balance reconciles (moneyReconciled) |
-| DATA-013 | High | P0 | Only account and entitlement reads can currently cut over | Partially fixed | Roadmap | API keys, teams and money read from Postgres are the next classes; readiness lists them as not yet |
+| DATA-013 | High | P0 | Only account and entitlement reads can currently cut over | Partially fixed | Verified here | decided for API keys: each request reads the edge store and the strongly consistent revocation object; serving them from Postgres would add a proof check and a query to every API request for no gain. Postgres stays their system of record |
 | DATA-006 | High | P0 | Stale and repair fences expire after 30 days | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DATA-007 | High | P0 | Critical mirror writes use a global request context bridge | Partially fixed | Roadmap | mirror writes still use the request-context bridge; the awaited intent is what keeps a died write from vanishing |
 | DATA-008 | High | P0 | Backfill has no strong single-run lease | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TEST-001 | High | P0 | Four production-critical Postgres suites could not run without a real database | Environment-blocked / unverified | Fixed now | the four Postgres suites run against a real Postgres 16 here and in CI (test.yml installs it) |
 | DATA-020 | High | P0 | Proof deletion failure after a digest mismatch is swallowed | Open | Fixed now | proof withdrawal is an epoch move; if it fails it is audited, and the row still cannot be served because it does not match |
 | TASK-003 | High | P0 | AMV_JOBS is commented out by default | Partially fixed | Owner | AMV_JOBS queue binding |
-| REL-003 | High | P0 | Most capability readiness is binding/key presence only | Partially fixed | Roadmap | external synthetics per capability (model, PG, R2, queue, browser, mail, payments) on a schedule |
+| REL-003 | High | P0 | Most capability readiness is binding/key presence only | Partially fixed | Fixed now | every configured capability does one real harmless operation hourly (model list, SELECT 1, storage write/read/delete, email domains, Stripe balance); readiness reports proved, the outside probe fails on a broken one (configured-is-not-the-same-as-working) |
 | REL-017 | High | P0 | backup_fresh means a status record says done, not that a recoverable backup exists | Open | Fixed now | backup_fresh = signed manifest + every checksum + last part present + a sound drill of that manifest; the cron drills each night |
 | REL-018 | High | P0 | postgres_reads_all means 100% cohort, not a clean or complete Postgres cutover | Open | Fixed now | postgres_reads_all = 100% cohort AND nothing in the way; readiness names the blockers and which records Postgres serves |
 | STATE-005 | High | P0 | Critical revocation still has KV fallback paths | Partially fixed | Roadmap | revocation is strong with fail-closed routes since Oct 26; the remaining KV reads are listed for the Postgres move |
@@ -98,7 +98,7 @@ Totals: Roadmap 52, Fixed now 46, Resolved before 39, Owner 29, Partly done 18, 
 | MODEL-003 | High | P1 | AMV remains heavily dependent on one model family/provider path | Open | Owner | needs a provider, a contract, people or a decision |
 | TASK-004 | High | P1 | Queue covers only part of AMV asynchronous work | Partially fixed | Roadmap | more async work through the queue |
 | DR-005 | High | P1 | Nightly backup permits up to roughly 24 hours RPO for KV-backed state | Open | Owner | a shorter RPO needs Postgres as the record (DR-001) |
-| REL-019 | High | P1 | Production readiness does not execute end-to-end capability synthetics | Open | Roadmap | same as REL-003 |
+| REL-019 | High | P1 | Production readiness does not execute end-to-end capability synthetics | Open | Fixed now | same as REL-003: readiness now carries what was proved, with its age |
 | STATE-003 | High | P1 | Retention sweep has no strong global lease | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TEST-003 | High | P1 | Bubblewrap security tests fail closed when the environment lacks bubblewrap | Environment-blocked / unverified | Verified here | bubblewrap is installed by the session setup and in CI; the fence suites pass in the gate |
 | RETR-001 | High | P1 | Semantic meaning is on-demand reranking, not a persistent vector index | Open | Roadmap | persistent vector index |
