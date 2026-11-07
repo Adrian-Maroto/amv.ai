@@ -22,6 +22,15 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | FIN-024 | High | Transaction ids compare account, amount, currency, kind and provider; a mismatch is refused and alerted. |
 | USAGE-011 | High | Unknown credit preference reads as ask (stop for keys); no record stays auto. |
 | CONN-030 | Critical | A non-4xx failure on a write returns outcome_unknown and asks the person to look before retrying. |
+| COMP-022 | High | The cloud computer's root key rotates without downtime (AMV_COMPUTER_KEY_PREVIOUS); per-machine keys and per-call tokens were already there. Steps in GO-LIVE.md. |
+| AUTH-020 | Critical | A passkey credential is claimed, indexed, then written to the account; an account not saved takes its index back. |
+
+## Checked, and already bounded
+
+| Id | Why no change |
+|---|---|
+| QUEUE-014 | A queue outage runs the leftover accounts inline only within the tick's 25-second budget, books the rest for the next tick and alerts - late, not an overload. Removing the fallback would stop everybody's jobs during an outage. |
+| REL-022 | The launch gate already refuses `consumer_full` without the job queue (preflight.mjs, LIVE requirements). |
 
 ## Needs an owner decision
 
@@ -29,9 +38,8 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 |---|---|
 | AGENT-026 | KMS/HSM envelope root - infrastructure the owner chooses. |
 | AGENT-010 | Same as AGENT-026. |
-| COMP-022 | Fleet root key -> per-machine credentials needs a key service decision. |
 | FIN-025 | Cash payouts stay off; KYC/AML/tax is a provider and legal decision. |
-| DR-012 | Restore into an isolated environment needs a second Cloudflare account/namespace. |
+| DR-012 | Restore into an isolated environment needs a second KV namespace and a binding switch at deploy time - the only atomic switch KV has. Meanwhile revocations are held forward, every restore run can be rolled back, and the drill writes nothing. |
 | TASK-017 | Cloudflare Workflows adoption is an infrastructure change. |
 | FILE-030 | Direct signed R2 uploads need R2 S3 credentials (FILE-001, owner). |
 | REL-022 | Which bindings are mandatory is a deploy decision. |
@@ -66,9 +74,7 @@ Open or partly fixed P0 items not yet changed here:
 - DATA-038 (High): Cutover scans only a limited first page of pending intents
 - LOCK-001 (Critical): Record mutation leases do not fence the final commit
 - LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
-- AUTH-020 (Critical): Passkey account/credential index creation is non-atomic
 - AUTH-022 (High): Accounts with no local factor can pass step-up on session possession alone
-- QUEUE-014 (High): Queue outage falls back to inline execution and can overload the scheduler/Worker
 - DR-011 (Critical): Restore write freeze can fall back to eventually consistent state
 - DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
 - REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
