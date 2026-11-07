@@ -1,0 +1,93 @@
+# November 7 audit - where each finding stands
+
+The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This page records what changed since, by id. Every "Fixed here" item has a test that fails when its fix is removed.
+
+## Fixed here
+
+| Id | Severity | What changed |
+|---|---|---|
+| STATE-008 | Critical | A delete starts a new generation; a commit across a tombstone must name it (07-atomic-counters revCommit/revReset). a-revision-and-its-value-are-one-write. |
+| STATE-009 | Critical | A read whose committed copy cannot be found is refused as 503 record_settling, never served stale (04-data-layer _revRead). |
+| STATE-010 | Critical | Same fix as STATE-008: an erased record cannot be written back by a writer from before the erasure. |
+| DATA-030 | Critical | Writes fence the Postgres proof whenever Postgres is configured, independent of PG_READ. |
+| DATA-034 | High | Ledger key reuse reads the existing row back; a different payload is ledger_key_conflict, kept for repair. |
+| AGENT-022 | Critical | Generation re-read after the jar write; a save overtaken by a forget is deleted or queued. |
+| AGENT-023 | High | A jar that cannot be read is not saved over; an unopenable jar is replaced and audited. |
+| AGENT-024 | High | An unknown listing is signInsUnknown; the card keeps Forget on every site. |
+| AUTH-021 | Critical | A TOTP setup is spent once before recovery codes are made; the second confirm gets 409 totp_confirmed. |
+| AUTH-023 | High | An unopenable TOTP secret is 503 totp_unavailable naming recovery codes and passkeys; owner alerted. |
+| COMP-023 | High | A save whose prior copy could not be kept is marked priorNotKept and the screen says so (save still happens). |
+| QUEUE-015 | High | Pause and the automations switch are read before each account and each due job (_autoStopNow). |
+| REL-020 | High | Asset scan is quote-agnostic and reads the readable bundle; green on minified and --no-minify builds. |
+| FIN-024 | High | Transaction ids compare account, amount, currency, kind and provider; a mismatch is refused and alerted. |
+| USAGE-011 | High | Unknown credit preference reads as ask (stop for keys); no record stays auto. |
+| CONN-030 | Critical | A non-4xx failure on a write returns outcome_unknown and asks the person to look before retrying. |
+
+## Needs an owner decision
+
+| Id | Why |
+|---|---|
+| AGENT-026 | KMS/HSM envelope root - infrastructure the owner chooses. |
+| AGENT-010 | Same as AGENT-026. |
+| COMP-022 | Fleet root key -> per-machine credentials needs a key service decision. |
+| FIN-025 | Cash payouts stay off; KYC/AML/tax is a provider and legal decision. |
+| DR-012 | Restore into an isolated environment needs a second Cloudflare account/namespace. |
+| TASK-017 | Cloudflare Workflows adoption is an infrastructure change. |
+| FILE-030 | Direct signed R2 uploads need R2 S3 credentials (FILE-001, owner). |
+| REL-022 | Which bindings are mandatory is a deploy decision. |
+
+## Still open (code)
+
+Open or partly fixed P0 items not yet changed here:
+
+- AGENT-008 (Critical): Disabling sign-in retention can falsely succeed when credential deletion fails
+- AGENT-019 (Critical): Credential read or decrypt failure is misclassified as “nothing is held”
+- AGENT-020 (Critical): A watched run can resurrect a sign-in after concurrent revocation
+- COMP-006 (Critical): One global AMV_COMPUTER_KEY authenticates the entire fleet
+- REL-001 (Critical): consumer_full profile omits critical production systems
+- DATA-001 (Critical): Postgres serves a row before it has proved equivalence
+- DATA-002 (Critical): Verification failure can leave an unverified Postgres row live
+- DATA-003 (Critical): Write-through can report success after both safety markers fail
+- DATA-021 (Critical): A mirror write can still disappear when both intent and repair writes fail
+- DATA-004 (Critical): Historical prepaid credits are explicitly omitted from backfill
+- DATA-005 (Critical): Older seller ledger history is knowingly truncated
+- DATA-019 (Critical): Postgres proof and write fence are themselves stored in eventually consistent KV
+- DR-004 (Critical): Restore is additive/partial rather than atomic point-in-time recovery
+- DR-009 (Critical): Verified backup parts are still applied incrementally to the live authority
+- STATE-001 (Critical): Retention can overwrite concurrent user sync in KV mode
+- STATE-007 (Critical): The revision actor and the KV value form a split non-atomic authority
+- AGENT-009 (High): Forget-one-site endpoint reports success even when nothing was removed
+- AGENT-011 (High): Credential storage/revocation relies on eventually consistent KV
+- DATA-031 (High): Postgres write-through reports success even when proof publication loses a race
+- DATA-032 (Critical): Money ledger mirrors have no durable pre-write outbox
+- DATA-033 (High): Seller currency validation assumes two decimal places
+- DATA-036 (High): Migration intent and repair records still share the eventually consistent KV failure domain
+- DATA-037 (High): Canonical revision blobs expire before all stale paths are impossible
+- DATA-038 (High): Cutover scans only a limited first page of pending intents
+- LOCK-001 (Critical): Record mutation leases do not fence the final commit
+- LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
+- AUTH-020 (Critical): Passkey account/credential index creation is non-atomic
+- AUTH-022 (High): Accounts with no local factor can pass step-up on session possession alone
+- QUEUE-014 (High): Queue outage falls back to inline execution and can overload the scheduler/Worker
+- DR-011 (Critical): Restore write freeze can fall back to eventually consistent state
+- DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
+- REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
+- AUDIT-010 (Critical): Background financial/audit work can fall back to a mutable global request context
+- FIN-020 (High): Internal transaction recording is non-atomic across id marker and log entry
+- FIN-022 (High): Admin finance totals aggregate different currencies into one number
+- FIN-023 (High): Transaction helpers round all currencies to two decimals
+- FIN-026 (High): Credit grants can update balance before a durable financial receipt exists
+- CONN-031 (High): Idempotency keys are not mandatory for every external mutation
+- CONN-032 (High): Action claim and result are not stored in one strong transaction
+- CONN-033 (High): MCP/plugin mutations do not inherit AMV’s independent verify/Undo contract
+- CONN-034 (High): Public-looking DNS names are not fully resolved/reevaluated against private targets
+- FILE-031 (High): Uploaded objects lack a complete quarantine and malware-scanning state machine
+- READY-020 (Critical): Postgres cutover readiness can miss pending work beyond the first limited page
+- READY-021 (High): Critical synthetics do not exercise the real Queue, browser and semantic-search path
+- READY-022 (High): Model synthetic proves model listing/configuration rather than a real inference round trip
+- READY-025 (High): /health/ready can return HTTP 200 while the consumer product is operationally incomplete
+- MODEL-022 (High): Circuit breaker health is per isolate rather than globally coordinated
+- OPS-020 (High): 24/7 on-call, paging and public status operations are not fully established
+- OPS-021 (High): Broad launch needs completed legal, privacy and data-governance operations
+- OPS-022 (High): Model safeguards are not a complete abuse-operations system
+- OPS-024 (High): AMV lacks proved commercial capacity for million-user model/browser/computer load
