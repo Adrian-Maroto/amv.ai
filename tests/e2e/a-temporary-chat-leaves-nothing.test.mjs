@@ -85,6 +85,19 @@ section('No background job, task or standing instruction is kept from it (Nov 1 
   ok(r.listCalls > 0 && !/temporary chat/i.test(r.listed || ''), 'looking at what already exists still works', r.listed);
 }
 
+section('Nothing is published from it either (Nov 3 audit OPS-006)');
+{
+  const r = await page.evaluate(async () => {
+    const sent = []; const real = window.fetch;
+    window.fetch = async (u, o) => { sent.push(String(u)); return new Response('{}', { status: 200 }); };
+    const t = await _amvRunTool('deploy_site', { title: 'Mug shop', html: '<h1>Mugs</h1>' });
+    window.fetch = real;
+    return { text: t && t.text, sent: sent.filter(u => /deploy|sites?\b|publish/i.test(u)) };
+  });
+  ok(/temporary chat/i.test(r.text || '') && /Not published/.test(r.text || ''), 'publishing a live site is refused, saying why', r.text);
+  ok(r.sent.length === 0, 'and nothing was sent to be published', r.sent);
+}
+
 section('Memories are not read into it, and nothing is extracted from it');
 {
   const r = await page.evaluate(async () => {

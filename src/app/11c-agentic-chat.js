@@ -988,6 +988,14 @@ async function _amvRunTool(name, input, onStatus){
     }
 
     if(name==='deploy_site'){
+      /* A TEMPORARY CHAT LEAVES NOTHING BEHIND (Nov 3 audit OPS-006). A
+         published site is kept on AMV's servers, at a public address, until
+         somebody takes it down - the most lasting thing a chat can make, and
+         the one tool that kept something which the temporary chat did not
+         refuse. Building it and running it here still work; publishing is
+         asked for again in a normal chat. */
+      if(typeof _isTempChat === 'function' && _isTempChat())
+        return { text:'Not published: this is a temporary chat, so nothing from it is kept - and a live site stays on AMV\u2019s servers at a public address. Tell the user so plainly, and that they can publish it from a normal chat.', render:null };
       onStatus && onStatus('Publishing it live\u2026');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
         return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
