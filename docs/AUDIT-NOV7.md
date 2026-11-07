@@ -33,6 +33,9 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | (CI) | - | Mirror writes of one record run in write order; an older copy finishing last no longer deletes newer API keys or members (found by CI). |
 | AUTH-022 | High | An account with no factor of its own passes step-up only with a sign-in made in the last ten minutes; otherwise reauth_required. |
 | FIN-026 | High | A credit pack's add to the balance carries a once-only key kept with the value, so a retried webhook cannot add it twice. |
+| DATA-033 | High | Seller ledger amounts are whole minor units of their own currency. |
+| READY-022 | High | The hourly model check asks the cheapest engine for one streamed token, not a model list. |
+| CONN-031 | High | A connected-account write without an Idempotency-Key is refused before it reaches the account. |
 
 ## Checked, and already bounded
 
@@ -40,6 +43,14 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 |---|---|
 | QUEUE-014 | A queue outage runs the leftover accounts inline only within the tick's 25-second budget, books the rest for the next tick and alerts - late, not an overload. Removing the fallback would stop everybody's jobs during an outage. |
 | REL-022 | The launch gate already refuses `consumer_full` without the job queue (preflight.mjs, LIVE requirements). |
+
+| CONN-032 | Claim (strong object) and result (KV) are separate, but a missing result never re-runs the write: the retry is told AMV may already have done it. |
+| CONN-034 | Workers cannot open connections to private networks, so a public name resolving to 10.x/169.254 reaches nothing from the Worker; redirects are re-checked per hop (19-outbound-requests.js). |
+| STATE-001 | Retention trims through DB.putIfRev, the same revision guard as sync, and retries on a lost race. |
+| AGENT-009 | Forgetting a site the agent does not hold answers 404 not_held (an-agent-keeps-a-sign-in-only-where-it-may). |
+| COMP-006 | Same as COMP-022: per-machine keys, per-call tokens, and rotation without downtime. |
+| REL-001 | The launch gate's consumer_full profile requires browser, library, meaning, cloud computer, Postgres, job queue, nightly backup and workspaces. |
+| READY-025 | /health/ready reports `proved` per capability, and the synthetic workflow fails on any proved=false; 200 means the stores answer, by design, so a monitor reads both. |
 
 ## Needs an owner decision
 
@@ -60,8 +71,6 @@ Open or partly fixed P0 items not yet changed here:
 - AGENT-008 (Critical): Disabling sign-in retention can falsely succeed when credential deletion fails
 - AGENT-019 (Critical): Credential read or decrypt failure is misclassified as “nothing is held”
 - AGENT-020 (Critical): A watched run can resurrect a sign-in after concurrent revocation
-- COMP-006 (Critical): One global AMV_COMPUTER_KEY authenticates the entire fleet
-- REL-001 (Critical): consumer_full profile omits critical production systems
 - DATA-001 (Critical): Postgres serves a row before it has proved equivalence
 - DATA-002 (Critical): Verification failure can leave an unverified Postgres row live
 - DATA-003 (Critical): Write-through can report success after both safety markers fail
@@ -71,13 +80,10 @@ Open or partly fixed P0 items not yet changed here:
 - DATA-019 (Critical): Postgres proof and write fence are themselves stored in eventually consistent KV
 - DR-004 (Critical): Restore is additive/partial rather than atomic point-in-time recovery
 - DR-009 (Critical): Verified backup parts are still applied incrementally to the live authority
-- STATE-001 (Critical): Retention can overwrite concurrent user sync in KV mode
 - STATE-007 (Critical): The revision actor and the KV value form a split non-atomic authority
-- AGENT-009 (High): Forget-one-site endpoint reports success even when nothing was removed
 - AGENT-011 (High): Credential storage/revocation relies on eventually consistent KV
 - DATA-031 (High): Postgres write-through reports success even when proof publication loses a race
 - DATA-032 (Critical): Money ledger mirrors have no durable pre-write outbox
-- DATA-033 (High): Seller currency validation assumes two decimal places
 - DATA-036 (High): Migration intent and repair records still share the eventually consistent KV failure domain
 - DATA-037 (High): Canonical revision blobs expire before all stale paths are impossible
 - LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
@@ -85,14 +91,9 @@ Open or partly fixed P0 items not yet changed here:
 - DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
 - REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
 - AUDIT-010 (Critical): Background financial/audit work can fall back to a mutable global request context
-- CONN-031 (High): Idempotency keys are not mandatory for every external mutation
-- CONN-032 (High): Action claim and result are not stored in one strong transaction
 - CONN-033 (High): MCP/plugin mutations do not inherit AMV’s independent verify/Undo contract
-- CONN-034 (High): Public-looking DNS names are not fully resolved/reevaluated against private targets
 - FILE-031 (High): Uploaded objects lack a complete quarantine and malware-scanning state machine
 - READY-021 (High): Critical synthetics do not exercise the real Queue, browser and semantic-search path
-- READY-022 (High): Model synthetic proves model listing/configuration rather than a real inference round trip
-- READY-025 (High): /health/ready can return HTTP 200 while the consumer product is operationally incomplete
 - MODEL-022 (High): Circuit breaker health is per isolate rather than globally coordinated
 - OPS-020 (High): 24/7 on-call, paging and public status operations are not fully established
 - OPS-021 (High): Broad launch needs completed legal, privacy and data-governance operations
