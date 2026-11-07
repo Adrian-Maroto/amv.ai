@@ -694,8 +694,8 @@ async function totpConfirm(request, env){
      both showed theirs - and the set the first one showed was overwritten
      the moment the second landed, so somebody wrote down ten codes that
      never worked. The setup is spent before any codes are made. */
-  const setupId = (await _pkSha256(new TextEncoder().encode(pendRaw))).slice(0, 24);
-  if(!(await _claimOnce(env, 'totpsetspent', _b64u.enc(setupId), 900)))
+  const setupId = _b64u.enc((await _pkSha256(new TextEncoder().encode(pendRaw))).slice(0, 24));
+  if(!(await _claimOnce(env, 'totpsetspent', setupId, 900)))
     return json({ error: 'This setup has already been confirmed. Your recovery codes are the ones shown then.', code: 'totp_confirmed' }, 409);
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
