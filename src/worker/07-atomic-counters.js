@@ -138,23 +138,39 @@ export class AMVCounter {
        key of its own first, so a commit is never ahead of its value, and
        there is no timer that lets a stale writer overtake one. Refused when
        this holds a newer revision than the writer read. */
+    /* A DELETE IS A NEW GENERATION, NOT A FLAG (Nov 7 audit STATE-008/010).
+       The tombstone kept the revision it deleted and a commit skipped the
+       check whenever the record was absent - so a writer that had read the
+       record before the delete committed straight over it, and the deleted
+       content came back (an erased account's conversations, among others).
+       Now a delete moves the revision on, and a commit across a tombstone
+       must name that exact generation: only a writer that read "absent"
+       after the delete can create the record again, and it does so at a
+       revision above every one before it. A tombstone from before this
+       (`gen` unset) kept the old revision, so it counts as one above it. */
     if (op === 'revCommit') {
       const cur = await this.state.storage.get('rev');
       const expect = +body.expect || 0, set = +body.set || 0;
-      if (cur && !cur.absent && cur.rev > expect) return json({ ok: false, cur: cur.rev });
+      if (cur && cur.absent) {
+        const tomb = _revTombRev(cur);
+        if (expect !== tomb || set <= tomb) return json({ ok: false, cur: tomb, absent: true });
+      } else if (cur && cur.rev > expect) return json({ ok: false, cur: cur.rev });
       await this.state.storage.put('rev', { rev: set, digest: String(body.digest || ''), at: Date.now() });
       return json({ ok: true });
     }
     if (op === 'revGet') {
       const cur = await this.state.storage.get('rev');
       if (!cur) return json({ committed: false, rev: 0 });
-      return json({ committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent });
+      if (cur.absent) return json({ committed: true, rev: _revTombRev(cur), digest: null, absent: true });
+      return json({ committed: !!cur.digest, rev: cur.rev || 0, digest: cur.digest || null, absent: false });
     }
     if (op === 'revReset') {
-      const cur = (await this.state.storage.get('rev')) || { rev: 0 };
-      await this.state.storage.put('rev', body.absent ? { rev: cur.rev || 0, absent: true, at: Date.now() }
+      const cur = await this.state.storage.get('rev');
+      const was = cur ? (cur.absent ? _revTombRev(cur) : (cur.rev || 0)) : 0;
+      await this.state.storage.put('rev', body.absent
+        ? (cur && cur.absent ? cur : { rev: was + 1, gen: true, absent: true, at: Date.now() })
         : { rev: +body.rev || 0, digest: String(body.digest || ''), at: Date.now() });
-      return json({ ok: true });
+      return json({ ok: true, rev: body.absent ? (cur && cur.absent ? was : was + 1) : (+body.rev || 0) });
     }
     if (op === 'revCas') {
       const now = Date.now();
@@ -635,6 +651,9 @@ async function _outcomes(env, month, opt) {
   }
   return out;
 }
+/* The generation a tombstone stands for (revCommit): written with `gen`, it
+   is its own revision; from before generations, one above the one deleted. */
+function _revTombRev(cur){ return cur.gen ? (+cur.rev || 0) : (+cur.rev || 0) + 1; }
 /* The month figures written together (_econAdd): which names, and the
    object that holds them - one per shard per month. */
 const ECON_RE = /^(costtotal|featcost|outcome|cachesave|ttfb|ttfbsum|ttfbn):/;

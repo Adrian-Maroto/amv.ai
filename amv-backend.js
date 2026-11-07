@@ -1027,8 +1027,21 @@ async function _revRead(env, kind, id, raw){
     try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
   }
+  /* KNOWN STALE IS NEVER AN ANSWER (Nov 7 audit STATE-009). The copy here
+     is not the committed one and the committed one cannot be found: this
+     answered the copy anyway. A reader then showed - and a merge could build
+     on - content the record no longer holds. Refused instead, as a short
+     unavailability the caller can retry: the committed copy reaches this
+     region within the store's propagation time, or the read is repaired. */
   try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) { /* logging: it never decides anything */ }
-  return raw;
+  throw new RecordSettlingError(kind + ':' + id);
+}
+class RecordSettlingError extends Error {
+  constructor(key){
+    super('the committed copy of ' + key + ' is not readable here yet'); this.name = 'RecordSettlingError'; this.key = key;
+    /* An answer, not a fault (the router's amvRefusal): a short wait, said as one. */
+    this.amvRefusal = { status: 503, body: { error: 'Your latest changes are still arriving here. Try again in a few seconds.', code: 'record_settling' } };
+  }
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -1241,11 +1254,20 @@ const DB = {
        failed, or a region that has not seen it yet, never answers as current.
        Nothing is ever overtaken by a timer. */
     if(env.AMV_COUNTER){
+      /* Created after a delete: the writer read "absent", so it goes on from
+         the tombstone's generation (revCommit refuses any other). */
+      let j2 = j;
+      if(!(+expectedRev)){
+        let st = null;
+        try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+        if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
+        if(st.absent){ expectedRev = +st.rev || 0; obj._rev = expectedRev + 1; j2 = JSON.stringify(obj); }
+      }
       const nextRev = +obj._rev || 0;
-      const digest = await _revDigest(j);
+      const digest = await _revDigest(j2);
       const blob = _revBlobKey(kind, id, nextRev);
       if(!_revBlobKeyOK(blob)) throw new Error('bad_record_key');
-      await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
+      await env.AMV_KV.put(blob, j2, { expirationTtl: REV_BLOB_TTL_S });
       const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
       if(!cas || !cas.ok){
         try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
@@ -1253,9 +1275,9 @@ const DB = {
       }
       /* Committed. The copy is for readers; if it cannot be written, the
          committed value is kept with no expiry until a reader repairs it. */
-      try { await env.AMV_KV.put(`${kind}:${id}`, j); }
+      try { await env.AMV_KV.put(`${kind}:${id}`, j2); }
       catch(e){
-        try { await env.AMV_KV.put(blob, j); } catch(_) { /* said by the audit on the next line */ }
+        try { await env.AMV_KV.put(blob, j2); } catch(_) { /* said by the audit on the next line */ }
         try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
       }
       if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
@@ -4003,23 +4025,39 @@ export class AMVCounter {
        key of its own first, so a commit is never ahead of its value, and
        there is no timer that lets a stale writer overtake one. Refused when
        this holds a newer revision than the writer read. */
+    /* A DELETE IS A NEW GENERATION, NOT A FLAG (Nov 7 audit STATE-008/010).
+       The tombstone kept the revision it deleted and a commit skipped the
+       check whenever the record was absent - so a writer that had read the
+       record before the delete committed straight over it, and the deleted
+       content came back (an erased account's conversations, among others).
+       Now a delete moves the revision on, and a commit across a tombstone
+       must name that exact generation: only a writer that read "absent"
+       after the delete can create the record again, and it does so at a
+       revision above every one before it. A tombstone from before this
+       (`gen` unset) kept the old revision, so it counts as one above it. */
     if (op === 'revCommit') {
       const cur = await this.state.storage.get('rev');
       const expect = +body.expect || 0, set = +body.set || 0;
-      if (cur && !cur.absent && cur.rev > expect) return json({ ok: false, cur: cur.rev });
+      if (cur && cur.absent) {
+        const tomb = _revTombRev(cur);
+        if (expect !== tomb || set <= tomb) return json({ ok: false, cur: tomb, absent: true });
+      } else if (cur && cur.rev > expect) return json({ ok: false, cur: cur.rev });
       await this.state.storage.put('rev', { rev: set, digest: String(body.digest || ''), at: Date.now() });
       return json({ ok: true });
     }
     if (op === 'revGet') {
       const cur = await this.state.storage.get('rev');
       if (!cur) return json({ committed: false, rev: 0 });
-      return json({ committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent });
+      if (cur.absent) return json({ committed: true, rev: _revTombRev(cur), digest: null, absent: true });
+      return json({ committed: !!cur.digest, rev: cur.rev || 0, digest: cur.digest || null, absent: false });
     }
     if (op === 'revReset') {
-      const cur = (await this.state.storage.get('rev')) || { rev: 0 };
-      await this.state.storage.put('rev', body.absent ? { rev: cur.rev || 0, absent: true, at: Date.now() }
+      const cur = await this.state.storage.get('rev');
+      const was = cur ? (cur.absent ? _revTombRev(cur) : (cur.rev || 0)) : 0;
+      await this.state.storage.put('rev', body.absent
+        ? (cur && cur.absent ? cur : { rev: was + 1, gen: true, absent: true, at: Date.now() })
         : { rev: +body.rev || 0, digest: String(body.digest || ''), at: Date.now() });
-      return json({ ok: true });
+      return json({ ok: true, rev: body.absent ? (cur && cur.absent ? was : was + 1) : (+body.rev || 0) });
     }
     if (op === 'revCas') {
       const now = Date.now();
@@ -4500,6 +4538,9 @@ async function _outcomes(env, month, opt) {
   }
   return out;
 }
+/* The generation a tombstone stands for (revCommit): written with `gen`, it
+   is its own revision; from before generations, one above the one deleted. */
+function _revTombRev(cur){ return cur.gen ? (+cur.rev || 0) : (+cur.rev || 0) + 1; }
 /* The month figures written together (_econAdd): which names, and the
    object that holds them - one per shard per month. */
 const ECON_RE = /^(costtotal|featcost|outcome|cachesave|ttfb|ttfbsum|ttfbn):/;

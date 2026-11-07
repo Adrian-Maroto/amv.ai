@@ -124,8 +124,16 @@ section('Everything the page asks this origin for is in it');
    anything a future head addition points at. Cross-origin URLs and the API
    paths the app fetches at runtime are deliberately out of scope - those go to
    the Worker, not the static host. */
+/* Attributes in the markup, and the same names set from script (the head
+   links the boot code adds: `link.href='/manifest.webmanifest'`). Either
+   quote: this matched the minified page only because the minifier happens to
+   write double quotes, so a readable build (--no-minify) found nothing and
+   failed (Nov 7 audit REL-020). The readable bundle is read as well, so what
+   is found does not depend on how the page was built. */
 const refs = new Set();
-for (const m of page.matchAll(/(?:href|src|content)="\/([^"/][^"]*)"/g)) refs.add(m[1]);
+const ASSET_REF = /(?:href|src|content)\s*=\s*["']\/([^"'/\s][^"'\s]*)["']/g;
+for (const text of [page, readFileSync(R('app.js'), 'utf8')])
+  for (const m of text.matchAll(ASSET_REF)) if (!/^v\d|^api\/|^auth\/|^admin\//.test(m[1]) && /\.[a-z0-9]{2,12}$/i.test(m[1].split(/[?#]/)[0])) refs.add(m[1].split(/[?#]/)[0]);
 for (const r of [...refs].sort()) {
   ok(PUBLISH.includes(r), `the page asks for /${r}, and it is published`);
 }

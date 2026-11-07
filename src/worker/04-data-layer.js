@@ -67,8 +67,21 @@ async function _revRead(env, kind, id, raw){
     try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
   }
+  /* KNOWN STALE IS NEVER AN ANSWER (Nov 7 audit STATE-009). The copy here
+     is not the committed one and the committed one cannot be found: this
+     answered the copy anyway. A reader then showed - and a merge could build
+     on - content the record no longer holds. Refused instead, as a short
+     unavailability the caller can retry: the committed copy reaches this
+     region within the store's propagation time, or the read is repaired. */
   try { audit(env, 'rev_read_stale', { kind, id, rev: st.rev }); } catch(e) { /* logging: it never decides anything */ }
-  return raw;
+  throw new RecordSettlingError(kind + ':' + id);
+}
+class RecordSettlingError extends Error {
+  constructor(key){
+    super('the committed copy of ' + key + ' is not readable here yet'); this.name = 'RecordSettlingError'; this.key = key;
+    /* An answer, not a fault (the router's amvRefusal): a short wait, said as one. */
+    this.amvRefusal = { status: 503, body: { error: 'Your latest changes are still arriving here. Try again in a few seconds.', code: 'record_settling' } };
+  }
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -281,11 +294,20 @@ const DB = {
        failed, or a region that has not seen it yet, never answers as current.
        Nothing is ever overtaken by a timer. */
     if(env.AMV_COUNTER){
+      /* Created after a delete: the writer read "absent", so it goes on from
+         the tombstone's generation (revCommit refuses any other). */
+      let j2 = j;
+      if(!(+expectedRev)){
+        let st = null;
+        try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+        if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
+        if(st.absent){ expectedRev = +st.rev || 0; obj._rev = expectedRev + 1; j2 = JSON.stringify(obj); }
+      }
       const nextRev = +obj._rev || 0;
-      const digest = await _revDigest(j);
+      const digest = await _revDigest(j2);
       const blob = _revBlobKey(kind, id, nextRev);
       if(!_revBlobKeyOK(blob)) throw new Error('bad_record_key');
-      await env.AMV_KV.put(blob, j, { expirationTtl: REV_BLOB_TTL_S });
+      await env.AMV_KV.put(blob, j2, { expirationTtl: REV_BLOB_TTL_S });
       const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
       if(!cas || !cas.ok){
         try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
@@ -293,9 +315,9 @@ const DB = {
       }
       /* Committed. The copy is for readers; if it cannot be written, the
          committed value is kept with no expiry until a reader repairs it. */
-      try { await env.AMV_KV.put(`${kind}:${id}`, j); }
+      try { await env.AMV_KV.put(`${kind}:${id}`, j2); }
       catch(e){
-        try { await env.AMV_KV.put(blob, j); } catch(_) { /* said by the audit on the next line */ }
+        try { await env.AMV_KV.put(blob, j2); } catch(_) { /* said by the audit on the next line */ }
         try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
       }
       if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }

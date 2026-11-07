@@ -32,6 +32,7 @@ env.AMV_COUNTER = { _objects: { get: (k) => { const name = k.replace(/^rc\|/, ''
       const st = new Map();
       const obj = new W.AMVCounter({ storage: { async get(k) { return st.get(k); }, async put(k, v) { st.set(k, v); }, async delete(k) { st.delete(k); }, async deleteAll() { st.clear(); }, async setAlarm() {} } }, {});
       Object.defineProperty(obj, '__rev', { get: () => st.get('rev') });
+      Object.defineProperty(obj, '__st', { value: st });
       objects.set(name, obj);
     }
     const obj = objects.get(name);
@@ -80,17 +81,56 @@ section('Deleted is committed: a remaining copy is never read back');
   await W.DB.del(env, 'data', ME);
   kv.set(MAIN, JSON.stringify(rec(4, 'fourth')));          // a copy somewhere that the delete has not reached
   ok((await W.DB.get(env, 'data', ME)) === null, 'an erased record reads as absent, whatever copies remain');
-  ok((await W.DB.putIfRev(env, 'data', ME, rec(1, 'new life'), 0)).ok && (await W.DB.get(env, 'data', ME)).note === 'new life', 'and a new one can be written after it');
+  /* Nov 7 audit STATE-008/010: a writer that read the record BEFORE the
+     delete - revision 4 - must not put it back. It used to: the tombstone kept
+     revision 4 and a commit skipped the check whenever the record was absent. */
+  ok(!(await W.DB.putIfRev(env, 'data', ME, rec(5, 'resurrected'), 4)).ok && (await W.DB.get(env, 'data', ME)) === null,
+    'a writer holding the record from before the delete is refused, and it stays deleted');
+  ok(!(await W.DB.putIfRev(env, 'data', ME, rec(9, 'resurrected'), 9)).ok && (await W.DB.get(env, 'data', ME)) === null,
+    'so is one claiming a revision past the delete it never saw');
+  const life = rec(1, 'new life');
+  ok((await W.DB.putIfRev(env, 'data', ME, life, 0)).ok && (await W.DB.get(env, 'data', ME)).note === 'new life', 'a writer that read "absent" can create it again');
+  ok(life._rev === 6 && (await W.DB.get(env, 'data', ME))._rev === 6, 'above every revision before it: delete was generation 5, the new life is 6', life._rev);
+  ok(!(await W.DB.putIfRev(env, 'data', ME, rec(5, 'old'), 4)).ok, 'and the old writer is still refused against the new life');
+}
+
+section('The committed copy cannot be found: the stale one is not answered (Nov 7 audit STATE-009)');
+{
+  const OTHER = 'lee@example.com';
+  ok((await W.DB.putIfRev(env, 'data', OTHER, rec(1, 'committed'), 0)).ok, 'a committed value');
+  kv.set('data:' + OTHER, JSON.stringify(rec(0, 'stale')));
+  kv.delete('revblob:data:' + OTHER + ':1');
+  let threw = null;
+  try { await W.DB.get(env, 'data', OTHER); } catch (e) { threw = e; }
+  ok(threw && threw.name === 'RecordSettlingError' && threw.amvRefusal && threw.amvRefusal.status === 503 && threw.amvRefusal.body.code === 'record_settling',
+    'the read is refused as a short wait - a 503 the router answers as one, not the copy it knows is wrong', threw && threw.message);
+  kv.set('revblob:data:' + OTHER + ':1', JSON.stringify(rec(1, 'committed')));
+  ok((await W.DB.get(env, 'data', OTHER)).note === 'committed', 'and once the committed copy arrives, it is what is read');
+}
+
+section('A tombstone from before generations is one above the revision it deleted');
+{
+  const OLD = 'old@example.com';
+  env.AMV_COUNTER.get('rev:data:' + OLD);
+  /* Exactly what a delete wrote before this change: the revision it deleted, marked absent. */
+  objects.get('rev:data:' + OLD).__st.set('rev', { rev: 3, absent: true, at: Date.now() });
+  ok(!(await W.DB.putIfRev(env, 'data', OLD, rec(4, 'stale'), 3)).ok && (await W.DB.get(env, 'data', OLD)) === null,
+    'the writer that read revision 3 before that delete is refused');
+  const again = rec(1, 'again');
+  ok((await W.DB.putIfRev(env, 'data', OLD, again, 0)).ok && again._rev === 5, 'and a writer that read "absent" creates it at 5, above the delete', again._rev);
+  await W.DB.del(env, 'data', OLD);
+  const t = objects.get('rev:data:' + OLD).__rev;
+  ok(t && t.absent && t.gen === true && t.rev === 6, 'a delete now writes the next generation itself', t);
 }
 
 section('A restore is what readers see afterwards, byte for byte');
 {
-  ok((await W.DB.putIfRev(env, 'data', ME, rec(2, 'before restore'), 1)).ok, 'a committed value');
-  const restored = JSON.stringify(rec(7, 'from the backup'));
+  ok((await W.DB.putIfRev(env, 'data', ME, rec(7, 'before restore'), 6)).ok, 'a committed value');
+  const restored = JSON.stringify(rec(9, 'from the backup'));
   kv.set(MAIN, restored);                                   // what a restore writes
   await W._revCommitRestored(env, 'data', ME, restored);
   ok((await W.DB.get(env, 'data', ME)).note === 'from the backup' && kv.get(MAIN) === restored, 'readers get the restored value, unchanged - not the copy committed before it');
-  ok((await W.DB.putIfRev(env, 'data', ME, rec(8, 'after'), 7)).ok, 'and the next write goes on from the restored revision');
+  ok((await W.DB.putIfRev(env, 'data', ME, rec(10, 'after'), 9)).ok, 'and the next write goes on from the restored revision');
 }
 
 section('No object to commit with: nothing is written');
