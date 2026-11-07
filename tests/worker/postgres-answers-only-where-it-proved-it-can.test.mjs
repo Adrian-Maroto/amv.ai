@@ -251,6 +251,21 @@ section('The proof lives where it cannot be stale, and a comparison cannot outli
   ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'ultra', 'a write made outside the cohort still fences the proof');
   await settle();
 
+  /* Nov 7 audit DATA-030: reads switched OFF altogether, a write Postgres
+     misses, reads switched back on - the old proof must not answer. */
+  await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'ultra', updatedAt: ENT.updatedAt + 35 }));
+  await settle();
+  for (let i = 0; i < 3 && !proof('pgok:ent:in@example.com'); i++) { await new Promise(r => setTimeout(r, 1100)); await W.DB.get(env, 'ent', 'in@example.com'); await settle(); }
+  ok(!!proof('pgok:ent:in@example.com'), 'proved again, once Postgres has the write');
+  delete env.PG_READ;
+  env.PG = { connectionString: `postgres://${user}@127.0.0.1:1/postgres` };
+  try { await W.DB.put(env, 'ent', 'in@example.com', Object.assign({}, ENT, { plan: 'max', updatedAt: ENT.updatedAt + 36 })); } catch (e) {}
+  await settle();
+  env.PG = { connectionString: GOOD };
+  env.PG_READ = 'in@example.com';
+  ok((await W.DB.get(env, 'ent', 'in@example.com')).plan === 'max', 'a write made while reads were off still fences the proof - switching them on does not revive the old row');
+  await settle();
+
   /* The proof's object cannot be asked: Postgres does not answer. */
   const realNs = env.AMV_COUNTER;
   env.AMV_COUNTER = Object.assign({}, realNs, { get: (id) => { const inner = realNs.get(id); return { fetch: async (u, init) => {

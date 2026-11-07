@@ -217,11 +217,21 @@ function _pgReadVerify(env, kind, email){
 /* Called by DB.put / DB.del BEFORE KV is written: the proof goes first. If it
    cannot be removed, this throws and the write does not happen - a record
    whose proof outlived its change is the one thing that may not exist. */
+/* Whether a write must move the proof epoch: whenever Postgres is there to
+   hold proofs at all - not only while reads are on (Nov 7 audit DATA-030).
+   Gated on PG_READ, a write made while reads were switched off left every
+   earlier proof standing, and switching reads back on answered from a row
+   that write never reached. */
+function _pgFenceApplies(env, kind, id){
+  if (!env || !PG_READ_KINDS.has(kind) || !_pgOn(env) || DB._hasD1(env)) return '';
+  const email = String(id || '').toLowerCase();
+  return email.includes('@') ? email : '';
+}
 async function _pgReadFence(env, kind, id){
   /* Every write of a record Postgres may answer for is fenced - inside the
-     read cohort or not - so a proof left from a time the record was in it
-     cannot outlive a write made while it was out. */
-  const email = _pgReadApplies(env, kind, id);
+     read cohort or not, reads on or not - so a proof left from a time the
+     record was answered from Postgres cannot outlive a write made since. */
+  const email = _pgFenceApplies(env, kind, id);
   if (!email) return undefined;
   if (!env.AMV_COUNTER) return undefined;
   const r = await counter(env, _pgProofName(kind, email), { op: 'proofFence' });
