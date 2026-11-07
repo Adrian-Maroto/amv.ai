@@ -116,6 +116,14 @@ async function _autoQueueConsume(batch, env){
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
+    /* The hourly capability check's probe (85-synthetics.js): proof the
+       queue delivers, stamped with when it arrived. Never stopped by a
+       switch - it does no work and spends nothing. */
+    if(body.kind === 'synth'){
+      try{ await env.AMV_KV.put(SYNTH_QUEUE_KEY, JSON.stringify({ sent: +body.at || 0, got: Date.now() }), { expirationTtl: 3 * 86400 }); }
+      catch(e){ audit(env, 'synth_queue_unrecorded', {}); }
+      msg.ack(); continue;
+    }
     if(body.kind === 'outbox'){
       try{ await _outboxConsume(env, msg); }
       catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }

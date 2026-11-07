@@ -45,7 +45,8 @@ section('Every configured capability does one real, harmless thing');
   ok(r.results.payments.ok === true && seen.some(u => /api\.stripe\.com\/v1\/balance/.test(u)), 'the payments key reads the balance - a read, nothing charged', r.results.payments);
   ok(r.results.library.ok === true && env.AMV_FILES._files.size === 0, 'storage writes, reads back and deletes its probe, leaving nothing', r.results.library);
   ok(r.results.postgres.ok === null && /not configured/.test(r.results.postgres.why), 'what is not configured is said to be, not counted as working', r.results.postgres);
-  ok(['job_queue', 'browser', 'meaning'].every(k => r.results[k].ok === null && /not exercised/.test(r.results[k].why)), 'and what is not exercised says so');
+  ok(['browser', 'meaning'].every(k => r.results[k].ok === null && /not exercised/.test(r.results[k].why)), 'and what is not exercised says so');
+  ok(r.results.job_queue.ok === null && /not configured/.test(r.results.job_queue.why), 'with no queue bound, the queue is not configured');
   ok(r.failed.length === 0, 'nothing failed', r.failed);
   ok(!seen.some(u => /charges|payment_intents|emails$/.test(u)), 'nothing was charged or sent', seen);
 }
@@ -61,6 +62,23 @@ section('A key the provider no longer takes is found, named and told');
   ok(told.length === 0, 'and not again within the day', told);
   const p = await W._synthProved(env, Date.now());
   ok(p.state === 'failing' && p.proved.payments === false && p.proved.model === true, 'readiness reports it as configured and broken', p);
+}
+
+section('The queue is proved by a round trip, not by accepting a message (Nov 7 audit READY-021)');
+{
+  const env = mkEnv(); answer = {};
+  const sentQ = [];
+  env.AMV_JOBS = { async sendBatch(msgs) { sentQ.push(...msgs.map(m => m.body)); } };
+  let r = await W.runCapabilitySynthetics(env);
+  ok(r.results.job_queue.ok === true && sentQ.length === 1 && sentQ[0].kind === 'synth', 'the first run sends a probe - all it can prove yet', r.results.job_queue);
+  r = await W.runCapabilitySynthetics(env);
+  ok(r.results.job_queue.ok === false && /never delivered/.test(r.results.job_queue.why), 'a probe nothing took off the queue fails the next run', r.results.job_queue);
+  /* The consumer takes the newest probe off, as the real queue would. */
+  const m = { body: sentQ[sentQ.length - 1], ack() { this.acked = true; }, retry() {} };
+  await W.default.queue({ queue: 'amv-jobs', messages: [m] }, env, { waitUntil() {} });
+  ok(m.acked, '(the consumer takes it)');
+  r = await W.runCapabilitySynthetics(env);
+  ok(r.results.job_queue.ok === true, 'once it arrives, the queue is proved', r.results.job_queue);
 }
 
 section('A model key that lists models but cannot answer is broken (Nov 7 audit READY-022)');

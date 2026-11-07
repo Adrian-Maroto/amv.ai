@@ -13548,6 +13548,14 @@ async function _autoQueueConsume(batch, env){
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
+    /* The hourly capability check's probe (85-synthetics.js): proof the
+       queue delivers, stamped with when it arrived. Never stopped by a
+       switch - it does no work and spends nothing. */
+    if(body.kind === 'synth'){
+      try{ await env.AMV_KV.put(SYNTH_QUEUE_KEY, JSON.stringify({ sent: +body.at || 0, got: Date.now() }), { expirationTtl: 3 * 86400 }); }
+      catch(e){ audit(env, 'synth_queue_unrecorded', {}); }
+      msg.ack(); continue;
+    }
     if(body.kind === 'outbox'){
       try{ await _outboxConsume(env, msg); }
       catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }
@@ -47954,7 +47962,26 @@ const SYNTH_PROBES = [
   { id: 'payments', on: (env) => _has(env, 'STRIPE_SECRET_KEY'),
     run: (env) => _synthHttp('https://api.stripe.com/v1/balance', { Authorization: 'Bearer ' + env.STRIPE_SECRET_KEY }) },
 ];
-const SYNTH_NOT_EXERCISED = ['job_queue', 'browser', 'meaning'];
+/* THE QUEUE, ROUND TRIP (Nov 7 audit READY-021). Each run sends a probe
+   and reads what the consumer recorded for the one before: the last probe
+   must have arrived, and within the hour. Sending alone proved only that the
+   queue accepts messages, not that anything ever takes them off it. */
+const SYNTH_QUEUE_KEY = 'synth:queue';
+SYNTH_PROBES.push({ id: 'job_queue', on: (env) => _jobQueueOn(env),
+  run: async (env) => {
+    let last = null;
+    try { last = JSON.parse((await env.AMV_KV.get(SYNTH_QUEUE_KEY)) || 'null'); } catch (e) { last = null; }
+    let sentBefore = 0;
+    try { sentBefore = +(await env.AMV_KV.get(SYNTH_QUEUE_KEY + ':sent')) || 0; } catch (e) { sentBefore = 0; }
+    const at = Date.now();
+    await env.AMV_JOBS.sendBatch([{ body: { kind: 'synth', at } }]);
+    await env.AMV_KV.put(SYNTH_QUEUE_KEY + ':sent', String(at), { expirationTtl: 3 * 86400 });
+    /* The first run has nothing to compare with: sending is all it can prove. */
+    if (!sentBefore) return;
+    if (!last || +last.sent < sentBefore) throw new Error('the probe sent at the last check was never delivered');
+    if (+last.got - +last.sent > 3600 * 1000) throw new Error('the last probe took ' + Math.round((+last.got - +last.sent) / 60000) + ' minutes to arrive');
+  } });
+const SYNTH_NOT_EXERCISED = ['browser', 'meaning'];
 
 /* A STOP MEANS NO PROVIDER IS CALLED (stop-means-stop-spending). Listing
    models costs nothing, but "paused" and "the day's ceiling is reached" are
