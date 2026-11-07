@@ -104,6 +104,12 @@
    "owner": "src/worker/61-owner-digest.js",
    "retry": "retried in five minutes; dead-lettered messages are acknowledged and recorded, the cron outbox still holds them",
    "runs": "_outboxConsume"
+  },
+  "synth": {
+   "what": "the hourly capability check's queue probe",
+   "owner": "src/worker/85-synthetics.js",
+   "retry": "never retried: acknowledged on arrival with the time it came; a probe that never arrives fails the next hourly check",
+   "runs": "_autoQueueConsume"
   }
  }
 }
