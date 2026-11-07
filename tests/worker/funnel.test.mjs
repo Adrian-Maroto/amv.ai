@@ -182,7 +182,7 @@ section('Each step is wired to the event that actually proves it');
   ok(/await _funnelMark\(env, user\.email, 'activated'\)/.test(src) &&
      /total > 0/.test(src.slice(src.indexOf("'activated'") - 400, src.indexOf("'activated'") + 100)),
      'activated fires when AMV has finished writing a real answer, not on a page view');
-  ok(/else if\(first !== day\) await _funnelMark\(env, email, 'returned'\)/.test(src),
+  ok(/else if\(rec\.day !== day\)\{\s*await _funnelMark\(env, email, 'returned'\)/.test(src),
      'returned fires on a different calendar day from the first');
   ok(/_planPriceUSD\(_planOf\(ent\), ent\.custom\) > 0 && _planPriceUSD\(_planOf\(prev\), prev\.custom\) === 0/.test(src),
      'paid fires only on the transition from not paying to paying');

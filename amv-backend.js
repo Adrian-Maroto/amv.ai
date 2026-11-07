@@ -35556,10 +35556,64 @@ async function _markActive(env, email){
        day is remembered for as long as the funnel counts, so this stays true
        for somebody who returns after a month. */
     const firstKey = `factive:${email}`;
-    const first = await env.AMV_KV.get(firstKey);
-    if(!first) await env.AMV_KV.put(firstKey, day, { expirationTtl: FUNNEL_TTL_S });
-    else if(first !== day) await _funnelMark(env, email, 'returned');
+    const raw = await env.AMV_KV.get(firstKey);
+    /* WHO IS STILL HERE N WEEKS LATER (retention by signup cohort). "Came
+       back once, ever" looks healthy for a product that loses everybody by
+       week three. So the first active day's record also notes which weeks
+       after it the person was active in - each week counted once, at most
+       RET_WEEKS writes for a whole life, no new record kind - into the month
+       map the owner's figures already read in one call per shard. A record
+       from before this (a bare date) is not counted into a cohort: its
+       cohort's size was never counted, so its share would be invented. */
+    let rec = null;
+    try { rec = raw ? (raw.charAt(0) === '{' ? JSON.parse(raw) : { day: raw, legacy: true }) : null; } catch (e) { rec = { day: String(raw), legacy: true }; }
+    if(!rec){
+      await env.AMV_KV.put(firstKey, JSON.stringify({ day, w: [] }), { expirationTtl: FUNNEL_TTL_S });
+      await _econAdd(env, email, [['ret:' + _cohortWeekOf(day) + ':w0', 1]]);
+    } else if(rec.day !== day){
+      await _funnelMark(env, email, 'returned');
+      const n = Math.floor((Date.parse(day + 'T00:00:00Z') - Date.parse(rec.day + 'T00:00:00Z')) / (7 * 86400000));
+      if(!rec.legacy && n >= 1 && n <= RET_WEEKS && !(rec.w || []).includes(n)){
+        rec.w = (rec.w || []).concat(n);
+        await env.AMV_KV.put(firstKey, JSON.stringify(rec), { expirationTtl: FUNNEL_TTL_S });
+        await _econAdd(env, email, [['ret:' + _cohortWeekOf(rec.day) + ':w' + n, 1]]);
+      }
+    }
   }catch(e){ /* best-effort */ }
+}
+
+const RET_WEEKS = 12;
+/* The Monday of the week a day falls in: the cohort a person started in. */
+function _cohortWeekOf(day){
+  const d = new Date(String(day) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+/* The last twelve signup weeks, each with its size and the share of it active
+   one, two ... twelve weeks on - only for weeks that have finished. Read from
+   the month maps of the last four months: one call per shard per month. */
+async function _retentionReport(env, now){
+  const t = now || Date.now();
+  const months = [];
+  for(let i = 0; i < 4; i++){ const d = new Date(t); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - i); months.push(d.toISOString().slice(0, 7)); }
+  const sum = {};
+  for(const m of await Promise.all(months.map(m => _econMonth(env, m).catch(() => ({})))))
+    for(const [k, v] of Object.entries(m)) if(k.startsWith('ret:')) sum[k] = (sum[k] || 0) + (+v || 0);
+  const thisWeek = _cohortWeekOf(new Date(t).toISOString().slice(0, 10));
+  const cohorts = [];
+  for(let i = 0; i < RET_WEEKS; i++){
+    const start = new Date(Date.parse(thisWeek + 'T00:00:00Z') - i * 7 * 86400000).toISOString().slice(0, 10);
+    const size = sum['ret:' + start + ':w0'] || 0;
+    const weeks = [];
+    for(let n = 1; n <= RET_WEEKS; n++){
+      const finished = Date.parse(start + 'T00:00:00Z') + (n + 1) * 7 * 86400000 <= t;
+      if(!finished) break;
+      const c = sum['ret:' + start + ':w' + n] || 0;
+      weeks.push({ n, count: c, pct: size ? +((c / size) * 100).toFixed(1) : null });
+    }
+    cohorts.push({ week: start, size, weeks });
+  }
+  return { cohorts, weeks: RET_WEEKS };
 }
 
 /* ── Growth tracking: a tiny per-day counter so the owner can see TRENDS, not
@@ -36038,6 +36092,7 @@ async function adminStats(request, env) {
        onboarding work is trying to move, and the only one that says whether it
        did (AMV-101). */
     funnel: await _funnelReport(env),
+    retention: await _retentionReport(env).catch(() => null),
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,
                teamSeatsSold: seatsSold, teamSeatMRR: seatsSold * TEAM_SEAT_PRICE_USD },
     margin: (() => {

@@ -518,26 +518,39 @@ function _admRenderTab(tab, backendLive, live){
       })());
   }
   else if(tab==='growth'){
-    // build a conversion funnel from locally tracked events
-    const log=(AEGIS._loadLog?AEGIS._loadLog():[]).filter(e=>e.event==='track');
-    const cnt=n=>log.filter(e=>e.name===n).length;
-    const steps=[
-      {label:'Signed up',n:cnt('signup')},
-      {label:'Sent first message',n:cnt('activated_first_message')},
-      {label:'Viewed upgrade nudge',n:cnt('upgrade_nudge_shown')},
-      {label:'Started checkout',n:cnt('upgrade_checkout_started')},
-    ];
-    const top=Math.max(1,steps[0].n,...steps.map(s=>s.n));
-    const funnel='<div class="adm-funnel">'+steps.map((s,i)=>{
-      const pct=Math.round((s.n/top)*100);
-      const conv=i>0&&steps[i-1].n>0?Math.round((s.n/steps[i-1].n)*100)+'% of prev':'';
-      return '<div class="adm-fnl-row"><div class="adm-fnl-top"><span>'+s.label+'</span><span class="adm-fnl-n">'+s.n+(conv?' <span class="adm-fnl-conv">'+conv+'</span>':'')+'</span></div><div class="adm-fnl-track"><div class="adm-fnl-fill" style="width:'+Math.max(pct,2)+'%"></div></div></div>';
-    }).join('')+'</div>';
-    el.innerHTML=
-      _admCard('Conversion funnel', funnel + '<p class="adm-note">Tracked locally from real user events. '+(log.length?log.length+' events recorded this session.':'Events populate as users move through the app.')+'</p>')+
-      _admCard('Engagement', _admPending('DAU/WAU/MAU, retention curves, peak traffic monitoring, usage trends over time'))+
-      _admCard('Distribution', _admPending('Geographic & language distribution, device/browser/OS analytics, live world map of active users'));
+    /* FROM THE SERVER, ACROSS EVERYBODY. This tab used to build its funnel
+       from the events logged in THIS browser - the owner's own clicks - and
+       label it "tracked from real user events". The server has counted the
+       real funnel all along (_funnelReport) and the cohorts now (_retentionReport). */
+    const f = live && live.funnel, r = live && live.retention;
+    const steps = f ? [
+      { label: 'Signed up', n: f.signup || 0 },
+      { label: 'Got a real answer', n: f.activated || 0, pct: f.activatedPct },
+      { label: 'Came back on another day', n: f.returned || 0, pct: f.returnedPct },
+      { label: 'Paid', n: f.paid || 0, pct: f.paidPct },
+    ] : [];
+    const top = Math.max(1, ...steps.map(x => x.n));
+    const funnel = f ? '<div class="adm-funnel">' + steps.map(x =>
+      '<div class="adm-fnl-row"><div class="adm-fnl-top"><span>' + escH(x.label) + '</span><span class="adm-fnl-n">' + x.n.toLocaleString()
+      + (x.pct != null ? ' <span class="adm-fnl-conv">' + x.pct + '% of sign-ups</span>' : '') + '</span></div>'
+      + '<div class="adm-fnl-track"><div class="adm-fnl-fill" style="width:' + Math.max(Math.round(x.n / top * 100), 2) + '%"></div></div></div>').join('') + '</div>'
+      + (f.firstAnswer && f.firstAnswer.measured ? '<p class="adm-note">' + (f.firstAnswer.under3MinPct != null ? f.firstAnswer.under3MinPct + '% got their first real answer within three minutes of signing up.' : '') + (f.avgDaysToPay != null ? ' Those who pay take ' + f.avgDaysToPay + ' days on average.' : '') + '</p>' : '')
+      : '';
+    /* Retention by the week people started: the number to steer by. Each cell
+       is the share of that week's sign-ups active that many weeks later; a
+       week that has not finished yet is left empty, not counted as zero. */
+    const shown = [1, 2, 4, 8, 12];
+    const cohorts = r && (r.cohorts || []).filter(c => c.size > 0);
+    const table = cohorts && cohorts.length
+      ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Started the week of</th><th>People</th>' + shown.map(n => '<th>Week ' + n + '</th>').join('') + '</tr></thead><tbody>'
+        + cohorts.map(c => '<tr><td>' + escH(c.week) + '</td><td>' + c.size.toLocaleString() + '</td>' + shown.map(n => { const w = (c.weeks || []).find(x => x.n === n); return '<td>' + (w && w.pct != null ? w.pct + '%' : '\u2013') + '</td>'; }).join('') + '</tr>').join('')
+        + '</tbody></table></div><p class="adm-note">Of the people who started each week, the share who used AMV again that many weeks later. Week 4 above 30% is a product people keep; under 10% is a product people try.</p>'
+      : '<div class="adm-empty">No cohort has started yet. The first row appears a week after people start signing up.</div>';
+    el.innerHTML =
+      _admCard('Who signs up, and who stays', live ? (f ? funnel : '<div class="adm-empty">Nothing counted yet.</div>') : _admPending('Sign-up, first answer, coming back and paying, across everybody'))
+      + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'));
   }
+
 }
 function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
 function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
