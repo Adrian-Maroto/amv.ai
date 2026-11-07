@@ -44949,17 +44949,18 @@ async function passkeyRegister(request, env){
       : 'That passkey could not be verified, so it was not added.';
     return json({ error: msg, code: 'passkey_refused' }, 400);
   }
-  if(await env.AMV_KV.get('pkcred:' + made.credId)) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
+  if(!(await _pkCredReserve(env, made.credId, em))) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
   const name = String(body.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 60) || 'Passkey';
-  const r = await _withAcct(env, user.email, (a) => {
+  let r;
+  try{ r = await _withAcct(env, user.email, (a) => {
     if(!a) return { error: 'unauthorized', status: 401 };
     a.passkeys = Array.isArray(a.passkeys) ? a.passkeys : [];
     if(a.passkeys.length >= PK_MAX) return { error: 'passkey_limit', status: 409 };
     if(a.passkeys.some(k => k.id === made.credId)) return { error: 'passkey_exists', status: 409 };
     a.passkeys.push({ id: made.credId, alg: made.alg, jwk: made.jwk, count: made.count, name, at: Date.now(), used: 0, backedUp: !!made.backedUp });
-  });
+  }); }catch(e){ await _pkCredUnreserve(env, made.credId, em); throw e; }
+  if(r && r.error){ await _pkCredUnreserve(env, made.credId, em); }
   if(r && r.error) return json({ error: r.error === 'passkey_limit' ? 'An account can hold ' + PK_MAX + ' passkeys.' : 'That passkey could not be added.', code: r.error }, r.status || 400);
-  await env.AMV_KV.put('pkcred:' + made.credId, em);
   audit(env, 'passkey_added', { email: em });
   await _userEvent(env, request, em, 'passkey_added', { name });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -44969,6 +44970,27 @@ async function passkeyRegister(request, env){
    the second half of a passkey sign-up. The challenge was minted for this
    address and is spent once; the account and its passkey are written in one
    step, under the account's lock, or not at all. */
+/* ONE PASSKEY, ONE ACCOUNT, NEVER HALF-MADE (Nov 7 audit AUTH-020). The
+   index that sign-in looks a passkey up by was checked with a read and
+   written after the account: two registrations of one credential at once
+   both passed the check, and a Worker that stopped between the two writes
+   left an account holding a passkey no sign-in could ever find. Now the
+   credential is claimed first (one winner, atomically), the index written,
+   and only then the account; if the account is not made the index is taken
+   back. An index left by a crash points at an account that does not hold
+   the passkey, so sign-in - which checks the account's own list - refuses
+   it rather than letting anybody in. */
+async function _pkCredReserve(env, credId, em){
+  if(await env.AMV_KV.get('pkcred:' + credId)) return false;
+  const credKey = String(credId);
+  if(!(await _claimOnce(env, 'pkcredclaim', credKey, 86400))) return false;
+  await env.AMV_KV.put('pkcred:' + credKey, em);
+  return true;
+}
+async function _pkCredUnreserve(env, credId, em){
+  try{ if((await env.AMV_KV.get('pkcred:' + credId)) === em) await env.AMV_KV.delete('pkcred:' + credId); }
+  catch(e){ audit(env, 'passkey_index_left', { email: em }); }
+}
 async function _passkeySignupFinish(request, env, site, body){
   const em = String(body.email || '').toLowerCase().trim();
   const rec = await _pkSpend(env, body.cid, 'signup', em);
@@ -44980,18 +45002,17 @@ async function _passkeySignupFinish(request, env, site, body){
     audit(env, 'passkey_refused', { email: em, why: String(e && e.message || e).slice(0, 40), at: 'signup' });
     return json({ error: /not_verified/.test(String(e && e.message)) ? 'That passkey was made without a fingerprint, face or PIN, so it cannot be used to sign in.' : 'That passkey could not be verified, so no account was made. Try again, or use a password.', code: 'passkey_refused' }, 400);
   }
-  if(await env.AMV_KV.get('pkcred:' + made.credId)) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
+  if(!(await _pkCredReserve(env, made.credId, em))) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
   const sipHash = await _ipHash(env, request);
   const name = String(rec.name || '');
   let created = false;
-  await _withKind(env, 'acct', em, (a) => {
+  try{ await _withKind(env, 'acct', em, (a) => {
     if(a && a.email) return;
     Object.assign(a, { email: em, name, provider: 'email', createdAt: Date.now(), sipHash,
       passkeys: [{ id: made.credId, alg: made.alg, jwk: made.jwk, count: made.count, name: 'Passkey', at: Date.now(), used: 0, backedUp: !!made.backedUp }] });
     created = true;
-  }, {});
-  if(!created) return json({ error: 'There is already an account with this email. Sign in instead.', code: 'account_exists' }, 409);
-  await env.AMV_KV.put('pkcred:' + made.credId, em);
+  }, {}); }catch(e){ await _pkCredUnreserve(env, made.credId, em); throw e; }
+  if(!created){ await _pkCredUnreserve(env, made.credId, em); return json({ error: 'There is already an account with this email. Sign in instead.', code: 'account_exists' }, 409); }
   audit(env, 'passkey_added', { email: em, at: 'signup' });
   return _accountCreated(env, request, em, name, body);
 }

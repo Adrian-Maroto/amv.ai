@@ -245,6 +245,37 @@ section('A passkey belongs to one account: its id cannot be taken by another (No
   ok(fake.status === 401 && !fake.d.token, 'and the copy under the same id signs nobody in: it is checked against the key that was registered', fake.status);
 }
 
+section('One credential registered from two accounts at once: one wins; a failed write leaves no index (Nov 7 audit AUTH-020)');
+{
+  const mk = async (email) => { await W.DB.put(env, 'acct', email, { email, name: email[0], provider: 'passkey', createdAt: Date.now() });
+    return (await W.issueTokens(env, email, email[0], '')).token; };
+  const aTok = await mk('ann@example.com'), bTok = await mk('bob@example.com');
+  const k = await makeAuthenticator(), twin = await makeAuthenticator({ credId: k.credId });
+  const [oa, ob] = await Promise.all([call('/auth/passkey/options', { purpose: 'register' }, aTok), call('/auth/passkey/options', { purpose: 'register' }, bTok)]);
+  const [ca, cb] = await Promise.all([k.create({ challenge: oa.d.publicKey.challenge, origin: ORIGIN, rpId: RP }), twin.create({ challenge: ob.d.publicKey.challenge, origin: ORIGIN, rpId: RP })]);
+  /* Both at once, the index read slowed. (This harness does not interleave
+     them finely enough to fail without the claim; the claim is the one-winner
+     guarantee, and this holds the outcome.) */
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (key, ...x) => { if (String(key).startsWith('pkcred:')) await new Promise(r => setTimeout(r, 30)); return realGet.call(env.AMV_KV, key, ...x); };
+  const both = await Promise.all([call('/auth/passkey/register', { cid: oa.d.cid, credential: ca }, aTok), call('/auth/passkey/register', { cid: ob.d.cid, credential: cb }, bTok)]);
+  env.AMV_KV.get = realGet;
+  const won = both.filter(r => r.status === 200);
+  ok(won.length === 1 && both.some(r => r.status === 409), 'exactly one of them holds it', both.map(r => r.status));
+  const winner = both[0].status === 200 ? 'ann@example.com' : 'bob@example.com';
+  ok(m.get('pkcred:' + k.credId) === winner && ((await W.DB.get(env, 'acct', winner)).passkeys || []).some(p => p.id === k.credId), 'and the index points at the account that holds it', m.get('pkcred:' + k.credId));
+
+  /* The account write fails: no index is left pointing at nobody. */
+  const cTok = await mk('cal@example.com');
+  const k2 = await makeAuthenticator();
+  const oc = await call('/auth/passkey/options', { purpose: 'register' }, cTok);
+  const realPut = env.AMV_KV.put;
+  env.AMV_KV.put = async (key, v, o) => { if (String(key) === 'acct:cal@example.com') throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
+  const fail = await call('/auth/passkey/register', { cid: oc.d.cid, credential: await k2.create({ challenge: oc.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, cTok);
+  env.AMV_KV.put = realPut;
+  ok(fail.status !== 200 && !m.has('pkcred:' + k2.credId), 'a passkey whose account could not be saved leaves no index behind', [fail.status, m.get('pkcred:' + k2.credId)]);
+}
+
 section('The last way into an account is never removed');
 {
   /* An account with no password and no Google sign-in - only a passkey. Its
