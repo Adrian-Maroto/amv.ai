@@ -33262,6 +33262,20 @@ const WALLET_LOCK_TRIES = 6;
    refusal that had already touched the record committed the touch. Now a
    result that refuses - `{ commit: false }`, or an error with a status or a
    code - skips the save. Throwing still skips it too. */
+/* THE LEASE IS CHECKED BEFORE THE COMMIT, NOT AFTER (Nov 7 audit LOCK-001).
+   A lock is a 15-second lease. A mutate slow enough to outlive it - a stalled
+   read, a busy isolate - finished after another writer had taken the lock
+   and written, and then saved its older copy over theirs; the release noticed
+   only once the damage was done. A writer now commits only while its lease
+   still has a margin left; past it, nothing is saved and the change is
+   refused as busy, which every caller already turns into "try again". */
+const RMUT_LEASE_S = 15;
+const RMUT_COMMIT_BY_MS = 11000;
+function _leaseOver(started){ return Date.now() - started > RMUT_COMMIT_BY_MS; }
+function _leaseLost(env, kind, key){
+  audit(env, 'lock_lease_too_short', { kind, id: String(key).slice(0, 120) });
+  const e = new Error(kind + ' is busy'); e.code = 'record_busy'; return e;
+}
 const _mutRefuses = (o) => !!(o && typeof o === 'object' && (o.commit === false || (typeof o.error === 'string' && (o.status != null || o.code != null))));
 async function _withRecord(env, kind, id, load, save, mutate) {
   /* The key is used AS GIVEN. It used to be lowercased here, which is right for
@@ -33273,11 +33287,15 @@ async function _withRecord(env, kind, id, load, save, mutate) {
   const key = String(id || '');
   if (!key) return null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'rmut:' + kind, key, 15)) {
+    if (await _claimOnce(env, 'rmut:' + kind, key, RMUT_LEASE_S)) {
+      const started = Date.now();
       try {
         const rec = await load(env, key);
         const out = await mutate(rec);
-        if (!_mutRefuses(out)) await save(env, key, rec);
+        if (!_mutRefuses(out)) {
+          if (_leaseOver(started)) throw _leaseLost(env, kind, key);
+          await save(env, key, rec);
+        }
         return out;
       } finally { await _releaseClaim(env, 'rmut:' + kind, key); }
     }
@@ -33304,11 +33322,15 @@ async function _withWallet(env, email, mutate) {
   if (!em) return null;
   let lastErr = null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'wmut', em, 15)) {
+    if (await _claimOnce(env, 'wmut', em, RMUT_LEASE_S)) {
+      const started = Date.now();
       try {
         const w = await _wallet(env, em);
         const out = await mutate(w);
-        if (!_mutRefuses(out)) await _saveWallet(env, em, w);
+        if (!_mutRefuses(out)) {
+          if (_leaseOver(started)) throw _leaseLost(env, 'wallet', em);
+          await _saveWallet(env, em, w);
+        }
         return out;
       } catch (e) { lastErr = e; throw e; }
       finally { await _releaseClaim(env, 'wmut', em); }

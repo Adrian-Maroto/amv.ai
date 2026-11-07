@@ -51,6 +51,23 @@ for (const [name, run, read] of cases) {
   ok(read() !== before, 'an ordinary result commits');
 }
 
+section('A writer whose lease ran out commits nothing (Nov 7 audit LOCK-001)');
+{
+  /* The mutate is slow enough for the 15-second lease to be gone - the clock
+     is moved, not waited for. Another writer could already be inside. */
+  const realNow = Date.now;
+  for (const [name, run, read] of cases) {
+    const before = read();
+    let threw = null;
+    try {
+      await run((r) => { Date.now = () => realNow() + 13000; if (name === '_withWallet') r.balance = (+r.balance || 0) + 500; else r.n = (r.n || 0) + 500; });
+    } catch (e) { threw = e; }
+    Date.now = realNow;
+    ok(threw && threw.code === 'record_busy' && read() === before, name + ': past its lease, it saves nothing and says busy - it does not overwrite whoever holds the lock now', { code: threw && threw.code, before, after: read() });
+    claims.clear();
+  }
+}
+
 console.log = quiet;
 if (report('a-refusal-writes-nothing') > 0) process.exitCode = 1;
 done();
