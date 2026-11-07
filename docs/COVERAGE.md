@@ -2,14 +2,14 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-07 from 389 suites (1 exited non-zero: erasure.test.mjs).
+2026-11-07 from 389 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
 this is branch coverage in bytes. Browser suites (tests/e2e) are not counted here: they drive
 the Worker too, so these numbers are a floor.
 
-**Whole Worker:** functions 1166/1184 (98.5%), code 92.4%.
+**Whole Worker:** functions 1166/1184 (98.5%), code 92.8%.
 
 ## The trust areas
 
@@ -17,12 +17,12 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 123/123 (100.0%), code 91.4%.
+Functions 123/123 (100.0%), code 91.8%.
 
 
 ### Company sign-in and SCIM
 
-Functions 30/30 (100.0%), code 81.5%.
+Functions 30/30 (100.0%), code 81.7%.
 
 
 ### Teams and permissions
@@ -32,7 +32,7 @@ Functions 46/46 (100.0%), code 87.5%.
 
 ### Money: subscriptions, payments, credit, payouts, marketplace
 
-Functions 71/71 (100.0%), code 93.3%.
+Functions 71/71 (100.0%), code 93.9%.
 
 
 ### Spending limits and usage
@@ -47,7 +47,7 @@ Functions 6/6 (100.0%), code 87.3%.
 
 ### Webhooks and event triggers
 
-Functions 52/52 (100.0%), code 93.2%.
+Functions 52/52 (100.0%), code 93.5%.
 
 
 ## Every file
@@ -101,49 +101,49 @@ Functions 52/52 (100.0%), code 93.2%.
 | `36-share-pages.js` | 12/12 | 92.4% |
 | `37-connector-directory.js` | 2/2 | 93.3% |
 | `38-connector-logos.js` | 8/10 | 83.8% |
-| `39-resumable-streams.js` | 17/17 | 94.9% |
-| `40-widget.js` | 12/12 | 92.5% |
-| `41-signed-tokens.js` | 29/29 | 93.4% |
+| `39-resumable-streams.js` | 17/17 | 95.2% |
+| `40-widget.js` | 12/12 | 92.8% |
+| `41-signed-tokens.js` | 29/29 | 94.9% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
-| `43-sms-agent.js` | 9/9 | 89.6% |
+| `43-sms-agent.js` | 9/9 | 90.0% |
 | `44-payments.js` | 2/2 | 99.3% |
-| `45-abuse-and-activity.js` | 6/6 | 92.8% |
-| `46-referrals.js` | 27/27 | 96.2% |
-| `47-renewal-sweep.js` | 7/7 | 93.7% |
-| `48-other-calendars.js` | 8/10 | 73.7% |
-| `49-renewals-and-ledger.js` | 9/9 | 89.4% |
-| `50-extra-usage.js` | 13/13 | 91.8% |
-| `51-marketplace.js` | 3/3 | 93.4% |
-| `52-marketplace-trust.js` | 12/12 | 93.5% |
-| `53-marketplace-economy.js` | 35/35 | 95.2% |
-| `54-payouts.js` | 10/10 | 91.5% |
-| `55-listing-reports.js` | 11/11 | 90.0% |
-| `56-admin.js` | 12/12 | 98.6% |
-| `57-public-api.js` | 7/7 | 96.8% |
-| `58-public-config-and-funnel.js` | 3/3 | 99.1% |
-| `59-support.js` | 3/3 | 97.9% |
-| `60-readiness.js` | 9/9 | 96.7% |
-| `61-owner-digest.js` | 35/35 | 87.5% |
-| `62-global-mail.js` | 22/26 | 87.2% |
-| `63-run-needs.js` | 3/3 | 99.4% |
-| `64-job-boards.js` | 1/3 | 94.6% |
+| `45-abuse-and-activity.js` | 6/6 | 94.0% |
+| `46-referrals.js` | 27/27 | 97.1% |
+| `47-renewal-sweep.js` | 7/7 | 95.1% |
+| `48-other-calendars.js` | 8/10 | 74.5% |
+| `49-renewals-and-ledger.js` | 9/9 | 90.6% |
+| `50-extra-usage.js` | 13/13 | 92.4% |
+| `51-marketplace.js` | 3/3 | 94.3% |
+| `52-marketplace-trust.js` | 12/12 | 93.9% |
+| `53-marketplace-economy.js` | 35/35 | 95.7% |
+| `54-payouts.js` | 10/10 | 92.0% |
+| `55-listing-reports.js` | 11/11 | 90.1% |
+| `56-admin.js` | 12/12 | 98.8% |
+| `57-public-api.js` | 7/7 | 97.5% |
+| `58-public-config-and-funnel.js` | 3/3 | 99.4% |
+| `59-support.js` | 3/3 | 98.5% |
+| `60-readiness.js` | 9/9 | 97.5% |
+| `61-owner-digest.js` | 35/35 | 88.5% |
+| `62-global-mail.js` | 22/26 | 89.4% |
+| `63-run-needs.js` | 3/3 | 100.0% |
+| `64-job-boards.js` | 1/3 | 98.2% |
 | `65-country-capabilities.js` | 5/6 | 99.7% |
-| `66-telegram.js` | 3/5 | 71.0% |
+| `66-telegram.js` | 3/5 | 80.1% |
 | `67-weekly-habits.js` | 2/2 | 100.0% |
-| `68-cloud-library.js` | 15/15 | 88.6% |
-| `69-speech.js` | 8/8 | 93.3% |
-| `70-hooks.js` | 22/22 | 94.7% |
-| `71-scim.js` | 15/15 | 84.0% |
-| `72-web-takeover.js` | 10/10 | 79.9% |
-| `73-passkeys-and-mfa.js` | 40/40 | 87.4% |
-| `74-site-icons.js` | 6/6 | 94.0% |
-| `75-source-previews.js` | 3/3 | 97.7% |
-| `76-email-words.js` | 2/2 | 99.8% |
-| `77-agents.js` | 21/21 | 88.4% |
-| `77a-agent-signins.js` | 22/22 | 88.5% |
-| `78-teach-replay.js` | 5/5 | 86.3% |
-| `79-meaning.js` | 3/3 | 97.7% |
-| `80-switches.js` | 10/10 | 90.8% |
-| `81-web-push.js` | 15/15 | 92.9% |
-| `82-tasks.js` | 3/4 | 74.6% |
-| `83-support.js` | 4/4 | 84.0% |
+| `68-cloud-library.js` | 15/15 | 90.0% |
+| `69-speech.js` | 8/8 | 95.7% |
+| `70-hooks.js` | 22/22 | 95.8% |
+| `71-scim.js` | 15/15 | 84.3% |
+| `72-web-takeover.js` | 10/10 | 81.0% |
+| `73-passkeys-and-mfa.js` | 40/40 | 88.8% |
+| `74-site-icons.js` | 6/6 | 95.5% |
+| `75-source-previews.js` | 3/3 | 98.4% |
+| `76-email-words.js` | 2/2 | 100.0% |
+| `77-agents.js` | 21/21 | 90.2% |
+| `77a-agent-signins.js` | 22/22 | 90.9% |
+| `78-teach-replay.js` | 5/5 | 87.0% |
+| `79-meaning.js` | 3/3 | 98.6% |
+| `80-switches.js` | 10/10 | 95.1% |
+| `81-web-push.js` | 15/15 | 96.1% |
+| `82-tasks.js` | 3/4 | 79.1% |
+| `83-support.js` | 4/4 | 89.9% |

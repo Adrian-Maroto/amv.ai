@@ -2,7 +2,7 @@
 
 Statuses: **Fixed now** (code + test this round, guards mutation-checked), **Resolved before** (the audit itself found it resolved in the Nov 3 build), **Owner** (money, providers, accounts or people only the owner can arrange), **Roadmap** (a platform or product build larger than a fix), **Not done yet** (code work not reached this round).
 
-Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, Not done yet 9, Verified here 5
+Totals: Roadmap 52, Fixed now 42, Resolved before 39, Owner 29, Partly done 22, Verified here 5
 
 | ID | Sev | Pri | Finding | Audit said | Now | Note |
 |---|---|---|---|---|---|---|
@@ -67,7 +67,7 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | DR-010 | High | P1 | Restore-drill freshness is not independently bound to a signed backup manifest | Open | Fixed now | a drill record carries the signature of the manifest it read; readiness and restore need that exact one |
 | TEST-002 | High | P1 | Full Playwright matrix was not independently executable in this audit | Environment-blocked / unverified | Verified here | every e2e suite runs in the full gate (Playwright, Chromium); WebKit and Firefox run nightly (browsers.yml) |
 | REL-004 | High | P1 | Canary observes readiness only for a short window | Partially fixed | Partly done | canary watch length is a repository variable (AMV_CANARY_SECONDS) |
-| TEST-006 | High | P1 | Critical failure modes are underrepresented in tests | Open | Not done yet | not reached this round |
+| TEST-006 | High | P1 | Critical failure modes are underrepresented in tests | Open | Fixed now | every P0 fixed this audit has a regression test that fails on the vulnerable code, each mutation-checked |
 | COMP-018 | High | P1 | Computer-call replay prevention is memory-only and tokens are not bound to method or body | Open | Fixed now | call tokens v2: signed over method and body SHA-256; used tokens kept in the object's storage across restarts |
 | COMP-019 | High | P1 | Hostname deny patterns are not a complete private-network egress boundary | Open | Roadmap | product direction |
 | COMP-004 | High | P1 | Snapshot accepts tar exit code 1 | Partially fixed | Partly done | files still changing after re-reads are named with the copy; tar exit 1 kept for exactly that case |
@@ -78,12 +78,12 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | TASK-005 | High | P1 | Poison jobs are automatically rebooked after exhausting retries | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | SEC-011 | High | P1 | Dangerous switch changes can fall back to eventual KV and still return success | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | REL-005 | High | P1 | No mature staging environment equivalent to production | Partially fixed | Owner | needs a provider, a contract, people or a decision |
-| SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Open | Not done yet | not reached this round |
+| SEC-001 | High | P1 | 2,347 empty catch patterns create silent-failure risk | Open | Fixed now | every empty catch in the 26 trust files says why; six that hid a failed money, sign-out or rollback write now audit it; ceiling on the rest (an-empty-catch-in-trust-code-says-why) |
 | TASK-011 | High | P1 | Polling-first connectors will not scale to millions | Open | Roadmap | push connectors instead of polling |
 | FILE-002 | High | P1 | No full quarantine/malware pipeline before availability | Open | Owner | needs a provider, a contract, people or a decision |
 | FILE-001 | High | P1 | Large files still traverse Worker JSON/base64 paths | Open | Roadmap | direct signed uploads to storage |
 | OPS-007 | High | P1 | Million-user signup/payment/referral abuse needs scalable risk controls | Open | Roadmap | abuse risk controls at scale |
-| SEC-003 | High | P1 | 599 innerHTML assignments require centralized trust guarantees | Open | Not done yet | not reached this round |
+| SEC-003 | High | P1 | 599 innerHTML assignments require centralized trust guarantees | Open | Partly done | fuzz poisons every user-named thing on 18 screens and 13 dialogs (catches a removed escape); ratchet on sinks; eval/new Function/allow-same-origin absent; CSP proven to keep injected script inert. Trusted Types enforcement not switched on: Stripe, Google sign-in and Turnstile must be proved under it on staging with live keys first |
 | OPS-002 | High | P1 | Security and provider incident playbooks need live exercises | Open | Owner | live incident exercises are people and a schedule |
 | PROD-013 | High | P1 | Production legal and privacy operations must match the product’s data reach | Open | Owner | needs a provider, a contract, people or a decision |
 | MODEL-001 | High | P1 | One-million-token capability is configured rather than provider-authoritative | Partially fixed | Partly done | one capability record per engine from /v1/engines (Nov 2); provider-pulled limits are next |
@@ -113,12 +113,12 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | PROD-011 | High | P1 | Operational abuse/safety system is not yet company-scale | Open | Owner | needs a provider, a contract, people or a decision |
 | USAGE-004 | Medium | P1 | Task/Agent/browser/computer budgets are not uniformly enforced/displayed | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-001 | Medium | P1 | Persistent Agent IDs use Math.random | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
-| SEC-007 | Medium | P1 | Audit logs include raw email despite “PII minimized” language | Partially fixed | Not done yet | not reached this round |
+| SEC-007 | Medium | P1 | Audit logs include raw email despite “PII minimized” language | Partially fixed | Fixed now | log lines, the outside collector and analytics carry a keyed HMAC pseudonym, never an address or IP; owner looks one up on the go-live screen, audited (monitoring) |
 | SEC-012 | Medium | P1 | Brownout coordination uses KV state and sequential switch changes | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | RETR-003 | Medium | P1 | Past-chat search is not yet a server-scale semantic index | Open | Roadmap | server-side past-chat index |
 | COMP-008 | Medium | P1 | Timestamp-only version identifiers can collide | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | COMP-009 | Medium | P1 | Version copy/prune operations are not transactional | Partially fixed | Fixed now | a copy is read back at full size before it counts, and earlier copies are pruned only after it is confirmed |
-| TEST-004 | Medium | P1 | Overall worker coverage is strong but masks low-risk distribution | Open | Not done yet | not reached this round |
+| TEST-004 | Medium | P1 | Overall worker coverage is strong but masks low-risk distribution | Open | Fixed now | per-file coverage floors (docs/coverage-floors.json) and every trust-area function called, enforced in CI (coverage.mjs --enforce) |
 | USAGE-001 | Medium | P1 | A mocked chat turn makes about 19.3 Durable Object calls | Partially fixed | Partly done | month figures are one object call per turn (Nov 2); the limit and money calls remain separate by design |
 | FILE-003 | Medium | P1 | Library metadata is too account-aggregated for 25k+ files | Open | Roadmap | one metadata row per file (Postgres) |
 | SEC-002 | Medium | P1 | 50 Math.random uses include persistent/server identifiers | Partially fixed | Fixed now | kept ids from crypto.getRandomValues; only a retry jitter uses Math.random |
@@ -140,7 +140,7 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | PROD-008 | Strategic | P1 | PWA/wrappers/extensions are not enough for everyday AI | Strategic roadmap | Roadmap | product direction |
 | PROD-003 | Strategic | P1 | Agent isolation can be better than Grok Bot | Partially fixed | Roadmap | product direction |
 | PROD-001 | Strategic | P1 | Unify Chat, Tasks, Agents, and Computer | Partially fixed | Roadmap | product direction |
-| OPS-010 | Medium | P2 | Dynamic/intelligent UI needs systematic accessibility testing | Open | Not done yet | not reached this round |
+| OPS-010 | Medium | P2 | Dynamic/intelligent UI needs systematic accessibility testing | Open | Fixed now | browser accessibility tree on 18 screens and 13 dialogs, both themes: no unnamed control, every dialog named (fixed: the labeller picked the title as the dialog), WCAG AA contrast. A screen-reader pass by a person remains worth doing |
 | AGENT-014 | Medium | P2 | Saved browser sessions have a fixed 30-day TTL without renewal policy clarity | Partially fixed | Partly done | renewal and backup policy written (docs/AGENT-SIGN-INS.md); 30-day expiry kept |
 | AGENT-017 | Medium | P2 | Agents lack strict output schemas and completion contracts | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | AGENT-007 | Medium | P2 | No Agent-specific eval and outcome scorecard | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
@@ -157,7 +157,7 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | OPS-005 | Medium | P2 | Global KV/R2/provider architecture cannot promise region residency today | Open | Owner | needs a provider, a contract, people or a decision |
 | PROD-015 | Medium | P2 | SDK/API need stable production governance | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | DR-008 | Medium | P2 | Restore drills are not yet full-system game days | Open | Owner | full-system game days are people and a schedule |
-| REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Partially fixed | Not done yet | not reached this round |
+| REL-015 | Medium | P2 | Capability and launch documentation still drifts from code | Partially fixed | Partly done | docs may name only files and suites that exist (a-doc-names-only-what-exists); CONTEXT.md architecture rewritten; capabilities do not yet declare the setting each needs |
 | FILE-006 | Medium | P2 | Large/private files need signed/range download design | Open | Roadmap | signed range downloads |
 | PROD-014 | Medium | P2 | SCIM/OIDC foundation needs custom RBAC and policy gateway | Partially fixed | Roadmap | custom RBAC and a policy gateway on top of SCIM/OIDC |
 | PROD-018 | Medium | P2 | Shopping/travel/local places need structured first-class result objects | Open | Roadmap | structured shopping, travel and places results |
@@ -169,10 +169,10 @@ Totals: Roadmap 52, Resolved before 39, Fixed now 35, Owner 29, Partly done 20, 
 | REL-011 | Medium | P2 | 100% head sampling is not sustainable at millions | Open | Roadmap | sampled tracing at scale |
 | OPS-008 | Medium | P2 | Marketplace supply-chain governance needs publisher and update controls | Partially fixed | Partly done | operator takedown, seller freeze, installed copies switch off (Nov 2); signed updates not built |
 | MODEL-005 | Medium | P2 | Prompt/model canaries need richer quality gating | Partially fixed | Roadmap | a large versioned eval corpus gating model changes |
-| TEST-008 | Medium | P2 | Frontend bundle and runtime performance need device-level budgets | Open | Not done yet | not reached this round |
+| TEST-008 | Medium | P2 | Frontend bundle and runtime performance need device-level budgets | Open | Fixed now | low-end phone profile (6x CPU, slow 4G, touch): paint, script, input latency (Event Timing), screen switch and memory budgets; a 500ms keystroke stall fails it |
 | DATA-015 | Medium | P2 | Generic D1, KV, and Postgres paths risk permanent triple-authority complexity | Partially fixed | Partly done | one authority per data class written down; D1 retired and refused under a launch profile |
 | DATA-018 | Medium | P2 | No documented database region/failover/read-only degradation policy | Open | Owner | needs a provider, a contract, people or a decision |
-| DATA-017 | Medium | P2 | Financial amounts and currency semantics require stronger constraints | Partially fixed | Not done yet | not reached this round |
+| DATA-017 | Medium | P2 | Financial amounts and currency semantics require stronger constraints | Partially fixed | Fixed now | currencies table + foreign keys, non-zero and bounded amounts, seller money in whole cents in migration 0002; the Worker checks the same before it sends (a-money-row-is-exact-before-it-is-sent, 5000-case property test) |
 | OPS-006 | Medium | P2 | Temporary/private modes need consistent behavior across Agents/Tasks/connectors | Partially fixed | Partly done | a temporary chat sets up no background work (Nov 2) |
 | TASK-007 | Medium | P2 | Five-minute claim buckets generate duplicate delivery noise | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
 | TASK-006 | Medium | P2 | Queue messages contain raw email | Resolved in Nov. 3 build | Resolved before | resolved in the Nov 3 build |
