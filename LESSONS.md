@@ -15693,3 +15693,23 @@ that schedule's effects; prefer a trigger of its own. And when code moves out
 of a function that suites read by name, find every reader (`grep` for the
 name in tests) before the gate does - a check that reads an empty body
 passes or fails for the wrong reason.
+
+## 626. "Active" counted where it was convenient, not where people are
+
+The retention table shipped the day before measured "active" - and so the
+funnel's "came back" and every cohort week - at sign-in and nowhere else. The
+session lasts weeks and the page renews it silently, so the people who use AMV
+every day and never sign out were counted once, on their first day, and never
+again. The number most likely to steer the company was lowest for the best
+users, and nothing looked wrong: a low retention figure reads as a fact about
+the product, not about the counter.
+
+Found while adding channel attribution, by asking "which request does a
+returning person actually make?" - the answer was none that counted. The page
+now reports one arrival a day (`/v1/arrival`), which marks the person active the
+way sign-in does, and carries the channel when the link said one.
+
+**Rules.** Before trusting a behavioural metric, name the request that a real
+person doing the behaviour makes, and check that request is the one counted.
+And a metric that undercounts its best cases is not conservative - it points
+the steering the wrong way.

@@ -35,6 +35,41 @@ function _refCapture(){
 }
 try{ _refCapture(); }catch(e){}
 
+/* WHAT BROUGHT THEM BACK (?via=push from a notification, ?via=email from a
+   result email). Read once, taken out of the address for the same reason as
+   ?ref=, and held in memory only: it describes this one arrival, not the
+   device. Reported once the page has a session (_arrivalReport). */
+const ARRIVAL_VIA = ['push', 'email'];
+let _arrivalVia = '';
+let _arrivalSent = false;
+function _viaCapture(){
+  try{
+    const q = new URLSearchParams(location.search || '');
+    if(!q.has('via')) return;
+    const v = String(q.get('via') || '').toLowerCase();
+    if(ARRIVAL_VIA.includes(v)) _arrivalVia = v;
+    q.delete('via');
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+  }catch(e){ /* a malformed URL must never stop the app booting */ }
+}
+try{ _viaCapture(); }catch(e){}
+/* One a day per device, plus one whenever a link named its channel. The
+   server de-duplicates by account and day, so a second device costs a call
+   and counts nothing twice. A failure is retried on the next boot. */
+function _arrivalReport(){
+  try{
+    if(_arrivalSent || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
+    const day = new Date().toISOString().slice(0, 10);
+    if(!_arrivalVia && loadStr('amv_arrived') === day) return;
+    _arrivalSent = true;
+    AMV_API.arrival(_arrivalVia).then(ok=>{
+      if(ok){ try{ saveStr('amv_arrived', day); }catch(e){} _arrivalVia = ''; }
+      else _arrivalSent = false;
+    }).catch(()=>{ _arrivalSent = false; });
+  }catch(e){ _arrivalSent = false; }
+}
+
 /* The stored code, if any. Consumed at signup and then forgotten - it applies
    to the account being created, not to every account created on this device. */
 function _refPending(){ try{ return loadStr(REF_STORE_KEY) || ''; }catch(e){ return ''; } }

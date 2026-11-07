@@ -546,9 +546,20 @@ function _admRenderTab(tab, backendLive, live){
         + cohorts.map(c => '<tr><td>' + escH(c.week) + '</td><td>' + c.size.toLocaleString() + '</td>' + shown.map(n => { const w = (c.weeks || []).find(x => x.n === n); return '<td>' + (w && w.pct != null ? w.pct + '%' : '\u2013') + '</td>'; }).join('') + '</tr>').join('')
         + '</tbody></table></div><p class="adm-note">Of the people who started each week, the share who used AMV again that many weeks later. Week 4 above 30% is a product people keep; under 10% is a product people try.</p>'
       : '<div class="adm-empty">No cohort has started yet. The first row appears a week after people start signing up.</div>';
+    /* What brought people back this month: a notification or a result email
+       opened, by distinct person and day, and how many of those were somebody
+       returning rather than on their first day. Sent is not opened. */
+    const a = live && live.arrivals;
+    const names = { push: 'Notifications', email: 'Result emails' };
+    const brought = a
+      ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Channel</th><th>Opened from it</th><th>Of those, came back</th></tr></thead><tbody>'
+        + Object.keys(names).map(k => { const v = a[k] || {}; return '<tr><td>' + names[k] + '</td><td>' + (+v.arrivals || 0).toLocaleString() + '</td><td>' + (+v.returns || 0).toLocaleString() + '</td></tr>'; }).join('')
+        + '</tbody></table></div><p class="adm-note">This month, one count per person per day. A channel that is opened but brings nobody back is noise, not a habit.</p>'
+      : '<div class="adm-empty">Nothing counted yet this month.</div>';
     el.innerHTML =
       _admCard('Who signs up, and who stays', live ? (f ? funnel : '<div class="adm-empty">Nothing counted yet.</div>') : _admPending('Sign-up, first answer, coming back and paying, across everybody'))
-      + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'));
+      + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'))
+      + _admCard('What brought people back', live ? brought : _admPending('Opened from a notification or a result email, and how many of those were returns'));
   }
 
 }

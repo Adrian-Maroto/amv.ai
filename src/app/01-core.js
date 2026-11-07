@@ -1350,6 +1350,17 @@ const AMV_API = {
     }catch(e){ return false; }
   },
 
+  /* WHAT BROUGHT THIS PERSON BACK. One arrival a day for a signed-in page,
+     with the channel when the link said one (a notification, a result email).
+     It is the only thing that marks a person active when they stay signed in
+     - sign-in alone missed everybody who never signs out. */
+  async arrival(via){
+    if(!this.live) return false;
+    const r = await this._fetch('/v1/arrival', {method:'POST', body:JSON.stringify({via: via || ''})});
+    const d = await r.json().catch(()=>null);
+    return !!(d && d.ok);
+  },
+
   /* This account's invite link and what it has earned. The server is the only
      source of these numbers - nothing about a referral is decided here. */
   async referral(){

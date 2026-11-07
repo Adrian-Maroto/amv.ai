@@ -1350,6 +1350,17 @@ const AMV_API = {
     }catch(e){ return false; }
   },
 
+  /* WHAT BROUGHT THIS PERSON BACK. One arrival a day for a signed-in page,
+     with the channel when the link said one (a notification, a result email).
+     It is the only thing that marks a person active when they stay signed in
+     - sign-in alone missed everybody who never signs out. */
+  async arrival(via){
+    if(!this.live) return false;
+    const r = await this._fetch('/v1/arrival', {method:'POST', body:JSON.stringify({via: via || ''})});
+    const d = await r.json().catch(()=>null);
+    return !!(d && d.ok);
+  },
+
   /* This account's invite link and what it has earned. The server is the only
      source of these numbers - nothing about a referral is decided here. */
   async referral(){
@@ -4874,6 +4885,7 @@ function loginUser(acct) {
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
   _syncBootstrap();
+  try{ _arrivalReport(); }catch(e){}
   /* A sign-in asked for mid-task: reload what the old session could not
      fetch, and finish the thing that was interrupted. */
   try{ if(typeof connReload==='function' && window.AMV_API && AMV_API.live) connReload(); }catch(e){}
@@ -6218,6 +6230,7 @@ async function _ensureBackendSession(){
        reload begins with no access token in hand, so asked any earlier this
        reads "no session" and does nothing at all. */
     try{ _syncBootstrap(); }catch(e){}
+    try{ _arrivalReport(); }catch(e){}
     /* A connection approved at a provider just before this load finishes now
        that there is a session to finish it with - or asks for one. */
     try{ if(typeof _finishPendingConnect === 'function') _finishPendingConnect(); }catch(e){ try{ console.error('AMV: a pending connection could not be finished', e); }catch(_){} }
@@ -42886,6 +42899,41 @@ function _refCapture(){
   }catch(e){ /* a malformed URL must never stop the app booting */ }
 }
 try{ _refCapture(); }catch(e){}
+
+/* WHAT BROUGHT THEM BACK (?via=push from a notification, ?via=email from a
+   result email). Read once, taken out of the address for the same reason as
+   ?ref=, and held in memory only: it describes this one arrival, not the
+   device. Reported once the page has a session (_arrivalReport). */
+const ARRIVAL_VIA = ['push', 'email'];
+let _arrivalVia = '';
+let _arrivalSent = false;
+function _viaCapture(){
+  try{
+    const q = new URLSearchParams(location.search || '');
+    if(!q.has('via')) return;
+    const v = String(q.get('via') || '').toLowerCase();
+    if(ARRIVAL_VIA.includes(v)) _arrivalVia = v;
+    q.delete('via');
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+  }catch(e){ /* a malformed URL must never stop the app booting */ }
+}
+try{ _viaCapture(); }catch(e){}
+/* One a day per device, plus one whenever a link named its channel. The
+   server de-duplicates by account and day, so a second device costs a call
+   and counts nothing twice. A failure is retried on the next boot. */
+function _arrivalReport(){
+  try{
+    if(_arrivalSent || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
+    const day = new Date().toISOString().slice(0, 10);
+    if(!_arrivalVia && loadStr('amv_arrived') === day) return;
+    _arrivalSent = true;
+    AMV_API.arrival(_arrivalVia).then(ok=>{
+      if(ok){ try{ saveStr('amv_arrived', day); }catch(e){} _arrivalVia = ''; }
+      else _arrivalSent = false;
+    }).catch(()=>{ _arrivalSent = false; });
+  }catch(e){ _arrivalSent = false; }
+}
 
 /* The stored code, if any. Consumed at signup and then forgotten - it applies
    to the account being created, not to every account created on this device. */

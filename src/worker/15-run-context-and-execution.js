@@ -1189,7 +1189,7 @@ async function _autoEmailBatch(env, email, entries){
     '<p style="margin:0 0 16px;font-size:13px;color:#777">'
       + 'These ran together, so AMV has sent them together rather than one email each.</p>'
     + sections,
-    appUrl ? { label: 'Open in AMV', url: appUrl } : null,
+    appUrl ? { label: 'Open in AMV', url: appUrl + '/?via=email' } : null,
     '<hr style="border:none;border-top:1px solid #eee;margin:16px 0"><p style="margin:0;font-size:11px;color:#999">You set these recurring checks up in AMV. Manage or stop any of them in the Tasks tab.</p>',
     'Automated update from AMV.'
   );
@@ -1197,7 +1197,7 @@ async function _autoEmailBatch(env, email, entries){
     + list.map(e => '— ' + String((e.item && e.item.detail) || 'Background job').slice(0, 80)
                   + '\n\n' + e.out).join('\n\n\n')
     + '\n\nManage these recurring checks in AMV -> Tasks.'
-    + (appUrl ? '\n' + appUrl : '');
+    + (appUrl ? '\n' + appUrl + '/?via=email' : '');
   return _sendEmail(env, email, subject, html, text, 'auto');
 }
 
@@ -1227,14 +1227,14 @@ async function _autoEmailResult(env, email, item, out){
     isResearch ? 'Your research watch' : 'Your scheduled update',
     '<p style="margin:0 0 12px;font-size:13px;color:#777">You asked AMV to check on: <b>'+esc(label)+'</b></p>'+
     '<div style="font-size:14px"><p style="margin:0 0 12px;line-height:1.6;color:#333">'+htmlBody+'</p></div>',
-    appUrl ? { label: 'Open in AMV', url: appUrl } : null,
+    appUrl ? { label: 'Open in AMV', url: appUrl + '/?via=email' } : null,
     '<hr style="border:none;border-top:1px solid #eee;margin:16px 0"><p style="margin:0;font-size:11px;color:#999">You set up this recurring check in AMV. Manage or stop it anytime in the Tasks tab.</p>',
     'Automated update from AMV.'
   );
   const text = (isResearch ? 'AMV research watch\n\n' : 'AMV scheduled update\n\n')
     + 'Subject: ' + label + '\n\n' + out
     + '\n\nManage this recurring check in AMV -> Tasks.'
-    + (appUrl ? '\n' + appUrl : '');
+    + (appUrl ? '\n' + appUrl + '/?via=email' : '');
   return _sendEmail(env, email, subject, html, text, 'auto');
 }
 

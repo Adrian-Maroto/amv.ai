@@ -126,7 +126,7 @@ function _pushNoteFor(list){
   const waiting = list.filter(x => x.waiting), ready = list.filter(x => !x.waiting);
   const name = (d) => { const t = String(d || '').replace(/\s+/g, ' ').trim(); return t.length > 60 ? t.slice(0, 57) + '…' : t; };
   return { title: 'AMV', kind: 'run', ready: ready.length, waiting: waiting.length, name: list.length === 1 ? name(list[0].detail) : '',
-    url: '/#/crew', tag: waiting.length ? 'amv-approval' : 'amv-result', urgent: waiting.length > 0 };
+    url: '/?via=push#/crew', tag: waiting.length ? 'amv-approval' : 'amv-result', urgent: waiting.length > 0 };
 }
 /* The words of a notification, in the device's language. The job's own
    name is the person's own words and goes in as they wrote it. */

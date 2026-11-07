@@ -55,6 +55,60 @@ async function _markActive(env, email){
 }
 
 const RET_WEEKS = 12;
+
+/* AN ARRIVAL, AND WHAT BROUGHT IT (POST /v1/arrival).
+
+   Active used to be counted at sign-in and nowhere else, so somebody who stays
+   signed in and opens AMV every day was never "back": the funnel's returned
+   step and every cohort week undercounted exactly the people who use it most.
+   The page now reports one arrival a day; that marks the person active the
+   same way sign-in does.
+
+   And when the link said which channel it came from - ?via=push on a
+   notification, ?via=email on a result email - that channel is counted for
+   the month, once per person per day, and separately when it brought back
+   somebody whose first day was an earlier one. That is the only number that
+   says whether the notifications are a habit or a nuisance: sent is not
+   opened, and opened by a new person is not a return. */
+const ARRIVAL_VIA = new Set(['push', 'email']);
+async function arrivalRecord(request, env){
+  if(request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const user = await requireUser(request, env);
+  if(!user) return json({ error: 'unauthorized' }, 401);
+  const blocked = await guardAction(env, `arrive:${user.email}`, 10, 60, 'arrivals');
+  if(blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const via = ARRIVAL_VIA.has(body && body.via) ? body.via : '';
+  const em = user.email, day = todayKey();
+  let returning = false;
+  if(via){
+    try{
+      const raw = await env.AMV_KV.get(`factive:${em}`);
+      const first = raw ? (raw.charAt(0) === '{' ? (JSON.parse(raw) || {}).day : raw) : null;
+      returning = !!first && first !== day;
+    }catch(e){ returning = false; /* not known to be a return, so not counted as one */ }
+  }
+  try{ await _markActive(env, em); }catch(e){ /* a count for the owner's figures: never decides access or money */ }
+  if(via){
+    const seen = `arrvia:${em}:${day}:${via}`;
+    try{
+      if(!(await env.AMV_KV.get(seen))){
+        await env.AMV_KV.put(seen, '1', { expirationTtl: 2 * 86400 });
+        await _econAdd(env, em, [['via:' + via, 1]].concat(returning ? [['viaret:' + via, 1]] : []));
+      }
+    }catch(e){ audit(env, 'arrival_not_counted', { via }); }
+  }
+  return json({ ok: true });
+}
+/* What brought people back, for the month: per channel, people-days arrived
+   by it and those that were a return. */
+async function _arrivalsByChannel(env, month){
+  const m = await _econMonth(env, month || monthKey()).catch(() => null);
+  if(!m) return null;
+  const out = {};
+  for(const v of ARRIVAL_VIA) out[v] = { arrivals: +(m['via:' + v] || 0), returns: +(m['viaret:' + v] || 0) };
+  return out;
+}
 /* The Monday of the week a day falls in: the cohort a person started in. */
 function _cohortWeekOf(day){
   const d = new Date(String(day) + 'T00:00:00Z');
@@ -565,6 +619,7 @@ async function adminStats(request, env) {
        did (AMV-101). */
     funnel: await _funnelReport(env),
     retention: await _retentionReport(env).catch(() => null),
+    arrivals: await _arrivalsByChannel(env).catch(() => null),
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,
                teamSeatsSold: seatsSold, teamSeatMRR: seatsSold * TEAM_SEAT_PRICE_USD },
     margin: (() => {
