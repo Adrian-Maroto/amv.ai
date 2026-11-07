@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'erasure.harness.mjs');
 writeFileSync(harness, src + `
-export { authDeleteAccount, BACKUP_PREFIXES, BACKUP_NEVER, DB, _userFromApiKey, _apiKeyHash };
+export { authDeleteAccount, BACKUP_PREFIXES, BACKUP_NEVER, DB, _userFromApiKey, _apiKeyHash, _auditPid };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -169,8 +169,12 @@ section('A cancellation that fails reaches a human');
   console.log = realLog; console.error = realErr;
   const d = await r.json();
   ok(d.ok === true, 'the erasure still completes', d);
-  ok(logged.join('\n').indexOf('gone@x.com') >= 0,
+  /* Recorded against the account by its log pseudonym (SEC-007): the person
+     asked to be deleted, so their address is the one thing the line must not
+     carry. */
+  ok(logged.join('\n').indexOf(W._auditPid(env2, 'gone@x.com')) >= 0,
      'and the failure is recorded against the account it concerns', logged.length);
+  ok(logged.join('\n').indexOf('gone@x.com') < 0, 'under its pseudonym - the deleted address is not in the log');
 }
 
 section('A team does not keep a paid plan with nobody paying');

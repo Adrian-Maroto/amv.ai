@@ -21,11 +21,20 @@
    the action protocol, SCIM, webhooks, spending, sessions - every function
    no suite ever called, by name, because that list is the work.
 
-   It is a report, not a gate: the suites take ~20 minutes in the gate
-   already, and a percentage floor is a number people learn to game. The list
-   of never-called functions in the trust areas is what to act on.
+   It is a report first: the list of never-called functions in the trust
+   areas is what to act on. With --enforce it is also a ratchet (Nov 3 audit
+   TEST-004), run by CI: the whole-Worker figure hid Postgres modules at
+   24-38%, so the floors are PER FILE, in docs/coverage-floors.json -
+     - every function in a trust area stays called by some suite: a new one
+       arrives with its test, or the run fails naming it;
+     - no file's code coverage falls below its floor.
+   A floor is today's figure less two points, rounded down, so noise does not
+   fail a run but a removed test does. It only moves up: --update-floors
+   raises each floor to what was measured and never lowers one. A new file
+   gets a floor the first time floors are updated; until then it is named.
 
-   Options: --jobs=N (default 4), --only=<substring> to run a subset. */
+   Options: --jobs=N (default 4), --only=<substring> to run a subset,
+   --enforce, --update-floors. */
 import { spawn } from 'child_process';
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -144,4 +153,27 @@ md += '## Every file\n\n| File | Functions called | Code |\n|---|---|---|\n'
 mkdirSync(join(ROOT, 'docs'), { recursive: true });
 writeFileSync(join(ROOT, 'docs', 'COVERAGE.md'), md);
 rmSync(COV, { recursive: true, force: true });
+/* The ratchet. */
+const FLOORS = join(ROOT, 'docs', 'coverage-floors.json');
+const want = process.argv.includes('--enforce'), raise = process.argv.includes('--update-floors');
+if (want || raise) {
+  if (process.argv.some(a => a.startsWith('--only='))) { console.error('--enforce and --update-floors need every suite; drop --only'); process.exit(2); }
+  const floors = existsSync(FLOORS) ? JSON.parse(readFileSync(FLOORS, 'utf8')) : { about: '', files: {} };
+  floors.about = 'Per-file floors for Worker code coverage, enforced by node scripts/coverage.mjs --enforce in CI. A floor only rises (--update-floors). Every function in a trust area (sign-in, SCIM, teams, money, spending, the action protocol, webhooks) must stay called by some suite.';
+  const problems = [];
+  if (failed.length) problems.push(failed.length + ' suite(s) exited non-zero, so the figures are not a measurement: ' + failed.join(', '));
+  for (const [title, re] of TRUST) for (const x of perFile.filter(r => re.test(r.file)))
+    if (x.never.length) problems.push(title + ': ' + x.file + ' has functions no suite calls: ' + x.never.join(', '));
+  for (const x of perFile) {
+    const got = x.tot ? 100 * x.cov / x.tot : 100;
+    const floor = floors.files[x.file];
+    if (raise) { const f = Math.max(0, Math.floor(got - 2)); if (floor === undefined || f > floor) floors.files[x.file] = f; continue; }
+    if (floor === undefined) problems.push(x.file + ' has no coverage floor yet (measured ' + got.toFixed(1) + '%): run --update-floors and commit docs/coverage-floors.json');
+    else if (got < floor) problems.push(x.file + ': code coverage ' + got.toFixed(1) + '% is under its floor of ' + floor + '%');
+  }
+  for (const f of Object.keys(floors.files)) if (!perFile.some(x => x.file === f)) { if (raise) delete floors.files[f]; else problems.push('docs/coverage-floors.json names ' + f + ', which is not a Worker source file any more'); }
+  if (raise) { floors.files = Object.fromEntries(Object.entries(floors.files).sort()); writeFileSync(FLOORS, JSON.stringify(floors, null, 1) + '\n'); console.log('floors written for ' + Object.keys(floors.files).length + ' files'); }
+  if (want && problems.length) { console.error('Coverage is below what this repository holds itself to:\n  - ' + problems.join('\n  - ')); process.exitCode = 1; }
+  else if (want) console.log('every file is at or above its floor, and every trust-area function is called');
+}
 console.log('functions ' + sum.called + '/' + sum.fns + ' (' + pct(sum.called, sum.fns) + '), code ' + pct(sum.cov, sum.tot) + ' - docs/COVERAGE.md written' + (failed.length ? '; ' + failed.length + ' suites exited non-zero' : ''));

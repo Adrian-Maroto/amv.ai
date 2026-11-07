@@ -105,3 +105,14 @@ jobs:
       # means, and a commit cannot pass one and fail the other.
       - name: Health gate (build fresh, all suites, preflight)
         run: npm run check
+      # PER-FILE COVERAGE FLOORS (Nov 3 audit TEST-004).
+      #
+      # The whole-Worker figure was 92% while the Postgres modules sat at a
+      # third, so a headline number was hiding exactly the new code it should
+      # have flagged. This runs every Worker suite under V8 coverage (about
+      # three minutes) and fails when any file falls under its floor in
+      # docs/coverage-floors.json, or a function in a trust area - sign-in,
+      # SCIM, teams, money, spending, the action protocol, webhooks - is
+      # called by no suite. A floor only rises: `--update-floors` locally.
+      - name: Coverage floors (per file, trust-area functions all called)
+        run: node scripts/coverage.mjs --enforce
