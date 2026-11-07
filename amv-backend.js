@@ -19358,6 +19358,21 @@ function _corsKind(request, want) {
   return 'session';
 }
 function _applyCors(request, env, res) {
+  /* NO COOKIE IS SET FOR A STRANGER'S PAGE (Nov 3 audit SEC-009). Incoming
+     cookies from anywhere but AMV's own page are already removed
+     (_cookiesFromAmvOnly). The answer went the other way unchecked: signing
+     out sends clearing cookies, and a browser stores a cookie from a
+     credentialed cross-site answer even when it will not let the page read
+     it - so any page could sign somebody out of AMV by being opened. The
+     sweep in no-route-lends-its-cookie-to-a-stranger found it. Whatever the
+     route, an answer to a request that did not come from AMV carries no
+     Set-Cookie. */
+  try {
+    if (res && res.headers && res.headers.has('Set-Cookie') && !_cookieRequestFromAmv(request, env)) {
+      const h0 = new Headers(res.headers); h0.delete('Set-Cookie');
+      res = new Response(res.body, { status: res.status, statusText: res.statusText, headers: h0 });
+    }
+  } catch (e) { /* a response that cannot be copied is answered as it was; the request's own cookies were already ignored */ }
   try {
     const want = _corsOrigin(env);
     if (want === '*') return res;
