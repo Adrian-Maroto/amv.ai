@@ -81,7 +81,7 @@
   },
   "synthetics": {
    "what": "each configured capability doing one real, harmless operation, kept for readiness",
-   "owner": "src/worker/85-synthetics.js",
+   "owner": "src/worker/15a-job-queue.js",
    "runs": "runCapabilitySynthetics",
    "retry": "its own hourly trigger (17 * * * *); a run that fails is reported and readiness shows the last result as stale after two hours; each failing capability is told once a day"
   },
@@ -107,7 +107,7 @@
   },
   "synth": {
    "what": "the hourly capability check's queue probe",
-   "owner": "src/worker/85-synthetics.js",
+   "owner": "src/worker/15a-job-queue.js",
    "retry": "never retried: acknowledged on arrival with the time it came; a probe that never arrives fails the next hourly check",
    "runs": "_autoQueueConsume"
   }
