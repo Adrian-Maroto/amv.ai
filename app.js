@@ -30503,7 +30503,16 @@ async function _loadReadiness(note){
         '<input id="gl-mailto" class="fp-in" type="email" autocomplete="email" placeholder="Any address - leave empty for yours">'+
         '<button class="btn bs" id="gl-mailtest" type="button">Send a test email</button>'+
       '</div>'+
-      '<div id="gl-mailsay" class="gl-how" role="status" aria-live="polite"></div>';
+      '<div id="gl-mailsay" class="gl-how" role="status" aria-live="polite"></div>'+
+      /* The logs carry u_… for every address (adminAuditPid). To follow one
+         person through them, the owner asks here; the lookup is itself on the
+         record, under the pseudonym. */
+      '<div class="gl-note gl-mailtest">'+
+        '<label class="sr-only" for="gl-pidq">Address to find in the logs</label>'+
+        '<input id="gl-pidq" class="fp-in" type="email" autocomplete="off" placeholder="An address, to find its lines in the logs">'+
+        '<button class="btn bs" id="gl-pidgo" type="button">Find in the logs</button>'+
+      '</div>'+
+      '<div id="gl-pidsay" class="gl-how" role="status" aria-live="polite"></div>';
     on($('gl-mailtest'),'click',async()=>{
       const say=$('gl-mailsay'); if(say) say.textContent='Sending\u2026';
       const to=(($('gl-mailto')||{}).value||'').trim();
@@ -30520,6 +30529,18 @@ async function _loadReadiness(note){
           else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three in place: every major inbox accepts it.';
         }
         if(say) say.textContent=t;
+      }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
+    });
+    on($('gl-pidgo'),'click',async()=>{
+      const say=$('gl-pidsay'); const email=(($('gl-pidq')||{}).value||'').trim();
+      if(!email){ if(say) say.textContent='Type the address first.'; return; }
+      if(say) say.textContent='Looking up\u2026';
+      try{
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/audit/pid',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({email})},15000);
+        const x=await r.json().catch(()=>({}));
+        if(say) say.textContent = x.ok && x.pid
+          ? ('In the logs this person is '+x.pid+'. Search Workers Logs for it. (Keyed by '+x.keyedBy+'; this lookup is on the record.)')
+          : (x.error||'Could not look that up.');
       }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
     });
   }catch(e){
