@@ -225,8 +225,10 @@ section('A passkey belongs to one account: its id cannot be taken by another (No
 {
   /* Vera has a passkey. An attacker who learned its credential id makes a key
      of their own under that id and registers it on their account. */
+  /* Signed in just now: a session made a moment ago (AUTH-022). */
   const mk = async (email) => { await W.DB.put(env, 'acct', email, { email, name: email[0], provider: 'passkey', createdAt: Date.now() });
-    return (await W.issueTokens(env, email, email[0], '')).token; };
+    m.set('sess:' + email + ':s-' + email[0], JSON.stringify({ sid: 's-' + email[0], created: Date.now(), seen: Date.now() }));
+    return (await W.issueTokens(env, email, email[0], 's-' + email[0])).token; };
   const vTok = await mk('vera@example.com'), mTok = await mk('mallory@example.com');
   const vk = await makeAuthenticator();
   const vo = await call('/auth/passkey/options', { purpose: 'register' }, vTok);
@@ -247,8 +249,10 @@ section('A passkey belongs to one account: its id cannot be taken by another (No
 
 section('One credential registered from two accounts at once: one wins; a failed write leaves no index (Nov 7 audit AUTH-020)');
 {
+  /* Signed in just now: a session made a moment ago (AUTH-022). */
   const mk = async (email) => { await W.DB.put(env, 'acct', email, { email, name: email[0], provider: 'passkey', createdAt: Date.now() });
-    return (await W.issueTokens(env, email, email[0], '')).token; };
+    m.set('sess:' + email + ':s-' + email[0], JSON.stringify({ sid: 's-' + email[0], created: Date.now(), seen: Date.now() }));
+    return (await W.issueTokens(env, email, email[0], 's-' + email[0])).token; };
   const aTok = await mk('ann@example.com'), bTok = await mk('bob@example.com');
   const k = await makeAuthenticator(), twin = await makeAuthenticator({ credId: k.credId });
   const [oa, ob] = await Promise.all([call('/auth/passkey/options', { purpose: 'register' }, aTok), call('/auth/passkey/options', { purpose: 'register' }, bTok)]);
@@ -279,13 +283,15 @@ section('One credential registered from two accounts at once: one wins; a failed
 section('The last way into an account is never removed');
 {
   /* An account with no password and no Google sign-in - only a passkey. Its
-     first factor needs only the session (there is nothing to prove with yet);
-     removing that passkey, even with the passkey itself as proof, is refused. */
+     first factor needs a sign-in made just now (there is nothing to prove
+     with yet - AUTH-022); removing that passkey, even with the passkey itself
+     as proof, is refused. */
   await W.DB.put(env, 'acct', 'solo@example.com', { email: 'solo@example.com', name: 'Solo', provider: 'passkey', createdAt: Date.now() });
-  const soloTok = (await W.issueTokens(env, 'solo@example.com', 'Solo', '')).token;
+  m.set('sess:solo@example.com:s-solo', JSON.stringify({ sid: 's-solo', created: Date.now(), seen: Date.now() }));
+  const soloTok = (await W.issueTokens(env, 'solo@example.com', 'Solo', 's-solo')).token;
   const key = await makeAuthenticator({ kind: 'rsa' });
   const o = await call('/auth/passkey/options', { purpose: 'register' }, soloTok);
-  ok(o.status === 200, 'with nothing to prove with yet, the first factor needs only the session', o.status);
+  ok(o.status === 200, 'with nothing to prove with yet, the first factor needs a sign-in made just now', o.status);
   const reg = await call('/auth/passkey/register', { cid: o.d.cid, name: 'Laptop', credential: await key.create({ challenge: o.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, soloTok);
   ok(reg.status === 200, 'an RSA passkey (Windows Hello) is accepted too', reg.status);
   const o2 = await call('/auth/passkey/options', { purpose: 'register' }, soloTok);
@@ -397,6 +403,22 @@ section('A secret that cannot be opened is said to be, not called a wrong code (
   ok(r.status === 503 && r.d.code === 'totp_unavailable' && /recovery code|passkey/.test(r.d.error), 'the right code is answered "cannot be checked right now", with the other ways in', r);
   const rc = await call('/auth/login/mfa', { challenge: pw.d.challenge, recovery: on.d.recovery[0] });
   ok(rc.status === 200 && !!rc.d.token, 'and a recovery code still signs in', rc.status);
+}
+
+section('An account with nothing to prove with needs a sign-in made just now (Nov 7 audit AUTH-022)');
+{
+  const em = 'gina@example.com';
+  await W.DB.put(env, 'acct', em, { email: em, name: 'G', provider: 'google', createdAt: Date.now() });
+  m.set('sess:' + em + ':old', JSON.stringify({ sid: 'old', created: Date.now() - 3 * 86400000, seen: Date.now() }));
+  const stale = (await W.issueTokens(env, em, 'G', 'old')).token;
+  const r = await call('/auth/passkey/options', { purpose: 'register' }, stale);
+  ok(r.status === 403 && r.d.code === 'reauth_required', 'a session from days ago cannot add the first passkey - it is asked to sign in again', [r.status, r.d.code]);
+  const none = (await W.issueTokens(env, em, 'G', '')).token;
+  ok((await call('/auth/passkey/options', { purpose: 'register' }, none)).d.code === 'reauth_required', 'nor can a token with no session behind it');
+  m.set('sess:' + em + ':new', JSON.stringify({ sid: 'new', created: Date.now(), seen: Date.now() }));
+  const freshTok = (await W.issueTokens(env, em, 'G', 'new')).token;
+  const ok2 = await call('/auth/passkey/options', { purpose: 'register' }, freshTok);
+  ok(ok2.status === 200 && ok2.d.publicKey, 'one signed in a moment ago can', ok2.status);
 }
 
 if (report('a-passkey-or-a-second-step-guards-the-account') > 0) process.exitCode = 1;

@@ -44568,8 +44568,9 @@ async function browserTeach(request, env, ctx){
        A stolen session is not enough to plant a passkey the thief keeps
        through "sign out everywhere". The one exception is an account with
        nothing to prove with yet (signed up with Google, no factor): adding
-       its FIRST factor needs the session, and is recorded and alerted, because
-       refusing would leave those accounts with no way to get stronger at all.
+       its FIRST factor needs a sign-in made in the last ten minutes (Nov 7
+       audit AUTH-022), and is recorded, because refusing outright would
+       leave those accounts with no way to get stronger at all.
      - An API key is never enough for any of it.
      - Secrets are sealed under CONNECT_KEY; recovery codes are kept only as
        hashes; nothing secret is ever logged. A deployment without CONNECT_KEY
@@ -44906,6 +44907,7 @@ function _acctFactors(acct){
    { password }, { totp }, { recovery }, { passkey: { cid, credential } }.
    Returns null when proved, or a refusal Response. A recovery code used here
    is spent, like anywhere else. */
+const STEPUP_NOFACTOR_FRESH_MS = 10 * 60 * 1000;
 async function _stepUp(env, request, user, proof){
   const em = String(user.email || '').toLowerCase();
   const acct = await DB.get(env, 'acct', em);
@@ -44928,7 +44930,21 @@ async function _stepUp(env, request, user, proof){
       if(ok) return null;
     }
   } else if(!f.password && !f.passkeys && !f.totp){
-    return null;   /* nothing to prove with yet - see the note at the top */
+    /* NOTHING TO PROVE WITH IS NOT THE SAME AS ANY SESSION WILL DO (Nov 7
+       audit AUTH-022). An account with no factor of its own (signed up with
+       Google) passed on the session alone, so a session copied off a device
+       weeks ago could plant the first passkey and keep the account. The
+       session must be a sign-in made in the last few minutes - which, for
+       these accounts, means the provider asked who they are just now. */
+    let fresh = false;
+    try {
+      const sess = user.sid ? JSON.parse((await env.AMV_KV.get(_sessKey(em, user.sid))) || 'null') : null;
+      fresh = !!(sess && +sess.created > 0 && Date.now() - +sess.created <= STEPUP_NOFACTOR_FRESH_MS);
+    } catch (e) { fresh = false; }
+    if(fresh) return null;
+    audit(env, 'stepup_reauth_required', { email: em });
+    return json({ error: 'For your safety, sign in again first - then make this change within ten minutes.', code: 'reauth_required',
+                  can: { password: false, totp: false, recovery: false, passkey: false, reauth: true } }, 403);
   }
   audit(env, 'stepup_fail', { email: em });
   return json({ error: 'That did not confirm it is you. Nothing was changed.', code: 'stepup_failed',
