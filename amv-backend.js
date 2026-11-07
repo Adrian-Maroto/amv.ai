@@ -26934,6 +26934,9 @@ async function shareCreate(request, env){
     return json({ error:'This conversation is too large to share.', code:'share_too_large' }, 413);
   const id = _shareId();
   await DB.put(env, 'share', id, rec);
+  /* The sharer's referral code exists from the moment they share, so the page
+     can credit them without writing anything when a stranger opens it. */
+  try { await _referralEnsure(env, user.email); } catch (e) { /* the page links plainly; the share itself is made */ }
   // Owner index, so the privacy screen can actually list and revoke them.
   /* Under the lock revoking takes. Creating read this list, put a new entry on
      the front and wrote the whole thing back - so a revocation landing in that
@@ -27021,7 +27024,16 @@ async function sharePage(request, env, id){
      "not indexed". It keeps that promise: only an explicit true opts in. */
   const listed = rec.listed === true;
 
-  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  const appBase = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  /* A SHARED ANSWER IS HOW MOST PEOPLE FIRST MEET AMV, SO IT CREDITS WHO
+     SHARED IT. The "Try AMV" links carry the sharer's referral code, so a
+     sign-up from here is theirs (_referralCapture, with its own velocity and
+     self-referral checks). Read only - a page view writes nothing - so a
+     sharer who never opened Invite has no code yet and the link is plain. */
+  let refCode = '';
+  try { const c = await env.AMV_KV.get('refmine:' + String(rec.owner || '').toLowerCase()); if (/^[0-9A-Z]{6,12}$/.test(String(c || ''))) refCode = c; }
+  catch (e) { /* no code is a plain link, never a broken page */ }
+  const base = appBase + (refCode ? '/?ref=' + refCode + '&from=share' : '');
   // Only offered when an address is actually configured - a Report link that
   // goes nowhere is worse than none.
   const reportTo = String(env.SUPPORT_EMAIL || '').trim();

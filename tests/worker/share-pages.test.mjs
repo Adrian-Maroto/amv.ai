@@ -58,6 +58,23 @@ section('A shared link is a real page a preview crawler can read');
   ok(/value delivered rather than your costs/.test(html), 'the answer is actually on the page');
 }
 
+section('A stranger who signs up from a shared answer is credited to whoever shared it');
+{
+  const env = makeEnv();
+  const token = await tokenFor(env, 'sharer@x.com');
+  const d = await (await create(env, token, CONVO)).json();
+  const code = env._kv.get('refmine:sharer@x.com');
+  ok(/^[0-9A-Z]{6,12}$/.test(code || '') && env._kv.get('refcode:' + code) === 'sharer@x.com', 'sharing gives the sharer a referral code if they had none', code);
+  const writesBefore = env._kv.size;
+  const html = await (await W.sharePage(new Request(d.url), env, d.id)).text();
+  ok(html.includes('href="https://amv.test/?ref=' + code + '&amp;from=share"'), 'both invitations on the page carry it', (html.match(/href="https:\/\/amv\.test[^"]*"/g) || []));
+  ok((html.match(/\?ref=/g) || []).length === 2, 'the call to action and the footer link both');
+  ok(env._kv.size === writesBefore, 'and opening the page wrote nothing');
+  env._kv.delete('refmine:sharer@x.com');
+  const plain = await (await W.sharePage(new Request(d.url), env, d.id)).text();
+  ok(!/\?ref=/.test(plain) && plain.includes('href="https://amv.test"'), 'with no code on record the link is plain, never broken');
+}
+
 section('It is deliberately not indexable');
 {
   const env = makeEnv();
