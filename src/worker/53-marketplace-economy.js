@@ -254,7 +254,8 @@ async function _withRecord(env, kind, id, load, save, mutate) {
   const key = String(id || '');
   if (!key) return null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'rmut:' + kind, key, 15)) {
+    const lk = await _claimOnceDetail(env, 'rmut:' + kind, key, 15);
+    if (lk.claimed) {
       const started = Date.now();
       try {
         const rec = await load(env, key);
@@ -264,7 +265,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
           await save(env, key, rec);
         }
         return out;
-      } finally { await _releaseClaim(env, 'rmut:' + kind, key); }
+      } finally { await _releaseClaim(env, 'rmut:' + kind, key, lk.owner || null); }
     }
     await new Promise(r => setTimeout(r, 40 * (i + 1)));
   }
@@ -289,7 +290,8 @@ async function _withWallet(env, email, mutate) {
   if (!em) return null;
   let lastErr = null;
   for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
-    if (await _claimOnce(env, 'wmut', em, 15)) {
+    const lk = await _claimOnceDetail(env, 'wmut', em, 15);
+    if (lk.claimed) {
       const started = Date.now();
       try {
         const w = await _wallet(env, em);
@@ -300,7 +302,7 @@ async function _withWallet(env, email, mutate) {
         }
         return out;
       } catch (e) { lastErr = e; throw e; }
-      finally { await _releaseClaim(env, 'wmut', em); }
+      finally { await _releaseClaim(env, 'wmut', em, lk.owner || null); }
     }
     await new Promise(r => setTimeout(r, 40 * (i + 1)));
   }

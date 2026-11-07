@@ -412,7 +412,12 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            request rather than returned, so all seventeen call sites keep their
            boolean and none of them can forget to carry it. */
         if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
-        return { claimed: r.claimed };
+        /* Also handed back (Nov 7 audit LOCK-002): the map holds one owner
+           per name, so a lease that expired and was retaken in the same
+           isolate overwrote it, and the first holder's release then freed
+           the second's lock. A caller that keeps its own owner releases
+           with that, whatever the map says now. */
+        return { claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' };
       }
     }catch(e){ /* fall through to the next strategy */ }
   }
@@ -464,13 +469,14 @@ async function _onceOrRetry(env, kind, id, ttlSec, work){
   }
 }
 
-async function _releaseClaim(env, kind, id){
+async function _releaseClaim(env, kind, id, ownerIn){
   try{
     // release wherever it was claimed - the DO first, mirroring _claimOnce
     if(env && env.AMV_COUNTER){
       const mapKey = kind + ':' + id;
-      const owner = _CLAIM_OWNERS.get(mapKey) || '';
-      _CLAIM_OWNERS.delete(mapKey);
+      const owner = ownerIn != null ? String(ownerIn) : (_CLAIM_OWNERS.get(mapKey) || '');
+      /* Forget the map's entry only when it is this holder's. */
+      if(ownerIn == null || _CLAIM_OWNERS.get(mapKey) === owner) _CLAIM_OWNERS.delete(mapKey);
       try{
         const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
         /* Refused means this holder's lease had already expired and somebody

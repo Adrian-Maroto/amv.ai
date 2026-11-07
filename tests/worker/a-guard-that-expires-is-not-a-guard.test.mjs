@@ -100,7 +100,7 @@ section('The short locks are still short, or a failed withdrawal locks somebody 
 {
   const code = codeOnly(src).replace(/\s+/g, ' ');
   [['wdlock', 30], ['polock', 30], ["rmut:' + kind", 15], ['wmut', 15]].forEach(([name, secs]) => {
-    ok(new RegExp("_claimOnce\\(env, '" + name.replace(/[$*+?.()|[\]{}^]/g, '\\$&') + "[^,]*, [^,]+, " + secs + "\\)").test(code),
+    ok(new RegExp("_claimOnce(?:Detail)?\\(env, '" + name.replace(/[$*+?.()|[\]{}^]/g, '\\$&') + "[^,]*, [^,]+, " + secs + "\\)").test(code),
        name + ' is still a mutex measured in seconds', name);
   });
 }
