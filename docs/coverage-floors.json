@@ -93,6 +93,7 @@
   "80-switches.js": 88,
   "81-web-push.js": 90,
   "82-tasks.js": 72,
-  "83-support.js": 82
+  "83-support.js": 82,
+  "85-synthetics.js": 84
  }
 }
