@@ -2276,9 +2276,22 @@ async function runPgIntentSweep(env, atMs){
 /* Called by DB.put / DB.del after KV has the write. Never throws, never
    blocks the caller: it runs in the background of the request. `ik` is the
    intent written before it (_pgIntent), cleared here when Postgres has it. */
+/* IN THE ORDER THEY WERE WRITTEN. Each write mirrors the whole record as it
+   was at that moment, and a mirror of a list (API keys, a team) removes the
+   rows the list no longer has. Two writes a moment apart sent two mirrors
+   that finished in either order - and when the older finished last it took
+   the newer one's key or member back out of Postgres (found by a suite that
+   failed only under load). Mirrors of one record now run one after another,
+   in write order; different records still run at once. */
+const _pgChains = new Map();
 function _pgAfter(env, kind, id, obj, ik){
   if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return;
-  const p = _pgMirror(env, kind, String(id || '').toLowerCase(), obj)
+  const chainKey = kind + ':' + String(id || '').toLowerCase();
+  const before = _pgChains.get(chainKey) || Promise.resolve();
+  const run = before.catch(() => {}).then(() => _pgMirror(env, kind, String(id || '').toLowerCase(), obj));
+  _pgChains.set(chainKey, run);
+  run.catch(() => {}).finally(() => { if (_pgChains.get(chainKey) === run) _pgChains.delete(chainKey); });
+  const p = run
     .then(() => _pgIntentDone(env, ik))
     .catch(async (e) => {
       const why = String((e && e.message) || e).slice(0, 160);

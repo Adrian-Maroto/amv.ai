@@ -15,6 +15,7 @@
      - deleting the account leaves a tombstone with nothing personal on it;
      - without the binding nothing is tried. */
 import { execFileSync, execSync } from 'child_process';
+import { createServer, connect } from 'net';
 import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -122,6 +123,36 @@ section('API keys land one row each, by their hash alone; revoking one keeps its
   await W._pgSettle();
   ok(q(`select (revoked_at is not null) from api_keys where id='${a.d.item.id}'`) === 't' && q('select count(*) from api_keys') === '2',
      'the revoked key keeps its row, saying when');
+}
+
+section('Writes to one record reach Postgres in the order they were made');
+{
+  /* Four versions of one account's key list, each a key longer, written
+     back to back without waiting for the mirror - the order two quick key
+     creations produce. The last one written is the one Postgres must hold. */
+  const acctId = q("select id from accounts where email='ana@example.com'");
+  const base = JSON.parse(store.get('apikeys:ana@example.com')).items;
+  /* The database's first connection is slow - what CI's busy machine did -
+     so the mirror of the FIRST write starts after the later ones finished. */
+  let first = true;
+  const proxy = createServer((c) => {
+    const slow = first; first = false;
+    setTimeout(() => { const up = connect(PORT, '127.0.0.1'); c.pipe(up); up.pipe(c); up.on('error', () => c.destroy()); c.on('error', () => up.destroy()); }, slow ? 600 : 0);
+  });
+  await new Promise(r => proxy.listen(0, '127.0.0.1', r));
+  const realPg = env.PG;
+  env.PG = { connectionString: realPg.connectionString.replace(':' + PORT + '/', ':' + proxy.address().port + '/') };
+  const items = [];
+  for (let i = 0; i < 4; i++) {
+    items.push({ id: 'ord' + i, hash: 'h_ord_' + i, name: 'Order ' + i, created: Date.now() });
+    await W.DB.put(env, 'apikeys', 'ana@example.com', { items: base.concat(items) });
+  }
+  await W._pgSettle();
+  env.PG = realPg; proxy.close();
+  const n = q(`select count(*) from api_keys where account_id='${acctId}' and id like 'ord%'`);
+  ok(n === '4', 'all four keys are there - the oldest copy, finishing last, did not take the newer ones out', n);
+  await W.DB.put(env, 'apikeys', 'ana@example.com', { items: base });
+  await W._pgSettle();
 }
 
 section('A team is an organization with one membership per member; one with no account yet sends it for repair');

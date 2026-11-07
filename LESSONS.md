@@ -15731,3 +15731,20 @@ check" is not the same as "not working" either.
 and the least-privileged credential the provider recommends is the one to
 design it against. Read the provider's refusal codes: one that says "I know
 this key, it may not do this" is proof the key works.
+
+## 628. A test that fails only under load is reporting an ordering, not noise
+
+"Two keys, two rows" failed in CI and passed every time alone, and the gate's
+retry-alone passed it too - the shape that gets a suite labelled flaky. It was
+the product: each write mirrored the whole key list to Postgres in the
+background, a list mirror deletes the rows the list lacks, and on a busy
+machine the first write's mirror connected last and deleted the second key.
+At cutover that is an API key that silently disappears.
+
+It reproduced the moment the timing was made deterministic: a local proxy
+holding back the database's first connection, which left one key of four.
+
+**Rules.** When a suite fails under load and passes alone, find the two things
+whose order the load changed before calling it flaky; "passes when retried
+alone" is how an ordering bug looks. Then make that order deterministic in the
+test - delay the one step - so the fix can be measured by breaking it.
