@@ -398,7 +398,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
        part, the individual request is only a liability. */
     const ttfb = _firstByteAt ? _firstByteAt - _t0 : 0;
     if (ttfb > 0) {
-      const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500' : ttfb < 5000 ? 'p5000' : 'slow';
+      const b = _ttfbBucket(ttfb);
       _econ.push([`ttfb:${eng.key || 'unknown'}:${b}:${mk}`, 1], [`ttfbsum:${mk}`, ttfb], [`ttfbn:${mk}`, 1]);
     } }
   try { await _econAdd(env, _payer, _econ); } catch (e) { /* reporting must never break metering */ }

@@ -27379,7 +27379,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
        part, the individual request is only a liability. */
     const ttfb = _firstByteAt ? _firstByteAt - _t0 : 0;
     if (ttfb > 0) {
-      const b = ttfb < 500 ? 'p500' : ttfb < 1000 ? 'p1000' : ttfb < 2500 ? 'p2500' : ttfb < 5000 ? 'p5000' : 'slow';
+      const b = _ttfbBucket(ttfb);
       _econ.push([`ttfb:${eng.key || 'unknown'}:${b}:${mk}`, 1], [`ttfbsum:${mk}`, ttfb], [`ttfbn:${mk}`, 1]);
     } }
   try { await _econAdd(env, _payer, _econ); } catch (e) { /* reporting must never break metering */ }
@@ -35636,6 +35636,38 @@ async function _appRequestCounts(env) {
   return { top, complete };
 }
 
+/* TIME TO THE FIRST WORD, AS A HISTOGRAM WITH PERCENTILES (Nov 3 audit
+   REL-010). Buckets by upper bound; the individual request is never kept.
+   p10000 and p30000 split what used to be one open-ended 'slow' (5s and up),
+   because a p99 that can only say "over five seconds" cannot tell a slow
+   provider from a hung one. The earlier buckets keep their meaning, so a
+   month that straddles the change still adds up. A percentile is the upper
+   bound of the bucket it falls in - an honest "under N ms", never a number
+   finer than what was counted. */
+const TTFB_BUCKETS = [['p500', 500], ['p1000', 1000], ['p2500', 2500], ['p5000', 5000], ['p10000', 10000], ['p30000', 30000], ['slow', null]];
+function _ttfbBucket(ms) {
+  for (const [name, upTo] of TTFB_BUCKETS) if (upTo != null && ms < upTo) return name;
+  return 'slow';
+}
+function _ttfbPercentiles(buckets) {
+  const n = TTFB_BUCKETS.reduce((a, [b]) => a + (+buckets[b] || 0), 0);
+  if (!n) return { samples: 0, p50: null, p95: null, p99: null };
+  const at = (q) => {
+    const need = Math.ceil(q * n); let seen = 0;
+    for (const [b, upTo] of TTFB_BUCKETS) { seen += +buckets[b] || 0; if (seen >= need) return upTo == null ? 'over 30000' : 'under ' + upTo; }
+    return 'over 30000';
+  };
+  return { samples: n, p50: at(0.50), p95: at(0.95), p99: at(0.99) };
+}
+async function _ttfbBuckets(env, month, opt) {
+  const buckets = {};
+  await Promise.all(TTFB_BUCKETS.map(async ([b]) => {
+    const per = await Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`, opt).catch(() => 0)));
+    buckets[b] = per.reduce((a, c) => a + c, 0);
+  }));
+  return buckets;
+}
+
 /* THE SERVICE OBJECTIVES, FROM WHAT HAPPENED (Nov 1 audit REL-010).
    docs/SLO.md sets them; this measures them from the month's own counts -
    answers delivered whole, how fast they started, background runs that
@@ -35658,11 +35690,12 @@ async function _sloReport(env, month, opt) {
                budgetUsedPct: +used.toFixed(1), status: runs < 20 ? 'too_few' : used >= 100 ? 'broken' : used >= 50 ? 'burning' : 'ok' });
   }
   /* How fast answers start: the share inside five seconds, from the buckets. */
-  const per = await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(b =>
-    Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`, opt).catch(() => 0))).then(v => v.reduce((a, c) => a + c, 0))));
-  const n = per.reduce((a, c) => a + c, 0), fast = n - per[4];
+  const bk = await _ttfbBuckets(env, month, opt);
+  const n = TTFB_BUCKETS.reduce((a, [b]) => a + bk[b], 0), fast = bk.p500 + bk.p1000 + bk.p2500 + bk.p5000;
   const share = n ? (fast / n) * 100 : null;
+  const pc = _ttfbPercentiles(bk);
   out.push({ id: 'chat_starts_fast', what: 'A chat answer starts within 5 seconds', objective: 99.5, runs: n,
+             p50: pc.p50, p95: pc.p95, p99: pc.p99,
              actualPct: share == null ? null : +share.toFixed(2), budgetUsedPct: n ? +(((n - fast) / n) * 100 / 0.5 * 100).toFixed(1) : 0,
              status: n < 20 ? 'too_few' : (n - fast) / n * 100 >= 0.5 ? 'broken' : (n - fast) / n * 100 >= 0.25 ? 'burning' : 'ok' });
   return out;
@@ -35786,13 +35819,11 @@ async function adminStats(request, env) {
   const speed = await (async () => {
     /* Read together, not one after another: each is a sum of shares. */
     const [sum, n] = await Promise.all([_tallyGet(env, `ttfbsum:${month}`), _tallyGet(env, `ttfbn:${month}`)]);
-    const buckets = {};
-    await Promise.all(['p500', 'p1000', 'p2500', 'p5000', 'slow'].map(async (b) => {
-      const per = await Promise.all(Object.keys(ENGINES).map(k => _tallyGet(env, `ttfb:${k}:${b}:${month}`)));
-      buckets[b] = per.reduce((a, c) => a + c, 0);
-    }));
+    const buckets = await _ttfbBuckets(env, month);
     const fast = buckets.p500 + buckets.p1000;
+    const pc = _ttfbPercentiles(buckets);
     return { samples: n, avgFirstTokenMs: n ? Math.round(sum / n) : null, buckets,
+             p50: pc.p50, p95: pc.p95, p99: pc.p99,
              underOneSecondPct: n ? +((fast / n) * 100).toFixed(1) : null };
   })();
   const pop = await _planPopulation(env);

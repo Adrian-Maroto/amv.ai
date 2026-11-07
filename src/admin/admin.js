@@ -406,6 +406,10 @@ function _admRenderTab(tab, backendLive, live){
             + live.slo.map(o=>'<tr><td>'+escH(o.what)+'</td><td>'+o.objective+'%</td><td>'+(o.actualPct==null?'-':o.actualPct+'%')+'</td><td>'
               + (o.status==='too_few'?'too few to judge':(o.budgetUsedPct+'%'+(o.status==='broken'?' - over':o.status==='burning'?' - burning':'')))+'</td></tr>').join('')
             + '</tbody></table></div>'
+            /* p50/p95/p99 of the time to the first word, from the histogram -
+               "under N ms", as fine as the buckets that counted it. */
+            + (()=>{ const f=live.slo.find(o=>o.id==='chat_starts_fast'&&o.p50); return f
+                ? '<div class="adm-note">Time to the first word: half of answers '+escH(String(f.p50))+' ms, 95% '+escH(String(f.p95))+' ms, 99% '+escH(String(f.p99))+' ms.</div>' : ''; })()
           : '<div class="adm-empty">Nothing measured yet this month.</div>')
         : _admPending('Each objective, what it actually was, and how much error budget is spent'))+
       _admCard('Cost per good outcome', live

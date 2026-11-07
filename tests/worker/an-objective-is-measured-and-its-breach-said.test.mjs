@@ -14,7 +14,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'slo.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _sloReport, runSloCheck, _outcomeAdd, _tallyAdd, monthKey, ENGINES };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _sloReport, runSloCheck, _outcomeAdd, _tallyAdd, monthKey, ENGINES, _ttfbBucket, _ttfbPercentiles };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const calls = { n: 0 };
@@ -43,6 +43,21 @@ section('Measured from what happened');
   ok(by.chat_delivered.actualPct === 100 && by.chat_delivered.status === 'ok', 'every answer delivered: inside its objective', by.chat_delivered);
   ok(by.background_runs.actualPct === 99 && by.background_runs.budgetUsedPct === 100 && by.background_runs.status === 'broken', 'one failed run in a hundred spends the whole 1% budget', by.background_runs);
   ok(by.chat_starts_fast.actualPct === 100 && by.chat_starts_fast.runs === 40, 'and how fast answers start, from the buckets', by.chat_starts_fast);
+}
+
+section('How long the slowest answers waited, not only the average (Nov 3 audit REL-010)');
+{
+  ok(W._ttfbBucket(120) === 'p500' && W._ttfbBucket(4999) === 'p5000' && W._ttfbBucket(7000) === 'p10000' && W._ttfbBucket(29999) === 'p30000' && W._ttfbBucket(45000) === 'slow',
+     'a wait lands in the bucket it is under, and five seconds is no longer the last line');
+  const env = mkEnv();
+  for (let i = 0; i < 90; i++) await W._tallyAdd(env, `ttfb:amv-core:p500:${mk}`, 'a' + i, 1);
+  for (let i = 0; i < 6; i++) await W._tallyAdd(env, `ttfb:amv-core:p2500:${mk}`, 'b' + i, 1);
+  for (let i = 0; i < 3; i++) await W._tallyAdd(env, `ttfb:amv-core:p10000:${mk}`, 'c' + i, 1);
+  await W._tallyAdd(env, `ttfb:amv-core:slow:${mk}`, 'd', 1);
+  const f = (await W._sloReport(env, mk)).find(o => o.id === 'chat_starts_fast');
+  ok(f.runs === 100 && f.p50 === 'under 500' && f.p95 === 'under 2500' && f.p99 === 'under 10000', 'p50, p95 and p99 come from the histogram', f);
+  ok(f.actualPct === 96, 'and the four answers over five seconds are what spend the budget', f.actualPct);
+  ok(W._ttfbPercentiles({}).p99 === null, 'with nothing counted there is no percentile, not a zero');
 }
 
 section('A broken objective is told to the owner once a day, with its runbook');
