@@ -79,6 +79,24 @@ section('The ceiling holds however many addresses it is spread across');
      accepted + ' accepted, cap ' + CAP);
 }
 
+section('Once the budget is spent, a burst does not keep asking the one object for it');
+{
+  /* One counter holds the day's budget for the whole deployment. Asking it
+     again after it has said no is how a hot key forms at scale: the answer is
+     remembered by the server for a minute instead. */
+  const env = makeEnv();
+  for (let i = 0; i < CAP + 2; i++) await W._nonEssentialWrite(env, 'x');
+  let touched = 0;
+  const g = env.AMV_KV.get, pt = env.AMV_KV.put;
+  env.AMV_KV.get = async (k) => { touched++; return g(k); };
+  env.AMV_KV.put = async (k, v, o) => { touched++; return pt(k, v, o); };
+  let allowed = 0;
+  for (let i = 0; i < 500; i++) if (await W._nonEssentialWrite(env, 'x')) allowed++;
+  env.AMV_KV.get = g; env.AMV_KV.put = pt;
+  ok(allowed === 0, 'nothing more is allowed', allowed);
+  ok(touched === 0, 'and five hundred more asks reach the store zero times', touched);
+}
+
 section('The two of them share it, rather than having one each');
 {
   const env = makeEnv();

@@ -687,10 +687,22 @@ async function _tallyGet(env, name, opt) {
   if (month) sum += +((await _econMonth(env, month))[name]) || 0;
   return sum;
 }
+/* ONE OBJECT FOR THE WHOLE DEPLOYMENT, SO A "NO" IS REMEMBERED. The budget
+   is one counter a day for everybody - 150 writes - and once it is spent every
+   later call still went to that one object only to be refused. At a million
+   clients reporting errors that is thousands of requests a second to a single
+   object, which is how a hot key takes down the thing it shares a host with.
+   A refusal is held by this server until the minute is out (or the day
+   changes): the answer it would get is the same. */
+const NONESS_HOLD_MS = 60000;
+let _nonessHeld = { day: '', until: 0 };
 async function _nonEssentialWrite(env, what) {
+  const day = todayKey();
+  if (_nonessHeld.day === day && Date.now() < _nonessHeld.until) return false;
   const cap = Math.max(1, parseInt(env.NONESSENTIAL_WRITE_CAP || '', 10) || NONESSENTIAL_DAILY_WRITES);
-  const res = await counter(env, `noness:${todayKey()}`,
+  const res = await counter(env, `noness:${day}`,
     { op: 'reserve', amount: 1, cap, ttlMs: 86400000 * 2 });
+  if (res.unavailable || !res.allowed) _nonessHeld = { day, until: Date.now() + NONESS_HOLD_MS };
   /* The counter itself being unreachable is not a reason to spend the budget on
      the least important thing AMV does. Refuse, quietly. */
   if (res.unavailable) return false;
