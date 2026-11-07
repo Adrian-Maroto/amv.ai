@@ -55,7 +55,10 @@ async function _pgIntent(env, kind, id){
   if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return null;
   const tok = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
   const k = 'pgintent:' + kind + ':' + String(id || '').toLowerCase() + ':' + tok;
-  try { await env.AMV_KV.put(k, JSON.stringify({ at: Date.now() }), { expirationTtl: 7 * 86400 }); return k; }
+  /* The time rides as metadata too, so readiness can read every intent from
+     the listing alone (DATA-038), not one fetch each. */
+  const at = Date.now();
+  try { await env.AMV_KV.put(k, JSON.stringify({ at }), { expirationTtl: 7 * 86400, metadata: { at } }); return k; }
   catch (e) {
     /* No intent: put it straight on the repair list instead, so the write
        still cannot be lost. If that fails too, THE WRITE DOES NOT HAPPEN

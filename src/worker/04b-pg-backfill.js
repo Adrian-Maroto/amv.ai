@@ -471,10 +471,25 @@ async function _pgCutover(env){
     if (sql) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
   }
   try { const r = await env.AMV_KV.list({ prefix: 'pgrepair:', limit: 1 }); if ((r.keys || []).length) blockers.push('repairs waiting'); } catch (e) { blockers.push('repair list unreadable'); }
+  /* EVERY UNFINISHED WRITE, NOT THE FIRST FIFTY (Nov 7 audit DATA-038,
+     READY-020). Readiness looked at one page of fifty intents, so a stuck
+     write further down the list never blocked the cutover. Every page is
+     read now (the time comes with the listing), and a list too long to
+     count within the bound is itself a blocker, never a pass. */
   try {
-    const r = await env.AMV_KV.list({ prefix: 'pgintent:', limit: 50 });
-    let stuck = 0;
-    for (const k of r.keys || []) { let at = 0; try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; } if (!at || Date.now() - at > PG_INTENT_STALE_MS) stuck++; }
+    let stuck = 0, cursor, pages = 0, complete = false;
+    const now = Date.now();
+    do {
+      const r = await env.AMV_KV.list({ prefix: 'pgintent:', limit: 1000, cursor });
+      for (const k of r.keys || []) {
+        let at = +((k.metadata && k.metadata.at) || 0);
+        if (!at) { try { at = +(JSON.parse((await env.AMV_KV.get(k.name)) || '{}').at) || 0; } catch (e) { at = 0; } }
+        if (!at || now - at > PG_INTENT_STALE_MS) stuck++;
+      }
+      complete = !!r.list_complete || !r.cursor;
+      cursor = complete ? undefined : r.cursor;
+    } while (cursor && ++pages < 50);
+    if (!complete) blockers.push('more unfinished mirror writes than can be counted here');
     if (stuck) blockers.push(stuck + ' mirror write(s) unfinished');
   } catch (e) { blockers.push('intents unreadable'); }
   const state = blockers.length ? (bp ? 'reading_with_blockers' : 'not_ready') : bp >= 10000 ? 'reading_all' : bp > 0 ? 'reading_some' : 'ready_to_read';

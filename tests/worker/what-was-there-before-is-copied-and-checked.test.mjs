@@ -432,7 +432,16 @@ section('Money from before the ledger: one opening row per balance, reconciled t
   store.set('pgintent:ent:p001@example.com:abcd', JSON.stringify({ at: Date.now() - 3600000 }));
   c = await W._pgCutover(env);
   ok(c.state !== 'reading_all' && c.blockers.some(b => /unfinished/.test(b)), 'a mirror write whose background died blocks it too', c.blockers);
-  store.delete('pgintent:ent:p001@example.com:abcd'); for (const [k, v] of left) store.set(k, v);
+  store.delete('pgintent:ent:p001@example.com:abcd');
+  /* Nov 7 audit DATA-038/READY-020: sixty writes still in flight sort first,
+     and the one whose background died sorts after them - past the single
+     page of fifty the readiness check used to read. */
+  for (let i = 0; i < 60; i++) store.set('pgintent:acct:a' + String(i).padStart(3, '0') + '@example.com:f' + i, JSON.stringify({ at: Date.now() }));
+  store.set('pgintent:ent:zz@example.com:dead', JSON.stringify({ at: Date.now() - 3600000 }));
+  c = await W._pgCutover(env);
+  ok(c.state !== 'reading_all' && c.blockers.some(b => /^1 mirror write/.test(b)), 'a dead write behind sixty live ones still blocks it', c.blockers);
+  for (const k of [...store.keys()]) if (k.startsWith('pgintent:')) store.delete(k);
+  for (const [k, v] of left) store.set(k, v);
   env.PG_READ = savedRead;
 }
 
