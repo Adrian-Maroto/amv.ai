@@ -47854,7 +47854,7 @@ async function accountAccessLog(request, env){
    So once an hour each configured capability does one real, harmless thing,
    with the same credentials and bindings real requests use:
 
-     model      lists the provider's models        (read; costs nothing)
+     model      asks the cheapest engine for one token (a fraction of a cent)
      postgres   SELECT 1                            (read)
      library    writes, reads back and deletes a probe object
      email      lists the sending domains          (read)
@@ -47884,8 +47884,21 @@ async function _synthHttp(url, headers) {
 }
 
 const SYNTH_PROBES = [
+  /* A REAL ANSWER, NOT A LIST (Nov 7 audit READY-022). Listing models
+     passes for a key whose account has run out of credit, or a model the
+     account cannot use - the two ways chat actually stops. So the cheapest
+     engine is asked for one token, streamed as every chat is, and the
+     stream has to start. About ten tokens an hour; still skipped while
+     paused or past the day's ceiling (_synthModelHeld). */
   { id: 'model', on: (env) => _has(env, 'AMV_MODEL_KEY'),
-    run: (env) => _synthHttp(_modelBase(env) + '/v1/models?limit=1', _modelHeaders(env)) },
+    run: async (env) => {
+      const r = await fetchDeadline(_modelBase(env) + '/v1/messages', { method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, _modelHeaders(env)),
+        body: JSON.stringify({ model: ENGINES['amv-pulse'].model, max_tokens: 1, stream: true, messages: [{ role: 'user', content: 'Reply with OK.' }] }) }, SYNTH_STEP_MS);
+      if (!r.ok) { try { await r.text(); } catch (e) { /* the status is the answer */ } throw new Error('the provider answered ' + r.status); }
+      const text = await r.text();
+      if (!/message_start/.test(text)) throw new Error('the provider answered, but no reply started');
+    } },
   { id: 'postgres', on: (env) => _pgOn(env),
     run: async (env) => {
       const sql = await _pgClient(env);

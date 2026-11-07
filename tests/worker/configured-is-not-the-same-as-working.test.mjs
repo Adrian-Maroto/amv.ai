@@ -32,6 +32,7 @@ globalThis.fetch = async (u, init) => {
   u = String(u); seen.push(u);
   if (u === 'https://hooks.example/owner') { told.push(JSON.parse(init.body).text); return new Response('{}'); }
   for (const [frag, status] of Object.entries(answer)) if (u.includes(frag)) return new Response('{}', { status });
+  if (/\/v1\/messages/.test(u)) return new Response(answer.__noStart ? 'event: ping\n\n' : 'event: message_start\ndata: {"type":"message_start"}\n\n', { status: 200 });
   return new Response('{}', { status: 200 });
 };
 
@@ -39,14 +40,14 @@ section('Every configured capability does one real, harmless thing');
 {
   const env = mkEnv(); answer = {}; seen.length = 0;
   const r = await W.runCapabilitySynthetics(env);
-  ok(r.results.model.ok === true && seen.some(u => /\/v1\/models/.test(u)), 'the model key lists the provider’s models', r.results.model);
+  ok(r.results.model.ok === true && seen.some(u => /\/v1\/messages/.test(u)), 'the model answers one token, streamed - a real reply, not a list (READY-022)', r.results.model);
   ok(r.results.email.ok === true && seen.some(u => /api\.resend\.com\/domains/.test(u)), 'the email key reads its sending domains', r.results.email);
   ok(r.results.payments.ok === true && seen.some(u => /api\.stripe\.com\/v1\/balance/.test(u)), 'the payments key reads the balance - a read, nothing charged', r.results.payments);
   ok(r.results.library.ok === true && env.AMV_FILES._files.size === 0, 'storage writes, reads back and deletes its probe, leaving nothing', r.results.library);
   ok(r.results.postgres.ok === null && /not configured/.test(r.results.postgres.why), 'what is not configured is said to be, not counted as working', r.results.postgres);
   ok(['job_queue', 'browser', 'meaning'].every(k => r.results[k].ok === null && /not exercised/.test(r.results[k].why)), 'and what is not exercised says so');
   ok(r.failed.length === 0, 'nothing failed', r.failed);
-  ok(!seen.some(u => /charges|payment_intents|emails$|\/messages/.test(u)), 'nothing was charged, sent or asked of the model', seen);
+  ok(!seen.some(u => /charges|payment_intents|emails$/.test(u)), 'nothing was charged or sent', seen);
 }
 
 section('A key the provider no longer takes is found, named and told');
@@ -60,6 +61,17 @@ section('A key the provider no longer takes is found, named and told');
   ok(told.length === 0, 'and not again within the day', told);
   const p = await W._synthProved(env, Date.now());
   ok(p.state === 'failing' && p.proved.payments === false && p.proved.model === true, 'readiness reports it as configured and broken', p);
+}
+
+section('A model key that lists models but cannot answer is broken (Nov 7 audit READY-022)');
+{
+  answer = { '/v1/messages': 402 };
+  let r = await W.runCapabilitySynthetics(mkEnv());
+  ok(r.results.model.ok === false && /402/.test(r.results.model.why), 'out of credit at the provider: the check fails, saying so', r.results.model);
+  answer = { __noStart: true };
+  r = await W.runCapabilitySynthetics(mkEnv());
+  ok(r.results.model.ok === false && /no reply started/.test(r.results.model.why), 'an answer that never starts a reply fails too', r.results.model);
+  answer = {};
 }
 
 section('A send-only email key is working; an unknown one is not');
@@ -121,7 +133,7 @@ section('It has a trigger of its own, and the five-minute tick does not run it')
     const c = { _p: [], waitUntil(p) { this._p.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
     await W.default.scheduled({ cron, scheduledTime: Date.UTC(2026, 10, 7, 4, 17) }, env, c);
     await Promise.all(c._p);
-    return { probed: seen.some(u => /\/v1\/models|api\.stripe\.com\/v1\/balance/.test(u)), kept: !!(await env.AMV_KV.get('synth:last')) };
+    return { probed: seen.some(u => /\/v1\/messages|api\.stripe\.com\/v1\/balance/.test(u)), kept: !!(await env.AMV_KV.get('synth:last')) };
   };
   const hourly = await run(W.SYNTH_CRON);
   ok(hourly.probed && hourly.kept, 'the hourly trigger runs the checks and keeps the answer', hourly);
@@ -130,7 +142,7 @@ section('It has a trigger of its own, and the five-minute tick does not run it')
   const paused = mkEnv(); await paused.AMV_KV.put('GLOBAL_KILL', '1'); seen.length = 0;
   const c = { _p: [], waitUntil(p) { this._p.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
   await W.default.scheduled({ cron: W.SYNTH_CRON }, paused, c); await Promise.all(c._p);
-  ok(!seen.some(u => /\/v1\/models/.test(u)), 'and nothing is called while AMV is paused', seen);
+  ok(!seen.some(u => /\/v1\/messages/.test(u)), 'and nothing is called while AMV is paused', seen);
 }
 
 console.log = quiet;
