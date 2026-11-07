@@ -39,5 +39,13 @@ section('Exact, over many amounts');
   ok(bad.length === 0, 'every whole-cent amount is sent as exactly its cents, and a metered credit amount to six places', bad.slice(0, 3));
 }
 
+section('Seller money is whole units of its own currency (Nov 7 audit DATA-033)');
+{
+  ok(W._pgMoneyAmount({ table: 'seller', amount: 1500, currency: 'JPY' }).amount === '1500', 'whole yen, written without decimals');
+  ok(refused({ table: 'seller', amount: 1500.5, currency: 'JPY' }), 'half a yen is refused');
+  ok(W._pgMoneyAmount({ table: 'seller', amount: 12.345, currency: 'KWD' }).amount === '12.345', 'a dinar keeps three decimals');
+  ok(refused({ table: 'seller', amount: 12.345, currency: 'USD' }), 'dollars still need whole cents');
+}
+
 if (report('a-money-row-is-exact-before-it-is-sent') > 0) process.exitCode = 1;
 done();

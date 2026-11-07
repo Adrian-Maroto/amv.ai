@@ -296,10 +296,13 @@ function _pgMoneyAmount(row){
   if (!Number.isFinite(a) || Math.abs(a) >= 1e9) throw new Error('money_amount_invalid');
   const cur = String(row.currency || 'USD').toUpperCase();
   if (!/^[A-Z]{3}$/.test(cur)) throw new Error('money_currency_invalid');
+  /* Seller money is whole minor units OF ITS CURRENCY (Nov 7 audit DATA-033):
+     cents for dollars, whole yen, thousandths of a dinar - not always cents. */
   if (row.table === 'seller') {
-    const cents = Math.round(a * 100);
-    if (Math.abs(cents / 100 - a) > 1e-9) throw new Error('money_not_whole_cents');
-    return { currency: cur, amount: (cents / 100).toFixed(2) };
+    const d = _minorDigits(cur), f = Math.pow(10, d);
+    const units = Math.round(a * f);
+    if (Math.abs(units / f - a) > 1e-9) throw new Error('money_not_whole_cents');
+    return { currency: cur, amount: (units / f).toFixed(d) };
   }
   return { currency: cur, amount: a.toFixed(6) };
 }
