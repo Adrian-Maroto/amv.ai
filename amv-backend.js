@@ -6718,9 +6718,20 @@ async function connAct(request, env){
     /* The provider's own message is logged and NOT returned. It can carry a
        quota name, an internal id, or a hint about the account, and none of that
        belongs in an answer to a browser. */
-    if(spec.writes) await _actCount(env, 'failed', user.email);
-    audit(env, 'conn_action_failed', { by: user.email, action: name,
-      error: String((e && e.message) || e).slice(0, 120) });
+    /* REFUSED IS NOT THE SAME AS UNKNOWN (Nov 7 audit CONN-030). A provider
+       that answered 4xx refused the change, and "nothing was changed" is
+       true. One that answered 5xx, timed out, or whose answer was lost may
+       have made the change before the answer went missing - and "nothing
+       was changed" then tells somebody to send the email, book the meeting
+       or post the message a second time. For a write that is not a definite
+       refusal, AMV says it does not know, and to look before trying again. */
+    const errText = String((e && e.message) || '');
+    const st = +((errText.match(/_(\d{3})$/) || [])[1] || 0);
+    const refused = st >= 400 && st < 500;
+    const unknown = !!spec.writes && !refused;
+    if(spec.writes) await _actCount(env, unknown ? 'unverifiable' : 'failed', user.email);
+    audit(env, unknown ? 'conn_action_outcome_unknown' : 'conn_action_failed', { by: user.email, action: name,
+      error: errText.slice(0, 120) });
     /* AMV's OWN refusals - raised before any request, or naming a file that
        was never handed over - are said as what they are. */
     const why = String((e && e.message) || '');
@@ -6739,6 +6750,8 @@ async function connAct(request, env){
     if (own) return reply({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
     if (why.startsWith('slack_refused:'))
       return reply({ error: 'slack_refused', action: name, message: 'Slack refused the message (' + why.slice(14) + '). Nothing was posted.' }, 502);
+    if (unknown) return reply({ error: 'outcome_unknown', action: name,
+      message: 'AMV could not tell whether that went through - the account did not answer clearly. Look in the account before trying again, so it does not happen twice.' }, 502);
     return reply({ error:'action_failed', action: name,
       message:'That did not work. Nothing was changed.' }, 502);
   }

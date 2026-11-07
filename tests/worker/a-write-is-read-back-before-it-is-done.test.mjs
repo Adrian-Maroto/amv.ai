@@ -167,5 +167,24 @@ section('A write that cannot say whether it happened cannot report success');
   delete W.CONN_ACTIONS['test.blind'];
 }
 
+section('A refusal is "nothing changed"; a lost answer is "AMV does not know" (Nov 7 audit CONN-030)');
+{
+  const { env, tok } = await signedInWithGoogle();
+  const real = globalThis.fetch;
+  const send = async (answer) => {
+    globalThis.fetch = async (url, init) => /calendar\/v3\/calendars\/primary\/events$/.test(String(url)) && (init && init.method) === 'POST' ? answer() : real(url, init);
+    const r = await req(env, '/v1/connect/act', { action: 'calendar.create', args: ARGS['calendar.create'] }, tok);
+    globalThis.fetch = real;
+    return { status: r.status, d: await jsonOf(r) };
+  };
+  const refused = await send(() => J({ error: { message: 'forbidden' } }, 403));
+  ok(refused.status === 502 && refused.d.error === 'action_failed' && /Nothing was changed/.test(refused.d.message), 'the account said no: nothing was changed, and it says so', refused.d);
+  const fault = await send(() => J({ error: {} }, 503));
+  ok(fault.d.error === 'outcome_unknown' && !/Nothing was changed/.test(fault.d.message) && /before trying again/.test(fault.d.message),
+    'the account failed on its side: AMV does not claim nothing happened, and says to look first', fault.d);
+  const lost = await send(() => { throw new TypeError('network connection lost'); });
+  ok(lost.d.error === 'outcome_unknown' && !/Nothing was changed/.test(lost.d.message), 'and the same when the answer never arrived', lost.d);
+}
+
 if (report('a-write-is-read-back-before-it-is-done') > 0) process.exitCode = 1;
 done();
