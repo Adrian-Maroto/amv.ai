@@ -62,6 +62,23 @@ section('A key the provider no longer takes is found, named and told');
   ok(p.state === 'failing' && p.proved.payments === false && p.proved.model === true, 'readiness reports it as configured and broken', p);
 }
 
+section('A send-only email key is working; an unknown one is not');
+{
+  const env = mkEnv();
+  const real = globalThis.fetch;
+  const answerWith = (status, name) => { globalThis.fetch = async (u, init) => String(u).includes('api.resend.com') ? new Response(JSON.stringify({ name, message: 'x' }), { status }) : real(u, init); };
+  answerWith(401, 'restricted_api_key');
+  let r = await W.runCapabilitySynthetics(env);
+  ok(r.results.email.ok === true, 'a key the provider says may only send is a key that works - not BROKEN', r.results.email);
+  answerWith(403, 'invalid_api_key');
+  r = await W.runCapabilitySynthetics(env);
+  ok(r.results.email.ok === false && /403/.test(r.results.email.why) && /invalid_api_key/.test(r.results.email.why), 'a key it does not know fails, naming why', r.results.email);
+  answerWith(401, 'missing_api_key');
+  r = await W.runCapabilitySynthetics(env);
+  ok(r.results.email.ok === false, 'and so does any other refusal', r.results.email);
+  globalThis.fetch = real;
+}
+
 section('Storage that answers with something else fails');
 {
   const env = mkEnv(); answer = {};

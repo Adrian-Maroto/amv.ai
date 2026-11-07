@@ -15713,3 +15713,21 @@ way sign-in does, and carries the channel when the link said one.
 person doing the behaviour makes, and check that request is the one counted.
 And a metric that undercounts its best cases is not conservative - it points
 the steering the wrong way.
+
+## 627. A probe that needs more permission than the job reports the job broken
+
+The hourly capability check proved email by listing the account's sending
+domains. The key production uses is the one Resend recommends - allowed to
+send and nothing else - and that key is refused the domain list. So from its
+first run the check reported production's working email as BROKEN, the
+synthetic workflow failed every hour, and an owner reading it would have gone
+looking for a fault in mail that was being delivered.
+
+It was found because the live readiness answer was read, not assumed: the
+other half of "configured is not the same as working" is that "failed the
+check" is not the same as "not working" either.
+
+**Rules.** A probe must need no more permission than the job it vouches for,
+and the least-privileged credential the provider recommends is the one to
+design it against. Read the provider's refusal codes: one that says "I know
+this key, it may not do this" is proof the key works.

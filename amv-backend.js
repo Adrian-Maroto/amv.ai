@@ -47759,8 +47759,21 @@ const SYNTH_PROBES = [
         if (back !== body) throw new Error(o ? 'read back something else' : 'wrote, then could not read it back');
       } finally { try { await env.AMV_FILES.delete(key); } catch (e) { /* a probe left behind is 20 bytes under synthetic/, swept by the next run's put of a new name */ } }
     } },
+  /* A SEND-ONLY KEY IS A WORKING KEY. The recommended Resend key may only
+     send, and is refused the domain list with 401 `restricted_api_key` -
+     which this read as broken, so production's healthy email was reported
+     BROKEN every hour from the first run. That answer is the provider saying
+     it knows the key; a key it does not know is 403 `invalid_api_key`, and
+     that, or anything else, still fails. */
   { id: 'email', on: (env) => _has(env, 'EMAIL_API_KEY'),
-    run: (env) => _synthHttp('https://api.resend.com/domains', { Authorization: 'Bearer ' + env.EMAIL_API_KEY }) },
+    run: async (env) => {
+      const r = await fetchDeadline('https://api.resend.com/domains', { method: 'GET', headers: { Authorization: 'Bearer ' + env.EMAIL_API_KEY } }, SYNTH_STEP_MS);
+      let name = '';
+      try { const d = await r.json(); name = String((d && d.name) || ''); } catch (e) { name = ''; /* the status alone is the answer */ }
+      if (r.ok) return;
+      if (r.status === 401 && name === 'restricted_api_key') return;
+      throw new Error('the provider answered ' + r.status + (name ? ' (' + name.slice(0, 40) + ')' : ''));
+    } },
   { id: 'payments', on: (env) => _has(env, 'STRIPE_SECRET_KEY'),
     run: (env) => _synthHttp('https://api.stripe.com/v1/balance', { Authorization: 'Bearer ' + env.STRIPE_SECRET_KEY }) },
 ];
