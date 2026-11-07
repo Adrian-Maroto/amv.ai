@@ -1883,6 +1883,9 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       continue;
     }
     if(!item.active || item.next > now) continue;
+    /* Paused since this run began: this job and the ones after it wait,
+       still due, for the first run after it is back on (QUEUE-015). */
+    if(await _autoStopNow(env)){ audit(env, 'auto_run_stopped_midway', { email }); break; }
     /* HELD, NOT SKIPPED. The job does not run and nothing is spent - and
        `next` moves to the far side of the window rather than staying in the
        past, so it goes at a reasonable hour instead of the moment the window

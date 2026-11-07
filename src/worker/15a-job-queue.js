@@ -102,11 +102,16 @@ async function _autoEnqueue(env, users, now){
    tick: the kill switch and the automations switch stop it, a paused account
    runs nothing. A failure is retried with a growing delay; after the queue's
    max_retries the provider moves it to the dead-letter queue (below). */
+/* STOPPED MEANS STOPPED FROM THE NEXT JOB, NOT THE NEXT BATCH (Nov 7 audit
+   QUEUE-015). The pause and the automations switch were read once when a
+   batch arrived, so a pause pressed while it ran let every account after it
+   in that batch run anyway. Read again before each account here, and before
+   each job inside a run (_autoRunAccount). Unknown is stopped. */
+async function _autoStopNow(env){
+  try{ if((await env.AMV_KV.get('GLOBAL_KILL')) === '1') return true; }catch(e){ return true; }
+  try{ return !!(await _switchedOff(env, 'feature:automations')); }catch(e){ return true; }
+}
 async function _autoQueueConsume(batch, env){
-  let killed = false;
-  try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
-  let off = false;
-  try{ off = await _switchedOff(env, 'feature:automations'); }catch(e){ off = true; }
   for(const msg of (batch.messages || [])){
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
@@ -121,7 +126,7 @@ async function _autoQueueConsume(batch, env){
     /* Stopped on purpose: acknowledged, not retried. The job keeps its place
        and its next run, and the first tick after the switch is back on sends
        it again - the same as the tick does when it is stopped. */
-    if(killed || off){ msg.ack(); continue; }
+    if(await _autoStopNow(env)){ msg.ack(); continue; }
     try{
       const rec = await DB.get(env, 'auto', email);
       if(!rec || rec.paused || !Array.isArray(rec.items) || !rec.items.length){ msg.ack(); continue; }

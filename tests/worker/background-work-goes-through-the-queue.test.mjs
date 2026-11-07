@@ -126,6 +126,19 @@ section('The kill switch and a paused account stop the consumer too');
   r.paused = false; store.set('auto:' + TWO, JSON.stringify(r));
 }
 
+section('Paused in the middle of a batch: the accounts after it do not run (Nov 7 audit QUEUE-015)');
+{
+  due(ME); due(TWO); modelCalls = 0;
+  /* The first account's run pauses AMV the moment its model call is made -
+     an owner pressing pause while the batch is being worked through. */
+  const real = globalThis.fetch;
+  globalThis.fetch = async (...a) => { store.set('GLOBAL_KILL', '1'); return real(...a); };
+  const msgs = await deliver([{ email: ME }, { email: TWO }]);
+  globalThis.fetch = real; store.delete('GLOBAL_KILL');
+  ok(modelCalls === 1, 'only the account already running when the pause came spends anything', modelCalls);
+  ok(msgs.every(m => m.acked && !m.retried) && rec(TWO).items[0].next <= Date.now(), 'and the second keeps its place for after, without a retry', rec(TWO).items[0].next);
+}
+
 section('A queue that will not take the message never costs a job');
 {
   refuse = true; due(TWO); modelCalls = 0; audits.length = 0;
