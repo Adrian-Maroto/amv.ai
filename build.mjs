@@ -105,7 +105,7 @@ function emitBridge() {
      this), so it always carries the bridge these suites test. */
   writeFileSync('cloud/amv-bridge.mjs', readFileSync(BRIDGE_SRC));
   /* The readable list of what AMV can do, from the checked one. */
-  writeFileSync('docs/CAPABILITIES.md', renderCapabilities(JSON.parse(readFileSync('docs/capabilities.json', 'utf8'))));
+  writeFileSync('docs/CAPABILITIES.md', renderCapabilities(JSON.parse(readFileSync('docs/capabilities.json', 'utf8')), (f) => readFileSync(f, 'utf8')));
   /* The command-line tool, downloaded from Settings -> API keys - the page
      writes this deployment's address into it at download time. */
   writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));

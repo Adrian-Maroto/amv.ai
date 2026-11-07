@@ -268,7 +268,7 @@ step('Build is fresh (index.html reflects source)', () => {
      copy, and a stale or hand-edited one is named before the build replaces it. */
   {
     const page = existsSync(R('docs/CAPABILITIES.md')) ? readFileSync(R('docs/CAPABILITIES.md'), 'utf8') : '';
-    if (page !== renderCapabilities(JSON.parse(readFileSync(R('docs/capabilities.json'), 'utf8'))))
+    if (page !== renderCapabilities(JSON.parse(readFileSync(R('docs/capabilities.json'), 'utf8')), (f) => readFileSync(R(f), 'utf8')))
       throw new Error('docs/CAPABILITIES.md is not what docs/capabilities.json renders. Edit the registry, never the page, then run node build.mjs.');
   }
   sh('node build.mjs');

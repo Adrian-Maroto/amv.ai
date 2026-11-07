@@ -94,6 +94,22 @@ section('The check notices');
   ok(hit.length === 1, 'a doc naming a module that does not exist is caught');
 }
 
+section('The capability page says what each one needs, read from its code');
+{
+  const { settingsOf, renderCapabilities } = await import(join(ROOT, 'tools', 'capabilities-doc.mjs'));
+  const reg = JSON.parse(readFileSync(join(ROOT, 'docs', 'capabilities.json'), 'utf8'));
+  const read = (f) => readFileSync(join(ROOT, f), 'utf8');
+  const speech = reg.capabilities.find(c => (c.code || []).some(([f]) => /69-speech/.test(f)));
+  ok(speech && settingsOf(speech, read).includes('AMV_SPEECH_KEY'), 'server speech is listed as reading its key', speech && settingsOf(speech, read));
+  const fake = { code: [['src/worker/69-speech.js', 'noSuchFunctionAnywhere']] };
+  ok(settingsOf(fake, read).length === 0, 'a function that is not there reads nothing - nothing is guessed');
+  const readiness = read('src/worker/60-readiness.js');
+  const all = new Set(reg.capabilities.filter(c => c.status === 'built').flatMap(c => settingsOf(c, read)));
+  const unseen = [...all].filter(n => !readiness.includes(n));
+  ok(all.size >= 5 && unseen.length === 0, `every setting a capability reads (${all.size}) is on the go-live screen, so the operator can see it on or off`, unseen);
+  ok(readFileSync(join(ROOT, 'docs', 'CAPABILITIES.md'), 'utf8') === renderCapabilities(reg, read), 'and the committed page is what the code says today');
+}
+
 section('The architecture description says what the build does');
 {
   const ctx = readFileSync(join(ROOT, 'CONTEXT.md'), 'utf8');
