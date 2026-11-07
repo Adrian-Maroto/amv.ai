@@ -995,6 +995,7 @@ async function _route(request, env, ctx) {
     case '/admin/payouts/mark':  return adminPayoutMark(request, env);
     case '/admin/readiness':     return adminReadiness(request, env);
     case '/admin/email-test':    return adminEmailTest(request, env);
+    case '/admin/audit/pid':     return adminAuditPid(request, env);
     case '/admin/digest':        return adminDigest(request, env);
     case '/admin/backup/export': return backupExport(request, env);
     case '/admin/backup/import': return backupImport(request, env);

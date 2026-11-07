@@ -496,7 +496,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -529,6 +529,8 @@ function _readinessReport(env, seen) {
       effect: 'Step 4 of the move to Postgres: for these accounts (addresses and/or a share, like "amv@amv.homes,5%"), every account, plan and key read is also read from Postgres and compared in the background. KV still answers. Unset, nothing is compared. Results at GET /admin/pg/shadow.' },
     { id: 'backupSign', name: 'Backups: the signing key', env: 'BACKUP_SIGNING_KEY', set: _has(env, 'BACKUP_SIGNING_KEY'),
       effect: 'Signs each nightly backup\u2019s manifest, so a manifest edited in the bucket - or written by anything but this Worker - is not counted or restored. Unset, the token secret signs them; set it to keep backups trusted across a change of that secret.' },
+    { id: 'auditIdKey', name: 'Logs: the pseudonym key', env: 'AUDIT_ID_KEY', set: _has(env, 'AUDIT_ID_KEY'),
+      effect: 'Keys the u_… pseudonym that stands for each address in the audit log and analytics, so the logs never carry an address. Unset, the token secret keys it; set it to keep the same pseudonyms across a change of that secret. Look one up with POST /admin/audit/pid.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
@@ -607,6 +609,22 @@ function _readinessReport(env, seen) {
    operator, with the admin token, can send one test to OWNER_EMAIL (or an
    address they type) and read the provider's status and message verbatim.
    Never the key itself. Rate limited like every admin surface. */
+/* BREAK-GLASS: which pseudonym is this person in the logs (SEC-007)? Log lines
+   carry `u_...` instead of an address; when the owner has to follow one
+   account through Workers Logs, this answers it - behind the operator gate,
+   rate limited, and itself audited (under the pseudonym, never the address). */
+async function adminAuditPid(request, env) {
+  { const g = await _adminGate(request, env, 'auditpid', 10, 60); if (g) return g; }
+  /* POST with the address in the body: in a query string it would sit in
+     every access log this lookup exists to keep it out of. */
+  const body = await request.json().catch(() => ({}));
+  const email = String((body && body.email) || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254)
+    return json({ ok: false, error: 'Give the address to look up: {"email": "..."}.' }, 400);
+  const pid = _auditPid(env, email);
+  audit(env, 'admin_audit_pid_lookup', { pid });
+  return json({ ok: true, pid, keyedBy: env.AUDIT_ID_KEY ? 'AUDIT_ID_KEY' : 'JWT_SECRET' });
+}
 async function adminEmailTest(request, env) {
   { const g = await _adminGate(request, env, 'emailtest', 3, 30); if (g) return g; }
   const body = await request.json().catch(() => ({}));

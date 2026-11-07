@@ -25,7 +25,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'jobqueue.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens, _qOpen };
+export { runDueAutomations, issueTokens, _qOpen, _auditPid };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -149,7 +149,7 @@ section('A run that throws is retried, later each time; a dead letter is booked 
      afterwards was put there by the dead letter. */
   for (const k of [...store.keys()]) if (k.startsWith('duehour:')) store.delete(k);
   const dead = await deliver([{ email: ME }], 'amv-jobs-dead', 5);
-  ok(dead[0].acked && audits.some(a => a.event === 'auto_queue_dead' && a.email === ME), 'the dead letter is acknowledged and on the record', audits.map(a => a.event));
+  ok(dead[0].acked && audits.some(a => a.event === 'auto_queue_dead' && a.email === W._auditPid(env, ME)), 'the dead letter is acknowledged and on the record', audits.map(a => a.event));
   const booked = [...store.keys()].filter(k => k.startsWith('duehour:') && String(store.get(k)).includes(ME));
   ok(booked.length >= 1, 'and the account is booked into the due-work index for the next sweep', booked);
 }
@@ -160,7 +160,7 @@ section('A job that dies twice in a day is quarantined until somebody releases i
   audits.length = 0;
   const dead2 = await deliver([{ email: ME }], 'amv-jobs-dead', 5);
   const booked = [...store.keys()].filter(k => k.startsWith('duehour:') && String(store.get(k)).includes(ME));
-  ok(dead2[0].acked && store.has('autoquar:' + ME) && audits.some(a => a.event === 'auto_quarantined' && a.email === ME),
+  ok(dead2[0].acked && store.has('autoquar:' + ME) && audits.some(a => a.event === 'auto_quarantined' && a.email === W._auditPid(env, ME)),
      'a second dead letter the same day puts the account in quarantine, on the record', audits.map(a => a.event));
   ok(booked.length === 0, 'and it is NOT booked back in - a poison job does not fail for ever', booked);
   /* Due again, reached by the queue and by the tick: neither runs it. */

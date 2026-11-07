@@ -249,6 +249,7 @@ one except the two in the first table.
 | Errors reaching you with a stack | `SENTRY_DSN` | Sentry has a free tier. |
 | Which features are actually used | `POSTHOG_KEY` | PostHog has a free tier. Nothing is collected until you set it. |
 | An off-site copy of the audit trail | `AUDIT_WEBHOOK` | Depends where you point it. |
+| The same log pseudonyms after a change of the token secret | `AUDIT_ID_KEY` | Nothing. The audit log and analytics carry `u_...` for every address, keyed by this or by the token secret; the owner looks one up with `POST /admin/audit/pid` and `{"email": ...}`. |
 | A human to escalate to | `SUPPORT_EMAIL` | Nothing. |
 
 ### Knobs with working defaults - change only if you mean to

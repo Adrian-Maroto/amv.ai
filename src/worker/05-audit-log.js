@@ -58,15 +58,22 @@ function _bg(p) {
 function audit(env, event, detail) {
   try {
     const rec = { t: new Date().toISOString(), event, ...detail };
+    /* NO ADDRESS IN THE LOG LINE EITHER (Nov 3 audit SEC-007). The line went
+       to Workers Logs with every address as it was. Now every address -
+       in any field, or inside a sentence - becomes a keyed pseudonym
+       (`u_` + 16 hex of HMAC-SHA256 under AUDIT_ID_KEY or the token secret),
+       the same for the same person so events still join up, and useless to
+       anybody without the key; an IP is dropped. To find one person's lines,
+       the owner asks POST /admin/audit/pid with the address (audited). */
     // Workers Logs captures console output; cheap and always-on.
-    console.log('AUDIT ' + JSON.stringify(rec));
+    console.log('AUDIT ' + JSON.stringify(_auditScrub(env, rec)));
     // Optional: ship high-signal events to an external collector.
     if (env && env.AUDIT_WEBHOOK && _highSignal(event)) {
       // Registered with waitUntil (see _bg), not abandoned: the request is not
       // blocked on it and the isolate is kept alive until it settles.
       _bg(fetchDeadline(env.AUDIT_WEBHOOK, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(_scrubPII(rec)),
+        body: JSON.stringify(_auditScrub(env, rec)),
       }));
     }
     // Product analytics: mirror every business event to PostHog when configured
@@ -80,8 +87,8 @@ function audit(env, event, detail) {
         body: JSON.stringify({
           api_key: env.POSTHOG_KEY,
           event: 'srv_' + event,
-          distinct_id: _phId(by || email || (detail && detail.user) || 'server'),
-          properties: { ..._scrubPII(safe), source: 'amv-worker' },
+          distinct_id: _auditPid(env, by || email || (detail && detail.user) || 'server'),
+          properties: { ..._auditScrub(env, safe), source: 'amv-worker' },
           timestamp: rec.t,
         }),
       }));
@@ -95,14 +102,63 @@ function audit(env, event, detail) {
    IP. Outside, an address becomes the same pseudonym every time (so events
    still join up per person) and an IP is dropped. */
 const _EMAIL_IN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-function _scrubPII(v, depth) {
+/* SHA-256 and HMAC, synchronous: audit() is called from everywhere, in the
+   middle of things, and must not become a promise. Small inputs only. */
+const _SHA_K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+function _sha256Sync(bytes){
+  const len = bytes.length, bitLen = len * 8;
+  const total = ((len + 9 + 63) >> 6) << 6;
+  const m = new Uint8Array(total); m.set(bytes); m[len] = 0x80;
+  const dv = new DataView(m.buffer); dv.setUint32(total - 4, bitLen >>> 0); dv.setUint32(total - 8, Math.floor(bitLen / 4294967296));
+  const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  const w = new Uint32Array(64);
+  const r = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < total; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) { const a = w[i - 15], b = w[i - 2]; w[i] = (w[i - 16] + (r(a, 7) ^ r(a, 18) ^ (a >>> 3)) + w[i - 7] + (r(b, 17) ^ r(b, 19) ^ (b >>> 10))) >>> 0; }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + _SHA_K[i] + w[i]) >>> 0;
+      const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+  }
+  const out = new Uint8Array(32); const ov = new DataView(out.buffer); for (let i = 0; i < 8; i++) ov.setUint32(i * 4, H[i]);
+  return out;
+}
+function _hmacSync(keyStr, msgStr){
+  const enc = new TextEncoder();
+  let key = enc.encode(keyStr); if (key.length > 64) key = _sha256Sync(key);
+  const k = new Uint8Array(64); k.set(key);
+  const ip = k.map(b => b ^ 0x36), op = k.map(b => b ^ 0x5c);
+  const msg = enc.encode(msgStr);
+  const inner = new Uint8Array(64 + msg.length); inner.set(ip); inner.set(msg, 64);
+  const ih = _sha256Sync(inner);
+  const outer = new Uint8Array(96); outer.set(op); outer.set(ih, 64);
+  return _sha256Sync(outer);
+}
+/* The pseudonym for an address, the same every time under this deployment's key. */
+const _pidCache = new Map();
+function _auditPid(env, s){
+  const v = String(s || 'server').toLowerCase();
+  const key = String((env && (env.AUDIT_ID_KEY || env.JWT_SECRET)) || 'amv-audit');
+  const ck = key + '\n' + v;
+  if (_pidCache.has(ck)) return _pidCache.get(ck);
+  const h = _hmacSync('amv-audit-id\n' + key, v);
+  const id = 'u_' + [...h.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+  if (_pidCache.size > 5000) _pidCache.clear();
+  _pidCache.set(ck, id);
+  return id;
+}
+function _auditScrub(env, v, depth){
   const d = (depth || 0) + 1;
-  if (typeof v === 'string') return v.replace(_EMAIL_IN, (m) => _phId(m.toLowerCase()));
-  if (Array.isArray(v)) return d > 6 ? [] : v.map(x => _scrubPII(x, d));
+  if (typeof v === 'string') return v.replace(_EMAIL_IN, (m) => _auditPid(env, m));
+  if (Array.isArray(v)) return d > 6 ? [] : v.map(x => _auditScrub(env, x, d));
   if (v && typeof v === 'object') {
     if (d > 6) return {};
     const out = {};
-    for (const [k, x] of Object.entries(v)) { if (/^(ip|cfip|clientip)$/i.test(k)) continue; out[k] = _scrubPII(x, d); }
+    for (const [k, x] of Object.entries(v)) { if (/^(ip|cfip|clientip)$/i.test(k)) continue; out[k] = _auditScrub(env, x, d); }
     return out;
   }
   return v;
@@ -110,14 +166,6 @@ function _scrubPII(v, depth) {
 function _highSignal(event) {
   return event === 'auth_fail' || event === 'spend_cap_hit' ||
          event === 'forged_webhook' || event === 'global_cap_hit';
-}
-// Pseudonymous, stable id for analytics - masks the raw identifier so no email
-// or IP is sent to PostHog, while the same user still maps to the same id.
-function _phId(s) {
-  s = String(s || 'server');
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  return 'u_' + h.toString(36);
 }
 // ── Error monitoring: forward to Sentry when SENTRY_DSN is configured ────────
 // Inert until the secret is set. Fire-and-forget, fail-safe (never throws, never

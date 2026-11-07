@@ -47,7 +47,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest, _pgCutover };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest, _pgCutover, _auditPid };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -181,7 +181,7 @@ section('Run again from the start, it copies nothing twice and finds a row chang
   ok(last.state === 'done', 'it finished again', last);
   ok(q('select count(*) from accounts') === String(N) && q('select count(*) from seller_ledger') === '2' && q('select count(*) from credit_ledger') === '1',
      'the same rows, none twice');
-  ok(audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === 'p010@example.com' && a.fields === 'name'), 'the changed name is found by reading it back', audits.filter(a => a.event === 'pg_backfill_mismatch'));
+  ok(audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === W._auditPid(env, 'p010@example.com') && a.fields === 'name'), 'the changed name is found by reading it back', audits.filter(a => a.event === 'pg_backfill_mismatch'));
   ok(q("select mismatches||'|'||last_mismatch from migration_accounts where email='p010@example.com'") === '1|name', 'and counted against that account');
   const s = await status();
   ok(s.accountsDiffering === 1, 'the status says so', s.accountsDiffering);
@@ -254,12 +254,12 @@ section('A change that lands while an account is being read back is not a differ
   const { last } = await runToEnd();
   kv.get = get;
   ok(last.state === 'done' && reads >= 2, 'read back again, and finished', { last, reads });
-  ok(!audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === 'p020@example.com') &&
+  ok(!audits.some(a => a.event === 'pg_backfill_mismatch' && a.id === W._auditPid(env, 'p020@example.com')) &&
      q("select mismatches from migration_accounts where email='p020@example.com'") === '0', 'not reported as a difference');
 }
 
 /* ── Step 4: shadow reads ───────────────────────────────────────────────── */
-const shadowAudits = (id) => audits.filter(a => (a.event === 'pg_shadow_mismatch' || a.event === 'pg_shadow_failed') && a.id === id);
+const shadowAudits = (id) => audits.filter(a => (a.event === 'pg_shadow_mismatch' || a.event === 'pg_shadow_failed') && a.id === W._auditPid(env, id));
 const compared = () => [...counters.entries()].filter(([k]) => /^pgshadow:.*:compared:s\d+$/.test(k)).reduce((t, [, v]) => t + v, 0);
 
 section('Shadow reads: with nobody in the cohort, nothing is compared');
