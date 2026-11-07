@@ -1328,7 +1328,7 @@ step('No decision is read out of a store nothing writes', () => {
      so the allowance is per reader, and any other function touching it fails
      here. */
   const ALLOWED = {
-    goauth: { readers: ['authDeleteAccount'],
+    goauth: { readers: ['_eraseAccount'],
       reason: 'retired with googleOAuthExchange. Erasure still revokes a refresh token left behind on an '
             + 'old account - a cleanup, not a decision. Nothing may answer a capability question from it '
             + '(LESSONS 435).' },

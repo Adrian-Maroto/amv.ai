@@ -268,7 +268,7 @@ section('The renewal is in connUse, so nothing can reach a token around it');
   ok(conn.length === 3, 'every place that opens a stored connection was found', owners);
   ok(conn.filter(n => n === 'connUse').length === 1,
      'connUse is one of them, and only once', owners);
-  ok(conn.every(n => ['connUse', 'connRemove', 'authDeleteAccount'].indexOf(n) >= 0),
+  ok(conn.every(n => ['connUse', 'connRemove', '_eraseAccount'].indexOf(n) >= 0),
      'and the other two are the disconnect route and account erasure, which revoke rather than hand out', owners);
   ok(rmcp.length === 2 && rmcp.includes('_rmcpAccess') && rmcp.includes('_rmcpRevoke'),
      'app connectors: one door that hands a token on, one that only revokes', rmcp);

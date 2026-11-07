@@ -155,7 +155,7 @@ section('The Google grant is in the inventory that says what AMV holds');
      'while still never appearing in a downloadable backup', true);
 
   /* And it is still really deleted, with the grant revoked at Google first. */
-  const del = codeOnly(functionBody(src, 'authDeleteAccount') || '');
+  const del = codeOnly(functionBody(src, '_eraseAccount') || '');
   ok(/oauth2\.googleapis\.com\/revoke/.test(del), 'erasure revokes it at Google', true);
   ok(/DB\.del\(env, 'goauth', email\)/.test(del), 'and then removes the record', true);
 }

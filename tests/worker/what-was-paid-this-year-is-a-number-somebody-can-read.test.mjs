@@ -151,7 +151,7 @@ section('The record outlives the account, and the person is told that it does');
   ok(!W.PER_USER_KINDS.includes('payoutyear'), 'nor the year totals built from it', true);
   ok(W.PER_USER_KINDS.includes('wallet') && W.PER_USER_KINDS.includes('wallet_tx'),
      'while the wallet and its history, which are personal, still go', true);
-  const del = functionBody(src, 'authDeleteAccount');
+  const del = functionBody(src, '_eraseAccount');
   ok(/retained:/.test(del), 'and the deletion reply says what was kept', true);
   ok(/Tax and anti-money-laundering law require these to be kept/.test(del),
      'on what grounds, in words the person asking can read', true);
@@ -252,10 +252,12 @@ section('The guard lives outside the erasure routine, on purpose');
      authDeleteAccount as a claim that erasure DELETES it. A scan for a guard,
      written in the middle of that function, would have made the payout ledger
      look erased to the one check whose job is to notice if it ever were. */
-  const del = codeOnly(functionBody(src, 'authDeleteAccount'));
+  const del = codeOnly(functionBody(src, '_eraseAccount'));
   ok(!/withdraw:/.test(del),
      'the deletion routine names no key it does not remove', true);
-  ok(/_payoutsInFlight\(env, email\)/.test(del), 'it asks a helper instead', true);
+  /* The guard runs in the route, before the erasure routine is called at all
+     - the same routine the cron re-runs to finish one, after it was allowed. */
+  ok(/_payoutsInFlight\(env, email\)/.test(codeOnly(functionBody(src, 'authDeleteAccount'))), 'it asks a helper instead', true);
 }
 
 if (report('what-was-paid-this-year-is-a-number-somebody-can-read') > 0) process.exitCode = 1;

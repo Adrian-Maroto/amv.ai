@@ -27,7 +27,12 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 /* One definition, in tests/lib/source.mjs. Three files carried an identical
    copy of this, each with its own 30000-character escape hatch - and a copy is
    a second definition that drifts silently. */
-const bodyOf = (fn) => functionBody(src, fn);
+/* A route that hands its work to a routine is read with that routine: the
+   account deletion's erasure is a function of its own so the cron can finish
+   one that failed part-way (OPS-004), and a check that read only the route
+   would go blind to every write it makes. */
+const HANDS_OFF = { authDeleteAccount: ['_eraseAccount'] };
+const bodyOf = (fn) => [functionBody(src, fn), ...(HANDS_OFF[fn] || []).map(f => functionBody(src, f))].filter(Boolean).join('\n');
 
 /* Calls that cost money or consume somebody else's rate limit.
 

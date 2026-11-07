@@ -144,7 +144,7 @@ const rawWrites = (body) => {
    else's reasoning - which is exactly what happened to the signup, and it took
    an external audit to notice. */
 const NO_LOCK_NEEDED = {
-  authDeleteAccount: 'erasure, which is terminal: it is removing this person from every link they are in, and there is nothing left afterwards for a lost write to matter to. It already holds the team lock for the same pass',
+  _eraseAccount: 'erasure, which is terminal: it is removing this person from every link they are in, and there is nothing left afterwards for a lost write to matter to. It already holds the team lock for the same pass',
   /* authSignup WAS exempted here, on the grounds that it creates the record
      everything else keys on, that there is nobody to race, and that a claim
      already stopped two signups for one address. Every part of that was wrong.

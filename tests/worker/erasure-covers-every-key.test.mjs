@@ -95,7 +95,7 @@ const sliceBetween = (start, end) => {
    carry, in backticks, and reading that as code reported the key as erased -
    a check that quotes a comment back at you as evidence is worse than none. */
 const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/[^\n]*/g, ' ');
-const erasureBody = stripComments(bodyOf('authDeleteAccount'));
+const erasureBody = stripComments(bodyOf('_eraseAccount'));
 const looseBlock = sliceBetween('const loose = [', 'for (const raw of loose)');
 /* The kinds list moved to module scope so the data export could be built from
    the same one erasure walks. */
@@ -161,7 +161,7 @@ section('Every key naming a person is erased, or retained for a stated reason');
   const nowErased = Object.keys(RETAINED_ON_PURPOSE).filter(k => ERASED.has(k) && k !== 'apikey' && k !== 'entitleitem');
   /* And the person is TOLD. A retention decision nobody discloses is a
      retention decision that reads as an accident the day somebody looks. */
-  ok(/retained:\s*\{/.test(erasureBody) || /retained/.test(bodyOf('authDeleteAccount')),
+  ok(/retained:\s*\{/.test(erasureBody) || /retained/.test(bodyOf('_eraseAccount')),
      'the deletion reply says what was kept', true);
   ok(/Tax and anti-money-laundering law/.test(src),
      'and on what grounds, in words the person asking can read', true);

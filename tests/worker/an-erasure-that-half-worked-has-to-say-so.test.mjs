@@ -138,7 +138,7 @@ section('Every phase reports into the same list, not just the one that always di
   /* The property behind the two cases above. Read from the source, because the
      alternative is one test per phase and fifteen chances to forget one. */
   const fn = (() => {
-    const i = src.indexOf('async function authDeleteAccount');
+    const i = src.indexOf('async function _eraseAccount');
     let j = src.indexOf('{', i), d = 0;
     for (let k = j; k < src.length; k++) {
       if (src[k] === '{') d++;

@@ -19014,6 +19014,13 @@ export default {
           try{ await _workerError(env, 'cron', e); }catch(_){}
         }
       }
+      /* ERASURES THAT DID NOT FINISH (OPS-004), finished here: a few each
+         tick. Not stopped by a pause - a deletion spends nothing, and it is a
+         legal obligation - but, like everything, not run during a restore. */
+      try{
+        const er = await runPendingErasures(env, 5);
+        if(er.tried) console.log('[cron] erasures', JSON.stringify(er));
+      }catch(e){ try{ await _workerError(env, 'cron.erasures', e); }catch(_){} }
       /* Mail the provider could not take when it was sent, retried on its own
          schedule (_outboxDrain). Its own try, like everything here. */
       try{
@@ -21927,7 +21934,47 @@ async function authDeleteAccount(request, env) {
       code: 'payout_pending', count: held.length, amountUSD: total,
     }, 409);
   }
+  return _eraseAccount(env, email);
+}
 
+/* AN ERASURE THAT DID NOT FINISH IS FINISHED BY AMV, NOT BY HAND (Nov 3 audit
+   OPS-004). Every phase below names itself when its deletion fails, and the
+   person and the owner are told - but finishing it was a person's job, one
+   account at a time, which at a million accounts is a queue of legal
+   obligations nobody is working. Now what is left is recorded
+   (erasepend:<email>: what failed, when, how many tries) and the cron runs the
+   erasure again for it: every phase is a delete, so running it twice is
+   safe, and the record goes when a run completes. The owner is told when one
+   is still not done after ERASE_RETRY_MAX tries - then it really is a person's
+   job, and the record says exactly what for. The person was told it is
+   incomplete when they asked; finishing it does not need them. */
+const ERASE_RETRY_MAX = 12;
+const ERASE_PEND_PREFIX = 'erasepend:';
+async function _erasePendNote(env, email, failed) {
+  const k = ERASE_PEND_PREFIX + email;
+  let prev = null; try { prev = JSON.parse((await env.AMV_KV.get(k)) || 'null'); } catch (e) { prev = null; }
+  const rec = { email, failed, first: (prev && prev.first) || Date.now(), last: Date.now(), tries: ((prev && prev.tries) || 0) + 1 };
+  await env.AMV_KV.put(k, JSON.stringify(rec));
+  return rec;
+}
+async function runPendingErasures(env, max) {
+  const out = { tried: 0, finished: 0, still: 0 };
+  let page; try { page = await env.AMV_KV.list({ prefix: ERASE_PEND_PREFIX, limit: Math.max(1, Math.min(25, max || 5)) }); }
+  catch (e) { audit(env, 'erase_retry_unreadable', { why: String((e && e.message) || e).slice(0, 120) }); return out; }
+  for (const k of page.keys || []) {
+    const email = String(k.name).slice(ERASE_PEND_PREFIX.length);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) continue;
+    out.tried++;
+    let res;
+    try { res = await _eraseAccount(env, email, { retry: true }); }
+    catch (e) { audit(env, 'erase_retry_threw', { email, why: String((e && e.message) || e).slice(0, 120) }); out.still++; continue; }
+    if (res && res.status === 200) out.finished++; else out.still++;
+  }
+  return out;
+}
+
+async function _eraseAccount(env, email, opt) {
+  const retry = !!(opt && opt.retry);
   // (AMV-015) Erase referenced records too, not just the top-level per-user rows.
 
   /* EVERY PHASE REPORTS INTO THE SAME LIST.
@@ -22502,13 +22549,21 @@ async function authDeleteAccount(request, env) {
      finish it. The person leaving will not keep this reply - the audit line and
      the page are what exist afterwards. */
   if (eraseFailed.length) {
-    audit(env, 'account_delete_incomplete', { email, keysRemoved: deleted, failed: eraseFailed.join(',') });
-    try {
-      await alertOnce(env, 'erase_incomplete:' + email,
-        'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
-        + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
-        + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
-    } catch (e) { /* logging: it never decides anything */ }
+    audit(env, 'account_delete_incomplete', { email, keysRemoved: deleted, failed: eraseFailed.join(','), retry });
+    /* Kept so the cron finishes it. A note that cannot be written is the case
+       a person has to know about at once. */
+    let pend = null;
+    try { pend = await _erasePendNote(env, email, eraseFailed); }
+    catch (e) { audit(env, 'erase_retry_not_kept', { email, why: String((e && e.message) || e).slice(0, 120) }); }
+    if (!pend || pend.tries >= ERASE_RETRY_MAX) {
+      try {
+        await alertOnce(env, 'erase_incomplete:' + email,
+          'AN ERASURE DID NOT COMPLETE' + (pend ? ' after ' + pend.tries + ' tries' : ', and could not be queued to finish') + '. '
+          + email + ' asked to be deleted and these could not be removed: '
+          + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
+          + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60 * 24);
+      } catch (e) { /* logging: it never decides anything */ }
+    }
     return json({
       ok: false,
       incomplete: true,
@@ -22516,11 +22571,13 @@ async function authDeleteAccount(request, env) {
       prefixesPurged: deleted,
       failed: eraseFailed,
       error: 'Some of your data could not be deleted (' + eraseFailed.join(', ') + '). '
-           + 'Everything else has been removed and our team has been alerted to finish it. '
-           + 'Contact support if you do not get confirmation.',
+           + 'Everything else has been removed. AMV keeps trying to remove the rest on its own, '
+           + 'and our team is told if it cannot. Contact support if you want confirmation.',
     }, 500);
   }
-  audit(env, 'account_deleted', { email, keysRemoved: deleted });
+  audit(env, 'account_deleted', { email, keysRemoved: deleted, retry });
+  /* Finished: the to-do goes with it, and so does the email it held. */
+  try { await env.AMV_KV.delete(ERASE_PEND_PREFIX + email); } catch (e) { audit(env, 'erase_pend_not_cleared', { email }); }
   /* WHAT IS KEPT, AND WHY, SAID RATHER THAN LEFT TO BE DISCOVERED.
 
      Erasure takes the wallet and its transaction history with everything else.

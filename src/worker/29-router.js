@@ -220,6 +220,13 @@ export default {
           try{ await _workerError(env, 'cron', e); }catch(_){}
         }
       }
+      /* ERASURES THAT DID NOT FINISH (OPS-004), finished here: a few each
+         tick. Not stopped by a pause - a deletion spends nothing, and it is a
+         legal obligation - but, like everything, not run during a restore. */
+      try{
+        const er = await runPendingErasures(env, 5);
+        if(er.tried) console.log('[cron] erasures', JSON.stringify(er));
+      }catch(e){ try{ await _workerError(env, 'cron.erasures', e); }catch(_){} }
       /* Mail the provider could not take when it was sent, retried on its own
          schedule (_outboxDrain). Its own try, like everything here. */
       try{

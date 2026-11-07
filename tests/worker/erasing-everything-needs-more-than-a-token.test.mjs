@@ -337,7 +337,9 @@ section('The reauthentication happens before anything is touched');
 {
   /* Position, not presence. A confirmation checked after the first record is
      deleted is not a confirmation. */
-  const fn = codeOnly(functionBody(src, 'authDeleteAccount'));
+  /* The route, then the erasure routine it hands off to (OPS-004), in the
+     order they run - so "before" still means before. */
+  const fn = codeOnly(functionBody(src, 'authDeleteAccount')) + '\n' + codeOnly(functionBody(src, '_eraseAccount'));
   const iAuth = fn.indexOf('_reauthForDelete(');
   const iPayout = fn.indexOf('_payoutsInFlight(');
   const iDel = fn.search(/DB\.del\(|AMV_KV\.delete\(/);
