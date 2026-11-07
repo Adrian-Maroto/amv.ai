@@ -2025,18 +2025,44 @@ let _ovrReturnFocus = null;
 let _ovrDlgSeq = 0;
 function _ovrDialogRole(ovr){
   try{
-    if(ovr.querySelector('[role=dialog],[role=alertdialog]')) return;
+    /* A dialog that already says what it is keeps its role; it is only named
+       here if it has no name (the command palette had the role and nothing to
+       call it). */
+    const have = ovr.querySelector('[role=dialog],[role=alertdialog]');
     const top = ovr.firstElementChild; if(!top) return;
-    const box = top.querySelector('.ob, .modal, [class*="-box"], [class*="sheet"]') || top.firstElementChild || top;
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-modal', 'true');
-    /* A real heading first; only failing that, something styled as a title.
+    /* WHICH ELEMENT IS THE DIALOG. It used to fall back to the top element's
+       FIRST CHILD - which, for a panel written straight into #ovr, is its
+       title: "My live sites" was the dialog and the panel around it was not,
+       so the name was empty and the controls sat outside it (OPS-010). The
+       panel is a known panel class; failing that, the one child of a
+       full-screen backdrop; failing that, the top element itself. */
+    const backdrop = (el) => { try{ const cs = getComputedStyle(el); return (cs.position === 'fixed' || cs.position === 'absolute') && el.offsetWidth >= innerWidth * 0.9 && el.offsetHeight >= innerHeight * 0.9; }catch(e){ return false; } };
+    const box = have || top.querySelector('.ob, .modal, .cmdk, [class*="-modal"], [class*="-box"], [class*="sheet"]')
+      || (backdrop(top) && top.children.length === 1 ? top.firstElementChild : top);
+    if(!have){ box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); }
+    if(box.getAttribute('aria-label') || box.getAttribute('aria-labelledby')) return;
+    /* A real heading first; then something styled as a title; then the first
+       short line set in bold, which is how a dozen of these title themselves.
        One selector list would take whichever came first on the page. */
-    const h = box.querySelector('h1, h2, h3') || box.querySelector('[class*="title"], [class$="-t"]');
+    let h = box.querySelector('h1, h2, h3') || box.querySelector('[class*="title"], [class$="-t"], [class$="-h"]');
+    if(!h || !(h.textContent || '').trim()){
+      h = null;
+      for(const el of box.querySelectorAll('div, p, span, strong, b, label')){
+        const t = (el.textContent || '').trim();
+        if(!t || t.length > 80 || el.children.length > 1) continue;
+        if(+getComputedStyle(el).fontWeight >= 600){ h = el; break; }
+      }
+    }
     if(h && (h.textContent || '').trim()){
       if(!h.id) h.id = 'ovr-dlg-t' + (++_ovrDlgSeq);
       box.setAttribute('aria-labelledby', h.id);
+      return;
     }
+    /* No title at all - the command palette is a search box and nothing else.
+       Its field says what it is for, so the dialog says the same. */
+    const f = box.querySelector('input, textarea');
+    const fl = f && (f.getAttribute('aria-label') || f.getAttribute('placeholder'));
+    if(fl) box.setAttribute('aria-label', fl);
   }catch(e){}
 }
 function _initOverlayFocus(){
