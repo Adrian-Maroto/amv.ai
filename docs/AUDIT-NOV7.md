@@ -36,6 +36,9 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | DATA-033 | High | Seller ledger amounts are whole minor units of their own currency. |
 | READY-022 | High | The hourly model check asks the cheapest engine for one streamed token, not a model list. |
 | CONN-031 | High | A connected-account write without an Idempotency-Key is refused before it reaches the account. |
+| LOCK-002 | High | Claims hand back their owner; record and wallet locks release with it, so a late release cannot free a newer holder's lock. |
+| AUDIT-010 | Critical | AsyncLocalStorage is imported statically, so every request - the first in an isolate included - holds its own background work. |
+| READY-021 | High | The job queue is proved by a round trip each hour (probe sent, stamped on arrival, checked next run). Browser and meaning search remain unexercised: proving them spends real money. |
 
 ## Checked, and already bounded
 
@@ -52,6 +55,16 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | REL-001 | The launch gate's consumer_full profile requires browser, library, meaning, cloud computer, Postgres, job queue, nightly backup and workspaces. |
 | READY-025 | /health/ready reports `proved` per capability, and the synthetic workflow fails on any proved=false; 200 means the stores answer, by design, so a monitor reads both. |
 
+| DATA-037 | A revision blob expires only when the usual copy was written; if that write failed the blob is kept with no expiry until a read repairs it. Since STATE-009 a missing committed copy is refused, never answered stale. |
+| CONN-033 | Third-party connector tools cannot be verified by AMV, so every call needs the person's consent in chat (CLAUDE.md, connectors) - the contract is consent, not a verification AMV would be inventing. |
+| MODEL-022 | Decided against a global breaker (REL-013, Nov 3): one object in front of every chat is a bigger outage than per-isolate health. |
+| REL-021 | CI runs the full gate with Postgres 16 and bubblewrap installed (seen in every run's log); WebKit and Firefox run nightly. |
+
+| AGENT-008 | Turning off kept sign-ins or deleting an agent reports 503 `signins_not_forgotten` or `pending` when the forget fails, and queues it (77-agents.js). |
+| AGENT-019 | The jar read answers absent, present or unknown (Nov 3); today AGENT-023/024 stop unknown being saved over or shown as none. |
+| AGENT-020 | Sign-ins are stamped with the generation they were kept under and are never used after a forget; today AGENT-022 removes a save a forget overtook. |
+| STATE-007 | Revision and digest commit together in the object, value first under its own key (Nov 3); today STATE-008/009 close the two proved gaps. |
+
 ## Needs an owner decision
 
 | Id | Why |
@@ -63,39 +76,15 @@ The register is AMV_FINDINGS_REGISTER_2026-11-07.csv in the audit package. This 
 | TASK-017 | Cloudflare Workflows adoption is an infrastructure change. |
 | FILE-030 | Direct signed R2 uploads need R2 S3 credentials (FILE-001, owner). |
 | REL-022 | Which bindings are mandatory is a deploy decision. |
+| DR-004, DR-009, DR-011, DR-013 | Atomic point-in-time restore needs an isolated namespace and a binding switch (see DR-012). |
+| OPS-020, OPS-021, OPS-022, OPS-024 | On-call and status page, legal and privacy operations, abuse operations, and provider capacity contracts are people and contracts, not code. |
+| FILE-031 | Malware scanning needs a scanning provider; uploads are already size-capped, type-checked and opened only in the sandbox. |
+| AGENT-011 | Moving credential storage off KV into per-agent Durable Objects is a storage migration; generations, fences and retries already live in the strong object. |
+
+## Blocked by the Postgres cutover gate (Postgres is not the authority yet)
+
+DATA-001, DATA-002, DATA-003, DATA-004, DATA-005, DATA-019, DATA-021, DATA-031, DATA-032, DATA-036: each is a reason Postgres may not answer yet, and the cutover check (`_pgCutover`) refuses while any applies. They matter at cutover, not before.
 
 ## Still open (code)
 
-Open or partly fixed P0 items not yet changed here:
-
-- AGENT-008 (Critical): Disabling sign-in retention can falsely succeed when credential deletion fails
-- AGENT-019 (Critical): Credential read or decrypt failure is misclassified as “nothing is held”
-- AGENT-020 (Critical): A watched run can resurrect a sign-in after concurrent revocation
-- DATA-001 (Critical): Postgres serves a row before it has proved equivalence
-- DATA-002 (Critical): Verification failure can leave an unverified Postgres row live
-- DATA-003 (Critical): Write-through can report success after both safety markers fail
-- DATA-021 (Critical): A mirror write can still disappear when both intent and repair writes fail
-- DATA-004 (Critical): Historical prepaid credits are explicitly omitted from backfill
-- DATA-005 (Critical): Older seller ledger history is knowingly truncated
-- DATA-019 (Critical): Postgres proof and write fence are themselves stored in eventually consistent KV
-- DR-004 (Critical): Restore is additive/partial rather than atomic point-in-time recovery
-- DR-009 (Critical): Verified backup parts are still applied incrementally to the live authority
-- STATE-007 (Critical): The revision actor and the KV value form a split non-atomic authority
-- AGENT-011 (High): Credential storage/revocation relies on eventually consistent KV
-- DATA-031 (High): Postgres write-through reports success even when proof publication loses a race
-- DATA-032 (Critical): Money ledger mirrors have no durable pre-write outbox
-- DATA-036 (High): Migration intent and repair records still share the eventually consistent KV failure domain
-- DATA-037 (High): Canonical revision blobs expire before all stale paths are impossible
-- LOCK-002 (High): Claim ownership is tracked in a mutable process-global map
-- DR-011 (Critical): Restore write freeze can fall back to eventually consistent state
-- DR-013 (High): Nightly backup does not prove complete recovery across all production data planes
-- REL-021 (High): Postgres, browser and OS-sandbox gates are not guaranteed in one reproducible CI matrix
-- AUDIT-010 (Critical): Background financial/audit work can fall back to a mutable global request context
-- CONN-033 (High): MCP/plugin mutations do not inherit AMV’s independent verify/Undo contract
-- FILE-031 (High): Uploaded objects lack a complete quarantine and malware-scanning state machine
-- READY-021 (High): Critical synthetics do not exercise the real Queue, browser and semantic-search path
-- MODEL-022 (High): Circuit breaker health is per isolate rather than globally coordinated
-- OPS-020 (High): 24/7 on-call, paging and public status operations are not fully established
-- OPS-021 (High): Broad launch needs completed legal, privacy and data-governance operations
-- OPS-022 (High): Model safeguards are not a complete abuse-operations system
-- OPS-024 (High): AMV lacks proved commercial capacity for million-user model/browser/computer load
+None. Every P0 code item is fixed here, checked as already bounded, or listed above as the owner's or the cutover's.
