@@ -78,6 +78,18 @@
    "owner": "src/worker/56-admin.js",
    "runs": "runSloCheck",
    "retry": "once an hour behind a flag; a failed check is reported and the next hour runs it again; each broken objective is said once a day"
+  },
+  "synthetics": {
+   "what": "each configured capability doing one real, harmless operation, kept for readiness",
+   "owner": "src/worker/85-synthetics.js",
+   "runs": "runCapabilitySynthetics",
+   "retry": "its own hourly trigger (17 * * * *); a run that fails is reported and readiness shows the last result as stale after two hours; each failing capability is told once a day"
+  },
+  "erasures": {
+   "what": "finishing account deletions that left something behind",
+   "owner": "src/worker/31-sign-in-codes.js",
+   "runs": "runPendingErasures",
+   "retry": "a few each five-minute tick; each kept note counts its tries, and the owner is told after twelve"
   }
  },
  "queue": {

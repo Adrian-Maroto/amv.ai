@@ -18954,6 +18954,25 @@ export default {
        minutes both schedules fire, this one stands aside, so the two never
        race for the same jobs; if they did, the per-run lease would still let
        only one of them run each job. The kill switch stops it like the rest. */
+    /* EACH CONFIGURED CAPABILITY, PROVED (Nov 3 audit REL-003): its own
+       hourly trigger, so nothing else on the five-minute tick waits behind
+       five outside calls, and nothing counting the tick's calls counts these.
+       Not while paused or during a restore. */
+    if (event && event.cron === SYNTH_CRON) {
+      ctx.waitUntil((async()=>{
+        let killed = false;
+        try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
+        if(killed || await _restoreFrozen(env)) return;
+        try{
+          const r = await runCapabilitySynthetics(env);
+          if(r.failed.length) console.log('[cron:hourly] synthetics failed', JSON.stringify(r.failed));
+        }catch(e){
+          console.error('[cron:hourly] synthetics did not run', e && e.message);
+          try{ await _workerError(env, 'cron.synthetics', e); }catch(_){ /* the report of a failure failed; readiness shows the check as stale */ }
+        }
+      })());
+      return;
+    }
     if (event && event.cron === '* * * * *') {
       const at = Number(event.scheduledTime) || Date.now();
       if (new Date(at).getUTCMinutes() % 5 === 0) return;
@@ -19020,7 +19039,7 @@ export default {
       try{
         const er = await runPendingErasures(env, 5);
         if(er.tried) console.log('[cron] erasures', JSON.stringify(er));
-      }catch(e){ try{ await _workerError(env, 'cron.erasures', e); }catch(_){} }
+      }catch(e){ try{ await _workerError(env, 'cron.erasures', e); }catch(_){ /* the report of a failure failed; the erasure note is still there for the next tick */ } }
       /* Mail the provider could not take when it was sent, retried on its own
          schedule (_outboxDrain). Its own try, like everything here. */
       try{
@@ -19125,19 +19144,6 @@ export default {
       }catch(e){
         console.error('[cron] cohort check failed', e && e.message);
         try{ await _workerError(env, 'cron.cohort', e); }catch(_){}
-      }
-      /* EACH CONFIGURED CAPABILITY, PROVED (REL-003): once an hour, one real
-         harmless operation each - readiness reports what it found. */
-      try{
-        const synthFlag = 'synthcheck:' + new Date().toISOString().slice(0, 13);
-        if(!killed && !(await env.AMV_KV.get(synthFlag))){
-          await env.AMV_KV.put(synthFlag, '1', { expirationTtl: 7200 });
-          const r = await runCapabilitySynthetics(env);
-          if(r.failed.length) console.log('[cron] synthetics failed', JSON.stringify(r.failed));
-        }
-      }catch(e){
-        console.error('[cron] synthetics failed to run', e && e.message);
-        try{ await _workerError(env, 'cron.synthetics', e); }catch(_){}
       }
       /* THE SERVICE OBJECTIVES (REL-010): measured once an hour - it reads
          every shard of the month's counts - and the owner told when one is
@@ -47405,6 +47411,8 @@ async function accountAccessLog(request, env){
    not exercised: each would spend real money or real work to prove itself,
    and they say "not exercised" rather than pretending. */
 const SYNTH_KEY = 'synth:last';
+/* The trigger that runs them (wrangler.toml crons) - once an hour. */
+const SYNTH_CRON = '17 * * * *';
 const SYNTH_FRESH_MS = 2 * 3600 * 1000;
 const SYNTH_STEP_MS = 8000;
 
@@ -47429,7 +47437,7 @@ const SYNTH_PROBES = [
   { id: 'library', on: (env) => libConfigured(env),
     run: async (env) => {
       const key = 'synthetic/probe-' + Date.now().toString(36);
-      const body = 'amv-probe-' + Math.random().toString(36).slice(2);
+      const body = 'amv-probe-' + [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
       await env.AMV_FILES.put(key, body);
       try {
         const o = await env.AMV_FILES.get(key);

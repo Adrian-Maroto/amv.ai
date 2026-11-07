@@ -13,7 +13,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'synth.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { runCapabilitySynthetics, _synthProved, healthReady };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { runCapabilitySynthetics, _synthProved, healthReady, SYNTH_CRON };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = () => {};
 
@@ -93,6 +93,27 @@ section('A probe that hangs does not hang the check');
   const r = await W.runCapabilitySynthetics(env);
   globalThis.fetch = real;
   ok(r.results.email.ok === false && Date.now() - t < 15000, 'it is cut off and reported, the rest still answered', { email: r.results.email, ms: Date.now() - t });
+}
+
+section('It has a trigger of its own, and the five-minute tick does not run it');
+{
+  const toml = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8');
+  ok(W.SYNTH_CRON === '17 * * * *' && toml.includes('"' + W.SYNTH_CRON + '"'), 'its hourly schedule is in the deployed configuration', W.SYNTH_CRON);
+  const run = async (cron) => {
+    const env = mkEnv(); seen.length = 0; answer = {};
+    const c = { _p: [], waitUntil(p) { this._p.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
+    await W.default.scheduled({ cron, scheduledTime: Date.UTC(2026, 10, 7, 4, 17) }, env, c);
+    await Promise.all(c._p);
+    return { probed: seen.some(u => /\/v1\/models|api\.stripe\.com\/v1\/balance/.test(u)), kept: !!(await env.AMV_KV.get('synth:last')) };
+  };
+  const hourly = await run(W.SYNTH_CRON);
+  ok(hourly.probed && hourly.kept, 'the hourly trigger runs the checks and keeps the answer', hourly);
+  const tick = await run('*/5 * * * *');
+  ok(!tick.probed && !tick.kept, 'the five-minute tick does not', tick);
+  const paused = mkEnv(); await paused.AMV_KV.put('GLOBAL_KILL', '1'); seen.length = 0;
+  const c = { _p: [], waitUntil(p) { this._p.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
+  await W.default.scheduled({ cron: W.SYNTH_CRON }, paused, c); await Promise.all(c._p);
+  ok(!seen.some(u => /\/v1\/models/.test(u)), 'and nothing is called while AMV is paused', seen);
 }
 
 console.log = quiet;

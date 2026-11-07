@@ -150,7 +150,7 @@ npx wrangler deploy
 
 This prints your Worker URL, e.g. `https://amv-backend.<you>.workers.dev`.
 
-**The cron trigger is already in `wrangler.toml`** (`crons = ["*/5 * * * *"]`).
+**The cron trigger is already in `wrangler.toml`** (`crons = ["*/5 * * * *", "* * * * *", "17 * * * *"]`: the duties, jobs already due, and the hourly capability checks).
 Without deploying, automations never run in the background - that is the single
 step people miss.
 

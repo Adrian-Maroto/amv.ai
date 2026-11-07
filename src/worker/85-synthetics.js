@@ -24,6 +24,8 @@
    not exercised: each would spend real money or real work to prove itself,
    and they say "not exercised" rather than pretending. */
 const SYNTH_KEY = 'synth:last';
+/* The trigger that runs them (wrangler.toml crons) - once an hour. */
+const SYNTH_CRON = '17 * * * *';
 const SYNTH_FRESH_MS = 2 * 3600 * 1000;
 const SYNTH_STEP_MS = 8000;
 
@@ -48,7 +50,7 @@ const SYNTH_PROBES = [
   { id: 'library', on: (env) => libConfigured(env),
     run: async (env) => {
       const key = 'synthetic/probe-' + Date.now().toString(36);
-      const body = 'amv-probe-' + Math.random().toString(36).slice(2);
+      const body = 'amv-probe-' + [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
       await env.AMV_FILES.put(key, body);
       try {
         const o = await env.AMV_FILES.get(key);
