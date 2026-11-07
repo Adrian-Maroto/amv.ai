@@ -197,5 +197,22 @@ section('A reused transaction id with different money is refused, not absorbed (
   ok(kept.length === 1 && JSON.parse(store.get(kept[0])).amount === 4, 'and the first stands alone on the books', kept.length);
 }
 
+section('A payment recorded half way is finished once, not written twice (Nov 7 audit FIN-020)');
+{
+  clearLedger();
+  const realPut = baseEnv.AMV_KV.put;
+  let dieOnce = true;
+  /* The Worker stops after the line is written and before the id is final. */
+  baseEnv.AMV_KV.put = async (k, v, o) => { if (dieOnce && String(k) === 'txn:id:pay_77' && !String(v).includes('"pending":true')) { dieOnce = false; throw new Error('worker stopped'); } return realPut.call(baseEnv.AMV_KV, k, v, o); };
+  const first = await W._recordTxn(baseEnv, { id: 'pay_77', provider: 'paypal', email: 'p@test.com', amount: 30, currency: 'USD', kind: 'Pro' });
+  baseEnv.AMV_KV.put = realPut;
+  ok(first === null, '(the first attempt did not finish)');
+  await new Promise(r => setTimeout(r, 5));
+  const retry = await W._recordTxn(baseEnv, { id: 'pay_77', provider: 'paypal', email: 'p@test.com', amount: 30, currency: 'USD', kind: 'Pro' });
+  const lines = [...store.keys()].filter(k => k.startsWith('txn:e:'));
+  ok(retry && retry.amount === 30 && lines.length === 1, 'the retry finishes it: one line for one payment', lines.length);
+  ok(!JSON.parse(store.get('txn:id:pay_77')).pending, 'and the id is no longer pending');
+}
+
 report();
 done();

@@ -31405,6 +31405,16 @@ async function _recordTxn(env, tx) {
     if (tx.id) {
       const seen = await env.AMV_KV.get('txn:id:' + tx.id);
       if (seen) { let old = null; try { old = JSON.parse(seen); } catch (e) { old = null; /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
+        if (old && old.pending) {
+          /* A write that stopped half way: finish it, at the time it began,
+             so its line is the same key and not a second one. */
+          if (!same(old)) return conflict(old);
+          const { pending: _p, ...was } = old;
+          const b = JSON.stringify(was);
+          await env.AMV_KV.put('txn:e:' + _txnOrder(was), b, b.length <= 1000 ? { metadata: was } : undefined);
+          await env.AMV_KV.put('txn:id:' + tx.id, b);
+          return was;
+        }
         if (old) return same(old) ? old : conflict(old); }
       const legacy = await env.AMV_KV.get('txn:log');
       if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return same(old) ? old : conflict(old); }
@@ -31416,7 +31426,14 @@ async function _recordTxn(env, tx) {
        Each entry now has its own key, named so the newest sorts first, and
        carries itself as the key's metadata so the statement can list them
        without reading each one. */
+    /* THE ID FIRST, THEN THE LINE (Nov 7 audit FIN-020). The line was written
+       before its id, so a Worker stopping between the two left a line with
+       no id - and the retry, finding no id, wrote the same payment a second
+       time, a minute later. The id is now written first, holding the line's
+       time and marked pending; a retry finds it and writes the same line,
+       under the same key, rather than a new one. */
     const body = JSON.stringify(entry);
+    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
     await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
     if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
     return entry;
