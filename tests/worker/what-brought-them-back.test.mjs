@@ -23,7 +23,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'arrival.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authSignup, issueTokens, arrivalRecord, _arrivalsByChannel, _retentionReport };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authSignup, issueTokens, arrivalRecord, _arrivalsByChannel, _retentionReport, _econMonth, _markActive };\n');
 const W = await import(harness + '?t=' + Date.now());
 globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' });
 const quiet = console.log; console.log = () => {};
@@ -101,6 +101,24 @@ section('A channel counts once per person per day, and as a return only when it 
   ok(m.push.arrivals === 2 && m.push.returns === 1, 'three opens in a day are one, and that one brought somebody back', m.push);
   ok(m.email.arrivals === 1 && m.email.returns === 1, 'a result email that brought somebody back is counted for email', m.email);
   ok(Object.keys(m).join() === 'push,email', 'a channel AMV did not send counts nothing', Object.keys(m));
+}
+
+section('Each person is counted once a month, so cost is shared over people, not visits');
+{
+  /* November had two people across many visits; December starts clean. The
+     month is read once, after every visit, because the owner's read is cached. */
+  at(29); await arrive(ana); await arrive(bo);   // 1 Dec
+  at(30); await arrive(ana);                     // 2 Dec: the same person again
+  kv.set('factive:old@x.com', '2026-10-01');     // a record from before the change
+  await W._markActive(env, 'old@x.com');
+  const dec = +(((await W._econMonth(env, '2026-12')) || {}).mau || 0);
+  ok(dec === 3, 'three people active in December are three, however often they came', dec);
+  const rec = JSON.parse(kv.get('factive:old@x.com'));
+  ok(rec.legacy === true && rec.m === '2026-12' && !(rec.w || []).length, 'an older record is counted for the month and still kept out of the cohorts', rec);
+  const back = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  ok(/costPerActiveUser: mau > 0 \? \+\(totalCost \/ mau\)/.test(back), 'the owner\u2019s figures divide the month\u2019s cost by people, not by visits');
+  const admin = readFileSync(join(ROOT, 'src', 'admin', 'admin.js'), 'utf8');
+  ok(/AI cost per active person/.test(admin) && /Revenue per active person/.test(admin), 'and the Growth tab sets cost and revenue per active person side by side');
 }
 
 section('The links carry their channel, the page reports it, the owner sees it');

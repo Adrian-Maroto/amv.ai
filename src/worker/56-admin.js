@@ -39,16 +39,28 @@ async function _markActive(env, email){
        cohort's size was never counted, so its share would be invented. */
     let rec = null;
     try { rec = raw ? (raw.charAt(0) === '{' ? JSON.parse(raw) : { day: raw, legacy: true }) : null; } catch (e) { rec = { day: String(raw), legacy: true }; }
+    /* DISTINCT PEOPLE THIS MONTH. Daily actives add up to visits, not
+       people, so nothing could say what AI costs per person who is actually
+       here. The same record notes the last month this person was counted in
+       (`m`): one count per person per month, no new record kind. */
+    const month = day.slice(0, 7);
     if(!rec){
-      await env.AMV_KV.put(firstKey, JSON.stringify({ day, w: [] }), { expirationTtl: FUNNEL_TTL_S });
-      await _econAdd(env, email, [['ret:' + _cohortWeekOf(day) + ':w0', 1]]);
+      await env.AMV_KV.put(firstKey, JSON.stringify({ day, w: [], m: month }), { expirationTtl: FUNNEL_TTL_S });
+      await _econAdd(env, email, [['ret:' + _cohortWeekOf(day) + ':w0', 1], ['mau', 1]]);
     } else if(rec.day !== day){
       await _funnelMark(env, email, 'returned');
+      const add = [];
       const n = Math.floor((Date.parse(day + 'T00:00:00Z') - Date.parse(rec.day + 'T00:00:00Z')) / (7 * 86400000));
       if(!rec.legacy && n >= 1 && n <= RET_WEEKS && !(rec.w || []).includes(n)){
         rec.w = (rec.w || []).concat(n);
+        add.push(['ret:' + _cohortWeekOf(rec.day) + ':w' + n, 1]);
+      }
+      if(rec.m !== month){ rec.m = month; add.push(['mau', 1]); }
+      if(add.length){
+        /* A legacy record is rewritten as one, so it is still never counted
+           into a cohort it was not counted into at the start. */
         await env.AMV_KV.put(firstKey, JSON.stringify(rec), { expirationTtl: FUNNEL_TTL_S });
-        await _econAdd(env, email, [['ret:' + _cohortWeekOf(rec.day) + ':w' + n, 1]]);
+        await _econAdd(env, email, add);
       }
     }
   }catch(e){ /* best-effort */ }
@@ -549,6 +561,7 @@ async function adminStats(request, env) {
   // snapshot. 30-day signup + active series, plus today's figures.
   const signups30 = await _growthSeries(env, 'signup', 30);
   const active30 = await _growthSeries(env, 'active', 30);
+  const mau = await _econMonth(env, month).then(m => +((m && m.mau) || 0)).catch(() => 0);
   /* AMV-075: referral conversions, so the invite loop is a measured channel
      rather than a feature nobody can tell is working. A conversion is counted
      when an invited account has genuinely started using AMV - the same bar the
@@ -633,6 +646,11 @@ async function adminStats(request, env) {
         grossMargin: +(mrr - totalCost).toFixed(2),
         grossMarginPct: mrr > 0 ? +(((mrr - totalCost) / mrr) * 100).toFixed(1) : null,
         costPerPayingUser: paying > 0 ? +(totalCost / paying).toFixed(3) : 0,
+        /* What AI costs per person who used AMV this month - the number a
+           free tier, a plan price and a growth push are all bets on. Null
+           until somebody has been counted, never a divide by zero. */
+        activeThisMonth: mau,
+        costPerActiveUser: mau > 0 ? +(totalCost / mau).toFixed(3) : null,
         freeUserCost: freeCost,
         byPlan: byPlanEconomics,
         featureCost,

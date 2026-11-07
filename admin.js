@@ -556,10 +556,20 @@ function _admRenderTab(tab, backendLive, live){
         + Object.keys(names).map(k => { const v = a[k] || {}; return '<tr><td>' + names[k] + '</td><td>' + (+v.arrivals || 0).toLocaleString() + '</td><td>' + (+v.returns || 0).toLocaleString() + '</td></tr>'; }).join('')
         + '</tbody></table></div><p class="adm-note">This month, one count per person per day. A channel that is opened but brings nobody back is noise, not a habit.</p>'
       : '<div class="adm-empty">Nothing counted yet this month.</div>';
+    /* What one person who is actually here costs: the month's AI spend over
+       the distinct people active this month. */
+    const mg = live && live.margin;
+    const perActive = mg && mg.costPerActiveUser != null
+      ? '<div class="adm-stats">' + _admStat((+mg.activeThisMonth || 0).toLocaleString(), 'People active this month')
+        + _admStat('$' + mg.costPerActiveUser.toFixed(3), 'AI cost per active person')
+        + (live.revenue && mg.activeThisMonth > 0 ? _admStat('$' + (live.revenue.estMRR / mg.activeThisMonth).toFixed(2), 'Revenue per active person') : '') + '</div>'
+        + '<p class="adm-note">Revenue per active person above cost per active person is a business that gets better as it grows. Below it, every new user is a loss to be paid for.</p>'
+      : '<div class="adm-empty">Nobody counted as active this month yet.</div>';
     el.innerHTML =
       _admCard('Who signs up, and who stays', live ? (f ? funnel : '<div class="adm-empty">Nothing counted yet.</div>') : _admPending('Sign-up, first answer, coming back and paying, across everybody'))
       + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'))
-      + _admCard('What brought people back', live ? brought : _admPending('Opened from a notification or a result email, and how many of those were returns'));
+      + _admCard('What brought people back', live ? brought : _admPending('Opened from a notification or a result email, and how many of those were returns'))
+      + _admCard('What one active person costs', live ? perActive : _admPending('This month\u2019s AI cost and revenue per person who used AMV'));
   }
 
 }
