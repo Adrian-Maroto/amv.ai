@@ -119,7 +119,7 @@ section('A pack whose answer was lost is added once, however often it is retried
   const env = mkEnv();
   const objs = new Map();
   const real = (name) => { if (!objs.has(name)) { const st = new Map(); objs.set(name, new W.AMVCounter({ storage: {
-    async get(k) { return st.get(k); }, async put(k, v) { if (typeof k === 'object') { for (const [a, b] of Object.entries(k)) st.set(a, b); } else st.set(k, v); },
+    async get(k) { return st.get(k); }, async put(k, v) { st.set(k, v); },
     async delete(k) { st.delete(k); }, async deleteAll() { st.clear(); }, async setAlarm() {}, async deleteAlarm() {} } }, {})); } return objs.get(name); };
   const standIn = env.AMV_COUNTER;
   let loseOnce = true;

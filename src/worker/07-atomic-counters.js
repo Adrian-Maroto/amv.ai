@@ -83,7 +83,9 @@ export class AMVCounter {
       if (onceKey && (await this.state.storage.get(onceKey))) return json({ value: cur, replay: true });
       // never let a refund drive the counter negative
       const next = Math.max(0, cur + (body.amount || 0));
-      if (onceKey) await this.state.storage.put({ v: next, [onceKey]: 1 });
+      /* Both writes issued together, nothing awaited between them: the
+         object commits them as one. */
+      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, 1)]);
       else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
