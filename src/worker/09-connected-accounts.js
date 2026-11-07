@@ -1670,7 +1670,13 @@ async function connAct(request, env){
   let idem = null;
   if(spec.writes){
     const ik = String(request.headers.get('Idempotency-Key') || body.idempotencyKey || '');
-    if(ik){
+    /* REQUIRED, NOT OFFERED (Nov 7 audit CONN-031). A write without a key
+       cannot be told apart from its own retry, so the email or the event
+       could be made twice by a client that tried again after a lost answer.
+       The page always sends one; any other caller has to as well. */
+    if(!ik) return json({ error:'idempotency_required', action: name,
+      message:'A change to a connected account needs an Idempotency-Key (16 to 80 letters, digits, - or _), so a retry cannot do it twice. Nothing was done.' }, 400);
+    {
       if(!/^[A-Za-z0-9_-]{16,80}$/.test(ik)) return json({ error:'bad_idempotency_key', message:'An Idempotency-Key is 16 to 80 letters, digits, - or _.' }, 400);
       const digest = await _sha256Hex(JSON.stringify([name, body.args || {}]));
       const kvKey = `actidem:${String(user.email).toLowerCase()}:${ik}`;

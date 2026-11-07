@@ -115,7 +115,12 @@ function mkEnv() {
       async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+    /* One object per name, as the real one is: a claim is taken once. */
+    AMV_COUNTER: (() => { const taken = new Set(); return { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+      const b = JSON.parse((init && init.body) || '{}');
+      if (b.op === 'claim') { if (taken.has(n)) return new Response(JSON.stringify({ claimed: false })); taken.add(n); return new Response(JSON.stringify({ claimed: true, owner: n })); }
+      if (b.op === 'release') { taken.delete(n); return new Response(JSON.stringify({ released: true })); }
+      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }; })(),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
   };
@@ -124,7 +129,8 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const req = (env, path, body, tok) => W.default.fetch(new Request('https://api.amv.test' + path, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '44.44.44.44', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
-  body: JSON.stringify(body),
+  /* A fresh key per action, as the page sends (CONN-031); a test that names one keeps it. */
+  body: JSON.stringify(path === '/v1/connect/act' && body && !body.noKey && !body.idempotencyKey ? Object.assign({ idempotencyKey: 'tk' + Math.random().toString(36).slice(2).padEnd(18, '0') }, body) : body),
 }), env, ctx);
 const jsonOf = async (r) => { try { return await r.json(); } catch (e) { return {}; } };
 const ME = 'me@example.com';
@@ -184,6 +190,15 @@ section('A refusal is "nothing changed"; a lost answer is "AMV does not know" (N
     'the account failed on its side: AMV does not claim nothing happened, and says to look first', fault.d);
   const lost = await send(() => { throw new TypeError('network connection lost'); });
   ok(lost.d.error === 'outcome_unknown' && !/Nothing was changed/.test(lost.d.message), 'and the same when the answer never arrived', lost.d);
+}
+
+section('A change with no idempotency key is not made (Nov 7 audit CONN-031)');
+{
+  const { env, tok } = await signedInWithGoogle();
+  sent.length = 0;
+  const r = await req(env, '/v1/connect/act', { action: 'calendar.create', args: ARGS['calendar.create'], noKey: true }, tok);
+  const d = await jsonOf(r);
+  ok(r.status === 400 && d.error === 'idempotency_required' && !sent.some(u => /calendar\/v3/.test(u)), 'refused before anything reaches the account', [r.status, d.error]);
 }
 
 if (report('a-write-is-read-back-before-it-is-done') > 0) process.exitCode = 1;

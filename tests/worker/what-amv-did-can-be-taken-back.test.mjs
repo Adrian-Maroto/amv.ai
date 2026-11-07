@@ -105,7 +105,8 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const req = (env, path, body, tok) => W.default.fetch(new Request('https://api.amv.test' + path, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '45.45.45.45', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
-  body: JSON.stringify(body),
+  /* A fresh key per action, as the page sends (CONN-031); a test that names one keeps it. */
+  body: JSON.stringify(path === '/v1/connect/act' && body && !body.noKey && !body.idempotencyKey ? Object.assign({ idempotencyKey: 'tk' + Math.random().toString(36).slice(2).padEnd(18, '0') }, body) : body),
 }), env, ctx);
 const jsonOf = async (r) => { try { return await r.json(); } catch (e) { return {}; } };
 const env = mkEnv();
