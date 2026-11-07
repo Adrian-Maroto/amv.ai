@@ -654,6 +654,14 @@ function _mcAgentSignIns(a){
   const b = a.browser || {};
   if(!b.keep) return '';
   const held = a.signIns || [];
+  /* The server could not tell what is stored: say so, and keep Forget on
+     every site - the one action that is right whatever is there. */
+  if(a.signInsUnknown){
+    const rows = (b.sites || []).map(site => '<li><span>' + escH(site) + '</span> <span class="mc-agent-si-st">' + escH(T('could not be checked')) + '</span> '
+      + '<button class="mc-sec-link" data-dact="mcAgentForgetSite" data-darg="' + escH(a.id + '|' + site) + '">' + escH(T('Forget')) + '</button></li>').join('');
+    return '<div class="mc-agent-si"><span>' + escH(T('Sign-ins it may keep (read-only when you are away)')) + '</span><ul>' + rows + '</ul>'
+      + '<p class="mc-agent-none">' + escH(T('AMV could not check this agent’s saved sign-ins just now. Forget still works; try again in a moment to see them.')) + '</p></div>';
+  }
   const rows = (b.sites || []).map(site => {
     const h = held.find(x => x.site === site);
     return '<li><span>' + escH(site) + '</span> <span class="mc-agent-si-st">'

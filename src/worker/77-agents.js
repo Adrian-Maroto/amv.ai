@@ -231,7 +231,7 @@ async function agentsList(request, env) {
       contract: a.contract || null, rev: +a.rev || 0,
       history: (Array.isArray(a.history) ? a.history : []).slice(-AGENT_HISTORY_MAX).reverse(),
       browser: _agentBrowserShown(a.browser),
-      signIns: await _agentSignInsShown(env, email, a).catch(() => []),
+      ...(await _agentSignInsShown(env, email, a).then(v => ({ signIns: v }), () => ({ signIns: null, signInsUnknown: true }))),
       spentUSD: spent == null ? null : Math.round(spent * 100) / 100,
       jobs: jobs.map(x => ({ id: x.id, detail: String(x.detail || '').slice(0, 180), active: !!x.active, done: !!x.done,
         repeat: x.repeat, next: x.next || 0, lastError: x.lastError || null })),

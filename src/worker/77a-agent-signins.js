@@ -236,27 +236,61 @@ async function _agentJarSave(env, email, agent, cookies){
   if(!kept.length) return [];
   const key = await _agentDek(env, email, agent.id, true);
   if(!key) return [];
-  let rec = { sites: {} };
-  try{ const raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); if(raw) rec = (await _agentJarOpen(key, email, agent.id, raw)) || rec; }catch(e){ rec = { sites: {} }; }
+  /* WHAT IS THERE HAS TO BE READ BEFORE IT IS REPLACED (Nov 7 audit
+     AGENT-023). A read that failed started from an empty jar, so saving one
+     site wiped every other sign-in the agent held. Not known now means not
+     saved; a jar that is stored and will not open with the agent's key is
+     unusable already (its key was destroyed or it is damaged), so it is
+     replaced, and said to be. */
+  let rec = { sites: {} }, raw;
+  try{ raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); }
+  catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'jar_unknown' }); return []; }
+  if(raw){
+    const open = await _agentJarOpen(key, email, agent.id, raw);
+    if(open) rec = open; else audit(env, 'agent_jar_replaced_unreadable', { email, agent: agent.id });
+  }
   rec.sites = rec.sites || {};
   for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
   for(const s of kept) rec.sites[s] = Object.assign({ at: Date.now(), cookies: bySite[s] }, _agentGenOf(began, s));
   await env.AMV_KV.put(_agentJarKey(email, agent.id), await _agentJarSeal(key, email, agent.id, rec), { expirationTtl: AGENT_JAR_TTL_S });
+  /* REVOCATION WINS A RACE IT LOST BY A MOMENT (Nov 7 audit AGENT-022). A
+     forget that moved the generation between the check above and this write
+     has already deleted the jar - and this write put it back. Each entry is
+     stamped with the generation it was kept under, so it could never be
+     used; it is still not left stored. The generation is read again after
+     the write, and a write it has overtaken is taken back and its deletion
+     queued, as the forget's own would be. */
+  let after = null;
+  try{ after = await _agentGen(env, email, agent.id); }catch(e){ after = null; }
+  if(!after || _agentGenOf(after, '').g !== _agentGenOf(began, '').g || kept.some(s => _agentGenOf(after, s).sg !== _agentGenOf(began, s).sg)){
+    audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: after ? 'forgotten_during_save' : 'generation_unknown_after_save' });
+    try{ await env.AMV_KV.delete(_agentJarKey(email, agent.id)); }
+    catch(e){ try{ await _agentJarQueue(env, email, agent.id, ''); }catch(_){ /* fenced by its generation stamp either way; the forget's own retry finds it */ } }
+    return [];
+  }
   audit(env, 'agent_signins_kept', { email, agent: agent.id, sites: kept });
   return kept;
 }
 /* Which sites an agent holds a sign-in for, and until when - never the
    cookies themselves. */
+/* NOT KNOWN IS NOT NONE (Nov 7 audit AGENT-024). A list that could not be
+   read came back empty, and the screen then said "not signed in yet" beside
+   every site - with no Forget button - while a sealed sign-in might still be
+   stored. That throws instead (`agent_signins_unknown`): the caller says the
+   sign-ins could not be checked, and Forget stays offered for every site. */
 async function _agentSignInsShown(env, email, agent){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
-  let rec = null, gen = null;
+  let gen = null;
   try{ gen = await _agentGen(env, email, agent.id); }catch(e){ gen = null; }
-  try{ rec = (await _agentJarRead(env, email, agent.id)).rec; }catch(e){ rec = null; }
+  const j = await _agentJarRead(env, email, agent.id).catch(() => ({ state: 'unknown' }));
+  if(j.state === 'absent') return [];
+  if(j.state === 'unknown' || j.keyUnknown || !gen) throw new Error('agent_signins_unknown');
+  /* Stored and will not open with the agent's key - its key destroyed by a
+     forget, so its deletion is already fenced and queued: nothing usable,
+     and that is known, not unknown. */
+  const rec = j.rec;
   if(!rec || !rec.sites) return [];
   const now = Date.now();
-  /* With the generation unreadable a sign-in is not used (_agentJarLoad), so
-     it is not shown as usable either. */
-  if(!gen) return [];
   return Object.entries(rec.sites)
     .filter(([s, v]) => (agent.browser.sites || []).includes(s) && v && now - v.at <= AGENT_JAR_TTL_S * 1000 && !_agentJarRevoked(agent, s, v, gen))
     .map(([s, v]) => ({ site: s, savedAt: v.at, expiresAt: v.at + AGENT_JAR_TTL_S * 1000 }));
@@ -420,7 +454,7 @@ async function agentSignInsForget(request, env){
     note: r.removed ? undefined : r.queued === false
       ? 'It can no longer be used. The stored copy could not be deleted or queued for deletion yet; AMV will keep trying when you open this again.'
       : 'It can no longer be used. The stored copy is being deleted and will be gone shortly.',
-    signIns: await _agentSignInsShown(env, email, fresh) });
+    ...(await _agentSignInsShown(env, email, fresh).then(v => ({ signIns: v }), () => ({ signIns: null, signInsUnknown: true }))) });
 }
 
 /* READ, UNATTENDED: the pages of an agent's listed sites that its job names,

@@ -348,6 +348,44 @@ section('Unknown is not absent, and a forget during a run is not undone by it (N
   ok(!kv.has('agentjarpend:' + ME + ':*') && ![...kv.keys()].some(k => k.startsWith('agentjar:' + ME + ':')), 'which removes everything once the store answers');
 }
 
+section('What is stored is read before it is replaced; a forget mid-save wins; unknown is shown as unknown (Nov 7 audit AGENT-022/023/024)');
+{
+  const t = (await call('/auth/login', { email: ME, password: 'a long enough passphrase here' })).d.token;
+  const mk = await call('/v1/agents/save', { name: 'Tracker reader', role: 'Reads the tracker' }, t);
+  const AG2 = mk.d.agent && mk.d.agent.id;
+  const agent = () => W._agentFind(env, ME, AG2);
+  await call('/v1/agents/save', { id: AG2, browserKeep: true, browserSites: ['tracker.example.com', 'wiki.example.org'] }, t);
+  await new Promise(r => setTimeout(r, 2));
+  await watched(await agent(), [cookie('tracker.example.com', 'T-20'), cookie('wiki.example.org', 'W-20')]);
+  const jarKey = 'agentjar:' + ME + ':' + AG2;
+  const realGet = env.AMV_KV.get, realPut = env.AMV_KV.put;
+
+  /* The jar cannot be read: saving the wiki must not wipe the tracker. */
+  const a1 = await agent(); await W._agentJarLoad(env, ME, a1);
+  env.AMV_KV.get = async (k, ...x) => { if (k === jarKey) throw new Error('store down'); return realGet.call(env.AMV_KV, k, ...x); };
+  const kept = await W._agentJarSave(env, ME, a1, [cookie('wiki.example.org', 'W-21')]);
+  ok(kept.length === 0, 'with the jar unreadable, nothing is saved', kept);
+
+  /* And the list says it could not be checked, keeping Forget - not "not signed in yet". */
+  const listed = await call('/v1/agents', undefined, t);
+  const mine = (listed.d.agents || []).find(x => x.id === AG2) || {};
+  ok(mine.signInsUnknown === true && mine.signIns === null, 'the card is told the sign-ins could not be checked, not that there are none', { u: mine.signInsUnknown, s: mine.signIns });
+  env.AMV_KV.get = realGet;
+  const load = await W._agentJarLoad(env, ME, await agent());
+  ok(load.some(c => c.value === 'T-20') && load.some(c => c.value === 'W-20'), 'and once it can be read, both sign-ins are still there', load.map(c => c.value));
+
+  /* A forget lands between the save's check and its write. */
+  const a2 = await agent(); await W._agentJarLoad(env, ME, a2);
+  let once = true;
+  env.AMV_KV.put = async (k, v, o) => {
+    if (k === jarKey && once) { once = false; await call('/v1/agents/signins/forget', { id: AG2 }, t); }
+    return realPut.call(env.AMV_KV, k, v, o);
+  };
+  const raced = await W._agentJarSave(env, ME, a2, [cookie('tracker.example.com', 'T-22')]);
+  env.AMV_KV.put = realPut;
+  ok(raced.length === 0 && !kv.has(jarKey), 'the forget wins: the save says it kept nothing, and nothing is left stored', { raced, stored: kv.has(jarKey) });
+}
+
 console.log = origLog;
 if (report('an-agent-keeps-a-sign-in-only-where-it-may') > 0) process.exitCode = 1;
 done();

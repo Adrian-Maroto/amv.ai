@@ -1955,5 +1955,43 @@
   "it": "La copia verrà usata al prossimo avvio dello spazio di lavoro.",
   "ko": "다음에 작업 공간이 시작될 때 이 사본이 사용됩니다.",
   "ta": "அடுத்த முறை பணியிடம் தொடங்கும்போது இந்த நகல் பயன்படுத்தப்படும்."
+ },
+ "could not be checked": {
+  "es": "no se pudo comprobar",
+  "zh": "无法检查",
+  "hi": "जाँच नहीं हो सकी",
+  "ar": "تعذّر التحقق",
+  "pt": "não foi possível verificar",
+  "fr": "vérification impossible",
+  "de": "konnte nicht geprüft werden",
+  "ja": "確認できませんでした",
+  "ru": "не удалось проверить",
+  "id": "tidak dapat diperiksa",
+  "bn": "যাচাই করা যায়নি",
+  "ur": "جانچ نہیں ہو سکی",
+  "tr": "kontrol edilemedi",
+  "vi": "không kiểm tra được",
+  "it": "impossibile verificare",
+  "ko": "확인할 수 없음",
+  "ta": "சரிபார்க்க முடியவில்லை"
+ },
+ "AMV could not check this agent’s saved sign-ins just now. Forget still works; try again in a moment to see them.": {
+  "es": "AMV no pudo comprobar ahora los inicios de sesión guardados de este agente. Olvidar sigue funcionando; inténtalo de nuevo en un momento para verlos.",
+  "zh": "AMV 现在无法检查此代理保存的登录信息。“忘记”仍然可用；稍后再试即可查看。",
+  "hi": "AMV अभी इस एजेंट के सहेजे गए साइन-इन जाँच नहीं सका। भूलना अब भी काम करता है; उन्हें देखने के लिए थोड़ी देर में फिर कोशिश करें।",
+  "ar": "لم يتمكن AMV من التحقق من تسجيلات الدخول المحفوظة لهذا الوكيل الآن. لا يزال النسيان يعمل؛ حاول مرة أخرى بعد قليل لرؤيتها.",
+  "pt": "O AMV não conseguiu verificar agora os logins salvos deste agente. Esquecer ainda funciona; tente de novo em instantes para vê-los.",
+  "fr": "AMV n’a pas pu vérifier pour l’instant les connexions enregistrées de cet agent. Oublier fonctionne toujours ; réessayez dans un moment pour les voir.",
+  "de": "AMV konnte die gespeicherten Anmeldungen dieses Agenten gerade nicht prüfen. Vergessen funktioniert weiterhin; versuche es gleich noch einmal, um sie zu sehen.",
+  "ja": "AMV は今このエージェントの保存済みサインインを確認できませんでした。「忘れる」は引き続き使えます。表示するには少し待ってからもう一度お試しください。",
+  "ru": "AMV сейчас не удалось проверить сохранённые входы этого агента. «Забыть» по-прежнему работает; попробуйте снова чуть позже, чтобы их увидеть.",
+  "id": "AMV tidak dapat memeriksa info masuk tersimpan agen ini sekarang. Lupakan tetap berfungsi; coba lagi sebentar lagi untuk melihatnya.",
+  "bn": "AMV এই মুহূর্তে এই এজেন্টের সংরক্ষিত সাইন-ইন যাচাই করতে পারেনি। ভুলে যাওয়া এখনও কাজ করে; সেগুলি দেখতে একটু পরে আবার চেষ্টা করুন।",
+  "ur": "AMV ابھی اس ایجنٹ کے محفوظ سائن اِن جانچ نہیں سکا۔ بھولنا اب بھی کام کرتا ہے؛ انہیں دیکھنے کے لیے تھوڑی دیر بعد دوبارہ کوشش کریں۔",
+  "tr": "AMV bu ajanın kayıtlı oturum açmalarını şu anda kontrol edemedi. Unut hâlâ çalışıyor; görmek için birazdan tekrar deneyin.",
+  "vi": "AMV hiện không thể kiểm tra các lần đăng nhập đã lưu của tác tử này. Quên vẫn hoạt động; hãy thử lại sau giây lát để xem chúng.",
+  "it": "AMV non è riuscito a verificare ora gli accessi salvati di questo agente. Dimentica funziona ancora; riprova tra poco per vederli.",
+  "ko": "AMV가 지금 이 에이전트의 저장된 로그인을 확인하지 못했습니다. 잊기는 계속 작동합니다. 잠시 후 다시 시도해 확인하세요.",
+  "ta": "AMV இப்போது இந்த முகவரின் சேமித்த உள்நுழைவுகளைச் சரிபார்க்க முடியவில்லை. மறத்தல் இன்னும் வேலை செய்கிறது; அவற்றைப் பார்க்கச் சிறிது நேரத்தில் மீண்டும் முயலவும்."
  }
 }
