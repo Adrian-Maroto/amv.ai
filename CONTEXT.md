@@ -146,19 +146,20 @@ would be repeated.
 
 ## 4. ARCHITECTURE (single-file-deployable)
 
-- **Frontend build:** `app.js` (~1.12MB - the SINGLE SOURCE OF TRUTH; the build
-  reads ONLY this) + `styles.css` (~410KB) → `node build.mjs` bundles them into
-  `index.html` (~1.57MB). `i18n-dict.js` (~48KB) is a 144-term × 17-language
-  translation dictionary; its content is inlined + merged into the runtime `I18N`
-  object in app.js.
-  - ⚠️ Old numbered module files (`00-core-state.js`, `10-chat-engine.js`, …,
-    `70-agents-lab.js`) from an earlier code split are **INERT** - NOT referenced by
-    any build tooling. Do not mistake them for source. `app.js` is authoritative.
-- **Backend:** `amv-backend.js` (~262KB) - a **Cloudflare Worker**. Storage via
-  Cloudflare **KV / D1**. Auth: PBKDF2-SHA256 password hashing + signed **JWTs**.
-- **Deploy:** create a KV namespace → paste its id into `wrangler.toml` (currently
-  the placeholder `REPLACE_WITH_YOUR_KV_NAMESPACE_ID` on line 14) → `npx wrangler
-  deploy`. Fully documented in `DEPLOY.md`.
+- **Frontend build:** the source is `src/app/NN-name.js`, concatenated in name
+  order by `node build.mjs` into `app.js` (GENERATED - never edit it) and, with
+  `styles.css`, minified into `index.html`. The language packs are edited in
+  `src/app/04-i18n.js` and written to `i18n/<code>.json`, fetched by the page
+  for the chosen language. What the host publishes is `public/`, which the build
+  writes. CLAUDE.md "Architecture reality" is the authoritative description.
+- **Backend:** a **Cloudflare Worker**, source `src/worker/NN-name.js`,
+  concatenated by the build into `amv-backend.js` (GENERATED, deployed by
+  wrangler). Storage: KV, a Durable Object for atomic counters and
+  revisions, and Postgres as the control plane where it is switched on
+  (`docs/DATA-TIER.md`). Auth: PBKDF2-SHA256 passwords, signed tokens,
+  passkeys and an authenticator app.
+- **Deploy:** `DEPLOY.md` and `GO-LIVE.md`; `npm run check` must say SHIPPABLE
+  first, and `preflight.mjs` reads the bindings as deployed.
 
 ### Secrets (owner sets at deploy - see DEPLOY.md)
 Required: `AMV_MODEL_KEY`, `JWT_SECRET`.
@@ -200,31 +201,15 @@ Twilio, Google (`GOOGLE_CLIENT_ID`), `ALERT_WEBHOOK`,
 
 ## 6. BUILD / TEST WORKFLOW (follow this)
 
-- `node build.mjs` → assembles index.html from app.js + styles.css.
-- `npm test` → build + `tests/run.mjs` (auto-discovers `*.test.mjs` in
-  `tests/e2e/` + `tests/worker/`).
-- `npm run check` (check.mjs) → **full gauntlet**: (1) syntax both files → (2) Worker
-  module-load check via `import()` → (3) fresh build → (4) all suites → (5) preflight.
-  Placeholder KV id = warning, not failure.
-- Other scripts: `npm run preflight` / `predeploy`, `npm run backup` / `restore`,
-  `npm run deploy`, `npm run test:e2e` / `test:worker` / `test:security`.
-
-**Current state: ✓ SHIPPABLE. 29 test suites green (19 worker + 10 e2e, 700+
-assertions).**
-
-Worker suites: abuse, account-delete, admin-users, alerting, auth, backup, captcha,
-check, crew-handoff, finance, market-moderation, metering, plan-margins,
-plan-security, preflight, ratelimit, reset, video, worker.
-E2e suites: agentic, auth-client, errors, forgot, mobile, regressions, research,
-security, smoke, video.
-
-### After EVERY edit
-1. `node --check` both files.
-2. Module-check the Worker: `node -e "import('./amv-backend.js').catch(e=>{if(e instanceof SyntaxError)process.exit(1)})"`.
-3. `node build.mjs`.
-4. Run the suite.
-5. `cp` deliverables to `/mnt/user-data/outputs/` (app.js, amv-backend.js, styles.css,
-   index.html, i18n-dict.js, DEPLOY.md, package.json, tests/**).
+- `node build.mjs` → concatenates `src/app/` and `src/worker/`, writes `app.js`,
+  `amv-backend.js`, `index.html`, the language packs and `public/`.
+- `npm run check:fast` (~15s) between edits; `npm run check` (~20 minutes, every
+  suite) before anything is called done. `tests/run.mjs` discovers every
+  `*.test.mjs` under `tests/worker/` and `tests/e2e/`, so no list of suites is
+  kept here - a hand-kept list is what went stale before. CLAUDE.md "Verify like
+  this" describes each stage.
+- Other scripts: `npm run preflight`, `npm run backup` / `restore`,
+  `npm run coverage`, `npm run test:e2e` / `test:worker` / `test:security`.
 
 ### Live testing
 Playwright serving index.html over a local http server, then in the page:

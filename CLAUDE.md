@@ -239,7 +239,7 @@ Companion docs (do not duplicate them here - read them):
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by
-  `a-tool-the-model-never-receives`.
+  `the-tools-reach-the-model`.
 - CSS is applied as append-only override LAYERs (A1..A17+). New work adds a NEW
   layer at the end to win the cascade. Reuse tokens/classes; do not fork a
   component per page.
