@@ -131,7 +131,7 @@ const BACKUP_PREFIXES = [
   'custemail:',
   /* Referral codes are permanent per account and live in links people have
      already shared, so a restore that reissues them breaks every one. */
-  'refcode:', 'refmine:', 'refpend:',
+  'refcode:', 'betainv:', 'refmine:', 'refpend:',
   'waitlist:',    // people who asked to be told; losing them loses the launch list
   'mkthread:',    // marketplace conversations - the messages themselves
   /* The two indexes. They can be rebuilt from a scan, so losing them is
