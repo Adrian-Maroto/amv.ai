@@ -164,5 +164,17 @@ section('Everything recorded before the move is still on the statement');
   ok((await W._readTxnLog(baseEnv, 500)).length === 2, 'and an id already in the old record is not recorded again', true);
 }
 
+section('A reused transaction id with different money is refused, not absorbed (Nov 7 audit FIN-024)');
+{
+  clearLedger();
+  const a = await W._recordTxn(baseEnv, { id: 'fee_sale_9', provider: 'marketplace', email: 'b@test.com', amount: 4, currency: 'USD', kind: 'marketplace fee' });
+  const again = await W._recordTxn(baseEnv, { id: 'fee_sale_9', provider: 'marketplace', email: 'b@test.com', amount: 4, currency: 'USD', kind: 'marketplace fee' });
+  ok(a && again && again.amount === 4, 'the same event again answers with what was recorded');
+  const other = await W._recordTxn(baseEnv, { id: 'fee_sale_9', provider: 'marketplace', email: 'b@test.com', amount: 400, currency: 'USD', kind: 'marketplace fee' });
+  ok(other === null, 'a different amount under that id is refused - answered as nothing recorded', other);
+  const kept = [...store.keys()].filter(k => k.startsWith('txn:e:'));
+  ok(kept.length === 1 && JSON.parse(store.get(kept[0])).amount === 4, 'and the first stands alone on the books', kept.length);
+}
+
 report();
 done();

@@ -287,23 +287,39 @@ function _pgMoneyAmount(row){
   }
   return { currency: cur, amount: a.toFixed(6) };
 }
+/* THE SAME KEY HAS TO BE THE SAME MONEY (Nov 7 audit DATA-034, FIN-024).
+   A row whose key was already there was taken as "already written" without
+   looking - so a second event that reused a key for a different amount,
+   account or currency was silently dropped, and the ledger disagreed with
+   what happened. A key already present is now read back and compared on
+   what makes the row money; a different payload under the same key is a
+   conflict that is refused (and so repaired or reported), never absorbed. */
 async function _pgLedgerInsert(sql, row){
   const money = _pgMoneyAmount(row);
   const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
   if (!acct.length) throw new Error('no_account_row');
+  let made;
   if (row.table === 'seller') {
-    await sql`
+    made = await sql`
       INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
       VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
               ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
-      ON CONFLICT (idempotency_key) DO NOTHING`;
-    return;
+      ON CONFLICT (idempotency_key) DO NOTHING RETURNING idempotency_key`;
+  } else {
+    made = await sql`
+      INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
+      VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
+              ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
+      ON CONFLICT (idempotency_key) DO NOTHING RETURNING idempotency_key`;
   }
-  await sql`
-    INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
-    VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
-            ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
-    ON CONFLICT (idempotency_key) DO NOTHING`;
+  if (made && made.length) return;
+  const was = row.table === 'seller'
+    ? await sql`SELECT account_id, currency, amount::text AS amount, reason FROM seller_ledger WHERE idempotency_key = ${row.key}`
+    : await sql`SELECT account_id, currency, amount::text AS amount, reason FROM credit_ledger WHERE idempotency_key = ${row.key}`;
+  const w = was && was[0];
+  const same = !!w && String(w.account_id) === String(acct[0].id) && w.currency === money.currency
+    && Number(w.amount) === Number(money.amount) && String(w.reason) === String(row.reason);
+  if (!same) throw new Error('ledger_key_conflict');
 }
 
 /* A seller's money line (_pushWalletTx), as a seller_ledger row. Only lines

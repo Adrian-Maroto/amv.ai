@@ -118,11 +118,24 @@ async function _recordTxn(env, tx) {
        lets a retried sale record its fee without recording it twice - and the
        id has to be supplied, because a generated one is different every time
        and would make every replay look new. */
+    /* The same id has to be the same transaction (Nov 7 audit FIN-024): one
+       recorded under it before is answered only if it is the same money -
+       account, amount, currency, kind, provider. A different payload under a
+       reused id is a conflict, told to the owner, and answered as nothing
+       recorded, which callers already treat as a failure. */
+    const same = (old) => old && old.email === entry.email && +old.amount === entry.amount
+      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider;
+    const conflict = async (old) => {
+      audit(env, 'txn_id_conflict', { id: tx.id, kind: entry.kind });
+      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account or currency. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
+      return null;
+    };
     if (tx.id) {
       const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { try { return JSON.parse(seen); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
+      if (seen) { let old = null; try { old = JSON.parse(seen); } catch (e) { old = null; /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
+        if (old) return same(old) ? old : conflict(old); }
       const legacy = await env.AMV_KV.get('txn:log');
-      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return old; }
+      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return same(old) ? old : conflict(old); }
     }
     /* ONE KEY PER TRANSACTION. This used to be one record, read, prepended to
        and written back - so two sales in the same moment each read the list

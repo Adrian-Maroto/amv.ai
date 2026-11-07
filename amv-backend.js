@@ -2464,23 +2464,39 @@ function _pgMoneyAmount(row){
   }
   return { currency: cur, amount: a.toFixed(6) };
 }
+/* THE SAME KEY HAS TO BE THE SAME MONEY (Nov 7 audit DATA-034, FIN-024).
+   A row whose key was already there was taken as "already written" without
+   looking - so a second event that reused a key for a different amount,
+   account or currency was silently dropped, and the ledger disagreed with
+   what happened. A key already present is now read back and compared on
+   what makes the row money; a different payload under the same key is a
+   conflict that is refused (and so repaired or reported), never absorbed. */
 async function _pgLedgerInsert(sql, row){
   const money = _pgMoneyAmount(row);
   const acct = await sql`SELECT id FROM accounts WHERE email = ${String(row.email).toLowerCase()}`;
   if (!acct.length) throw new Error('no_account_row');
+  let made;
   if (row.table === 'seller') {
-    await sql`
+    made = await sql`
       INSERT INTO seller_ledger (account_id, currency, amount, reason, idempotency_key, hold_until, at)
       VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
               ${row.reason}, ${row.key}, ${_pgTime(row.holdUntil)}, ${_pgTime(row.at) || new Date()})
-      ON CONFLICT (idempotency_key) DO NOTHING`;
-    return;
+      ON CONFLICT (idempotency_key) DO NOTHING RETURNING idempotency_key`;
+  } else {
+    made = await sql`
+      INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
+      VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
+              ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
+      ON CONFLICT (idempotency_key) DO NOTHING RETURNING idempotency_key`;
   }
-  await sql`
-    INSERT INTO credit_ledger (account_id, currency, amount, reason, idempotency_key, source_event, at, note)
-    VALUES (${acct[0].id}, ${money.currency}, ${money.amount},
-            ${row.reason}, ${row.key}, ${row.source || null}, ${_pgTime(row.at) || new Date()}, ${row.note || null})
-    ON CONFLICT (idempotency_key) DO NOTHING`;
+  if (made && made.length) return;
+  const was = row.table === 'seller'
+    ? await sql`SELECT account_id, currency, amount::text AS amount, reason FROM seller_ledger WHERE idempotency_key = ${row.key}`
+    : await sql`SELECT account_id, currency, amount::text AS amount, reason FROM credit_ledger WHERE idempotency_key = ${row.key}`;
+  const w = was && was[0];
+  const same = !!w && String(w.account_id) === String(acct[0].id) && w.currency === money.currency
+    && Number(w.amount) === Number(money.amount) && String(w.reason) === String(row.reason);
+  if (!same) throw new Error('ledger_key_conflict');
 }
 
 /* A seller's money line (_pushWalletTx), as a seller_ledger row. Only lines
@@ -31343,11 +31359,24 @@ async function _recordTxn(env, tx) {
        lets a retried sale record its fee without recording it twice - and the
        id has to be supplied, because a generated one is different every time
        and would make every replay look new. */
+    /* The same id has to be the same transaction (Nov 7 audit FIN-024): one
+       recorded under it before is answered only if it is the same money -
+       account, amount, currency, kind, provider. A different payload under a
+       reused id is a conflict, told to the owner, and answered as nothing
+       recorded, which callers already treat as a failure. */
+    const same = (old) => old && old.email === entry.email && +old.amount === entry.amount
+      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider;
+    const conflict = async (old) => {
+      audit(env, 'txn_id_conflict', { id: tx.id, kind: entry.kind });
+      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account or currency. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
+      return null;
+    };
     if (tx.id) {
       const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { try { return JSON.parse(seen); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
+      if (seen) { let old = null; try { old = JSON.parse(seen); } catch (e) { old = null; /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
+        if (old) return same(old) ? old : conflict(old); }
       const legacy = await env.AMV_KV.get('txn:log');
-      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return old; }
+      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return same(old) ? old : conflict(old); }
     }
     /* ONE KEY PER TRANSACTION. This used to be one record, read, prepended to
        and written back - so two sales in the same moment each read the list

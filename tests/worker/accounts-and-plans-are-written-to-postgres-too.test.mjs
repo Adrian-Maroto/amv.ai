@@ -47,7 +47,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx, runPgIntentSweep };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx, runPgIntentSweep, _pgLedger };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -167,6 +167,19 @@ section('Money is one row per event: a pack bought once is one row however often
      'and the ledger adds up to what is left: nothing');
   const upd = (() => { try { q("update credit_ledger set amount=999 where idempotency_key='credit:pi_pack_1'"); return 'changed'; } catch (e) { return String(e.stderr || e.message); } })();
   ok(/append-only/.test(upd), 'and a row, once written, cannot be changed', upd.slice(0, 80));
+}
+
+section('The same key with different money is a conflict, not a duplicate (Nov 7 audit DATA-034)');
+{
+  W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 20, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
+  await W._pgSettle();
+  ok(!store.has('pgrepair:ledger:credit:pi_pack_1'), 'the same event again is the same row - nothing to repair');
+  W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 2000, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
+  await W._pgSettle();
+  const rep = JSON.parse(store.get('pgrepair:ledger:credit:pi_pack_1') || 'null');
+  ok(rep && /ledger_key_conflict/.test(rep.why), 'a different amount under that key is refused and kept for repair, said as a conflict', rep && rep.why);
+  ok(q("select count(*)||':'||sum(amount)::text from credit_ledger where idempotency_key='credit:pi_pack_1'") === '1:20.000000', 'and the row that was there is untouched');
+  store.delete('pgrepair:ledger:credit:pi_pack_1');
 }
 
 section('Credit spent is a row per message, at what it cost; a request id sent twice is two spends, not one');
