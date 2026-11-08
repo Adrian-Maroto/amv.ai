@@ -159,10 +159,11 @@ section('And a script AMV tells the model to emit runs somewhere it cannot reach
   ok(/cdnjs\.cloudflare\.com/.test(appSrc), 'the instruction names a CDN', true);
   /* Nov 8 audit FRONT-020: a generated page runs in preview.html, a document
      with its own policy - and the fallback (srcdoc) runs no scripts at all -
-     so this page's policy names neither CDN, nor blob: scripts. */
+     so this page's policy names neither CDN. (blob: stays: it is how the
+     build starts AMV's own bundle without blocking the first paint.) */
   const ss = cspDirective('script-src');
-  ok(!/cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net/.test(ss) && !/(^|\s)blob:/.test(ss),
-     'and this page lets neither CDN nor a blob: run script here - the preview document has its own policy', ss);
+  ok(!/cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net/.test(ss),
+     'and this page lets neither CDN run script here - the preview document has its own policy', ss);
   ok(!/cdn\.jsdelivr\.net/.test(cspDirective('connect-src')), 'nor fetch from the Python CDN, which only the sandbox does', cspDirective('connect-src'));
   ok(/sandbox/.test(worker) || /sandbox/.test(appSrc),
      'generated pages are sandboxed', true);

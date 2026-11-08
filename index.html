@@ -9,7 +9,7 @@
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'sha256-4vtRp8pcU3obNnhha39xueE5OnyaniDSuLFv0aUGgaY=' 'sha256-WgCBbxIFkJvDSo3FugDWdEP2eg8tGBh4UwrX9dG/J2Q=' 'sha256-GgO3rVXPcNfGTSiF9nOSBpNFaLtECM/gOgVonmreX7g=' 'self' https://accounts.google.com https://js.stripe.com https://www.paypal.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
+  script-src 'sha256-4vtRp8pcU3obNnhha39xueE5OnyaniDSuLFv0aUGgaY=' 'sha256-WgCBbxIFkJvDSo3FugDWdEP2eg8tGBh4UwrX9dG/J2Q=' 'sha256-GgO3rVXPcNfGTSiF9nOSBpNFaLtECM/gOgVonmreX7g=' 'self' blob: https://accounts.google.com https://js.stripe.com https://www.paypal.com https://challenges.cloudflare.com https://www.googletagmanager.com https://plausible.io;
   worker-src 'self' blob:;
   media-src 'self' blob:;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style;

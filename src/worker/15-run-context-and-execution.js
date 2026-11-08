@@ -2041,9 +2041,10 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       let doneMark = null;
       try{ doneMark = await env.AMV_KV.get('autodone:' + runSlot); }catch(e){ doneMark = null; }
       if(doneMark){
+        /* Moved on, quietly: this slot ran. Whether its record was saved or
+           this is a stale copy of the slot, running it again is the one
+           thing that must not happen. */
         audit(env, 'auto_run_recovered', { email, item: item.id });
-        item.lastError = 'the last run finished, but what it produced could not be saved - it was not run again';
-        item.runs = (item.runs || 0) + 1;
         item.next = _autoNextAfter(item, now, 'ran');
         changed = true; await releaseItem(); continue;
       }

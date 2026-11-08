@@ -519,6 +519,20 @@
    "backup": false,
    "authority": "kv"
   },
+  "autodone": {
+   "class": "operational",
+   "holds": "that one scheduled run of a job finished, so it is never run twice",
+   "kept": "three days",
+   "backup": false,
+   "authority": "kv"
+  },
+  "autotry": {
+   "class": "operational",
+   "holds": "how many times one scheduled run was cut off before it finished",
+   "kept": "three days",
+   "backup": false,
+   "authority": "kv"
+  },
   "fgoal": {
    "class": "operational",
    "holds": "the name of the first starting chip an account clicked (never what it typed), for the owner's figures",

@@ -108,8 +108,7 @@ section('A run cut off part way is taken over, a finished one is not repeated, o
   due(ME); modelCalls = 0;
   store.set('autodone:' + slot(), '1');
   await W.runDueAutomations(env, Date.now());
-  ok(modelCalls === 0 && rec(ME).items[0].next > Date.now() && /could not be saved - it was not run again/.test(rec(ME).items[0].lastError || ''),
-     'a run that finished is not run a second time; the row says what happened', rec(ME).items[0].lastError);
+  ok(modelCalls === 0 && rec(ME).items[0].next > Date.now(), 'a run that finished is not run a second time, and the job moves on', { modelCalls, next: rec(ME).items[0].next });
   /* Cut off three times: stopped for this slot, saying why. */
   due(ME); modelCalls = 0;
   store.set('autotry:' + slot(), '3');
