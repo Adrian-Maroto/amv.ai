@@ -23,6 +23,8 @@ async function _inviteTake(env, raw){
   if(!code) return '';
   let beta = null;
   try { beta = JSON.parse((await env.AMV_KV.get('betainv:' + code)) || 'null'); } catch (e) { beta = null; }
+  /* Revoked or past its date: not an invite any more (Nov 8 audit BETA-002). */
+  if(beta && (beta.revoked || (+beta.exp && Date.now() > +beta.exp))) return '';
   if(beta && +beta.uses > 0){
     const r = await counter(env, 'betainvuse:' + code, { op: 'reserve', amount: 1, cap: +beta.uses, ttlMs: 400 * 86400000 });
     return r && r.allowed ? 'beta' : '';
@@ -73,15 +75,55 @@ async function adminInvitesCreate(request, env){
   const body = await request.json().catch(() => ({}));
   const count = Math.max(1, Math.min(BETA_INV_MAX_PER_CALL, parseInt(body.count, 10) || 1));
   const uses = Math.max(1, Math.min(BETA_INV_MAX_USES, parseInt(body.uses, 10) || 1));
+  /* A date after which it lets nobody in: 1 to 365 days, 30 if not said. */
+  const days = Math.max(1, Math.min(365, parseInt(body.days, 10) || 30));
+  const exp = Date.now() + days * 86400000;
   const origin = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
   const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const codes = [];
   for(let i = 0; i < count; i++){
     const b = crypto.getRandomValues(new Uint8Array(9));
     const code = 'B' + [...b].map(x => ALPHA[x % ALPHA.length]).join('');
-    await env.AMV_KV.put('betainv:' + code, JSON.stringify({ uses, at: Date.now() }));
+    await env.AMV_KV.put('betainv:' + code, JSON.stringify({ uses, at: Date.now(), exp }));
     codes.push(code);
   }
-  audit(env, 'invites_created', { count, uses });
-  return json({ ok: true, uses, codes, links: origin ? codes.map(c => origin + '/?ref=' + c) : [] });
+  audit(env, 'invites_created', { count, uses, days });
+  return json({ ok: true, uses, expires: exp, codes, links: origin ? codes.map(c => origin + '/?ref=' + c) : [] });
+}
+
+/* POST /admin/invites/list -> every invite the owner made, with how many of
+   its uses are spent, when it ends and whether it was revoked. */
+async function adminInvitesList(request, env){
+  const gate = await _adminGate(request, env, 'invites', 30, 300);
+  if(gate) return gate;
+  const out = [];
+  let cursor, pages = 0;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'betainv:', cursor });
+    for(const k of (page.keys || [])){
+      let rec = null; try { rec = JSON.parse((await env.AMV_KV.get(k.name)) || 'null'); } catch (e) { rec = null; }
+      if(!rec) continue;
+      const code = k.name.slice('betainv:'.length);
+      let used = null; try { const r = await counter(env, 'betainvuse:' + code, { op: 'get' }); used = +((r && r.value) || 0); } catch (e) { used = null; }
+      out.push({ code, uses: +rec.uses || 0, used, made: rec.at || null, expires: rec.exp || null, revoked: !!rec.revoked,
+        open: !rec.revoked && !(+rec.exp && Date.now() > +rec.exp) && (used == null || used < (+rec.uses || 0)) });
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while(cursor && ++pages < 20);
+  return json({ ok: true, invites: out, complete: !cursor });
+}
+
+/* POST /admin/invites/revoke { code } -> it lets nobody else in. Sign-ups
+   it already let in are kept. */
+async function adminInvitesRevoke(request, env){
+  const gate = await _adminGate(request, env, 'invites', 30, 300);
+  if(gate) return gate;
+  const body = await request.json().catch(() => ({}));
+  const code = _inviteCode(body.code);
+  let rec = null; try { rec = JSON.parse((await env.AMV_KV.get('betainv:' + code)) || 'null'); } catch (e) { rec = null; }
+  if(!code || !rec) return json({ error: 'There is no invite with that code.', code: 'not_found' }, 404);
+  rec.revoked = true; rec.revokedAt = Date.now();
+  await env.AMV_KV.put('betainv:' + code, JSON.stringify(rec));
+  audit(env, 'invite_revoked', {});
+  return json({ ok: true, code, revoked: true });
 }

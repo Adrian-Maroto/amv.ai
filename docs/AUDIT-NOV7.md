@@ -87,4 +87,8 @@ DATA-001, DATA-002, DATA-003, DATA-004, DATA-005, DATA-019, DATA-021, DATA-031, 
 
 ## Still open (code)
 
-None. Every P0 code item is fixed here, checked as already bounded, or listed above as the owner's or the cutover's.
+At the time of writing, no Nov 7 P0 item was left without a change, a check
+or an owner. That is not the same as nothing left: the Nov 8 audit then
+reproduced four second-order defects in these very fixes (concurrent writers,
+lost responses, storage failing mid-restore), and the cutover and owner lists
+above are real open work. Current status: docs/AUDIT-NOV8.md.

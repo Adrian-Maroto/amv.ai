@@ -86,6 +86,25 @@ section('A use is spent only on an account that was made (Nov 8 audit)');
   ok((await signup('third@example.com', c)).d.code === 'invite_required', 'and the code is then spent', vals.get('betainvuse:' + c));
 }
 
+section('An invite ends on its date, can be revoked, and is listed with what is spent (Nov 8 audit BETA-002)');
+{
+  const A = { Authorization: 'Bearer admin-secret-token-value' };
+  const made = await call('/admin/invites', { count: 2, uses: 3, days: 7 }, A);
+  ok(made.d.expires > Date.now() + 6 * 86400000 && made.d.expires < Date.now() + 8 * 86400000, 'made with the date it ends', made.d.expires);
+  const [live, gone] = made.d.codes;
+  ok((await signup('dated@example.com', live)).status === 200, 'it lets somebody in before then');
+  const rv = await call('/admin/invites/revoke', { code: gone }, A);
+  ok(rv.status === 200 && rv.d.revoked, 'the owner revokes one');
+  ok((await signup('late@example.com', gone)).d.code === 'invite_required', 'and it lets nobody else in');
+  ok((await call('/admin/invites/revoke', { code: gone })).status === 403, 'only the owner can revoke');
+  const rec = JSON.parse(m.get('betainv:' + live)); rec.exp = Date.now() - 1000; m.set('betainv:' + live, JSON.stringify(rec));
+  ok((await signup('expired@example.com', live)).d.code === 'invite_required', 'past its date it lets nobody in');
+  const r = await W.default.fetch(new Request('https://api.amv.test/admin/invites/list', { method: 'POST', body: '{}', headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.7.9.9' }, A) }), env, ctx);
+  const d = await r.json();
+  const a = (d.invites || []).find(x => x.code === live), b = (d.invites || []).find(x => x.code === gone);
+  ok(a && a.used === 1 && a.uses === 3 && !a.open && b && b.revoked && !b.open, 'the list says how much each has been used and whether it is still open', { a, b });
+}
+
 section('Google and passkey sign-up are gated too');
 {
   const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');

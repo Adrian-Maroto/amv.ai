@@ -101,4 +101,4 @@ records it covers live in Postgres.
   operations, on-call and support staffing, an outside security review.
 - **Partly done (18):** fixed in part, with the remaining part named in the
   ledger.
-- **Not done yet: none.**
+- **Not done yet:** every item above was given a change, a check or an owner; the roadmap builds, owner actions and partial items listed above are still open work, not done. Current status: docs/AUDIT-NOV8.md.

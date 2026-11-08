@@ -27,6 +27,8 @@ each item, and what remains the owner's or the Postgres cutover's.
 | AUTH-025 | A failed passkey sign-up or registration releases its claim, so the same passkey can be added again at once. | a-passkey-or-a-second-step-guards-the-account |
 | CONN-034 | Every outbound hop to an address somebody chose is looked up (A and AAAA over DNS-over-HTTPS) and refused when any answer is private, loopback, link-local or metadata - redirects included. A lookup that cannot be made does not refuse; the Worker's egress does not reach private networks. | a-name-that-points-inside-is-refused |
 | READY-021, READY-026 | The hourly check now proves the hosted browser (opens, renders one line, reads it back) and the meaning index (two phrases, two vectors that agree), held like the model while the day's ceiling is reached; every configured capability is now exercised. | configured-is-not-the-same-as-working |
+| BETA-002 | An invite has an end date (1-365 days, 30 by default), can be revoked, and the owner console lists every invite with uses spent and whether it is open. | the-beta-lets-in-only-who-was-invited |
+| DOC-020, DOC-021 | The Nov 3 and Nov 7 status pages no longer say nothing is left; they name what is open and point here. | - |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
 ## Postgres mirror, ahead of the cutover
