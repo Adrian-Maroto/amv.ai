@@ -637,6 +637,10 @@ async function _restoreEntries(env, entries, mode, t){
       /* A record read as committed (STATE-007) is committed as restored, or
          readers would go on answering with the value from before. */
       if (key.startsWith('data:')) await _revCommitRestored(env, 'data', key.slice(5), merged.value);
+      /* A balance is read from its strong record (Nov 8 verified audit R03),
+         so a restored one is written there too. */
+      if (key.startsWith('wallet:')) await _walletAdopt(env, key.slice(7), merged.value);
+      if (key.startsWith('lib:')) await _libAdopt(env, key.slice(4), merged.value);
       /* The epoch's authority is the account's revocation object now, so a
          higher one from the snapshot is carried there too (it only ever
          rises). Failing is said: the restore otherwise holds. */

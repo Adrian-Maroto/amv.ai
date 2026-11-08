@@ -219,7 +219,10 @@ export default {
          cron writes too - jobs, sweeps, backups - and a write landing in the
          middle of a restore is exactly the mixed store the pause exists to
          prevent. Nothing runs until it is switched back on. */
-      if(await _writesPaused(env)){ console.log('[cron] paused: a restore is running, or whether one is could not be asked (feature:writes)'); return; }
+      const wst = await _writesState(env);
+      if(wst.paused){ console.log('[cron] paused: a restore is running, or whether one is could not be asked (feature:writes)'); return; }
+      /* What this tick writes, it writes only while that is still so (R17). */
+      _bgAdmit(wst.gen);
 
       if(killed){
         console.log('[cron] paused by GLOBAL_KILL - automations skipped');

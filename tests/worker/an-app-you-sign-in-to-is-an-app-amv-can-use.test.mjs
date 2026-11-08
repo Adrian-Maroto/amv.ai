@@ -26,6 +26,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { webcrypto } from 'crypto';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -51,7 +52,7 @@ function mkEnv(extra) {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'the-secret-this-deployment-seals-connections-with',
   }, extra || {});

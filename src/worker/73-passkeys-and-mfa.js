@@ -758,7 +758,15 @@ async function totpConfirm(request, env){
     let kept = null;
     try{ kept = await connOpen(env, (await env.AMV_KV.get('totpans:' + em)) || ''); }catch(e){ kept = null; }
     if(!kept || kept.t !== 'totpans' || (await _totpCheck(kept.s, body.code, null)) < 0) return null;
-    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(await DB.get(env, 'acct', em)) });
+    /* Only once the account says so (Nov 8 verified audit R18). The answer is
+       kept BEFORE the account is written, so a replay while that write was
+       still in flight - or after it failed - said the app was on and handed
+       out codes for a second step the account did not have. It now answers
+       only when the account holds this very secret, switched on. */
+    const acct = await DB.get(env, 'acct', em);
+    let on = null; try{ on = acct && acct.totp && acct.totp.on ? await connOpen(env, acct.totp.sealed || '') : null; }catch(e){ on = null; }
+    if(!on || on.s !== kept.s) return json({ error: 'The authenticator app is still being turned on. Try the newest code again in a moment.', code: 'totp_pending' }, 409);
+    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(acct) });
   };
   const pendRaw = await env.AMV_KV.get('totpset:' + em) || '';
   let pend = null; try{ pend = await connOpen(env, pendRaw); }catch(e){ pend = null; }

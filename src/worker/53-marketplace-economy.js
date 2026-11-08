@@ -167,7 +167,37 @@ const PAYOUT_HOLD_MS = PAYOUT_HOLD_DAYS * 86400000;
    "Nothing is known about this record, so nothing may be written over it." The
    money one was the one that did not. Absent is still a new seller and still
    returns a fresh wallet; only present-and-unparseable throws. */
+/* THE BALANCE IS HELD WHERE IT CANNOT BE STALE (Nov 8 verified audit R03,
+   R04). The wallet lock serialized writers, but each writer then READ the
+   wallet from KV - eventually consistent - so a credit applied to a copy a
+   moment old put back the balance before the last credit, and that credit
+   was gone. And a writer that stalled after its last check wrote its older
+   copy over the next writer's.
+
+   The wallet itself now lives in the strongly consistent object, as a
+   revision and the record at that revision. Every change reads it from
+   there, and commits only if the revision it read is still the current one:
+   a stalled writer finds the revision moved and is refused, and nothing it
+   held is written. KV keeps a copy for exports and backups; it is written
+   after the commit and put right if a slower writer left an older copy in
+   it. A wallet kept before this is read from KV once and adopted. With no
+   object bound (a development machine) KV is the record, as before. */
+const WALLET_FRESH = () => ({ balance: 0, lifetime: 0, currency: 'usd', holds: [] });
+async function _walletStrong(env, email) {
+  const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+  if (!g || g.unavailable) { const e = new Error('wallet is busy'); e.code = 'record_busy'; throw e; }
+  if (g.absent) return { w: WALLET_FRESH(), rev: +g.rev || 0 };
+  if (g.committed && g.digest) {
+    try { return { w: JSON.parse(g.digest), rev: +g.rev || 0 }; }
+    catch (e) { throw new UnreadableRecordError('walletrev:' + email, 'invalid JSON'); }
+  }
+  return { w: await _walletKv(env, email), rev: +g.rev || 0 };
+}
 async function _wallet(env, email) {
+  if (env && env.AMV_COUNTER) return (await _walletStrong(env, email)).w;
+  return _walletKv(env, email);
+}
+async function _walletKv(env, email) {
   const raw = await env.AMV_KV.get(`wallet:${email}`);
   if (raw != null) {
     try { return JSON.parse(raw); }
@@ -176,9 +206,41 @@ async function _wallet(env, email) {
       throw new UnreadableRecordError(`wallet:${email}`, 'invalid JSON');
     }
   }
-  return { balance: 0, lifetime: 0, currency: 'usd', holds: [] };
+  return WALLET_FRESH();
 }
-async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); }
+/* Commits a changed wallet at the revision it was read at. Refused - and
+   nothing written - when another writer committed since. Only _withWallet
+   calls this, under the wallet lock. */
+async function _saveWallet(env, email, w, rev) {
+  if (!(env && env.AMV_COUNTER)) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); return; }
+  /* No revision read: written as given (what a restore does). */
+  if (rev == null) return _walletAdopt(env, email, JSON.stringify(w));
+  const body = JSON.stringify(w);
+  if (body.length > WALLET_MAX_BYTES) {
+    try { await alertOnce(env, 'wallet_too_large', 'A seller wallet is over ' + WALLET_MAX_BYTES + ' bytes (its holds). It cannot be committed until matured holds are dropped; the change was refused.', 60); } catch (e) { /* the throw below is the record */ }
+    const e = new Error('wallet is busy'); e.code = 'record_busy'; throw e;
+  }
+  const c = await counter(env, 'walletrev:' + email, { op: 'revCommit', expect: rev, set: rev + 1, digest: body });
+  if (!c || !c.ok) throw _leaseLost(env, 'wallet', email);
+  /* The copy. A failure here leaves the copy behind, never the balance. */
+  try {
+    await env.AMV_KV.put(`wallet:${email}`, body);
+    const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+    if (g && g.committed && g.digest && (+g.rev || 0) > rev + 1) await env.AMV_KV.put(`wallet:${email}`, g.digest);
+  } catch (e) { audit(env, 'wallet_copy_behind', { email }); }
+}
+const WALLET_MAX_BYTES = 1500000;
+/* A wallet written as given - a restore - made the strong record too, at a
+   revision above every one before it, so readers and the next writer take
+   it rather than the record from before. */
+async function _walletAdopt(env, email, raw) {
+  await env.AMV_KV.put(`wallet:${email}`, raw);
+  if (!(env && env.AMV_COUNTER)) return;
+  const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+  if (!g || g.unavailable) throw new Error('wallet_strong_unavailable');
+  const r = await counter(env, 'walletrev:' + email, { op: 'revReset', rev: (+g.rev || 0) + 1, digest: String(raw) });
+  if (!r || !r.ok) throw new Error('wallet_strong_unavailable');
+}
 
 /* AMV-190: EVERY WALLET MUTATION GOES THROUGH HERE.
 
@@ -294,11 +356,12 @@ async function _withWallet(env, email, mutate) {
     if (lk.claimed) {
       const started = Date.now();
       try {
-        const w = await _wallet(env, em);
+        const at = env && env.AMV_COUNTER ? await _walletStrong(env, em) : { w: await _walletKv(env, em), rev: 0 };
+        const w = at.w;
         const out = await mutate(w);
         if (!_mutRefuses(out)) {
           if (_leaseOver(started)) throw _leaseLost(env, 'wallet', em);
-          await _saveWallet(env, em, w);
+          await _saveWallet(env, em, w, at.rev);
         }
         return out;
       } catch (e) { lastErr = e; throw e; }

@@ -36,9 +36,11 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'clearing.harness.mjs');
 writeFileSync(harness, src
-  + '\nexport { DB, _wallet, _saveWallet, _creditSale, _reverseSale, _availableBalance,'
+  + '\nexport { DB, _walletAdopt, _wallet, _saveWallet, _creditSale, _reverseSale, _availableBalance,'
   + ' PAYOUT_HOLD_MS, PAYOUT_RESERVE_MS, PAYOUT_RESERVE_PCT, MARKET_MIN_WITHDRAW, MARKET_PLATFORM_FEE };\n');
 const W = await import(harness + '?t=' + Date.now());
+/* A wallet set as given goes to its strong record too - it is what every read and write uses. */
+const _setWallet = (env, em, w) => W._walletAdopt(env, em, typeof w === 'string' ? w : JSON.stringify(w));
 const worker = W.default;
 
 const realFetch = globalThis.fetch;
@@ -107,7 +109,7 @@ async function sellerWithASale(env, { price = 999, at = Date.now() } = {}) {
 async function ageFunds(env, email, ms) {
   const w = await W._wallet(env, email);
   for (const h of (w.holds || [])) { h.at -= ms; h.until -= ms; }
-  await W._saveWallet(env, email, w);
+  await _setWallet(env, email, w);
 }
 
 section('A sale credits the seller, and the money is not theirs to take yet');
@@ -274,7 +276,7 @@ section('Money that predates the hold is not frozen retroactively');
   const tok = (await (await call(env, '/auth/signup', { email: SELLER, name: 'S', password: PW })).json()).token;
   await W.DB.put(env, 'consent', SELLER, { birthYear: 1990, at: Date.now() });
   await W.DB.put(env, 'ent', SELLER, { plan: 'pro', source: 'stripe' });
-  await W._saveWallet(env, SELLER, { balance: 120, lifetime: 120, currency: 'usd' });   // no holds field
+  await _setWallet(env, SELLER, { balance: 120, lifetime: 120, currency: 'usd' });   // no holds field
 
   const avail = await W._availableBalance(env, SELLER);
   ok(avail === 120, 'an older balance is fully available', avail);

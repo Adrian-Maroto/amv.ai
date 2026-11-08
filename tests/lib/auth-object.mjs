@@ -31,7 +31,7 @@ authObjectOp._store = new Map();
    operation to the stand-in unchanged. */
 export function withAuthOps(ns) {
   const store = new Map();
-  return Object.assign({}, ns, {
+  const self = Object.assign({}, ns, {
     /* What the objects hold, for a suite that asserts on it. */
     _objects: store,
     idFromName: ns.idFromName ? ns.idFromName.bind(ns) : (n) => n,
@@ -39,6 +39,10 @@ export function withAuthOps(ns) {
       const inner = ns.get(id);
       return { fetch: async (u, init) => {
         let b = {}; try { b = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        /* A suite breaks one object on purpose with `fault(name, body)`:
+           whatever it returns is the answer, and what it throws is the
+           object not answering. */
+        if (typeof self.fault === 'function') { const f = await self.fault(String(id), b); if (f) return f; }
         const a = authObjectOp(String(id), b, store);
         if (a) return a;
         /* A record's revision (revCas), as the object keeps it: a write goes
@@ -82,8 +86,35 @@ export function withAuthOps(ns) {
           if (p.epoch !== Number(b.epoch)) return out({ ok: false, epoch: p.epoch });
           store.set(k, { epoch: p.epoch, digest: String(b.digest || '') || null }); return out({ ok: true, epoch: p.epoch });
         }
+        /* A lock (claim/release), as the object keeps it - asked of the
+           stand-in first, so a suite that models its own locks (or breaks
+           them on purpose) still decides; only a stand-in that does not know
+           the operation at all is answered here. Without this, such a
+           stand-in answers a claim with something that is not one, and the
+           Worker - rightly - treats that as the object not answering. */
+        if (b.op === 'claim' || (b.op === 'release' && !store.has('cl|' + String(id)))) {
+          const res = await inner.fetch(u, init);
+          let o = null; try { o = await res.clone().json(); } catch (e) { o = null; }
+          if (!res.ok || !o || typeof o !== 'object') return res;
+          if (b.op === 'claim' && typeof o.claimed === 'boolean') return res;
+          if (b.op === 'release' && (typeof o.released === 'boolean' || o.ok === true)) return res;
+        }
+        if (b.op === 'claim' || b.op === 'release') {
+          const k = 'cl|' + String(id); const held = store.get(k); const now = Date.now();
+          const out = (x) => new Response(JSON.stringify(x));
+          if (b.op === 'claim') {
+            if (held && held.until > now) return out({ claimed: false, until: held.until });
+            const owner = 'o' + Math.random().toString(36).slice(2);
+            store.set(k, { until: now + Math.max(1000, Number(b.ttlMs) || 30000), owner });
+            return out({ claimed: true, owner });
+          }
+          if (!held) return out({ released: true, wasHeld: false });
+          if (b.owner && held.owner !== b.owner) return out({ released: false, reason: 'not_owner' });
+          store.delete(k); return out({ released: true, wasHeld: true });
+        }
         return inner.fetch(u, init);
       } };
     },
   });
+  return self;
 }

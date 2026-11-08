@@ -284,7 +284,7 @@ export class AMVCounter {
        everywhere at once. No alarm: a switch is off until somebody turns it on. */
     if (op === 'swGet') {
       const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
-      return json({ v: sb.v, map: sb.map });
+      return json({ v: sb.v, map: sb.map, wgen: +sb.wgen || 0 });
     }
     if (op === 'swSet') {
       const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
@@ -296,6 +296,10 @@ export class AMVCounter {
         if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
         else delete sb.map[name];
       }
+      /* Every time writes are switched off is a new generation: background
+         work admitted before it must not commit after it (Nov 8 verified
+         audit R17), even once writes are back on. */
+      if (body.off && names.includes('feature:writes')) sb.wgen = (+sb.wgen || 0) + 1;
       sb.v += 1;
       await this.state.storage.put('sw', sb);
       return json({ v: sb.v, map: sb.map });
@@ -406,16 +410,30 @@ export class AMVCounter {
 
 /* Helper: call a named counter DO. Falls back to KV (non-atomic) only if
    the DO binding isn't configured, so the Worker still runs in dev. */
+const COUNTER_TIMEOUT_MS = 20000;
 async function counter(env, name, payload) {
   try {
     if (env.AMV_COUNTER) {
       const id = env.AMV_COUNTER.idFromName(name);
       const stub = env.AMV_COUNTER.get(id);
-      const r = await stub.fetch('https://do/counter', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      return await r.json();
+      /* A reply is an answer only when it is a 2xx carrying a JSON object
+         (Nov 8 verified audit R01). A 503 with a JSON error body used to be
+         returned as if it were the object speaking - no `claimed`, no
+         `unavailable` - and the claim then fell through to KV, where two
+         contenders both took the lock. Anything else, a stall included, is
+         the object not answering, handled below like a thrown call. */
+      let timer = null;
+      const stall = new Promise((_, no) => { timer = setTimeout(() => no(new Error('counter did not answer in time')), COUNTER_TIMEOUT_MS); });
+      try {
+        const r = await Promise.race([stub.fetch('https://do/counter', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }), stall]);
+        if (!r || !r.ok) throw new Error('counter answered ' + (r ? r.status : 'nothing'));
+        const out = await Promise.race([r.json(), stall]);
+        if (!out || typeof out !== 'object' || Array.isArray(out)) throw new Error('counter answered something that is not a record');
+        return out;
+      } finally { if (timer) clearTimeout(timer); }
     }
   } catch (e) {
     // AMV-016: the DO was BOUND but the atomic call failed. That is a real

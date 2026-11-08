@@ -58,7 +58,17 @@ async function _revRead(env, kind, id, raw){
   if(!env.AMV_COUNTER) return raw;
   let st = null;
   try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
-  if(!st || st.unavailable || !st.committed) return raw;
+  /* An object that could not be asked is not "nothing committed" (Nov 8
+     verified audit R05): the copy here may be one a delete already ended -
+     an erased account's conversations - and answering it put them back on
+     the screen and into the next merge. Refused as a short wait instead. */
+  if(!st || st.unavailable){
+    /* Nothing here to bring back: "absent" is safe to answer. */
+    if(raw == null) return null;
+    try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
+    throw new RecordSettlingError(kind + ':' + id);
+  }
+  if(!st.committed) return raw;
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
   let blob = null;
@@ -206,6 +216,7 @@ const DB = {
     }
   },
   async put(env, kind, id, obj, kvOpts){
+    await _bgWriteGuard(env);
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
       /* Characters are not bytes; only count bytes when it could matter. */
@@ -235,6 +246,7 @@ const DB = {
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
+    await _bgWriteGuard(env);
     if(this._hasD1(env)){ const ik = await _pgIntent(env, kind, id); await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null, ik); return; }
     const epoch = await _pgReadFence(env, kind, id);
     const ik = await _pgIntent(env, kind, id);
@@ -263,6 +275,7 @@ const DB = {
      honest about which guarantee it actually has, rather than assuming one it
      does not. */
   async putIfRev(env, kind, id, obj, expectedRev){
+    await _bgWriteGuard(env);
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
       const now = Date.now();

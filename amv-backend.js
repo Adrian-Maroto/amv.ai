@@ -1018,7 +1018,17 @@ async function _revRead(env, kind, id, raw){
   if(!env.AMV_COUNTER) return raw;
   let st = null;
   try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
-  if(!st || st.unavailable || !st.committed) return raw;
+  /* An object that could not be asked is not "nothing committed" (Nov 8
+     verified audit R05): the copy here may be one a delete already ended -
+     an erased account's conversations - and answering it put them back on
+     the screen and into the next merge. Refused as a short wait instead. */
+  if(!st || st.unavailable){
+    /* Nothing here to bring back: "absent" is safe to answer. */
+    if(raw == null) return null;
+    try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
+    throw new RecordSettlingError(kind + ':' + id);
+  }
+  if(!st.committed) return raw;
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
   let blob = null;
@@ -1166,6 +1176,7 @@ const DB = {
     }
   },
   async put(env, kind, id, obj, kvOpts){
+    await _bgWriteGuard(env);
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
       /* Characters are not bytes; only count bytes when it could matter. */
@@ -1195,6 +1206,7 @@ const DB = {
     await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
+    await _bgWriteGuard(env);
     if(this._hasD1(env)){ const ik = await _pgIntent(env, kind, id); await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); _pgAfter(env, kind, id, null, ik); return; }
     const epoch = await _pgReadFence(env, kind, id);
     const ik = await _pgIntent(env, kind, id);
@@ -1223,6 +1235,7 @@ const DB = {
      honest about which guarantee it actually has, rather than assuming one it
      does not. */
   async putIfRev(env, kind, id, obj, expectedRev){
+    await _bgWriteGuard(env);
     const j = JSON.stringify(obj);
     if(this._hasD1(env)){
       const now = Date.now();
@@ -2317,25 +2330,37 @@ function _pgAfter(env, kind, id, obj, ik){
   _pgInFlight.add(p);
   try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
+let _pgRevLocal = 0;
 async function _pgRevNext(env, kind, chainKey){
-  if (!env.AMV_COUNTER) return null;
-  try { const r = await counter(env, 'pgrev:' + chainKey, { op: 'incr', amount: 1, keep: true }); const v = +((r && r.value) || 0); return v > 0 ? v : null; }
+  /* No object at all: one instance, so the clock (kept rising) orders it. */
+  if (!env.AMV_COUNTER) { _pgRevLocal = Math.max(_pgRevLocal + 1, Date.now() * 1000); return _pgRevLocal; }
+  /* strict: an allocator that cannot be asked gives no revision - never the
+     KV fallback's own count, which starts again at one (Nov 8 verified audit
+     R11) and would lose to every revision already in Postgres, or win over
+     newer ones. */
+  try { const r = await counter(env, 'pgrev:' + chainKey, { op: 'incr', amount: 1, keep: true, strict: true }); const v = +((r && r.value) || 0); return v > 0 ? v : null; }
   catch (e) { return null; }
 }
 /* The mirror's rows and its revision, one transaction: applied only when
    this revision is newer than the newest that landed (or when there is no
    revision, from the backfill, which copies what KV holds now). Answers
    false when it was older and nothing was written. */
+/* NO REVISION, NO WRITE (Nov 8 verified audit R12). A mirror with no
+   revision skipped the guard and wrote whatever it held - over a newer row,
+   when its allocator had failed. Every mirror now needs one: a live write,
+   the write-through, the repair and the backfill all take the record's next
+   revision BEFORE they read what to copy, so anything they copy is at least
+   as new as every revision below theirs, and a newer write wins over them.
+   Without one, nothing is written and the mirror fails onto the repair list. */
 async function _pgGuarded(sql, kind, id, rev, fn){
+  if (!(Number(rev) > 0)) throw new Error('mirror_revision_unavailable');
   return sql.begin(async (tx) => {
-    if (rev) {
-      const won = await tx`
+    const won = await tx`
         INSERT INTO mirror_revisions (kind, record_id, rev) VALUES (${kind}, ${id}, ${rev})
         ON CONFLICT (kind, record_id) DO UPDATE SET rev = EXCLUDED.rev, at = now()
           WHERE mirror_revisions.rev < EXCLUDED.rev
         RETURNING rev`;
-      if (!won.length) return false;
-    }
+    if (!won.length) return false;
     await fn(tx);
     return true;
   });
@@ -2385,9 +2410,14 @@ async function _pgMirror(env, kind, email, obj, sqlIn, rev){
       });
     }
     if (kind === 'team') {
-      let missing = false;
-      await _pgGuarded(sql, kind, email, rev, async (tx) => { missing = await _pgMirrorTeam(tx, email, obj); });
-      if (missing) throw new Error('member_without_account_row');
+      /* A member with no account row fails the whole transaction (Nov 8
+         verified audit R13): it used to commit the team without them and
+         report it afterwards, so Postgres held a membership list nobody
+         wrote - a permission source missing a person. Nothing lands; the
+         repair copies it once the account row exists. */
+      await _pgGuarded(sql, kind, email, rev, async (tx) => {
+        if (await _pgMirrorTeam(tx, email, obj)) throw new Error('member_without_account_row');
+      });
       return;
     }
     if (kind === 'ent' || kind === 'apikeys') {
@@ -2811,27 +2841,37 @@ async function _pgBackfillSaveHeld(sql, me, phase, cursor, add){
   return r.length === 1;
 }
 
+/* The next revision of each named kind of one record, or throws. */
+async function _pgRevsFor(env, id, kinds){
+  const out = {};
+  for (const k of kinds) { const r = await _pgRevNext(env, k, k + ':' + id); if (!r) throw new Error('mirror_revision_unavailable'); out[k] = r; }
+  return out;
+}
 /* One record of one phase. Returns 'copied', 'same', 'mismatched' (verify),
    'skipped', or throws. */
 async function _pgBackfillOne(env, sql, phase, keyName, t){
   if (phase === 'acct') {
     const email = keyName.slice(5).toLowerCase();
+    /* Revisions first, then the read (R12): what is copied is at least as
+       new as every mirror below these, and any write after them wins. */
+    const revs = await _pgRevsFor(env, email, ['acct', 'ent', 'apikeys']);
     const kv = await _pgAccountKV(env, email);
     if (!kv.acct) return 'skipped';                 // unreadable or gone since the listing
     const digest = await _pgDigest(kv);
     const was = await sql`SELECT kv_digest FROM migration_accounts WHERE email = ${email}`;
     if (was.length && was[0].kv_digest === digest) return 'same';
-    await _pgMirror(env, 'acct', email, kv.acct, sql);
-    await _pgMirror(env, 'ent', email, kv.ent, sql);
-    await _pgMirror(env, 'apikeys', email, kv.keys, sql);
+    await _pgMirror(env, 'acct', email, kv.acct, sql, revs.acct);
+    await _pgMirror(env, 'ent', email, kv.ent, sql, revs.ent);
+    await _pgMirror(env, 'apikeys', email, kv.keys, sql, revs.apikeys);
     await sql`UPDATE migration_accounts SET kv_digest = ${digest}, backfilled_at = now() WHERE email = ${email}`;
     return 'copied';
   }
   if (phase === 'team') {
     const id = keyName.slice(5);
+    const revs = await _pgRevsFor(env, id.toLowerCase(), ['team']);
     const team = await DB.get(env, 'team', id);
     if (!team) return 'skipped';
-    await _pgMirror(env, 'team', id.toLowerCase(), team, sql);
+    await _pgMirror(env, 'team', id.toLowerCase(), team, sql, revs.team);
     return 'copied';
   }
   if (phase === 'wallet') {
@@ -2859,7 +2899,12 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
       await _pgLedgerInsert(sql, kept.row);
     } else if (PG_MIRROR_KINDS.has(kind)) {
       /* As KV has it now: if it was deleted since, that is what is copied. */
-      await _pgMirror(env, kind, id, await DB.get(env, kind, id), sql);
+      /* A repair is a write of its own, newer than the one that failed: it
+         takes the record's next revision, then copies KV as it is now. With
+         no revision it stays on the list. */
+      const rev = await _pgRevNext(env, kind, kind + ':' + String(id).toLowerCase());
+      if (!rev) { t.unreadable++; return 'skipped'; }
+      await _pgMirror(env, kind, id, await DB.get(env, kind, id), sql, rev);
     } else { t.unreadable++; return 'skipped'; }
     await env.AMV_KV.delete(keyName);
     return 'copied';
@@ -3490,7 +3535,10 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
   if (!email || !(await _pgReadIn(env, email))) return false;
   let why = '';
   try {
-    await _pgMirror(env, kind, email, obj);
+    /* With its own revision, like every live mirror (R12). */
+    const rev = await _pgRevNext(env, kind, kind + ':' + email);
+    if (!rev) throw new Error('mirror_revision_unavailable');
+    await _pgMirror(env, kind, email, obj, null, rev);
     const sql = await _pgClient(env);
     let back;
     try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
@@ -4305,7 +4353,7 @@ export class AMVCounter {
        everywhere at once. No alarm: a switch is off until somebody turns it on. */
     if (op === 'swGet') {
       const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
-      return json({ v: sb.v, map: sb.map });
+      return json({ v: sb.v, map: sb.map, wgen: +sb.wgen || 0 });
     }
     if (op === 'swSet') {
       const sb = (await this.state.storage.get('sw')) || { v: 0, map: {} };
@@ -4317,6 +4365,10 @@ export class AMVCounter {
         if (body.off) sb.map[name] = { off: true, why: String(body.why || '').slice(0, 200), at: Date.now() };
         else delete sb.map[name];
       }
+      /* Every time writes are switched off is a new generation: background
+         work admitted before it must not commit after it (Nov 8 verified
+         audit R17), even once writes are back on. */
+      if (body.off && names.includes('feature:writes')) sb.wgen = (+sb.wgen || 0) + 1;
       sb.v += 1;
       await this.state.storage.put('sw', sb);
       return json({ v: sb.v, map: sb.map });
@@ -4427,16 +4479,30 @@ export class AMVCounter {
 
 /* Helper: call a named counter DO. Falls back to KV (non-atomic) only if
    the DO binding isn't configured, so the Worker still runs in dev. */
+const COUNTER_TIMEOUT_MS = 20000;
 async function counter(env, name, payload) {
   try {
     if (env.AMV_COUNTER) {
       const id = env.AMV_COUNTER.idFromName(name);
       const stub = env.AMV_COUNTER.get(id);
-      const r = await stub.fetch('https://do/counter', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      return await r.json();
+      /* A reply is an answer only when it is a 2xx carrying a JSON object
+         (Nov 8 verified audit R01). A 503 with a JSON error body used to be
+         returned as if it were the object speaking - no `claimed`, no
+         `unavailable` - and the claim then fell through to KV, where two
+         contenders both took the lock. Anything else, a stall included, is
+         the object not answering, handled below like a thrown call. */
+      let timer = null;
+      const stall = new Promise((_, no) => { timer = setTimeout(() => no(new Error('counter did not answer in time')), COUNTER_TIMEOUT_MS); });
+      try {
+        const r = await Promise.race([stub.fetch('https://do/counter', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }), stall]);
+        if (!r || !r.ok) throw new Error('counter answered ' + (r ? r.status : 'nothing'));
+        const out = await Promise.race([r.json(), stall]);
+        if (!out || typeof out !== 'object' || Array.isArray(out)) throw new Error('counter answered something that is not a record');
+        return out;
+      } finally { if (timer) clearTimeout(timer); }
     }
   } catch (e) {
     // AMV-016: the DO was BOUND but the atomic call failed. That is a real
@@ -13720,9 +13786,12 @@ async function _autoQueueConsume(batch, env){
   /* Nothing in a batch changes anything while a restore has writes off, or
      while that cannot be asked (Nov 8 audit DR-016): each message waits and
      comes back, except the queue's own probe, which writes only its stamp. */
-  const paused = await _writesPaused(env);
-  for(const msg of (batch.messages || [])){
-    if(paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
+  /* Asked again for every message (Nov 8 verified audit R17): a restore
+     switched on between two of them holds the rest. */
+  try{ for(const msg of (batch.messages || [])){
+    const st = await _writesState(env);
+    if(st.paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
+    _bgAdmit(st.gen);
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
@@ -13736,7 +13805,7 @@ async function _autoQueueConsume(batch, env){
     }
     if(body.kind === 'outbox'){
       try{ await _outboxConsume(env, msg); }
-      catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }
+      catch(e){ if(!(e && e.code === 'writes_paused')) audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: e && e.code === 'writes_paused' ? 120 : 300 }); }
       continue;
     }
     const email = await _qWho(env, body);
@@ -13753,12 +13822,14 @@ async function _autoQueueConsume(batch, env){
       if(r.ran || r.failed) console.log('[queue] automations', JSON.stringify({ email, ...r }));
       msg.ack();
     }catch(e){
+      /* Held by a restore that began while it ran: not the job's failure. */
+      if(e && e.code === 'writes_paused'){ msg.retry({ delaySeconds: 120 }); continue; }
       const n = Number(msg.attempts) || 1;
       audit(env, 'auto_queue_run_failed', { email, attempt: n, error: String((e && e.message) || e).slice(0, 160) });
       try{ await _workerError(env, 'queue.automations', e); }catch(_){}
       msg.retry({ delaySeconds: Math.min(AUTO_QUEUE_RETRY_S * n * n, 3600) });
     }
-  }
+  } } finally { _bgAdmitEnd(); }
 }
 
 /* THE DEAD-LETTER QUEUE: an account whose run failed every retry.
@@ -13788,7 +13859,9 @@ const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); r
 const _autoQuarName = (email) => 'autoquar:' + String(email || '').toLowerCase();
 async function _autoQuarantined(env, email){
   try{
-    if(env.AMV_COUNTER){ const r = await counter(env, _autoQuarName(email), { op: 'get' }); if(r && r.unavailable) return true; if(+((r && r.value) || 0) > 0) return true; }
+    /* strict: an object that cannot be asked is a hold, never the KV
+       fallback's zero (Nov 8 verified audit R10). */
+    if(env.AMV_COUNTER){ const r = await counter(env, _autoQuarName(email), { op: 'get', strict: true }); if(!r || r.unavailable || typeof r.value === 'undefined') return true; if(+(r.value || 0) > 0) return true; }
     return !!(await env.AMV_KV.get(_autoQuarKey(email)));
   }
   catch(e){ audit(env, 'auto_quarantine_unknown', { email }); return true; }
@@ -18141,6 +18214,10 @@ async function _restoreEntries(env, entries, mode, t){
       /* A record read as committed (STATE-007) is committed as restored, or
          readers would go on answering with the value from before. */
       if (key.startsWith('data:')) await _revCommitRestored(env, 'data', key.slice(5), merged.value);
+      /* A balance is read from its strong record (Nov 8 verified audit R03),
+         so a restored one is written there too. */
+      if (key.startsWith('wallet:')) await _walletAdopt(env, key.slice(7), merged.value);
+      if (key.startsWith('lib:')) await _libAdopt(env, key.slice(4), merged.value);
       /* The epoch's authority is the account's revocation object now, so a
          higher one from the snapshot is carried there too (it only ever
          rises). Failing is said: the restore otherwise holds. */
@@ -18644,17 +18721,48 @@ const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
    asked - a switchboard that does not answer is not permission to write
    into a store somebody may be restoring. The restore itself still needs a
    definite yes from _restoreFrozen before it starts. */
-async function _writesPaused(env){
+async function _writesPaused(env){ return (await _writesState(env)).paused; }
+/* { paused, gen }: whether writes are off (or that cannot be asked), and the
+   generation of the last time they were switched off. */
+async function _writesState(env){
   if (env.AMV_COUNTER) {
     try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });
-      if (r && r.unavailable) return true;
-      if (r && r.map && typeof r.map === 'object') return !!(r.map['feature:writes'] && r.map['feature:writes'].off);
+      if (r && r.unavailable) return { paused: true, gen: -1 };
+      if (r && r.map && typeof r.map === 'object') return { paused: !!(r.map['feature:writes'] && r.map['feature:writes'].off), gen: +r.wgen || 0 };
       /* Answered with no switchboard of its own: the stored switches decide,
          as they do for the restore itself. */
-    } catch (e) { return true; }
+    } catch (e) { return { paused: true, gen: -1 }; }
   }
-  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); return !!(m && m['feature:writes'] && m['feature:writes'].off); }
-  catch (e) { return true; }
+  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); const w = m && m['feature:writes']; return { paused: !!(w && w.off), gen: +((w && w.at) || (m && m._wgen)) || 0 }; }
+  catch (e) { return { paused: true, gen: -1 }; }
+}
+/* BACKGROUND WORK COMMITS ONLY INTO THE GENERATION IT WAS ADMITTED IN (Nov 8
+   verified audit R17). A queue batch checked the freeze once, for the whole
+   batch, so a restore switched on between two messages still let the second
+   one run and write; and a run admitted before a restore, still going when
+   it began, committed its result into the restored store. Each message is
+   now admitted on its own, with the generation it saw, and every record
+   write it makes (DB.put / DB.del) asks again: writes off, or switched off
+   since, and the write is refused - the message is retried later. */
+const _bgAdmitted = new WeakMap();
+function _bgScope(){ try { const c = _ctxStore ? _ctxStore.getStore() : null; return (c && typeof c === 'object') ? c : null; } catch (e) { return null; } }
+function _bgAdmit(gen){ const c = _bgScope(); if (c) _bgAdmitted.set(c, gen); }
+function _bgAdmitEnd(){ const c = _bgScope(); if (c) _bgAdmitted.delete(c); }
+/* Asked of the one switchboard object, so kept for a second per isolate:
+   every background write in the deployment would otherwise be a call to the
+   same object. A restore is started by a person after switching writes off,
+   which is longer than this. */
+let _bgWritesSeen = null;
+const BG_WRITES_FRESH_MS = 1000;
+async function _bgWriteGuard(env){
+  const c = _bgScope();
+  if (!c || !_bgAdmitted.has(c)) return;
+  const now = Date.now();
+  let st = _bgWritesSeen && _bgWritesSeen.env === env && now - _bgWritesSeen.at < BG_WRITES_FRESH_MS ? _bgWritesSeen.st : null;
+  if (!st) { st = await _writesState(env); _bgWritesSeen = { env, at: now, st }; }
+  if (st.paused || st.gen !== _bgAdmitted.get(c)) {
+    const e = new Error('writes are paused for a restore'); e.code = 'writes_paused'; throw e;
+  }
 }
 async function _restoreFrozen(env){
   let m = null;
@@ -19423,7 +19531,10 @@ export default {
          cron writes too - jobs, sweeps, backups - and a write landing in the
          middle of a restore is exactly the mixed store the pause exists to
          prevent. Nothing runs until it is switched back on. */
-      if(await _writesPaused(env)){ console.log('[cron] paused: a restore is running, or whether one is could not be asked (feature:writes)'); return; }
+      const wst = await _writesState(env);
+      if(wst.paused){ console.log('[cron] paused: a restore is running, or whether one is could not be asked (feature:writes)'); return; }
+      /* What this tick writes, it writes only while that is still so (R17). */
+      _bgAdmit(wst.gen);
 
       if(killed){
         console.log('[cron] paused by GLOBAL_KILL - automations skipped');
@@ -22967,6 +23078,14 @@ async function _eraseAccount(env, email, opt) {
       if (!(r && r.ok)) _eraseFailed('team usage totals');
     }
   } catch { _eraseFailed('team usage totals'); }
+  /* The wallet's strong copy (its revision and record): a delete moves it to
+     a new generation, so no writer that read it before can put it back. */
+  if (env.AMV_COUNTER) {
+    try { const r = await counter(env, `walletrev:${email}`, { op: 'revReset', absent: true }); if (!(r && r.ok)) _eraseFailed('earnings balance'); }
+    catch { _eraseFailed('earnings balance'); }
+    try { const r = await counter(env, `librec:${email}`, { op: 'revReset', absent: true }); if (!(r && r.ok)) _eraseFailed('the list of your files'); }
+    catch { _eraseFailed('the list of your files'); }
+  }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
   /* The saved cloud workspace lives with AMV's computer Worker, not in this
@@ -31700,7 +31819,38 @@ const TXN_PREFIX = 'txn:e:';
    from here, because the backup coverage check reads the writes to know
    which kinds of record exist. */
 const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') + ':' + e.id;
-const TXN_ID_CLAIM_S = 300;
+/* The canonical record of a transaction id: { rec, mine } - `mine` when
+   this call is the one that made it. null when the strong object could not
+   answer, which the caller reports as not recorded. Without the object (a
+   development machine) KV is the record, as it always was. */
+async function _txnCanonical(env, id, entry) {
+  const fromKv = async () => {
+    const seen = await env.AMV_KV.get('txn:id:' + id);
+    if (seen) { try { const o = JSON.parse(seen); if (o) { const { pending: _p, ...was } = o; return was; } } catch (e) { /* unreadable: the legacy list is asked next */ } }
+    const legacy = await env.AMV_KV.get('txn:log');
+    if (legacy) { try { const o = (JSON.parse(legacy) || []).find((e) => e && e.id === id); if (o) return o; } catch (e) { /* unreadable list: nothing known from it */ } }
+    return null;
+  };
+  if (!env.AMV_COUNTER) { const old = await fromKv(); return old ? { rec: old, mine: false } : { rec: entry, mine: true }; }
+  const name = 'txnrec:' + id;
+  const read = async () => {
+    const g = await counter(env, name, { op: 'revGet' });
+    if (!g || g.unavailable) return { unavailable: true };
+    if (g.committed && g.digest) { try { return { rec: JSON.parse(g.digest) }; } catch (e) { return { unavailable: true }; } }
+    return { rec: null };
+  };
+  let g = await read();
+  if (g.unavailable) return null;
+  if (g.rec) return { rec: g.rec, mine: false };
+  /* Not in the object yet: a record kept before it existed is the first. */
+  const old = await fromKv();
+  const want = old || entry;
+  const c = await counter(env, name, { op: 'revCommit', expect: 0, set: 1, digest: JSON.stringify(want) });
+  if (!c || c.unavailable) return null;
+  if (c.ok) return { rec: want, mine: !old };
+  g = await read();
+  return g.rec ? { rec: g.rec, mine: false } : null;
+}
 async function _recordTxn(env, tx) {
   try {
     const entry = {
@@ -31724,78 +31874,42 @@ async function _recordTxn(env, tx) {
        account, amount, currency, kind, provider. A different payload under a
        reused id is a conflict, told to the owner, and answered as nothing
        recorded, which callers already treat as a failure. */
+    /* The same id is the same transaction: account, amount, currency, kind,
+       provider - and the provider's own reference (Nov 8 verified audit R08),
+       so an id reused for a different invoice is not taken for a replay. */
     const same = (old) => old && old.email === entry.email && +old.amount === entry.amount
-      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider;
+      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider
+      && String(old.ref || '') === entry.ref;
     const conflict = async (old) => {
       audit(env, 'txn_id_conflict', { id: tx.id, kind: entry.kind });
-      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account or currency. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
+      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account, currency or provider reference. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
       return null;
     };
+    /* THE TRANSACTION ITSELF LIVES IN THE STRONG OBJECT (Nov 8 verified audit
+       R09, R16). The first writer of an id commits the whole record there
+       before any line is written; every later writer - a retry, a duplicate
+       delivery, another region reading KV a moment behind - reads that record
+       back and writes the SAME line under the SAME key, at the time the first
+       writer chose. So a write that stopped half way is finished by its retry
+       rather than doubled, and the id's KV record is written exactly once per
+       attempt, never twice inside KV's one-write-a-second limit. A record
+       from before this (in KV only) is adopted as the canonical one. */
+    let rec = entry;
     if (tx.id) {
-      const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { let old = null; try { old = JSON.parse(seen); } catch (e) { old = null; /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
-        if (old && old.pending) {
-          /* A write that stopped half way: finish it, at the time it began,
-             so its line is the same key and not a second one. */
-          if (!same(old)) return conflict(old);
-          const { pending: _p, ...was } = old;
-          const b = JSON.stringify(was);
-          await env.AMV_KV.put('txn:e:' + _txnOrder(was), b, b.length <= 1000 ? { metadata: was } : undefined);
-          await env.AMV_KV.put('txn:id:' + tx.id, b);
-          return was;
-        }
-        if (old) return same(old) ? old : conflict(old); }
-      const legacy = await env.AMV_KV.get('txn:log');
-      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return same(old) ? old : conflict(old); }
-    }
-    /* ONE KEY PER TRANSACTION. This used to be one record, read, prepended to
-       and written back - so two sales in the same moment each read the list
-       without the other and the second write erased the first, and the
-       thousand-entry cap would have held minutes of history at any volume.
-       Each entry now has its own key, named so the newest sorts first, and
-       carries itself as the key's metadata so the statement can list them
-       without reading each one. */
-    /* THE ID FIRST, THEN THE LINE (Nov 7 audit FIN-020). The line was written
-       before its id, so a Worker stopping between the two left a line with
-       no id - and the retry, finding no id, wrote the same payment a second
-       time, a minute later. The id is now written first, holding the line's
-       time and marked pending; a retry finds it and writes the same line,
-       under the same key, rather than a new one. */
-    /* ONE WRITER PER ID (Nov 8 audit). Two regions can both read the id as
-       absent - KV is eventually consistent - and both wrote a line, so one
-       payment became two. The id is now claimed in the strongly consistent
-       object first: one writer gets it, and the other waits for that
-       writer's record and answers with it (or nothing, which callers treat
-       as "not recorded yet" and retry). The claim lasts five minutes, longer
-       than KV takes to show the record everywhere, so a retry after it finds
-       the record; a writer that stopped before writing anything frees the
-       id for the retry when the claim runs out, and one that failed frees it
-       at once. */
-    let claimOwner = null;
-    if (tx.id) {
-      const c = await _claimOnceDetail(env, 'txnid', tx.id, TXN_ID_CLAIM_S);
-      if (!c.claimed) {
-        if (c.unavailable) return null;
-        for (let i = 0; i < 6; i++) {
-          const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-          let old = null; try { old = seen ? JSON.parse(seen) : null; } catch (e) { old = null; }
-          if (old && !old.pending) return same(old) ? old : conflict(old);
-          await new Promise((r) => setTimeout(r, 150));
-        }
-        return null;
+      const canon = await _txnCanonical(env, tx.id, entry);
+      if (!canon) return null;                        // nothing could be asked: not recorded, the caller retries
+      if (!canon.mine) {
+        if (!same(canon.rec)) return conflict(canon.rec);
+        rec = canon.rec;
       }
-      claimOwner = c.owner || '';
     }
-    const body = JSON.stringify(entry);
-    try {
-      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
-      await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
-      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
-    } catch (e) {
-      if (tx.id) await _releaseClaim(env, 'txnid', tx.id, claimOwner);
-      throw e;
-    }
-    return entry;
+    const body = JSON.stringify(rec);
+    /* With no strong object, the id's KV record is the only memory of the
+       time the first attempt chose, so it goes first, marked pending. */
+    if (tx.id && !env.AMV_COUNTER && rec === entry) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
+    await env.AMV_KV.put('txn:e:' + _txnOrder(rec), body, body.length <= 1000 ? { metadata: rec } : undefined);
+    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
+    return rec;
   } catch (e) { return null; }
 }
 
@@ -32016,7 +32130,26 @@ const CLAIM_ONCE_TTL_S = 400 * 86400;
 
    Bounded: an entry is removed the moment its lock is released, and a lock
    whose release never runs is one whose isolate is gone with the map. */
-const _CLAIM_OWNERS = new Map();
+/* Nov 8 verified audit R02: ONE NAME PER ISOLATE WAS NOT ENOUGH. A lease that
+   expired and was taken again in the same isolate overwrote the first
+   holder's token, and the first holder's release - naming no owner - then
+   freed the SECOND holder's lock. Owners are now kept per request (the
+   request's own async context, and the environment it was given), oldest
+   first: a release that names no owner gives back the oldest claim this
+   request took on that name, which the object refuses when that lease has
+   already passed to somebody else. A release from a request that never took
+   the name (a claim taken in one request and given back by another) names
+   no owner, as before. */
+const _CLAIM_SCOPES = new WeakMap();
+const _CLAIM_NOCTX = {};
+function _claimOwners(env){
+  let c = null; try { c = _ctxStore ? _ctxStore.getStore() : null; } catch (e) { c = null; }
+  const top = (c && typeof c === 'object') ? c : _CLAIM_NOCTX;
+  let byEnv = _CLAIM_SCOPES.get(top); if(!byEnv){ byEnv = new WeakMap(); _CLAIM_SCOPES.set(top, byEnv); }
+  const ek = (env && typeof env === 'object') ? env : _CLAIM_NOCTX;
+  let m = byEnv.get(ek); if(!m){ m = new Map(); byEnv.set(ek, m); }
+  return m;
+}
 
 async function _claimOnce(env, kind, id, ttlSec){
   return (await _claimOnceDetail(env, kind, id, ttlSec)).claimed;
@@ -32046,7 +32179,10 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            happens to be there when it gets around to it. Kept beside the
            request rather than returned, so all seventeen call sites keep their
            boolean and none of them can forget to carry it. */
-        if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
+        if(r.claimed){
+          const mk = kind + ':' + id, owners = _claimOwners(env);
+          const list = owners.get(mk) || []; list.push(r.owner || ''); owners.set(mk, list);
+        }
         /* Also handed back (Nov 7 audit LOCK-002): the map holds one owner
            per name, so a lease that expired and was retaken in the same
            isolate overwrote it, and the first holder's release then freed
@@ -32054,7 +32190,11 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            with that, whatever the map says now. */
         return { claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' };
       }
-    }catch(e){ /* fall through to the next strategy */ }
+    }catch(e){ /* answered below: the object is bound, so nothing else may decide */ }
+    /* Bound but no usable answer - a malformed reply, a throw (Nov 8 verified
+       audit R01). Never D1 or KV: a lock the strong object could not grant is
+       not granted. */
+    return { claimed: false, unavailable: true };
   }
   if(DB._hasD1(env)){
     try{
@@ -32109,9 +32249,11 @@ async function _releaseClaim(env, kind, id, ownerIn){
     // release wherever it was claimed - the DO first, mirroring _claimOnce
     if(env && env.AMV_COUNTER){
       const mapKey = kind + ':' + id;
-      const owner = ownerIn != null ? String(ownerIn) : (_CLAIM_OWNERS.get(mapKey) || '');
-      /* Forget the map's entry only when it is this holder's. */
-      if(ownerIn == null || _CLAIM_OWNERS.get(mapKey) === owner) _CLAIM_OWNERS.delete(mapKey);
+      const owners = _claimOwners(env), list = owners.get(mapKey) || [];
+      let owner;
+      if(ownerIn != null){ owner = String(ownerIn); const at = list.indexOf(owner); if(at >= 0) list.splice(at, 1); }
+      else owner = list.length ? list.shift() : '';
+      if(list.length) owners.set(mapKey, list); else owners.delete(mapKey);
       try{
         const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
         /* Refused means this holder's lease had already expired and somebody
@@ -33569,7 +33711,37 @@ const PAYOUT_HOLD_MS = PAYOUT_HOLD_DAYS * 86400000;
    "Nothing is known about this record, so nothing may be written over it." The
    money one was the one that did not. Absent is still a new seller and still
    returns a fresh wallet; only present-and-unparseable throws. */
+/* THE BALANCE IS HELD WHERE IT CANNOT BE STALE (Nov 8 verified audit R03,
+   R04). The wallet lock serialized writers, but each writer then READ the
+   wallet from KV - eventually consistent - so a credit applied to a copy a
+   moment old put back the balance before the last credit, and that credit
+   was gone. And a writer that stalled after its last check wrote its older
+   copy over the next writer's.
+
+   The wallet itself now lives in the strongly consistent object, as a
+   revision and the record at that revision. Every change reads it from
+   there, and commits only if the revision it read is still the current one:
+   a stalled writer finds the revision moved and is refused, and nothing it
+   held is written. KV keeps a copy for exports and backups; it is written
+   after the commit and put right if a slower writer left an older copy in
+   it. A wallet kept before this is read from KV once and adopted. With no
+   object bound (a development machine) KV is the record, as before. */
+const WALLET_FRESH = () => ({ balance: 0, lifetime: 0, currency: 'usd', holds: [] });
+async function _walletStrong(env, email) {
+  const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+  if (!g || g.unavailable) { const e = new Error('wallet is busy'); e.code = 'record_busy'; throw e; }
+  if (g.absent) return { w: WALLET_FRESH(), rev: +g.rev || 0 };
+  if (g.committed && g.digest) {
+    try { return { w: JSON.parse(g.digest), rev: +g.rev || 0 }; }
+    catch (e) { throw new UnreadableRecordError('walletrev:' + email, 'invalid JSON'); }
+  }
+  return { w: await _walletKv(env, email), rev: +g.rev || 0 };
+}
 async function _wallet(env, email) {
+  if (env && env.AMV_COUNTER) return (await _walletStrong(env, email)).w;
+  return _walletKv(env, email);
+}
+async function _walletKv(env, email) {
   const raw = await env.AMV_KV.get(`wallet:${email}`);
   if (raw != null) {
     try { return JSON.parse(raw); }
@@ -33578,9 +33750,41 @@ async function _wallet(env, email) {
       throw new UnreadableRecordError(`wallet:${email}`, 'invalid JSON');
     }
   }
-  return { balance: 0, lifetime: 0, currency: 'usd', holds: [] };
+  return WALLET_FRESH();
 }
-async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); }
+/* Commits a changed wallet at the revision it was read at. Refused - and
+   nothing written - when another writer committed since. Only _withWallet
+   calls this, under the wallet lock. */
+async function _saveWallet(env, email, w, rev) {
+  if (!(env && env.AMV_COUNTER)) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); return; }
+  /* No revision read: written as given (what a restore does). */
+  if (rev == null) return _walletAdopt(env, email, JSON.stringify(w));
+  const body = JSON.stringify(w);
+  if (body.length > WALLET_MAX_BYTES) {
+    try { await alertOnce(env, 'wallet_too_large', 'A seller wallet is over ' + WALLET_MAX_BYTES + ' bytes (its holds). It cannot be committed until matured holds are dropped; the change was refused.', 60); } catch (e) { /* the throw below is the record */ }
+    const e = new Error('wallet is busy'); e.code = 'record_busy'; throw e;
+  }
+  const c = await counter(env, 'walletrev:' + email, { op: 'revCommit', expect: rev, set: rev + 1, digest: body });
+  if (!c || !c.ok) throw _leaseLost(env, 'wallet', email);
+  /* The copy. A failure here leaves the copy behind, never the balance. */
+  try {
+    await env.AMV_KV.put(`wallet:${email}`, body);
+    const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+    if (g && g.committed && g.digest && (+g.rev || 0) > rev + 1) await env.AMV_KV.put(`wallet:${email}`, g.digest);
+  } catch (e) { audit(env, 'wallet_copy_behind', { email }); }
+}
+const WALLET_MAX_BYTES = 1500000;
+/* A wallet written as given - a restore - made the strong record too, at a
+   revision above every one before it, so readers and the next writer take
+   it rather than the record from before. */
+async function _walletAdopt(env, email, raw) {
+  await env.AMV_KV.put(`wallet:${email}`, raw);
+  if (!(env && env.AMV_COUNTER)) return;
+  const g = await counter(env, 'walletrev:' + email, { op: 'revGet' });
+  if (!g || g.unavailable) throw new Error('wallet_strong_unavailable');
+  const r = await counter(env, 'walletrev:' + email, { op: 'revReset', rev: (+g.rev || 0) + 1, digest: String(raw) });
+  if (!r || !r.ok) throw new Error('wallet_strong_unavailable');
+}
 
 /* AMV-190: EVERY WALLET MUTATION GOES THROUGH HERE.
 
@@ -33696,11 +33900,12 @@ async function _withWallet(env, email, mutate) {
     if (lk.claimed) {
       const started = Date.now();
       try {
-        const w = await _wallet(env, em);
+        const at = env && env.AMV_COUNTER ? await _walletStrong(env, em) : { w: await _walletKv(env, em), rev: 0 };
+        const w = at.w;
         const out = await mutate(w);
         if (!_mutRefuses(out)) {
           if (_leaseOver(started)) throw _leaseLost(env, 'wallet', em);
-          await _saveWallet(env, em, w);
+          await _saveWallet(env, em, w, at.rev);
         }
         return out;
       } catch (e) { lastErr = e; throw e; }
@@ -43445,6 +43650,75 @@ async function everydayJobs(request, env) {
    holds somebody's email in a key.
    ══════════════════════════════════════════════════════════════════════════ */
 const LIB_KIND = 'lib';
+/* THE LIST OF YOUR FILES IS HELD WHERE IT CANNOT BE STALE (Nov 8 verified
+   audit R20). An upload changed the account's one list record twice in a
+   moment - pending, then kept - and KV takes one write a second per key, so
+   the second was refused and a file that had reached storage was reported as
+   not kept, its entry left pending. Two uploads at once did the same. The
+   list now lives in the strongly consistent object, as a revision and the
+   list at that revision, changed under the lock and committed only from the
+   revision it was read at; KV keeps a copy for exports and backups, written
+   once per change and allowed to fall behind (said, never decided on). A list
+   kept before this is read from KV once and adopted. With no object bound
+   (a development machine) KV is the list, as before. */
+const _libRevName = (email) => 'librec:' + String(email || '').toLowerCase();
+const _libBusy = () => { const e = new Error('lib is busy'); e.code = 'record_busy'; return e; };
+async function _libRead(env, email){
+  const em = String(email || '').toLowerCase();
+  if (!env.AMV_COUNTER) return { rec: (await DB.get(env, LIB_KIND, em)) || null, rev: 0 };
+  const g = await counter(env, _libRevName(em), { op: 'revGet' });
+  if (!g || g.unavailable) throw _libBusy();
+  if (g.absent) return { rec: null, rev: +g.rev || 0 };
+  if (g.committed && g.digest) { try { return { rec: JSON.parse(g.digest), rev: +g.rev || 0 }; } catch (e) { throw new UnreadableRecordError(_libRevName(em), 'invalid JSON'); } }
+  return { rec: (await DB.get(env, LIB_KIND, em)) || null, rev: +g.rev || 0 };
+}
+async function _libRec(env, email){ return (await _libRead(env, email)).rec || { files: [] }; }
+async function _libCommit(env, email, rec, rev){
+  const em = String(email || '').toLowerCase();
+  if (!env.AMV_COUNTER) { await DB.put(env, LIB_KIND, em, rec); return; }
+  const c = await counter(env, _libRevName(em), { op: 'revCommit', expect: rev, set: rev + 1, digest: JSON.stringify(rec) });
+  if (!c || !c.ok) throw _libBusy();
+  try { await DB.put(env, LIB_KIND, em, rec); } catch (e) { audit(env, 'library_copy_behind', { by: em }); }
+}
+/* The list as given - a restore - made the strong record too. */
+async function _libAdopt(env, email, raw){
+  if (!env.AMV_COUNTER) return;
+  const em = String(email || '').toLowerCase();
+  const g = await counter(env, _libRevName(em), { op: 'revGet' });
+  if (!g || g.unavailable) throw new Error('library_strong_unavailable');
+  const r = await counter(env, _libRevName(em), { op: 'revReset', rev: (+g.rev || 0) + 1, digest: String(raw) });
+  if (!r || !r.ok) throw new Error('library_strong_unavailable');
+}
+/* Read, change, commit, under the list's lock. */
+async function _withLib(env, email, mutate){
+  const em = String(email || '').toLowerCase();
+  for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
+    const lk = await _claimOnceDetail(env, 'rmut:lib', em, 15);
+    if (lk.claimed) {
+      const started = Date.now();
+      try {
+        const at = await _libRead(env, em);
+        const rec = at.rec || { files: [] };
+        const out = await mutate(rec);
+        if (!_mutRefuses(out)) {
+          if (_leaseOver(started)) throw _leaseLost(env, 'lib', em);
+          await _libCommit(env, em, rec, at.rev);
+        }
+        return out;
+      } finally { await _releaseClaim(env, 'rmut:lib', em, lk.owner || null); }
+    }
+    if (lk.unavailable) break;
+    await new Promise(r => setTimeout(r, 40 * (i + 1)));
+  }
+  throw _libBusy();
+}
+/* What the server itself says the bytes are: two files are the same file
+   only when this matches (Nov 8 verified audit R23) - the page's signature
+   samples a file, so two different files could share one. */
+async function _libDigest(body){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(body)));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 const LIB_MB = 1024 * 1024;
 /* Count and stored size (characters of text, or of base64 for a picture or
    PDF, which is what crosses the wire and what is stored). */
@@ -43523,7 +43797,10 @@ async function _libUser(request, env, write){
 async function libList(request, env){
   if (!libConfigured(env)) return _libOff();
   const { user, res } = await _libUser(request, env, false); if (res) return res;
-  const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const rec = await _libRec(env, user.email);
+  /* Deletes still owed (bytes or passages that would not go): tried again
+     in the background, so nothing waits for somebody to delete again. */
+  if ((rec.files || []).some(f => f.deleting)) _bg(_libFinishDeletes(env, user.email).catch(() => {}));
   const files = (rec.files || []).filter(f => !f.pending && !f.deleting).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
   return json({ ok: true, configured: true, searchInside: _fileIndexOn(env), files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
@@ -43603,13 +43880,14 @@ async function libPut(request, env){
   const id = 'lf' + now.toString(36) + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const meta = { id, sig, kind, name, size: Math.max(0, +b.size || 0), format: String(b.format || '').slice(0, 40),
                  summary: String(b.summary || '').slice(0, 300), mime: String(b.mime || '').slice(0, 100),
-                 chars: body.length, bytes: new TextEncoder().encode(body).length, added: now, used: now, folder };
+                 chars: body.length, bytes: new TextEncoder().encode(body).length, added: now, used: now, folder,
+                 h: await _libDigest(body) };
 
   /* The same file sent twice is one entry. Decided under the lock, with the
      limit, so two tabs uploading at once cannot both pass the last check. */
   let decided; const abandoned = [];
   try {
-    decided = await _withKind(env, LIB_KIND, user.email, (rec) => {
+    decided = await _withLib(env, user.email, (rec) => {
       /* An upload that never finished (a Worker stopped mid-way) is cleared
          after ten minutes, so it cannot hold a place in the limit for ever. */
       const all = Array.isArray(rec.files) ? rec.files : [];
@@ -43617,18 +43895,29 @@ async function libPut(request, env){
          are deleted below, not left behind unseen and uncounted (Nov 1 audit FILE-004). */
       for (const f of all) if (f.pending && now - (f.added || 0) >= 600000) abandoned.push(f.id);
       rec.files = all.filter(f => !f.pending || now - (f.added || 0) < 600000);
-      const same = rec.files.find(f => f.sig === sig && !f.pending && !f.deleting);
-      if (same) { same.used = now; return { dup: _libMeta(same) }; }
+      /* The same file is the same bytes (R23), not merely the same sampled
+         signature; an entry from before the server kept its own digest is
+         never assumed to be this one. */
+      const same = rec.files.find(f => f.sig === sig && f.h && f.h === meta.h && !f.pending && !f.deleting);
+      if (same) { same.used = now; return { dup: _libMeta(same), dupId: same.id, needsIndex: kind === 'text' && !(+same.vec > 0) }; }
       const u = _libUsage(rec);
       if (u.files + 1 > limit.files || u.bytes + meta.bytes > limit.bytes) return { full: u };
       rec.files.push(Object.assign({ pending: true }, meta));
       return { add: true };
-    }, { files: [] });
+    });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Try again in a moment.' }, 503);
   }
   for (const gone of abandoned) { try { await env.AMV_FILES.delete(prefix + gone); } catch (e) {} }
-  if (decided && decided.dup) return json({ ok: true, file: decided.dup, verified: true, existed: true });
+  if (decided && decided.dup) {
+    /* Kept already, but its passages never reached the index (R22): sending
+       it again is the way to repair that, so it is indexed now. */
+    if (decided.needsIndex && _fileIndexOn(env)) {
+      const vec = await _fileIndexAdd(env, user, Object.assign({}, meta, { id: decided.dupId }), body);
+      if (vec) { try { await _withLib(env, user.email, (rec) => { const f = (rec.files || []).find(x => x.id === decided.dupId); if (f) f.vec = vec; }); } catch (e) { audit(env, 'library_index_unrecorded', { by: user.email }); } }
+    }
+    return json({ ok: true, file: decided.dup, verified: true, existed: true });
+  }
   if (decided && decided.full)
     return json({ error: 'library_full', used: decided.full, limit,
       message: 'Your files in your account are full for your plan. Delete some, or keep this one on this device only.' }, 409);
@@ -43637,7 +43926,7 @@ async function libPut(request, env){
      of it fails the entry is taken out again, so the list never names a file
      that is not there. */
   const drop = async () => {
-    try { await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => f.id !== id); }, { files: [] }); } catch (e) {}
+    try { await _withLib(env, user.email, (rec) => { rec.files = (rec.files || []).filter(f => f.id !== id); }); } catch (e) {}
     try { await env.AMV_FILES.delete(prefix + id); } catch (e) {}
   };
   try {
@@ -43647,9 +43936,9 @@ async function libPut(request, env){
     /* Its passages, searchable by meaning (87-file-index.js) - before it
        stops being pending, so a listed file is a searchable one. */
     const vec = await _fileIndexAdd(env, user, meta, body);
-    await _withKind(env, LIB_KIND, user.email, (rec) => {
+    await _withLib(env, user.email, (rec) => {
       const f = (rec.files || []).find(x => x.id === id); if (f){ delete f.pending; if (vec) f.vec = vec; }
-    }, { files: [] });
+    });
   } catch (e) {
     await drop();
     audit(env, 'library_put_failed', { by: user.email, error: String((e && e.message) || e).slice(0, 120) });
@@ -43663,7 +43952,7 @@ async function libGet(request, env){
   if (!libConfigured(env)) return _libOff();
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const id = new URL(request.url).searchParams.get('id') || '';
-  const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const rec = await _libRec(env, user.email);
   const f = (rec.files || []).find(x => x.id === id && !x.pending && !x.deleting);
   if (!f) return json({ error: 'not_found', message: 'That file is not in your account any more.' }, 404);
   const obj = await env.AMV_FILES.get((await _libPrefix(user.email)) + id);
@@ -43691,7 +43980,7 @@ async function libDelete(request, env){
      counted against the limit because they still take the space, and are
      tried again by the next delete. */
   try {
-    await _withKind(env, LIB_KIND, user.email, (rec) => { for (const f of (rec.files || [])) if (ids.has(f.id) || f.deleting) { f.deleting = true; ids.add(f.id); } }, { files: [] });
+    await _withLib(env, user.email, (rec) => { for (const f of (rec.files || [])) if (ids.has(f.id) || f.deleting) { f.deleting = true; ids.add(f.id); } });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was deleted - try again in a moment.' }, 503);
   }
@@ -43702,13 +43991,20 @@ async function libDelete(request, env){
     for (const id of ids) if (!(await env.AMV_FILES.head(prefix + id))) gone.add(id);
   } catch (e) { /* none confirmed gone: every entry stays marked */ }
   /* Their passages go from the index too, so nothing of a deleted file can
-     still be found by meaning. */
+     still be found by meaning - and an entry stays, hidden and marked, until
+     they have (Nov 8 verified audit R15): it is the only record of which
+     passages are still owed a delete, so it is not removed while any are.
+     The next delete, or the next listing, tries again. */
   try {
-    const now = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
-    await _fileIndexRemove(env, user.email, (now.files || []).filter(f => gone.has(f.id)));
-  } catch (e) { /* the search drops entries whose file is gone, so an index line left behind answers nothing */ }
+    const now = await _libRec(env, user.email);
+    for (const f of (now.files || []).filter(f => gone.has(f.id))) {
+      let out = false;
+      try { out = await _fileIndexRemove(env, user.email, [f]); } catch (e) { out = false; }
+      if (!out) gone.delete(f.id);
+    }
+  } catch (e) { gone.clear(); }
   try {
-    if (gone.size) await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); }, { files: [] });
+    if (gone.size) await _withLib(env, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); });
   } catch (e) { /* the bytes are gone; the marked entries are removed by the next delete */ }
   const left = ids.size - gone.size;
   if (left) {
@@ -43716,6 +44012,24 @@ async function libDelete(request, env){
     return json({ error: 'delete_incomplete', deleted: gone.size, message: 'Some of those files could not be removed from storage yet. They are hidden and will be removed - try again in a moment.' }, 502);
   }
   return json({ ok: true, deleted: gone.size });
+}
+
+/* The marked entries' bytes and passages, tried again; an entry goes once
+   both are gone. Answers how many are still owed. */
+async function _libFinishDeletes(env, email){
+  const prefix = await _libPrefix(email);
+  const rec = await _libRec(env, email);
+  const owed = (rec.files || []).filter(f => f.deleting);
+  const gone = new Set();
+  for (const f of owed) {
+    try {
+      await env.AMV_FILES.delete(prefix + f.id);
+      if (await env.AMV_FILES.head(prefix + f.id)) continue;
+      if (await _fileIndexRemove(env, email, [f])) gone.add(f.id);
+    } catch (e) { /* still owed */ }
+  }
+  if (gone.size) await _withLib(env, email, (r) => { r.files = (r.files || []).filter(f => !gone.has(f.id)); });
+  return owed.length - gone.size;
 }
 
 /* POST /v1/library/move { ids: [], folder } - into a folder, or out of all of
@@ -43729,13 +44043,13 @@ async function libMove(request, env){
   const folder = _libFolder(b.folder);
   if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);
   try {
-    await _withKind(env, LIB_KIND, user.email, (rec) => {
+    await _withLib(env, user.email, (rec) => {
       for (const f of (rec.files || [])) if (ids.has(f.id) && !f.pending && !f.deleting) f.folder = folder;
-    }, { files: [] });
+    });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was moved - try again in a moment.' }, 503);
   }
-  const after = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const after = await _libRec(env, user.email);
   const moved = (after.files || []).filter(f => ids.has(f.id) && (f.folder || '') === folder).length;
   if (!moved) return json({ error: 'not_found', message: 'Those files are not in your account any more.' }, 404);
   return json({ ok: true, moved, folder, verified: moved === ids.size });
@@ -43745,7 +44059,7 @@ async function libMove(request, env){
    reports it rather than answering "deleted". */
 async function _libEraseAll(env, email){
   if (!libConfigured(env)) return 0;
-  try { const rec = await DB.get(env, LIB_KIND, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
+  try { const rec = await _libRec(env, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
   const prefix = await _libPrefix(email);
   let n = 0, cursor;
   for (let i = 0; i < 1000; i++) {
@@ -45721,7 +46035,15 @@ async function totpConfirm(request, env){
     let kept = null;
     try{ kept = await connOpen(env, (await env.AMV_KV.get('totpans:' + em)) || ''); }catch(e){ kept = null; }
     if(!kept || kept.t !== 'totpans' || (await _totpCheck(kept.s, body.code, null)) < 0) return null;
-    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(await DB.get(env, 'acct', em)) });
+    /* Only once the account says so (Nov 8 verified audit R18). The answer is
+       kept BEFORE the account is written, so a replay while that write was
+       still in flight - or after it failed - said the app was on and handed
+       out codes for a second step the account did not have. It now answers
+       only when the account holds this very secret, switched on. */
+    const acct = await DB.get(env, 'acct', em);
+    let on = null; try{ on = acct && acct.totp && acct.totp.on ? await connOpen(env, acct.totp.sealed || '') : null; }catch(e){ on = null; }
+    if(!on || on.s !== kept.s) return json({ error: 'The authenticator app is still being turned on. Try the newest code again in a moment.', code: 'totp_pending' }, 409);
+    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(acct) });
   };
   const pendRaw = await env.AMV_KV.get('totpset:' + em) || '';
   let pend = null; try{ pend = await connOpen(env, pendRaw); }catch(e){ pend = null; }
@@ -46986,15 +47308,22 @@ async function _agentJarOpen(key, email, id, raw){
    "nothing here", and a forget then told the person no sign-in existed while
    the sealed copy stayed stored. */
 async function _agentJarRead(env, email, id){
-  let raw;
-  try{ raw = await env.AMV_KV.get(_agentJarKey(email, id)); }
+  let st;
+  try{ st = await _agentJarStrong(env, email, id); }
   catch(e){ return { state: 'unknown', raw: null, rec: null, key: null }; }
-  if(!raw) return { state: 'absent', raw: null, rec: null, key: null };
+  const raw = st.raw;
+  if(!raw) return { state: 'absent', raw: null, rec: null, key: null, rev: st.rev };
   let key = null, keyUnknown = false;
   try{ key = await _agentDek(env, email, id, false); }catch(e){ key = null; keyUnknown = true; }
-  return { state: 'present', raw, rec: await _agentJarOpen(key, email, id, raw), key, keyUnknown };
+  const rec = await _agentJarOpen(key, email, id, raw);
+  /* Nov 8 verified audit R14: stored in this format, under a key the agent
+     still has, and it will not open - damaged, or read with the wrong key.
+     That is not "no sign-ins"; it is not known what it holds. A jar whose
+     key a forget destroyed, or one in the earlier format, is unusable for
+     certain, and is not this. */
+  const unreadable = !rec && !!key && String(raw).startsWith(AGENT_JAR_FMT + '.');
+  return { state: 'present', raw, rec, key, keyUnknown, unreadable, rev: st.rev };
 }
-
 /* THE GENERATION, IN STRONG STORAGE (Nov 3 audit AGENT-011/020). Every forget
    moves a number on the agent's own counter object - strongly consistent, one
    writer - before it touches anything else: `all` for every site, `s:<site>`
@@ -47060,40 +47389,55 @@ async function _agentJarLoad(env, email, agent){
    kept, so the run can say so. */
 /* ONE SAVE AT A TIME, FROM THE COPY THAT IS THERE (Nov 8 audit). Two runs
    of one agent each read the jar, added their own site and wrote it back:
-   the second write erased the first run's sign-in, and both were told it
-   was kept. A save now holds the agent's jar lock for the read, the merge
-   and the write, and the strongly consistent object remembers a
-   fingerprint of the copy last written. A read that does not match it is a
-   stale copy from this region's KV, so it is read again until it does; one
-   that still does not match after the wait is not merged into, and the save
-   says so. A fingerprint older than KV takes to settle everywhere is not
-   trusted over KV, so a write that could not record one heals itself. */
-const AGENT_JAR_SETTLE_MS = 90000;
-async function _agentJarPrint(raw){
-  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(raw || ''))));
-  return [...d.slice(0, 16)].map(b => b.toString(16).padStart(2, '0')).join('');
+   the second write erased the first run's sign-in. A save holds the agent's
+   jar lock for the read, the merge and the write.
+
+   AND THE COPY IS THE STRONG ONE (Nov 8 verified audit R21). The lock alone
+   was not enough: the jar was read from KV, which can answer with a copy a
+   moment old, so a fingerprint of the last write was kept in the strong
+   object to tell - and when that fingerprint could not be written, the next
+   save took the old copy as current and the site the last save had just
+   kept was gone. The sealed jar itself now lives in the strongly consistent
+   object, as a revision and the jar at that revision; every read is from
+   there, and a write commits only from the revision it read. KV keeps a
+   copy, which nothing reads to decide. A jar kept before this is read from
+   KV once and adopted. With no object bound (a development machine) KV is
+   the jar, as before. */
+const _agentJarStrongName = (email, id) => 'agentjarv:' + String(email).toLowerCase() + ':' + id;
+async function _agentJarStrong(env, email, id){
+  if(!env.AMV_COUNTER){ return { raw: (await env.AMV_KV.get(_agentJarKey(email, id))) || null, rev: 0 }; }
+  const g = await counter(env, _agentJarStrongName(email, id), { op: 'revGet' });
+  if(!g || g.unavailable) throw new Error('agent_jar_unknown');
+  if(g.absent) return { raw: null, rev: +g.rev || 0 };
+  if(g.committed && g.digest) return { raw: String(g.digest), rev: +g.rev || 0 };
+  return { raw: (await env.AMV_KV.get(_agentJarKey(email, id))) || null, rev: +g.rev || 0 };
 }
-const _agentJarRevName = (email, id) => 'agentjarrev:' + String(email).toLowerCase() + ':' + id;
-async function _agentJarMark(env, email, id, raw){
-  try{ await counter(env, _agentJarRevName(email, id), { op: 'revReset', rev: Date.now(), digest: (await _agentJarPrint(raw)) + '@' + Date.now() }); }
-  catch(e){ audit(env, 'agent_jar_mark_failed', { email, agent: id }); }
-}
-/* The jar as last written, or throws: 'unknown' when the store cannot be
-   read, 'settling' when only an older copy can be seen yet. */
-async function _agentJarCurrent(env, email, id){
-  let want = null;
+/* Writes the jar (`sealed`, or null to delete it) from revision `rev`.
+   Answers false when another write landed since; throws when the object
+   cannot be asked. A delete is a new generation that no older writer can
+   build on. */
+async function _agentJarPut(env, email, id, sealed, rev){
+  const key = _agentJarKey(email, id);
   if(env.AMV_COUNTER){
-    const r = await counter(env, _agentJarRevName(email, id), { op: 'revGet' });
+    const name = _agentJarStrongName(email, id);
+    const r = sealed == null
+      ? await counter(env, name, { op: 'revReset', absent: true })
+      : await counter(env, name, { op: 'revCommit', expect: +rev || 0, set: (+rev || 0) + 1, digest: sealed });
     if(!r || r.unavailable) throw new Error('agent_jar_unknown');
-    if(r.committed && r.digest){ const [h, at] = String(r.digest).split('@'); if(Date.now() - (+at || 0) < AGENT_JAR_SETTLE_MS) want = h; }
+    if(!r.ok) return false;
   }
-  for(let i = 0; i < 8; i++){
-    let raw;
-    try{ raw = await env.AMV_KV.get(_agentJarKey(email, id)); }catch(e){ throw new Error('agent_jar_unknown'); }
-    if(!want || (await _agentJarPrint(raw)) === want) return raw;
-    await new Promise(r => setTimeout(r, 150));
+  /* The KV copy. Failing to change it leaves a sealed copy behind - never
+     the one anything reads - and says so ('copy'), so a forget does not
+     report a credential gone while a copy of it is still stored. */
+  try{
+    if(sealed == null) await env.AMV_KV.delete(key);
+    else await env.AMV_KV.put(key, sealed, { expirationTtl: AGENT_JAR_TTL_S });
+  }catch(e){
+    if(!env.AMV_COUNTER) throw e;
+    audit(env, 'agent_jar_copy_behind', { email, agent: id });
+    return 'copy';
   }
-  throw new Error('agent_jar_settling');
+  return true;
 }
 async function _agentJarSave(env, email, agent, cookies){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
@@ -47118,6 +47462,9 @@ async function _agentJarSave(env, email, agent, cookies){
   }
   kept = kept.filter(s => _agentGenOf(now, s).sg === _agentGenOf(began, s).sg);
   if(!kept.length) return [];
+  let hadKey = false;
+  try{ hadKey = !!(await _agentDek(env, email, agent.id, false)); }
+  catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'key_unknown' }); return []; }
   const key = await _agentDek(env, email, agent.id, true);
   if(!key) return [];
   /* WHAT IS THERE HAS TO BE READ BEFORE IT IS REPLACED (Nov 7 audit
@@ -47135,19 +47482,29 @@ async function _agentJarSave(env, email, agent, cookies){
   }
   if(!lk.claimed){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: lk.unavailable ? 'lock_unknown' : 'another_save' }); return []; }
   try{
-    let rec = { sites: {} }, raw;
-    try{ raw = await _agentJarCurrent(env, email, agent.id); }
-    catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: /settling/.test(String(e && e.message)) ? 'jar_settling' : 'jar_unknown' }); return []; }
+    let rec = { sites: {} }, st;
+    try{ st = await _agentJarStrong(env, email, agent.id); }
+    catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'jar_unknown' }); return []; }
+    const raw = st.raw;
     if(raw){
       const open = await _agentJarOpen(key, email, agent.id, raw);
-      if(open) rec = open; else audit(env, 'agent_jar_replaced_unreadable', { email, agent: agent.id });
+      if(open) rec = open;
+      else if(hadKey && String(raw).startsWith(AGENT_JAR_FMT + '.')){
+        /* Under the key the agent has, and it does not open (R14): what it
+           holds is not known, so it is not replaced. */
+        audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'jar_unreadable' });
+        return [];
+      }
+      else audit(env, 'agent_jar_replaced_unreadable', { email, agent: agent.id });
     }
     rec.sites = rec.sites || {};
     for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
     for(const s of kept) rec.sites[s] = Object.assign({ at: Date.now(), cookies: bySite[s] }, _agentGenOf(began, s));
     const sealed = await _agentJarSeal(key, email, agent.id, rec);
-    await env.AMV_KV.put(_agentJarKey(email, agent.id), sealed, { expirationTtl: AGENT_JAR_TTL_S });
-    await _agentJarMark(env, email, agent.id, sealed);
+    let put;
+    try{ put = await _agentJarPut(env, email, agent.id, sealed, st.rev); }
+    catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'jar_unknown' }); return []; }
+    if(!put){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'another_save' }); return []; }
   } finally { await _releaseClaim(env, 'agentjarlock', String(email).toLowerCase() + ':' + agent.id, lk.owner || null); }
   /* REVOCATION WINS A RACE IT LOST BY A MOMENT (Nov 7 audit AGENT-022). A
      forget that moved the generation between the check above and this write
@@ -47160,12 +47517,43 @@ async function _agentJarSave(env, email, agent, cookies){
   try{ after = await _agentGen(env, email, agent.id); }catch(e){ after = null; }
   if(!after || _agentGenOf(after, '').g !== _agentGenOf(began, '').g || kept.some(s => _agentGenOf(after, s).sg !== _agentGenOf(began, s).sg)){
     audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: after ? 'forgotten_during_save' : 'generation_unknown_after_save' });
-    try{ await env.AMV_KV.delete(_agentJarKey(email, agent.id)); await _agentJarMark(env, email, agent.id, null); }
-    catch(e){ try{ await _agentJarQueue(env, email, agent.id, ''); }catch(_){ /* fenced by its generation stamp either way; the forget's own retry finds it */ } }
+    /* Only what THIS save put there is taken back (Nov 8 verified audit
+       R06): it used to delete the whole jar, so a save made after the forget
+       - by a run that began after it, under the new generation - was erased
+       by the cleanup of the one before. The jar is read again under the lock
+       and only entries stamped with a generation that has moved on are
+       dropped; current ones stay. */
+    let pruned = false;
+    try{ pruned = after ? await _agentJarPrune(env, email, agent, after) : false; }catch(e){ pruned = false; }
+    if(!pruned){ try{ await _agentJarQueue(env, email, agent.id, ''); }catch(_){ /* fenced by its generation stamp either way; the forget's own retry finds it */ } }
     return [];
   }
   audit(env, 'agent_signins_kept', { email, agent: agent.id, sites: kept });
   return kept;
+}
+/* Drops the entries of an agent's jar that were kept under a generation that
+   has since moved on, under the jar lock, from the strong copy. Answers true
+   when the jar holds nothing stale afterwards. */
+async function _agentJarPrune(env, email, agent, gen){
+  const lockId = String(email).toLowerCase() + ':' + agent.id;
+  let lk = { claimed: false };
+  for(let i = 0; i < 8 && !lk.claimed; i++){
+    lk = await _claimOnceDetail(env, 'agentjarlock', lockId, 15);
+    if(lk.unavailable) return false;
+    if(!lk.claimed) await new Promise(r => setTimeout(r, 60 * (i + 1)));
+  }
+  if(!lk.claimed) return false;
+  try{
+    const j = await _agentJarRead(env, email, agent.id);
+    /* Gone where it is read: a KV copy the late save left behind goes too. */
+    if(j.state === 'absent'){ try{ await env.AMV_KV.delete(_agentJarKey(email, agent.id)); return true; }catch(e){ return false; } }
+    if(j.state !== 'present' || !j.rec || !j.rec.sites) return false;
+    const sites = j.rec.sites, stale = Object.keys(sites).filter(s => !_agentGenCurrent(gen, s, sites[s]));
+    if(!stale.length) return true;
+    for(const s of stale) delete sites[s];
+    const sealed = Object.keys(sites).length ? await _agentJarSeal(j.key, email, agent.id, j.rec) : null;
+    return await _agentJarPut(env, email, agent.id, sealed, j.rev);
+  } finally { await _releaseClaim(env, 'agentjarlock', lockId, lk.owner || null); }
 }
 /* Which sites an agent holds a sign-in for, and until when - never the
    cookies themselves. */
@@ -47180,7 +47568,7 @@ async function _agentSignInsShown(env, email, agent){
   try{ gen = await _agentGen(env, email, agent.id); }catch(e){ gen = null; }
   const j = await _agentJarRead(env, email, agent.id).catch(() => ({ state: 'unknown' }));
   if(j.state === 'absent') return [];
-  if(j.state === 'unknown' || j.keyUnknown || !gen) throw new Error('agent_signins_unknown');
+  if(j.state === 'unknown' || j.keyUnknown || j.unreadable || !gen) throw new Error('agent_signins_unknown');
   /* Stored and will not open with the agent's key - its key destroyed by a
      forget, so its deletion is already fenced and queued: nothing usable,
      and that is known, not unknown. */
@@ -47238,14 +47626,16 @@ async function _agentJarForget(env, email, id, site){
     audit(env, 'agent_signin_delete_pending', { email, agent: id, site: site || 'all', why: 'unreadable' });
     return { held: 'unknown', removed: false, queued };
   }
+  let put = false;
   try{
-    if(!site || Object.keys(j.rec.sites || {}).length <= 1){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
-    else { delete j.rec.sites[site]; const sealed = await _agentJarSeal(j.key, email, id, j.rec); await env.AMV_KV.put(key, sealed, { expirationTtl: AGENT_JAR_TTL_S }); await _agentJarMark(env, email, id, sealed); }
+    if(!site || Object.keys(j.rec.sites || {}).length <= 1) put = await _agentJarPut(env, email, id, null, j.rev);
+    else { delete j.rec.sites[site]; const sealed = await _agentJarSeal(j.key, email, id, j.rec); put = await _agentJarPut(env, email, id, sealed, j.rev); }
   }catch(e){ /* read back below decides */ }
   let gone = false;
   try{
-    const raw = await env.AMV_KV.get(key);
-    if(!raw) gone = true;
+    const raw = (await _agentJarStrong(env, email, id)).raw;
+    if(put === 'copy') gone = false;
+    else if(!raw) gone = true;
     else if(site){ const after = await _agentJarOpen(j.key, email, id, raw); gone = !(after && after.sites && after.sites[site]); }
   }catch(e){ gone = false; }
   let queued = true;
@@ -47279,11 +47669,21 @@ async function _agentJarForgetAll(env, email){
     try{ page = await env.AMV_KV.list({ prefix, cursor }); }
     catch(e){ listed = false; break; }
     for(const k of (page.keys || [])){
-      try{ await env.AMV_KV.delete(k.name); await _agentJarMark(env, em, k.name.slice(prefix.length), null); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
-      try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
+      const aid = k.name.slice(prefix.length);
+      try{ await _agentJarPut(env, em, aid, null, 0); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try{ if(await env.AMV_KV.get(k.name) || (await _agentJarStrong(env, em, aid)).raw) left.push(k.name); }catch(e){ left.push(k.name); }
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
+  /* The strong copy of every agent's jar, too - also those whose KV copy is
+     not there to be listed. */
+  try{
+    const all = await DB.get(env, 'agents', em);
+    for(const a of ((all && all.list) || [])){
+      if(!a || !a.id || left.includes(prefix + a.id)) continue;
+      try{ await _agentJarPut(env, em, a.id, null, 0); }catch(e){ left.push(prefix + a.id); }
+    }
+  }catch(e){ listed = false; }
   for(const k of left){
     try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
   }
@@ -47313,15 +47713,16 @@ async function runAgentJarCleanup(env){
       try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const key = _agentJarKey(email, id);
       try{
-        if(!site){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
+        if(!site){ await _agentJarPut(env, email, id, null, 0); }
         else { const j = await _agentJarRead(env, email, id);
           /* Unopenable (its key is gone): nothing in it can be used, so it goes whole. */
-          if(j.raw && !j.rec){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
+          if(j.raw && !j.rec){ await _agentJarPut(env, email, id, null, 0); }
           else if(j.rec && j.rec.sites && j.rec.sites[site]){ delete j.rec.sites[site];
-            if(Object.keys(j.rec.sites).length){ const sealed = await _agentJarSeal(j.key, email, id, j.rec); await env.AMV_KV.put(key, sealed, { expirationTtl: AGENT_JAR_TTL_S }); await _agentJarMark(env, email, id, sealed); }
-            else { await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); } } }
+            if(Object.keys(j.rec.sites).length){ const sealed = await _agentJarSeal(j.key, email, id, j.rec); await _agentJarPut(env, email, id, sealed, j.rev); }
+            else { await _agentJarPut(env, email, id, null, 0); } } }
         const after = await _agentJarRead(env, email, id);
-        const gone = !after.raw || (site && after.rec && !((after.rec.sites || {})[site])) || (site && !after.rec);
+        const copy = await env.AMV_KV.get(key);
+        const gone = (!after.raw && !copy) || (site && after.rec && !((after.rec.sites || {})[site]) && (!copy || copy === after.raw)) || (site && !after.rec && !copy);
         if(gone){ await env.AMV_KV.delete(k.name); done++; } else left++;
       }catch(e){ left++; }
     }
@@ -48332,7 +48733,7 @@ async function supportAccount(request, env){
   const auto = (await DB.get(env, 'auto', _autoKey(email))) || { items: [] };
   const agents = (await DB.get(env, 'agents', email)) || { list: [] };
   const conns = (await DB.get(env, CONN_KV, email)) || {};
-  const lib = (await DB.get(env, LIB_KIND, email)) || { files: [] };
+  let lib = { files: [] }; try { lib = await _libRec(env, email); } catch (e) { lib = { files: [] }; }
   let monthUsed = null;
   try { monthUsed = +((await counter(env, `usg:${email}:${_periodKeyFor(ent.renewedAt, ent.plan, ent.customCfg)}`, { op: 'get' })).value || 0); } catch (e) { monthUsed = null; }
   return json({ ok: true, account: {
@@ -48686,9 +49087,14 @@ async function adminInvitesRevoke(request, env){
 
      - written when a file is kept (68-cloud-library.js libPut), removed when
        it is deleted - the index never names a file the list does not have;
-     - one NAMESPACE per account (a hash of the address, never the address),
-       so a query can only ever reach the asking account's own passages - the
-       permission is the namespace, not a filter somebody could forget;
+     - each passage carries its account (a hash of the address, never the
+       address) and every query is filtered to the asking account, inside one
+       of FIDX_BUCKETS namespaces chosen by that hash - and an answer is
+       shown only for a file in the asker's own list, so a passage of anybody
+       else's can never be one. (It was one namespace per account; an index
+       holds 50,000 namespaces, which is 50,000 accounts - Nov 8 verified
+       audit capacity note. Buckets keep each query small at any number of
+       accounts, and the filter needs the metadata index named in GO-LIVE.md.)
      - only text is indexed; a picture, a PDF or an Office file kept as
        itself is not read here;
      - the embedding is paid for like any other use of the meaning model,
@@ -48703,6 +49109,17 @@ const FIDX_TOP = 8;
 
 function _fileIndexOn(env){ return !!(env && env.VECTORS && typeof env.VECTORS.upsert === 'function' && typeof env.VECTORS.query === 'function' && _meaningOn(env)); }
 
+/* A passage's id: 64 bytes at most is all the index takes (Nov 8 verified
+   audit R19 - the account's namespace in the id made it 65 from the eleventh
+   passage on, and every file that long was refused). The namespace already
+   keeps accounts apart, so the id needs only the file and the passage - and
+   a hash, so it says nothing about either. */
+async function _fidxId(ns, fileId, i){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ns + ':' + String(fileId)));
+  return [...new Uint8Array(d)].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('') + ':' + i;
+}
+const FIDX_BUCKETS = 4096;
+const _fidxBucket = (space) => 'b' + (parseInt(String(space).slice(1, 9), 16) % FIDX_BUCKETS);
 async function _fidxSpace(email){
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-fidx:' + String(email || '').toLowerCase()));
   return 'a' + [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
@@ -48747,8 +49164,10 @@ async function _fileIndexAdd(env, user, file, body){
   try {
     const vecs = await _fidxEmbed(env, chunks);
     const ns = await _fidxSpace(user.email);
-    await env.VECTORS.upsert(vecs.map((values, i) => ({ id: ns + ':' + file.id + ':' + i, values, namespace: ns,
-      metadata: { f: String(file.id), i, n: String(file.name || '').slice(0, 200), t: chunks[i] } })));
+    const rows = [];
+    for (let i = 0; i < vecs.length; i++) rows.push({ id: await _fidxId(ns, file.id, i), values: vecs[i], namespace: _fidxBucket(ns),
+      metadata: { a: ns, f: String(file.id), i, n: String(file.name || '').slice(0, 200), t: chunks[i] } });
+    await env.VECTORS.upsert(rows);
     await _recordSpend(env, subject, usd, 'meaning', book.period, book);
     return chunks.length;
   } catch (e) {
@@ -48759,11 +49178,18 @@ async function _fileIndexAdd(env, user, file, body){
 }
 /* Takes a deleted file's passages out. Every id it ever had is named, so
    nothing of it stays searchable. */
+/* NEEDS ONLY THE INDEX (Nov 8 verified audit R07): removing passages does
+   not need the meaning model, so it is not skipped when the model is off -
+   it used to answer "removed" there without asking the index anything. With
+   passages to remove and no index to remove them from, the answer is false:
+   not done, and kept to be tried again. */
 async function _fileIndexRemove(env, email, files){
-  if (!_fileIndexOn(env) || typeof env.VECTORS.deleteByIds !== 'function') return true;
+  const owed = (files || []).some(f => +f.vec > 0);
+  if (!owed) return true;
+  if (!(env && env.VECTORS && typeof env.VECTORS.deleteByIds === 'function')) { audit(env, 'file_index_remove_unbound', { email }); return false; }
   const ns = await _fidxSpace(email);
   const ids = [];
-  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(ns + ':' + f.id + ':' + i);
+  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(await _fidxId(ns, f.id, i));
   if (!ids.length) return true;
   try { for (let i = 0; i < ids.length; i += 100) await env.VECTORS.deleteByIds(ids.slice(i, i + 100)); return true; }
   catch (e) { audit(env, 'file_index_remove_failed', { email, n: ids.length }); return false; }
@@ -48785,15 +49211,16 @@ async function libSearch(request, env){
   try {
     const [qv] = await _fidxEmbed(env, [query]);
     const ns = await _fidxSpace(user.email);
-    const got = await env.VECTORS.query(qv, { topK: FIDX_TOP * 2, namespace: ns, returnMetadata: 'all' });
+    const got = await env.VECTORS.query(qv, { topK: FIDX_TOP * 2, namespace: _fidxBucket(ns), filter: { a: ns }, returnMetadata: 'all' });
     await _recordSpend(env, subject, usd, 'meaning', book.period, book);
     /* Only files the list still has - an index entry for a file being
        deleted, or gone, is not an answer. */
-    const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+    const rec = await _libRec(env, user.email);
     const live = new Map((rec.files || []).filter(f => !f.pending && !f.deleting).map(f => [String(f.id), f]));
     const seen = new Set(), results = [];
     for (const mt of ((got && got.matches) || [])) {
       const md = (mt && mt.metadata) || {};
+      if (md.a !== ns) continue;                      // never another account's, whatever the index answered
       const f = live.get(String(md.f || ''));
       if (!f || seen.has(f.id + ':' + md.i)) continue;
       seen.add(f.id + ':' + md.i);

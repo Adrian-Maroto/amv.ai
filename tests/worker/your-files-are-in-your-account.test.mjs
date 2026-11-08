@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'library.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, LIB_LIMITS };\n');
+  + '\nexport { DB, LIB_LIMITS, _libRec, _libAdopt };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* Object storage the way R2 behaves for the calls AMV makes. `loseWrites`
@@ -97,15 +97,16 @@ section('A file is kept, listed, and opened again - from the storage itself');
   /* Nov 1 audit FILE-005: the limit counts what the store holds - bytes - not characters. */
   const text = 'é'.repeat(1000);            // 1,000 characters, 2,000 bytes
   await req(env, '/v1/library/put', file('accents.txt', text), tok);
-  const rec = await W.DB.get(env, 'lib', 'a@example.com');
+  /* The list is read from its strong copy (Nov 8 verified audit R20). */
+  const rec = await W._libRec(env, 'a@example.com');
   const f = rec.files.find(x => x.name === 'accents.txt');
   ok(f && f.bytes === 2000 && f.chars === 1000, 'a file is counted by its stored bytes', f && { bytes: f.bytes, chars: f.chars });
   /* Nov 1 audit FILE-004: an upload whose Worker stopped after storing the bytes leaves nothing behind. */
-  await W.DB.put(env, 'lib', 'a@example.com', Object.assign({}, rec, { files: rec.files.concat([{ id: 'lfdead', name: 'half.txt', pending: true, added: Date.now() - 11 * 60000, chars: 4, sig: 'x' }]) }));
+  await W._libAdopt(env, 'a@example.com', JSON.stringify(Object.assign({}, rec, { files: rec.files.concat([{ id: 'lfdead', name: 'half.txt', pending: true, added: Date.now() - 11 * 60000, chars: 4, sig: 'x' }]) })));
   const deadKey = [...r2._m.keys()][0].replace(/[^/]+$/, 'lfdead');
   r2._m.set(deadKey, 'half');
   await req(env, '/v1/library/put', file('later.txt', 'a later upload'), tok);
-  ok(!r2._m.has(deadKey) && !(await W.DB.get(env, 'lib', 'a@example.com')).files.some(x => x.id === 'lfdead'), 'an abandoned upload is cleared, its bytes too', [...r2._m.keys()]);
+  ok(!r2._m.has(deadKey) && !(await W._libRec(env, 'a@example.com')).files.some(x => x.id === 'lfdead'), 'an abandoned upload is cleared, its bytes too', [...r2._m.keys()]);
 }
 
 section('Storage that says yes and keeps nothing is not "kept"');

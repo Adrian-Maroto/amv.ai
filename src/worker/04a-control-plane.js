@@ -140,25 +140,37 @@ function _pgAfter(env, kind, id, obj, ik){
   _pgInFlight.add(p);
   try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
+let _pgRevLocal = 0;
 async function _pgRevNext(env, kind, chainKey){
-  if (!env.AMV_COUNTER) return null;
-  try { const r = await counter(env, 'pgrev:' + chainKey, { op: 'incr', amount: 1, keep: true }); const v = +((r && r.value) || 0); return v > 0 ? v : null; }
+  /* No object at all: one instance, so the clock (kept rising) orders it. */
+  if (!env.AMV_COUNTER) { _pgRevLocal = Math.max(_pgRevLocal + 1, Date.now() * 1000); return _pgRevLocal; }
+  /* strict: an allocator that cannot be asked gives no revision - never the
+     KV fallback's own count, which starts again at one (Nov 8 verified audit
+     R11) and would lose to every revision already in Postgres, or win over
+     newer ones. */
+  try { const r = await counter(env, 'pgrev:' + chainKey, { op: 'incr', amount: 1, keep: true, strict: true }); const v = +((r && r.value) || 0); return v > 0 ? v : null; }
   catch (e) { return null; }
 }
 /* The mirror's rows and its revision, one transaction: applied only when
    this revision is newer than the newest that landed (or when there is no
    revision, from the backfill, which copies what KV holds now). Answers
    false when it was older and nothing was written. */
+/* NO REVISION, NO WRITE (Nov 8 verified audit R12). A mirror with no
+   revision skipped the guard and wrote whatever it held - over a newer row,
+   when its allocator had failed. Every mirror now needs one: a live write,
+   the write-through, the repair and the backfill all take the record's next
+   revision BEFORE they read what to copy, so anything they copy is at least
+   as new as every revision below theirs, and a newer write wins over them.
+   Without one, nothing is written and the mirror fails onto the repair list. */
 async function _pgGuarded(sql, kind, id, rev, fn){
+  if (!(Number(rev) > 0)) throw new Error('mirror_revision_unavailable');
   return sql.begin(async (tx) => {
-    if (rev) {
-      const won = await tx`
+    const won = await tx`
         INSERT INTO mirror_revisions (kind, record_id, rev) VALUES (${kind}, ${id}, ${rev})
         ON CONFLICT (kind, record_id) DO UPDATE SET rev = EXCLUDED.rev, at = now()
           WHERE mirror_revisions.rev < EXCLUDED.rev
         RETURNING rev`;
-      if (!won.length) return false;
-    }
+    if (!won.length) return false;
     await fn(tx);
     return true;
   });
@@ -208,9 +220,14 @@ async function _pgMirror(env, kind, email, obj, sqlIn, rev){
       });
     }
     if (kind === 'team') {
-      let missing = false;
-      await _pgGuarded(sql, kind, email, rev, async (tx) => { missing = await _pgMirrorTeam(tx, email, obj); });
-      if (missing) throw new Error('member_without_account_row');
+      /* A member with no account row fails the whole transaction (Nov 8
+         verified audit R13): it used to commit the team without them and
+         report it afterwards, so Postgres held a membership list nobody
+         wrote - a permission source missing a person. Nothing lands; the
+         repair copies it once the account row exists. */
+      await _pgGuarded(sql, kind, email, rev, async (tx) => {
+        if (await _pgMirrorTeam(tx, email, obj)) throw new Error('member_without_account_row');
+      });
       return;
     }
     if (kind === 'ent' || kind === 'apikeys') {

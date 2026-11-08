@@ -120,9 +120,12 @@ async function _autoQueueConsume(batch, env){
   /* Nothing in a batch changes anything while a restore has writes off, or
      while that cannot be asked (Nov 8 audit DR-016): each message waits and
      comes back, except the queue's own probe, which writes only its stamp. */
-  const paused = await _writesPaused(env);
-  for(const msg of (batch.messages || [])){
-    if(paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
+  /* Asked again for every message (Nov 8 verified audit R17): a restore
+     switched on between two of them holds the rest. */
+  try{ for(const msg of (batch.messages || [])){
+    const st = await _writesState(env);
+    if(st.paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
+    _bgAdmit(st.gen);
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
@@ -136,7 +139,7 @@ async function _autoQueueConsume(batch, env){
     }
     if(body.kind === 'outbox'){
       try{ await _outboxConsume(env, msg); }
-      catch(e){ audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: 300 }); }
+      catch(e){ if(!(e && e.code === 'writes_paused')) audit(env, 'outbox_queue_failed', { error: String((e && e.message) || e).slice(0, 160) }); msg.retry({ delaySeconds: e && e.code === 'writes_paused' ? 120 : 300 }); }
       continue;
     }
     const email = await _qWho(env, body);
@@ -153,12 +156,14 @@ async function _autoQueueConsume(batch, env){
       if(r.ran || r.failed) console.log('[queue] automations', JSON.stringify({ email, ...r }));
       msg.ack();
     }catch(e){
+      /* Held by a restore that began while it ran: not the job's failure. */
+      if(e && e.code === 'writes_paused'){ msg.retry({ delaySeconds: 120 }); continue; }
       const n = Number(msg.attempts) || 1;
       audit(env, 'auto_queue_run_failed', { email, attempt: n, error: String((e && e.message) || e).slice(0, 160) });
       try{ await _workerError(env, 'queue.automations', e); }catch(_){}
       msg.retry({ delaySeconds: Math.min(AUTO_QUEUE_RETRY_S * n * n, 3600) });
     }
-  }
+  } } finally { _bgAdmitEnd(); }
 }
 
 /* THE DEAD-LETTER QUEUE: an account whose run failed every retry.
@@ -188,7 +193,9 @@ const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); r
 const _autoQuarName = (email) => 'autoquar:' + String(email || '').toLowerCase();
 async function _autoQuarantined(env, email){
   try{
-    if(env.AMV_COUNTER){ const r = await counter(env, _autoQuarName(email), { op: 'get' }); if(r && r.unavailable) return true; if(+((r && r.value) || 0) > 0) return true; }
+    /* strict: an object that cannot be asked is a hold, never the KV
+       fallback's zero (Nov 8 verified audit R10). */
+    if(env.AMV_COUNTER){ const r = await counter(env, _autoQuarName(email), { op: 'get', strict: true }); if(!r || r.unavailable || typeof r.value === 'undefined') return true; if(+(r.value || 0) > 0) return true; }
     return !!(await env.AMV_KV.get(_autoQuarKey(email)));
   }
   catch(e){ audit(env, 'auto_quarantine_unknown', { email }); return true; }

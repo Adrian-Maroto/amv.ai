@@ -34,9 +34,11 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'payoutorder.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { DB, _wallet, _saveWallet, _availableOf, marketWithdraw, _reconcileStrandedPayouts,' +
+  '\nexport { DB, _walletAdopt, _wallet, _saveWallet, _availableOf, marketWithdraw, _reconcileStrandedPayouts,' +
   ' issueTokens, MARKET_MIN_WITHDRAW, PAYOUT_HOLD_MS };\n');
 const W = await import(harness + '?t=' + Date.now());
+/* A wallet set as given goes to its strong record too - it is what every read and write uses. */
+const _setWallet = (env, em, w) => W._walletAdopt(env, em, typeof w === 'string' ? w : JSON.stringify(w));
 
 section('The debit happens before anything promises the money');
 {
@@ -75,6 +77,8 @@ function mkEnv() {
       },
     },
     AMV_COUNTER: withAuthOps({
+      /* The wallet is committed in its strong record first; breaking its write breaks that. */
+      fault: (n, b) => { if (FAIL && FAIL.startsWith('wallet:') && n === 'walletrev:' + FAIL.slice(7) && b.op === 'revCommit') throw new Error('counter refused ' + n); return null; },
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
@@ -99,7 +103,7 @@ const SELLER = 'seller@test.com';
 async function seed(env, balance) {
   await env.AMV_KV.put(`acct:${SELLER}`, JSON.stringify({ email: SELLER, name: 'S' }));
   await W.DB.put(env, 'consent', SELLER, { birthYear: 1990, termsVersion: '1' });
-  await W._saveWallet(env, SELLER, { balance, lifetime: balance, holds: [], payouts: [], paidOut: 0 });
+  await _setWallet(env, SELLER, { balance, lifetime: balance, holds: [], payouts: [], paidOut: 0 });
   return (await W.issueTokens(env, SELLER, 'S')).token;
 }
 const withdraw = async (env, tok, dest = 'paypal@test.com') =>
@@ -150,7 +154,7 @@ section('Money debited for a payout that was never written comes back');
      wallet is left debited with a marker and nothing to show for it. */
   const env = mkEnv();
   const tok = await seed(env, 100);
-  await W._saveWallet(env, SELLER, { balance: 40, lifetime: 100, holds: [], payouts: [], paidOut: 0,
+  await _setWallet(env, SELLER, { balance: 40, lifetime: 100, holds: [], payouts: [], paidOut: 0,
                                      pendingOut: [{ id: 'wd_ghost', amount: 60, at: Date.now() }] });
 
   const returned = await W._reconcileStrandedPayouts(env, SELLER);
@@ -168,7 +172,7 @@ section('But money whose payout IS real is not handed back a second time');
   const env = mkEnv();
   await seed(env, 100);
   await env.AMV_KV.put('withdraw:wd_real', JSON.stringify({ id: 'wd_real', seller: SELLER, amount: 60, status: 'approved' }));
-  await W._saveWallet(env, SELLER, { balance: 40, lifetime: 100, holds: [], payouts: [], paidOut: 0,
+  await _setWallet(env, SELLER, { balance: 40, lifetime: 100, holds: [], payouts: [], paidOut: 0,
                                      pendingOut: [{ id: 'wd_real', amount: 60, at: Date.now() }] });
 
   const returned = await W._reconcileStrandedPayouts(env, SELLER);

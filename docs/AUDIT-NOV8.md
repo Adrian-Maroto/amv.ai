@@ -45,6 +45,39 @@ each item, and what remains the owner's or the Postgres cutover's.
 | AUTH-024 | A passkey's account is also kept in the strongly consistent object; sign-in reads KV, then the strong copy, so a passkey made a moment ago signs in from a region KV has not reached. Removed with the passkey. | a-passkey-or-a-second-step-guards-the-account |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
+## The verified audit: twenty-three reproduced failures (R01-R23)
+
+The auditor's reproduction (`verify_adversarial.mjs`) was run unchanged
+against the code first: all twenty-three reproduced. After the fixes it
+reproduces none, and its three controls still pass. Its scenarios are kept,
+with the results turned round, in `the-verified-failures-of-nov-8-stay-fixed`;
+each fix below was broken on purpose and that suite failed every time.
+
+| Id | What changed |
+|---|---|
+| R01 | `counter()` takes only a 2xx reply carrying a JSON object, within 20 seconds; anything else is the object not answering. A claim the bound object could not grant is never taken through D1 or KV. |
+| R02 | Lock owners are kept per request (its async context and environment), oldest first: a release naming no owner gives back the oldest claim that request took, which the object refuses once that lease has passed to somebody else. |
+| R03, R04 | A seller's wallet lives in the strong object as a revision and the wallet at that revision; every change reads it from there and commits only from the revision it read, so a stalled writer is refused and a stale KV copy is never credited. KV keeps a copy, put right if a slower writer left an older one. A restore writes the strong record too. |
+| R05 | A committed record whose authority cannot be asked is not answered from the copy here (it may be one a delete ended): a short wait, unless nothing is stored. |
+| R08 | A reused transaction id with a different provider reference is refused, like a different amount. |
+| R09, R16 | A transaction's whole record is committed in the strong object before any line; every retry or duplicate writes the same line under the same key at the first writer's time, and the id's KV record is written once - inside KV's one-write-a-second limit. |
+| R10 | A quarantine read that the object cannot answer holds the run (no KV fallback). |
+| R11 | The mirror's revision allocator never falls back to KV's count. |
+| R12 | No mirror writes without a revision: live writes, write-through, repair and the backfill all take the record's next revision before reading what to copy. |
+| R13 | A team with a member who has no account row rolls back whole and goes on the repair list. |
+| R17 | Every queue message is admitted on its own against the restore switch, and every record write made by background work asks again: writes off, or switched off since it was admitted, and the write is refused and the message retried. |
+| R07 | Removing passages needs only the index, not the meaning model; with passages owed and no index, removal says not done. |
+| R15 | A deleted file's entry stays (hidden) until its bytes and its passages are both gone; the next delete or listing tries again. |
+| R19 | Passage ids are a 32-character hash of account and file plus the passage number - within the 64 bytes the index takes. |
+| R20 | The file list lives in the strong object; KV's copy is written once per change and may fall behind, so two changes in a moment no longer hit KV's per-key limit. |
+| R22 | Sending a kept file again indexes it when its passages never reached the index. |
+| R23 | Two files are the same file only when the server's own SHA-256 of the bytes matches, not the page's sampled signature. |
+| R06 | A late save's cleanup drops only entries stamped with a generation that has moved on - never a newer run's sign-in. |
+| R14 | A jar that will not open under the agent's own key is "could not be checked" and is not replaced; a forget still erases it. |
+| R21 | An agent's sealed jar itself lives in the strong object (revision and jar), so a stale KV copy is never what a save builds on. |
+| R18 | Turning on the authenticator app answers a replay only once the account holds that same secret, switched on. |
+| Capacity | The file index keeps passages in 4,096 hashed buckets, each passage carrying its account, every query filtered to the asker and every answer checked against the asker's own list - not one namespace per account, which capped an index at 50,000 accounts. Needs the metadata index named in GO-LIVE.md. |
+
 ## Postgres mirror, ahead of the cutover
 
 | Id | What changed | Test |

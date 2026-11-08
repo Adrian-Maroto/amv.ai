@@ -100,7 +100,38 @@ const TXN_PREFIX = 'txn:e:';
    from here, because the backup coverage check reads the writes to know
    which kinds of record exist. */
 const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') + ':' + e.id;
-const TXN_ID_CLAIM_S = 300;
+/* The canonical record of a transaction id: { rec, mine } - `mine` when
+   this call is the one that made it. null when the strong object could not
+   answer, which the caller reports as not recorded. Without the object (a
+   development machine) KV is the record, as it always was. */
+async function _txnCanonical(env, id, entry) {
+  const fromKv = async () => {
+    const seen = await env.AMV_KV.get('txn:id:' + id);
+    if (seen) { try { const o = JSON.parse(seen); if (o) { const { pending: _p, ...was } = o; return was; } } catch (e) { /* unreadable: the legacy list is asked next */ } }
+    const legacy = await env.AMV_KV.get('txn:log');
+    if (legacy) { try { const o = (JSON.parse(legacy) || []).find((e) => e && e.id === id); if (o) return o; } catch (e) { /* unreadable list: nothing known from it */ } }
+    return null;
+  };
+  if (!env.AMV_COUNTER) { const old = await fromKv(); return old ? { rec: old, mine: false } : { rec: entry, mine: true }; }
+  const name = 'txnrec:' + id;
+  const read = async () => {
+    const g = await counter(env, name, { op: 'revGet' });
+    if (!g || g.unavailable) return { unavailable: true };
+    if (g.committed && g.digest) { try { return { rec: JSON.parse(g.digest) }; } catch (e) { return { unavailable: true }; } }
+    return { rec: null };
+  };
+  let g = await read();
+  if (g.unavailable) return null;
+  if (g.rec) return { rec: g.rec, mine: false };
+  /* Not in the object yet: a record kept before it existed is the first. */
+  const old = await fromKv();
+  const want = old || entry;
+  const c = await counter(env, name, { op: 'revCommit', expect: 0, set: 1, digest: JSON.stringify(want) });
+  if (!c || c.unavailable) return null;
+  if (c.ok) return { rec: want, mine: !old };
+  g = await read();
+  return g.rec ? { rec: g.rec, mine: false } : null;
+}
 async function _recordTxn(env, tx) {
   try {
     const entry = {
@@ -124,78 +155,42 @@ async function _recordTxn(env, tx) {
        account, amount, currency, kind, provider. A different payload under a
        reused id is a conflict, told to the owner, and answered as nothing
        recorded, which callers already treat as a failure. */
+    /* The same id is the same transaction: account, amount, currency, kind,
+       provider - and the provider's own reference (Nov 8 verified audit R08),
+       so an id reused for a different invoice is not taken for a replay. */
     const same = (old) => old && old.email === entry.email && +old.amount === entry.amount
-      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider;
+      && String(old.currency || 'USD').toUpperCase() === entry.currency && String(old.kind || '') === entry.kind && String(old.provider || 'unknown') === entry.provider
+      && String(old.ref || '') === entry.ref;
     const conflict = async (old) => {
       audit(env, 'txn_id_conflict', { id: tx.id, kind: entry.kind });
-      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account or currency. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
+      try { await alertOnce(env, 'txn_id_conflict', 'A money record was written again under an id it already had, with a different amount, account, currency or provider reference. The new one was refused; the first stands. Look at transaction ' + tx.id + '.', 60); } catch (e) { /* the audit line above is the record */ }
       return null;
     };
+    /* THE TRANSACTION ITSELF LIVES IN THE STRONG OBJECT (Nov 8 verified audit
+       R09, R16). The first writer of an id commits the whole record there
+       before any line is written; every later writer - a retry, a duplicate
+       delivery, another region reading KV a moment behind - reads that record
+       back and writes the SAME line under the SAME key, at the time the first
+       writer chose. So a write that stopped half way is finished by its retry
+       rather than doubled, and the id's KV record is written exactly once per
+       attempt, never twice inside KV's one-write-a-second limit. A record
+       from before this (in KV only) is adopted as the canonical one. */
+    let rec = entry;
     if (tx.id) {
-      const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-      if (seen) { let old = null; try { old = JSON.parse(seen); } catch (e) { old = null; /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
-        if (old && old.pending) {
-          /* A write that stopped half way: finish it, at the time it began,
-             so its line is the same key and not a second one. */
-          if (!same(old)) return conflict(old);
-          const { pending: _p, ...was } = old;
-          const b = JSON.stringify(was);
-          await env.AMV_KV.put('txn:e:' + _txnOrder(was), b, b.length <= 1000 ? { metadata: was } : undefined);
-          await env.AMV_KV.put('txn:id:' + tx.id, b);
-          return was;
-        }
-        if (old) return same(old) ? old : conflict(old); }
-      const legacy = await env.AMV_KV.get('txn:log');
-      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return same(old) ? old : conflict(old); }
-    }
-    /* ONE KEY PER TRANSACTION. This used to be one record, read, prepended to
-       and written back - so two sales in the same moment each read the list
-       without the other and the second write erased the first, and the
-       thousand-entry cap would have held minutes of history at any volume.
-       Each entry now has its own key, named so the newest sorts first, and
-       carries itself as the key's metadata so the statement can list them
-       without reading each one. */
-    /* THE ID FIRST, THEN THE LINE (Nov 7 audit FIN-020). The line was written
-       before its id, so a Worker stopping between the two left a line with
-       no id - and the retry, finding no id, wrote the same payment a second
-       time, a minute later. The id is now written first, holding the line's
-       time and marked pending; a retry finds it and writes the same line,
-       under the same key, rather than a new one. */
-    /* ONE WRITER PER ID (Nov 8 audit). Two regions can both read the id as
-       absent - KV is eventually consistent - and both wrote a line, so one
-       payment became two. The id is now claimed in the strongly consistent
-       object first: one writer gets it, and the other waits for that
-       writer's record and answers with it (or nothing, which callers treat
-       as "not recorded yet" and retry). The claim lasts five minutes, longer
-       than KV takes to show the record everywhere, so a retry after it finds
-       the record; a writer that stopped before writing anything frees the
-       id for the retry when the claim runs out, and one that failed frees it
-       at once. */
-    let claimOwner = null;
-    if (tx.id) {
-      const c = await _claimOnceDetail(env, 'txnid', tx.id, TXN_ID_CLAIM_S);
-      if (!c.claimed) {
-        if (c.unavailable) return null;
-        for (let i = 0; i < 6; i++) {
-          const seen = await env.AMV_KV.get('txn:id:' + tx.id);
-          let old = null; try { old = seen ? JSON.parse(seen) : null; } catch (e) { old = null; }
-          if (old && !old.pending) return same(old) ? old : conflict(old);
-          await new Promise((r) => setTimeout(r, 150));
-        }
-        return null;
+      const canon = await _txnCanonical(env, tx.id, entry);
+      if (!canon) return null;                        // nothing could be asked: not recorded, the caller retries
+      if (!canon.mine) {
+        if (!same(canon.rec)) return conflict(canon.rec);
+        rec = canon.rec;
       }
-      claimOwner = c.owner || '';
     }
-    const body = JSON.stringify(entry);
-    try {
-      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
-      await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
-      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
-    } catch (e) {
-      if (tx.id) await _releaseClaim(env, 'txnid', tx.id, claimOwner);
-      throw e;
-    }
-    return entry;
+    const body = JSON.stringify(rec);
+    /* With no strong object, the id's KV record is the only memory of the
+       time the first attempt chose, so it goes first, marked pending. */
+    if (tx.id && !env.AMV_COUNTER && rec === entry) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
+    await env.AMV_KV.put('txn:e:' + _txnOrder(rec), body, body.length <= 1000 ? { metadata: rec } : undefined);
+    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
+    return rec;
   } catch (e) { return null; }
 }
 
@@ -416,7 +411,26 @@ const CLAIM_ONCE_TTL_S = 400 * 86400;
 
    Bounded: an entry is removed the moment its lock is released, and a lock
    whose release never runs is one whose isolate is gone with the map. */
-const _CLAIM_OWNERS = new Map();
+/* Nov 8 verified audit R02: ONE NAME PER ISOLATE WAS NOT ENOUGH. A lease that
+   expired and was taken again in the same isolate overwrote the first
+   holder's token, and the first holder's release - naming no owner - then
+   freed the SECOND holder's lock. Owners are now kept per request (the
+   request's own async context, and the environment it was given), oldest
+   first: a release that names no owner gives back the oldest claim this
+   request took on that name, which the object refuses when that lease has
+   already passed to somebody else. A release from a request that never took
+   the name (a claim taken in one request and given back by another) names
+   no owner, as before. */
+const _CLAIM_SCOPES = new WeakMap();
+const _CLAIM_NOCTX = {};
+function _claimOwners(env){
+  let c = null; try { c = _ctxStore ? _ctxStore.getStore() : null; } catch (e) { c = null; }
+  const top = (c && typeof c === 'object') ? c : _CLAIM_NOCTX;
+  let byEnv = _CLAIM_SCOPES.get(top); if(!byEnv){ byEnv = new WeakMap(); _CLAIM_SCOPES.set(top, byEnv); }
+  const ek = (env && typeof env === 'object') ? env : _CLAIM_NOCTX;
+  let m = byEnv.get(ek); if(!m){ m = new Map(); byEnv.set(ek, m); }
+  return m;
+}
 
 async function _claimOnce(env, kind, id, ttlSec){
   return (await _claimOnceDetail(env, kind, id, ttlSec)).claimed;
@@ -446,7 +460,10 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            happens to be there when it gets around to it. Kept beside the
            request rather than returned, so all seventeen call sites keep their
            boolean and none of them can forget to carry it. */
-        if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
+        if(r.claimed){
+          const mk = kind + ':' + id, owners = _claimOwners(env);
+          const list = owners.get(mk) || []; list.push(r.owner || ''); owners.set(mk, list);
+        }
         /* Also handed back (Nov 7 audit LOCK-002): the map holds one owner
            per name, so a lease that expired and was retaken in the same
            isolate overwrote it, and the first holder's release then freed
@@ -454,7 +471,11 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            with that, whatever the map says now. */
         return { claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' };
       }
-    }catch(e){ /* fall through to the next strategy */ }
+    }catch(e){ /* answered below: the object is bound, so nothing else may decide */ }
+    /* Bound but no usable answer - a malformed reply, a throw (Nov 8 verified
+       audit R01). Never D1 or KV: a lock the strong object could not grant is
+       not granted. */
+    return { claimed: false, unavailable: true };
   }
   if(DB._hasD1(env)){
     try{
@@ -509,9 +530,11 @@ async function _releaseClaim(env, kind, id, ownerIn){
     // release wherever it was claimed - the DO first, mirroring _claimOnce
     if(env && env.AMV_COUNTER){
       const mapKey = kind + ':' + id;
-      const owner = ownerIn != null ? String(ownerIn) : (_CLAIM_OWNERS.get(mapKey) || '');
-      /* Forget the map's entry only when it is this holder's. */
-      if(ownerIn == null || _CLAIM_OWNERS.get(mapKey) === owner) _CLAIM_OWNERS.delete(mapKey);
+      const owners = _claimOwners(env), list = owners.get(mapKey) || [];
+      let owner;
+      if(ownerIn != null){ owner = String(ownerIn); const at = list.indexOf(owner); if(at >= 0) list.splice(at, 1); }
+      else owner = list.length ? list.shift() : '';
+      if(list.length) owners.set(mapKey, list); else owners.delete(mapKey);
       try{
         const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
         /* Refused means this holder's lease had already expired and somebody

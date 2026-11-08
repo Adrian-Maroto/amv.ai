@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agentjar.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')
-  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentJarForget, _agentJarForgetAll, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _withKind, _autoCostUSD, _autoRunMaxUSD, BROWSER_PAGE_USD, AGENT_READ_PAGES_MAX };\n');
+  + '\nexport { DB, connSeal, connOpen, revokeUserTokens, _agentFind, _agentJarSave, _agentJarLoad, _agentJarForget, _agentJarForgetAll, _agentReadSites, runAgentJarCleanup, _agentDek, _agentJarOpen, _agentJarSeal, _agentJarPut, _agentJarStrong, _withKind, _autoCostUSD, _autoRunMaxUSD, BROWSER_PAGE_USD, AGENT_READ_PAGES_MAX };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const kv = new Map(); const vals = new Map(); const audits = [];
@@ -147,9 +147,11 @@ section('Expires on its own: 30 days after a watched run refreshed it');
 {
   const key = 'agentjar:' + ME + ':' + AG;
   const k = await W._agentDek(env, ME, AG, false);
-  const rec = await W._agentJarOpen(k, ME, AG, kv.get(key));
+  /* The jar's strong copy is the one read, so that is the one aged. */
+  const st = await W._agentJarStrong(env, ME, AG);
+  const rec = await W._agentJarOpen(k, ME, AG, st.raw);
   rec.sites['tracker.example.com'].at = Date.now() - 31 * 86400 * 1000;
-  kv.set(key, await W._agentJarSeal(k, ME, AG, rec));
+  await W._agentJarPut(env, ME, AG, await W._agentJarSeal(k, ME, AG, rec), st.rev);
   const loaded = await W._agentJarLoad(env, ME, await agent());
   ok(loaded.length === 1 && /WIKI/.test(loaded[0].value), 'the stale site is no longer used; the fresh one is', loaded.map(c => c.domain));
 }
@@ -222,12 +224,14 @@ section('Each agent seals with a key of its own, and forgetting destroys it (Nov
   const kb = await W._agentDek(env, ME, B1.id, false);
   ok(await W._agentJarOpen(kb, ME, B1.id, jarA) === null && await W._agentJarOpen(kb, ME, A1.id, jarA) === null, 'one agent’s key does not open another agent’s jar');
   /* A jar copied over another agent's: it does not open there, and nothing is used. */
+  /* Set where it is read: the jar's strong copy. */
+  const setJar = async (aid, raw) => W._agentJarPut(env, ME, aid, raw, (await W._agentJarStrong(env, ME, aid)).rev);
   const jarB = kv.get('agentjar:' + ME + ':' + B1.id);
-  kv.set('agentjar:' + ME + ':' + B1.id, jarA);
+  await setJar(B1.id, jarA);
   ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, B1.id))).length === 0, 'a jar moved under another agent’s name opens nothing there');
-  kv.set('agentjar:' + ME + ':' + B1.id, jarB);
+  await setJar(B1.id, jarB);
   /* A jar sealed the earlier way, under the deployment key: never opened. */
-  kv.set('agentjar:' + ME + ':' + B1.id, await W.connSeal(env, { sites: { 'tracker.example.com': { at: Date.now(), cookies: [cookie('tracker.example.com', 'OLD-FORMAT')] } } }));
+  await setJar(B1.id, await W.connSeal(env, { sites: { 'tracker.example.com': { at: Date.now(), cookies: [cookie('tracker.example.com', 'OLD-FORMAT')] } } }));
   ok((await W._agentJarLoad(env, ME, await W._agentFind(env, ME, B1.id))).length === 0, 'a jar in the earlier format is not opened - the next watched run signs in again');
   kv.set('agentjar:' + ME + ':' + B1.id, jarB);
   /* Editing an agent keeps its key and its fences. */
@@ -283,13 +287,15 @@ section('Unknown is not absent, and a forget during a run is not undone by it (N
 
   /* AGENT-019: the store cannot be read. The audit's proof got
      {held:false, removed:true} here - "nothing to forget" while it stayed. */
+  /* The jar is read from its strong copy, so it is that object that cannot be asked. */
   const realGet = env.AMV_KV.get;
+  env.AMV_COUNTER.fault = (n, b) => { if (n === 'agentjarv:' + ME + ':' + G && b.op === 'revGet') throw new Error('regional storage outage'); return null; };
   env.AMV_KV.get = async (k) => { if (k === jarKey) throw new Error('regional storage outage'); return realGet.call(env.AMV_KV, k); };
   const r = await W._agentJarForget(env, ME, G, '');
   ok(r.held === 'unknown' && r.removed === false, 'an unreadable store is "unknown", never "nothing held, removed"', r);
   const viaRoute = await call('/v1/agents/signins/forget', { id: G }, tok4);
   ok(viaRoute.status === 200 && viaRoute.d.removed === false, 'and the person is told it is not gone yet - not that there was nothing', [viaRoute.status, viaRoute.d.code]);
-  env.AMV_KV.get = realGet;
+  env.AMV_KV.get = realGet; env.AMV_COUNTER.fault = null;
   ok(kv.has(jarKey) && (await W._agentJarLoad(env, ME, await ag())).length === 0, 'the copy that could not be read is fenced: nothing in it is used');
   ok(kv.has('agentjarpend:' + ME + ':' + G), 'and its deletion is queued');
   await W.runAgentJarCleanup(env);
@@ -328,11 +334,12 @@ section('Unknown is not absent, and a forget during a run is not undone by it (N
   const used = (await W._agentJarLoad(env, ME, stale)).map(c => c.value);
   ok(used.includes('T-20') && !used.includes('W-20'), 'a stale record without the stamp still uses nothing forgotten - the generation decides', used);
 
-  /* Nov 8 audit: a save does not merge into a copy older than the one last
-     written - it waits for the region to catch up, and says not kept if it
-     has not. Once the copy has settled the save goes ahead. */
-  ok((await watched(await ag(), [cookie('tracker.example.com', 'T-21')])).length === 0
-     && audits.some(a => a.event === 'agent_signins_not_kept' && a.why === 'jar_settling'), 'a save over a copy older than the last write is not made, and says why');
+  /* Nov 8 verified audit R21: the stale copy in this region decides nothing
+     now - a save reads the jar's strong copy, so it goes ahead on the jar as
+     it is, and the site the forget took stays forgotten. */
+  const after21 = await watched(await ag(), [cookie('tracker.example.com', 'T-21')]);
+  const now21 = (await W._agentJarLoad(env, ME, await ag())).map(c => c.value);
+  ok(after21.includes('tracker.example.com') && now21.includes('T-21') && !now21.includes('W-20'), 'a stale copy here is not built on: the save is made on the current jar, and nothing forgotten comes back', now21);
   kv.set(jarKey, settled);
   /* The generation cannot be read: nothing is used, nothing is kept. */
   await watched(await ag(), [cookie('tracker.example.com', 'T-21')]);
@@ -369,6 +376,7 @@ section('What is stored is read before it is replaced; a forget mid-save wins; u
 
   /* The jar cannot be read: saving the wiki must not wipe the tracker. */
   const a1 = await agent(); await W._agentJarLoad(env, ME, a1);
+  env.AMV_COUNTER.fault = (n, b) => { if (n === 'agentjarv:' + ME + ':' + AG2 && b.op === 'revGet') throw new Error('store down'); return null; };
   env.AMV_KV.get = async (k, ...x) => { if (k === jarKey) throw new Error('store down'); return realGet.call(env.AMV_KV, k, ...x); };
   const kept = await W._agentJarSave(env, ME, a1, [cookie('wiki.example.org', 'W-21')]);
   ok(kept.length === 0, 'with the jar unreadable, nothing is saved', kept);
@@ -377,7 +385,7 @@ section('What is stored is read before it is replaced; a forget mid-save wins; u
   const listed = await call('/v1/agents', undefined, t);
   const mine = (listed.d.agents || []).find(x => x.id === AG2) || {};
   ok(mine.signInsUnknown === true && mine.signIns === null, 'the card is told the sign-ins could not be checked, not that there are none', { u: mine.signInsUnknown, s: mine.signIns });
-  env.AMV_KV.get = realGet;
+  env.AMV_KV.get = realGet; env.AMV_COUNTER.fault = null;
   const load = await W._agentJarLoad(env, ME, await agent());
   ok(load.some(c => c.value === 'T-20') && load.some(c => c.value === 'W-20'), 'and once it can be read, both sign-ins are still there', load.map(c => c.value));
 

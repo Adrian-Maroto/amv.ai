@@ -39,6 +39,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -83,7 +84,9 @@ function mkEnv() {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
+      /* The wallet is committed in its strong record first; breaking its write breaks that. */
+      fault: (n, b) => { if (FAIL && FAIL.startsWith('wallet:') && n === 'walletrev:' + FAIL.slice(7) && b.op === 'revCommit') throw new Error('counter refused ' + n); return null; },
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
@@ -103,7 +106,7 @@ function mkEnv() {
         if (b.op === 'rateCheck') { vals.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 

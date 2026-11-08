@@ -30,6 +30,75 @@
    holds somebody's email in a key.
    ══════════════════════════════════════════════════════════════════════════ */
 const LIB_KIND = 'lib';
+/* THE LIST OF YOUR FILES IS HELD WHERE IT CANNOT BE STALE (Nov 8 verified
+   audit R20). An upload changed the account's one list record twice in a
+   moment - pending, then kept - and KV takes one write a second per key, so
+   the second was refused and a file that had reached storage was reported as
+   not kept, its entry left pending. Two uploads at once did the same. The
+   list now lives in the strongly consistent object, as a revision and the
+   list at that revision, changed under the lock and committed only from the
+   revision it was read at; KV keeps a copy for exports and backups, written
+   once per change and allowed to fall behind (said, never decided on). A list
+   kept before this is read from KV once and adopted. With no object bound
+   (a development machine) KV is the list, as before. */
+const _libRevName = (email) => 'librec:' + String(email || '').toLowerCase();
+const _libBusy = () => { const e = new Error('lib is busy'); e.code = 'record_busy'; return e; };
+async function _libRead(env, email){
+  const em = String(email || '').toLowerCase();
+  if (!env.AMV_COUNTER) return { rec: (await DB.get(env, LIB_KIND, em)) || null, rev: 0 };
+  const g = await counter(env, _libRevName(em), { op: 'revGet' });
+  if (!g || g.unavailable) throw _libBusy();
+  if (g.absent) return { rec: null, rev: +g.rev || 0 };
+  if (g.committed && g.digest) { try { return { rec: JSON.parse(g.digest), rev: +g.rev || 0 }; } catch (e) { throw new UnreadableRecordError(_libRevName(em), 'invalid JSON'); } }
+  return { rec: (await DB.get(env, LIB_KIND, em)) || null, rev: +g.rev || 0 };
+}
+async function _libRec(env, email){ return (await _libRead(env, email)).rec || { files: [] }; }
+async function _libCommit(env, email, rec, rev){
+  const em = String(email || '').toLowerCase();
+  if (!env.AMV_COUNTER) { await DB.put(env, LIB_KIND, em, rec); return; }
+  const c = await counter(env, _libRevName(em), { op: 'revCommit', expect: rev, set: rev + 1, digest: JSON.stringify(rec) });
+  if (!c || !c.ok) throw _libBusy();
+  try { await DB.put(env, LIB_KIND, em, rec); } catch (e) { audit(env, 'library_copy_behind', { by: em }); }
+}
+/* The list as given - a restore - made the strong record too. */
+async function _libAdopt(env, email, raw){
+  if (!env.AMV_COUNTER) return;
+  const em = String(email || '').toLowerCase();
+  const g = await counter(env, _libRevName(em), { op: 'revGet' });
+  if (!g || g.unavailable) throw new Error('library_strong_unavailable');
+  const r = await counter(env, _libRevName(em), { op: 'revReset', rev: (+g.rev || 0) + 1, digest: String(raw) });
+  if (!r || !r.ok) throw new Error('library_strong_unavailable');
+}
+/* Read, change, commit, under the list's lock. */
+async function _withLib(env, email, mutate){
+  const em = String(email || '').toLowerCase();
+  for (let i = 0; i < WALLET_LOCK_TRIES; i++) {
+    const lk = await _claimOnceDetail(env, 'rmut:lib', em, 15);
+    if (lk.claimed) {
+      const started = Date.now();
+      try {
+        const at = await _libRead(env, em);
+        const rec = at.rec || { files: [] };
+        const out = await mutate(rec);
+        if (!_mutRefuses(out)) {
+          if (_leaseOver(started)) throw _leaseLost(env, 'lib', em);
+          await _libCommit(env, em, rec, at.rev);
+        }
+        return out;
+      } finally { await _releaseClaim(env, 'rmut:lib', em, lk.owner || null); }
+    }
+    if (lk.unavailable) break;
+    await new Promise(r => setTimeout(r, 40 * (i + 1)));
+  }
+  throw _libBusy();
+}
+/* What the server itself says the bytes are: two files are the same file
+   only when this matches (Nov 8 verified audit R23) - the page's signature
+   samples a file, so two different files could share one. */
+async function _libDigest(body){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(body)));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 const LIB_MB = 1024 * 1024;
 /* Count and stored size (characters of text, or of base64 for a picture or
    PDF, which is what crosses the wire and what is stored). */
@@ -108,7 +177,10 @@ async function _libUser(request, env, write){
 async function libList(request, env){
   if (!libConfigured(env)) return _libOff();
   const { user, res } = await _libUser(request, env, false); if (res) return res;
-  const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const rec = await _libRec(env, user.email);
+  /* Deletes still owed (bytes or passages that would not go): tried again
+     in the background, so nothing waits for somebody to delete again. */
+  if ((rec.files || []).some(f => f.deleting)) _bg(_libFinishDeletes(env, user.email).catch(() => {}));
   const files = (rec.files || []).filter(f => !f.pending && !f.deleting).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
   return json({ ok: true, configured: true, searchInside: _fileIndexOn(env), files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
@@ -188,13 +260,14 @@ async function libPut(request, env){
   const id = 'lf' + now.toString(36) + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const meta = { id, sig, kind, name, size: Math.max(0, +b.size || 0), format: String(b.format || '').slice(0, 40),
                  summary: String(b.summary || '').slice(0, 300), mime: String(b.mime || '').slice(0, 100),
-                 chars: body.length, bytes: new TextEncoder().encode(body).length, added: now, used: now, folder };
+                 chars: body.length, bytes: new TextEncoder().encode(body).length, added: now, used: now, folder,
+                 h: await _libDigest(body) };
 
   /* The same file sent twice is one entry. Decided under the lock, with the
      limit, so two tabs uploading at once cannot both pass the last check. */
   let decided; const abandoned = [];
   try {
-    decided = await _withKind(env, LIB_KIND, user.email, (rec) => {
+    decided = await _withLib(env, user.email, (rec) => {
       /* An upload that never finished (a Worker stopped mid-way) is cleared
          after ten minutes, so it cannot hold a place in the limit for ever. */
       const all = Array.isArray(rec.files) ? rec.files : [];
@@ -202,18 +275,29 @@ async function libPut(request, env){
          are deleted below, not left behind unseen and uncounted (Nov 1 audit FILE-004). */
       for (const f of all) if (f.pending && now - (f.added || 0) >= 600000) abandoned.push(f.id);
       rec.files = all.filter(f => !f.pending || now - (f.added || 0) < 600000);
-      const same = rec.files.find(f => f.sig === sig && !f.pending && !f.deleting);
-      if (same) { same.used = now; return { dup: _libMeta(same) }; }
+      /* The same file is the same bytes (R23), not merely the same sampled
+         signature; an entry from before the server kept its own digest is
+         never assumed to be this one. */
+      const same = rec.files.find(f => f.sig === sig && f.h && f.h === meta.h && !f.pending && !f.deleting);
+      if (same) { same.used = now; return { dup: _libMeta(same), dupId: same.id, needsIndex: kind === 'text' && !(+same.vec > 0) }; }
       const u = _libUsage(rec);
       if (u.files + 1 > limit.files || u.bytes + meta.bytes > limit.bytes) return { full: u };
       rec.files.push(Object.assign({ pending: true }, meta));
       return { add: true };
-    }, { files: [] });
+    });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Try again in a moment.' }, 503);
   }
   for (const gone of abandoned) { try { await env.AMV_FILES.delete(prefix + gone); } catch (e) {} }
-  if (decided && decided.dup) return json({ ok: true, file: decided.dup, verified: true, existed: true });
+  if (decided && decided.dup) {
+    /* Kept already, but its passages never reached the index (R22): sending
+       it again is the way to repair that, so it is indexed now. */
+    if (decided.needsIndex && _fileIndexOn(env)) {
+      const vec = await _fileIndexAdd(env, user, Object.assign({}, meta, { id: decided.dupId }), body);
+      if (vec) { try { await _withLib(env, user.email, (rec) => { const f = (rec.files || []).find(x => x.id === decided.dupId); if (f) f.vec = vec; }); } catch (e) { audit(env, 'library_index_unrecorded', { by: user.email }); } }
+    }
+    return json({ ok: true, file: decided.dup, verified: true, existed: true });
+  }
   if (decided && decided.full)
     return json({ error: 'library_full', used: decided.full, limit,
       message: 'Your files in your account are full for your plan. Delete some, or keep this one on this device only.' }, 409);
@@ -222,7 +306,7 @@ async function libPut(request, env){
      of it fails the entry is taken out again, so the list never names a file
      that is not there. */
   const drop = async () => {
-    try { await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => f.id !== id); }, { files: [] }); } catch (e) {}
+    try { await _withLib(env, user.email, (rec) => { rec.files = (rec.files || []).filter(f => f.id !== id); }); } catch (e) {}
     try { await env.AMV_FILES.delete(prefix + id); } catch (e) {}
   };
   try {
@@ -232,9 +316,9 @@ async function libPut(request, env){
     /* Its passages, searchable by meaning (87-file-index.js) - before it
        stops being pending, so a listed file is a searchable one. */
     const vec = await _fileIndexAdd(env, user, meta, body);
-    await _withKind(env, LIB_KIND, user.email, (rec) => {
+    await _withLib(env, user.email, (rec) => {
       const f = (rec.files || []).find(x => x.id === id); if (f){ delete f.pending; if (vec) f.vec = vec; }
-    }, { files: [] });
+    });
   } catch (e) {
     await drop();
     audit(env, 'library_put_failed', { by: user.email, error: String((e && e.message) || e).slice(0, 120) });
@@ -248,7 +332,7 @@ async function libGet(request, env){
   if (!libConfigured(env)) return _libOff();
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const id = new URL(request.url).searchParams.get('id') || '';
-  const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const rec = await _libRec(env, user.email);
   const f = (rec.files || []).find(x => x.id === id && !x.pending && !x.deleting);
   if (!f) return json({ error: 'not_found', message: 'That file is not in your account any more.' }, 404);
   const obj = await env.AMV_FILES.get((await _libPrefix(user.email)) + id);
@@ -276,7 +360,7 @@ async function libDelete(request, env){
      counted against the limit because they still take the space, and are
      tried again by the next delete. */
   try {
-    await _withKind(env, LIB_KIND, user.email, (rec) => { for (const f of (rec.files || [])) if (ids.has(f.id) || f.deleting) { f.deleting = true; ids.add(f.id); } }, { files: [] });
+    await _withLib(env, user.email, (rec) => { for (const f of (rec.files || [])) if (ids.has(f.id) || f.deleting) { f.deleting = true; ids.add(f.id); } });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was deleted - try again in a moment.' }, 503);
   }
@@ -287,13 +371,20 @@ async function libDelete(request, env){
     for (const id of ids) if (!(await env.AMV_FILES.head(prefix + id))) gone.add(id);
   } catch (e) { /* none confirmed gone: every entry stays marked */ }
   /* Their passages go from the index too, so nothing of a deleted file can
-     still be found by meaning. */
+     still be found by meaning - and an entry stays, hidden and marked, until
+     they have (Nov 8 verified audit R15): it is the only record of which
+     passages are still owed a delete, so it is not removed while any are.
+     The next delete, or the next listing, tries again. */
   try {
-    const now = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
-    await _fileIndexRemove(env, user.email, (now.files || []).filter(f => gone.has(f.id)));
-  } catch (e) { /* the search drops entries whose file is gone, so an index line left behind answers nothing */ }
+    const now = await _libRec(env, user.email);
+    for (const f of (now.files || []).filter(f => gone.has(f.id))) {
+      let out = false;
+      try { out = await _fileIndexRemove(env, user.email, [f]); } catch (e) { out = false; }
+      if (!out) gone.delete(f.id);
+    }
+  } catch (e) { gone.clear(); }
   try {
-    if (gone.size) await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); }, { files: [] });
+    if (gone.size) await _withLib(env, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); });
   } catch (e) { /* the bytes are gone; the marked entries are removed by the next delete */ }
   const left = ids.size - gone.size;
   if (left) {
@@ -301,6 +392,24 @@ async function libDelete(request, env){
     return json({ error: 'delete_incomplete', deleted: gone.size, message: 'Some of those files could not be removed from storage yet. They are hidden and will be removed - try again in a moment.' }, 502);
   }
   return json({ ok: true, deleted: gone.size });
+}
+
+/* The marked entries' bytes and passages, tried again; an entry goes once
+   both are gone. Answers how many are still owed. */
+async function _libFinishDeletes(env, email){
+  const prefix = await _libPrefix(email);
+  const rec = await _libRec(env, email);
+  const owed = (rec.files || []).filter(f => f.deleting);
+  const gone = new Set();
+  for (const f of owed) {
+    try {
+      await env.AMV_FILES.delete(prefix + f.id);
+      if (await env.AMV_FILES.head(prefix + f.id)) continue;
+      if (await _fileIndexRemove(env, email, [f])) gone.add(f.id);
+    } catch (e) { /* still owed */ }
+  }
+  if (gone.size) await _withLib(env, email, (r) => { r.files = (r.files || []).filter(f => !gone.has(f.id)); });
+  return owed.length - gone.size;
 }
 
 /* POST /v1/library/move { ids: [], folder } - into a folder, or out of all of
@@ -314,13 +423,13 @@ async function libMove(request, env){
   const folder = _libFolder(b.folder);
   if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);
   try {
-    await _withKind(env, LIB_KIND, user.email, (rec) => {
+    await _withLib(env, user.email, (rec) => {
       for (const f of (rec.files || [])) if (ids.has(f.id) && !f.pending && !f.deleting) f.folder = folder;
-    }, { files: [] });
+    });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was moved - try again in a moment.' }, 503);
   }
-  const after = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const after = await _libRec(env, user.email);
   const moved = (after.files || []).filter(f => ids.has(f.id) && (f.folder || '') === folder).length;
   if (!moved) return json({ error: 'not_found', message: 'Those files are not in your account any more.' }, 404);
   return json({ ok: true, moved, folder, verified: moved === ids.size });
@@ -330,7 +439,7 @@ async function libMove(request, env){
    reports it rather than answering "deleted". */
 async function _libEraseAll(env, email){
   if (!libConfigured(env)) return 0;
-  try { const rec = await DB.get(env, LIB_KIND, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
+  try { const rec = await _libRec(env, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
   const prefix = await _libPrefix(email);
   let n = 0, cursor;
   for (let i = 0; i < 1000; i++) {

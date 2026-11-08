@@ -9,9 +9,14 @@
 
      - written when a file is kept (68-cloud-library.js libPut), removed when
        it is deleted - the index never names a file the list does not have;
-     - one NAMESPACE per account (a hash of the address, never the address),
-       so a query can only ever reach the asking account's own passages - the
-       permission is the namespace, not a filter somebody could forget;
+     - each passage carries its account (a hash of the address, never the
+       address) and every query is filtered to the asking account, inside one
+       of FIDX_BUCKETS namespaces chosen by that hash - and an answer is
+       shown only for a file in the asker's own list, so a passage of anybody
+       else's can never be one. (It was one namespace per account; an index
+       holds 50,000 namespaces, which is 50,000 accounts - Nov 8 verified
+       audit capacity note. Buckets keep each query small at any number of
+       accounts, and the filter needs the metadata index named in GO-LIVE.md.)
      - only text is indexed; a picture, a PDF or an Office file kept as
        itself is not read here;
      - the embedding is paid for like any other use of the meaning model,
@@ -26,6 +31,17 @@ const FIDX_TOP = 8;
 
 function _fileIndexOn(env){ return !!(env && env.VECTORS && typeof env.VECTORS.upsert === 'function' && typeof env.VECTORS.query === 'function' && _meaningOn(env)); }
 
+/* A passage's id: 64 bytes at most is all the index takes (Nov 8 verified
+   audit R19 - the account's namespace in the id made it 65 from the eleventh
+   passage on, and every file that long was refused). The namespace already
+   keeps accounts apart, so the id needs only the file and the passage - and
+   a hash, so it says nothing about either. */
+async function _fidxId(ns, fileId, i){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ns + ':' + String(fileId)));
+  return [...new Uint8Array(d)].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('') + ':' + i;
+}
+const FIDX_BUCKETS = 4096;
+const _fidxBucket = (space) => 'b' + (parseInt(String(space).slice(1, 9), 16) % FIDX_BUCKETS);
 async function _fidxSpace(email){
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-fidx:' + String(email || '').toLowerCase()));
   return 'a' + [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
@@ -70,8 +86,10 @@ async function _fileIndexAdd(env, user, file, body){
   try {
     const vecs = await _fidxEmbed(env, chunks);
     const ns = await _fidxSpace(user.email);
-    await env.VECTORS.upsert(vecs.map((values, i) => ({ id: ns + ':' + file.id + ':' + i, values, namespace: ns,
-      metadata: { f: String(file.id), i, n: String(file.name || '').slice(0, 200), t: chunks[i] } })));
+    const rows = [];
+    for (let i = 0; i < vecs.length; i++) rows.push({ id: await _fidxId(ns, file.id, i), values: vecs[i], namespace: _fidxBucket(ns),
+      metadata: { a: ns, f: String(file.id), i, n: String(file.name || '').slice(0, 200), t: chunks[i] } });
+    await env.VECTORS.upsert(rows);
     await _recordSpend(env, subject, usd, 'meaning', book.period, book);
     return chunks.length;
   } catch (e) {
@@ -82,11 +100,18 @@ async function _fileIndexAdd(env, user, file, body){
 }
 /* Takes a deleted file's passages out. Every id it ever had is named, so
    nothing of it stays searchable. */
+/* NEEDS ONLY THE INDEX (Nov 8 verified audit R07): removing passages does
+   not need the meaning model, so it is not skipped when the model is off -
+   it used to answer "removed" there without asking the index anything. With
+   passages to remove and no index to remove them from, the answer is false:
+   not done, and kept to be tried again. */
 async function _fileIndexRemove(env, email, files){
-  if (!_fileIndexOn(env) || typeof env.VECTORS.deleteByIds !== 'function') return true;
+  const owed = (files || []).some(f => +f.vec > 0);
+  if (!owed) return true;
+  if (!(env && env.VECTORS && typeof env.VECTORS.deleteByIds === 'function')) { audit(env, 'file_index_remove_unbound', { email }); return false; }
   const ns = await _fidxSpace(email);
   const ids = [];
-  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(ns + ':' + f.id + ':' + i);
+  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(await _fidxId(ns, f.id, i));
   if (!ids.length) return true;
   try { for (let i = 0; i < ids.length; i += 100) await env.VECTORS.deleteByIds(ids.slice(i, i + 100)); return true; }
   catch (e) { audit(env, 'file_index_remove_failed', { email, n: ids.length }); return false; }
@@ -108,15 +133,16 @@ async function libSearch(request, env){
   try {
     const [qv] = await _fidxEmbed(env, [query]);
     const ns = await _fidxSpace(user.email);
-    const got = await env.VECTORS.query(qv, { topK: FIDX_TOP * 2, namespace: ns, returnMetadata: 'all' });
+    const got = await env.VECTORS.query(qv, { topK: FIDX_TOP * 2, namespace: _fidxBucket(ns), filter: { a: ns }, returnMetadata: 'all' });
     await _recordSpend(env, subject, usd, 'meaning', book.period, book);
     /* Only files the list still has - an index entry for a file being
        deleted, or gone, is not an answer. */
-    const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+    const rec = await _libRec(env, user.email);
     const live = new Map((rec.files || []).filter(f => !f.pending && !f.deleting).map(f => [String(f.id), f]));
     const seen = new Set(), results = [];
     for (const mt of ((got && got.matches) || [])) {
       const md = (mt && mt.metadata) || {};
+      if (md.a !== ns) continue;                      // never another account's, whatever the index answered
       const f = live.get(String(md.f || ''));
       if (!f || seen.has(f.id + ':' + md.i)) continue;
       seen.add(f.id + ':' + md.i);

@@ -254,7 +254,10 @@ async function _pgWriteThrough(env, kind, id, obj, epoch){
   if (!email || !(await _pgReadIn(env, email))) return false;
   let why = '';
   try {
-    await _pgMirror(env, kind, email, obj);
+    /* With its own revision, like every live mirror (R12). */
+    const rev = await _pgRevNext(env, kind, kind + ':' + email);
+    if (!rev) throw new Error('mirror_revision_unavailable');
+    await _pgMirror(env, kind, email, obj, null, rev);
     const sql = await _pgClient(env);
     let back;
     try { back = await _pgReadRow(sql, kind, email); } finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }

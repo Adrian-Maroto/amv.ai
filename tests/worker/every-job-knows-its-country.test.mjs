@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -58,7 +59,7 @@ function mkEnv() {
     /* The tallies go to the REAL counter class, over in-memory storage, one
        call at a time per object - which is what a Durable Object guarantees.
        Everything else keeps the simple stand-in these sections always used. */
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -82,7 +83,7 @@ function mkEnv() {
         if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const mkCtx = () => ({ waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

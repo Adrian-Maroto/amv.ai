@@ -38,6 +38,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -45,8 +46,10 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'claimfail.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _reverseSale, _refundRejectedPayout, _creditSale };\n');
+writeFileSync(harness, src + '\nexport { DB, _walletAdopt, _reverseSale, _refundRejectedPayout, _creditSale };\n');
 const W = await import(harness + '?t=' + Date.now());
+/* A wallet set as given goes to its strong record too - it is what every read and write uses. */
+const _setWallet = (env, em, w) => W._walletAdopt(env, em, typeof w === 'string' ? w : JSON.stringify(w));
 const worker = W.default;
 
 const SELLER = 'seller@example.com';
@@ -79,7 +82,9 @@ function mkEnv() {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
+      /* The wallet is committed in its strong record first; breaking its write breaks that. */
+      fault: (n, b) => { if (env._failWallet && n.startsWith('walletrev:') && b.op === 'revCommit') throw new Error('storage down'); return null; },
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -92,7 +97,7 @@ function mkEnv() {
         if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
   return env;
 }
@@ -110,13 +115,13 @@ const held = (env) => [...env._vals.keys()].filter(k => k.startsWith('c:'));
 const wallet = (env, who) => JSON.parse(env.AMV_KV._map.get('wallet:' + (who || SELLER)) || '{}');
 
 /* A completed sale, in the shape _reverseSale reads. */
-function sold(env, ref) {
+async function sold(env, ref) {
   env.AMV_KV._map.set(`saleref:${ref}`, JSON.stringify({
     itemId: 'usr_thing', buyer: BUYER, seller: SELLER, sellerShare: 32, price: 40, ref,
   }));
   env.AMV_KV._map.set(`entitleitem:${BUYER}:usr_thing`, '1');
   env.AMV_KV._map.set(`purchases:${BUYER}`, JSON.stringify([{ id: 'usr_thing', at: Date.now() }]));
-  env.AMV_KV._map.set('wallet:' + SELLER, JSON.stringify({
+  await _setWallet(env, SELLER, JSON.stringify({
     balance: 32, lifetime: 32, currency: 'usd', holds: [], paidOut: 0, payouts: [] }));
 }
 
@@ -190,7 +195,7 @@ section('A rejected payout that could not be refunded says so');
      fails after the status is written, they are out of pocket with a terminally
      rejected payout and nothing anywhere saying money is owed. */
   const env = mkEnv();
-  env.AMV_KV._map.set('wallet:' + SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
+  await _setWallet(env, SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
   const rec = { id: 'wd_abc123', seller: SELLER, amount: 50, status: 'rejected', refundDue: 50 };
 
   env._failWallet = true;
@@ -211,7 +216,7 @@ section('And completing it twice does not pay twice');
   /* The failure the original ordering was chosen to avoid. It still must not
      happen - a refund that can be repeated is money out of nothing. */
   const env = mkEnv();
-  env.AMV_KV._map.set('wallet:' + SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
+  await _setWallet(env, SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
   const rec = { id: 'wd_xyz789', seller: SELLER, amount: 50, status: 'rejected', refundDue: 50 };
 
   await W._refundRejectedPayout(env, rec);
@@ -233,7 +238,7 @@ section('A rejection whose credit fails leaves the debt on the record');
      it. The status is terminal and the money did not move - so the ONLY thing
      standing between the seller and a silent loss is the record saying so. */
   const env = mkEnv();
-  env.AMV_KV._map.set('wallet:' + SELLER, JSON.stringify({
+  await _setWallet(env, SELLER, JSON.stringify({
     balance: 0, holds: [], paidOut: 60, payouts: [{ at: Date.now(), amount: 60 }] }));
   env.AMV_KV._map.set('withdraw:wd_live001', JSON.stringify({
     id: 'wd_live001', seller: SELLER, amount: 60, status: 'pending', ts: Date.now() }));
@@ -260,7 +265,7 @@ section('An operator can finish a stuck refund through the route');
   /* The recovery has to be reachable. A terminal state that refuses everything
      leaves the only fix as somebody editing storage by hand. */
   const env = mkEnv();
-  env.AMV_KV._map.set('wallet:' + SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
+  await _setWallet(env, SELLER, JSON.stringify({ balance: 0, holds: [], paidOut: 50, payouts: [] }));
   env.AMV_KV._map.set('withdraw:wd_stuck01', JSON.stringify({
     id: 'wd_stuck01', seller: SELLER, amount: 50, status: 'rejected', refundDue: 50, ts: Date.now() }));
 

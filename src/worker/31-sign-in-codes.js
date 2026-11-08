@@ -1799,6 +1799,14 @@ async function _eraseAccount(env, email, opt) {
       if (!(r && r.ok)) _eraseFailed('team usage totals');
     }
   } catch { _eraseFailed('team usage totals'); }
+  /* The wallet's strong copy (its revision and record): a delete moves it to
+     a new generation, so no writer that read it before can put it back. */
+  if (env.AMV_COUNTER) {
+    try { const r = await counter(env, `walletrev:${email}`, { op: 'revReset', absent: true }); if (!(r && r.ok)) _eraseFailed('earnings balance'); }
+    catch { _eraseFailed('earnings balance'); }
+    try { const r = await counter(env, `librec:${email}`, { op: 'revReset', absent: true }); if (!(r && r.ok)) _eraseFailed('the list of your files'); }
+    catch { _eraseFailed('the list of your files'); }
+  }
   try { const r = await counter(env, `life:${email}`, { op: 'clear' }); if (!(r && r.ok)) _eraseFailed('lifetime usage totals'); }
   catch { _eraseFailed('lifetime usage totals'); }
   /* The saved cloud workspace lives with AMV's computer Worker, not in this

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createHmac } from 'crypto';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -47,7 +48,7 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
     async put(k, v){ store.set(k, v); },
     async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -56,7 +57,7 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  } };
+  }) };
 const ctx = { waitUntil(){}, passThroughOnException(){} };
 store.set('ent:' + ME, JSON.stringify({ plan: 'ultra', renewedAt: Date.now() }));
 const pair = await W.issueTokens(env, ME, 'Slack');

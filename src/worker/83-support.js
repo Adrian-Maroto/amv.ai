@@ -59,7 +59,7 @@ async function supportAccount(request, env){
   const auto = (await DB.get(env, 'auto', _autoKey(email))) || { items: [] };
   const agents = (await DB.get(env, 'agents', email)) || { list: [] };
   const conns = (await DB.get(env, CONN_KV, email)) || {};
-  const lib = (await DB.get(env, LIB_KIND, email)) || { files: [] };
+  let lib = { files: [] }; try { lib = await _libRec(env, email); } catch (e) { lib = { files: [] }; }
   let monthUsed = null;
   try { monthUsed = +((await counter(env, `usg:${email}:${_periodKeyFor(ent.renewedAt, ent.plan, ent.customCfg)}`, { op: 'get' })).value || 0); } catch (e) { monthUsed = null; }
   return json({ ok: true, account: {

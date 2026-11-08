@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -45,13 +46,13 @@ function mkEnv() {
       async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
       async list({ prefix, limit } = {}) { const keys = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })); return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true }; },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
       if (b.op === 'reserve') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: vals.get(n) })); }
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
       return new Response(JSON.stringify({ allowed: true, value: cur }));
-    } }) },
+    } }) }),
   };
 }
 const mkCtx = () => ({ waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {}, async settle() { await Promise.all(this._p || []); } });

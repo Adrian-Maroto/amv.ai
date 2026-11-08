@@ -205,27 +205,37 @@ async function _pgBackfillSaveHeld(sql, me, phase, cursor, add){
   return r.length === 1;
 }
 
+/* The next revision of each named kind of one record, or throws. */
+async function _pgRevsFor(env, id, kinds){
+  const out = {};
+  for (const k of kinds) { const r = await _pgRevNext(env, k, k + ':' + id); if (!r) throw new Error('mirror_revision_unavailable'); out[k] = r; }
+  return out;
+}
 /* One record of one phase. Returns 'copied', 'same', 'mismatched' (verify),
    'skipped', or throws. */
 async function _pgBackfillOne(env, sql, phase, keyName, t){
   if (phase === 'acct') {
     const email = keyName.slice(5).toLowerCase();
+    /* Revisions first, then the read (R12): what is copied is at least as
+       new as every mirror below these, and any write after them wins. */
+    const revs = await _pgRevsFor(env, email, ['acct', 'ent', 'apikeys']);
     const kv = await _pgAccountKV(env, email);
     if (!kv.acct) return 'skipped';                 // unreadable or gone since the listing
     const digest = await _pgDigest(kv);
     const was = await sql`SELECT kv_digest FROM migration_accounts WHERE email = ${email}`;
     if (was.length && was[0].kv_digest === digest) return 'same';
-    await _pgMirror(env, 'acct', email, kv.acct, sql);
-    await _pgMirror(env, 'ent', email, kv.ent, sql);
-    await _pgMirror(env, 'apikeys', email, kv.keys, sql);
+    await _pgMirror(env, 'acct', email, kv.acct, sql, revs.acct);
+    await _pgMirror(env, 'ent', email, kv.ent, sql, revs.ent);
+    await _pgMirror(env, 'apikeys', email, kv.keys, sql, revs.apikeys);
     await sql`UPDATE migration_accounts SET kv_digest = ${digest}, backfilled_at = now() WHERE email = ${email}`;
     return 'copied';
   }
   if (phase === 'team') {
     const id = keyName.slice(5);
+    const revs = await _pgRevsFor(env, id.toLowerCase(), ['team']);
     const team = await DB.get(env, 'team', id);
     if (!team) return 'skipped';
-    await _pgMirror(env, 'team', id.toLowerCase(), team, sql);
+    await _pgMirror(env, 'team', id.toLowerCase(), team, sql, revs.team);
     return 'copied';
   }
   if (phase === 'wallet') {
@@ -253,7 +263,12 @@ async function _pgBackfillOne(env, sql, phase, keyName, t){
       await _pgLedgerInsert(sql, kept.row);
     } else if (PG_MIRROR_KINDS.has(kind)) {
       /* As KV has it now: if it was deleted since, that is what is copied. */
-      await _pgMirror(env, kind, id, await DB.get(env, kind, id), sql);
+      /* A repair is a write of its own, newer than the one that failed: it
+         takes the record's next revision, then copies KV as it is now. With
+         no revision it stays on the list. */
+      const rev = await _pgRevNext(env, kind, kind + ':' + String(id).toLowerCase());
+      if (!rev) { t.unreadable++; return 'skipped'; }
+      await _pgMirror(env, kind, id, await DB.get(env, kind, id), sql, rev);
     } else { t.unreadable++; return 'skipped'; }
     await env.AMV_KV.delete(keyName);
     return 'copied';

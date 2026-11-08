@@ -59,7 +59,7 @@ section('Two runs saving at once both keep what they signed in to');
   ok(res[0].includes('a.example.com') && res[1].includes('b.example.com'), 'and each run is told what it kept, truthfully', res);
 }
 
-section('A copy that never catches up is not merged into');
+section('A copy here that never catches up decides nothing: the jar is read from the strong copy (Nov 8 verified audit R21)');
 {
   const run = await W._agentFind(env, email, id);
   await W._agentJarLoad(env, email, run);
@@ -67,8 +67,8 @@ section('A copy that never catches up is not merged into');
   const kept = await W._agentJarSave(env, email, run, [cookie('a.example.com', 'A-3')]);
   stale = null;
   const v = await values();
-  ok(kept.length === 0, 'the save says nothing was kept', kept);
-  ok(v['b.example.com'] === 'B-NEW' && v['base.example.com'] === 'BASE', 'and the sign-ins already there are untouched', v);
+  ok(kept.includes('a.example.com'), 'the save is made, on the copy that is current', kept);
+  ok(v['a.example.com'] === 'A-3' && v['b.example.com'] === 'B-NEW' && v['base.example.com'] === 'BASE', 'and every sign-in already there is still there', v);
 }
 
 console.log = quiet;

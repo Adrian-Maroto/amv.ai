@@ -15772,3 +15772,37 @@ The restore merge's catch said writing the snapshot over unreadable live state
 "is the one thing that must not happen here" - and returned the snapshot to be
 written. Rule: when a guard's comment describes a failure case, make that
 failure happen in a test and assert what the comment promises.
+
+## 632. A fingerprint of the truth is not the truth: keep the record itself where it is strong (Nov 8 verified audit)
+Lesson 630's fix - a lock plus a fingerprint of the last write in the strong
+object - was still beaten: when the fingerprint could not be written, the next
+save trusted KV's older copy and lost a site; the wallet lock serialized
+writers who then each read a stale KV balance; an upload's two writes to one
+KV key inside a second were refused by KV's own limit. Rule: for a record
+whose lost update costs money, credentials or files (wallet, an agent's sign-in
+jar, the file list, a transaction's identity), the record itself lives in the
+strongly consistent object as a revision and its value, every change commits
+from the revision it read, and KV holds a copy that is written once per change
+and never decides anything. A writer that stalled finds the revision moved and
+is refused.
+
+## 633. "Could not be asked" must never fall through to a store that answers differently (Nov 8 verified audit)
+Six of the twenty-three reproduced failures were one shape: the strong object
+did not answer - a 503 body, a throw, a malformed reply - and the code took an
+answer from somewhere else: a KV claim both contenders won, a KV counter that
+said "not quarantined", a revision counter that started again at one, a
+committed-record check that served a deleted copy, an unversioned mirror that
+skipped its guard. Rule: when the authority is bound and does not answer, the
+result is "unknown", and unknown holds, refuses or waits - it is never the
+fallback's answer. `counter()` now treats any non-2xx, non-object or late reply
+as no answer, and callers that need the authority pass `strict`.
+
+## 634. Run the auditor's own reproduction before and after, not just your tests (Nov 8 verified audit)
+Every one of the twenty-three failures came with a local script that showed it.
+Running that script against the code first proved all twenty-three still
+reproduced - after a round that had reported the area finished - and running
+it after each batch is what showed when a batch was really closed. Rule: when
+an audit ships a reproduction, run it unchanged before touching anything, keep
+its scenarios as a permanent suite with the results turned round
+(`the-verified-failures-of-nov-8-stay-fixed`), and do not report a finding
+closed until its scenario no longer reproduces.

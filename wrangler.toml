@@ -224,6 +224,7 @@ new_sqlite_classes = ["AMVCounter"]
 # Needs the [ai] binding above as well. Create the index once (1024
 # dimensions is bge-m3's size, cosine is how it is compared):
 #   npx wrangler vectorize create amv-files --dimensions=1024 --metric=cosine
+#   npx wrangler vectorize create-metadata-index amv-files --property-name=a --type=string
 # then uncomment. Until then the library searches file names only, and says so.
 #
 # [[vectorize]]

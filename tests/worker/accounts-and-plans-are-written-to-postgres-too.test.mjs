@@ -177,11 +177,19 @@ section('A team is an organization with one membership per member; one with no a
               { email: 'nobody-yet@example.com', role: 'member', joinedAt: Date.now() }] };
   await W.DB.put(env, 'team', team.id, team);
   await W._pgSettle();
+  /* Nov 8 verified audit R13: a member with no account row fails the whole
+     team's transaction - nothing of it lands, rather than a membership list
+     nobody wrote becoming something permissions could be read from. */
+  ok(q("select count(*) from organizations where legacy_id='team_abc123'") === '0', 'a team with a member who has no account row yet lands nothing at all');
+  ok(store.has('pgrepair:team:team_abc123'), 'and is sent for repair, rather than dropped or written half');
+  /* Once every member has an account, the next write lands whole. */
+  team.members = team.members.filter(m => m.email !== 'nobody-yet@example.com');
+  await W.DB.put(env, 'team', team.id, team);
+  await W._pgSettle();
   const org = q("select name, kind, extra->>'planCache' from organizations where legacy_id='team_abc123'").split('|');
   ok(org[0] === 'Acme' && org[1] === 'company' && org[2] === 'team', 'the team is an organization, its own fields kept', org);
   const mem = q("select a.email||':'||m.role from memberships m join accounts a on a.id=m.account_id join organizations o on o.id=m.org_id where o.legacy_id='team_abc123' order by a.email").split('\n');
-  ok(mem.join() === 'ana@example.com:owner,dee@example.com:viewer', 'each member with an account has a membership, with their role', mem);
-  ok(store.has('pgrepair:team:team_abc123'), 'the member with no account row yet sends the team for repair, rather than being dropped');
+  ok(mem.join() === 'ana@example.com:owner,dee@example.com:viewer', 'each member has a membership, with their role', mem);
   team.members = team.members.filter(m => m.email !== 'dee@example.com' && m.email !== 'nobody-yet@example.com');
   await W.DB.put(env, 'team', team.id, team);
   await W._pgSettle();

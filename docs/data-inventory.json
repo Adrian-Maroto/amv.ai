@@ -913,7 +913,7 @@
   }
  },
  "elsewhere": {
-  "durable-object": "every counter, limit, reservation, lock and lease; the sign-out-everywhere generation; each agent sign-in generation; each Postgres row proof; each synced record committed revision and digest; the switchboard; lifetime usage totals (src/worker/07-atomic-counters.js)",
+  "durable-object": "every counter, limit, reservation, lock and lease; the sign-out-everywhere generation; each agent sign-in generation and its sealed sign-in jar; each seller wallet; each account's file list; each transaction id's record; each Postgres row proof and mirror revision; each synced record committed revision and digest; the switchboard; lifetime usage totals (src/worker/07-atomic-counters.js)",
   "r2": "the bytes of library files, nightly backups and saved cloud workspaces (src/worker/68-cloud-library.js, 27a-nightly-backup.js, cloud/)",
   "postgres": "the mirror of accounts and plans and the ledgers it will own, reached through Hyperdrive (docs/DATA-TIER.md)",
   "d1": "retired - never an authority; a launch profile refuses DATA_STORE = d1 (preflight.mjs)"

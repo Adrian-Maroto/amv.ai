@@ -28,6 +28,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -60,7 +61,7 @@ function mkEnv(extra) {
       async delete(k) { m.delete(k); },
       async list() { return { keys: [], list_complete: true }; },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ fetch(_u, init) {
         return serialise(async () => {
@@ -79,7 +80,7 @@ function mkEnv(extra) {
           return new Response(JSON.stringify({ allowed: true, value: cur }));
         });
       } }),
-    },
+    }),
   }, extra || {});
 }
 
@@ -194,7 +195,7 @@ section('When the counter is down, the split is the one we chose');
      account by OUR outage. So security and owner mail goes and notification
      mail is held, and that is asserted rather than assumed. */
   const env = mkEnv({
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ fetch() { throw new Error('DO is down'); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ fetch() { throw new Error('DO is down'); } }) }),
   });
   sent = [];
   const held = await W._sendEmail(env, 'x@example.com', 's', '<p>h</p>', 't', 'message');

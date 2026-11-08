@@ -15,7 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'fidx.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _fidxChunks };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _fidxChunks, _fidxId, _fidxSpace };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (String(a[0]).startsWith('AUDIT')) return; quiet(...a); };
 
@@ -27,10 +27,12 @@ const R2 = { async put(k, v) { r2m.set(k, String(v)); }, async get(k) { return r
 const TOPICS = [/rent|landlord|lease|tenancy/i, /tax|invoice|receipt|vat/i, /dog|vet|puppy/i, /flight|airport|trip/i];
 const vec = (t) => TOPICS.map(re => (re.test(t) ? 1 : 0.01));
 const AI = { async run(_m, { text }) { return { data: text.map(vec) }; } };
-const spaces = new Map(); let deleted = [];
+const spaces = new Map(); let deleted = []; const queries = []; let ignoreFilter = false;
 const VECTORS = {
   async upsert(rows) { for (const r of rows) { if (!spaces.has(r.namespace)) spaces.set(r.namespace, new Map()); spaces.get(r.namespace).set(r.id, r); } return { count: rows.length }; },
-  async query(v, { topK, namespace }) { const sp = spaces.get(namespace) || new Map(); const cos = (a, b) => { let d = 0, x = 0, y = 0; for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; x += a[i] * a[i]; y += b[i] * b[i]; } return d / Math.sqrt(x * y); };
+  async query(v, { topK, namespace, filter }) { queries.push({ namespace, filter }); const sp0 = spaces.get(namespace) || new Map();
+    /* As the index does with a metadata filter - unless a suite makes it ignore it. */
+    const sp = new Map([...sp0].filter(([, r]) => ignoreFilter || !filter || Object.entries(filter).every(([k, val]) => r.metadata[k] === val))); const cos = (a, b) => { let d = 0, x = 0, y = 0; for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; x += a[i] * a[i]; y += b[i] * b[i]; } return d / Math.sqrt(x * y); };
     return { matches: [...sp.values()].map(r => ({ id: r.id, score: cos(v, r.values), metadata: r.metadata })).sort((a, b) => b.score - a.score).slice(0, topK) }; },
   async deleteByIds(ids) { deleted = deleted.concat(ids); for (const sp of spaces.values()) for (const id of ids) sp.delete(id); return { count: ids.length }; },
 };
@@ -56,7 +58,9 @@ await req(env, '/v1/library/put', file('bo-taxes.txt', 'My tax receipts for the 
 
 section('A kept file is indexed, in its own account’s space');
 {
-  ok(lease.status === 200 && spaces.size === 2, 'two accounts, two separate spaces', [lease.status, spaces.size]);
+  const owners = new Set([...spaces.values()].flatMap(sp => [...sp.values()].map(r => r.metadata.a)));
+  ok(lease.status === 200 && owners.size === 2 && [...owners].every(a => /^a[0-9a-f]{40}$/.test(a)), 'every passage carries its own account, as a hash - two accounts, two owners', [lease.status, [...owners]]);
+  ok([...spaces.keys()].every(n => /^b\d+$/.test(n)), 'kept in buckets, so one index holds any number of accounts (not one namespace each)', [...spaces.keys()]);
   const list = await req(env, '/v1/library', undefined, ana);
   ok(list.d.searchInside === true, 'and the library says it can search inside files', list.d.searchInside);
 }
@@ -67,6 +71,13 @@ section('A search finds the file by what it says, not its name');
   ok(r.status === 200 && r.d.results[0] && r.d.results[0].name === 'flat.txt' && /landlord/.test(r.d.results[0].passage), 'a question with none of the file’s words finds it, with the passage', r.d);
   const other = await req(env, '/v1/library/search', { query: 'vat invoice' }, ana);
   ok(!(other.d.results || []).some(x => x.name === 'bo-taxes.txt'), 'and never reaches somebody else’s file, even when it is the best match', other.d.results);
+  ok(queries.length && queries.every(q => q.filter && /^a[0-9a-f]{40}$/.test(q.filter.a)), 'every query is filtered to the asking account', queries.slice(-1));
+  /* An index that ignored the filter - or two accounts in one bucket - still
+     shows nobody anything of anybody else's. */
+  ignoreFilter = true;
+  const loose = await req(env, '/v1/library/search', { query: 'vat invoice' }, ana);
+  ignoreFilter = false;
+  ok(loose.status === 200 && !(loose.d.results || []).some(x => x.name === 'bo-taxes.txt' || /VAT/.test(x.passage)), 'even an index that ignored the filter answers only the asker’s own passages', loose.d.results);
   ok((await req(env, '/v1/library/search', { query: 'x' }, ana)).status === 400, 'an empty question is refused');
   ok((await req(env, '/v1/library/search', { query: 'tenancy' })).status === 401, 'nobody signed out can search');
 }
@@ -75,7 +86,8 @@ section('Deleting a file takes its passages out of the index');
 {
   const id = lease.d.file.id;
   const del = await req(env, '/v1/library/delete', { ids: [id] }, ana);
-  ok(del.status === 200 && deleted.some(x => x.includes(':' + id + ':')), 'its passages are deleted by id', deleted);
+  const want = await W._fidxId(await W._fidxSpace('ana@example.com'), id, 0);
+  ok(del.status === 200 && deleted.includes(want) && deleted.every(x => new TextEncoder().encode(x).length <= 64), 'its passages are deleted by id - each id within the 64 bytes the index takes', deleted);
   const r = await req(env, '/v1/library/search', { query: 'tenancy' }, ana);
   ok(!(r.d.results || []).some(x => x.id === id), 'and a search no longer finds it', r.d.results);
 }

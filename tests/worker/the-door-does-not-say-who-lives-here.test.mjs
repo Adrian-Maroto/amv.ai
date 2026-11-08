@@ -33,6 +33,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -83,7 +84,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOps({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -92,7 +93,7 @@ function mkEnv() {
         if (b.op === 'reserve') { const nx = cur + (b.amount || 0); if (nx > b.cap) return new Response(JSON.stringify({ allowed: false, value: cur })); vals.set(n, nx); return new Response(JSON.stringify({ allowed: true, value: nx })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const post = (path, body, ip = '1.2.3.4') => new Request('https://api.amv.test' + path, {
@@ -297,7 +298,7 @@ section('A counter outage does not become a sign-in outage');
      with Google" would be a worse failure than the one being prevented. */
   const env = mkEnv();
   const broken = Object.assign({}, env, {
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) }),
   });
   const r = await read(await W.authGoogle(post('/auth/google', { credential: idToken({ email: 'blip@example.com', email_verified: true }) }, '6.6.6.6'), broken));
   ok(r.status === 200, 'somebody still gets in', r.status);
@@ -364,7 +365,7 @@ section('And a counter outage does not become a sign-in outage here either');
   const env = mkEnv();
   await read(await W.authSignup(post('/auth/signup', { email: 'blip@example.com', name: 'B', password: PW }), env));
   const broken = Object.assign({}, env, {
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) }),
   });
   const r = await read(await W.authLogin(post('/auth/login', { email: 'blip@example.com', password: PW }, '6.1.1.1'), broken));
   ok(r.status === 200, 'somebody still gets in', r.status);

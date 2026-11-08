@@ -22,14 +22,17 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'market.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _wallet, _creditSale, _reverseSale, MARKET_PLATFORM_FEE, MARKET_MIN_WITHDRAW };\n');
+writeFileSync(harness, src + '\nexport { DB, _walletAdopt, _wallet, _creditSale, _reverseSale, MARKET_PLATFORM_FEE, MARKET_MIN_WITHDRAW };\n');
 const W = await import(harness + '?t=' + Date.now());
+/* A wallet set as given goes to its strong record too - it is what every read and write uses. */
+const _setWallet = (env, em, w) => W._walletAdopt(env, em, typeof w === 'string' ? w : JSON.stringify(w));
 
 const SELLER = 'seller@example.com';
 const BUYER = 'buyer@example.com';
@@ -56,7 +59,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     STRIPE_SECRET_KEY: 'sk_test', STRIPE_WEBHOOK_SECRET: SECRET,
   };
@@ -173,7 +176,7 @@ section('A seller who withdrew first cannot outrun the reversal');
   await listing(env, 'itm5');
   await webhook(env, sale('evt5', 'itm5', 5000, 'pi_5'));
   const w = await walletOf(env, SELLER);
-  await env.AMV_KV.put(`wallet:${SELLER}`, JSON.stringify({ ...w, balance: 0 }));   // as if withdrawn
+  await _setWallet(env, SELLER, JSON.stringify({ ...w, balance: 0 }));   // as if withdrawn
 
   await W._reverseSale(env, 'pi_5', 'chargeback');
   const after = await walletOf(env, SELLER);

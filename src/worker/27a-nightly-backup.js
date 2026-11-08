@@ -278,17 +278,48 @@ const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
    asked - a switchboard that does not answer is not permission to write
    into a store somebody may be restoring. The restore itself still needs a
    definite yes from _restoreFrozen before it starts. */
-async function _writesPaused(env){
+async function _writesPaused(env){ return (await _writesState(env)).paused; }
+/* { paused, gen }: whether writes are off (or that cannot be asked), and the
+   generation of the last time they were switched off. */
+async function _writesState(env){
   if (env.AMV_COUNTER) {
     try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });
-      if (r && r.unavailable) return true;
-      if (r && r.map && typeof r.map === 'object') return !!(r.map['feature:writes'] && r.map['feature:writes'].off);
+      if (r && r.unavailable) return { paused: true, gen: -1 };
+      if (r && r.map && typeof r.map === 'object') return { paused: !!(r.map['feature:writes'] && r.map['feature:writes'].off), gen: +r.wgen || 0 };
       /* Answered with no switchboard of its own: the stored switches decide,
          as they do for the restore itself. */
-    } catch (e) { return true; }
+    } catch (e) { return { paused: true, gen: -1 }; }
   }
-  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); return !!(m && m['feature:writes'] && m['feature:writes'].off); }
-  catch (e) { return true; }
+  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); const w = m && m['feature:writes']; return { paused: !!(w && w.off), gen: +((w && w.at) || (m && m._wgen)) || 0 }; }
+  catch (e) { return { paused: true, gen: -1 }; }
+}
+/* BACKGROUND WORK COMMITS ONLY INTO THE GENERATION IT WAS ADMITTED IN (Nov 8
+   verified audit R17). A queue batch checked the freeze once, for the whole
+   batch, so a restore switched on between two messages still let the second
+   one run and write; and a run admitted before a restore, still going when
+   it began, committed its result into the restored store. Each message is
+   now admitted on its own, with the generation it saw, and every record
+   write it makes (DB.put / DB.del) asks again: writes off, or switched off
+   since, and the write is refused - the message is retried later. */
+const _bgAdmitted = new WeakMap();
+function _bgScope(){ try { const c = _ctxStore ? _ctxStore.getStore() : null; return (c && typeof c === 'object') ? c : null; } catch (e) { return null; } }
+function _bgAdmit(gen){ const c = _bgScope(); if (c) _bgAdmitted.set(c, gen); }
+function _bgAdmitEnd(){ const c = _bgScope(); if (c) _bgAdmitted.delete(c); }
+/* Asked of the one switchboard object, so kept for a second per isolate:
+   every background write in the deployment would otherwise be a call to the
+   same object. A restore is started by a person after switching writes off,
+   which is longer than this. */
+let _bgWritesSeen = null;
+const BG_WRITES_FRESH_MS = 1000;
+async function _bgWriteGuard(env){
+  const c = _bgScope();
+  if (!c || !_bgAdmitted.has(c)) return;
+  const now = Date.now();
+  let st = _bgWritesSeen && _bgWritesSeen.env === env && now - _bgWritesSeen.at < BG_WRITES_FRESH_MS ? _bgWritesSeen.st : null;
+  if (!st) { st = await _writesState(env); _bgWritesSeen = { env, at: now, st }; }
+  if (st.paused || st.gen !== _bgAdmitted.get(c)) {
+    const e = new Error('writes are paused for a restore'); e.code = 'writes_paused'; throw e;
+  }
 }
 async function _restoreFrozen(env){
   let m = null;
