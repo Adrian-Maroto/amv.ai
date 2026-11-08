@@ -75,25 +75,6 @@ const THIRD_PARTY = {
     sri: 'IMPOSSIBLE. Rolling, and PayPal publishes no hashes.',
     mitigation: 'named in the CSP; loaded only on the payment screen',
   },
-  'cdnjs.cloudflare.com': {
-    why: 'NOT loaded by AMV. It is in the policy because the model is told to emit self-contained '
-       + 'HTML that loads three.js, and a sandboxed frame inherits this policy.',
-    sri: 'NOT YET. r128 is immutable and cdnjs publishes hashes, so the instruction to the model '
-       + 'could carry one - it needs the hash computed on a machine that can reach cdnjs, which this '
-       + 'one cannot. Open on purpose rather than guessed at: a wrong integrity attribute would break '
-       + 'every 3D model the product generates.',
-    mitigation: 'it only ever runs inside a sandboxed frame with a unique origin, so it cannot read '
-              + 'this account whatever it contains',
-  },
-  'cdn.jsdelivr.net': {
-    why: 'Pyodide, so the Lab can run Python.',
-    sri: 'NOT YET. This one is version-pinned and immutable, so it COULD carry a hash - but it is '
-       + 'loaded with importScripts inside a Worker, which takes no integrity attribute. Doing it '
-       + 'properly means fetching, hashing and eval-ing, which needs unsafe-eval. Open on purpose.',
-    mitigation: 'pinned to an exact version (v0.26.2) rather than a moving one; runs inside a Worker '
-              + 'with no DOM, no localStorage and no cookies, so a compromised build cannot read the '
-              + 'session even if it is served one',
-  },
 };
 
 section('Every third-party host is one somebody has written a decision about');
@@ -176,8 +157,13 @@ section('And a script AMV tells the model to emit runs somewhere it cannot reach
      frame with a unique origin. The sandbox is the control there, and it has to
      stay one. */
   ok(/cdnjs\.cloudflare\.com/.test(appSrc), 'the instruction names a CDN', true);
-  ok(/cdnjs\.cloudflare\.com/.test(cspDirective('script-src')),
-     'and it is named in the policy, because a sandboxed frame inherits it', true);
+  /* Nov 8 audit FRONT-020: a generated page runs in preview.html, a document
+     with its own policy - and the fallback (srcdoc) runs no scripts at all -
+     so this page's policy names neither CDN, nor blob: scripts. */
+  const ss = cspDirective('script-src');
+  ok(!/cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net/.test(ss) && !/(^|\s)blob:/.test(ss),
+     'and this page lets neither CDN nor a blob: run script here - the preview document has its own policy', ss);
+  ok(!/cdn\.jsdelivr\.net/.test(cspDirective('connect-src')), 'nor fetch from the Python CDN, which only the sandbox does', cspDirective('connect-src'));
   ok(/sandbox/.test(worker) || /sandbox/.test(appSrc),
      'generated pages are sandboxed', true);
   ok(/allow-scripts/.test(appSrc) || /allow-scripts/.test(worker),
