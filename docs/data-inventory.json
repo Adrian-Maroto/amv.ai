@@ -519,6 +519,13 @@
    "backup": false,
    "authority": "kv"
   },
+  "betainv": {
+   "class": "operational",
+   "holds": "an owner-made beta invite code and how many sign-ups it allows",
+   "kept": "until the owner removes it",
+   "backup": true,
+   "authority": "kv"
+  },
   "refcode": {
    "class": "financial",
    "holds": "a referral code",
