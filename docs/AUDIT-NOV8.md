@@ -33,6 +33,7 @@ each item, and what remains the owner's or the Postgres cutover's.
 | FIN-021 | The finance statement reads one line past its 300-line page and says `hasMore` when the ledger is longer, with or without Stripe; totals already say they cover the page. | finance |
 | QUEUE-013 | The queue key is remade when its secret changes, instead of a warm isolate keeping the old one. | background-work-goes-through-the-queue |
 | GROWTH-011 | The Growth tab shows confirmed actions per active person beside cost and revenue per person: work done, not messages. | what-brought-them-back |
+| FRONT-022 | A file shared from another app carries when it arrived and is removed after an hour if the app never opened it - swept on each new share and when the service worker starts. | a-file-shared-from-another-app-arrives-in-amv |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
 ## Postgres mirror, ahead of the cutover

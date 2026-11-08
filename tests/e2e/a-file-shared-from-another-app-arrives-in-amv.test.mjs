@@ -104,5 +104,12 @@ try {
   await browser.close();
   server.close();
 }
+section('A share the app never opened does not wait for ever (Nov 8 audit FRONT-022)');
+{
+  const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+  ok(/'X-At': String\(Date\.now\(\)\)/.test(sw) && /SHARE_KEEP_MS = 60 \* 60 \* 1000/.test(sw), 'each parked file carries when it arrived, and is kept an hour at most');
+  ok(/await shareSweep\(box\);\s*let n = 0/.test(sw) && /addEventListener\('activate'[\s\S]{0,160}shareSweep/.test(sw), 'older ones are removed when a new share arrives and when the worker starts');
+}
+
 if (report('a-file-shared-from-another-app-arrives-in-amv') > 0) process.exitCode = 1;
 done();

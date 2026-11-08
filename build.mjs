@@ -829,6 +829,21 @@ self.addEventListener('activate', e => {
    every update - for the page to take out, and the page empties it the
    moment it does (_sharedFilesTake). Nothing here is sent anywhere. */
 const SHARE_INBOX = 'amvshare-inbox';
+/* A share the app never opened does not wait on the device for ever (Nov 8
+   audit FRONT-022): anything parked more than an hour ago - or with no time
+   on it - is removed whenever a new share arrives and whenever this worker
+   starts. */
+const SHARE_KEEP_MS = 60 * 60 * 1000;
+async function shareSweep(box){
+  try {
+    for (const r of await box.keys()) {
+      const res = await box.match(r);
+      const at = +((res && res.headers.get('X-At')) || 0);
+      if (!at || Date.now() - at > SHARE_KEEP_MS) await box.delete(r);
+    }
+  } catch (e) { /* the page empties the inbox when it opens a share either way */ }
+}
+self.addEventListener('activate', e => { e.waitUntil((async () => { try { if (await caches.has(SHARE_INBOX)) await shareSweep(await caches.open(SHARE_INBOX)); } catch (err) {} })()); });
 const SHARE_FILE_MAX = 50 * 1024 * 1024;
 self.addEventListener('fetch', e => {
   const req = e.request;
@@ -843,11 +858,12 @@ self.addEventListener('fetch', e => {
       if (files.length) {
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
         const box = await caches.open(SHARE_INBOX);
+        await shareSweep(box);
         let n = 0, over = 0;
         for (const f of files) {
           if (f.size > SHARE_FILE_MAX) { over++; continue; }
           await box.put('/__shared/' + id + '/' + (n++), new Response(f, { headers: {
-            'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(String(f.name || 'file').slice(0, 200)) } }));
+            'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(String(f.name || 'file').slice(0, 200)), 'X-At': String(Date.now()) } }));
         }
         if (n) q.set('shared', id);
         if (over) q.set('sharedover', String(over));
