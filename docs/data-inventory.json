@@ -519,6 +519,13 @@
    "backup": false,
    "authority": "kv"
   },
+  "fgoal": {
+   "class": "operational",
+   "holds": "the name of the first starting chip an account clicked (never what it typed), for the owner's figures",
+   "kept": "400 days",
+   "backup": false,
+   "authority": "kv"
+  },
   "betainv": {
    "class": "operational",
    "holds": "an owner-made beta invite code and how many sign-ups it allows",

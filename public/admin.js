@@ -530,6 +530,7 @@ function _admRenderTab(tab, backendLive, live){
     const steps = f ? [
       { label: 'Signed up', n: f.signup || 0 },
       { label: 'Got a real answer', n: f.activated || 0, pct: f.activatedPct },
+      { label: 'Set something to run again on its own', n: f.habit || 0, pct: f.habitPct },
       { label: 'Came back on another day', n: f.returned || 0, pct: f.returnedPct },
       { label: 'Paid', n: f.paid || 0, pct: f.paidPct },
     ] : [];
@@ -540,6 +541,19 @@ function _admRenderTab(tab, backendLive, live){
       + '<div class="adm-fnl-track"><div class="adm-fnl-fill" style="width:' + Math.max(Math.round(x.n / top * 100), 2) + '%"></div></div></div>').join('') + '</div>'
       + (f.firstAnswer && f.firstAnswer.measured ? '<p class="adm-note">' + (f.firstAnswer.under3MinPct != null ? f.firstAnswer.under3MinPct + '% got their first real answer within three minutes of signing up.' : '') + (f.avgDaysToPay != null ? ' Those who pay take ' + f.avgDaysToPay + ' days on average.' : '') + '</p>' : '')
       : '';
+    /* WHICH FIRST STEP KEEPS PEOPLE (Nov 8 audit GROWTH-010): for each
+       starting chip, of those who clicked it first, how many got an answer,
+       made something recurring, came back and paid. The chips' order is a
+       guess until this says otherwise. */
+    const g = live && live.firstGoals;
+    const gNames = { advice: 'Advice', research: 'Look up', write: 'Edit', build: 'Build', automate: 'Automate' };
+    const gPct = (v, n) => n > 0 ? Math.round(v / n * 100) + '%' : '-';
+    const goals = g && Object.values(g).some(x => x && x.chose)
+      ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>First chip</th><th>Chose it</th><th>Got an answer</th><th>Made it recurring</th><th>Came back</th><th>Paid</th></tr></thead><tbody>'
+        + Object.keys(gNames).map(k => { const x = g[k] || {}; const n = +x.chose || 0;
+            return '<tr><td>' + gNames[k] + '</td><td>' + n.toLocaleString() + '</td><td>' + gPct(+x.activated || 0, n) + '</td><td>' + gPct(+x.habit || 0, n) + '</td><td>' + gPct(+x.returned || 0, n) + '</td><td>' + gPct(+x.paid || 0, n) + '</td></tr>'; }).join('')
+        + '</tbody></table></div><p class="adm-note">Of the people who clicked each one first. Put the chip that keeps the most people first.</p>'
+      : '<div class="adm-empty">Nobody has clicked a starting chip yet.</div>';
     /* Retention by the week people started: the number to steer by. Each cell
        is the share of that week's sign-ups active that many weeks later; a
        week that has not finished yet is left empty, not counted as zero. */
@@ -576,6 +590,7 @@ function _admRenderTab(tab, backendLive, live){
       _admCard('Who signs up, and who stays', live ? (f ? funnel : '<div class="adm-empty">Nothing counted yet.</div>') : _admPending('Sign-up, first answer, coming back and paying, across everybody'))
       + _admCard('Retention by the week they started', live ? table : _admPending('Of each week\u2019s sign-ups, the share still here one, two, four, eight and twelve weeks later'))
       + _admCard('What brought people back', live ? brought : _admPending('Opened from a notification or a result email, and how many of those were returns'))
+      + _admCard('Which first step keeps people', live ? goals : _admPending('For each starting chip, how many who clicked it first got an answer, made it recurring, came back and paid'))
       + _admCard('Invite links', '<p class="adm-note">With SIGNUP_INVITE_ONLY=1, a new account needs one of these or an existing person\u2019s referral link.</p>'
         + '<div class="adm-stats"><label class="adm-note" for="adm-inv-n">How many</label> <input id="adm-inv-n" type="number" min="1" max="200" value="10" style="width:70px"> '
         + '<label class="adm-note" for="adm-inv-u">Uses each</label> <input id="adm-inv-u" type="number" min="1" max="50" value="1" style="width:70px"> '

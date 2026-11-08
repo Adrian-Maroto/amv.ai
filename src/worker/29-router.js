@@ -948,6 +948,7 @@ async function _route(request, env, ctx) {
     case '/v1/keys/list':    return apiKeyList(request, env);
     case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
     case '/v1/feedback':     return feedbackRecord(request, env);
+    case '/v1/firstgoal': return firstGoalRecord(request, env);
     case '/v1/arrival':      return arrivalRecord(request, env);
     case '/v1/support':      return supportSubmit(request, env);
     case '/v1/admin/support': return supportInbox(request, env);

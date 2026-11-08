@@ -1361,6 +1361,14 @@ const AMV_API = {
     return !!(d && d.ok);
   },
 
+  /* Which starting chip this person clicked first (only its name),
+     so the owner learns which first goal keeps people. Never fails a click. */
+  async firstGoal(goal){
+    if(!this.live) return false;
+    try{ const r = await this._fetch('/v1/firstgoal', {method:'POST', body:JSON.stringify({goal})}); const d = await r.json().catch(()=>null); return !!(d && d.ok); }
+    catch(e){ return false; }
+  },
+
   /* This account's invite link and what it has earned. The server is the only
      source of these numbers - nothing about a referral is decided here. */
   async referral(){

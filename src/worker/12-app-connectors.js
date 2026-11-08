@@ -1024,6 +1024,9 @@ async function autoCreate(request, env){
                      '. Remove one to add another, or upgrade for more.',
                code:'job_limit', have: budget.max }, 429);
   }
+  /* THE HABIT STEP (Nov 8 audit GROWTH-010): the first job somebody set to
+     run again on its own - the step between a first answer and coming back. */
+  if(repeat !== 'once'){ try{ await _funnelMark(env, user.email, 'habit'); }catch(e){ /* a count for the owner's figures: never decides access or money */ } }
   return json({ ok:true, item: _hookShown(item), emailReady,
                 ...(_hookIsOn(item) ? { hookUrl: await _hookAddress(env, request, user.email, item) } : {}),
                 // true only when they asked for email and cannot have it

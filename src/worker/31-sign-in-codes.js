@@ -1718,7 +1718,7 @@ async function _eraseAccount(env, email, opt) {
                  `retainidx:${email}`,
                  /* When support looked at the account (83-support.js). */
                  `accesslog:${email}`,
-                 ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
+                 ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`), `fgoal:${email}`];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const id of myPasskeys) loose.push(`pkcred:${id}`);
   for (const raw of loose) {

@@ -8971,6 +8971,9 @@ async function autoCreate(request, env){
                      '. Remove one to add another, or upgrade for more.',
                code:'job_limit', have: budget.max }, 429);
   }
+  /* THE HABIT STEP (Nov 8 audit GROWTH-010): the first job somebody set to
+     run again on its own - the step between a first answer and coming back. */
+  if(repeat !== 'once'){ try{ await _funnelMark(env, user.email, 'habit'); }catch(e){ /* a count for the owner's figures: never decides access or money */ } }
   return json({ ok:true, item: _hookShown(item), emailReady,
                 ...(_hookIsOn(item) ? { hookUrl: await _hookAddress(env, request, user.email, item) } : {}),
                 // true only when they asked for email and cannot have it
@@ -17613,6 +17616,7 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  'fgoal:',                 // which first goal somebody chose: an owner's figure that expires, nothing to restore
   /* Sign-in in flight: a passkey challenge (five minutes), a second-step
      challenge (ten), and an authenticator app half set up, its secret sealed
      with this deployment's key. Restoring any of them would put a spent or
@@ -20102,6 +20106,7 @@ async function _route(request, env, ctx) {
     case '/v1/keys/list':    return apiKeyList(request, env);
     case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
     case '/v1/feedback':     return feedbackRecord(request, env);
+    case '/v1/firstgoal': return firstGoalRecord(request, env);
     case '/v1/arrival':      return arrivalRecord(request, env);
     case '/v1/support':      return supportSubmit(request, env);
     case '/v1/admin/support': return supportInbox(request, env);
@@ -22834,7 +22839,7 @@ async function _eraseAccount(env, email, opt) {
                  `retainidx:${email}`,
                  /* When support looked at the account (83-support.js). */
                  `accesslog:${email}`,
-                 ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
+                 ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`), `fgoal:${email}`];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const id of myPasskeys) loose.push(`pkcred:${id}`);
   for (const raw of loose) {
@@ -36269,7 +36274,7 @@ async function _growthAdd(env, kind, day, who){
    No step is inferred. `activated` is a real answer AMV produced for them,
    `returned` is a second distinct day, `paid` is a verified payment. A funnel
    made of proxies tells you a story rather than the truth. */
-const FUNNEL_STEPS = ['signup', 'activated', 'returned', 'paid'];
+const FUNNEL_STEPS = ['signup', 'activated', 'habit', 'returned', 'paid'];
 const FUNNEL_TTL_S = 400 * 86400;
 
 async function _funnelMark(env, email, step){
@@ -36291,7 +36296,10 @@ async function _funnelMark(env, email, step){
        it. */
     await env.AMV_KV.put(k, String(Date.now()), { expirationTtl: FUNNEL_TTL_S });
     await _tallyAdd(env, `funnel:${step}`, em, 1);
-    if(step !== 'signup') await _recordGrowth(env, step, em);
+    if(step !== 'signup' && step !== 'habit') await _recordGrowth(env, step, em);
+    /* And by the goal they chose first, so the owner sees which first goal
+       turns into people who stay (Nov 8 audit GROWTH-010). */
+    if(step !== 'signup'){ try{ const g = await env.AMV_KV.get('fgoal:' + em); if(g && FIRST_GOALS.includes(g)) await _tallyAdd(env, 'goal:' + g + ':' + step, em, 1); }catch(e){ /* a count for the owner's figures */ } }
     /* How long it took them to pay, accumulated rather than stored per user, so
        the average is available without reading every account. */
     /* HOW LONG TO THE FIRST REAL ANSWER (Oct 31 audit, item 98: "first value
@@ -36342,6 +36350,7 @@ async function _funnelReport(env){
     ...out,
     firstAnswer: { within: ttv, measured: ttvN, under3MinPct: ttvN > 0 ? +((ttv['3m'] / ttvN) * 100).toFixed(1) : null },
     activatedPct: pct(out.activated),
+    habitPct: pct(out.habit),
     returnedPct: pct(out.returned),
     paidPct: pct(out.paid),
     avgDaysToPay: days,
@@ -36350,6 +36359,42 @@ async function _funnelReport(env){
        to discover when the numbers do not match the user count. */
     note: 'Counted from when funnel tracking was switched on, so accounts older than that are not included.',
   };
+}
+
+/* WHAT SOMEBODY CAME FOR FIRST (Nov 8 audit GROWTH-010). The first starting
+   chip a new person clicks under the box (Advice, Look up, Edit, Build,
+   Automate) is kept once per account - only its name, never what they
+   typed - and every later
+   funnel step is also counted under it. The owner then sees, per goal, how
+   many chose it, got an answer, made it recurring, came back and paid -
+   which is how the order of the chips gets decided by what keeps people,
+   not by guessing. */
+const FIRST_GOALS = ['advice', 'research', 'write', 'build', 'automate'];
+async function firstGoalRecord(request, env){
+  if(request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const user = await requireUser(request, env);
+  if(!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const goal = String(body.goal || '');
+  if(!FIRST_GOALS.includes(goal)) return json({ error: 'unknown goal', code: 'bad_goal' }, 400);
+  const em = String(user.email).toLowerCase();
+  try{
+    if(await env.AMV_KV.get('fgoal:' + em)) return json({ ok: true, kept: false });   // the first choice stands
+    await env.AMV_KV.put('fgoal:' + em, goal, { expirationTtl: FUNNEL_TTL_S });
+    await _tallyAdd(env, 'goal:' + goal + ':chose', em, 1);
+  }catch(e){ return json({ ok: true, kept: false }); }   // a count for the owner's figures: never fails the person
+  return json({ ok: true, kept: true });
+}
+async function _goalReport(env){
+  const out = {};
+  for(const g of FIRST_GOALS){
+    const row = {};
+    for(const step of ['chose', 'activated', 'habit', 'returned', 'paid']){
+      try{ row[step] = Math.max(0, await _tallyGet(env, 'goal:' + g + ':' + step)); }catch(e){ row[step] = 0; }
+    }
+    out[g] = row;
+  }
+  return out;
 }
 
 /* Read the last N days of a growth series as [{date, count}], oldest first. */
@@ -36678,6 +36723,7 @@ async function adminStats(request, env) {
        onboarding work is trying to move, and the only one that says whether it
        did (AMV-101). */
     funnel: await _funnelReport(env),
+    firstGoals: await _goalReport(env),
     retention: await _retentionReport(env).catch(() => null),
     arrivals: await _arrivalsByChannel(env).catch(() => null),
     revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,

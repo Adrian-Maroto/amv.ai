@@ -1361,6 +1361,14 @@ const AMV_API = {
     return !!(d && d.ok);
   },
 
+  /* Which starting chip this person clicked first (only its name),
+     so the owner learns which first goal keeps people. Never fails a click. */
+  async firstGoal(goal){
+    if(!this.live) return false;
+    try{ const r = await this._fetch('/v1/firstgoal', {method:'POST', body:JSON.stringify({goal})}); const d = await r.json().catch(()=>null); return !!(d && d.ok); }
+    catch(e){ return false; }
+  },
+
   /* This account's invite link and what it has earned. The server is the only
      source of these numbers - nothing about a referral is decided here. */
   async referral(){
@@ -10760,7 +10768,7 @@ function _chip(kind, label, prompt){
     advice:'<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
     automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
   }[kind]||'<circle cx="12" cy="12" r="9"/>';
-  return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+
+  return '<button class="chome-chip" data-q="'+escH(prompt)+'" data-kind="'+escH(kind)+'">'+
     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+ic+'</svg>'+
     escH(label)+'</button>';
 }
@@ -11094,6 +11102,10 @@ function renderChatMsgs() {
         _chip('build','Build','Build me a small working app I can actually use, run it, and show me the result. Ask me what it should do first.')+
         _chip('automate','Automate','Every morning at 7, find what changed overnight in the things I follow and have a short brief ready. Ask me what to follow first.');
       chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
+        /* The first chip this person ever clicks, by its name only, so the
+           owner learns which starting point turns into people who stay
+           (Nov 8 audit GROWTH-010). Sent once; the server keeps the first. */
+        try{ if(loadStr('amv_firstgoal')!=='1'){ saveStr('amv_firstgoal','1'); if(window.AMV_API && AMV_API.firstGoal) AMV_API.firstGoal(p.dataset.kind); } }catch(e){}
         const ta=$('mta');
         if(ta){ta.value=p.dataset.q;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';ta.focus();}
       }));
