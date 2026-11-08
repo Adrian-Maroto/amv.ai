@@ -813,6 +813,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "erased": {
+   "class": "security",
+   "holds": "that an account was erased, and when - a hash of the address, nothing else - so a restore never brings it back",
+   "kept": "kept after deletion so a restore cannot undo it",
+   "backup": true,
+   "authority": "kv"
+  },
   "totpans": {
    "class": "security",
    "holds": "the answer to turning on an authenticator app (its recovery codes), sealed, so a lost answer can be shown again",

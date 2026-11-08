@@ -111,7 +111,12 @@ async function _fileIndexRemove(env, email, files){
   if (!(env && env.VECTORS && typeof env.VECTORS.deleteByIds === 'function')) { audit(env, 'file_index_remove_unbound', { email }); return false; }
   const ns = await _fidxSpace(email);
   const ids = [];
-  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(await _fidxId(ns, f.id, i));
+  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) {
+    ids.push(await _fidxId(ns, f.id, i));
+    /* The ids of the first format (R19), so passages kept before the change
+       are deletable too - only the first ten ever fitted. */
+    if (i < 10) ids.push(ns + ':' + f.id + ':' + i);
+  }
   if (!ids.length) return true;
   try { for (let i = 0; i < ids.length; i += 100) await env.VECTORS.deleteByIds(ids.slice(i, i + 100)); return true; }
   catch (e) { audit(env, 'file_index_remove_failed', { email, n: ids.length }); return false; }

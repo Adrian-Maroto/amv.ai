@@ -17638,6 +17638,7 @@ const BACKUP_PREFIXES = [
   'agents:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
+  'erased:',   // which accounts were erased (a hash): a rebuilt store must still refuse to bring them back
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
   'game:', 'gameown:',
   'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
@@ -18181,6 +18182,14 @@ async function _restoreEntries(env, entries, mode, t){
     if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
       unrestorable++; if(lost.length < 20) lost.push(key); continue;
     }
+    /* AN ERASED ACCOUNT STAYS ERASED (Nov 8 verified audit, batch B). A
+       snapshot taken before somebody deleted their account holds their
+       records, and writing it back brought the account back: conversations,
+       files, balance. Every erasure leaves a marker (a hash of the address,
+       nothing else), and a record of that address is not restored - unless
+       the person has signed up again since, and the account is theirs now. */
+    const who = _restoreOwner(key);
+    if(who && await _restoreErased(env, who, t)){ skipped++; t.erasedSkipped = (t.erasedSkipped || 0) + 1; continue; }
     if(mode === 'missing'){
       const existing = await env.AMV_KV.get(key);
       if(existing != null){ skipped++; continue; }
@@ -18258,6 +18267,23 @@ async function _restoreEntries(env, entries, mode, t){
    was given would be worse than one that overwrites too much - an operator has
    to be able to trust that a restore restores. These are the four facts that
    mean "this access was taken away", and nothing else is touched. */
+/* The address a record belongs to, when its key names one. */
+function _restoreOwner(key){
+  const rest = String(key).slice(String(key).indexOf(':') + 1);
+  const first = rest.split(':')[0];
+  return /^[^\s@]+@[^\s@]+$/.test(first) ? first.toLowerCase() : '';
+}
+const _erasedKey = async (email) => 'erased:' + (await _sha256Hex('amv-erased:' + String(email || '').toLowerCase()));
+async function _restoreErased(env, email, t){
+  t._erasedSeen = t._erasedSeen || new Map();
+  if (t._erasedSeen.has(email)) return t._erasedSeen.get(email);
+  let gone = false;
+  try {
+    if (await env.AMV_KV.get(await _erasedKey(email))) gone = !(await env.AMV_KV.get('acct:' + email));
+  } catch (e) { gone = true; /* not known whether it was erased: not brought back */ }
+  t._erasedSeen.set(email, gone);
+  return gone;
+}
 async function _restoreMerge(env, key, incoming) {
   try {
     /* The token epoch is a bare counter and the rule is simply the larger one.
@@ -22522,6 +22548,11 @@ async function runPendingErasures(env, max) {
 
 async function _eraseAccount(env, email, opt) {
   const retry = !!(opt && opt.retry);
+  /* First, the marker a restore reads (27-backup-restore.js): a hash of the
+     address and when, so a snapshot taken before this cannot bring the
+     account back. Nothing else about the person is kept in it. */
+  try { await env.AMV_KV.put(await _erasedKey(email), JSON.stringify({ at: Date.now() })); }
+  catch (e) { audit(env, 'erase_marker_failed', {}); }
   // (AMV-015) Erase referenced records too, not just the top-level per-user rows.
 
   /* EVERY PHASE REPORTS INTO THE SAME LIST.
@@ -31987,15 +32018,20 @@ async function adminFinance(request, env) {
   const ledgerAll = await _readTxnLog(env, 301);
   const ledgerMore = ledgerAll.length > 300;
   const ledger = ledgerAll.slice(0, 300);
-  const ledgerTx = ledger.map(t => ({
+  /* A line recorded twice under one id - left by the code before the
+     transaction's record lived in the strong object (Nov 8 verified audit
+     R09) - is shown once and named, so it is counted once and looked at. */
+  const seenTx = new Set(), duplicateIds = [];
+  const ledgerTx = ledger.filter(t => { if (!t || !t.id) return true; if (seenTx.has(t.id)) { if (duplicateIds.length < 50 && !duplicateIds.includes(t.id)) duplicateIds.push(t.id); return false; } seenTx.add(t.id); return true; }).map(t => ({
     id: t.id, date: t.ts, email: t.email || '-', amount: t.amount, refunded: t.status === 'refunded' ? t.amount : 0,
     currency: t.currency, status: t.status, description: t.kind || '', provider: t.provider, last4: null, receipt: null,
   }));
+  if (duplicateIds.length) audit(env, 'ledger_duplicate_lines', { n: duplicateIds.length });
 
   if (!env.STRIPE_SECRET_KEY) {
     // No Stripe, but we may still have PayPal / marketplace transactions.
     const sum = _totalsByCurrency(ledgerTx, (t) => t.status === 'succeeded');
-    return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx, hasMore: ledgerMore,
+    return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx, hasMore: ledgerMore, duplicateIds,
       totals: sum.totals, byCurrency: sum.byCurrency,
       note: ledgerTx.length ? 'Stripe not connected - showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
   }
@@ -32038,7 +32074,7 @@ async function adminFinance(request, env) {
   return json({
     ok: true, configured: true,
     transactions,
-    hasMore: !!d.has_more || ledgerMore,
+    hasMore: !!d.has_more || ledgerMore, duplicateIds,
     nextCursor: stripeTx.length ? stripeTx[stripeTx.length - 1].id : null,
     totals: sum.totals, byCurrency: sum.byCurrency,
   });
@@ -49189,7 +49225,12 @@ async function _fileIndexRemove(env, email, files){
   if (!(env && env.VECTORS && typeof env.VECTORS.deleteByIds === 'function')) { audit(env, 'file_index_remove_unbound', { email }); return false; }
   const ns = await _fidxSpace(email);
   const ids = [];
-  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(await _fidxId(ns, f.id, i));
+  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) {
+    ids.push(await _fidxId(ns, f.id, i));
+    /* The ids of the first format (R19), so passages kept before the change
+       are deletable too - only the first ten ever fitted. */
+    if (i < 10) ids.push(ns + ':' + f.id + ':' + i);
+  }
   if (!ids.length) return true;
   try { for (let i = 0; i < ids.length; i += 100) await env.VECTORS.deleteByIds(ids.slice(i, i + 100)); return true; }
   catch (e) { audit(env, 'file_index_remove_failed', { email, n: ids.length }); return false; }

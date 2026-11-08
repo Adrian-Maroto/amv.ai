@@ -18,7 +18,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'v8fixed.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, counter, _claimOnce, _claimOnceDetail, _releaseClaim, _withWallet, _revRead, _fileIndexRemove, _recordTxn, _autoQuarantined, _pgRevNext, _pgGuarded, _pgMirror, _autoQueueConsume, _fidxSpace, signToken, libPut, libDelete, libList, _libRec, _agentJarSave, _agentJarLoad, _agentSignInsShown, _agentJarForget, _agentJarKey, _wallet, connSeal, totpConfirm, _totpNewSecret, _totpAt, _libFinishDeletes };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, counter, _claimOnce, _claimOnceDetail, _releaseClaim, _withWallet, _revRead, _fileIndexRemove, _recordTxn, _autoQuarantined, _pgRevNext, _pgGuarded, _pgMirror, _autoQueueConsume, _fidxSpace, signToken, libPut, libDelete, libList, _libRec, _agentJarSave, _agentJarLoad, _agentSignInsShown, _agentJarForget, _agentJarKey, _wallet, connSeal, totpConfirm, _totpNewSecret, _totpAt, _libFinishDeletes, _restoreEntries, _erasedKey, adminFinance, _fidxId };\n');
 globalThis.fetch = async () => { throw new Error('the network is not used here'); };
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (String(a[0]).startsWith('AUDIT')) return; quiet(...a); };
@@ -278,6 +278,37 @@ section('The second sign-in step is on only when the account says so (R18)');
   resume.resolve(); const original = await first;
   ok(replay.status !== 200 && !body.ok && !body.recovery, 'a replay while the account is still being written is not told the app is on', { status: replay.status, code: body.code });
   ok(original.status === 503 && !JSON.parse(e._kv.get('acct:' + email)).totp, 'and the failed write leaves the app off');
+}
+
+section('A restore never brings back an account erased since the snapshot (batch B)');
+{
+  const e = environment();
+  await e.AMV_KV.put(await W._erasedKey('gone@example.com'), JSON.stringify({ at: Date.now() }));
+  const t = { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] };
+  await W._restoreEntries(e, [['acct:gone@example.com', '{"name":"Gone"}'], ['wallet:gone@example.com', '{"balance":40}'], ['acct:here@example.com', '{"name":"Here"}']], 'overwrite', t);
+  ok(!e._kv.has('acct:gone@example.com') && !e._kv.has('wallet:gone@example.com') && t.erasedSkipped === 2, 'an erased address’s records are not written back', t);
+  ok(e._kv.has('acct:here@example.com'), 'everybody else’s are');
+  e._kv.set('acct:gone@example.com', '{"name":"Back again"}');
+  const t2 = { restored: 0, skipped: 0, refused: 0, unrestorable: 0, heldForward: 0, lost: [] };
+  await W._restoreEntries(e, [['wallet:gone@example.com', '{"balance":0}']], 'overwrite', t2);
+  ok(e._kv.has('wallet:gone@example.com'), 'unless the person signed up again since: then the account is theirs');
+}
+
+section('Lines left twice under one id by the old code are counted once and named');
+{
+  const e = environment(); e.ADMIN_TOKEN = 'admin-token-for-the-test-0123456789';
+  const line = { id: 'dup-1', ts: 100, provider: 'paypal', email: 'p@example.com', amount: 10, currency: 'USD', kind: 'Pro', status: 'succeeded' };
+  e._kv.set('txn:e:9999999999899:dup-1', JSON.stringify(line)); e._meta.set('txn:e:9999999999899:dup-1', line);
+  e._kv.set('txn:e:9999999999799:dup-1', JSON.stringify({ ...line, ts: 200 })); e._meta.set('txn:e:9999999999799:dup-1', { ...line, ts: 200 });
+  const r = await (await W.adminFinance(new Request('https://api.amv.test/admin/finance', { headers: { 'X-Admin-Token': e.ADMIN_TOKEN, 'CF-Connecting-IP': '9.9.9.9' } }), e)).json();
+  ok(r.transactions && r.transactions.filter(x => x.id === 'dup-1').length === 1 && (r.duplicateIds || []).includes('dup-1'), 'shown once, and named for somebody to look at', { n: (r.transactions || []).length, dup: r.duplicateIds, err: r.error });
+}
+
+section('Passages kept under the first id format are deletable too');
+{
+  const e = environment(); const ns = await W._fidxSpace('audit@example.com');
+  e._vectors.set(ns + ':f9:0', {}); e._vectors.set(await W._fidxId(ns, 'f9', 1), {});
+  ok(await W._fileIndexRemove(e, 'audit@example.com', [{ id: 'f9', vec: 2 }]) && e._vectors.size === 0, 'old and new ids both go', [...e._vectors.keys()]);
 }
 
 section('What already worked still works');

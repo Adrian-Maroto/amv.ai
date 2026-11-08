@@ -61,6 +61,7 @@ const BACKUP_PREFIXES = [
   'agents:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
+  'erased:',   // which accounts were erased (a hash): a rebuilt store must still refuse to bring them back
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
   'game:', 'gameown:',
   'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
@@ -604,6 +605,14 @@ async function _restoreEntries(env, entries, mode, t){
     if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
       unrestorable++; if(lost.length < 20) lost.push(key); continue;
     }
+    /* AN ERASED ACCOUNT STAYS ERASED (Nov 8 verified audit, batch B). A
+       snapshot taken before somebody deleted their account holds their
+       records, and writing it back brought the account back: conversations,
+       files, balance. Every erasure leaves a marker (a hash of the address,
+       nothing else), and a record of that address is not restored - unless
+       the person has signed up again since, and the account is theirs now. */
+    const who = _restoreOwner(key);
+    if(who && await _restoreErased(env, who, t)){ skipped++; t.erasedSkipped = (t.erasedSkipped || 0) + 1; continue; }
     if(mode === 'missing'){
       const existing = await env.AMV_KV.get(key);
       if(existing != null){ skipped++; continue; }
@@ -681,6 +690,23 @@ async function _restoreEntries(env, entries, mode, t){
    was given would be worse than one that overwrites too much - an operator has
    to be able to trust that a restore restores. These are the four facts that
    mean "this access was taken away", and nothing else is touched. */
+/* The address a record belongs to, when its key names one. */
+function _restoreOwner(key){
+  const rest = String(key).slice(String(key).indexOf(':') + 1);
+  const first = rest.split(':')[0];
+  return /^[^\s@]+@[^\s@]+$/.test(first) ? first.toLowerCase() : '';
+}
+const _erasedKey = async (email) => 'erased:' + (await _sha256Hex('amv-erased:' + String(email || '').toLowerCase()));
+async function _restoreErased(env, email, t){
+  t._erasedSeen = t._erasedSeen || new Map();
+  if (t._erasedSeen.has(email)) return t._erasedSeen.get(email);
+  let gone = false;
+  try {
+    if (await env.AMV_KV.get(await _erasedKey(email))) gone = !(await env.AMV_KV.get('acct:' + email));
+  } catch (e) { gone = true; /* not known whether it was erased: not brought back */ }
+  t._erasedSeen.set(email, gone);
+  return gone;
+}
 async function _restoreMerge(env, key, incoming) {
   try {
     /* The token epoch is a bare counter and the rule is simply the larger one.

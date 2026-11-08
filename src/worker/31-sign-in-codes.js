@@ -1243,6 +1243,11 @@ async function runPendingErasures(env, max) {
 
 async function _eraseAccount(env, email, opt) {
   const retry = !!(opt && opt.retry);
+  /* First, the marker a restore reads (27-backup-restore.js): a hash of the
+     address and when, so a snapshot taken before this cannot bring the
+     account back. Nothing else about the person is kept in it. */
+  try { await env.AMV_KV.put(await _erasedKey(email), JSON.stringify({ at: Date.now() })); }
+  catch (e) { audit(env, 'erase_marker_failed', {}); }
   // (AMV-015) Erase referenced records too, not just the top-level per-user rows.
 
   /* EVERY PHASE REPORTS INTO THE SAME LIST.
