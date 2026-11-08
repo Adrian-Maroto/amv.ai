@@ -12897,6 +12897,11 @@ async function runDueAutomations(env, atMs, opts){
    queue consumer calls it for one account per message when the AMV_JOBS
    queue is bound (_autoQueueConsume). `deadline` is when it must stop
    starting new work. Returns what it scanned, ran and failed. */
+/* A run's lease: longer than any run is allowed to take (the queue's
+   AUTO_QUEUE_RUN_MS, four minutes, plus the tick's own budget), short enough
+   that a run cut off by a deploy is taken over within the quarter hour. */
+const AUTO_RUN_LEASE_S = 15 * 60;
+const AUTO_RUN_MAX_TRIES = 3;
 async function _autoRunAccount(env, email, rec, now, deadline){
   /* In quarantine (15a-job-queue.js, TASK-005): nothing runs until released. */
   if(await _autoQuarantined(env, email)) return { scanned: 0, ran: 0, failed: 0, quarantined: true };
@@ -13185,7 +13190,43 @@ async function _autoRunAccount(env, email, rec, now, deadline){
     // AMV-032: LEASE this specific run slot so two overlapping/retried cron
     // invocations can't both execute the same due job (duplicate model call or
     // email). The key is unique to this item's scheduled time; atomic on D1.
-    if(!(await _claimOnce(env, 'autorun', `${email}:${item.id}:${item.next}`, 3*86400))) { await releaseItem(); continue; }
+    /* A RUN THAT DIED IS RESUMED, NOT LOST FOR THREE DAYS (Nov 8 audit
+       TASK-017). The slot's claim lasted three days, so a Worker that
+       stopped mid-run - a deploy, a crash, a platform restart - left the
+       slot claimed and the job's `next` unmoved: every tick after found it
+       claimed and skipped it, silently, until the claim ran out. Now:
+         - the claim is a lease a little longer than any run can take, so a
+           run that died is taken over by the next tick that finds it;
+         - a run that FINISHED writes a mark at once (autodone), before any
+           bookkeeping - a tick that finds the mark knows the work is done
+           even if the record recording it was never saved, and only moves
+           the job on, never running it a second time;
+         - every takeover is counted (autotry), and a slot that has died
+           AUTO_RUN_MAX_TRIES times is stopped and says so on its row,
+           instead of crashing for ever. */
+    const runSlot = `${email}:${item.id}:${item.next}`;
+    {
+      let doneMark = null;
+      try{ doneMark = await env.AMV_KV.get('autodone:' + runSlot); }catch(e){ doneMark = null; }
+      if(doneMark){
+        audit(env, 'auto_run_recovered', { email, item: item.id });
+        item.lastError = 'the last run finished, but what it produced could not be saved - it was not run again';
+        item.runs = (item.runs || 0) + 1;
+        item.next = _autoNextAfter(item, now, 'ran');
+        changed = true; await releaseItem(); continue;
+      }
+    }
+    if(!(await _claimOnce(env, 'autorun', runSlot, AUTO_RUN_LEASE_S))) { await releaseItem(); continue; }
+    {
+      let tries = 0;
+      try{ tries = (+(await env.AMV_KV.get('autotry:' + runSlot)) || 0) + 1; await env.AMV_KV.put('autotry:' + runSlot, String(tries), { expirationTtl: 3 * 86400 }); }catch(e){ tries = 1; }
+      if(tries > AUTO_RUN_MAX_TRIES){
+        audit(env, 'auto_run_gave_up', { email, item: item.id, tries: tries - 1 });
+        item.lastError = 'stopped: this run was cut off ' + (tries - 1) + ' times before it could finish. It runs again at its next time.';
+        item.next = _autoNextAfter(item, now, 'failed');
+        changed = true; await releaseItem(); continue;
+      }
+    }
 
     /* What this run may actually do: the job's level, capped by the account's
        ceiling, decided HERE - at the point of spending and sending - so
@@ -13297,6 +13338,9 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
                                             _neverList(rec), deadline, agent ? Object.assign({}, agent, { _ek: runEk, _memory: _agentMemory(rec, agent.id) }) : agent);
       const exec = tried.exec;
+      /* Finished: marked before anything else, so a stop from here on is
+         recovered as "done" rather than run again (see the lease above). */
+      try{ await env.AMV_KV.put('autodone:' + runSlot, '1', { expirationTtl: 3 * 86400 }); }catch(e){ audit(env, 'auto_done_mark_failed', { email, item: item.id }); }
       item.attempts = (Number(item.attempts) || 0) + tried.attempts;
       if(exec && exec.quiet){
         if(typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
@@ -17616,6 +17660,7 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  'autodone:', 'autotry:',  // a run's finished mark and its crash count: three days, about a run already over
   'fgoal:',                 // which first goal somebody chose: an owner's figure that expires, nothing to restore
   /* Sign-in in flight: a passkey challenge (five minutes), a second-step
      challenge (ten), and an authenticator app half set up, its secret sealed

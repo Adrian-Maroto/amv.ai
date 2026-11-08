@@ -89,6 +89,35 @@ section('With no queue, nothing changes: the tick runs the work itself');
   ok(modelCalls >= 2 && r.ran >= 2 && !r.enqueued, 'both accounts’ jobs ran in the tick', { modelCalls, r });
 }
 
+section('A run cut off part way is taken over, a finished one is not repeated, one that keeps dying stops (Nov 8 audit TASK-017)');
+{
+  const slot = () => { const it = rec(ME).items[0]; return ME + ':' + it.id + ':' + it.next; };
+  /* Cut off: the slot was claimed by a run that died - no finished mark, the
+     record never saved. Before, the claim held for three days and the job
+     was skipped silently every tick. The lease ends; the next tick runs it. */
+  due(ME); modelCalls = 0;
+  const s1 = slot();
+  store.set('autorun:' + s1, '1');                 // the dead run's claim
+  await W.runDueAutomations(env, Date.now());
+  ok(modelCalls === 0 && rec(ME).items[0].next <= Date.now(), 'while the dead run’s lease lasts, it is not run twice', modelCalls);
+  store.delete('autorun:' + s1);                   // the lease ran out
+  await W.runDueAutomations(env, Date.now());
+  ok(modelCalls >= 1 && rec(ME).items[0].next > Date.now(), 'once it ends, the next tick runs the job and moves it on', { modelCalls, next: rec(ME).items[0].next });
+  /* Finished, record not saved: the mark says it is done, so it is moved on
+     and not run again. */
+  due(ME); modelCalls = 0;
+  store.set('autodone:' + slot(), '1');
+  await W.runDueAutomations(env, Date.now());
+  ok(modelCalls === 0 && rec(ME).items[0].next > Date.now() && /could not be saved - it was not run again/.test(rec(ME).items[0].lastError || ''),
+     'a run that finished is not run a second time; the row says what happened', rec(ME).items[0].lastError);
+  /* Cut off three times: stopped for this slot, saying why. */
+  due(ME); modelCalls = 0;
+  store.set('autotry:' + slot(), '3');
+  await W.runDueAutomations(env, Date.now());
+  ok(modelCalls === 0 && /cut off 3 times/.test(rec(ME).items[0].lastError || '') && rec(ME).items[0].next > Date.now(), 'a slot that keeps dying is stopped and its row says so', rec(ME).items[0].lastError);
+  const r = rec(ME); r.items[0].lastError = null; store.set('auto:' + ME, JSON.stringify(r));
+}
+
 section('With a queue, the tick sends one message per due account and runs nothing itself');
 {
   env.AMV_JOBS = QUEUE;

@@ -157,6 +157,7 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  'autodone:', 'autotry:',  // a run's finished mark and its crash count: three days, about a run already over
   'fgoal:',                 // which first goal somebody chose: an owner's figure that expires, nothing to restore
   /* Sign-in in flight: a passkey challenge (five minutes), a second-step
      challenge (ten), and an authenticator app half set up, its secret sealed
