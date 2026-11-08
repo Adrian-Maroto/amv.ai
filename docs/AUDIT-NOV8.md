@@ -29,6 +29,7 @@ each item, and what remains the owner's or the Postgres cutover's.
 | READY-021, READY-026 | The hourly check now proves the hosted browser (opens, renders one line, reads it back) and the meaning index (two phrases, two vectors that agree), held like the model while the day's ceiling is reached; every configured capability is now exercised. | configured-is-not-the-same-as-working |
 | BETA-002 | An invite has an end date (1-365 days, 30 by default), can be revoked, and the owner console lists every invite with uses spent and whether it is open. | the-beta-lets-in-only-who-was-invited |
 | DOC-020, DOC-021 | The Nov 3 and Nov 7 status pages no longer say nothing is left; they name what is open and point here. | - |
+| FILE-033 | A library delete marks the files (gone from the list at once), deletes and checks the bytes, and removes only the records whose bytes are confirmed gone; any left stay marked and are removed by the next delete. | your-files-are-in-your-account |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
 ## Postgres mirror, ahead of the cutover

@@ -163,6 +163,25 @@ section('Deleting removes the bytes, and so does deleting the account');
   ok(!(await W.DB.get(env, 'lib', 'gone@example.com')), 'and so is the list', true);
 }
 
+section('A file whose bytes will not delete is hidden, kept on the list, and removed by the next delete (Nov 8 audit FILE-033)');
+{
+  const r2 = mkR2(), env = mkEnv(r2);
+  const tok = await signup(env, 'stuck@example.com');
+  const one = await jsonOf(await req(env, '/v1/library/put', file('s.txt', 'stuck'), tok));
+  const realDel = r2.delete;
+  r2.delete = async () => { throw new Error('storage unavailable'); };
+  const del = await req(env, '/v1/library/delete', { ids: [one.file.id] }, tok);
+  r2.delete = realDel;
+  const d = await jsonOf(del);
+  ok(del.status === 502 && d.error === 'delete_incomplete', 'the delete says it is not finished', d);
+  const list = await jsonOf(await req(env, '/v1/library', undefined, tok, 'GET'));
+  const rec = await W.DB.get(env, 'lib', 'stuck@example.com');
+  ok(!(list.files || []).some(f => f.id === one.file.id) && rec.files.some(f => f.id === one.file.id && f.deleting) && r2._m.size === 1,
+     'it is gone from the list, but its record is kept, pointing at the bytes still there', { list: (list.files || []).length, kept: rec.files.length, objects: r2._m.size });
+  const again = await jsonOf(await req(env, '/v1/library/delete', { ids: [] .concat(one.file.id) }, tok));
+  ok(again.ok && r2._m.size === 0 && !(await W.DB.get(env, 'lib', 'stuck@example.com')).files.length, 'the next delete removes the bytes, then the record', again);
+}
+
 section('A file must be what it says it is: programs and macro-carrying Office files are not kept');
 {
   const r2 = mkR2(), env = mkEnv(r2);

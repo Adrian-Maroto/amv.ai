@@ -43408,7 +43408,7 @@ async function libList(request, env){
   if (!libConfigured(env)) return _libOff();
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
-  const files = (rec.files || []).filter(f => !f.pending).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
+  const files = (rec.files || []).filter(f => !f.pending && !f.deleting).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
   return json({ ok: true, configured: true, files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
 
@@ -43501,7 +43501,7 @@ async function libPut(request, env){
          are deleted below, not left behind unseen and uncounted (Nov 1 audit FILE-004). */
       for (const f of all) if (f.pending && now - (f.added || 0) >= 600000) abandoned.push(f.id);
       rec.files = all.filter(f => !f.pending || now - (f.added || 0) < 600000);
-      const same = rec.files.find(f => f.sig === sig && !f.pending);
+      const same = rec.files.find(f => f.sig === sig && !f.pending && !f.deleting);
       if (same) { same.used = now; return { dup: _libMeta(same) }; }
       const u = _libUsage(rec);
       if (u.files + 1 > limit.files || u.bytes + meta.bytes > limit.bytes) return { full: u };
@@ -43545,7 +43545,7 @@ async function libGet(request, env){
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const id = new URL(request.url).searchParams.get('id') || '';
   const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
-  const f = (rec.files || []).find(x => x.id === id && !x.pending);
+  const f = (rec.files || []).find(x => x.id === id && !x.pending && !x.deleting);
   if (!f) return json({ error: 'not_found', message: 'That file is not in your account any more.' }, 404);
   const obj = await env.AMV_FILES.get((await _libPrefix(user.email)) + id);
   if (!obj) {
@@ -43563,24 +43563,34 @@ async function libDelete(request, env){
   const ids = new Set((Array.isArray(b.ids) ? b.ids : []).map(String).slice(0, 1000));
   if (!ids.size) return json({ error: 'bad_request', message: 'Say which files to delete.' }, 400);
   const prefix = await _libPrefix(user.email);
+  /* THE RECORD GOES LAST (Nov 8 audit FILE-033). The entries were removed
+     first and the bytes after, so bytes that would not delete were left in
+     storage with nothing pointing at them - never shown, never swept, still
+     somebody's file. Now: marked as being deleted (gone from the person's
+     list at once), the bytes deleted and checked, and only the entries whose
+     bytes are confirmed gone are removed. Any left stay marked, still
+     counted against the limit because they still take the space, and are
+     tried again by the next delete. */
   try {
-    await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !ids.has(f.id)); }, { files: [] });
+    await _withKind(env, LIB_KIND, user.email, (rec) => { for (const f of (rec.files || [])) if (ids.has(f.id) || f.deleting) { f.deleting = true; ids.add(f.id); } }, { files: [] });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was deleted - try again in a moment.' }, 503);
   }
-  /* The list no longer names them, so they are gone for the person. The bytes
-     going is what is checked: one that survives is reported, not hidden. */
   const keys = [...ids].map(id => prefix + id);
-  let left = 0;
+  const gone = new Set();
   try {
     await env.AMV_FILES.delete(keys);
-    for (const k of keys) if (await env.AMV_FILES.head(k)) left++;
-  } catch (e) { left = keys.length; }
+    for (const id of ids) if (!(await env.AMV_FILES.head(prefix + id))) gone.add(id);
+  } catch (e) { /* none confirmed gone: every entry stays marked */ }
+  try {
+    if (gone.size) await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); }, { files: [] });
+  } catch (e) { /* the bytes are gone; the marked entries are removed by the next delete */ }
+  const left = ids.size - gone.size;
   if (left) {
     audit(env, 'library_delete_incomplete', { by: user.email, left });
-    return json({ error: 'delete_incomplete', deleted: ids.size - left, message: 'Some of those files could not be removed from storage. Try again.' }, 502);
+    return json({ error: 'delete_incomplete', deleted: gone.size, message: 'Some of those files could not be removed from storage yet. They are hidden and will be removed - try again in a moment.' }, 502);
   }
-  return json({ ok: true, deleted: ids.size });
+  return json({ ok: true, deleted: gone.size });
 }
 
 /* POST /v1/library/move { ids: [], folder } - into a folder, or out of all of
@@ -43595,7 +43605,7 @@ async function libMove(request, env){
   if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);
   try {
     await _withKind(env, LIB_KIND, user.email, (rec) => {
-      for (const f of (rec.files || [])) if (ids.has(f.id) && !f.pending) f.folder = folder;
+      for (const f of (rec.files || [])) if (ids.has(f.id) && !f.pending && !f.deleting) f.folder = folder;
     }, { files: [] });
   } catch (e) {
     return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was moved - try again in a moment.' }, 503);
