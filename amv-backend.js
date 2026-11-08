@@ -13577,11 +13577,16 @@ async function _autoRunAccount(env, email, rec, now, deadline){
    from JWT_SECRET - so what sits in the queue, its retries and its dead
    letters, says nothing about who it is for. Messages already in flight with
    a plain address are still read. */
-let _qKeyP = null;
+/* Kept with the secret it was made from (Nov 8 audit QUEUE-013): a warm
+   isolate that cached the key went on using it after the secret rotated. */
+let _qKeyP = null, _qKeyFor = null;
 function _qKey(env){
   if(!env || !env.JWT_SECRET) return null;
-  if(!_qKeyP) _qKeyP = crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-queue-ref\n' + env.JWT_SECRET))
-    .then(h => crypto.subtle.importKey('raw', h, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']));
+  if(!_qKeyP || _qKeyFor !== env.JWT_SECRET){
+    _qKeyFor = env.JWT_SECRET;
+    _qKeyP = crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-queue-ref\n' + env.JWT_SECRET))
+      .then(h => crypto.subtle.importKey('raw', h, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']));
+  }
   return _qKeyP;
 }
 async function _qSeal(env, text){

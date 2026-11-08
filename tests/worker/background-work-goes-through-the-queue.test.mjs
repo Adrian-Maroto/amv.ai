@@ -25,7 +25,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'jobqueue.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { SWITCH_KEY, runDueAutomations, issueTokens, _qOpen, _auditPid };
+export { SWITCH_KEY, runDueAutomations, issueTokens, _qOpen, _qSeal, _auditPid };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -125,6 +125,14 @@ section('A restore with writes off holds every message for later (Nov 8 audit DR
   const after = await deliver([{ email: TWO }]);
   ok(after[0].acked && modelCalls === 1, 'and once writes are back on, the work runs', modelCalls);
   due(TWO);
+}
+
+section('The queue key follows its secret (Nov 8 audit QUEUE-013)');
+{
+  const a = { JWT_SECRET: 'first-secret-at-least-32-characters-long-xx' }, b = { JWT_SECRET: 'second-secret-at-least-32-characters-long-x' };
+  const sealed = await W._qSeal(a, 'who@example.com');
+  ok(await W._qOpen(a, sealed) === 'who@example.com', 'sealed and opened under the same secret');
+  ok(await W._qOpen(b, sealed) === '' && await W._qOpen(b, await W._qSeal(b, 'x@y.z')) === 'x@y.z', 'after the secret changes, the old key is not used in a warm isolate');
 }
 
 section('The kill switch and a paused account stop the consumer too');
