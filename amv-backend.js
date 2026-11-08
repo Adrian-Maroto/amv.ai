@@ -48223,8 +48223,7 @@ async function accountAccessLog(request, env){
    "configured and working" from "configured". A capability that fails is told
    to the owner once a day per capability, naming it, with the provider's own
    status code. The job queue, the hosted browser and the meaning index are
-   not exercised: each would spend real money or real work to prove itself,
-   and they say "not exercised" rather than pretending. */
+   exercised too (below), each with the smallest real thing it does. */
 const SYNTH_KEY = 'synth:last';
 /* The trigger that runs them (wrangler.toml crons) - once an hour. */
 const SYNTH_CRON = '17 * * * *';
@@ -48310,7 +48309,30 @@ SYNTH_PROBES.push({ id: 'job_queue', on: (env) => _jobQueueOn(env),
     if (!last || +last.sent < sentBefore) throw new Error('the probe sent at the last check was never delivered');
     if (+last.got - +last.sent > 3600 * 1000) throw new Error('the last probe took ' + Math.round((+last.got - +last.sent) / 60000) + ' minutes to arrive');
   } });
-const SYNTH_NOT_EXERCISED = ['browser', 'meaning'];
+/* THE TWO THAT WERE NEVER PROVED (Nov 8 audit READY-021/026). Both now do
+   one small real thing an hour: the meaning index embeds two short phrases
+   and they must come back as two vectors that agree; the hosted browser
+   opens, renders one line and reads it back. Each costs a fraction of a
+   cent an hour, and like the model they are held while the day's ceiling
+   is reached. */
+SYNTH_PROBES.push({ id: 'meaning', costs: true, on: (env) => _meaningOn(env),
+  run: async (env) => {
+    const out = await env.AI.run(MEANING_MODEL, { text: ['the cat sat on the mat', 'a cat is sitting on a mat'] });
+    const v = out && Array.isArray(out.data) ? out.data : null;
+    if (!v || v.length !== 2 || !v[0] || !v[0].length || v[0].length !== v[1].length) throw new Error('the model answered, but not with two matching vectors');
+    if (!(_cosine(v[0], v[1]) > 0.5)) throw new Error('two sentences that mean the same came back unrelated');
+  } });
+SYNTH_PROBES.push({ id: 'browser', costs: true, on: (env) => !!env.BROWSER,
+  run: async (env) => {
+    const b = await _webLaunch(env, {});
+    try {
+      const page = await b.newPage();
+      await page.setContent('<p id="p">amv-probe</p>');
+      const got = await page.evaluate(() => document.getElementById('p').textContent);
+      if (got !== 'amv-probe') throw new Error('the page opened, but did not read back what it was given');
+    } finally { try { await b.close(); } catch (e) { /* the session ends with its own timeout */ } }
+  } });
+const SYNTH_NOT_EXERCISED = [];
 
 /* A STOP MEANS NO PROVIDER IS CALLED (stop-means-stop-spending). Listing
    models costs nothing, but "paused" and "the day's ceiling is reached" are
@@ -48327,10 +48349,10 @@ async function _synthModelHeld(env) {
 async function runCapabilitySynthetics(env) {
   const at = Date.now();
   const results = {};
-  const modelHeld = SYNTH_PROBES[0].on(env) ? await _synthModelHeld(env) : '';
+  const modelHeld = SYNTH_PROBES.some(p => (p.id === 'model' || p.costs) && p.on(env)) ? await _synthModelHeld(env) : '';
   await Promise.all(SYNTH_PROBES.map(async (p) => {
     if (!p.on(env)) { results[p.id] = { ok: null, why: 'not configured' }; return; }
-    if (p.id === 'model' && modelHeld) { results[p.id] = { ok: null, why: modelHeld }; return; }
+    if ((p.id === 'model' || p.costs) && modelHeld) { results[p.id] = { ok: null, why: modelHeld }; return; }
     const t = Date.now();
     try { await _synthStep(p.run(env)); results[p.id] = { ok: true, ms: Date.now() - t }; }
     catch (e) { results[p.id] = { ok: false, ms: Date.now() - t, why: String((e && e.message) || e).slice(0, 160) }; }

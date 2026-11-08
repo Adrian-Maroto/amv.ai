@@ -45,7 +45,22 @@ section('Every configured capability does one real, harmless thing');
   ok(r.results.payments.ok === true && seen.some(u => /api\.stripe\.com\/v1\/balance/.test(u)), 'the payments key reads the balance - a read, nothing charged', r.results.payments);
   ok(r.results.library.ok === true && env.AMV_FILES._files.size === 0, 'storage writes, reads back and deletes its probe, leaving nothing', r.results.library);
   ok(r.results.postgres.ok === null && /not configured/.test(r.results.postgres.why), 'what is not configured is said to be, not counted as working', r.results.postgres);
-  ok(['browser', 'meaning'].every(k => r.results[k].ok === null && /not exercised/.test(r.results[k].why)), 'and what is not exercised says so');
+  ok(['browser', 'meaning'].every(k => r.results[k].ok === null && /not configured/.test(r.results[k].why)), 'and the browser and meaning index, not set up here, say so');
+}
+
+section('The hosted browser and the meaning index each do one real thing (Nov 8 audit READY-021/026)');
+{
+  const vec = (x) => Array.from({ length: 8 }, (_, i) => Math.cos(i + x));
+  let closed = false;
+  const page = { async setContent(h) { page.h = h; }, async evaluate() { return /amv-probe/.test(page.h) ? 'amv-probe' : ''; } };
+  const env = mkEnv({ AI: { run: async (_m, { text }) => ({ data: text.map((t, i) => vec(i * 0.01)) }) },
+    BROWSER: { launch: async () => ({ newPage: async () => page, close: async () => { closed = true; } }) } });
+  const r = await W.runCapabilitySynthetics(env);
+  ok(r.results.meaning.ok === true, 'two sentences that mean the same come back as two vectors that agree', r.results.meaning);
+  ok(r.results.browser.ok === true && closed, 'the browser opens, renders one line, reads it back and closes', r.results.browser);
+  const bad = mkEnv({ AI: { run: async () => ({ data: [vec(0)] }) }, BROWSER: { launch: async () => { throw new Error('no browser sessions left'); } } });
+  const r2 = await W.runCapabilitySynthetics(bad);
+  ok(r2.results.meaning.ok === false && r2.results.browser.ok === false && r2.failed.includes('browser'), 'and either one not working is a failure, named', r2.results);
   ok(r.results.job_queue.ok === null && /not configured/.test(r.results.job_queue.why), 'with no queue bound, the queue is not configured');
   ok(r.failed.length === 0, 'nothing failed', r.failed);
   ok(!seen.some(u => /charges|payment_intents|emails$/.test(u)), 'nothing was charged or sent', seen);
