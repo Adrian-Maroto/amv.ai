@@ -45514,11 +45514,26 @@ async function _pkCredReserve(env, credId, em){
   const credKey = String(credId);
   if(!(await _claimOnce(env, 'pkcredclaim', credKey, 86400))) return false;
   await env.AMV_KV.put('pkcred:' + credKey, em);
+  /* And where every region reads it at once (Nov 8 audit AUTH-024): a
+     passkey made a moment ago in one region signs in from another before
+     KV has caught up. The strong copy holds only which account it is. */
+  try{ if(env.AMV_COUNTER) await counter(env, 'pkidx:' + credKey, { op: 'revReset', rev: 1, digest: em }); }catch(e){ audit(env, 'passkey_strong_index_failed', { email: em }); }
   return true;
+}
+/* Which account a passkey belongs to: KV, then the strong copy. */
+async function _pkCredOwner(env, credId){
+  const k = String(credId || '');
+  let em = await env.AMV_KV.get('pkcred:' + k);
+  if(!em && env.AMV_COUNTER){
+    try{ const r = await counter(env, 'pkidx:' + k, { op: 'revGet' }); if(r && r.committed && !r.absent && r.digest) em = String(r.digest); }catch(e){ em = null; }
+  }
+  return em || null;
 }
 async function _pkCredUnreserve(env, credId, em){
   try{ if((await env.AMV_KV.get('pkcred:' + credId)) === em) await env.AMV_KV.delete('pkcred:' + credId); }
   catch(e){ audit(env, 'passkey_index_left', { email: em }); }
+  try{ if(env.AMV_COUNTER){ const r = await counter(env, 'pkidx:' + credId, { op: 'revGet' }); if(r && r.digest === em) await counter(env, 'pkidx:' + credId, { op: 'revReset', absent: true }); } }
+  catch(e){ audit(env, 'passkey_strong_index_left', { email: em }); }
   /* And the claim itself (Nov 8 audit AUTH-025): left held, the same passkey
      could not be registered again for a day after a sign-up that made
      nothing. Released by this request's own claim, so a later holder's is
@@ -45564,7 +45579,7 @@ async function passkeySignin(request, env){
   const cred = body.credential && body.credential.response ? body.credential : null;
   const FAIL = { error: 'That passkey did not sign you in. Try again, or use your password.', code: 'passkey_failed' };
   if(!cred || typeof cred.id !== 'string' || cred.id.length > 1400) return json(FAIL, 401);
-  const em = await env.AMV_KV.get('pkcred:' + cred.id);
+  const em = await _pkCredOwner(env, cred.id);
   if(!em){ await _pkSpend(env, body.cid, 'signin', null); audit(env, 'auth_fail', { reason: 'passkey_unknown' }); return json(FAIL, 401); }
   { const sso = await _ssoRequiredFor(env, em); if (sso) return _ssoRequiredJson(sso); }
   let used;
@@ -45617,6 +45632,7 @@ async function passkeyRemove(request, env){
     a.passkeys = a.passkeys.filter(x => x.id !== id);
   });
   if(r && r.error) return json({ error: r.error === 'last_way_in' ? 'That is the only way into this account, so it cannot be removed. Add another first.' : 'That passkey is not on this account.', code: r.error }, r.status);
+  try{ if(env.AMV_COUNTER) await counter(env, 'pkidx:' + id, { op: 'revReset', absent: true }); }catch(e){ /* sign-in checks the account's own list, so a strong copy left behind lets nobody in */ }
   try{ await env.AMV_KV.delete('pkcred:' + id); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'passkey_removed', { email: em });
   await _userEvent(env, request, em, 'passkey_removed', { name });

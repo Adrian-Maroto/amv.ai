@@ -112,6 +112,13 @@ section('A passkey signs in with nothing else');
   ok(s.status === 200 && !!s.d.token, 'it signs in', s.status);
   const replay = await call('/auth/passkey/signin', { cid: o.d.cid, credential: g });
   ok(replay.status === 401 && !replay.d.token, 'the same answer replayed does not', replay.status);
+  /* Nov 8 audit AUTH-024: in a region whose KV has not caught up the passkey's
+     index is missing; the strong copy still says whose it is. */
+  { const key = [...m.keys()].find(k => k.startsWith('pkcred:')); const was = m.get(key); m.delete(key);
+    const o2 = await call('/auth/passkey/options', { purpose: 'signin' });
+    const s2 = await call('/auth/passkey/signin', { cid: o2.d.cid, credential: await auth.get({ challenge: o2.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+    m.set(key, was);
+    ok(s2.status === 200 && !!s2.d.token, 'a passkey made a moment ago signs in where the index has not arrived yet', s2.status); }
 
   const bad = async (over, label) => {
     const oo = await call('/auth/passkey/options', { purpose: 'signin' });
