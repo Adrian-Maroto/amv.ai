@@ -566,7 +566,10 @@ function _admRenderTab(tab, backendLive, live){
     const perActive = mg && mg.costPerActiveUser != null
       ? '<div class="adm-stats">' + _admStat((+mg.activeThisMonth || 0).toLocaleString(), 'People active this month')
         + _admStat('$' + mg.costPerActiveUser.toFixed(3), 'AI cost per active person')
-        + (live.revenue && mg.activeThisMonth > 0 ? _admStat('$' + (live.revenue.estMRR / mg.activeThisMonth).toFixed(2), 'Revenue per active person') : '') + '</div>'
+        + (live.revenue && mg.activeThisMonth > 0 ? _admStat('$' + (live.revenue.estMRR / mg.activeThisMonth).toFixed(2), 'Revenue per active person') : '')
+        /* The north star is work done, not messages (Nov 8 audit GROWTH-011):
+           actions on people's accounts that AMV read back and confirmed. */
+        + (live.actionOutcomes && mg.activeThisMonth > 0 ? _admStat((((+live.actionOutcomes.verified || 0)) / mg.activeThisMonth).toFixed(2), 'Confirmed actions per active person') : '') + '</div>'
         + '<p class="adm-note">Revenue per active person above cost per active person is a business that gets better as it grows. Below it, every new user is a loss to be paid for.</p>'
       : '<div class="adm-empty">Nobody counted as active this month yet.</div>';
     el.innerHTML =

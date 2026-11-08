@@ -119,6 +119,7 @@ section('Each person is counted once a month, so cost is shared over people, not
   ok(/costPerActiveUser: mau > 0 \? \+\(totalCost \/ mau\)/.test(back), 'the owner\u2019s figures divide the month\u2019s cost by people, not by visits');
   const admin = readFileSync(join(ROOT, 'src', 'admin', 'admin.js'), 'utf8');
   ok(/AI cost per active person/.test(admin) && /Revenue per active person/.test(admin), 'and the Growth tab sets cost and revenue per active person side by side');
+  ok(/live\.actionOutcomes\.verified[\s\S]{0,80}mg\.activeThisMonth/.test(admin) && /Confirmed actions per active person/.test(admin), 'and beside them the work done: confirmed actions per active person (Nov 8 audit GROWTH-011)');
 }
 
 section('The links carry their channel, the page reports it, the owner sees it');
