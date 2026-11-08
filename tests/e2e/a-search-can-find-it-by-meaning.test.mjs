@@ -11,6 +11,7 @@
      more than words found. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const outbound = makeOutbound();
 outbound.on(/model\.example/, () => new Response('', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
@@ -20,13 +21,13 @@ const vec = (t) => { t = t.toLowerCase(); return [/revenue|sales|ventas|ingresos
 const env = makeEnv({
   APP_URL: 'http://localhost:9258', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
   AI: { async run(_m, input){ if (!modelUp) throw new Error('down'); return { data: input.text.map(vec) }; } },
-  AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
     if (b.op === 'reserve') { vals.set(n, cur + b.amount); return r({ allowed: true, value: vals.get(n) }); }
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
     return r({ allowed: true, value: cur });
-  } }) },
+  } }) }),
 });
 const L = await bootLive({ env, outbound, port: 9258 });
 const { page } = L;

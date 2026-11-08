@@ -12,6 +12,7 @@
      server saved. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { sessionOp } from '../lib/session-op.mjs';
 
 const ev = (t, d) => 'event: ' + t + '\ndata: ' + JSON.stringify(d) + '\n\n';
@@ -31,7 +32,7 @@ const vals = new Map();
 const env = makeEnv({
   APP_URL: 'http://localhost:9248', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
   STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_x',
-  AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
     { const so = sessionOp(vals, n, b); if (so) return r(so); }
     if (b.op === 'reserve') {
@@ -41,7 +42,7 @@ const env = makeEnv({
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
     return r({ allowed: true, value: cur });
-  } }) },
+  } }) }),
 });
 const L = await bootLive({ env, outbound, port: 9248 });
 const { page } = L;

@@ -19,6 +19,7 @@
    bug once - it must never report "sent" when there was no way to send. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const outbound = makeOutbound();
 outbound.on(/api\.stripe\.com/, () => ({ ok: true, data: [] }));
@@ -31,7 +32,7 @@ const env = makeEnv({
   APP_URL: 'http://localhost:9187',
   AMV_MODEL_KEY: 'k',
   MODEL_API_URL: 'https://model.example',
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -42,7 +43,7 @@ const env = makeEnv({
       if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
       return new Response(JSON.stringify({ allowed: true, value: cur }));
     } }),
-  },
+  }),
 });
 
 const L = await bootLive({ env, outbound, port: 9187 });

@@ -7,6 +7,7 @@
    their messages and where they went - and no project, nothing asked. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -24,7 +25,7 @@ outbound.on(/api\.stripe\.com/, () => ({ ok: true, data: [] }));
 
 const objs = new Map();
 const env = makeEnv({ APP_URL: 'http://localhost:9247', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example' });
-env.AMV_COUNTER = { idFromName: n => n, get: n => {
+env.AMV_COUNTER = withAuthOps({ idFromName: n => n, get: n => {
   if (!objs.has(n)) {
     const st = new Map();
     objs.set(n, new AMVCounter({ storage: { async get(k) { return st.get(k); }, async put(k, v) { st.set(k, structuredClone(v)); },
@@ -32,7 +33,7 @@ env.AMV_COUNTER = { idFromName: n => n, get: n => {
   }
   const o = objs.get(n);
   return { fetch: (u, init) => o.fetch(new Request('https://do/', init)) };
-} };
+} });
 const L = await bootLive({ env, outbound, port: 9247 });
 const { page } = L;
 const OWNER = 'boss@example.com', MEMBER = 'dana@example.com';

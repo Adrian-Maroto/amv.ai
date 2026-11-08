@@ -18,6 +18,7 @@
    the call is not. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 /* An SSE stream in the shape the model really returns, so the client's own
    parser does the work rather than a shortcut written for this file. */
@@ -79,7 +80,7 @@ const env = makeEnv({
   SLACK_CLIENT_ID: 'test-slack-id', SLACK_CLIENT_SECRET: 'test-slack-secret',
   AMV_MODEL_KEY: 'k',
   MODEL_API_URL: 'https://model.example',
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -90,7 +91,7 @@ const env = makeEnv({
       if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
       return new Response(JSON.stringify({ allowed: true, value: cur }));
     } }),
-  },
+  }),
 });
 
 const L = await bootLive({ env, outbound, port: 9187 });

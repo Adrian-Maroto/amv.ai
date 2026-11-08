@@ -12,6 +12,7 @@
    adds is what the person sees, and what pressing Stop does on their side. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 /* Each run's scripted answers, keyed by its goal, so a run still going in the
    background (the stopped one) cannot take another run's script. */
@@ -42,7 +43,7 @@ const vals = new Map();
 const env = makeEnv({
   APP_URL: 'http://localhost:9187', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
   BROWSER: { async launch(){ B.launched++; return { async newPage(){ return page; }, async close(){ B.closed++; } }; } },
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -51,7 +52,7 @@ const env = makeEnv({
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  },
+  }),
 });
 const L = await bootLive({ env, outbound, port: 9187 });
 const P = L.page;

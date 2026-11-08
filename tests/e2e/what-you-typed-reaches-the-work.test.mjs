@@ -17,6 +17,7 @@
    actually sent. Every link in that chain, end to end, once. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 /* Every model call the cron makes, kept so a case can read what was really
    sent rather than what the screen claimed. */
@@ -33,7 +34,7 @@ const env = makeEnv({
   APP_URL: 'http://localhost:9179',
   AMV_MODEL_KEY: 'k',
   MODEL_API_URL: 'https://model.example',
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -44,7 +45,7 @@ const env = makeEnv({
       if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
       return new Response(JSON.stringify({ allowed: true, value: cur }));
     } }),
-  },
+  }),
 });
 
 const L = await bootLive({ env, outbound, port: 9179 });

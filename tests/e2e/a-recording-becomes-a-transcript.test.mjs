@@ -12,6 +12,7 @@
    guessed at. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const heard = [];
 const outbound = makeOutbound();
@@ -29,7 +30,7 @@ const env = makeEnv({
   APP_URL: 'http://localhost:9183',
   AMV_SPEECH_URL: 'https://speech.example/v1', AMV_SPEECH_KEY: 'sk-speech',
   AMV_SPEECH_LISTEN_MODEL: 'hear-1', AMV_SPEECH_LISTEN_USD_PER_MIN: '0.006',
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -38,7 +39,7 @@ const env = makeEnv({
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  },
+  }),
 });
 
 const L = await bootLive({ env, outbound, port: 9183 });

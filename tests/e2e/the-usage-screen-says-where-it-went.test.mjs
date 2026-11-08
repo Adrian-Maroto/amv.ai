@@ -8,6 +8,7 @@
    the ones this device cannot name said plainly rather than shown as ids. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -30,7 +31,7 @@ outbound.on(/api\.stripe\.com/, () => ({ ok: true, data: [] }));
 
 const objs = new Map();
 const env = makeEnv({ APP_URL: 'http://localhost:9246', AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example' });
-env.AMV_COUNTER = {
+env.AMV_COUNTER = withAuthOps({
   idFromName: n => n,
   get: n => {
     if (!objs.has(n)) {
@@ -42,7 +43,7 @@ env.AMV_COUNTER = {
     const o = objs.get(n);
     return { fetch: (u, init) => o.fetch(new Request('https://do/', init)) };
   },
-};
+});
 const L = await bootLive({ env, outbound, port: 9246 });
 const { page } = L;
 const EMAIL = 'where@example.com';

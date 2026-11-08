@@ -18,6 +18,7 @@
      - Escape ends it and lets go of the microphone. */
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 function textStream(text) {
   const ev = (t, d) => 'event: ' + t + '\ndata: ' + JSON.stringify(d) + '\n\n';
@@ -56,7 +57,7 @@ const env = makeEnv({
   AMV_SPEECH_URL: 'https://speech.example/v1', AMV_SPEECH_KEY: 'sk-speech',
   AMV_SPEECH_LISTEN_MODEL: 'hear-1', AMV_SPEECH_LISTEN_USD_PER_MIN: '0.006',
   AMV_SPEECH_VOICE_MODEL: 'speak-1', AMV_SPEECH_VOICE: 'calm', AMV_SPEECH_VOICE_USD_PER_1K_CHARS: '0.015',
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOps({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -66,7 +67,7 @@ const env = makeEnv({
       if (b.op === 'rateCheck') { vals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  },
+  }),
 });
 const L = await bootLive({ env, outbound, port: 9185 });
 const { page } = L;

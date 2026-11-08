@@ -47,7 +47,7 @@ each item, and what remains the owner's or the Postgres cutover's.
 
 ## The verified audit: twenty-three reproduced failures (R01-R23)
 
-The auditor's reproduction (`verify_adversarial.mjs`) was run unchanged
+The auditor's own reproduction script was run unchanged
 against the code first: all twenty-three reproduced. After the fixes it
 reproduces none, and its three controls still pass. Its scenarios are kept,
 with the results turned round, in `the-verified-failures-of-nov-8-stay-fixed`;
