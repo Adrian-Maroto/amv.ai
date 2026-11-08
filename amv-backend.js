@@ -2509,12 +2509,19 @@ async function _pgLedgerInsert(sql, row){
       ON CONFLICT (idempotency_key) DO NOTHING RETURNING idempotency_key`;
   }
   if (made && made.length) return;
+  /* Every field that makes it this money (Nov 8 audit DATA-042): the event
+     it came from for a credit, and when it may be paid for a seller - not
+     only account, currency, amount and reason. */
   const was = row.table === 'seller'
-    ? await sql`SELECT account_id, currency, amount::text AS amount, reason FROM seller_ledger WHERE idempotency_key = ${row.key}`
-    : await sql`SELECT account_id, currency, amount::text AS amount, reason FROM credit_ledger WHERE idempotency_key = ${row.key}`;
+    ? await sql`SELECT account_id, currency, amount::text AS amount, reason, hold_until FROM seller_ledger WHERE idempotency_key = ${row.key}`
+    : await sql`SELECT account_id, currency, amount::text AS amount, reason, source_event FROM credit_ledger WHERE idempotency_key = ${row.key}`;
   const w = was && was[0];
+  const tms = (v) => (v == null ? null : +new Date(v));
   const same = !!w && String(w.account_id) === String(acct[0].id) && w.currency === money.currency
-    && Number(w.amount) === Number(money.amount) && String(w.reason) === String(row.reason);
+    && Number(w.amount) === Number(money.amount) && String(w.reason) === String(row.reason)
+    && (row.table === 'seller'
+      ? tms(w.hold_until) === tms(_pgTime(row.holdUntil))
+      : String(w.source_event == null ? '' : w.source_event) === String(row.source || ''));
   if (!same) throw new Error('ledger_key_conflict');
 }
 
