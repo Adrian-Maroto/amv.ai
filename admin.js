@@ -566,7 +566,10 @@ function _admRenderTab(tab, backendLive, live){
     const perActive = mg && mg.costPerActiveUser != null
       ? '<div class="adm-stats">' + _admStat((+mg.activeThisMonth || 0).toLocaleString(), 'People active this month')
         + _admStat('$' + mg.costPerActiveUser.toFixed(3), 'AI cost per active person')
-        + (live.revenue && mg.activeThisMonth > 0 ? _admStat('$' + (live.revenue.estMRR / mg.activeThisMonth).toFixed(2), 'Revenue per active person') : '') + '</div>'
+        + (live.revenue && mg.activeThisMonth > 0 ? _admStat('$' + (live.revenue.estMRR / mg.activeThisMonth).toFixed(2), 'Revenue per active person') : '')
+        /* The north star is work done, not messages (Nov 8 audit GROWTH-011):
+           actions on people's accounts that AMV read back and confirmed. */
+        + (live.actionOutcomes && mg.activeThisMonth > 0 ? _admStat((((+live.actionOutcomes.verified || 0)) / mg.activeThisMonth).toFixed(2), 'Confirmed actions per active person') : '') + '</div>'
         + '<p class="adm-note">Revenue per active person above cost per active person is a business that gets better as it grows. Below it, every new user is a loss to be paid for.</p>'
       : '<div class="adm-empty">Nobody counted as active this month yet.</div>';
     el.innerHTML =
@@ -576,7 +579,7 @@ function _admRenderTab(tab, backendLive, live){
       + _admCard('Invite links', '<p class="adm-note">With SIGNUP_INVITE_ONLY=1, a new account needs one of these or an existing person\u2019s referral link.</p>'
         + '<div class="adm-stats"><label class="adm-note" for="adm-inv-n">How many</label> <input id="adm-inv-n" type="number" min="1" max="200" value="10" style="width:70px"> '
         + '<label class="adm-note" for="adm-inv-u">Uses each</label> <input id="adm-inv-u" type="number" min="1" max="50" value="1" style="width:70px"> '
-        + '<button class="btn bp" type="button" id="adm-inv-go">Make links</button></div><pre id="adm-inv-out" class="adm-note" style="white-space:pre-wrap"></pre>')
+        + '<button class="btn bp" type="button" id="adm-inv-go">Make links</button> <button class="btn" type="button" id="adm-inv-ls">Show invites</button></div><pre id="adm-inv-out" class="adm-note" style="white-space:pre-wrap"></pre><div id="adm-inv-list"></div>')
       + _admCard('What one active person costs', live ? perActive : _admPending('This month\u2019s AI cost and revenue per person who used AMV'));
   }
 
@@ -593,7 +596,35 @@ async function _admMakeInvites(){
     out.textContent = r.ok && d.ok ? ((d.links && d.links.length ? d.links : d.codes) || []).join('\n') : (d.error || 'The links could not be made.');
   }catch(e){ out.textContent = 'The links could not be made. Check the connection and try again.'; }
 }
-document.addEventListener('click', (e) => { if(e.target && e.target.id === 'adm-inv-go') _admMakeInvites(); });
+/* Owner: every invite made, how much of each is spent, and a way to stop one
+   (GET /admin/invites/list, POST /admin/invites/revoke). */
+async function _admListInvites(){
+  const box = document.getElementById('adm-inv-list'); if(!box) return;
+  box.textContent = 'Loading\u2026';
+  try{
+    const r = await AMV_API._fetch('/admin/invites/list', { method:'POST', body: '{}' });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ box.textContent = d.error || 'The invites could not be read.'; return; }
+    const rows = (d.invites || []).map(v => '<tr><td>' + escH(v.code) + '</td><td>' + (v.used == null ? '?' : v.used) + ' / ' + v.uses + '</td><td>'
+      + (v.expires ? escH(new Date(v.expires).toLocaleDateString()) : '-') + '</td><td>' + (v.revoked ? 'Revoked' : v.open ? 'Open' : 'Closed') + '</td><td>'
+      + (v.revoked ? '' : '<button class="btn" type="button" data-adm-revoke="' + escH(v.code) + '">Revoke</button>') + '</td></tr>').join('');
+    box.innerHTML = rows ? '<div class="adm-fin-table-wrap"><table class="adm-fin-table"><thead><tr><th>Code</th><th>Used</th><th>Ends</th><th>State</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' + (d.complete ? '' : '<p class="adm-note">Showing the first part of a long list.</p>') : '<p class="adm-note">No invites made yet.</p>';
+  }catch(e){ box.textContent = 'The invites could not be read. Check the connection and try again.'; }
+}
+async function _admRevokeInvite(code){
+  try{
+    const r = await AMV_API._fetch('/admin/invites/revoke', { method:'POST', body: JSON.stringify({ code }) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ const box = document.getElementById('adm-inv-list'); if(box) box.insertAdjacentText('afterbegin', (d.error || 'That invite could not be revoked.') + ' '); return; }
+  }catch(e){ /* the list below is read again and shows what is true */ }
+  _admListInvites();
+}
+document.addEventListener('click', (e) => {
+  if(!e.target) return;
+  if(e.target.id === 'adm-inv-go') _admMakeInvites();
+  if(e.target.id === 'adm-inv-ls') _admListInvites();
+  const rv = e.target.getAttribute && e.target.getAttribute('data-adm-revoke'); if(rv) _admRevokeInvite(rv);
+});
 function _admMoney(n,cur){ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:String(cur||'USD').toUpperCase()}).format(+n||0); }catch(e){ return String(cur||'')+' '+(+n||0).toLocaleString(); } }
 function _admKpi(label,val,sub,color){ return '<div class="adm-kpi"><div class="adm-kpi-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div><div class="adm-kpi-l">'+label+'</div><div class="adm-kpi-s">'+sub+'</div></div>'; }
 function _admAgo(ts){ const t=Date.parse(ts||0); if(!t) return ''; const s=(Date.now()-t)/1000; if(s<60)return Math.floor(s)+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
