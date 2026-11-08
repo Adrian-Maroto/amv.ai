@@ -626,6 +626,10 @@ async function _restoreEntries(env, entries, mode, t){
 
        Revocation only moves one way. */
       const merged = await _restoreMerge(env, key, val);
+      /* Live state that could not be read is left exactly as it is (Nov 8
+         audit): the record is counted as not restored and named, so the
+         operator runs the restore again once the store answers. */
+      if (merged.unknown) { unrestorable++; if (lost.length < 20) lost.push(key); continue; }
       if (merged.held) heldForward++;
       await env.AMV_KV.put(key, merged.value);
       /* A record read as committed (STATE-007) is committed as restored, or
@@ -686,9 +690,17 @@ async function _restoreMerge(env, key, incoming) {
 
     const liveRaw = await env.AMV_KV.get(key);
     if (liveRaw == null) return { value: incoming, held: false };
+    /* Only these four kinds carry a fact a restore may not undo; anything
+       else is written as given, as it always was. */
+    const guarded = key.startsWith('ent:') || key.startsWith('seller:') || key.startsWith('apikeys:');
+    if (!guarded) return { value: incoming, held: false };
     let live = null, from = null;
-    try { live = JSON.parse(liveRaw); from = JSON.parse(incoming); } catch (e) { return { value: incoming, held: false }; }
-    if (!live || !from || typeof live !== 'object' || typeof from !== 'object') return { value: incoming, held: false };
+    try { live = JSON.parse(liveRaw); } catch (e) { live = undefined; }
+    /* A live record that will not parse may hold a block or a revocation
+       nobody can see, so it is not written over. */
+    if (!live || typeof live !== 'object') { audit(env, 'restore_live_unreadable', { key }); return { unknown: true }; }
+    try { from = JSON.parse(incoming); } catch (e) { return { value: incoming, held: false }; }
+    if (!from || typeof from !== 'object') return { value: incoming, held: false };
 
     let held = false;
     /* An account blocked for charging back stays blocked. */
@@ -717,12 +729,12 @@ async function _restoreMerge(env, key, incoming) {
     }
     return { value: held ? JSON.stringify(from) : incoming, held };
   } catch (e) {
-    /* Unreadable live state means the comparison could not be made. Writing the
-       snapshot over it anyway is the one thing that must not happen here, so
-       the incoming value is kept as-is and the caller records that a restore
-       ran - the alternative is silently deciding a revocation did not exist. */
+    /* Unreadable live state means the comparison could not be made, and
+       writing the snapshot over it anyway could silently undo a block or a
+       revocation (Nov 8 audit: this said so and then did it). Nothing is
+       written for this record; the caller counts it as not restored. */
     audit(env, 'restore_merge_failed', { key, error: String((e && e.message) || e).slice(0, 120) });
-    return { value: incoming, held: false };
+    return { unknown: true };
   }
 }
 

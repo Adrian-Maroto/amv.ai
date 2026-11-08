@@ -15748,3 +15748,27 @@ holding back the database's first connection, which left one key of four.
 whose order the load changed before calling it flaky; "passes when retried
 alone" is how an ordering bug looks. Then make that order deterministic in the
 test - delay the one step - so the fix can be measured by breaking it.
+
+## 629. A limited thing is spent at the moment it is used, not the moment it is asked for (Nov 8 audit)
+The beta invite was taken as the first check of a sign-up, so a typo in the
+address spent a one-use code and turned away the real sign-up after it. Rule:
+anything limited - an invite use, a reservation, a claim - is taken as the
+LAST check before the thing it pays for is made, and handed back by name
+(once-only) whenever nothing was made. Test the refused paths, not only the
+happy one.
+
+## 630. "Read it, add mine, write it back" on KV is a lost update, whatever the lock says (Nov 8 audit)
+Two agent runs each merged their own site into the sign-in jar; the second
+write erased the first, and both were told their sign-in was kept. A lock
+alone is not enough on KV: the second holder can still be shown the copy from
+before the first holder's write. Rule: hold the lock AND compare what was read
+with a fingerprint of the last write kept in the strongly consistent object;
+re-read until they match, and refuse rather than merge into a copy that has
+not caught up. The same applies to an id checked for absence in KV before a
+money write - claim the id in the object first.
+
+## 631. A comment that says "nothing is written" must be tested by making the read fail (Nov 8 audit)
+The restore merge's catch said writing the snapshot over unreadable live state
+"is the one thing that must not happen here" - and returned the snapshot to be
+written. Rule: when a guard's comment describes a failure case, make that
+failure happen in a test and assert what the comment promises.

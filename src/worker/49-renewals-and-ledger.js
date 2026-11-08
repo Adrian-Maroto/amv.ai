@@ -100,6 +100,7 @@ const TXN_PREFIX = 'txn:e:';
    from here, because the backup coverage check reads the writes to know
    which kinds of record exist. */
 const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') + ':' + e.id;
+const TXN_ID_CLAIM_S = 300;
 async function _recordTxn(env, tx) {
   try {
     const entry = {
@@ -160,10 +161,40 @@ async function _recordTxn(env, tx) {
        time, a minute later. The id is now written first, holding the line's
        time and marked pending; a retry finds it and writes the same line,
        under the same key, rather than a new one. */
+    /* ONE WRITER PER ID (Nov 8 audit). Two regions can both read the id as
+       absent - KV is eventually consistent - and both wrote a line, so one
+       payment became two. The id is now claimed in the strongly consistent
+       object first: one writer gets it, and the other waits for that
+       writer's record and answers with it (or nothing, which callers treat
+       as "not recorded yet" and retry). The claim lasts five minutes, longer
+       than KV takes to show the record everywhere, so a retry after it finds
+       the record; a writer that stopped before writing anything frees the
+       id for the retry when the claim runs out, and one that failed frees it
+       at once. */
+    let claimOwner = null;
+    if (tx.id) {
+      const c = await _claimOnceDetail(env, 'txnid', tx.id, TXN_ID_CLAIM_S);
+      if (!c.claimed) {
+        if (c.unavailable) return null;
+        for (let i = 0; i < 6; i++) {
+          const seen = await env.AMV_KV.get('txn:id:' + tx.id);
+          let old = null; try { old = seen ? JSON.parse(seen) : null; } catch (e) { old = null; }
+          if (old && !old.pending) return same(old) ? old : conflict(old);
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return null;
+      }
+      claimOwner = c.owner || '';
+    }
     const body = JSON.stringify(entry);
-    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
-    await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
-    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
+    try {
+      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, JSON.stringify(Object.assign({}, entry, { pending: true })));
+      await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
+      if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
+    } catch (e) {
+      if (tx.id) await _releaseClaim(env, 'txnid', tx.id, claimOwner);
+      throw e;
+    }
     return entry;
   } catch (e) { return null; }
 }

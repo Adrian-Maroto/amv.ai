@@ -30,13 +30,40 @@ async function _inviteTake(env, raw){
   try { if(await env.AMV_KV.get('refcode:' + code)) return 'ref'; } catch (e) { return ''; }
   return '';
 }
-/* Null when the sign-up may go ahead; otherwise the refusal. */
-async function _inviteGate(env, raw, where){
-  if(!_inviteOnly(env)) return null;
+
+/* A USE IS SPENT ONLY ON AN ACCOUNT THAT WAS MADE (Nov 8 audit: a sign-up
+   refused for a typo used up a one-use code, and the real sign-up after it
+   was turned away). Every sign-up door now takes the use as its last check,
+   after the address, password and everything else it can refuse on, and
+   hands it back whenever no account came of it - refused, already taken, or
+   the write failing. The give-back carries a once-only name, so a retry of a
+   lost answer cannot hand back two. A Worker stopping between taking and
+   making loses that one use; that is the rare direction, and the owner can
+   make more, where the other direction let a sign-up past the limit. */
+async function _inviteHold(env, raw, where){
+  if(!_inviteOnly(env)) return { refusal: null, done: async () => {} };
   const kind = await _inviteTake(env, raw).catch(() => '');
-  if(kind){ audit(env, 'invite_used', { kind, where }); return null; }
-  audit(env, 'invite_refused', { where });
-  return json({ error: 'AMV is invite-only for now. Open the invite link somebody sent you, or ask a friend who uses AMV for theirs.', code: 'invite_required' }, 403);
+  if(!kind){
+    audit(env, 'invite_refused', { where });
+    return { refusal: json({ error: 'AMV is invite-only for now. Open the invite link somebody sent you, or ask a friend who uses AMV for theirs.', code: 'invite_required' }, 403), done: async () => {} };
+  }
+  const code = _inviteCode(raw), hold = crypto.randomUUID();
+  let settled = false;
+  return { refusal: null, async done(made){
+    if(settled) return; settled = true;
+    if(made){ audit(env, 'invite_used', { kind, where }); return; }
+    if(kind !== 'beta') return;
+    try { await counter(env, 'betainvuse:' + code, { op: 'incr', amount: -1, once: 'back:' + hold, ttlMs: 400 * 86400000 }); }
+    catch (e) { audit(env, 'invite_not_returned', { where }); }
+  } };
+}
+/* Null when the sign-up may go ahead; otherwise the refusal. Kept for a door
+   that makes the account in the same step it checks. */
+async function _inviteGate(env, raw, where){
+  const h = await _inviteHold(env, raw, where);
+  if(h.refusal) return h.refusal;
+  await h.done(true);
+  return null;
 }
 
 /* POST /admin/invites { count, uses } -> { codes, links } */

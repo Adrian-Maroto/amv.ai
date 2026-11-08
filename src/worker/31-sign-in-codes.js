@@ -474,10 +474,12 @@ async function authGoogle(request, env) {
     const name = claims.name || em.split('@')[0];
     /* A first Google sign-in makes an account, so the beta asks for an invite
        here too; an account that already exists signs in as always. */
-    if(_inviteOnly(env) && !(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'google'); if(inv) return inv; }
+    const inv = (_inviteOnly(env) && !(await DB.get(env, 'acct', em))) ? await _inviteHold(env, body.ref, 'google') : null;
+    if(inv && inv.refusal) return inv.refusal;
     let fed;
     try{ fed = await _federatedAccount(env, em, { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) }); }
-    catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+    catch(e){ if(inv) await inv.done(false); if(!_isBusy(e)) throw e; return _busyJson('account'); }
+    if(inv) await inv.done(!!fed.created);
     if(fed.squatted) audit(env, 'google_cleared_unconfirmed_password', {});
     const created = fed.created;
     if(created){

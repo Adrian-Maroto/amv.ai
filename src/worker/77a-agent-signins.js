@@ -211,6 +211,43 @@ async function _agentJarLoad(env, email, agent){
 /* Kept from a watched run: the cookies of the agent's listed sites, replacing
    what it held for those sites, each stamped with now. Returns the sites it
    kept, so the run can say so. */
+/* ONE SAVE AT A TIME, FROM THE COPY THAT IS THERE (Nov 8 audit). Two runs
+   of one agent each read the jar, added their own site and wrote it back:
+   the second write erased the first run's sign-in, and both were told it
+   was kept. A save now holds the agent's jar lock for the read, the merge
+   and the write, and the strongly consistent object remembers a
+   fingerprint of the copy last written. A read that does not match it is a
+   stale copy from this region's KV, so it is read again until it does; one
+   that still does not match after the wait is not merged into, and the save
+   says so. A fingerprint older than KV takes to settle everywhere is not
+   trusted over KV, so a write that could not record one heals itself. */
+const AGENT_JAR_SETTLE_MS = 90000;
+async function _agentJarPrint(raw){
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(raw || ''))));
+  return [...d.slice(0, 16)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const _agentJarRevName = (email, id) => 'agentjarrev:' + String(email).toLowerCase() + ':' + id;
+async function _agentJarMark(env, email, id, raw){
+  try{ await counter(env, _agentJarRevName(email, id), { op: 'revReset', rev: Date.now(), digest: (await _agentJarPrint(raw)) + '@' + Date.now() }); }
+  catch(e){ audit(env, 'agent_jar_mark_failed', { email, agent: id }); }
+}
+/* The jar as last written, or throws: 'unknown' when the store cannot be
+   read, 'settling' when only an older copy can be seen yet. */
+async function _agentJarCurrent(env, email, id){
+  let want = null;
+  if(env.AMV_COUNTER){
+    const r = await counter(env, _agentJarRevName(email, id), { op: 'revGet' });
+    if(!r || r.unavailable) throw new Error('agent_jar_unknown');
+    if(r.committed && r.digest){ const [h, at] = String(r.digest).split('@'); if(Date.now() - (+at || 0) < AGENT_JAR_SETTLE_MS) want = h; }
+  }
+  for(let i = 0; i < 8; i++){
+    let raw;
+    try{ raw = await env.AMV_KV.get(_agentJarKey(email, id)); }catch(e){ throw new Error('agent_jar_unknown'); }
+    if(!want || (await _agentJarPrint(raw)) === want) return raw;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  throw new Error('agent_jar_settling');
+}
 async function _agentJarSave(env, email, agent, cookies){
   if(!agent || !agent.browser || !agent.browser.keep || !connConfigured(env)) return [];
   const sites = agent.browser.sites || [];
@@ -242,17 +279,29 @@ async function _agentJarSave(env, email, agent, cookies){
      saved; a jar that is stored and will not open with the agent's key is
      unusable already (its key was destroyed or it is damaged), so it is
      replaced, and said to be. */
-  let rec = { sites: {} }, raw;
-  try{ raw = await env.AMV_KV.get(_agentJarKey(email, agent.id)); }
-  catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: 'jar_unknown' }); return []; }
-  if(raw){
-    const open = await _agentJarOpen(key, email, agent.id, raw);
-    if(open) rec = open; else audit(env, 'agent_jar_replaced_unreadable', { email, agent: agent.id });
+  /* Another run saving this agent's jar is waited for, not overwritten. */
+  let lk = { claimed: false };
+  for(let i = 0; i < 8 && !lk.claimed; i++){
+    lk = await _claimOnceDetail(env, 'agentjarlock', String(email).toLowerCase() + ':' + agent.id, 15);
+    if(!lk.claimed && !lk.unavailable) await new Promise(r => setTimeout(r, 60 * (i + 1)));
+    else if(lk.unavailable) break;
   }
-  rec.sites = rec.sites || {};
-  for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
-  for(const s of kept) rec.sites[s] = Object.assign({ at: Date.now(), cookies: bySite[s] }, _agentGenOf(began, s));
-  await env.AMV_KV.put(_agentJarKey(email, agent.id), await _agentJarSeal(key, email, agent.id, rec), { expirationTtl: AGENT_JAR_TTL_S });
+  if(!lk.claimed){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: lk.unavailable ? 'lock_unknown' : 'another_save' }); return []; }
+  try{
+    let rec = { sites: {} }, raw;
+    try{ raw = await _agentJarCurrent(env, email, agent.id); }
+    catch(e){ audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: /settling/.test(String(e && e.message)) ? 'jar_settling' : 'jar_unknown' }); return []; }
+    if(raw){
+      const open = await _agentJarOpen(key, email, agent.id, raw);
+      if(open) rec = open; else audit(env, 'agent_jar_replaced_unreadable', { email, agent: agent.id });
+    }
+    rec.sites = rec.sites || {};
+    for(const s of Object.keys(rec.sites)) if(!sites.includes(s)) delete rec.sites[s];
+    for(const s of kept) rec.sites[s] = Object.assign({ at: Date.now(), cookies: bySite[s] }, _agentGenOf(began, s));
+    const sealed = await _agentJarSeal(key, email, agent.id, rec);
+    await env.AMV_KV.put(_agentJarKey(email, agent.id), sealed, { expirationTtl: AGENT_JAR_TTL_S });
+    await _agentJarMark(env, email, agent.id, sealed);
+  } finally { await _releaseClaim(env, 'agentjarlock', String(email).toLowerCase() + ':' + agent.id, lk.owner || null); }
   /* REVOCATION WINS A RACE IT LOST BY A MOMENT (Nov 7 audit AGENT-022). A
      forget that moved the generation between the check above and this write
      has already deleted the jar - and this write put it back. Each entry is
@@ -264,7 +313,7 @@ async function _agentJarSave(env, email, agent, cookies){
   try{ after = await _agentGen(env, email, agent.id); }catch(e){ after = null; }
   if(!after || _agentGenOf(after, '').g !== _agentGenOf(began, '').g || kept.some(s => _agentGenOf(after, s).sg !== _agentGenOf(began, s).sg)){
     audit(env, 'agent_signins_not_kept', { email, agent: agent.id, why: after ? 'forgotten_during_save' : 'generation_unknown_after_save' });
-    try{ await env.AMV_KV.delete(_agentJarKey(email, agent.id)); }
+    try{ await env.AMV_KV.delete(_agentJarKey(email, agent.id)); await _agentJarMark(env, email, agent.id, null); }
     catch(e){ try{ await _agentJarQueue(env, email, agent.id, ''); }catch(_){ /* fenced by its generation stamp either way; the forget's own retry finds it */ } }
     return [];
   }
@@ -343,8 +392,8 @@ async function _agentJarForget(env, email, id, site){
     return { held: 'unknown', removed: false, queued };
   }
   try{
-    if(!site || Object.keys(j.rec.sites || {}).length <= 1) await env.AMV_KV.delete(key);
-    else { delete j.rec.sites[site]; await env.AMV_KV.put(key, await _agentJarSeal(j.key, email, id, j.rec), { expirationTtl: AGENT_JAR_TTL_S }); }
+    if(!site || Object.keys(j.rec.sites || {}).length <= 1){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
+    else { delete j.rec.sites[site]; const sealed = await _agentJarSeal(j.key, email, id, j.rec); await env.AMV_KV.put(key, sealed, { expirationTtl: AGENT_JAR_TTL_S }); await _agentJarMark(env, email, id, sealed); }
   }catch(e){ /* read back below decides */ }
   let gone = false;
   try{
@@ -383,7 +432,7 @@ async function _agentJarForgetAll(env, email){
     try{ page = await env.AMV_KV.list({ prefix, cursor }); }
     catch(e){ listed = false; break; }
     for(const k of (page.keys || [])){
-      try{ await env.AMV_KV.delete(k.name); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+      try{ await env.AMV_KV.delete(k.name); await _agentJarMark(env, em, k.name.slice(prefix.length), null); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
       try{ if(await env.AMV_KV.get(k.name)) left.push(k.name); }catch(e){ left.push(k.name); }
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -417,12 +466,13 @@ async function runAgentJarCleanup(env){
       try{ site = (JSON.parse((await env.AMV_KV.get(k.name)) || '{}').site) || ''; }catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
       const key = _agentJarKey(email, id);
       try{
-        if(!site) await env.AMV_KV.delete(key);
+        if(!site){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
         else { const j = await _agentJarRead(env, email, id);
           /* Unopenable (its key is gone): nothing in it can be used, so it goes whole. */
-          if(j.raw && !j.rec) await env.AMV_KV.delete(key);
+          if(j.raw && !j.rec){ await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); }
           else if(j.rec && j.rec.sites && j.rec.sites[site]){ delete j.rec.sites[site];
-            if(Object.keys(j.rec.sites).length) await env.AMV_KV.put(key, await _agentJarSeal(j.key, email, id, j.rec), { expirationTtl: AGENT_JAR_TTL_S }); else await env.AMV_KV.delete(key); } }
+            if(Object.keys(j.rec.sites).length){ const sealed = await _agentJarSeal(j.key, email, id, j.rec); await env.AMV_KV.put(key, sealed, { expirationTtl: AGENT_JAR_TTL_S }); await _agentJarMark(env, email, id, sealed); }
+            else { await env.AMV_KV.delete(key); await _agentJarMark(env, email, id, null); } } }
         const after = await _agentJarRead(env, email, id);
         const gone = !after.raw || (site && after.rec && !((after.rec.sites || {})[site])) || (site && !after.rec);
         if(gone){ await env.AMV_KV.delete(k.name); done++; } else left++;

@@ -569,8 +569,11 @@ async function _passkeySignupFinish(request, env, site, body){
     audit(env, 'passkey_refused', { email: em, why: String(e && e.message || e).slice(0, 40), at: 'signup' });
     return json({ error: /not_verified/.test(String(e && e.message)) ? 'That passkey was made without a fingerprint, face or PIN, so it cannot be used to sign in.' : 'That passkey could not be verified, so no account was made. Try again, or use a password.', code: 'passkey_refused' }, 400);
   }
-  if(!(await DB.get(env, 'acct', em))){ const inv = await _inviteGate(env, body.ref, 'passkey'); if(inv) return inv; }
   if(!(await _pkCredReserve(env, made.credId, em))) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
+  /* The invite last, after everything that can refuse; handed back unless an
+     account is made (86-invite-beta.js). */
+  const inv = (await DB.get(env, 'acct', em)) ? null : await _inviteHold(env, body.ref, 'passkey');
+  if(inv && inv.refusal){ await _pkCredUnreserve(env, made.credId, em); return inv.refusal; }
   const sipHash = await _ipHash(env, request);
   const name = String(rec.name || '');
   let created = false;
@@ -579,7 +582,8 @@ async function _passkeySignupFinish(request, env, site, body){
     Object.assign(a, { email: em, name, provider: 'email', createdAt: Date.now(), sipHash,
       passkeys: [{ id: made.credId, alg: made.alg, jwk: made.jwk, count: made.count, name: 'Passkey', at: Date.now(), used: 0, backedUp: !!made.backedUp }] });
     created = true;
-  }, {}); }catch(e){ await _pkCredUnreserve(env, made.credId, em); throw e; }
+  }, {}); }catch(e){ if(inv) await inv.done(false); await _pkCredUnreserve(env, made.credId, em); throw e; }
+  if(inv) await inv.done(created);
   if(!created){ await _pkCredUnreserve(env, made.credId, em); return json({ error: 'There is already an account with this email. Sign in instead.', code: 'account_exists' }, 409); }
   audit(env, 'passkey_added', { email: em, at: 'signup' });
   return _accountCreated(env, request, em, name, body);

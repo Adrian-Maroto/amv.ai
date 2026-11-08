@@ -416,8 +416,6 @@ async function authSignup(request, env){
   if (sBlock) return sBlock;
   const capOk = await _verifyCaptcha(env, body.captchaToken, request);
   if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
-  /* Invite-only beta (86-invite-beta.js): checked before anything is made. */
-  { const inv = await _inviteGate(env, body.ref, 'password'); if (inv) return inv; }
   const em = String(email||'').toLowerCase().trim();
   // Strict format: exactly one @, no whitespace/colons/control chars, sane length.
   // Emails go into KV key structures and audit logs - keep them clean by construction.
@@ -472,15 +470,24 @@ async function authSignup(request, env){
     return json({ error: 'AMV could not check that address just now. Please try again in a few minutes.',
                   code: 'account_unreadable' }, 503);
   }
+  /* Invite-only beta (86-invite-beta.js): the last check, so a sign-up
+     refused above never spends a use, and one that makes nothing hands its
+     use back. An address somebody already has is not a new account, so it
+     needs no invite and spends none. */
+  const inv = (await DB.get(env, 'acct', em)) ? null : await _inviteHold(env, body.ref, 'password');
+  if (inv && inv.refusal) return inv.refusal;
   let created = false, unconfirmed = false;
-  await _withKind(env, 'acct', em, (rec) => {
-    if (rec && rec.email) {                          // somebody already has it
-      unconfirmed = (rec.provider || 'email') === 'email' && !rec.emailVerifiedAt;
-      return;
-    }
-    Object.assign(rec, acct);                        // written by the lock, in place
-    created = true;
-  }, {});
+  try {
+    await _withKind(env, 'acct', em, (rec) => {
+      if (rec && rec.email) {                          // somebody already has it
+        unconfirmed = (rec.provider || 'email') === 'email' && !rec.emailVerifiedAt;
+        return;
+      }
+      Object.assign(rec, acct);                        // written by the lock, in place
+      created = true;
+    }, {});
+  } catch (e) { if (inv) await inv.done(false); throw e; }
+  if (inv) await inv.done(created);
   if (!created) {
     /* AN ADDRESS NOBODY HAS PROVED IS NOT YET ANYBODY'S.
 

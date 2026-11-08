@@ -214,5 +214,29 @@ section('A payment recorded half way is finished once, not written twice (Nov 7 
   ok(!JSON.parse(store.get('txn:id:pay_77')).pending, 'and the id is no longer pending');
 }
 
+section('Two regions writing one payment at once make one line (Nov 8 audit)');
+{
+  /* Both writers read the id as absent - what eventually consistent KV does
+     across regions - and are held there until both have looked. Driven with
+     the real counter object, which is what decides between them. */
+  clearLedger();
+  const objs = new Map();
+  const ns = { idFromName: n => n, get: (n) => ({ async fetch(_u, init) {
+    if (!objs.has(n)) { const st = new Map(); objs.set(n, new W.AMVCounter({ storage: { async get(k){ return st.get(k); }, async put(k, v){ st.set(k, v); }, async delete(k){ st.delete(k); }, async deleteAll(){ st.clear(); }, async setAlarm(){}, async deleteAlarm(){} } }, {})); }
+    /* One request at a time, as a Durable Object runs them. */
+    const o = objs.get(n); const run = (o._q || Promise.resolve()).then(() => o.fetch(new Request('https://do/c', init)));
+    o._q = run.catch(() => {}); return run; } }) };
+  let reads = 0, release; const both = new Promise(r => release = r);
+  const kv = { ...baseEnv.AMV_KV,
+    async get(k){ if (k === 'txn:id:evt_same' && reads < 2) { reads++; if (reads === 2) release(); await both; return null; } return baseEnv.AMV_KV.get(k); },
+    async put(k, v, o){ await new Promise(r => setTimeout(r, 5)); return baseEnv.AMV_KV.put(k, v, o); } };
+  const env = { ...baseEnv, AMV_KV: kv, AMV_COUNTER: ns };
+  const base = { id: 'evt_same', provider: 'stripe', email: 'buyer@example.com', amount: 25, currency: 'USD', kind: 'credit_pack', status: 'succeeded', ref: 'pi_1' };
+  const [a, b] = await Promise.all([W._recordTxn(env, { ...base, ts: 1000 }), W._recordTxn(env, { ...base, ts: 2000 })]);
+  const lines = [...store.keys()].filter(k => k.startsWith('txn:e:'));
+  ok(lines.length === 1, 'one payment, one line on the books', lines);
+  ok(a && b && a.id === 'evt_same' && b.id === 'evt_same' && a.ts === b.ts, 'and both writers are answered with the same record', { a, b });
+}
+
 report();
 done();

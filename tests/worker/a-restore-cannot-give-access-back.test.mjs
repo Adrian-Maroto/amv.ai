@@ -193,9 +193,14 @@ section('Unreadable live state does not silently decide a revocation away');
   const env = mkEnv();
   await env.AMV_KV.put('ent:' + USER, '{not json at all');
   const d = await (await restore(env, { ['ent:' + USER]: JSON.stringify({ plan: 'pro' }) })).json();
-  ok(d.ok === true, 'the restore still completes', d.ok);
-  ok(JSON.parse(await env.AMV_KV.get('ent:' + USER)).plan === 'pro',
-     'and the snapshot is applied over bytes nothing could read', true);
+  /* Nov 8 audit: bytes nothing could read may hold a block nobody can see,
+     so they are not written over. The restore says so, names the record,
+     and an operator who has looked removes the bad record and runs it again. */
+  ok(d.ok === false && d.code === 'restore_incomplete' && d.lost.includes('ent:' + USER), 'the restore says it is incomplete and names the record', d);
+  ok(await env.AMV_KV.get('ent:' + USER) === '{not json at all', 'and the unreadable live bytes are left as they were', true);
+  await env.AMV_KV.delete('ent:' + USER);
+  const again = await (await restore(env, { ['ent:' + USER]: JSON.stringify({ plan: 'pro' }) })).json();
+  ok(again.ok === true && JSON.parse(await env.AMV_KV.get('ent:' + USER)).plan === 'pro', 'once the bad record is removed, the restore applies it', again);
 }
 
 section('The rule is monotonic, checked directly');
@@ -210,6 +215,29 @@ section('The rule is monotonic, checked directly');
   ok(up.value === '11' && up.held === false, 'a higher one is taken', up);
   const same = await W._restoreMerge(env, 'tokepoch:a@b.c', '9');
   ok(same.value === '9' && same.held === false, 'and an equal one is not reported as a conflict', same);
+}
+
+section('Live state that cannot be read is not written over (Nov 8 audit)');
+{
+  /* The store failing while a restore runs: the comparison cannot be made,
+     so a block or revocation it would have protected could be undone. */
+  const env = mkEnv();
+  const realGet = env.AMV_KV.get;
+  await env.AMV_KV.put('ent:victim@x.com', JSON.stringify({ plan: 'free', blocked: true, blockedReason: 'chargeback' }));
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('ent:')) throw new Error('store down'); return realGet.call(env.AMV_KV, k); };
+  const m = await W._restoreMerge(env, 'ent:victim@x.com', JSON.stringify({ plan: 'pro', blocked: false }));
+  ok(m.unknown === true && m.value === undefined, 'the merge says it could not tell, and offers nothing to write', m);
+  const r = await restore(env, { 'ent:victim@x.com': JSON.stringify({ plan: 'pro', blocked: false }) });
+  const d = await r.json();
+  env.AMV_KV.get = realGet;
+  ok(JSON.parse(env.AMV_KV._map.get('ent:victim@x.com')).blocked === true, 'the live block is still there after the restore', env.AMV_KV._map.get('ent:victim@x.com'));
+  ok(JSON.stringify(d).includes('ent:victim@x.com'), 'and the restore names the record it did not restore', d);
+  /* A live record that will not parse is the same: something may be in it. */
+  await env.AMV_KV.put('apikeys:a@x.com', '{not json');
+  const p = await W._restoreMerge(env, 'apikeys:a@x.com', JSON.stringify({ items: [{ id: 'k1' }] }));
+  ok(p.unknown === true, 'an unreadable live key list is not replaced', p);
+  const plain = await W._restoreMerge(env, 'data:a@x.com:chats', JSON.stringify({ v: 1 }));
+  ok(plain.value === JSON.stringify({ v: 1 }), 'ordinary records are restored as given, as before', plain);
 }
 
 section('The merge is on the write path, not beside it');

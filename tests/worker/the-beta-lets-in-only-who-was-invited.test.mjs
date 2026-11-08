@@ -74,11 +74,24 @@ section('Anybody in the beta can bring somebody in, and is credited');
   ok(r.status === 200 && r.d.token, 'an existing person’s referral code is an invite', r.status);
 }
 
+section('A use is spent only on an account that was made (Nov 8 audit)');
+{
+  const made = await call('/admin/invites', { count: 1, uses: 1 }, { Authorization: 'Bearer admin-secret-token-value' });
+  const c = made.d.codes[0];
+  ok((await signup('not-an-email', c)).status === 400, 'a sign-up refused for a typo is refused');
+  ok((await call('/auth/signup', { email: 'weak@example.com', name: 'N', password: 'short', ref: c })).status === 400, 'and one with a password too weak');
+  ok((await signup('first@example.com', c)).status === 409, 'and one for an address that already has an account');
+  const r = await signup('real@example.com', c);
+  ok(r.status === 200 && r.d.token, 'none of them used the one-use code: the real sign-up after them gets in', r.status);
+  ok((await signup('third@example.com', c)).d.code === 'invite_required', 'and the code is then spent', vals.get('betainvuse:' + c));
+}
+
 section('Google and passkey sign-up are gated too');
 {
   const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-  ok(/_inviteOnly\(env\) && !\(await DB\.get\(env, 'acct', em\)\)\)\{ const inv = await _inviteGate\(env, body\.ref, 'google'\)/.test(src), 'a first Google sign-in asks for the invite');
-  ok(/const inv = await _inviteGate\(env, body\.ref, 'passkey'\)/.test(src), 'and a passkey sign-up');
+  ok(/_inviteOnly\(env\) && !\(await DB\.get\(env, 'acct', em\)\)\) \? await _inviteHold\(env, body\.ref, 'google'\)/.test(src)
+    && /if\(inv\) await inv\.done\(!!fed\.created\)/.test(src), 'a first Google sign-in asks for the invite, and hands it back unless an account was made');
+  ok(/await _inviteHold\(env, body\.ref, 'passkey'\)/.test(src) && /if\(inv\) await inv\.done\(created\);\s*if\(!created\)\{ await _pkCredUnreserve/.test(src), 'and a passkey sign-up, the same way');
 }
 
 console.log = quiet;

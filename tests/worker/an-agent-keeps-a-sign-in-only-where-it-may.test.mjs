@@ -321,12 +321,19 @@ section('Unknown is not absent, and a forget during a run is not undone by it (N
   await watched(await ag(), [cookie('tracker.example.com', 'T-20'), cookie('wiki.example.org', 'W-20')]);
   const copy = kv.get(jarKey);
   await call('/v1/agents/signins/forget', { id: G, site: 'wiki.example.org' }, tok4);
+  const settled = kv.get(jarKey);
   kv.set(jarKey, copy);                                  // a copy that outlived the delete
   const stale = JSON.parse(JSON.stringify(await ag()));
   delete stale.browser.revokedAt; delete stale.browser.revokedSites;   // and a record that has not seen the stamp
   const used = (await W._agentJarLoad(env, ME, stale)).map(c => c.value);
   ok(used.includes('T-20') && !used.includes('W-20'), 'a stale record without the stamp still uses nothing forgotten - the generation decides', used);
 
+  /* Nov 8 audit: a save does not merge into a copy older than the one last
+     written - it waits for the region to catch up, and says not kept if it
+     has not. Once the copy has settled the save goes ahead. */
+  ok((await watched(await ag(), [cookie('tracker.example.com', 'T-21')])).length === 0
+     && audits.some(a => a.event === 'agent_signins_not_kept' && a.why === 'jar_settling'), 'a save over a copy older than the last write is not made, and says why');
+  kv.set(jarKey, settled);
   /* The generation cannot be read: nothing is used, nothing is kept. */
   await watched(await ag(), [cookie('tracker.example.com', 'T-21')]);
   ok((await W._agentJarLoad(env, ME, await ag())).some(c => c.value === 'T-21'), 'a usable sign-in is in place');
