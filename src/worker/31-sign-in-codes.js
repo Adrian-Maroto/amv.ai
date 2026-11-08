@@ -1711,7 +1711,7 @@ async function _eraseAccount(env, email, opt) {
                     means them too (AMV-101). */
                  `factive:${email}`,
                  /* An authenticator app being set up: its secret, sealed. */
-                 `totpset:${email}`,
+                 `totpset:${email}`, `totpans:${email}`,
                  /* Background work held after failing (15a-job-queue.js). */
                  `autoquar:${email}`, `autodead:${email}`,
                  /* Their own retention choice, indexed for the nightly sweep. */

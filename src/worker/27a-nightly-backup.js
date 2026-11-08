@@ -281,8 +281,10 @@ const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
 async function _writesPaused(env){
   if (env.AMV_COUNTER) {
     try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });
+      if (r && r.unavailable) return true;
       if (r && r.map && typeof r.map === 'object') return !!(r.map['feature:writes'] && r.map['feature:writes'].off);
-      return true;
+      /* Answered with no switchboard of its own: the stored switches decide,
+         as they do for the restore itself. */
     } catch (e) { return true; }
   }
   try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); return !!(m && m['feature:writes'] && m['feature:writes'].off); }
