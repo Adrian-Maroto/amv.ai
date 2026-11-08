@@ -63,6 +63,8 @@ function school({ courses = 8, perCall = 120, failCourses = [], body = null, hea
   const state = { calls: 0, inFlight: 0, maxInFlight: 0, order: [] };
   globalThis.fetch = async (url) => {
     const u = String(url);
+    /* The name lookup a fetch to a chosen address makes (CONN-034) is not a call to the school. */
+    if (u.startsWith('https://cloudflare-dns.com/dns-query')) return new Response(JSON.stringify({ Status: 0, Answer: [] }), { status: 200 });
     state.calls++;
     state.inFlight++;
     state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);

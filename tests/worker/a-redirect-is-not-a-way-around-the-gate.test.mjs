@@ -52,6 +52,8 @@ function server(script) {
   const seen = [];
   globalThis.fetch = async (url, init) => {
     const u = String(url);
+    /* The name lookup each hop makes (CONN-034) is not one of the hops. */
+    if (u.startsWith('https://cloudflare-dns.com/dns-query')) return { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ Status: 0, Answer: [] }) };
     seen.push({ url: u, headers: Object.assign({}, (init && init.headers) || {}), redirect: init && init.redirect });
     const step = script[seen.length - 1] || script[script.length - 1];
     if (step && step.to) {

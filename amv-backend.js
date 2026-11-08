@@ -14416,6 +14416,7 @@ async function fetchGuarded(rawUrl, init, ms){
   for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
+    if(await _resolvesPrivate(new URL(gate.url).hostname)) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
     if(!(r.status >= 300 && r.status < 400)) return { blocked: false, response: r };
     const loc = r.headers.get('location');
@@ -14434,6 +14435,38 @@ async function fetchGuarded(rawUrl, init, ms){
     target = next;
   }
   return { blocked: true, why: 'That address redirected too many times.', url: target, hop: OUTBOUND_MAX_HOPS };
+}
+
+/* A NAME IS CHECKED BY WHERE IT POINTS (Nov 8 audit CONN-034). The gate
+   reads the address as written, so a public-looking name whose DNS answer is
+   10.0.0.5 or 169.254.169.254 passed it. Every hop's name is now looked up
+   (A and AAAA, over DNS-over-HTTPS) and refused when any answer is a private,
+   loopback, link-local or metadata address - the same ranges as the gate.
+   A lookup that cannot be made does not refuse: a Worker's own egress does
+   not reach private networks, so this is a second wall, not the only one;
+   and answers are kept for a minute so a page of requests is one lookup.
+   A name that answers public here and private a moment later (rebinding) is
+   bounded by that same egress, which resolves it again itself. */
+const _dnsSeen = new Map();
+const DNS_KEEP_MS = 60000;
+async function _resolvesPrivate(host){
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if(!h || /^[\d.]+$/.test(h) || h.includes(':')) return false;          // a literal: the gate already read it
+  const hit = _dnsSeen.get(h);
+  if(hit && Date.now() - hit.at < DNS_KEEP_MS) return hit.bad;
+  const ask = async (type) => {
+    try {
+      const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=' + type + '&name=' + encodeURIComponent(h), { headers: { Accept: 'application/dns-json' } }, 3000);
+      if(!r || !r.ok) return [];
+      const d = await r.json();
+      return ((d && d.Answer) || []).filter(a => a && (a.type === 1 || a.type === 28)).map(a => String(a.data || ''));
+    } catch (e) { return []; }
+  };
+  const ips = [].concat(...(await Promise.all([ask('A'), ask('AAAA')])));
+  const bad = ips.some(ip => ip && !_webHostAllowed('http://' + (ip.includes(':') ? '[' + ip + ']' : ip) + '/').ok);
+  if(_dnsSeen.size > 2000) _dnsSeen.clear();
+  _dnsSeen.set(h, { at: Date.now(), bad });
+  return bad;
 }
 
 /* Same ORIGIN, decided by parsing rather than by comparing strings.
