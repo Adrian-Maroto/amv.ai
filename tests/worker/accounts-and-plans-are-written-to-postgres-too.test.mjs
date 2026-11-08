@@ -48,7 +48,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgdual.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx, runPgIntentSweep, _pgLedger };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _pgMirror, _creditGrant, _creditReverse, meterStream, ENGINES, CREDIT_MARKUP, _pushWalletTx, runPgIntentSweep, _pgLedger };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -107,6 +107,19 @@ section('A plan lands as one entitlement row, and KV is unchanged by it');
   await W._pgSettle();
   ok(q("select count(*)||':'||max(plan) from entitlements") === '1:ultra', 'a change updates the one row, it does not add a second');
   ok(JSON.parse(store.get('ent:ana@example.com')).plan === 'ultra' && JSON.parse(store.get('ent:ana@example.com')).subId === 'sub_123', 'KV holds exactly what it was given');
+}
+
+section('Two isolates’ mirrors of one record, landing in reverse order, leave the newer (Nov 8 audit DATA-040)');
+{
+  /* Revision 2 (plan ultra) lands first; revision 1 (plan pro), written
+     earlier in another isolate, finishes after it. */
+  const base = JSON.parse(store.get('ent:ana@example.com'));
+  await W._pgMirror(env, 'ent', 'ana@example.com', Object.assign({}, base, { plan: 'team' }), null, 1000002);
+  await W._pgMirror(env, 'ent', 'ana@example.com', Object.assign({}, base, { plan: 'pro' }), null, 1000001);
+  ok(q("select max(e.plan) from entitlements e join accounts a on a.id=e.account_id where a.email='ana@example.com'") === 'team', 'the older mirror finishing last changes nothing', q("select plan from entitlements"));
+  ok(q("select rev from mirror_revisions where kind='ent' and record_id='ana@example.com'") === '1000002', 'and the newest revision is the one kept');
+  await W._pgMirror(env, 'ent', 'ana@example.com', Object.assign({}, base, { plan: 'ultra' }), null, 1000003);
+  ok(q("select max(e.plan) from entitlements e join accounts a on a.id=e.account_id where a.email='ana@example.com'") === 'ultra', 'a newer one still lands');
 }
 
 section('API keys land one row each, by their hash alone; revoking one keeps its row with when');
@@ -202,10 +215,14 @@ section('Money is one row per event: a pack bought once is one row however often
 
 section('The same key with different money is a conflict, not a duplicate (Nov 7 audit DATA-034)');
 {
-  W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 20, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
+  await W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 20, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
+  /* Nov 8 audit DATA-032: by the time the caller goes on, the exact row is
+     already kept - an isolate that ends now leaves it on the repair list. */
+  { const held = JSON.parse(store.get('pgrepair:ledger:credit:pi_pack_1') || 'null');
+    ok(held && held.why === 'pending' && held.row && held.row.amount === 20, 'the row is written down before it is sent', held); }
   await W._pgSettle();
   ok(!store.has('pgrepair:ledger:credit:pi_pack_1'), 'the same event again is the same row - nothing to repair');
-  W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 2000, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
+  await W._pgLedger(env, { email: 'ana@example.com', currency: 'USD', amount: 2000, reason: 'purchase', key: 'credit:pi_pack_1', source: 'stripe:pi_pack_1' });
   await W._pgSettle();
   const rep = JSON.parse(store.get('pgrepair:ledger:credit:pi_pack_1') || 'null');
   ok(rep && /ledger_key_conflict/.test(rep.why), 'a different amount under that key is refused and kept for repair, said as a conflict', rep && rep.why);

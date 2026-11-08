@@ -27,6 +27,15 @@ each item, and what remains the owner's or the Postgres cutover's.
 | AUTH-025 | A failed passkey sign-up or registration releases its claim, so the same passkey can be added again at once. | a-passkey-or-a-second-step-guards-the-account |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
+## Postgres mirror, ahead of the cutover
+
+| Id | What changed | Test |
+|---|---|---|
+| DATA-040 | Every mirror carries a per-record revision from the strongly consistent object, taken when the write is made; Postgres keeps the newest that landed (`mirror_revisions`), so an older mirror from any isolate finishing later changes nothing. | accounts-and-plans-are-written-to-postgres-too |
+| DATA-041 | Each mirror - an account and its migration record, an erasure's five statements, a team and its members, a key list - is one SQL transaction with its revision. | accounts-and-plans-are-written-to-postgres-too |
+| DATA-032 | A money row is put on the repair list, awaited by the caller, before it is sent, and taken off once Postgres has it. | accounts-and-plans-are-written-to-postgres-too |
+| DATA-042 | Ledger key reuse also compares the source event (credit) and hold date (seller). | accounts-and-plans-are-written-to-postgres-too |
+
 ## Marked open in the register, already changed on Nov 7
 
 The register carries these forward as open; the Nov 7 build changed each and
@@ -38,9 +47,9 @@ rather than a transaction), the remaining step is the Postgres cutover below.
 
 ## Needs the Postgres cutover (Postgres is not the authority yet)
 
-DATA-003, DATA-021, DATA-031, DATA-032, DATA-036, DATA-040, DATA-041,
-DATA-042, STATE-001, STATE-007: each asks for one transactional authority
-(outbox, monotonic source revisions, multi-statement transactions). The
+DATA-003, DATA-021, DATA-031, DATA-036, STATE-001, STATE-007: each asks
+for Postgres to become the one transactional authority, which is the
+cutover itself. The
 cutover check (`_pgCutover`) refuses while any applies.
 
 ## Needs the owner

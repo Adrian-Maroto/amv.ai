@@ -344,7 +344,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
     /* The Postgres ledger's row for what this message cost the credit, once,
        keyed by the request (04a-control-plane.js). Whose credit paid is in
        the note: on a team it is the team's, spent by this member. */
-    if (cost > 0) _pgLedger(env, { email: user && user.email, currency: 'USD', amount: -(cost * CREDIT_MARKUP), reason: 'spend',
+    if (cost > 0) await _pgLedger(env, { email: user && user.email, currency: 'USD', amount: -(cost * CREDIT_MARKUP), reason: 'spend',
       /* The key is made here, never from the request id: that one is the
          browser's to choose, and a reused one would swallow a real spend. */
       key: 'spend:' + crypto.randomUUID(), note: 'subject:' + creditName.replace(/^creditspent:/, '') + (reqId ? ' req:' + reqId : '') });

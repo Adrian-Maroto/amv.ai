@@ -529,7 +529,7 @@ async function _pushWalletTx(env, email, tx) {
   const added = await _pushWalletTxLine(env, email, tx);
   /* A line that is new is money that moved: its Postgres ledger row too
      (04a-control-plane.js), keyed by what makes the line itself unique. */
-  if (added) _pgSellerRow(env, email, tx);
+  if (added) await _pgSellerRow(env, email, tx);
   return added;
 }
 async function _pushWalletTxLine(env, email, tx) {

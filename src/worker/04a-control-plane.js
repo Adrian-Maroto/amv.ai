@@ -114,7 +114,16 @@ function _pgAfter(env, kind, id, obj, ik){
   if (!PG_MIRROR_KINDS.has(kind) || !_pgOn(env)) return;
   const chainKey = kind + ':' + String(id || '').toLowerCase();
   const before = _pgChains.get(chainKey) || Promise.resolve();
-  const run = before.catch(() => {}).then(() => _pgMirror(env, kind, String(id || '').toLowerCase(), obj));
+  /* AND IN THE ORDER THEY WERE WRITTEN EVERYWHERE (Nov 8 audit DATA-040).
+     The chain above orders one isolate's mirrors; two isolates' mirrors of
+     the same record could still land in either order. Each write now takes
+     the record's next revision from the strongly consistent object at the
+     moment it is made (asked now, before anything else waits), and Postgres
+     keeps the newest one that landed: an older mirror finishing later
+     changes nothing. Not obtainable means unordered, as before - the proof
+     still keeps Postgres from answering for a row nobody compared. */
+  const revP = _pgRevNext(env, kind, chainKey);
+  const run = before.catch(() => {}).then(async () => _pgMirror(env, kind, String(id || '').toLowerCase(), obj, null, await revP));
   _pgChains.set(chainKey, run);
   run.catch(() => {}).finally(() => { if (_pgChains.get(chainKey) === run) _pgChains.delete(chainKey); });
   const p = run
@@ -131,6 +140,29 @@ function _pgAfter(env, kind, id, obj, ik){
   _pgInFlight.add(p);
   try { _bg(p); } catch (e) { /* nothing to hold it open: delivery is best effort, said in _bg */ }
 }
+async function _pgRevNext(env, kind, chainKey){
+  if (!env.AMV_COUNTER) return null;
+  try { const r = await counter(env, 'pgrev:' + chainKey, { op: 'incr', amount: 1, keep: true }); const v = +((r && r.value) || 0); return v > 0 ? v : null; }
+  catch (e) { return null; }
+}
+/* The mirror's rows and its revision, one transaction: applied only when
+   this revision is newer than the newest that landed (or when there is no
+   revision, from the backfill, which copies what KV holds now). Answers
+   false when it was older and nothing was written. */
+async function _pgGuarded(sql, kind, id, rev, fn){
+  return sql.begin(async (tx) => {
+    if (rev) {
+      const won = await tx`
+        INSERT INTO mirror_revisions (kind, record_id, rev) VALUES (${kind}, ${id}, ${rev})
+        ON CONFLICT (kind, record_id) DO UPDATE SET rev = EXCLUDED.rev, at = now()
+          WHERE mirror_revisions.rev < EXCLUDED.rev
+        RETURNING rev`;
+      if (!won.length) return false;
+    }
+    await fn(tx);
+    return true;
+  });
+}
 /* For tests and for the backfill: wait for every mirror write in flight. */
 async function _pgSettle(){ while (_pgInFlight.size) await Promise.allSettled([..._pgInFlight]); }
 
@@ -138,58 +170,68 @@ const _pgTime = (ms) => (Number(ms) > 0 ? new Date(Number(ms)) : null);
 
 /* `sqlIn`: the backfill passes the client it already holds, so a page of
    accounts is one connection, not three per account; it closes that itself. */
-async function _pgMirror(env, kind, email, obj, sqlIn){
+async function _pgMirror(env, kind, email, obj, sqlIn, rev){
   if (!email) return;
   const sql = sqlIn || await _pgClient(env);
+  /* EVERY STATEMENT OF ONE MIRROR, OR NONE (Nov 8 audit DATA-041): an
+     erasure is four statements and an account two; a failure between them
+     left half of one in Postgres. Each mirror is one transaction now. */
   try {
     if (kind === 'acct') {
-      if (!obj) {
-        /* Erased: what hangs off the account goes first - whichever order the
-           erasure deletes its records in, nothing is left pointing at a
-           person - then a tombstone with nothing personal left on it. */
-        await sql`DELETE FROM api_keys WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
-        await sql`DELETE FROM memberships WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
-        await sql`DELETE FROM entitlements WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
-        await sql`UPDATE accounts SET email = 'erased-' || id || '@erased.invalid', name = '', pw_hash = NULL, pw_salt = NULL,
-                   pw_algo = NULL, pw_iter = NULL, extra = '{}'::jsonb, deleted_at = now(), updated_at = now()
-                  WHERE email = ${email}`;
-        await sql`DELETE FROM migration_accounts WHERE email = ${email}`;
-        return;
-      }
-      const { name, provider, pwHash, salt, pwIter, pwAlgo, createdAt, emailVerifiedAt, email: _e, ...extra } = obj;
-      const rows = await sql`
-        INSERT INTO accounts (email, name, provider, pw_hash, pw_salt, pw_algo, pw_iter, email_verified_at, created_at, extra, updated_at)
-        VALUES (${email}, ${String(name || '')}, ${String(provider || 'email')}, ${pwHash || null}, ${salt || null},
-                ${pwHash ? String(pwAlgo || 'pbkdf2-sha256') : null}, ${pwIter ? Number(pwIter) : null},
-                ${_pgTime(emailVerifiedAt)}, ${_pgTime(createdAt) || new Date()}, ${sql.json(extra)}, now())
-        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, provider = EXCLUDED.provider, pw_hash = EXCLUDED.pw_hash,
-          pw_salt = EXCLUDED.pw_salt, pw_algo = EXCLUDED.pw_algo, pw_iter = EXCLUDED.pw_iter,
-          email_verified_at = EXCLUDED.email_verified_at, extra = EXCLUDED.extra, updated_at = now()
-        RETURNING id`;
-      const accountId = rows[0].id;
-      await sql`INSERT INTO migration_accounts (email, account_id) VALUES (${email}, ${accountId})
-                ON CONFLICT (email) DO UPDATE SET account_id = EXCLUDED.account_id`;
+      return await _pgGuarded(sql, kind, email, rev, async (tx) => {
+        if (!obj) {
+          /* Erased: what hangs off the account goes first - whichever order the
+             erasure deletes its records in, nothing is left pointing at a
+             person - then a tombstone with nothing personal left on it. */
+          await tx`DELETE FROM api_keys WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
+          await tx`DELETE FROM memberships WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
+          await tx`DELETE FROM entitlements WHERE account_id IN (SELECT id FROM accounts WHERE email = ${email})`;
+          await tx`UPDATE accounts SET email = 'erased-' || id || '@erased.invalid', name = '', pw_hash = NULL, pw_salt = NULL,
+                     pw_algo = NULL, pw_iter = NULL, extra = '{}'::jsonb, deleted_at = now(), updated_at = now()
+                    WHERE email = ${email}`;
+          await tx`DELETE FROM migration_accounts WHERE email = ${email}`;
+          return;
+        }
+        const { name, provider, pwHash, salt, pwIter, pwAlgo, createdAt, emailVerifiedAt, email: _e, ...extra } = obj;
+        const rows = await tx`
+          INSERT INTO accounts (email, name, provider, pw_hash, pw_salt, pw_algo, pw_iter, email_verified_at, created_at, extra, updated_at)
+          VALUES (${email}, ${String(name || '')}, ${String(provider || 'email')}, ${pwHash || null}, ${salt || null},
+                  ${pwHash ? String(pwAlgo || 'pbkdf2-sha256') : null}, ${pwIter ? Number(pwIter) : null},
+                  ${_pgTime(emailVerifiedAt)}, ${_pgTime(createdAt) || new Date()}, ${tx.json(extra)}, now())
+          ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, provider = EXCLUDED.provider, pw_hash = EXCLUDED.pw_hash,
+            pw_salt = EXCLUDED.pw_salt, pw_algo = EXCLUDED.pw_algo, pw_iter = EXCLUDED.pw_iter,
+            email_verified_at = EXCLUDED.email_verified_at, extra = EXCLUDED.extra, updated_at = now()
+          RETURNING id`;
+        const accountId = rows[0].id;
+        await tx`INSERT INTO migration_accounts (email, account_id) VALUES (${email}, ${accountId})
+                  ON CONFLICT (email) DO UPDATE SET account_id = EXCLUDED.account_id`;
+      });
+    }
+    if (kind === 'team') {
+      let missing = false;
+      await _pgGuarded(sql, kind, email, rev, async (tx) => { missing = await _pgMirrorTeam(tx, email, obj); });
+      if (missing) throw new Error('member_without_account_row');
       return;
     }
-    if (kind === 'team') return await _pgMirrorTeam(sql, email, obj);
     if (kind === 'ent' || kind === 'apikeys') {
       const acct = await sql`SELECT id FROM accounts WHERE email = ${email}`;
       /* Deleting what an account no longer has a row for is already done. */
       if (!acct.length) { if (!obj) return; throw new Error('no_account_row'); }
       const accountId = acct[0].id;
-      if (kind === 'apikeys') return await _pgMirrorKeys(sql, accountId, obj);  // awaited: the finally below closes the client
-      if (!obj) { await sql`DELETE FROM entitlements WHERE account_id = ${accountId}`; return; }
-      const { plan, source, renewedAt, periodEnd, lapsedAt, blocked, blockedReason, customCfg, seats, updatedAt, ...extra } = obj;
-      await sql`
-        INSERT INTO entitlements (account_id, plan, seats, source, period_start, period_end, lapsed_at, blocked, blocked_reason, custom_cfg, extra, updated_at)
-        VALUES (${accountId}, ${String(plan || 'free')}, ${seats ? Number(seats) : null}, ${String(source || 'none')},
-                ${_pgTime(renewedAt)}, ${_pgTime(periodEnd)}, ${_pgTime(lapsedAt)}, ${!!blocked}, ${blockedReason ? String(blockedReason) : null},
-                ${customCfg ? sql.json(customCfg) : null}, ${sql.json(extra)}, ${_pgTime(updatedAt) || new Date()})
-        ON CONFLICT (account_id) WHERE account_id IS NOT NULL DO UPDATE SET plan = EXCLUDED.plan, seats = EXCLUDED.seats,
-          source = EXCLUDED.source, period_start = EXCLUDED.period_start, period_end = EXCLUDED.period_end,
-          lapsed_at = EXCLUDED.lapsed_at, blocked = EXCLUDED.blocked, blocked_reason = EXCLUDED.blocked_reason,
-          custom_cfg = EXCLUDED.custom_cfg, extra = EXCLUDED.extra, updated_at = EXCLUDED.updated_at`;
-      return;
+      return await _pgGuarded(sql, kind, email, rev, async (tx) => {
+        if (kind === 'apikeys') return _pgMirrorKeys(tx, accountId, obj);
+        if (!obj) { await tx`DELETE FROM entitlements WHERE account_id = ${accountId}`; return; }
+        const { plan, source, renewedAt, periodEnd, lapsedAt, blocked, blockedReason, customCfg, seats, updatedAt, ...extra } = obj;
+        await tx`
+          INSERT INTO entitlements (account_id, plan, seats, source, period_start, period_end, lapsed_at, blocked, blocked_reason, custom_cfg, extra, updated_at)
+          VALUES (${accountId}, ${String(plan || 'free')}, ${seats ? Number(seats) : null}, ${String(source || 'none')},
+                  ${_pgTime(renewedAt)}, ${_pgTime(periodEnd)}, ${_pgTime(lapsedAt)}, ${!!blocked}, ${blockedReason ? String(blockedReason) : null},
+                  ${customCfg ? tx.json(customCfg) : null}, ${tx.json(extra)}, ${_pgTime(updatedAt) || new Date()})
+          ON CONFLICT (account_id) WHERE account_id IS NOT NULL DO UPDATE SET plan = EXCLUDED.plan, seats = EXCLUDED.seats,
+            source = EXCLUDED.source, period_start = EXCLUDED.period_start, period_end = EXCLUDED.period_end,
+            lapsed_at = EXCLUDED.lapsed_at, blocked = EXCLUDED.blocked, blocked_reason = EXCLUDED.blocked_reason,
+            custom_cfg = EXCLUDED.custom_cfg, extra = EXCLUDED.extra, updated_at = EXCLUDED.updated_at`;
+      });
     }
   } finally {
     if (!sqlIn) { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
@@ -206,10 +248,10 @@ function _pgTextArray(list){
 /* An account's API keys: one row per key, the hash only (the key itself is
    never stored anywhere). A revoked key keeps its row with when; a key gone
    from the record is gone from the table. */
-async function _pgMirrorKeys(sql, accountId, obj){
+async function _pgMirrorKeys(tx, accountId, obj){
   const items = (obj && Array.isArray(obj.items)) ? obj.items.filter(k => k && k.id && k.hash) : [];
   const ids = items.map(k => String(k.id));
-  await sql.begin(async (tx) => {
+  {
     if (ids.length) await tx`DELETE FROM api_keys WHERE account_id = ${accountId} AND id NOT IN ${tx(ids)}`;
     else await tx`DELETE FROM api_keys WHERE account_id = ${accountId}`;
     for (const k of items) {
@@ -221,7 +263,7 @@ async function _pgMirrorKeys(sql, accountId, obj){
           last_used_at = EXCLUDED.last_used_at, revoked_at = EXCLUDED.revoked_at
           WHERE api_keys.account_id = EXCLUDED.account_id`;
     }
-  });
+  }
 }
 
 /* A team: an organization of kind company, found by its KV id while both
@@ -229,7 +271,7 @@ async function _pgMirrorKeys(sql, accountId, obj){
    row yet is not dropped: the whole team goes on the repair list, so the
    backfill writes it again once that account's row exists. */
 async function _pgMirrorTeam(sql, teamId, obj){
-  if (!obj) { await sql`DELETE FROM organizations WHERE legacy_id = ${teamId}`; return; }
+  if (!obj) { await sql`DELETE FROM organizations WHERE legacy_id = ${teamId}`; return false; }
   const { id: _id, name, ownerEmail, members, createdAt, policy, ...extra } = obj;
   const owner = await sql`SELECT id FROM accounts WHERE email = ${String(ownerEmail || '').toLowerCase()}`;
   if (!owner.length) throw new Error('no_account_row');
@@ -238,7 +280,9 @@ async function _pgMirrorTeam(sql, teamId, obj){
   const known = emails.length ? await sql`SELECT id, email FROM accounts WHERE email IN ${sql(emails)}` : [];
   const idOf = new Map(known.map(r => [r.email, r.id]));
   const ROLES = new Set(['owner', 'admin', 'member', 'viewer']);
-  await sql.begin(async (tx) => {
+  /* Run inside the mirror's own transaction (_pgGuarded). */
+  const tx = sql;
+  {
     const org = await tx`
       INSERT INTO organizations (name, kind, created_by, created_at, policy, legacy_id, extra)
       VALUES (${String(name || 'Team')}, 'company', ${owner[0].id}, ${_pgTime(createdAt) || new Date()},
@@ -258,8 +302,9 @@ async function _pgMirrorTeam(sql, teamId, obj){
         VALUES (${orgId}, ${aid}, ${role}, ${String(m.source || 'invite')}, ${m.monthlyCap != null ? Number(m.monthlyCap) : null}, ${_pgTime(m.joinedAt) || new Date()})
         ON CONFLICT (org_id, account_id) DO UPDATE SET role = EXCLUDED.role, monthly_cap = EXCLUDED.monthly_cap`;
     }
-  });
-  if (emails.some(e => !idOf.has(e))) throw new Error('member_without_account_row');
+  }
+  /* Committed as far as it can go; the caller then lists it for repair. */
+  return emails.some(e => !idOf.has(e));
 }
 
 /* ── MONEY: one row per event, never a number that is overwritten ─────────
@@ -268,12 +313,25 @@ async function _pgMirrorTeam(sql, teamId, obj){
    so the same event delivered twice is one row (the UNIQUE key), not two.
    A row that could not be written is kept whole on the repair list, so the
    backfill writes exactly that row - never one recomputed later. */
-function _pgLedger(env, row){
+/* WRITTEN DOWN BEFORE IT IS SENT (Nov 8 audit DATA-032). The row went
+   straight to a background insert, so an isolate that ended first left it
+   nowhere - not in Postgres and not on the repair list. The exact row is
+   now kept on the repair list first, awaited by the caller, and taken off
+   once Postgres has it; a row the backfill finds there and Postgres already
+   holds is the same key and the same money, so writing it again is a no-op. */
+async function _pgLedger(env, row){
   if (!_pgOn(env) || !row || !row.key || !row.email || !(Math.abs(+row.amount) > 0)) return;
+  const rk = 'pgrepair:ledger:' + row.key;
+  try { await env.AMV_KV.put(rk, JSON.stringify({ at: Date.now(), why: 'pending', row })); }
+  catch (e) {
+    try { audit(env, 'pg_ledger_unrecorded', { id: row.key }); } catch(_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'pg_ledger_unrecorded', 'A money row could not be put on the Postgres repair list before it was sent. KV and the counters are still the record; run the backfill before money reads move to Postgres.', 60); } catch(_) { /* logging */ }
+  }
   const p = (async () => {
     const sql = await _pgClient(env);
-    try { return await _pgLedgerInsert(sql, row); }
+    try { await _pgLedgerInsert(sql, row); }
     finally { try { await sql.end({ timeout: 5 }); } catch(e) { /* cleanup: nothing depends on it */ } }
+    try { await env.AMV_KV.delete(rk); } catch(e) { /* the backfill finds the row already there: the same key, a no-op */ }
   })().catch(async (e) => {
     const why = String((e && e.message) || e).slice(0, 160);
     try { audit(env, 'pg_mirror_failed', { kind: 'ledger', id: row.key, error: why }); } catch(_) { /* logging: it never decides anything */ }
@@ -363,9 +421,9 @@ function _pgSellerLedgerRow(email, tx){
   return { table: 'seller', email, currency: tx.currency || 'USD', amount: +tx.amount, reason: PG_SELLER_REASON[tx.type],
     key: 'seller:' + tx.type + ':' + id, at: tx.ts, holdUntil: tx.holdUntil };
 }
-function _pgSellerRow(env, email, tx){
+async function _pgSellerRow(env, email, tx){
   const row = _pgSellerLedgerRow(email, tx);
   if (!row) return;
   if (row.unkeyed) { try { audit(env, 'pg_mirror_failed', { kind: 'seller', id: email, error: 'line_without_identity:' + tx.type }); } catch(e) { /* logging: it never decides anything */ } return; }
-  _pgLedger(env, row);
+  await _pgLedger(env, row);
 }

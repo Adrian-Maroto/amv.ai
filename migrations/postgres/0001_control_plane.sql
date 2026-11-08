@@ -219,6 +219,20 @@ CREATE INDEX api_keys_account ON api_keys (account_id);
 -- ── The migration's own bookkeeping ─────────────────────────────────────
 -- Keyed by email because KV is: where each account is read from, and where
 -- the backfill has got to. An account moves only when its row says so.
+-- The newest write of each mirrored record that has landed (Nov 8 audit
+-- DATA-040). Every mirror carries a revision taken, per record, from the
+-- strongly consistent object at the moment of the write; a mirror whose
+-- revision is not newer than this one changes nothing, in the same
+-- transaction as its rows - so an older copy finishing last, from any
+-- isolate, can never undo a newer one.
+CREATE TABLE mirror_revisions (
+  kind             text NOT NULL,
+  record_id        text NOT NULL,
+  rev              bigint NOT NULL CHECK (rev > 0),
+  at               timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (kind, record_id)
+);
+
 CREATE TABLE migration_accounts (
   email            text PRIMARY KEY CHECK (email = lower(email)),
   account_id       uuid REFERENCES accounts(id),
