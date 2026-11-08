@@ -60,6 +60,8 @@ let CAL = [];
 let GH = [], ghStatus = 200, ghAsked = [];
 globalThis.fetch = async (url, init) => {
   const u = new URL(String(url));
+  /* The name lookup a watched page's fetch makes (CONN-034): a public answer. */
+  if (u.hostname === 'cloudflare-dns.com') return new Response(JSON.stringify({ Status: 0, Answer: [] }), { status: 200 });
   if (u.hostname === 'tickets.example.com') { pageHits++; return new Response(PAGE.html, { status: PAGE.status, headers: { 'Content-Type': 'text/html' } }); }
   if (/googleapis\.com$/.test(u.hostname) && u.pathname.includes('/calendar/')) return new Response(JSON.stringify({ items: CAL }), { status: 200 });
   if (u.hostname === 'api.github.com') { ghAsked.push(u.pathname); return new Response(JSON.stringify(GH), { status: ghStatus }); }
