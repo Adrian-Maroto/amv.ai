@@ -31800,7 +31800,11 @@ async function adminFinance(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
 
   // Non-Stripe payments (PayPal, marketplace/wallet) come from our own ledger.
-  const ledger = await _readTxnLog(env, 300);
+  /* Read one past the cap, so a ledger longer than the page says so
+     (Nov 8 audit FIN-021): the totals already say they cover the page. */
+  const ledgerAll = await _readTxnLog(env, 301);
+  const ledgerMore = ledgerAll.length > 300;
+  const ledger = ledgerAll.slice(0, 300);
   const ledgerTx = ledger.map(t => ({
     id: t.id, date: t.ts, email: t.email || '-', amount: t.amount, refunded: t.status === 'refunded' ? t.amount : 0,
     currency: t.currency, status: t.status, description: t.kind || '', provider: t.provider, last4: null, receipt: null,
@@ -31809,7 +31813,7 @@ async function adminFinance(request, env) {
   if (!env.STRIPE_SECRET_KEY) {
     // No Stripe, but we may still have PayPal / marketplace transactions.
     const sum = _totalsByCurrency(ledgerTx, (t) => t.status === 'succeeded');
-    return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx,
+    return json({ ok: true, configured: ledgerTx.length > 0, transactions: ledgerTx, hasMore: ledgerMore,
       totals: sum.totals, byCurrency: sum.byCurrency,
       note: ledgerTx.length ? 'Stripe not connected - showing PayPal & marketplace transactions.' : 'Connect Stripe (STRIPE_SECRET_KEY) to see card transactions.' });
   }
@@ -31852,7 +31856,7 @@ async function adminFinance(request, env) {
   return json({
     ok: true, configured: true,
     transactions,
-    hasMore: !!d.has_more,
+    hasMore: !!d.has_more || ledgerMore,
     nextCursor: stripeTx.length ? stripeTx[stripeTx.length - 1].id : null,
     totals: sum.totals, byCurrency: sum.byCurrency,
   });

@@ -238,5 +238,14 @@ section('Two regions writing one payment at once make one line (Nov 8 audit)');
   ok(a && b && a.id === 'evt_same' && b.id === 'evt_same' && a.ts === b.ts, 'and both writers are answered with the same record', { a, b });
 }
 
+section('A ledger longer than the page says there is more (Nov 8 audit FIN-021)');
+{
+  clearLedger();
+  for (let i = 0; i < 302; i++) await W._recordTxn(baseEnv, { id: 'pp_' + i, provider: 'paypal', email: 'p@x.com', amount: 1, currency: 'USD', kind: 'plan', ts: 1000 + i });
+  const d = await (await W.adminFinance(adminReq(), baseEnv)).json();
+  ok(d.transactions.length === 300 && d.hasMore === true && d.totals.scope === 'page', 'three hundred shown, more said to exist, and the totals say they cover the page', { n: d.transactions.length, more: d.hasMore, scope: d.totals.scope });
+  clearLedger();
+}
+
 report();
 done();
