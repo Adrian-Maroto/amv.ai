@@ -25,7 +25,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'jobqueue.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { SWITCH_KEY, runDueAutomations, issueTokens, _qOpen, _qSeal, _auditPid };
+export { SWITCH_KEY, runDueAutomations, issueTokens, _qOpen, _qSeal, _auditPid, _autoQuarantined };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -133,6 +133,20 @@ section('The queue key follows its secret (Nov 8 audit QUEUE-013)');
   const sealed = await W._qSeal(a, 'who@example.com');
   ok(await W._qOpen(a, sealed) === 'who@example.com', 'sealed and opened under the same secret');
   ok(await W._qOpen(b, sealed) === '' && await W._qOpen(b, await W._qSeal(b, 'x@y.z')) === 'x@y.z', 'after the secret changes, the old key is not used in a warm isolate');
+}
+
+section('A quarantine is seen in every region at once (Nov 8 audit QUEUE-016)');
+{
+  const marks = new Map();
+  const strong = { idFromName: n => n, get: n => ({ async fetch(_u, init) { const b = JSON.parse(init.body); const r = o => new Response(JSON.stringify(o));
+    if (b.op === 'incr') { marks.set(n, (marks.get(n) || 0) + b.amount); return r({ value: marks.get(n) }); }
+    if (b.op === 'clear') { marks.delete(n); return r({ ok: true }); }
+    return r({ value: marks.get(n) || 0 }); } }) };
+  const kvEmpty = { async get() { return null; }, async put() {}, async delete() {} };
+  const e2 = { AMV_KV: kvEmpty, AMV_COUNTER: strong };
+  ok(await W._autoQuarantined(e2, 'q@x.com') === false, 'not quarantined, not held');
+  marks.set('autoquar:q@x.com', 1);
+  ok(await W._autoQuarantined(e2, 'q@x.com') === true, 'marked in the strong object, held - even where KV has not caught up');
 }
 
 section('The kill switch and a paused account stop the consumer too');

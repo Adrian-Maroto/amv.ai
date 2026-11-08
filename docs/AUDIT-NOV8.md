@@ -34,6 +34,8 @@ each item, and what remains the owner's or the Postgres cutover's.
 | QUEUE-013 | The queue key is remade when its secret changes, instead of a warm isolate keeping the old one. | background-work-goes-through-the-queue |
 | GROWTH-011 | The Growth tab shows confirmed actions per active person beside cost and revenue per person: work done, not messages. | what-brought-them-back |
 | FRONT-022 | A file shared from another app carries when it arrived and is removed after an hour if the app never opened it - swept on each new share and when the service worker starts. | a-file-shared-from-another-app-arrives-in-amv |
+| QUEUE-016 | A quarantine is also a mark in the account's strongly consistent object, set and cleared with the KV record; either holds the run. | background-work-goes-through-the-queue |
+| COMP-021, LOG-010 | Checked: used call nonces are pruned on every call and bounded by the call rate; log sampling stays at 100% because the audit trail is written to the logs. | - |
 | AUTH-026 | Turning on the authenticator app keeps its answer sealed for fifteen minutes and shows the same recovery codes again to whoever holds the app; an account write that failed leaves the setup usable. | a-passkey-or-a-second-step-guards-the-account |
 
 ## Postgres mirror, ahead of the cutover

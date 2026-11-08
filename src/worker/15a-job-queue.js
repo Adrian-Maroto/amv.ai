@@ -180,8 +180,17 @@ const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); r
    read is treated as in force for this run, so work that failed twice is
    never run again just because the store did not answer. It is tried
    again on the next tick. */
+/* HELD WHERE EVERY REGION SEES IT AT ONCE (Nov 8 audit QUEUE-016). The
+   quarantine was only a KV record, which another region can miss for up to
+   a minute - long enough to run poisoned work again. It is now also a mark
+   in the account's strongly consistent object, set with the record and
+   cleared with it, and either one holds the run. */
+const _autoQuarName = (email) => 'autoquar:' + String(email || '').toLowerCase();
 async function _autoQuarantined(env, email){
-  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }
+  try{
+    if(env.AMV_COUNTER){ const r = await counter(env, _autoQuarName(email), { op: 'get' }); if(r && r.unavailable) return true; if(+((r && r.value) || 0) > 0) return true; }
+    return !!(await env.AMV_KV.get(_autoQuarKey(email)));
+  }
   catch(e){ audit(env, 'auto_quarantine_unknown', { email }); return true; }
 }
 /* POST /admin/auto/release { email }: the operator's replay, after looking. */
@@ -191,8 +200,9 @@ async function autoQuarantineRelease(request, env){
   let body = {}; try{ body = await request.json(); }catch(e){ body = {}; }
   const email = String(body.email || '').toLowerCase().trim();
   if(!email) return json({ error: 'Name the account: { email }.', code: 'bad_request' }, 400);
-  const held = await env.AMV_KV.get(_autoQuarKey(email));
+  const held = await _autoQuarantined(env, email);
   if(!held) return json({ error: 'That account is not in quarantine.', code: 'not_quarantined' }, 404);
+  if(env.AMV_COUNTER) await counter(env, _autoQuarName(email), { op: 'clear' });
   await env.AMV_KV.delete(_autoQuarKey(email));
   await env.AMV_KV.delete(_autoDeadKey(email));
   await _autoBucketAdd(env, email, Date.now());
@@ -210,6 +220,7 @@ async function _autoQueueDead(batch, env){
       audit(env, 'auto_queue_dead', { email, attempts: Number(msg.attempts) || 0 });
       let before = null; try{ before = await env.AMV_KV.get(_autoDeadKey(email)); }catch(e){ before = null; }
       if(before){
+        try{ if(env.AMV_COUNTER) await counter(env, _autoQuarName(email), { op: 'incr', amount: 1, keep: true }); }catch(e){ audit(env, 'auto_quarantine_mark_failed', { email }); }
         try{ await env.AMV_KV.put(_autoQuarKey(email), JSON.stringify({ at: Date.now(), attempts: Number(msg.attempts) || 0 })); }catch(e){}
         audit(env, 'auto_quarantined', { email });
         quarantined.push(email);
