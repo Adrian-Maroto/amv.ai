@@ -95,6 +95,7 @@
   "82-tasks.js": 72,
   "83-support.js": 82,
   "85-synthetics.js": 84,
-  "86-invite-beta.js": 80
+  "86-invite-beta.js": 80,
+  "87-file-index.js": 80
  }
 }

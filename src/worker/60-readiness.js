@@ -475,6 +475,9 @@ function _readinessReport(env, seen) {
     { id: 'meaning', name: 'Searching by meaning (Workers AI)', on: _meaningOn(env), blocking: false,
       turnsOn: 'File and project searches that find a passage saying the same thing in other words or another language (bge-m3, nothing stored). Without it searches use words and the other phrasings the engine passes.',
       how: 'Uncomment the [ai] binding (AI) in wrangler.toml - Workers AI is on every Cloudflare account' },
+    { id: 'fileIndex', name: 'Searching inside your files (Vectorize)', on: _fileIndexOn(env), blocking: false,
+      turnsOn: 'The library searches what files say, not only their names: every passage of every text file kept in an account is indexed, in that account\u2019s own namespace. Without it the library searches by name.',
+      how: 'Create the index (npx wrangler vectorize create amv-files --dimensions=1024 --metric=cosine), then uncomment the [[vectorize]] binding VECTORS and the [ai] binding in wrangler.toml' },
   ];
 
   /* GROUPING, BECAUSE THIRTY-SIX ROWS IN ONE COLUMN IS NOT A SCREEN.
@@ -496,7 +499,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

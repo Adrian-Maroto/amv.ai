@@ -8,7 +8,7 @@ async function _libCloudRefresh(){
   try{
     const d = await AMV_API.libraryList();
     _libCloudState = d && d.configured
-      ? { configured: true, files: Array.isArray(d.files) ? d.files : [], used: d.used, limit: d.limit, error: '' }
+      ? { configured: true, searchInside: !!d.searchInside, files: Array.isArray(d.files) ? d.files : [], used: d.used, limit: d.limit, error: '' }
       : { configured: false, files: null, error: '' };
   }catch(e){ _libCloudState = { configured: _libCloudState.configured, files: null, error: T('Your files in your account could not be checked just now.') }; }
   return _libCloudState;
@@ -65,6 +65,18 @@ function _libOpenNow(opts){
   _renderFileLibrary();
 }
 let _libRenderSeq = 0;
+let _libInside = null, _libInsideTimer = 0;
+function _libInsideAsk(q, seq){
+  clearTimeout(_libInsideTimer);
+  _libInsideTimer = setTimeout(async () => {
+    let hits = new Map();
+    try{ const d = await AMV_API.librarySearch(q); for(const r of ((d && d.results) || [])) if(!hits.has(r.id)) hits.set(r.id, String(r.passage || '')); }
+    catch(e){ hits = new Map(); }
+    if(String(($('lib-q') || {}).value || '').trim().toLowerCase() !== q) return;
+    _libInside = { q, hits };
+    _renderFileLibrary();
+  }, 400);
+}
 async function _renderFileLibrary(){
   const seq = ++_libRenderSeq;
   const [local, cloud] = await Promise.all([_libAll(), _libCloudRefresh()]);
@@ -94,7 +106,14 @@ async function _renderFileLibrary(){
   const cur = _libOpts.folder;
   if(cur && !counts.has(cur)) _libOpts.folder = undefined;
   const inCur = f => _libOpts.folder === undefined ? true : _libOpts.folder === '' ? !folderOf(f) : (folderOf(f) === _libOpts.folder || folderOf(f).startsWith(_libOpts.folder + '/'));
-  const list = kinds.filter(f => inCur(f) && (!q || String(f.name).toLowerCase().includes(q)));
+  /* SEARCHED INSIDE, NOT ONLY BY NAME (Nov 8 audit RETR-020): where the
+     account's index is on, what was typed is also looked for in what the
+     files say, and a file found that way is listed with the passage that
+     matched. Asked once the typing pauses; a later search replaces it. */
+  const cloudIdOf = f => f.remote ? f.id : ((cloudBySig.get(f.sig) || {}).id || '');
+  const inside = (_libInside && _libInside.q === q) ? _libInside.hits : null;
+  if(cloud && cloud.searchInside && q.length >= 3 && !inside) _libInsideAsk(q, seq);
+  const list = kinds.filter(f => inCur(f) && (!q || String(f.name).toLowerCase().includes(q) || !!(inside && inside.has(cloudIdOf(f)))));
   const fbox = $('lib-folders');
   if(fbox){
     const chip = (val, label, n) => '<button type="button" class="btn mc-mini' + (_libOpts.folder === val ? '' : ' ghost') + '" aria-pressed="' + (_libOpts.folder === val) + '" data-lib-folder="' + escH(val === undefined ? '\u0000all' : val) + '">'
@@ -109,7 +128,8 @@ async function _renderFileLibrary(){
   const label = f => [f.format && _FR_LABEL[f.format] ? T(_FR_LABEL[f.format]) : (f.kind === 'img' ? T('Picture') : f.kind === 'pdf' ? 'PDF' : T('Text')),
     f.kind === 'office' ? T('Can be edited') : '',
     folderOf(f) ? '\u{1F4C1} ' + folderOf(f) : '', f.summary || '', f.size ? fmtSize(f.size) : '', T('Used') + ' ' + day(f.used),
-    cloud && cloud.configured ? (f.remote ? T('In your account') : cloudBySig.has(f.sig) ? '' : T('This device only')) : ''].filter(Boolean).join(' · ');
+    cloud && cloud.configured ? (f.remote ? T('In your account') : cloudBySig.has(f.sig) ? '' : T('This device only')) : '',
+    inside && inside.has(cloudIdOf(f)) ? '\u201C' + inside.get(cloudIdOf(f)).slice(0, 160) + '\u2026\u201D' : ''].filter(Boolean).join(' · ');
   body.innerHTML = (list.length
     ? list.map(f => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name">' + escH(f.name) + '</div>'
         + '<div class="shelf-meta">' + escH(label(f)) + '</div></div>'

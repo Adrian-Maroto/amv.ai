@@ -218,6 +218,18 @@ new_sqlite_classes = ["AMVCounter"]
 # [ai]
 # binding = "AI"
 
+# ── Searching inside your files (src/worker/87-file-index.js) ──
+# A permanent index of every passage of every text file kept in someone's
+# account, one namespace per account so a search reaches only their own.
+# Needs the [ai] binding above as well. Create the index once (1024
+# dimensions is bge-m3's size, cosine is how it is compared):
+#   npx wrangler vectorize create amv-files --dimensions=1024 --metric=cosine
+# then uncomment. Until then the library searches file names only, and says so.
+#
+# [[vectorize]]
+# binding = "VECTORS"
+# index_name = "amv-files"
+
 # ── AMV's cloud computer (cloud/) ──
 # A computer of their own in AMV's cloud, for Pro plans and above. It runs in a
 # Worker of its own (cloud/wrangler.toml, needs Workers Paid with Containers);

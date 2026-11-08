@@ -130,6 +130,14 @@ SYNTH_PROBES.push({ id: 'browser', costs: true, on: (env) => !!env.BROWSER,
       if (got !== 'amv-probe') throw new Error('the page opened, but did not read back what it was given');
     } finally { try { await b.close(); } catch (e) { /* the session ends with its own timeout */ } }
   } });
+/* The file index answers a query (87-file-index.js): one search in a
+   namespace no account has, so it reads nothing of anybody's. */
+SYNTH_PROBES.push({ id: 'file_index', on: (env) => _fileIndexOn(env),
+  run: async (env) => {
+    const v = Array.from({ length: 1024 }, (_, i) => (i === 0 ? 1 : 0));
+    const r = await env.VECTORS.query(v, { topK: 1, namespace: 'amv-synthetic-probe' });
+    if (!r || !Array.isArray(r.matches)) throw new Error('the index answered, but not with a list of matches');
+  } });
 const SYNTH_NOT_EXERCISED = [];
 
 /* A STOP MEANS NO PROVIDER IS CALLED (stop-means-stop-spending). Listing

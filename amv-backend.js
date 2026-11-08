@@ -20181,6 +20181,7 @@ async function _route(request, env, ctx) {
     case '/v1/library/put':    return libPut(request, env);
     case '/v1/library/get':    return libGet(request, env);
     case '/v1/library/delete': return libDelete(request, env);
+    case '/v1/library/search': return libSearch(request, env);
     case '/v1/library/move':   return libMove(request, env);
     case '/v1/audio/transcribe': return speechTranscribe(request, env);
     case '/v1/audio/speak':      return speechSpeak(request, env);
@@ -37784,6 +37785,9 @@ function _readinessReport(env, seen) {
     { id: 'meaning', name: 'Searching by meaning (Workers AI)', on: _meaningOn(env), blocking: false,
       turnsOn: 'File and project searches that find a passage saying the same thing in other words or another language (bge-m3, nothing stored). Without it searches use words and the other phrasings the engine passes.',
       how: 'Uncomment the [ai] binding (AI) in wrangler.toml - Workers AI is on every Cloudflare account' },
+    { id: 'fileIndex', name: 'Searching inside your files (Vectorize)', on: _fileIndexOn(env), blocking: false,
+      turnsOn: 'The library searches what files say, not only their names: every passage of every text file kept in an account is indexed, in that account\u2019s own namespace. Without it the library searches by name.',
+      how: 'Create the index (npx wrangler vectorize create amv-files --dimensions=1024 --metric=cosine), then uncomment the [[vectorize]] binding VECTORS and the [ai] binding in wrangler.toml' },
   ];
 
   /* GROUPING, BECAUSE THIRTY-SIX ROWS IN ONE COLUMN IS NOT A SCREEN.
@@ -37805,7 +37809,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -43520,7 +43524,7 @@ async function libList(request, env){
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
   const files = (rec.files || []).filter(f => !f.pending && !f.deleting).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
-  return json({ ok: true, configured: true, files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
+  return json({ ok: true, configured: true, searchInside: _fileIndexOn(env), files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
 
 /* A FILE IS WHAT IT SAYS IT IS, OR IT IS NOT KEPT (Oct 31 audit, item 52).
@@ -43639,8 +43643,11 @@ async function libPut(request, env){
     await env.AMV_FILES.put(prefix + id, body, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
     const head = await env.AMV_FILES.head(prefix + id);
     if (!head || +head.size < new TextEncoder().encode(body).length) throw new Error('not_stored');
+    /* Its passages, searchable by meaning (87-file-index.js) - before it
+       stops being pending, so a listed file is a searchable one. */
+    const vec = await _fileIndexAdd(env, user, meta, body);
     await _withKind(env, LIB_KIND, user.email, (rec) => {
-      const f = (rec.files || []).find(x => x.id === id); if (f) delete f.pending;
+      const f = (rec.files || []).find(x => x.id === id); if (f){ delete f.pending; if (vec) f.vec = vec; }
     }, { files: [] });
   } catch (e) {
     await drop();
@@ -43693,6 +43700,12 @@ async function libDelete(request, env){
     await env.AMV_FILES.delete(keys);
     for (const id of ids) if (!(await env.AMV_FILES.head(prefix + id))) gone.add(id);
   } catch (e) { /* none confirmed gone: every entry stays marked */ }
+  /* Their passages go from the index too, so nothing of a deleted file can
+     still be found by meaning. */
+  try {
+    const now = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+    await _fileIndexRemove(env, user.email, (now.files || []).filter(f => gone.has(f.id)));
+  } catch (e) { /* the search drops entries whose file is gone, so an index line left behind answers nothing */ }
   try {
     if (gone.size) await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); }, { files: [] });
   } catch (e) { /* the bytes are gone; the marked entries are removed by the next delete */ }
@@ -43731,6 +43744,7 @@ async function libMove(request, env){
    reports it rather than answering "deleted". */
 async function _libEraseAll(env, email){
   if (!libConfigured(env)) return 0;
+  try { const rec = await DB.get(env, LIB_KIND, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
   const prefix = await _libPrefix(email);
   let n = 0, cursor;
   for (let i = 0; i < 1000; i++) {
@@ -48455,6 +48469,14 @@ SYNTH_PROBES.push({ id: 'browser', costs: true, on: (env) => !!env.BROWSER,
       if (got !== 'amv-probe') throw new Error('the page opened, but did not read back what it was given');
     } finally { try { await b.close(); } catch (e) { /* the session ends with its own timeout */ } }
   } });
+/* The file index answers a query (87-file-index.js): one search in a
+   namespace no account has, so it reads nothing of anybody's. */
+SYNTH_PROBES.push({ id: 'file_index', on: (env) => _fileIndexOn(env),
+  run: async (env) => {
+    const v = Array.from({ length: 1024 }, (_, i) => (i === 0 ? 1 : 0));
+    const r = await env.VECTORS.query(v, { topK: 1, namespace: 'amv-synthetic-probe' });
+    if (!r || !Array.isArray(r.matches)) throw new Error('the index answered, but not with a list of matches');
+  } });
 const SYNTH_NOT_EXERCISED = [];
 
 /* A STOP MEANS NO PROVIDER IS CALLED (stop-means-stop-spending). Listing
@@ -48635,4 +48657,136 @@ async function adminInvitesRevoke(request, env){
   await env.AMV_KV.put('betainv:' + code, JSON.stringify(rec));
   audit(env, 'invite_revoked', {});
   return json({ ok: true, code, revoked: true });
+}
+/* =====================================================================
+   A PERMANENT INDEX OF WHAT IS IN YOUR FILES (Nov 8 audit RETR-020).
+
+   Searching by meaning used to embed the passages it was handed at the
+   moment of asking (79-meaning.js): fine for one project's files in one
+   message, useless for "which of my files says X" across everything kept in
+   the account. This keeps a vector for every passage of every text file in
+   the library, in a Cloudflare Vectorize index bound as VECTORS:
+
+     - written when a file is kept (68-cloud-library.js libPut), removed when
+       it is deleted - the index never names a file the list does not have;
+     - one NAMESPACE per account (a hash of the address, never the address),
+       so a query can only ever reach the asking account's own passages - the
+       permission is the namespace, not a filter somebody could forget;
+     - only text is indexed; a picture, a PDF or an Office file kept as
+       itself is not read here;
+     - the embedding is paid for like any other use of the meaning model,
+       against the account's own ceiling.
+
+   Off - and saying so - until VECTORS and the meaning model are both bound
+   (wrangler.toml, GO-LIVE.md). Searching by name keeps working either way.
+   ===================================================================== */
+const FIDX_CHUNK = 1400;          // characters per passage
+const FIDX_MAX_CHUNKS = 64;       // passages per file (about 90,000 characters)
+const FIDX_TOP = 8;
+
+function _fileIndexOn(env){ return !!(env && env.VECTORS && typeof env.VECTORS.upsert === 'function' && typeof env.VECTORS.query === 'function' && _meaningOn(env)); }
+
+async function _fidxSpace(email){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-fidx:' + String(email || '').toLowerCase()));
+  return 'a' + [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+}
+/* Passages on paragraph boundaries where it can, never longer than a chunk. */
+function _fidxChunks(text){
+  const out = [];
+  const paras = String(text || '').replace(/\r/g, '').split(/\n{2,}/);
+  let cur = '';
+  for (const p0 of paras) {
+    let p = p0.trim(); if (!p) continue;
+    while (p.length > FIDX_CHUNK) { if (cur) { out.push(cur); cur = ''; } out.push(p.slice(0, FIDX_CHUNK)); p = p.slice(FIDX_CHUNK); }
+    if ((cur + '\n\n' + p).length > FIDX_CHUNK) { if (cur) out.push(cur); cur = p; }
+    else cur = cur ? cur + '\n\n' + p : p;
+    if (out.length >= FIDX_MAX_CHUNKS) break;
+  }
+  if (cur && out.length < FIDX_MAX_CHUNKS) out.push(cur);
+  return out.slice(0, FIDX_MAX_CHUNKS);
+}
+async function _fidxEmbed(env, texts){
+  const vecs = [];
+  for (let i = 0; i < texts.length; i += MEANING_BATCH) {
+    const out = await env.AI.run(MEANING_MODEL, { text: texts.slice(i, i + MEANING_BATCH) });
+    const got = out && Array.isArray(out.data) ? out.data : null;
+    if (!got || got.length !== Math.min(MEANING_BATCH, texts.length - i)) throw new Error('the model answered ' + (got ? got.length : 'nothing') + ' vectors');
+    vecs.push(...got);
+  }
+  return vecs;
+}
+/* Indexes one kept text file. Answers how many passages it holds now (0 when
+   off or not text). A failure is said, and the file is still kept - it is
+   simply not searchable by meaning until it is kept again. */
+async function _fileIndexAdd(env, user, file, body){
+  if (!_fileIndexOn(env) || !file || file.kind !== 'text') return 0;
+  const chunks = _fidxChunks(body);
+  if (!chunks.length) return 0;
+  const usd = chunks.reduce((n, c) => n + c.length, 0) * MEANING_USD_PER_CHAR;
+  const book = {};
+  const refused = await _spendGate(env, user, 'meaning', usd, book, { fallbackCeilingUSD: FREE_AUTO_CEILING_USD });
+  if (refused) return 0;
+  const subject = user.billingSubject || user.email;
+  try {
+    const vecs = await _fidxEmbed(env, chunks);
+    const ns = await _fidxSpace(user.email);
+    await env.VECTORS.upsert(vecs.map((values, i) => ({ id: ns + ':' + file.id + ':' + i, values, namespace: ns,
+      metadata: { f: String(file.id), i, n: String(file.name || '').slice(0, 200), t: chunks[i] } })));
+    await _recordSpend(env, subject, usd, 'meaning', book.period, book);
+    return chunks.length;
+  } catch (e) {
+    await _recordSpend(env, subject, 0, 'meaning', book.period, book).catch(() => {});
+    audit(env, 'file_index_failed', { email: user.email, error: String((e && e.message) || e).slice(0, 120) });
+    return 0;
+  }
+}
+/* Takes a deleted file's passages out. Every id it ever had is named, so
+   nothing of it stays searchable. */
+async function _fileIndexRemove(env, email, files){
+  if (!_fileIndexOn(env) || typeof env.VECTORS.deleteByIds !== 'function') return true;
+  const ns = await _fidxSpace(email);
+  const ids = [];
+  for (const f of files || []) for (let i = 0; i < Math.min(FIDX_MAX_CHUNKS, +f.vec || 0); i++) ids.push(ns + ':' + f.id + ':' + i);
+  if (!ids.length) return true;
+  try { for (let i = 0; i < ids.length; i += 100) await env.VECTORS.deleteByIds(ids.slice(i, i + 100)); return true; }
+  catch (e) { audit(env, 'file_index_remove_failed', { email, n: ids.length }); return false; }
+}
+
+/* POST /v1/library/search { query } -> { results: [{ id, name, passage, score }] } */
+async function libSearch(request, env){
+  if (!libConfigured(env)) return _libOff();
+  const { user, res } = await _libUser(request, env, false); if (res) return res;
+  if (!_fileIndexOn(env)) return json({ error: 'not_configured', message: 'Searching inside your files is not switched on for this deployment; searching by name still works.' }, 503);
+  let b = {}; try { b = await request.json(); } catch (e) {}
+  const query = String(b.query || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (query.length < 2) return json({ error: 'bad_request', message: 'Say what to look for.' }, 400);
+  const usd = query.length * MEANING_USD_PER_CHAR;
+  const book = {};
+  const refused = await _spendGate(env, user, 'meaning', usd, book, { fallbackCeilingUSD: FREE_AUTO_CEILING_USD });
+  if (refused) return refused;
+  const subject = user.billingSubject || user.email;
+  try {
+    const [qv] = await _fidxEmbed(env, [query]);
+    const ns = await _fidxSpace(user.email);
+    const got = await env.VECTORS.query(qv, { topK: FIDX_TOP * 2, namespace: ns, returnMetadata: 'all' });
+    await _recordSpend(env, subject, usd, 'meaning', book.period, book);
+    /* Only files the list still has - an index entry for a file being
+       deleted, or gone, is not an answer. */
+    const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+    const live = new Map((rec.files || []).filter(f => !f.pending && !f.deleting).map(f => [String(f.id), f]));
+    const seen = new Set(), results = [];
+    for (const mt of ((got && got.matches) || [])) {
+      const md = (mt && mt.metadata) || {};
+      const f = live.get(String(md.f || ''));
+      if (!f || seen.has(f.id + ':' + md.i)) continue;
+      seen.add(f.id + ':' + md.i);
+      results.push({ id: f.id, name: f.name, passage: String(md.t || '').slice(0, 600), score: Math.round((+mt.score || 0) * 1000) / 1000 });
+      if (results.length >= FIDX_TOP) break;
+    }
+    return json({ ok: true, results });
+  } catch (e) {
+    await _recordSpend(env, subject, 0, 'meaning', book.period, book).catch(() => {});
+    audit(env, 'file_search_failed', { email: user.email, error: String((e && e.message) || e).slice(0, 120) });
+    return json({ error: 'search_failed', message: 'Searching inside your files did not work just now. Searching by name still works.' }, 502);
+  }
 }

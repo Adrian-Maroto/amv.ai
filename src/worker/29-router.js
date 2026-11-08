@@ -978,6 +978,7 @@ async function _route(request, env, ctx) {
     case '/v1/library/put':    return libPut(request, env);
     case '/v1/library/get':    return libGet(request, env);
     case '/v1/library/delete': return libDelete(request, env);
+    case '/v1/library/search': return libSearch(request, env);
     case '/v1/library/move':   return libMove(request, env);
     case '/v1/audio/transcribe': return speechTranscribe(request, env);
     case '/v1/audio/speak':      return speechSpeak(request, env);

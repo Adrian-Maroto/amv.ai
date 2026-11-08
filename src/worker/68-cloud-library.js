@@ -110,7 +110,7 @@ async function libList(request, env){
   const { user, res } = await _libUser(request, env, false); if (res) return res;
   const rec = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
   const files = (rec.files || []).filter(f => !f.pending && !f.deleting).slice().sort((a, b) => (b.used || 0) - (a.used || 0)).map(_libMeta);
-  return json({ ok: true, configured: true, files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
+  return json({ ok: true, configured: true, searchInside: _fileIndexOn(env), files, used: _libUsage(rec), limit: _libLimitsFor(user.plan) });
 }
 
 /* A FILE IS WHAT IT SAYS IT IS, OR IT IS NOT KEPT (Oct 31 audit, item 52).
@@ -229,8 +229,11 @@ async function libPut(request, env){
     await env.AMV_FILES.put(prefix + id, body, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
     const head = await env.AMV_FILES.head(prefix + id);
     if (!head || +head.size < new TextEncoder().encode(body).length) throw new Error('not_stored');
+    /* Its passages, searchable by meaning (87-file-index.js) - before it
+       stops being pending, so a listed file is a searchable one. */
+    const vec = await _fileIndexAdd(env, user, meta, body);
     await _withKind(env, LIB_KIND, user.email, (rec) => {
-      const f = (rec.files || []).find(x => x.id === id); if (f) delete f.pending;
+      const f = (rec.files || []).find(x => x.id === id); if (f){ delete f.pending; if (vec) f.vec = vec; }
     }, { files: [] });
   } catch (e) {
     await drop();
@@ -283,6 +286,12 @@ async function libDelete(request, env){
     await env.AMV_FILES.delete(keys);
     for (const id of ids) if (!(await env.AMV_FILES.head(prefix + id))) gone.add(id);
   } catch (e) { /* none confirmed gone: every entry stays marked */ }
+  /* Their passages go from the index too, so nothing of a deleted file can
+     still be found by meaning. */
+  try {
+    const now = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+    await _fileIndexRemove(env, user.email, (now.files || []).filter(f => gone.has(f.id)));
+  } catch (e) { /* the search drops entries whose file is gone, so an index line left behind answers nothing */ }
   try {
     if (gone.size) await _withKind(env, LIB_KIND, user.email, (rec) => { rec.files = (rec.files || []).filter(f => !gone.has(f.id)); }, { files: [] });
   } catch (e) { /* the bytes are gone; the marked entries are removed by the next delete */ }
@@ -321,6 +330,7 @@ async function libMove(request, env){
    reports it rather than answering "deleted". */
 async function _libEraseAll(env, email){
   if (!libConfigured(env)) return 0;
+  try { const rec = await DB.get(env, LIB_KIND, email); if (rec && rec.files) await _fileIndexRemove(env, email, rec.files); } catch (e) { audit(env, 'file_index_erase_failed', {}); }
   const prefix = await _libPrefix(email);
   let n = 0, cursor;
   for (let i = 0; i < 1000; i++) {

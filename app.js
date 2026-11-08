@@ -1514,6 +1514,8 @@ const AMV_API = {
     if(!r.ok || d.error){ const e=new Error(d.message||'That file could not be opened.'); e.status=r.status; throw e; }
     return d;
   },
+  /* What the account's files SAY, searched by meaning (87-file-index.js). */
+  async librarySearch(query){ const r=await this._fetch('/v1/library/search', {method:'POST', body:JSON.stringify({query})}); const d=await r.json().catch(()=>({})); return r.ok ? d : { results: [] }; },
   async libraryDelete(ids){ return this._wrote('/v1/library/delete', { ids }, 'Those files could not be deleted.'); },
   async libraryMove(ids, folder){ return this._wrote('/v1/library/move', { ids, folder }, 'Those files could not be moved.'); },
   /* SERVER SPEECH (69-speech.js). Both spend, so neither is ever retried: a
