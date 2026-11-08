@@ -112,7 +112,12 @@ async function _autoStopNow(env){
   try{ return !!(await _switchedOff(env, 'feature:automations')); }catch(e){ return true; }
 }
 async function _autoQueueConsume(batch, env){
+  /* Nothing in a batch changes anything while a restore has writes off, or
+     while that cannot be asked (Nov 8 audit DR-016): each message waits and
+     comes back, except the queue's own probe, which writes only its stamp. */
+  const paused = await _writesPaused(env);
   for(const msg of (batch.messages || [])){
+    if(paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
@@ -166,8 +171,13 @@ async function _autoQueueConsume(batch, env){
    record, never silently dropped. */
 const _autoQuarKey = (who) => { const email = String(who || '').toLowerCase(); return `autoquar:${email}`; };
 const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); return `autodead:${email}`; };
+/* Not known is held (Nov 8 audit QUEUE-017): a quarantine that cannot be
+   read is treated as in force for this run, so work that failed twice is
+   never run again just because the store did not answer. It is tried
+   again on the next tick. */
 async function _autoQuarantined(env, email){
-  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }catch(e){ return false; }
+  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }
+  catch(e){ audit(env, 'auto_quarantine_unknown', { email }); return true; }
 }
 /* POST /admin/auto/release { email }: the operator's replay, after looking. */
 async function autoQuarantineRelease(request, env){

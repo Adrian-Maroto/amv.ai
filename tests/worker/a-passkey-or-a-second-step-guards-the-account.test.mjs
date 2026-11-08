@@ -278,6 +278,10 @@ section('One credential registered from two accounts at once: one wins; a failed
   const fail = await call('/auth/passkey/register', { cid: oc.d.cid, credential: await k2.create({ challenge: oc.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, cTok);
   env.AMV_KV.put = realPut;
   ok(fail.status !== 200 && !m.has('pkcred:' + k2.credId), 'a passkey whose account could not be saved leaves no index behind', [fail.status, m.get('pkcred:' + k2.credId)]);
+  /* Nov 8 audit AUTH-025: nor a claim - the same passkey can be added again at once. */
+  const oc2 = await call('/auth/passkey/options', { purpose: 'register' }, cTok);
+  const retry = await call('/auth/passkey/register', { cid: oc2.d.cid, credential: await k2.create({ challenge: oc2.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, cTok);
+  ok(retry.status === 200 && m.get('pkcred:' + k2.credId) === 'cal@example.com', 'and the same passkey can be registered again straight away', retry.status);
 }
 
 section('The last way into an account is never removed');
@@ -384,11 +388,33 @@ section('One setup is confirmed once: the recovery codes shown are the ones that
   const st = await call('/auth/totp/start', { proof: { password: P } }, t);
   const c = await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000));
   const both = await Promise.all([call('/auth/totp/confirm', { code: c }, t), call('/auth/totp/confirm', { code: c }, t)]);
-  const won = both.filter(r => r.status === 200), lost = both.filter(r => r.status !== 200);
-  ok(won.length === 1 && lost.length === 1 && lost[0].status === 409 && lost[0].d.code === 'totp_confirmed', 'two confirmations at once: one turns it on, the other is told it already was', both.map(r => r.status));
+  const won = both.filter(r => r.status === 200 && !r.d.replayed), other = both.find(r => r !== won[0]);
+  ok(won.length === 1 && (other.d.code === 'totp_confirmed' || (other.d.replayed && JSON.stringify(other.d.recovery) === JSON.stringify(won[0].d.recovery))),
+     'two confirmations at once: one turns it on; the other is told it already was, or shown the same codes', both.map(r => [r.status, r.d.code || (r.d.replayed ? 'replayed' : 'on')]));
   const pw = await call('/auth/login', { email: EM, password: P });
   const rc = await call('/auth/login/mfa', { challenge: pw.d.challenge, recovery: won[0].d.recovery[3] });
   ok(rc.status === 200 && !!rc.d.token, 'and the codes that one showed are the codes that work', rc.status);
+  /* Nov 8 audit AUTH-026: the answer that carried them was lost; asking again
+     with a code from the app shows the same codes, and a wrong code does not. */
+  const again = await call('/auth/totp/confirm', { code: c }, t);
+  ok(again.status === 200 && again.d.replayed && JSON.stringify(again.d.recovery) === JSON.stringify(won[0].d.recovery), 'a lost answer is given again to whoever holds the app', again.d.code || again.status);
+  const guess = await call('/auth/totp/confirm', { code: '000000' }, t);
+  ok(guess.status !== 200 && !guess.d.recovery, 'and not to a wrong code', guess.status);
+}
+
+section('A confirmation the account could not save leaves the setup usable (Nov 8 audit AUTH-026)');
+{
+  const EM = 'notsaved@example.com', P = 'one more long passphrase';
+  const t = (await call('/auth/signup', { email: EM, name: 'N', password: P })).d.token;
+  const st = await call('/auth/totp/start', { proof: { password: P } }, t);
+  const c = await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000));
+  const realPut = env.AMV_KV.put;
+  env.AMV_KV.put = async (key, v, o) => { if (String(key) === 'acct:' + EM) throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
+  const fail = await call('/auth/totp/confirm', { code: c }, t);
+  env.AMV_KV.put = realPut;
+  ok(fail.status !== 200 && fail.d.code === 'totp_not_saved', 'the failure says nothing was changed', fail.d.code);
+  const ok2 = await call('/auth/totp/confirm', { code: c }, t);
+  ok(ok2.status === 200 && Array.isArray(ok2.d.recovery) && !ok2.d.replayed, 'and confirming again turns it on, rather than "already confirmed"', ok2.d.code || ok2.status);
 }
 
 section('A secret that cannot be opened is said to be, not called a wrong code (Nov 7 audit AUTH-023)');

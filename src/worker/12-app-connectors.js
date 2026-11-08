@@ -331,8 +331,14 @@ async function _rmcpSession(url, token){
 }
 
 /* What went wrong with an app, in words a person can act on. */
-function _rmcpFail(app, e){
+function _rmcpFail(app, e, sent){
   const code = (e && e.code) || '';
+  /* A tool call that was already sent when it failed may have done its work
+     before the answer was lost (Nov 8 audit CONN-036): that is "may have
+     happened", never "nothing was changed". Refused at the door (401, 403)
+     is still known to have changed nothing. */
+  if (sent && code !== 'unauthorized' && code !== 'forbidden')
+    return json({ error: 'outcome_unknown', message: app.name + (code === 'rpc' ? ' reported an error' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') : ' did not answer properly') + ' after the action was sent, so AMV cannot tell whether it was done. Look in ' + app.name + ' before trying again, so it does not happen twice.' }, 502);
   if (code === 'unauthorized') return json({ error: 'reconnect', message: app.name + ' no longer accepts AMV’s sign-in. Reconnect it in Integrations.' }, 401);
   if (code === 'forbidden') return json({ error: 'forbidden', message: app.name + ' did not allow that with the access it gave AMV. Nothing was changed.' }, 403);
   return json({ error: 'app_error', message: app.name + '’s connector did not answer properly' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. Nothing was changed; try again in a moment.' }, 502);
@@ -536,17 +542,18 @@ async function remoteCall(request, env){
   const a = await _rmcpAccess(env, user.email, slug);
   if (a.error === 'not_connected') return json({ error: 'not_connected' }, 404);
   if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
-  let r;
+  let r, sent = false;
   try {
     /* Retried only when the app said 401 before doing anything - a refused
        sign-in is refused at the door, so the action has not happened and
        asking again cannot do it twice. */
     r = await _rmcpOnce(env, user.email, slug, a.tok, async (access) => {
       const sid = await _rmcpSession(app.url, access);
+      sent = true;
       return await _rmcpRpc(app.url, access, sid, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
     });
   } catch (e) {
-    return _rmcpFail(app, e);
+    return _rmcpFail(app, e, sent);
   }
   try { await _withKind(env, RMCP_KV, user.email, (rec) => { if (rec && rec[slug]) rec[slug].lastUsed = Date.now(); }, {}); } catch (e) {}
   /* The app and the tool are recorded; the arguments are not - they are

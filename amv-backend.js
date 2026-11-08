@@ -3499,8 +3499,11 @@ function _bg(p) {
   if (!p || typeof p.then !== 'function') return;
   const settled = p.catch(() => {});
   try {
-    const own = _ctxStore && _ctxStore.getStore();
-    const c = own || _liveCtx;
+    /* Only the context this work is running in (Nov 8 audit AUDIT-010):
+       every request, tick and queue batch runs inside its own, so the shared
+       variable is used only where the runtime offers no async-local storage
+       at all - never to borrow another request's lifetime. */
+    const c = _ctxStore ? _ctxStore.getStore() : _liveCtx;
     if (c && typeof c.waitUntil === 'function') { c.waitUntil(settled); return; }
   } catch (e) { /* a finished context: the fallback below still applies */ }
   /* Nothing to hold it open. Better than throwing, and honest: this is the
@@ -5962,15 +5965,60 @@ async function connApi(request, env){
   }
   /* Asserted as well as asked for: a token goes only to its own provider. */
   if(u.provider !== pid) return json({ error:'wrong_provider' }, 500);
+  /* A CHANGE IS MADE ONCE, AND NEVER CALLED "NOTHING" WHEN IT MAY HAVE
+     HAPPENED (Nov 8 audit CONN-035). A write through this route needs an
+     Idempotency-Key, held exactly as the named actions hold theirs: the first
+     request claims it, its answer is kept for a day, and a retry gets that
+     answer back instead of sending the change again. The key is also passed
+     to the provider, which honours it where it can. AMV cannot read an
+     arbitrary API's change back, so the answer says what the provider said
+     and no more - and a lost answer, or a provider error after the request
+     was sent, is "may have happened", never "nothing was changed". */
+  const writes = method !== 'GET';
+  let idem = null;
+  if(writes){
+    const ik = String(request.headers.get('Idempotency-Key') || body.idempotencyKey || '');
+    if(!ik) return json({ error:'idempotency_required', message:'A change through a connected app needs an Idempotency-Key (16 to 80 letters, digits, - or _), so a retry cannot do it twice. Nothing was sent.' }, 400);
+    if(!/^[A-Za-z0-9_-]{16,80}$/.test(ik)) return json({ error:'bad_idempotency_key', message:'An Idempotency-Key is 16 to 80 letters, digits, - or _.' }, 400);
+    const digest = await _sha256Hex(JSON.stringify([pid, method, url, payload || '']));
+    const kvKey = `apiidem:${String(user.email).toLowerCase()}:${ik}`;
+    let kept = null;
+    try{ kept = JSON.parse((await env.AMV_KV.get(kvKey)) || 'null'); }catch(e){ kept = null; }
+    if(kept){
+      if(kept.d !== digest) return json({ error:'idempotency_conflict', message:'That Idempotency-Key was used for a different request. Nothing was sent.' }, 409);
+      return json(Object.assign({}, kept.body, { replayed: true }), kept.status || 200);
+    }
+    let c = null;
+    try{ c = await counter(env, kvKey, { op:'claim', ttlMs: ACT_IDEM_TTL_S * 1000 }); }catch(e){ c = null; }
+    if(!c || c.unavailable) return json({ error:'idempotency_unavailable', message:'AMV could not make sure this is sent only once right now, so it was not sent. Try again in a moment.' }, 503);
+    if(!c.claimed) return json({ error:'idempotency_pending', message:'AMV is already sending this, or may already have sent it. Look in ' + p.name + ' before asking again, so it does not happen twice.' }, 409);
+    idem = { kvKey, digest, ik };
+  }
+  const reply = async (obj, status) => {
+    if(idem){ try{ await env.AMV_KV.put(idem.kvKey, JSON.stringify({ d: idem.digest, status: status || 200, body: obj, at: Date.now() }), { expirationTtl: ACT_IDEM_TTL_S }); }
+              catch(e){ audit(env, 'conn_api_idem_unsaved', { by: user.email, provider: pid }); } }
+    return json(obj, status);
+  };
   const headers = Object.assign({ Authorization: 'Bearer ' + u.token, Accept: 'application/json' }, p.api.headers || {});
+  if(idem) headers['Idempotency-Key'] = idem.ik;
   if(payload !== undefined) headers['Content-Type'] = /^\s*[\[{]/.test(payload) ? 'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
   let g;
   try { g = await fetchGuarded(url, { method, headers, body: payload }, 30000); }
-  catch (e) { return json({ error:'app_unreachable', message: p.name + ' did not answer. Nothing was changed.' }, 502); }
-  if(g.blocked) return json({ error:'blocked', message: g.why }, 400);
+  catch (e) {
+    if(writes){
+      audit(env, 'conn_api_outcome_unknown', { by: user.email, provider: pid, method });
+      return reply({ error:'outcome_unknown', message: p.name + ' did not answer, so AMV cannot tell whether the change was made. Look in ' + p.name + ' before trying again, so it does not happen twice.' }, 502);
+    }
+    return json({ error:'app_unreachable', message: p.name + ' did not answer. Nothing was changed - this was only a read.' }, 502);
+  }
+  if(g.blocked){ return writes ? reply({ error:'blocked', message: g.why }, 400) : json({ error:'blocked', message: g.why }, 400); }
   const text = await _rmcpText(g.response, CONN_API_MAX_OUT);
-  audit(env, 'conn_api', { by:user.email, provider:pid, method, path: new URL(url).pathname.slice(0, 120), status: g.response.status });
-  return json({ ok:true, status: g.response.status, body: text });
+  const st = g.response.status;
+  audit(env, 'conn_api', { by:user.email, provider:pid, method, path: new URL(url).pathname.slice(0, 120), status: st });
+  /* A provider error after a change was sent is not proof nothing happened. */
+  if(writes && st >= 500) return reply({ ok:false, error:'outcome_unknown', status: st, body: text, verified: null,
+    message: p.name + ' answered with an error (' + st + ') after the change was sent, so AMV cannot tell whether it was made. Look in ' + p.name + ' before trying again.' }, 200);
+  return writes ? reply({ ok:true, status: st, body: text, verified: null }) : json({ ok:true, status: st, body: text });
 }
 
 /* Disconnect. Revokes at the provider FIRST, and only then forgets it.
@@ -8165,8 +8213,14 @@ async function _rmcpSession(url, token){
 }
 
 /* What went wrong with an app, in words a person can act on. */
-function _rmcpFail(app, e){
+function _rmcpFail(app, e, sent){
   const code = (e && e.code) || '';
+  /* A tool call that was already sent when it failed may have done its work
+     before the answer was lost (Nov 8 audit CONN-036): that is "may have
+     happened", never "nothing was changed". Refused at the door (401, 403)
+     is still known to have changed nothing. */
+  if (sent && code !== 'unauthorized' && code !== 'forbidden')
+    return json({ error: 'outcome_unknown', message: app.name + (code === 'rpc' ? ' reported an error' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') : ' did not answer properly') + ' after the action was sent, so AMV cannot tell whether it was done. Look in ' + app.name + ' before trying again, so it does not happen twice.' }, 502);
   if (code === 'unauthorized') return json({ error: 'reconnect', message: app.name + ' no longer accepts AMV’s sign-in. Reconnect it in Integrations.' }, 401);
   if (code === 'forbidden') return json({ error: 'forbidden', message: app.name + ' did not allow that with the access it gave AMV. Nothing was changed.' }, 403);
   return json({ error: 'app_error', message: app.name + '’s connector did not answer properly' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. Nothing was changed; try again in a moment.' }, 502);
@@ -8370,17 +8424,18 @@ async function remoteCall(request, env){
   const a = await _rmcpAccess(env, user.email, slug);
   if (a.error === 'not_connected') return json({ error: 'not_connected' }, 404);
   if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
-  let r;
+  let r, sent = false;
   try {
     /* Retried only when the app said 401 before doing anything - a refused
        sign-in is refused at the door, so the action has not happened and
        asking again cannot do it twice. */
     r = await _rmcpOnce(env, user.email, slug, a.tok, async (access) => {
       const sid = await _rmcpSession(app.url, access);
+      sent = true;
       return await _rmcpRpc(app.url, access, sid, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
     });
   } catch (e) {
-    return _rmcpFail(app, e);
+    return _rmcpFail(app, e, sent);
   }
   try { await _withKind(env, RMCP_KV, user.email, (rec) => { if (rec && rec[slug]) rec[slug].lastUsed = Date.now(); }, {}); } catch (e) {}
   /* The app and the tool are recorded; the arguments are not - they are
@@ -13544,7 +13599,12 @@ async function _autoStopNow(env){
   try{ return !!(await _switchedOff(env, 'feature:automations')); }catch(e){ return true; }
 }
 async function _autoQueueConsume(batch, env){
+  /* Nothing in a batch changes anything while a restore has writes off, or
+     while that cannot be asked (Nov 8 audit DR-016): each message waits and
+     comes back, except the queue's own probe, which writes only its stamp. */
+  const paused = await _writesPaused(env);
   for(const msg of (batch.messages || [])){
+    if(paused && !(msg.body && msg.body.kind === 'synth')){ msg.retry({ delaySeconds: 120 }); continue; }
     const body = msg.body || {};
     /* A waiting email (61-owner-digest.js). Not stopped by the automations
        switch: it is mail somebody is owed, not new work. */
@@ -13598,8 +13658,13 @@ async function _autoQueueConsume(batch, env){
    record, never silently dropped. */
 const _autoQuarKey = (who) => { const email = String(who || '').toLowerCase(); return `autoquar:${email}`; };
 const _autoDeadKey = (who) => { const email = String(who || '').toLowerCase(); return `autodead:${email}`; };
+/* Not known is held (Nov 8 audit QUEUE-017): a quarantine that cannot be
+   read is treated as in force for this run, so work that failed twice is
+   never run again just because the store did not answer. It is tried
+   again on the next tick. */
 async function _autoQuarantined(env, email){
-  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }catch(e){ return false; }
+  try{ return !!(await env.AMV_KV.get(_autoQuarKey(email))); }
+  catch(e){ audit(env, 'auto_quarantine_unknown', { email }); return true; }
 }
 /* POST /admin/auto/release { email }: the operator's replay, after looking. */
 async function autoQuarantineRelease(request, env){
@@ -17438,7 +17503,7 @@ const BACKUP_NEVER = [
      challenge (ten), and an authenticator app half set up, its secret sealed
      with this deployment's key. Restoring any of them would put a spent or
      expired step back into circulation. */
-  'pkchal:', 'mfachal:', 'totpset:',
+  'pkchal:', 'mfachal:', 'totpset:', 'totpans:',
   /* Mail waiting to be retried (61-owner-digest.js, _outboxDrain): three
      days at most, and restoring it would send an old message again. */
   'outbox:',
@@ -18410,6 +18475,21 @@ const _drillKey = (day) => 'bkdrill:' + day;
    plane lives there (docs/DATA-TIER.md). */
 const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
 /* Asked fresh, never from a cache: is everything else paused RIGHT NOW. */
+/* For everything ELSE that writes (Nov 8 audit DR-011/016): background work
+   pauses while a restore has writes off, and also when that cannot be
+   asked - a switchboard that does not answer is not permission to write
+   into a store somebody may be restoring. The restore itself still needs a
+   definite yes from _restoreFrozen before it starts. */
+async function _writesPaused(env){
+  if (env.AMV_COUNTER) {
+    try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });
+      if (r && r.map && typeof r.map === 'object') return !!(r.map['feature:writes'] && r.map['feature:writes'].off);
+      return true;
+    } catch (e) { return true; }
+  }
+  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); return !!(m && m['feature:writes'] && m['feature:writes'].off); }
+  catch (e) { return true; }
+}
 async function _restoreFrozen(env){
   let m = null;
   if (env.AMV_COUNTER) { try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true }); if (r && r.map && typeof r.map === 'object') m = r.map; } catch (e) { return false; } }
@@ -19126,7 +19206,7 @@ export default {
       ctx.waitUntil((async()=>{
         let killed = false;
         try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
-        if(killed || await _restoreFrozen(env)) return;
+        if(killed || await _writesPaused(env)) return;
         try{
           const r = await runCapabilitySynthetics(env);
           if(r.failed.length) console.log('[cron:hourly] synthetics failed', JSON.stringify(r.failed));
@@ -19143,7 +19223,7 @@ export default {
       ctx.waitUntil((async()=>{
         let killed = false;
         try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
-        if(killed || await _restoreFrozen(env)) return;
+        if(killed || await _writesPaused(env)) return;
         try{
           const r = await runDueAutomations(env, 0, { quick: true });
           if(r.ran || r.failed || r.deferred) console.log('[cron:minute] automations', JSON.stringify(r));
@@ -19177,7 +19257,7 @@ export default {
          cron writes too - jobs, sweeps, backups - and a write landing in the
          middle of a restore is exactly the mixed store the pause exists to
          prevent. Nothing runs until it is switched back on. */
-      if(await _restoreFrozen(env)){ console.log('[cron] paused: a restore is running (feature:writes off)'); return; }
+      if(await _writesPaused(env)){ console.log('[cron] paused: a restore is running, or whether one is could not be asked (feature:writes)'); return; }
 
       if(killed){
         console.log('[cron] paused by GLOBAL_KILL - automations skipped');
@@ -24750,10 +24830,10 @@ async function reconcilePayments(env) {
       if (_stripeSessionPaid(d)) {
         if (p.kind === 'market') {
           await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
-                                   amountCents: d.amount_total, ref: d.payment_intent || row.id });
+                                   amountCents: d.amount_total, currency: d.currency, ref: d.payment_intent || row.id });
         } else if (p.kind === 'credit') {
           await _creditGrant(env, { subject: p.subject || p.email, email: p.email,
-                                    usd: Math.round(+d.amount_total || 0) / 100, ref: d.payment_intent || row.id });
+                                    usd: _fromMinor(Math.round(+d.amount_total || 0), d.currency), ref: d.payment_intent || row.id });
         } else if (p.plan) {
           await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
         }
@@ -31699,7 +31779,7 @@ async function stripeInvoices(request, env) {
     id: inv.id,
     number: inv.number || inv.id,
     date: inv.created * 1000,
-    amount: (inv.amount_paid != null ? inv.amount_paid : inv.total) / 100,
+    amount: _fromMinor(inv.amount_paid != null ? inv.amount_paid : inv.total, inv.currency),
     currency: (inv.currency || 'usd').toUpperCase(),
     status: inv.status,
     pdf: inv.invoice_pdf || inv.hosted_invoice_url || null,
@@ -32159,7 +32239,7 @@ async function stripeWebhook(request, env, ctx) {
       if (obj.metadata?.kind === 'usage_credit') {
         await _creditGrant(env, { subject: String(obj.metadata.subject || '').toLowerCase(),
           email: String(obj.metadata.email || obj.customer_email || '').toLowerCase(),
-          usd: Math.round(+obj.amount_total || 0) / 100, ref: obj.payment_intent || obj.id });
+          usd: _fromMinor(Math.round(+obj.amount_total || 0), obj.currency), ref: obj.payment_intent || obj.id });
         await _pendDone(env, obj.id);
         return new Response('ok', { status: 200 });
       }
@@ -32169,7 +32249,7 @@ async function stripeWebhook(request, env, ctx) {
           itemId: obj.metadata.itemId,
           buyer: (obj.metadata.buyer || obj.customer_email || '').toLowerCase(),
           seller: (obj.metadata.seller || '').toLowerCase(),
-          amountCents: obj.amount_total,
+          amountCents: obj.amount_total, currency: obj.currency,
           // What a later refund or dispute will arrive quoting.
           ref: obj.payment_intent || obj.id,
         });
@@ -32197,7 +32277,7 @@ async function stripeWebhook(request, env, ctx) {
         }
         // Record the initial subscription payment so it shows in admin finance
         // even beyond Stripe's own retention window.
-        const amt = (obj.amount_total != null ? obj.amount_total : 0) / 100;
+        const amt = _fromMinor(obj.amount_total != null ? obj.amount_total : 0, obj.currency);   // minor units of ITS currency (Nov 8 audit FIN-029)
         if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
           currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
           ref: obj.subscription || obj.id || '' });
@@ -32281,7 +32361,7 @@ async function stripeWebhook(request, env, ctx) {
       // Record each recurring renewal payment (invoice.paid carries amount_paid).
       if (type === 'invoice.paid' && email) {
         await _clearPastDue(env, email);                 // a payment landed: current again
-        const amt = (obj.amount_paid != null ? obj.amount_paid : 0) / 100;
+        const amt = _fromMinor(obj.amount_paid != null ? obj.amount_paid : 0, obj.currency);
         if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
           currency: (obj.currency || 'usd').toUpperCase(), kind: (plan || 'renewal'), status: 'succeeded',
           ref: obj.id || obj.subscription || '' });
@@ -32318,7 +32398,7 @@ async function stripeWebhook(request, env, ctx) {
       const charge = obj.charge ? obj : (obj.data?.object || obj);
       // Same split as a dispute: undo the sale, or fall through to the plan.
       const reversedR = (await _creditReverse(env, charge.payment_intent || charge.id, 'refund',
-                          Math.round(+(charge.amount_refunded || charge.amount) || 0) / 100))
+                          _fromMinor(Math.round(+(charge.amount_refunded || charge.amount) || 0), charge.currency)))
                      || await _reverseSale(env, charge.payment_intent || charge.id, 'refund');
       if (!reversedR) {
         const email = await _emailFromCustomer(env, charge.customer)
@@ -33847,7 +33927,7 @@ async function marketBuy(request, env) {
 
 /* Called from the Stripe webhook when a market_purchase session completes.
    Grants the item to the buyer and credits the seller their 80% share. */
-async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
+async function _creditSale(env, { itemId, buyer, seller, amountCents, ref, currency }) {
   if (!itemId || !buyer) return;
   // Exactly-once: atomically claim this (buyer,item) sale. A buyer can never own
   // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
@@ -33859,16 +33939,17 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
      claim expired in thirty seconds; now that it is permanent, the release has
      to be deliberate. */
   const _sale = await _onceOrRetry(env, 'sale', `${buyer}:${itemId}`, CLAIM_ONCE_TTL_S,
-    async () => { await _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }); });
+    async () => { await _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, currency }); });
   return _sale.value;
 }
 
 /* The credit itself. Separated only so the claim above wraps ALL of it - there
    is no partial success here worth keeping: either the buyer owns it and the
    seller was paid, or the whole thing is retried. */
-async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }) {
+async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, currency }) {
   const it = await _getListing(env, itemId);
-  const price = amountCents != null ? amountCents / 100 : (it ? it.price : 0);
+  /* Minor units of the currency the checkout was in (Nov 8 audit FIN-029). */
+  const price = amountCents != null ? _fromMinor(amountCents, currency) : (it ? it.price : 0);
   const sellerEmail = seller || (it && it.authorEmail) || '';
   // grant ownership to the buyer
   await env.AMV_KV.put(`entitleitem:${buyer}:${itemId}`, '1');
@@ -45201,6 +45282,12 @@ async function _pkCredReserve(env, credId, em){
 async function _pkCredUnreserve(env, credId, em){
   try{ if((await env.AMV_KV.get('pkcred:' + credId)) === em) await env.AMV_KV.delete('pkcred:' + credId); }
   catch(e){ audit(env, 'passkey_index_left', { email: em }); }
+  /* And the claim itself (Nov 8 audit AUTH-025): left held, the same passkey
+     could not be registered again for a day after a sign-up that made
+     nothing. Released by this request's own claim, so a later holder's is
+     never freed. */
+  try{ await _releaseClaim(env, 'pkcredclaim', String(credId)); }
+  catch(e){ audit(env, 'passkey_claim_left', { email: em }); }
 }
 async function _passkeySignupFinish(request, env, site, body){
   const em = String(body.email || '').toLowerCase().trim();
@@ -45370,9 +45457,22 @@ async function totpConfirm(request, env){
   const body = await request.json().catch(() => ({}));
   const lim = await limitAction(env, 'totpset:' + em, 10, 60);
   if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
+  /* THE ANSWER SURVIVES A LOST RESPONSE (Nov 8 audit AUTH-026). The ten
+     recovery codes are shown once, in this answer; when it was lost the
+     setup was already spent, so asking again said "already confirmed" and
+     the codes were gone. The answer is kept, sealed, for fifteen minutes,
+     and given again to a request that proves it holds the app - a current
+     code from the secret that was just turned on. */
+  const replay = async () => {
+    let kept = null;
+    try{ kept = await connOpen(env, (await env.AMV_KV.get('totpans:' + em)) || ''); }catch(e){ kept = null; }
+    if(!kept || kept.t !== 'totpans' || (await _totpCheck(kept.s, body.code, null)) < 0) return null;
+    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(await DB.get(env, 'acct', em)) });
+  };
   const pendRaw = await env.AMV_KV.get('totpset:' + em) || '';
   let pend = null; try{ pend = await connOpen(env, pendRaw); }catch(e){ pend = null; }
-  if(!pend || pend.t !== 'totpset') return json({ error: 'That setup has expired. Start again.', code: 'totp_expired' }, 400);
+  if(!pend || pend.t !== 'totpset'){ const again = await replay(); if(again) return again;
+    return json({ error: 'That setup has expired. Start again.', code: 'totp_expired' }, 400); }
   const step = await _totpCheck(pend.s, body.code, null);
   if(step < 0) return json({ error: 'That code does not match. Check the time on your phone and try the newest code.', code: 'totp_wrong' }, 400);
   /* ONE SETUP, CONFIRMED ONCE (Nov 7 audit AUTH-021). Two confirmations at
@@ -45381,13 +45481,26 @@ async function totpConfirm(request, env){
      the moment the second landed, so somebody wrote down ten codes that
      never worked. The setup is spent before any codes are made. */
   const setupId = _b64u.enc((await _pkSha256(new TextEncoder().encode(pendRaw))).slice(0, 24));
-  if(!(await _claimOnce(env, 'totpsetspent', setupId, 900)))
+  if(!(await _claimOnce(env, 'totpsetspent', setupId, 900))){
+    const again = await replay(); if(again) return again;
     return json({ error: 'This setup has already been confirmed. Your recovery codes are the ones shown then.', code: 'totp_confirmed' }, 409);
+  }
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
-  const w = await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
-  if(w && w.error) return json({ error: 'The authenticator app could not be turned on. Nothing was changed - start again.', code: 'totp_not_saved' }, w.status || 503);
+  /* Kept before the account changes, so there is never a moment when the
+     app is on and the codes can no longer be shown again. */
+  try{ await env.AMV_KV.put('totpans:' + em, await connSeal(env, { t: 'totpans', s: pend.s, codes }), { expirationTtl: 900 }); }
+  catch(e){ await _releaseClaim(env, 'totpsetspent', setupId); return json({ error: 'The authenticator app could not be turned on just now. Nothing was changed - try the newest code again.', code: 'totp_not_saved' }, 503); }
+  let w;
+  try{ w = await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; }); }
+  catch(e){ w = { error: 'not_saved', status: 503 }; }
+  /* Not saved: the setup is not spent either, so trying again works. */
+  if(w && w.error){
+    try{ await env.AMV_KV.delete('totpans:' + em); }catch(e){ /* it expires in fifteen minutes and answers only with the app's own code */ }
+    await _releaseClaim(env, 'totpsetspent', setupId);
+    return json({ error: 'The authenticator app could not be turned on. Nothing was changed - try the newest code again.', code: 'totp_not_saved' }, w.status || 503);
+  }
   try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });
@@ -45401,6 +45514,7 @@ async function totpDisable(request, env){
   const body = await request.json().catch(() => ({}));
   const refused = await _stepUp(env, request, user, body.proof); if(refused) return refused;
   await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; delete a.totp; a.recovery = []; });
+  try{ await env.AMV_KV.delete('totpans:' + em); }catch(e){ /* expires within fifteen minutes; the codes in it no longer work */ }
   audit(env, 'totp_off', { email: em });
   await _userEvent(env, request, em, 'mfa_off', { kind: 'authenticator app' });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });

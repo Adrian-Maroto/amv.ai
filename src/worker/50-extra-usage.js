@@ -278,7 +278,7 @@ async function stripeWebhook(request, env, ctx) {
       if (obj.metadata?.kind === 'usage_credit') {
         await _creditGrant(env, { subject: String(obj.metadata.subject || '').toLowerCase(),
           email: String(obj.metadata.email || obj.customer_email || '').toLowerCase(),
-          usd: Math.round(+obj.amount_total || 0) / 100, ref: obj.payment_intent || obj.id });
+          usd: _fromMinor(Math.round(+obj.amount_total || 0), obj.currency), ref: obj.payment_intent || obj.id });
         await _pendDone(env, obj.id);
         return new Response('ok', { status: 200 });
       }
@@ -288,7 +288,7 @@ async function stripeWebhook(request, env, ctx) {
           itemId: obj.metadata.itemId,
           buyer: (obj.metadata.buyer || obj.customer_email || '').toLowerCase(),
           seller: (obj.metadata.seller || '').toLowerCase(),
-          amountCents: obj.amount_total,
+          amountCents: obj.amount_total, currency: obj.currency,
           // What a later refund or dispute will arrive quoting.
           ref: obj.payment_intent || obj.id,
         });
@@ -316,7 +316,7 @@ async function stripeWebhook(request, env, ctx) {
         }
         // Record the initial subscription payment so it shows in admin finance
         // even beyond Stripe's own retention window.
-        const amt = (obj.amount_total != null ? obj.amount_total : 0) / 100;
+        const amt = _fromMinor(obj.amount_total != null ? obj.amount_total : 0, obj.currency);   // minor units of ITS currency (Nov 8 audit FIN-029)
         if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
           currency: (obj.currency || 'usd').toUpperCase(), kind: plan, status: 'succeeded',
           ref: obj.subscription || obj.id || '' });
@@ -400,7 +400,7 @@ async function stripeWebhook(request, env, ctx) {
       // Record each recurring renewal payment (invoice.paid carries amount_paid).
       if (type === 'invoice.paid' && email) {
         await _clearPastDue(env, email);                 // a payment landed: current again
-        const amt = (obj.amount_paid != null ? obj.amount_paid : 0) / 100;
+        const amt = _fromMinor(obj.amount_paid != null ? obj.amount_paid : 0, obj.currency);
         if (amt > 0) await _recordTxn(env, { provider: 'stripe', email, amount: amt,
           currency: (obj.currency || 'usd').toUpperCase(), kind: (plan || 'renewal'), status: 'succeeded',
           ref: obj.id || obj.subscription || '' });
@@ -437,7 +437,7 @@ async function stripeWebhook(request, env, ctx) {
       const charge = obj.charge ? obj : (obj.data?.object || obj);
       // Same split as a dispute: undo the sale, or fall through to the plan.
       const reversedR = (await _creditReverse(env, charge.payment_intent || charge.id, 'refund',
-                          Math.round(+(charge.amount_refunded || charge.amount) || 0) / 100))
+                          _fromMinor(Math.round(+(charge.amount_refunded || charge.amount) || 0), charge.currency)))
                      || await _reverseSale(env, charge.payment_intent || charge.id, 'refund');
       if (!reversedR) {
         const email = await _emailFromCustomer(env, charge.customer)

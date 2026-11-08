@@ -273,6 +273,21 @@ const _drillKey = (day) => 'bkdrill:' + day;
    plane lives there (docs/DATA-TIER.md). */
 const _restoreRunBase = (day, run) => 'restores/' + day + '/' + run + '/';
 /* Asked fresh, never from a cache: is everything else paused RIGHT NOW. */
+/* For everything ELSE that writes (Nov 8 audit DR-011/016): background work
+   pauses while a restore has writes off, and also when that cannot be
+   asked - a switchboard that does not answer is not permission to write
+   into a store somebody may be restoring. The restore itself still needs a
+   definite yes from _restoreFrozen before it starts. */
+async function _writesPaused(env){
+  if (env.AMV_COUNTER) {
+    try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true });
+      if (r && r.map && typeof r.map === 'object') return !!(r.map['feature:writes'] && r.map['feature:writes'].off);
+      return true;
+    } catch (e) { return true; }
+  }
+  try { const m = JSON.parse((await env.AMV_KV.get(SWITCH_KEY)) || '{}'); return !!(m && m['feature:writes'] && m['feature:writes'].off); }
+  catch (e) { return true; }
+}
 async function _restoreFrozen(env){
   let m = null;
   if (env.AMV_COUNTER) { try { const r = await counter(env, SWITCHBOARD, { op: 'swGet', strict: true }); if (r && r.map && typeof r.map === 'object') m = r.map; } catch (e) { return false; } }

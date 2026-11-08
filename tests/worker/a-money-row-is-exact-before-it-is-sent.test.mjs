@@ -47,5 +47,13 @@ section('Seller money is whole units of its own currency (Nov 7 audit DATA-033)'
   ok(refused({ table: 'seller', amount: 12.345, currency: 'USD' }), 'dollars still need whole cents');
 }
 
+section('A payment provider amount is read in its own currency’s units (Nov 8 audit FIN-029)');
+{
+  const back = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const bad = back.split('\n').filter(l => /(amount_total|amount_paid|amount_refunded|amountCents|inv\.total)[^;\n]*\)?\s*\/\s*100\b/.test(l) && !/^\s*(\/\/|\*)/.test(l));
+  ok(bad.length === 0, 'no amount from Stripe is divided by 100 whatever its currency', bad);
+  ok(/usd: _fromMinor\(Math\.round\(\+obj\.amount_total \|\| 0\), obj\.currency\)/.test(back), 'a credit pack is read in its checkout’s units');
+}
+
 if (report('a-money-row-is-exact-before-it-is-sent') > 0) process.exitCode = 1;
 done();

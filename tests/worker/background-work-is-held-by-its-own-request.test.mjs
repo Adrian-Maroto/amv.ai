@@ -46,6 +46,15 @@ section('Overlapping requests: each one’s background work is held by itself');
   ok(B2.held.length === 1, 'and B’s by B');
 }
 
+section('Outside any context, nothing borrows the last request (Nov 8 audit AUDIT-010)');
+{
+  const last = mkCtx('last');
+  await W.default.fetch(new Request('https://api.amv.test/v1/health'), env, last);
+  const before = last.held.length;
+  W._bg(Promise.resolve('stray'));
+  ok(last.held.length === before, 'work started outside every context is not held by a request that has finished', { before, after: last.held.length });
+}
+
 console.log = quiet;
 if (report('background-work-is-held-by-its-own-request') > 0) process.exitCode = 1;
 done();

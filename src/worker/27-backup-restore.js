@@ -161,7 +161,7 @@ const BACKUP_NEVER = [
      challenge (ten), and an authenticator app half set up, its secret sealed
      with this deployment's key. Restoring any of them would put a spent or
      expired step back into circulation. */
-  'pkchal:', 'mfachal:', 'totpset:',
+  'pkchal:', 'mfachal:', 'totpset:', 'totpans:',
   /* Mail waiting to be retried (61-owner-digest.js, _outboxDrain): three
      days at most, and restoring it would send an old message again. */
   'outbox:',

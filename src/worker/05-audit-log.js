@@ -53,8 +53,11 @@ function _bg(p) {
   if (!p || typeof p.then !== 'function') return;
   const settled = p.catch(() => {});
   try {
-    const own = _ctxStore && _ctxStore.getStore();
-    const c = own || _liveCtx;
+    /* Only the context this work is running in (Nov 8 audit AUDIT-010):
+       every request, tick and queue batch runs inside its own, so the shared
+       variable is used only where the runtime offers no async-local storage
+       at all - never to borrow another request's lifetime. */
+    const c = _ctxStore ? _ctxStore.getStore() : _liveCtx;
     if (c && typeof c.waitUntil === 'function') { c.waitUntil(settled); return; }
   } catch (e) { /* a finished context: the fallback below still applies */ }
   /* Nothing to hold it open. Better than throwing, and honest: this is the

@@ -557,6 +557,12 @@ async function _pkCredReserve(env, credId, em){
 async function _pkCredUnreserve(env, credId, em){
   try{ if((await env.AMV_KV.get('pkcred:' + credId)) === em) await env.AMV_KV.delete('pkcred:' + credId); }
   catch(e){ audit(env, 'passkey_index_left', { email: em }); }
+  /* And the claim itself (Nov 8 audit AUTH-025): left held, the same passkey
+     could not be registered again for a day after a sign-up that made
+     nothing. Released by this request's own claim, so a later holder's is
+     never freed. */
+  try{ await _releaseClaim(env, 'pkcredclaim', String(credId)); }
+  catch(e){ audit(env, 'passkey_claim_left', { email: em }); }
 }
 async function _passkeySignupFinish(request, env, site, body){
   const em = String(body.email || '').toLowerCase().trim();
@@ -726,9 +732,22 @@ async function totpConfirm(request, env){
   const body = await request.json().catch(() => ({}));
   const lim = await limitAction(env, 'totpset:' + em, 10, 60);
   if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
+  /* THE ANSWER SURVIVES A LOST RESPONSE (Nov 8 audit AUTH-026). The ten
+     recovery codes are shown once, in this answer; when it was lost the
+     setup was already spent, so asking again said "already confirmed" and
+     the codes were gone. The answer is kept, sealed, for fifteen minutes,
+     and given again to a request that proves it holds the app - a current
+     code from the secret that was just turned on. */
+  const replay = async () => {
+    let kept = null;
+    try{ kept = await connOpen(env, (await env.AMV_KV.get('totpans:' + em)) || ''); }catch(e){ kept = null; }
+    if(!kept || kept.t !== 'totpans' || (await _totpCheck(kept.s, body.code, null)) < 0) return null;
+    return json({ ok: true, replayed: true, recovery: kept.codes, security: _securityShown(await DB.get(env, 'acct', em)) });
+  };
   const pendRaw = await env.AMV_KV.get('totpset:' + em) || '';
   let pend = null; try{ pend = await connOpen(env, pendRaw); }catch(e){ pend = null; }
-  if(!pend || pend.t !== 'totpset') return json({ error: 'That setup has expired. Start again.', code: 'totp_expired' }, 400);
+  if(!pend || pend.t !== 'totpset'){ const again = await replay(); if(again) return again;
+    return json({ error: 'That setup has expired. Start again.', code: 'totp_expired' }, 400); }
   const step = await _totpCheck(pend.s, body.code, null);
   if(step < 0) return json({ error: 'That code does not match. Check the time on your phone and try the newest code.', code: 'totp_wrong' }, 400);
   /* ONE SETUP, CONFIRMED ONCE (Nov 7 audit AUTH-021). Two confirmations at
@@ -737,13 +756,26 @@ async function totpConfirm(request, env){
      the moment the second landed, so somebody wrote down ten codes that
      never worked. The setup is spent before any codes are made. */
   const setupId = _b64u.enc((await _pkSha256(new TextEncoder().encode(pendRaw))).slice(0, 24));
-  if(!(await _claimOnce(env, 'totpsetspent', setupId, 900)))
+  if(!(await _claimOnce(env, 'totpsetspent', setupId, 900))){
+    const again = await replay(); if(again) return again;
     return json({ error: 'This setup has already been confirmed. Your recovery codes are the ones shown then.', code: 'totp_confirmed' }, 409);
+  }
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
-  const w = await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
-  if(w && w.error) return json({ error: 'The authenticator app could not be turned on. Nothing was changed - start again.', code: 'totp_not_saved' }, w.status || 503);
+  /* Kept before the account changes, so there is never a moment when the
+     app is on and the codes can no longer be shown again. */
+  try{ await env.AMV_KV.put('totpans:' + em, await connSeal(env, { t: 'totpans', s: pend.s, codes }), { expirationTtl: 900 }); }
+  catch(e){ await _releaseClaim(env, 'totpsetspent', setupId); return json({ error: 'The authenticator app could not be turned on just now. Nothing was changed - try the newest code again.', code: 'totp_not_saved' }, 503); }
+  let w;
+  try{ w = await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; }); }
+  catch(e){ w = { error: 'not_saved', status: 503 }; }
+  /* Not saved: the setup is not spent either, so trying again works. */
+  if(w && w.error){
+    try{ await env.AMV_KV.delete('totpans:' + em); }catch(e){ /* it expires in fifteen minutes and answers only with the app's own code */ }
+    await _releaseClaim(env, 'totpsetspent', setupId);
+    return json({ error: 'The authenticator app could not be turned on. Nothing was changed - try the newest code again.', code: 'totp_not_saved' }, w.status || 503);
+  }
   try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){ /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });
@@ -757,6 +789,7 @@ async function totpDisable(request, env){
   const body = await request.json().catch(() => ({}));
   const refused = await _stepUp(env, request, user, body.proof); if(refused) return refused;
   await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; delete a.totp; a.recovery = []; });
+  try{ await env.AMV_KV.delete('totpans:' + em); }catch(e){ /* expires within fifteen minutes; the codes in it no longer work */ }
   audit(env, 'totp_off', { email: em });
   await _userEvent(env, request, em, 'mfa_off', { kind: 'authenticator app' });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });

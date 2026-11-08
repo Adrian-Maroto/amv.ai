@@ -25,7 +25,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'jobqueue.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens, _qOpen, _auditPid };
+export { SWITCH_KEY, runDueAutomations, issueTokens, _qOpen, _auditPid };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -113,6 +113,20 @@ section('The consumer runs the account’s due job, once');
   ok(modelCalls === 0 && twice[0].acked, 'the same message delivered again runs nothing', modelCalls);
 }
 
+section('A restore with writes off holds every message for later (Nov 8 audit DR-016)');
+{
+  due(TWO); modelCalls = 0;
+  store.set(W.SWITCH_KEY, JSON.stringify({ 'feature:writes': { off: true } }));
+  const held = await deliver([{ email: TWO }, { kind: 'outbox', id: 'x' }]);
+  ok(modelCalls === 0 && held.every(m => m.retried && !m.acked), 'nothing runs; each message comes back later', held.map(m => ({ a: m.acked, r: m.retried })));
+  const probe = await deliver([{ kind: 'synth', at: Date.now() }]);
+  ok(probe[0].acked, 'the queue’s own probe still lands');
+  store.delete(W.SWITCH_KEY);
+  const after = await deliver([{ email: TWO }]);
+  ok(after[0].acked && modelCalls === 1, 'and once writes are back on, the work runs', modelCalls);
+  due(TWO);
+}
+
 section('The kill switch and a paused account stop the consumer too');
 {
   store.set('GLOBAL_KILL', '1'); modelCalls = 0;
@@ -193,6 +207,12 @@ section('A job that dies twice in a day is quarantined until somebody releases i
   modelCalls = 0;
   await deliver([{ email: ME }]);
   ok(modelCalls >= 1, 'and its work runs again', modelCalls);
+  /* Nov 8 audit QUEUE-017: a quarantine that cannot be read holds the run. */
+  due(ME); modelCalls = 0;
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('autoquar:')) throw new Error('store down'); return realGet.call(env.AMV_KV, k); };
+  try { await deliver([{ email: ME }]); } finally { env.AMV_KV.get = realGet; }
+  ok(modelCalls === 0, 'when whether it is in quarantine cannot be read, it does not run', modelCalls);
 }
 
 console.log = origLog;

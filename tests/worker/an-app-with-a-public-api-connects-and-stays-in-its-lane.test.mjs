@@ -38,12 +38,16 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const SECRETS = {};
 for (const k of Object.keys(W.CONN_PROVIDERS)) { const p = W.CONN_PROVIDERS[k]; SECRETS[p.idEnv] = k + '-id'; SECRETS[p.secretEnv] = k + '-secret'; }
 function mkEnv() {
-  const m = new Map();
+  const m = new Map(), claims = new Set();
   return Object.assign({
     AMV_KV: { _map: m, async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
     AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
-      const a = authObjectOp(n, JSON.parse((init && init.body) || '{}')); if (a) return a;
+      const b = JSON.parse((init && init.body) || '{}');
+      const a = authObjectOp(n, b); if (a) return a;
+      /* A claim is held once, as the real object holds it. */
+      if (b.op === 'claim') { if (claims.has(n)) return new Response(JSON.stringify({ claimed: false })); claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: n })); }
+      if (b.op === 'release') { claims.delete(n); return new Response(JSON.stringify({ ok: true })); }
       return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'the-secret-this-deployment-seals-connections-with',
@@ -161,9 +165,22 @@ section('A call goes to its own app with its own token - never another’s');
   ok(out && out.headers.Authorization === 'Bearer MS-TOKEN', 'with Microsoft’s token, though Google’s shares the capability name', out && out.headers.Authorization);
   ok(!sent.some(x => /GOOGLE-TOKEN/.test(JSON.stringify(x.headers)) && !x.url.includes('googleapis')), 'Google’s token went nowhere but Google', true);
   sent = [];
-  const w = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } } }, t);
+  const w = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } }, idempotencyKey: 'test-send-mail-key-0001' }, t);
   const post = sent.find(x => x.url.endsWith('/me/sendMail'));
   ok(w.status === 200 && post && post.method === 'POST' && JSON.parse(post.body).message.subject === 'hi' && /application\/json/.test(post.headers['Content-Type']), 'a write sends its JSON body', post);
+  /* Nov 8 audit CONN-035: a change is made once, and a lost answer is not "nothing". */
+  ok(post && post.headers['Idempotency-Key'] === 'test-send-mail-key-0001', 'and passes its key to the provider', post && post.headers);
+  sent = [];
+  const again = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } }, idempotencyKey: 'test-send-mail-key-0001' }, t);
+  ok(again.status === 200 && again.d.replayed === true && !sent.some(x => x.url.endsWith('/me/sendMail')), 'a retry with the same key gets the first answer and sends nothing', again.d);
+  const nokey = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } } }, t);
+  ok(nokey.status === 400 && nokey.d.error === 'idempotency_required', 'a change without a key is not sent', nokey.d);
+  const realF = globalThis.fetch;
+  globalThis.fetch = async (u, i) => { if (String(u).endsWith('/me/sendMail')) throw new Error('connection reset'); return realF(u, i); };
+  let lost;
+  try { lost = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'x' } }, idempotencyKey: 'test-send-mail-key-0002' }, t); }
+  finally { globalThis.fetch = realF; }
+  ok(lost.d.error === 'outcome_unknown' && !/Nothing was changed/i.test(lost.d.message || ''), 'a change whose answer was lost says it may have happened, never that nothing changed', lost.d);
   const nc = await call(env, '/v1/connect/api', { provider: 'spotify', method: 'GET', path: 'me' }, t);
   ok(nc.status === 404 && nc.d.error === 'not_connected', 'an app this account has not connected is refused', nc);
   const anon = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'GET', path: 'me' });
@@ -246,7 +263,7 @@ section('Removing one app while another renews does not undo the renewal');
     [rm, used] = await Promise.all([
       call(env, '/v1/connect/remove', { id: slackId }, t),
       (async () => { await new Promise(r => setTimeout(r, 20));
-                     return call(env, '/v1/connect/api', { provider: 'dropbox', method: 'POST', path: 'users/get_current_account' }, t); })(),
+                     return call(env, '/v1/connect/api', { provider: 'dropbox', method: 'POST', path: 'users/get_current_account', idempotencyKey: 'test-dropbox-race-0001' }, t); })(),
     ]);
   } finally { globalThis.fetch = real; }
   ok(rm.status === 200 && used.status === 200, 'both finished', [rm.status, used.status]);

@@ -792,6 +792,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "totpans": {
+   "class": "security",
+   "holds": "the answer to turning on an authenticator app (its recovery codes), sealed, so a lost answer can be shown again",
+   "kept": "fifteen minutes",
+   "backup": false,
+   "authority": "kv"
+  },
   "totpset": {
    "class": "security",
    "holds": "an authenticator secret being set up, sealed",

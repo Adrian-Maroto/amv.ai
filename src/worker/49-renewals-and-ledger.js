@@ -349,7 +349,7 @@ async function stripeInvoices(request, env) {
     id: inv.id,
     number: inv.number || inv.id,
     date: inv.created * 1000,
-    amount: (inv.amount_paid != null ? inv.amount_paid : inv.total) / 100,
+    amount: _fromMinor(inv.amount_paid != null ? inv.amount_paid : inv.total, inv.currency),
     currency: (inv.currency || 'usd').toUpperCase(),
     status: inv.status,
     pdf: inv.invoice_pdf || inv.hosted_invoice_url || null,

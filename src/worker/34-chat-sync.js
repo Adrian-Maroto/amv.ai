@@ -666,10 +666,10 @@ async function reconcilePayments(env) {
       if (_stripeSessionPaid(d)) {
         if (p.kind === 'market') {
           await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
-                                   amountCents: d.amount_total, ref: d.payment_intent || row.id });
+                                   amountCents: d.amount_total, currency: d.currency, ref: d.payment_intent || row.id });
         } else if (p.kind === 'credit') {
           await _creditGrant(env, { subject: p.subject || p.email, email: p.email,
-                                    usd: Math.round(+d.amount_total || 0) / 100, ref: d.payment_intent || row.id });
+                                    usd: _fromMinor(Math.round(+d.amount_total || 0), d.currency), ref: d.payment_intent || row.id });
         } else if (p.plan) {
           await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
         }

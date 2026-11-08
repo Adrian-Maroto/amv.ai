@@ -1456,7 +1456,10 @@ const AMV_API = {
   /* One call to a connected app's API (Slack, Spotify, Dropbox...), made by the
      server with the token it holds. The page never sees the token. */
   async connectApi(provider, method, path, query, body){
-    return this._wrote('/v1/connect/api', { provider, method, path, query: query || undefined, body: body === undefined ? undefined : body },
+    /* A change carries a key of its own, so a retry is not a second change. */
+    const m = String(method || 'GET').toUpperCase();
+    const idempotencyKey = m === 'GET' ? undefined : 'a' + Date.now().toString(36) + '-' + _randToken(15);
+    return this._wrote('/v1/connect/api', { provider, method, path, query: query || undefined, body: body === undefined ? undefined : body, idempotencyKey },
       'That app did not complete the request.');
   },
   async remoteList(){ return this._wrote('/v1/remote/list', {}, 'The list of connected apps could not be read.'); },

@@ -270,6 +270,12 @@ section('Tools: listed through a session, from a stream that never closes');
   ok(nope.status === 404 && nope.d.error === 'not_connected', 'an app this account has not connected cannot be called', nope);
   const anon = await call(env, '/v1/remote/call', { app: 'notion', tool: 'search', args: {} });
   ok(anon.status === 401, 'nor by anybody signed out', anon.status);
+  /* Nov 8 audit CONN-036: the call was sent and its answer lost. */
+  const realF = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { try { const b = JSON.parse((init && init.body) || '{}'); if (b.method === 'tools/call') throw new Error('connection reset'); } catch (e) { if (e.message === 'connection reset') throw e; } return realF(url, init); };
+  let lost;
+  try { lost = await limited(call(env, '/v1/remote/call', { app: 'notion', tool: 'search', args: {} }, t)); } finally { globalThis.fetch = realF; }
+  ok(lost.d.error === 'outcome_unknown' && !/Nothing was changed/i.test(lost.d.message || ''), 'a call sent and then lost says it may have been done, never that nothing changed', lost.d);
 }
 
 section('An expiring sign-in renews itself; one the app refuses says reconnect');

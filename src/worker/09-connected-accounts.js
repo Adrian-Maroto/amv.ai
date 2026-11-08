@@ -918,15 +918,60 @@ async function connApi(request, env){
   }
   /* Asserted as well as asked for: a token goes only to its own provider. */
   if(u.provider !== pid) return json({ error:'wrong_provider' }, 500);
+  /* A CHANGE IS MADE ONCE, AND NEVER CALLED "NOTHING" WHEN IT MAY HAVE
+     HAPPENED (Nov 8 audit CONN-035). A write through this route needs an
+     Idempotency-Key, held exactly as the named actions hold theirs: the first
+     request claims it, its answer is kept for a day, and a retry gets that
+     answer back instead of sending the change again. The key is also passed
+     to the provider, which honours it where it can. AMV cannot read an
+     arbitrary API's change back, so the answer says what the provider said
+     and no more - and a lost answer, or a provider error after the request
+     was sent, is "may have happened", never "nothing was changed". */
+  const writes = method !== 'GET';
+  let idem = null;
+  if(writes){
+    const ik = String(request.headers.get('Idempotency-Key') || body.idempotencyKey || '');
+    if(!ik) return json({ error:'idempotency_required', message:'A change through a connected app needs an Idempotency-Key (16 to 80 letters, digits, - or _), so a retry cannot do it twice. Nothing was sent.' }, 400);
+    if(!/^[A-Za-z0-9_-]{16,80}$/.test(ik)) return json({ error:'bad_idempotency_key', message:'An Idempotency-Key is 16 to 80 letters, digits, - or _.' }, 400);
+    const digest = await _sha256Hex(JSON.stringify([pid, method, url, payload || '']));
+    const kvKey = `apiidem:${String(user.email).toLowerCase()}:${ik}`;
+    let kept = null;
+    try{ kept = JSON.parse((await env.AMV_KV.get(kvKey)) || 'null'); }catch(e){ kept = null; }
+    if(kept){
+      if(kept.d !== digest) return json({ error:'idempotency_conflict', message:'That Idempotency-Key was used for a different request. Nothing was sent.' }, 409);
+      return json(Object.assign({}, kept.body, { replayed: true }), kept.status || 200);
+    }
+    let c = null;
+    try{ c = await counter(env, kvKey, { op:'claim', ttlMs: ACT_IDEM_TTL_S * 1000 }); }catch(e){ c = null; }
+    if(!c || c.unavailable) return json({ error:'idempotency_unavailable', message:'AMV could not make sure this is sent only once right now, so it was not sent. Try again in a moment.' }, 503);
+    if(!c.claimed) return json({ error:'idempotency_pending', message:'AMV is already sending this, or may already have sent it. Look in ' + p.name + ' before asking again, so it does not happen twice.' }, 409);
+    idem = { kvKey, digest, ik };
+  }
+  const reply = async (obj, status) => {
+    if(idem){ try{ await env.AMV_KV.put(idem.kvKey, JSON.stringify({ d: idem.digest, status: status || 200, body: obj, at: Date.now() }), { expirationTtl: ACT_IDEM_TTL_S }); }
+              catch(e){ audit(env, 'conn_api_idem_unsaved', { by: user.email, provider: pid }); } }
+    return json(obj, status);
+  };
   const headers = Object.assign({ Authorization: 'Bearer ' + u.token, Accept: 'application/json' }, p.api.headers || {});
+  if(idem) headers['Idempotency-Key'] = idem.ik;
   if(payload !== undefined) headers['Content-Type'] = /^\s*[\[{]/.test(payload) ? 'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
   let g;
   try { g = await fetchGuarded(url, { method, headers, body: payload }, 30000); }
-  catch (e) { return json({ error:'app_unreachable', message: p.name + ' did not answer. Nothing was changed.' }, 502); }
-  if(g.blocked) return json({ error:'blocked', message: g.why }, 400);
+  catch (e) {
+    if(writes){
+      audit(env, 'conn_api_outcome_unknown', { by: user.email, provider: pid, method });
+      return reply({ error:'outcome_unknown', message: p.name + ' did not answer, so AMV cannot tell whether the change was made. Look in ' + p.name + ' before trying again, so it does not happen twice.' }, 502);
+    }
+    return json({ error:'app_unreachable', message: p.name + ' did not answer. Nothing was changed - this was only a read.' }, 502);
+  }
+  if(g.blocked){ return writes ? reply({ error:'blocked', message: g.why }, 400) : json({ error:'blocked', message: g.why }, 400); }
   const text = await _rmcpText(g.response, CONN_API_MAX_OUT);
-  audit(env, 'conn_api', { by:user.email, provider:pid, method, path: new URL(url).pathname.slice(0, 120), status: g.response.status });
-  return json({ ok:true, status: g.response.status, body: text });
+  const st = g.response.status;
+  audit(env, 'conn_api', { by:user.email, provider:pid, method, path: new URL(url).pathname.slice(0, 120), status: st });
+  /* A provider error after a change was sent is not proof nothing happened. */
+  if(writes && st >= 500) return reply({ ok:false, error:'outcome_unknown', status: st, body: text, verified: null,
+    message: p.name + ' answered with an error (' + st + ') after the change was sent, so AMV cannot tell whether it was made. Look in ' + p.name + ' before trying again.' }, 200);
+  return writes ? reply({ ok:true, status: st, body: text, verified: null }) : json({ ok:true, status: st, body: text });
 }
 
 /* Disconnect. Revokes at the provider FIRST, and only then forgets it.

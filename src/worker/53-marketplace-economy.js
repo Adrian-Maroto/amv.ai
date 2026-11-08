@@ -699,7 +699,7 @@ async function marketBuy(request, env) {
 
 /* Called from the Stripe webhook when a market_purchase session completes.
    Grants the item to the buyer and credits the seller their 80% share. */
-async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
+async function _creditSale(env, { itemId, buyer, seller, amountCents, ref, currency }) {
   if (!itemId || !buyer) return;
   // Exactly-once: atomically claim this (buyer,item) sale. A buyer can never own
   // the same item twice (marketBuy blocks re-purchase), so this is a stable key.
@@ -711,16 +711,17 @@ async function _creditSale(env, { itemId, buyer, seller, amountCents, ref }) {
      claim expired in thirty seconds; now that it is permanent, the release has
      to be deliberate. */
   const _sale = await _onceOrRetry(env, 'sale', `${buyer}:${itemId}`, CLAIM_ONCE_TTL_S,
-    async () => { await _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }); });
+    async () => { await _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, currency }); });
   return _sale.value;
 }
 
 /* The credit itself. Separated only so the claim above wraps ALL of it - there
    is no partial success here worth keeping: either the buyer owns it and the
    seller was paid, or the whole thing is retried. */
-async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref }) {
+async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, currency }) {
   const it = await _getListing(env, itemId);
-  const price = amountCents != null ? amountCents / 100 : (it ? it.price : 0);
+  /* Minor units of the currency the checkout was in (Nov 8 audit FIN-029). */
+  const price = amountCents != null ? _fromMinor(amountCents, currency) : (it ? it.price : 0);
   const sellerEmail = seller || (it && it.authorEmail) || '';
   // grant ownership to the buyer
   await env.AMV_KV.put(`entitleitem:${buyer}:${itemId}`, '1');
