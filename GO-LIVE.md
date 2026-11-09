@@ -755,6 +755,24 @@ when not. For a private or paid beta, the config above is what remains; for
 consumer production, see the stage table at the top - that needs engineering
 as well as config.
 
+## 5b. Prove staging before production (the staging drill)
+
+Every suite here runs AMV on local stand-ins. Before production gets its keys,
+put the same keys - Stripe in TEST mode - on a separate staging Worker and run
+the drill: it signs up two throwaway accounts, then checks sign-in, sync from
+two devices at once, files (kept, read back, duplicates, two at once, a long
+file, search inside, another account sees nothing, delete), one streamed
+answer from the model, a Stripe test checkout (never paid), and erases both
+accounts at the end. It refuses `amv.homes` and stops if Stripe answers live.
+
+- No terminal: set the repository variable `AMV_STAGING_URL` and the secret
+  `AMV_STAGING_ADMIN_TOKEN` (Settings > Secrets and variables > Actions), then
+  Actions > staging-drill > Run workflow. The run's summary lists every step.
+- With a terminal: `AMV_STAGING_URL=... AMV_STAGING_ADMIN_TOKEN=... node scripts/staging-drill.mjs`
+
+A staging captcha needs Turnstile's always-pass test secret, or no
+`TURNSTILE_SECRET` at all. Production gets its keys only after the drill passes.
+
 ## AMV for Chrome in the Chrome Web Store (optional, the owner's)
 
 Settings, API keys, In Chrome downloads `amv-chrome.zip` with this deployment's

@@ -1,0 +1,50 @@
+name: staging-drill
+
+# THE STAGING DRILL, FROM A BUTTON (scripts/staging-drill.mjs).
+#
+# Runs every flow that matters against the STAGING deployment's real
+# services - accounts, sync, files, search, the model, a Stripe TEST
+# checkout, erasure - with two throwaway accounts it erases at the end.
+# Never on a schedule: it is run when the owner presses Run workflow
+# (Actions > staging-drill), after staging has its keys.
+#
+# Needs, in Settings > Secrets and variables > Actions:
+#   variable AMV_STAGING_URL          the staging Worker's address
+#   secret   AMV_STAGING_ADMIN_TOKEN  the staging Worker's ADMIN_TOKEN
+# It refuses amv.homes and api.amv.homes, and stops if Stripe answers live.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version: '22'
+      - name: Run the drill against staging
+        env:
+          AMV_STAGING_URL: ${{ vars.AMV_STAGING_URL }}
+          AMV_STAGING_ADMIN_TOKEN: ${{ secrets.AMV_STAGING_ADMIN_TOKEN }}
+          AMV_STAGING_ORIGIN: ${{ vars.AMV_STAGING_ORIGIN }}
+        run: |
+          set +e
+          node scripts/staging-drill.mjs --out=drill.json
+          code=$?
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("drill.json", "utf8"));
+            const out = ["### Staging drill: " + (r.refused ? "refused - " + r.refused : (r.ok ? "passes" : "FAILS")), "",
+              "| Step | Result | Note |", "|---|---|---|"];
+            for (const s of r.results || []) out.push("| " + s.name + " | " + s.status + " | " + String(s.note || "").replace(/\|/g, "/") + " |");
+            require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
+          ' || true
+          exit $code
