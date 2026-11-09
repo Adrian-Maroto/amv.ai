@@ -39,6 +39,12 @@ jobs:
             echo "::error title=No staging storage::Set the repository variable AMV_STAGING_KV_ID to the id of the KV namespace amv-staging (32 letters and digits)."
             exit 1
           fi
+          # Never production's storage: staging's test accounts must not mix
+          # with real ones (the first staging deploy was given this id).
+          if grep -q "id = \"$KV\"" wrangler.toml; then
+            echo "::error title=That is production's storage::AMV_STAGING_KV_ID is the id of production's KV namespace. Create a NEW namespace named amv-staging (Cloudflare > Storage & Databases > KV > Create) and use its id."
+            exit 1
+          fi
       - name: Install from the lockfile
         run: npm ci
       - name: Deploy the staging copy
