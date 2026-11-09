@@ -1,0 +1,39 @@
+# THE STAGING COPY OF AMV - the same Worker, with storage of its own.
+#
+# Deployed only by Actions > deploy-staging (.github/workflows/deploy-staging.yml),
+# never by the production deploy. It is where test keys go - Stripe in TEST
+# mode, a model key with a small ceiling - and where the staging drill
+# (scripts/staging-drill.mjs) runs, so nothing tried here can touch the real
+# site's accounts, money or files.
+#
+# Its own KV namespace (the id comes from the repository variable
+# AMV_STAGING_KV_ID at deploy time), its own counter objects (a separate Worker
+# has separate ones), its own file bucket. No schedules: staging runs no nightly
+# jobs. Served only at its workers.dev address - no domain.
+name = "amv-ai-staging"
+main = "amv-backend.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[observability]
+enabled = true
+
+[[kv_namespaces]]
+binding = "AMV_KV"
+id = "STAGING_KV_ID"
+
+[[durable_objects.bindings]]
+name = "AMV_COUNTER"
+class_name = "AMVCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AMVCounter"]
+
+[[r2_buckets]]
+binding = "AMV_FILES"
+bucket_name = "amv-files-staging"
+
+[ai]
+binding = "AI"

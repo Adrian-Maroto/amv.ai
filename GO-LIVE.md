@@ -765,6 +765,20 @@ file, search inside, another account sees nothing, delete), one streamed
 answer from the model, a Stripe test checkout (never paid), and erases both
 accounts at the end. It refuses `amv.homes` and stops if Stripe answers live.
 
+The staging copy itself is one button too (`wrangler.staging.toml`): a
+separate Worker, `amv-ai-staging`, with storage of its own and no domain.
+
+1. Cloudflare > Storage & Databases > KV > Create: name `amv-staging`. Copy its ID.
+2. Cloudflare > R2 > Create bucket: `amv-files-staging`.
+3. GitHub > Settings > Secrets and variables > Actions > Variables: `AMV_STAGING_KV_ID` = that ID.
+4. Actions > deploy-staging > Run workflow. Its summary shows the staging address.
+5. Cloudflare > Workers & Pages > amv-ai-staging > Settings > Variables and Secrets: its own
+   `JWT_SECRET`, `ADMIN_TOKEN` and `CONNECT_KEY` (new random values, not production's), the
+   Stripe TEST key and test prices, and - when you buy one - a model key with
+   `GLOBAL_DAILY_USD_CAP` set low.
+
+Then run the drill:
+
 - No terminal: set the repository variable `AMV_STAGING_URL` and the secret
   `AMV_STAGING_ADMIN_TOKEN` (Settings > Secrets and variables > Actions), then
   Actions > staging-drill > Run workflow. The run's summary lists every step.

@@ -1,0 +1,59 @@
+name: deploy-staging
+
+# THE STAGING COPY, FROM A BUTTON (wrangler.staging.toml).
+#
+# Deploys the same Worker as production, as a separate Worker named
+# amv-ai-staging with storage of its own, served only at its workers.dev
+# address. Run it by hand (Actions > deploy-staging > Run workflow) - first to
+# create it, then again whenever staging should have the latest build.
+#
+# Needs, in Settings > Secrets and variables > Actions:
+#   variable AMV_STAGING_KV_ID   the id of the KV namespace "amv-staging"
+#                                (Cloudflare > Storage & Databases > KV)
+# and the bucket "amv-files-staging" (Cloudflare > R2). The Cloudflare token
+# and account id are the ones the production deploy already uses.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version: '22'
+      - name: Check what staging needs is set
+        env:
+          KV: ${{ vars.AMV_STAGING_KV_ID }}
+        run: |
+          if ! printf '%s' "$KV" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error title=No staging storage::Set the repository variable AMV_STAGING_KV_ID to the id of the KV namespace amv-staging (32 letters and digits)."
+            exit 1
+          fi
+      - name: Install from the lockfile
+        run: npm ci
+      - name: Deploy the staging copy
+        env:
+          KV: ${{ vars.AMV_STAGING_KV_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          sed -i "s/STAGING_KV_ID/$KV/" wrangler.staging.toml
+          npx wrangler deploy -c wrangler.staging.toml | tee deploy.log
+          url=$(grep -Eo 'https://amv-ai-staging[^ ]*workers\.dev' deploy.log | head -1)
+          {
+            echo "### Staging is deployed"
+            echo ""
+            echo "Address: ${url:-see the log above}"
+            echo ""
+            echo "Next: put its keys on the Worker **amv-ai-staging** in Cloudflare (GO-LIVE.md 5b), set the variable AMV_STAGING_URL to this address, then run **staging-drill**."
+          } >> "$GITHUB_STEP_SUMMARY"
