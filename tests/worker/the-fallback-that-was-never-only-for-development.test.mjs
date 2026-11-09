@@ -283,6 +283,7 @@ section('The deploy checklist does not name a secret nothing reads');
   const deploy = readFileSync(join(ROOT, 'DEPLOY.md'), 'utf8');
   const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8');
   const cloudWorker = readFileSync(join(ROOT, 'cloud', 'computer.mjs'), 'utf8');
+  const drillFlow = readFileSync(join(ROOT, '.github', 'workflows', 'staging-drill.yml'), 'utf8');
 
   /* The section that documents the removal names them on purpose. */
   const removalNote = /removed[\s\S]{0,2000}?reads none of those names|Video and images - removed/i;
@@ -300,6 +301,9 @@ section('The deploy checklist does not name a secret nothing reads');
       /* A repository variable the deploy workflow reads (AMV_LAUNCH_PROFILE)
          is a setting too - it is dead only if the workflow does not read it. */
       if (new RegExp('vars\\.' + n + '\\b').test(workflow)) continue;
+      /* And one the staging drill's workflow reads (vars. or secrets.): it is
+         for the drill, not the Worker, and dead only if that does not read it. */
+      if (new RegExp('(vars|secrets)\\.' + n + '\\b').test(drillFlow)) continue;
       /* AMV's cloud computer is a Worker of its own (cloud/); a binding the
          docs tell you to add there (WORKSPACES) is read by it, not by this one. */
       if (cloudWorker.includes(n)) continue;
