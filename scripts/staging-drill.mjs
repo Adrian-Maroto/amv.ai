@@ -62,6 +62,9 @@ export async function runDrill(opt = {}) {
     return { status: r.status, d, text, ms: Date.now() - t0, headers: r.headers };
   };
   const adminCall = (method, path, body) => call(method, path, body, null, { 'X-Admin-Token': admin });
+  /* What a refusal said, in its own words: the code and the start of the
+     message the person would see. Never a token or a key. */
+  const why = (r) => r.status + (r.d && (r.d.code || r.d.error) ? ' ' + [r.d.code, r.d.error].filter(Boolean).join(': ').slice(0, 160) : '');
 
   let stopped = null;
   const step = async (id, name, fn) => {
@@ -216,14 +219,14 @@ export async function runDrill(opt = {}) {
     });
     await step('consent', 'The terms are accepted, with a birth year (paying needs both)', async () => {
       const r = await call('POST', '/v1/consent', { birthYear: 1990, termsVersion: opt.termsVersion || 'staging-drill' }, people.a.token);
-      return { ok: r.status === 200, note: 'status ' + r.status };
+      return { ok: r.status === 200, note: why(r) };
     });
     await step('stripe', 'A checkout is created in Stripe TEST mode (nothing is paid)', async () => {
       const r = await call('POST', '/v1/stripe/checkout', { plan: 'pro', cycle: 'month' }, people.a.token);
       const url = String((r.d && (r.d.url || r.d.checkoutUrl)) || '');
       if (r.status >= 500 && /stripe|not configured|STRIPE/i.test(r.text) && !url) return { skip: 'Stripe is not configured here' };
       if (/cs_live_/.test(url)) return { ok: false, note: 'STRIPE IS LIVE ON THIS DEPLOYMENT - staging must use a test key', stop: 'Stripe is live' };
-      return { ok: r.status === 200 && /cs_test_/.test(url), note: url ? (/cs_test_/.test(url) ? 'test checkout made' : 'a checkout that is not marked test: ' + url.slice(0, 60)) : 'status ' + r.status };
+      return { ok: r.status === 200 && /cs_test_/.test(url), note: url ? (/cs_test_/.test(url) ? 'test checkout made' : 'a checkout that is not marked test: ' + url.slice(0, 60)) : why(r) };
     });
   } finally {
     /* Always: the two accounts go, and the invite. */
@@ -234,7 +237,7 @@ export async function runDrill(opt = {}) {
         const r = await call('POST', '/auth/delete', { password: PW }, people[k].token);
         const l = await call('POST', '/auth/login', { email: people[k].email, password: PW });
         const old = await call('POST', '/sync/pull', {}, people[k].token);
-        return { ok: r.status === 200 && l.status >= 400 && l.status < 500 && old.status === 401, note: 'delete ' + r.status + ((r.d && r.d.code) ? ' ' + r.d.code : '') + ', sign-in ' + l.status + ', old session ' + old.status };
+        return { ok: r.status === 200 && l.status >= 400 && l.status < 500 && old.status === 401, note: 'delete ' + why(r) + ', sign-in ' + l.status + ', old session ' + old.status };
       });
     }
     if (invite) await step('invite-revoke', 'The drill’s invite is revoked', async () => {
