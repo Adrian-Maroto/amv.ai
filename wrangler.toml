@@ -145,9 +145,9 @@ new_sqlite_classes = ["AMVCounter"]
 # device, which the library says. Storage is about 1.5 US cents per GB a month;
 # each plan's limit is enforced on the server (src/worker/68-cloud-library.js).
 #
-# [[r2_buckets]]
-# binding = "AMV_FILES"
-# bucket_name = "amv-files"
+[[r2_buckets]]
+binding = "AMV_FILES"
+bucket_name = "amv-files"
 
 # ── The control plane in Postgres (Hyperdrive) ──
 # Accounts and plans are also written to Postgres once this exists - KV stays
@@ -174,9 +174,9 @@ new_sqlite_classes = ["AMVCounter"]
 #   npx wrangler r2 bucket create amv-backups
 # then uncomment:
 #
-# [[r2_buckets]]
-# binding = "AMV_BACKUPS"
-# bucket_name = "amv-backups"
+[[r2_buckets]]
+binding = "AMV_BACKUPS"
+bucket_name = "amv-backups"
 
 # ── Background work through a queue (Cloudflare Queues) ──
 # Today the cron tick runs every account with work due one after another, in
@@ -215,8 +215,8 @@ new_sqlite_classes = ["AMVCounter"]
 # Until this is uncommented, searches use words and the other phrasings the
 # engine passes - which is what they did before.
 #
-# [ai]
-# binding = "AI"
+[ai]
+binding = "AI"
 
 # ── Searching inside your files (src/worker/87-file-index.js) ──
 # A permanent index of every passage of every text file kept in someone's

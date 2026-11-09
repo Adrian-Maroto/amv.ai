@@ -57,8 +57,14 @@ section('The fixtures are what they claim');
 }
 
 section('Commented out is OFF - never "declared"');
+/* What this checks is the config with these switched OFF - written out here,
+   not taken from the real file, which has since switched some of them on. */
+const allOff = real
+  .replace(/^\[\[r2_buckets\]\]\nbinding = "AMV_FILES"\nbucket_name = "amv-files"/m, '# [[r2_buckets]]\n# binding = "AMV_FILES"\n# bucket_name = "amv-files"')
+  .replace(/^\[\[r2_buckets\]\]\nbinding = "AMV_BACKUPS"\nbucket_name = "amv-backups"/m, '# [[r2_buckets]]\n# binding = "AMV_BACKUPS"\n# bucket_name = "amv-backups"')
+  .replace(/^\[ai\]\nbinding = "AI"/m, '# [ai]\n# binding = "AI"');
 {
-  const r = run(real);
+  const r = run(allOff);
   ok(r.code === 0, 'an ordinary deploy still passes with them off', r.out.slice(-400));
   ok(!/BROWSER is used and declared/.test(r.out), 'it no longer says the browser is declared');
   ok(/OFF on this deployment:.*hosted browser/.test(r.out) && /cloud Library/.test(r.out) && /searching by meaning/.test(r.out) && /cloud computer/.test(r.out),
@@ -67,7 +73,7 @@ section('Commented out is OFF - never "declared"');
 
 section('A launch profile that needs them fails until they are on');
 {
-  const off = run(real, { AMV_PROFILE: 'consumer_full' });
+  const off = run(allOff, { AMV_PROFILE: 'consumer_full' });
   ok(off.code === 1, 'consumer_full with them commented out is NOT ready');
   ok((off.out.match(/the consumer_full launch needs/g) || []).length === 8, 'and says which eight, one by one', off.out.match(/the consumer_full launch needs[^\n]*/g));
   /* Nov 1 audit REL-001: the product's four switched on is not enough - the
