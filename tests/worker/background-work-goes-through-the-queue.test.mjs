@@ -115,6 +115,10 @@ section('A run cut off part way is taken over, a finished one is not repeated, o
   await W.runDueAutomations(env, Date.now());
   ok(modelCalls === 0 && /cut off 3 times/.test(rec(ME).items[0].lastError || '') && rec(ME).items[0].next > Date.now(), 'a slot that keeps dying is stopped and its row says so', rec(ME).items[0].lastError);
   const r = rec(ME); r.items[0].lastError = null; store.set('auto:' + ME, JSON.stringify(r));
+  /* This section's marks go with it: a later section's job made due in the
+     same millisecond would have the same slot, and be skipped as done or
+     given up - which made the next section fail now and then. */
+  for (const k of [...store.keys()]) if (/^auto(try|done|run):/.test(k)) store.delete(k);
 }
 
 section('With a queue, the tick sends one message per due account and runs nothing itself');
