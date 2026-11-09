@@ -98,7 +98,14 @@ export async function runDrill(opt = {}) {
     });
     await step('config', 'What this deployment has switched on', async () => {
       const r = await adminCall('GET', '/admin/readiness');
-      if (r.status === 401 || r.status === 403) return { ok: false, note: 'the admin token was refused', stop: 'the admin token is wrong' };
+      if (r.status === 401 || r.status === 403) {
+        /* Which side is wrong, without ever showing the token. */
+        const notSet = r.d && r.d.code === 'admin_not_configured';
+        const odd = admin !== admin.trim() ? ' - the copy here has a space or line break at its start or end' : (/\s/.test(admin) ? ' - the copy here has a space inside it' : '');
+        return { ok: false, stop: 'the admin token is wrong',
+          note: notSet ? 'this Worker has NO ADMIN_TOKEN set - add it on this Worker (check its name) and deploy'
+                       : 'the admin token was refused: the copy here (' + admin.length + ' characters' + odd + ') does not match this Worker\u2019s ADMIN_TOKEN' };
+      }
       const rows = (r.d && Array.isArray(r.d.items)) ? r.d.items : [];
       const blockingOff = rows.filter(x => x && x.blocking && !x.on).map(x => x.name);
       return { ok: r.status === 200 && !blockingOff.length, note: blockingOff.length ? 'blocking and off: ' + blockingOff.join(', ') : rows.filter(x => x && x.on).length + ' of ' + rows.length + ' capabilities on' };

@@ -97,6 +97,18 @@ section('A wrong admin token stops it before anything is made');
   ok(!r.ok && r.results.find(x => x.id === 'signup-a').status === 'skipped' && ![...env._kv.keys()].some(k => k.startsWith('acct:')), 'no account is made', r.results.map(x => x.id + ':' + x.status));
 }
 
+section('It says which side of a refused token is wrong, never the token');
+{
+  const env = environment(); delete env.ADMIN_TOKEN;
+  const r = await runDrill({ base: BASE, adminToken: 'some-token', origin: 'https://app.example', fetch: through(env) });
+  const c = r.results.find(x => x.id === 'config');
+  ok(c && /NO ADMIN_TOKEN/.test(c.note), 'a Worker with no token says so', c && c.note);
+  const env2 = environment();
+  const r2 = await runDrill({ base: BASE, adminToken: 'some-token\n', origin: 'https://app.example', fetch: through(env2) });
+  const c2 = r2.results.find(x => x.id === 'config');
+  ok(c2 && /line break/.test(c2.note) && !/some-token/.test(c2.note), 'a copy with a line break is named, and the token is not printed', c2 && c2.note);
+}
+
 console.log = quiet;
 report();
 done();

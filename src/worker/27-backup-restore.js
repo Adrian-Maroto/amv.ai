@@ -446,6 +446,10 @@ async function _adminGate(request, env, what, perMin, perDay) {
     /* A wrong token is worth knowing about: it is either an operator with a
        stale copy or somebody trying. Either way it should not be silent. */
     audit(env, 'admin_denied', { what, ip: await _adminIp(request, env) });
+    /* A deployment with no operator token at all says so: nobody can get in
+       either way, and "set ADMIN_TOKEN on this Worker" is the only fix - the
+       one an operator otherwise has to guess at. */
+    if (!env.ADMIN_TOKEN) return json({ error: 'forbidden', code: 'admin_not_configured' }, 403);
     /* 403 to match every other admin refusal in this file. The status is part
        of the contract - one surface answering 401 while the rest answer 403
        means a caller has to know which route it is talking to. */
