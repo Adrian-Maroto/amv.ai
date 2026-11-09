@@ -503,7 +503,9 @@ section('Rows are grouped, and settings with a default are not shown as faults')
   const withVals = await get(Object.assign(bare(), {
     GLOBAL_DAILY_USD_CAP: '31337', NONESSENTIAL_WRITE_CAP: '4242',
     MODEL_API_URL: 'https://proxy.SUPERSECRET.example' }));
-  const body = JSON.stringify(withVals);
+  /* Times are dropped first: a millisecond clock contains "4242" now and
+     then, and that is not the knob's value leaking. */
+  const body = JSON.stringify(withVals).replace(/\b\d{12,}\b/g, '');
   ok(!/31337|4242|SUPERSECRET/.test(body), 'a set knob reports that it is set, never what to');
   ok(withVals.tuning.find(t => t.id === 'spendCap').set === true, 'while still reporting that it is set');
 }
