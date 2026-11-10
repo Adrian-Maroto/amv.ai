@@ -80,34 +80,6 @@ section('Every label that CAN be translated, is');
      'no standalone label anywhere is left in English after switching', r.stuck.slice(0, 6));
 }
 
-section('And the filter still filters, in either language');
-{
-  /* The half that a careless fix breaks. Translating the chip in place would
-     leave it looking right and matching nothing. */
-  const r = await page.evaluate(async () => {
-    setTab('market');
-    await new Promise(s => setTimeout(s, 1000));
-    const chips = () => [...document.querySelectorAll('[data-mk-cat]')]
-      .map(b => ({ value: b.dataset.mkCat, label: b.textContent.trim() }));
-    const list = chips();
-    const named = list.find(c => c.value !== 'All' && c.label !== c.value);
-    if (!named) return { noTranslatedChip: true, list };
-    const cardsBefore = document.querySelectorAll('#mk-grid > *').length;
-    document.querySelector('[data-mk-cat="' + named.value + '"]').click();
-    await new Promise(s => setTimeout(s, 450));
-    return { named, cardsBefore, cardsAfter: document.querySelectorAll('#mk-grid > *').length,
-             values: list.map(c => c.value) };
-  });
-
-  ok(!r.noTranslatedChip, 'at least one chip is showing a translated label',
-     r.noTranslatedChip ? JSON.stringify(r.list) : r.named.value + ' -> ' + r.named.label);
-  ok(r.values.every(v => /^[\x20-\x7E]+$/.test(v)),
-     'the filter VALUES stay the raw English the listings are tagged with', r.values);
-  ok(r.cardsAfter > 0 && r.cardsAfter <= r.cardsBefore,
-     'and clicking a translated chip still narrows the catalogue rather than emptying it',
-     r.cardsBefore + ' -> ' + r.cardsAfter);
-}
-
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

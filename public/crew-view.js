@@ -1356,8 +1356,8 @@ function renderCrewView(){
     const bgJobs=jobs.filter(j=>_cwRunsUnattended(j)).length;
     vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
       <div class="cw-where-bar">${_cwWhereBtnHTML()}</div>
-      <span class="eyebrow crew-eyebrow">Your recurring work</span>
-      <h2 class="crew-hero-title">Crew</h2>
+      <span class="eyebrow">Crew \u00b7 Autonomous work</span>
+      <h2>AMV working while you are not</h2>
       ${/* TWO SENTENCES, NOT TWO PARAGRAPHS.
 
             Everything the long version said was true and none of it was the
@@ -1367,8 +1367,9 @@ function renderCrewView(){
             detail about grants and passwords has not gone; it is on
             Connectors, where somebody is actually deciding whether to hand
             one over. */ ''}
-      <p class="vsub crew-hero-copy">Say what you want done and when. AMV checks what it needs, asks you for it, then runs it and brings the results here.</p>
-      <p class="vsub cw-open-note">Background work needs a server connection. Some tools run only while AMV is open.</p>
+      <p class="vsub">It runs on AMV\u2019s servers on a schedule you set, so the work happens with this window
+        closed and your laptop shut. You get the finished thing, not a reminder to go and do it.</p>
+      <p class="vsub cw-open-note">Say what you want below. The examples are there if you want ideas.</p>
 
       ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
 
@@ -1382,7 +1383,8 @@ function renderCrewView(){
             same input id, same run path, so what somebody types here is
             treated exactly as it would be on the paid screen. */ ''}
       <div class="mc-cmd mc-cmd-lg cw-cmd-lead">
-        <div class="mc-cmd-label">What should Crew take care of?</div>
+        <div class="mc-cmd-label">Tell AMV what to do
+          <span>- say it in your own words and it works out the rest</span></div>
         <div class="mc-cmd-inner">
           <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
           <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" autocomplete="off"
@@ -1422,7 +1424,7 @@ function renderCrewView(){
             Same reason "most used" moved down: it ranks what other people
             run, which is interesting once you know what this is and noise
             before. */ ''}
-      
+      ${_cwNotHereHTML('above')}
       ${_cwForYouHTML()}
       ${_cwMadeForHTML()}
       <div class="cw-filters">
@@ -1431,7 +1433,7 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
       ${_cwMostStartedHTML()}
-      
+      ${_cwErrandsHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
@@ -1447,7 +1449,7 @@ function renderCrewView(){
             looking for the way forward, and it is a sentence rather than a
             sales panel. */ ''}
       <div class="cw-plan-foot">
-        <span>Background Crew jobs are included with ${escH(P.name)} and above. Tool availability depends on your connections.</span>
+        <span>Crew runs on ${escH(P.name)} and above - AMV keeps working when you close it.</span>
         <button class="mc-sec-link" data-stab="plans">See plans \u2192</button>
       </div>
     </div></div>`;
@@ -1560,7 +1562,7 @@ function renderCrewView(){
         ? `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ ${escH(T('Resume autonomy'))}</button>`
         : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
     </header>
-    <p class="vsub cw-simple-sub">${escH(T('Say what you want done and when. AMV checks what it needs, asks you for it, then runs it and brings the results here.'))}</p>
+    <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
     ${(()=>{ const n=_crewJobAllowance();
       /* The number, before they hit it. A limit discovered by bumping into it
          reads as a fault; the same limit stated up front reads as a plan. */
@@ -1627,11 +1629,11 @@ function renderCrewView(){
       ${_mcNeverRowHTML()}
     </details>
     <section class="mc-sec" id="crew-games-sec" hidden><div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed.</span></div><div id="crew-games"></div></section>
-    
+    ${_mcBoughtCrewsHTML()}
 
     <div class="crew-jobs-sec mc-start">
       <div class="sec-head"><h3>${escH(T('Examples'))}</h3><span class="sec-sub">${escH(T('For where you live - change the country at the top. Pick one, or say your own in the box.'))}</span></div>
-      
+      ${_cwNotHereHTML('above')}
       ${_cwForYouHTML()}
       ${_cwMadeForHTML()}
       <div class="cw-filters">
@@ -1640,7 +1642,7 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
       ${_cwMostStartedHTML()}
-      
+      ${_cwErrandsHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>

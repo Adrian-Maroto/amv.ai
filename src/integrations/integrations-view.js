@@ -56,7 +56,7 @@ function launchTask(key){
     const ta=$('mta');
     if(ta){
       ta.value=prompt;
-      fitChatComposer(ta);
+      ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
       ta.focus();
       const s=prompt.indexOf('[');
       if(s>-1) ta.setSelectionRange(s,prompt.indexOf(']')+1);
@@ -65,409 +65,65 @@ function launchTask(key){
 }
 
 /* 4. TASKS VIEW */
-
-const AMV_TASK_EXTRA = [
-  {
-    "id": "meeting-agenda",
-    "title": "Prepare a meeting agenda",
-    "prompt": "Turn [meeting goal] into an agenda with decisions, time boxes and preparation.",
-    "cat": "Work"
-  },
-  {
-    "id": "follow-up",
-    "title": "Draft a follow-up",
-    "prompt": "Draft a polite follow-up about [topic]. Do not send it; give me text to review.",
-    "cat": "Work"
-  },
-  {
-    "id": "weekly-update",
-    "title": "Write a weekly update",
-    "prompt": "Turn [notes] into completed work, blockers and next steps. Do not invent results.",
-    "cat": "Work"
-  },
-  {
-    "id": "project-scope",
-    "title": "Define a project scope",
-    "prompt": "For [project], separate objectives, deliverables, exclusions, dependencies and acceptance tests.",
-    "cat": "Work"
-  },
-  {
-    "id": "risk-register",
-    "title": "Build a risk register",
-    "prompt": "For [project], identify risks, warning signs, mitigations and owners to assign.",
-    "cat": "Work"
-  },
-  {
-    "id": "decision-memo",
-    "title": "Compare a decision",
-    "prompt": "Compare [options] against [criteria]. Separate known evidence, assumptions and missing information.",
-    "cat": "Work"
-  },
-  {
-    "id": "interview-practice",
-    "title": "Practice an interview",
-    "prompt": "Ask me one interview question at a time for [role]. Give specific feedback after each answer.",
-    "cat": "Work"
-  },
-  {
-    "id": "onboarding",
-    "title": "Plan onboarding",
-    "prompt": "Create a first-week checklist for [role]. Flag access permissions that an administrator must grant.",
-    "cat": "Work"
-  },
-  {
-    "id": "handover",
-    "title": "Prepare a handover",
-    "prompt": "Turn [notes] into a handover with current status, open decisions and source links.",
-    "cat": "Work"
-  },
-  {
-    "id": "proposal-review",
-    "title": "Review a proposal",
-    "prompt": "Review [proposal] for unclear scope, contradictory terms, deliverables and unanswered questions.",
-    "cat": "Work"
-  },
-  {
-    "id": "quiz-me",
-    "title": "Quiz me one question at a time",
-    "prompt": "Quiz me on [topic], one question at a time. Explain errors and adjust difficulty.",
-    "cat": "Study"
-  },
-  {
-    "id": "study-calendar",
-    "title": "Plan revision",
-    "prompt": "Build a realistic revision schedule for [exam date, subjects, available time]. Ask for missing details.",
-    "cat": "Study"
-  },
-  {
-    "id": "essay-outline",
-    "title": "Outline an argument",
-    "prompt": "Help outline my argument about [topic], with thesis, counterargument and evidence gaps. Do not invent citations.",
-    "cat": "Study"
-  },
-  {
-    "id": "rubric-check",
-    "title": "Check work against a rubric",
-    "prompt": "Compare [my work] with [rubric]. Quote specific evidence and propose concrete edits.",
-    "cat": "Study"
-  },
-  {
-    "id": "citation-audit",
-    "title": "Check citations",
-    "prompt": "Check [citations] against the sources I provide. Flag unverifiable references instead of inventing them.",
-    "cat": "Study"
-  },
-  {
-    "id": "lab-report",
-    "title": "Organize a lab report",
-    "prompt": "Organize [experiment notes] into hypothesis, method, observations and limitations. Do not fabricate data.",
-    "cat": "Study"
-  },
-  {
-    "id": "worked-example",
-    "title": "Walk through a problem",
-    "prompt": "Guide me through [problem] step by step. Ask me to attempt the next step before giving it.",
-    "cat": "Study"
-  },
-  {
-    "id": "language-practice",
-    "title": "Practice a conversation",
-    "prompt": "Practice [language] with me about [topic]. Keep corrections short and explain useful expressions.",
-    "cat": "Study"
-  },
-  {
-    "id": "debate-prep",
-    "title": "Prepare both sides of a debate",
-    "prompt": "Build arguments and counterarguments for [motion]. Distinguish sourced facts from opinions.",
-    "cat": "Study"
-  },
-  {
-    "id": "reading-questions",
-    "title": "Discuss a reading",
-    "prompt": "From [reading], create questions that require close reading. Use only quotations actually in the supplied text.",
-    "cat": "Study"
-  },
-  {
-    "id": "bill-explain",
-    "title": "Understand a bill",
-    "prompt": "Explain [redacted bill]. Separate usage, fixed fees, taxes and due dates. Do not pay it.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "subscription-inventory",
-    "title": "List subscriptions",
-    "prompt": "From [redacted receipts or connected email with consent], list subscriptions, renewals and evidence. Do not cancel anything.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "refund-draft",
-    "title": "Draft a refund request",
-    "prompt": "Draft a refund request for [order issue] using the seller policy I provide or a current official source. Do not submit it.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "utility-compare",
-    "title": "Compare utility plans",
-    "prompt": "Compare utility options for [postcode and needs] from current official pricing. State exclusions and dates.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "move-checklist",
-    "title": "Organize a move",
-    "prompt": "Build a moving checklist for [origin, destination, date] with documents and tasks. Verify local official requirements.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "rental-questions",
-    "title": "Prepare rental questions",
-    "prompt": "From [listing or lease], suggest questions about fees, repairs and renewal. Flag legal questions for a qualified adviser.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "insurance-compare",
-    "title": "Compare insurance documents",
-    "prompt": "Compare [policy documents] on coverage, exclusions, limits and deductibles. Do not recommend a policy without the missing facts.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "renewal-calendar",
-    "title": "Identify renewal dates",
-    "prompt": "From [documents], list renewal dates and deadlines with the exact source for each. Do not create calendar events without my review.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "receipt-table",
-    "title": "Organize receipts",
-    "prompt": "Turn [receipts] into a table of merchant, date, currency, amount and category. Never add unlike currencies.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "savings-scenarios",
-    "title": "Model savings scenarios",
-    "prompt": "Calculate savings scenarios from [income, expenses, target]. Label assumptions and show the arithmetic.",
-    "cat": "Money and home"
-  },
-  {
-    "id": "source-check",
-    "title": "Check a claim",
-    "prompt": "Verify [claim] using primary sources when possible. Give dates, disagreement and confidence.",
-    "cat": "Research"
-  },
-  {
-    "id": "compare-sources",
-    "title": "Compare sources",
-    "prompt": "Compare [sources] on evidence, methods, conflicts of interest and what each cannot establish.",
-    "cat": "Research"
-  },
-  {
-    "id": "country-services",
-    "title": "Find official local services",
-    "prompt": "Find official services for [need] in the selected country. Verify domains and eligibility; do not submit personal data.",
-    "cat": "Research"
-  },
-  {
-    "id": "market-map",
-    "title": "Map a market",
-    "prompt": "Map [market] by customer segment, competitors and evidence. Distinguish revenue data from estimates.",
-    "cat": "Research"
-  },
-  {
-    "id": "company-brief",
-    "title": "Research a company",
-    "prompt": "Create a sourced brief on [company], including business model, recent official filings and open questions.",
-    "cat": "Research"
-  },
-  {
-    "id": "product-compare",
-    "title": "Compare local products",
-    "prompt": "Compare [product requirements] using current country-specific prices and seller policies. I will complete any checkout.",
-    "cat": "Research"
-  },
-  {
-    "id": "fact-timeline",
-    "title": "Build an evidence timeline",
-    "prompt": "Build a dated timeline of [topic]. Distinguish the event date from publication date.",
-    "cat": "Research"
-  },
-  {
-    "id": "paper-explain",
-    "title": "Explain a research paper",
-    "prompt": "Explain [paper] with its question, method, results, limitations and what the evidence does not show.",
-    "cat": "Research"
-  },
-  {
-    "id": "public-data",
-    "title": "Find public datasets",
-    "prompt": "Find datasets for [research question]. Report source, license, geography, update date and missing values.",
-    "cat": "Research"
-  },
-  {
-    "id": "accessibility-review",
-    "title": "Review accessibility",
-    "prompt": "Review [page or interface] for keyboard access, labels, contrast and readable content. Separate measured checks from hypotheses.",
-    "cat": "Research"
-  },
-  {
-    "id": "test-plan",
-    "title": "Design a test plan",
-    "prompt": "For [feature], define happy paths, permission checks, failure injection and acceptance criteria.",
-    "cat": "Build"
-  },
-  {
-    "id": "bug-repro",
-    "title": "Write a bug report",
-    "prompt": "Turn [observations] into steps, expected versus actual behavior, environment and a minimal reproduction.",
-    "cat": "Build"
-  },
-  {
-    "id": "api-contract",
-    "title": "Review an API contract",
-    "prompt": "Review [API specification] for authorization, idempotency, validation, error responses and versioning.",
-    "cat": "Build"
-  },
-  {
-    "id": "db-migration",
-    "title": "Plan a database migration",
-    "prompt": "Plan [migration] with backups, compatibility, rollback conditions and verification. Do not run it.",
-    "cat": "Build"
-  },
-  {
-    "id": "security-review",
-    "title": "Review code security",
-    "prompt": "Review [code] defensively for access control, injection, secret handling and failure behavior. Cite exact lines and label untested risks.",
-    "cat": "Build"
-  },
-  {
-    "id": "release-checklist",
-    "title": "Prepare a release checklist",
-    "prompt": "For [application], make a release checklist with required tests, rollback, monitoring and owners.",
-    "cat": "Build"
-  },
-  {
-    "id": "incident-notes",
-    "title": "Organize an incident",
-    "prompt": "From [incident notes], separate timeline, observed impact, hypotheses, mitigation and follow-up evidence.",
-    "cat": "Build"
-  },
-  {
-    "id": "sql-review",
-    "title": "Review a query",
-    "prompt": "Review [SQL] for correctness, permissions and performance. Suggest a safe plan; do not execute production changes.",
-    "cat": "Build"
-  },
-  {
-    "id": "docs-draft",
-    "title": "Write developer documentation",
-    "prompt": "Document [feature or code] with setup, examples, errors and known limitations. Do not claim behavior not in the code.",
-    "cat": "Build"
-  },
-  {
-    "id": "data-validation",
-    "title": "Check a dataset",
-    "prompt": "Inspect [dataset] for missing values, duplicates, types and inconsistent units. Report checks, not invented cleaned data.",
-    "cat": "Build"
-  },
-  {
-    "id": "travel-docs",
-    "title": "Check travel documents",
-    "prompt": "Identify official document requirements for [nationality, destination, dates]. Verify current government sources; do not submit an application.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "packing",
-    "title": "Make a packing list",
-    "prompt": "Make a packing list for [destination, dates, activities] and explain the assumptions.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "meal-budget",
-    "title": "Plan meals on a budget",
-    "prompt": "Plan meals for [people, budget, restrictions] using local units. Ask about allergies before choosing ingredients.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "appointment-prep",
-    "title": "Prepare appointment questions",
-    "prompt": "Help organize questions and information for [appointment]. Do not diagnose or replace the professional.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "event-plan",
-    "title": "Plan a small event",
-    "prompt": "Plan [event] with budget, timeline, accessibility, roles and contingency options.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "gift-research",
-    "title": "Research a gift",
-    "prompt": "Compare gift options for [recipient interests, budget, delivery deadline] from sellers in the selected country. Do not buy anything.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "document-checklist",
-    "title": "Create a document checklist",
-    "prompt": "From the official rules for [process], make a checklist and show the source for each requirement.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "repair-options",
-    "title": "Compare repair options",
-    "prompt": "For [item and issue], compare safe troubleshooting, official repair and replacement. Do not suggest hazardous repairs.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "calendar-review",
-    "title": "Review a week",
-    "prompt": "From [calendar export or an authorized connection], identify conflicts and open blocks. Propose changes without making them.",
-    "cat": "Everyday"
-  },
-  {
-    "id": "writing-tone",
-    "title": "Adjust the tone",
-    "prompt": "Rewrite [text] in [tone] while preserving its meaning and all commitments. Do not add promises.",
-    "cat": "Everyday"
-  }
-];
-
-let _taskSearch='', _taskMode='all', _taskPage=0;
-function _taskCatalog(){
-  const title={email:'Write an email',emailreply:'Reply to an email',text:'Write a text',trip:'Plan a trip',meal:'Plan meals',fitness:'Plan exercise',essay:'Develop an essay',homework:'Work through homework',study:'Create study notes',flashcards:'Create flashcards',summarize:'Summarize a document',explain:'Explain a concept',resume:'Improve a resume',coverletter:'Draft a cover letter',linkedin:'Improve a profile',bizplan:'Explore a business idea',proposal:'Draft a proposal',meeting:'Summarize meeting notes',social:'Draft social posts',script:'Write a script',story:'Write a story',code:'Build a feature',debug:'Debug code',api:'Design an API',budget:'Build a budget',invest:'Explore investment questions',contract:'Explain contract terms',excel:'Analyze data',pptx:'Create a presentation',word:'Draft a document',compare:'Compare products',lookup:'Research with sources',cook:'Cook from ingredients',edit:'Improve writing',translate:'Translate text',shopping:'Make a shopping list'};
-  const base=Object.keys(TASKS).map(id=>({id:'chat:'+id,title:title[id]||id,prompt:TASKS[id],cat:'Chat',mode:'chat'}));
-  const extra=AMV_TASK_EXTRA.map(t=>({...t,id:'extra:'+t.id,mode:'chat'}));
-  let jobs=[];try{jobs=_cwCountryHundred(_cwCountryGuess())||[];}catch(e){}
-  const seen=new Set();
-  return base.concat(extra,jobs.filter(j=>j&&j.id&&!seen.has(j.id)&&seen.add(j.id)).map(j=>({id:'crew:'+j.id,title:j.title,desc:j.desc,cat:j.cat||'Crew',mode:'crew',jobId:j.id})));
-}
 function renderTasksView(){
-  const vc=$('vc');if(!vc)return;
-  const list=_taskCatalog();
-  vc.innerHTML='<div class="sv fi"><div class="vi task-hub"><header class="product-header"><span class="eyebrow">Start with an outcome</span><h2>Tasks</h2><p>Choose a task for chat, or set up recurring work with Crew. Review the instruction before anything runs.</p></header>'+_productCountryHTML('tasks-country')+
-    '<div class="task-controls"><label class="task-search">Find a task<input class="inp" id="task-search" type="search" value="'+escH(_taskSearch)+'" placeholder="Email, bills, assignments, research..."></label><label>Run with<select class="inp" id="task-mode"><option value="all">Chat and Crew</option><option value="chat">Chat</option><option value="crew">Crew</option></select></label></div>'+
-    '<div id="task-count" class="product-note" role="status"></div><div id="task-results" class="task-grid"></div><div id="task-pages" class="task-pages"></div><p class="product-note">These are task templates, not a national usage ranking. Regional examples do not mean a site offers an API or that AMV can buy from it.</p></div></div>';
-  $('task-mode').value=_taskMode;
-  const paint=()=>{
-    const q=_taskSearch.toLocaleLowerCase().trim();
-    const found=list.filter(t=>(_taskMode==='all'||t.mode===_taskMode)&&(!q||(t.title+' '+(t.desc||t.prompt)+' '+t.cat).toLocaleLowerCase().includes(q)));
-    const pages=Math.max(1,Math.ceil(found.length/24));_taskPage=Math.min(_taskPage,pages-1);
-    $('task-count').textContent=found.length+' matching tasks'+(_productCountryName()?' for '+_productCountryName():'')+' / '+list.length+' templates in this view';
-    $('task-results').innerHTML=found.slice(_taskPage*24,(_taskPage+1)*24).map(t=>'<button class="task-card" data-task-id="'+escH(t.id)+'"><span class="task-mode">'+(t.mode==='crew'?'CREW / RECURRING':'CHAT / ONE TASK')+'</span><strong>'+escH(t.title)+'</strong><span class="task-desc">'+escH(t.desc||(t.prompt.split('\n')[0]))+'</span><span class="task-open">'+(t.mode==='crew'?'Choose schedule':'Open in chat')+' &rarr;</span></button>').join('')||'<p>No matching templates. Try a shorter search or describe the task in chat.</p>';
-    $('task-pages').innerHTML='<button class="btn bs" id="task-prev" '+(!_taskPage?'disabled':'')+'>Previous</button><span>Page '+(_taskPage+1)+' of '+pages+'</span><button class="btn bs" id="task-next" '+(_taskPage>=pages-1?'disabled':'')+'>Next</button>';
-    on($('task-prev'),'click',()=>{_taskPage--;paint();});on($('task-next'),'click',()=>{_taskPage++;paint();});
-  };
-  on($('task-search'),'input',e=>{_taskSearch=e.target.value;_taskPage=0;paint();});
-  on($('task-mode'),'change',e=>{_taskMode=e.target.value;_taskPage=0;paint();});
-  on($('tasks-country'),'change',e=>{if(!e.target.value)return;_cwSetCountry(e.target.value);_taskPage=0;renderTasksView();});
-  on($('task-results'),'click',e=>{
-    const b=e.target.closest('[data-task-id]');if(!b)return;
-    const t=list.find(t=>t.id===b.dataset.taskId);if(!t)return;
-    if(t.mode==='crew'){cwPeek(t.jobId);return;}
-    const country=_productCountryName();setTab('chat');
-    requestAnimationFrame(()=>{const ta=$('mta');if(!ta)return;ta.value=t.prompt+(country?'\n\nCountry context: '+country+'. Verify local sources where relevant; do not assume a provider is supported.':'');fitChatComposer(ta);ta.focus();const a=ta.value.indexOf('[');if(a>=0)ta.setSelectionRange(a,ta.value.indexOf(']',a)+1);});
-  });
-  paint();
-  if(typeof _cwCatalog==='function'&&!_cwCatalog())_loadCrewData().then(ok=>{if(ok&&S.tab==='tasks')renderTasksView();});
+  const vc=$('vc'); if(!vc) return;
+  /* WHAT ONLY AMV DOES, CUT TO THE SIX THAT ARE NOT ALREADY A TAB AWAY.
+     The daily brief is a Crew job, the brand canvas is Build, the debug loop
+     is Lab and the handoff has its own tab - four cards that each restated a
+     button already in the rail. These six are the reasons to be here. */
+  const unique=[
+    ['🔭','Set up a research watch','AMV monitors any topic on a schedule - a stock, a company, a trend - and reports what\'s happening. Info, not advice.','researchwatch'],
+    ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
+    ['\uD83D\uDD10','Act on your real accounts','Connect an account once and AMV works inside it - reading, drafting, organizing - with a scoped grant you can take back at any time.','connect'],
+    ['🏗️','Build & ship a working app','Not just code - AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
+    ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - written for 105 countries, not translated from one.','world'],
+    ['\uD83D\uDCAC','Just say it, and it goes and does it','Describe the outcome in a sentence. AMV works out which accounts and sites it needs, does the work, and stops for your approval before anything leaves.','say'],
+  ];
+  const ucard=(u)=>`<button class="uniq-card" data-dact="launchUnique" data-darg="${u[3]}">
+    <span class="uniq-ic">${u[0]}</span>
+    <span class="uniq-t">${u[1]}</span>
+    <span class="uniq-d">${escH(u[2])}</span>
+    <span class="uniq-go">Try it →</span>
+  </button>`;
+  /* IN THE ORDER PEOPLE ACTUALLY USE AN ASSISTANT. Practical guidance,
+     looking things up and writing - most of it improving text the person
+     brought - are nearly 80% of conversations; programming is a small share
+     (NBER w34255, 2025). The groups follow that, not who the person is. */
+  const cats=[
+    {label:'Advice & how-to',tasks:[['trip','\u2708\uFE0F','Plan a trip','Days, stays, costs and tips'],['meal','\uD83C\uDF7D\uFE0F','Meal plan','A week, with the shopping list'],['fitness','\uD83D\uDCAA','Workout plan','For your goal and your kit'],['budget','\uD83D\uDCB8','Make a budget','From what you actually spend'],['explain','\uD83D\uDCA1','Explain anything','Simply, step by step'],['homework','\uD83D\uDCDA','Help with homework','Worked through, not just answered']]},
+    {label:'Find out',tasks:[['compare','\uD83D\uDED2','Compare before you buy','Three options, one pick'],['lookup','\uD83D\uDD0E','Look it up, with sources','The current answer, dated'],['cook','\uD83C\uDF73','Cook with what you have','Two dinners from your fridge'],['summarize','\uD83D\uDD0D','Summarize anything','Articles, docs or books']]},
+    {label:'Writing',tasks:[['edit','\u270D\uFE0F','Improve my writing','Clearer, still yours'],['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Ready-to-send replies'],['translate','\uD83C\uDF10','Translate','Keeps the tone'],['essay','\uD83D\uDCDD','Write an essay','On any topic']]},
+    {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\uD83D\uDCE8','Cover letter','Tailored to the job'],['meeting','\uD83D\uDCCB','Meeting notes','With action items'],['excel','\uD83D\uDCCA','Analyze data','Paste it, ask anything'],['pptx','\uD83D\uDDBC\uFE0F','Presentation','Slides with a point']]},
+    {label:'Create',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
+    {label:'Code',tasks:[['code','\uD83D\uDCBB','Build something','Runs, not just written'],['debug','\uD83D\uDC1B','Fix my code','From the real error']]},
+  ];
+  const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span><span class="tk-d">${escH(t[3])}</span></span><span class="tk-arrow">\u2192</span></button>`;
+  vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
+    <header class="tasks-hero">
+      <div>
+        <!-- Was "What AMV can do", which is now the name of the tab NEXT to
+             this one in the rail. Two neighbouring tools cannot introduce
+             themselves with the same sentence; this one is the ready-made
+             jobs, so it says so. -->
+        <span class="eyebrow">Tasks</span>
+        <h2>Get something done.</h2>
+        <p class="vsub">Pick a ready-made task - it opens a chat set up to deliver it - or set AMV working on its own.</p>
+      </div>
+    </header>
+    ${_autoServerHTML()}
+    <div class="tasks-masonry">
+      ${cats.map((cat,n)=>`<section class="tk-cat">
+        <div class="sec-head"><h3>${cat.label}</h3><span class="sec-sub">${cat.tasks.length} tasks</span></div>
+        <div class="tk-list">${cat.tasks.map(row).join('')}</div>
+      </section>`).join('')}
+    </div>
+    <section class="uniq-sec">
+      <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Work it does on its own</span></div>
+      <div class="uniq-grid">${unique.map(ucard).join('')}</div>
+    </section>
+  </div></div>`;
+  try{ _wireAutoServer(vc); }catch(e){}
 }
-
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
   if(kind==='researchwatch'){ openResearchWatch(); return; }
@@ -492,7 +148,7 @@ let _taskCat=null;
 
 function _connSectionHTML(){
   try{ setTimeout(()=>_connLoad(false), 0); }catch(e){}
-  return '<section class="conn-sec" id="conn-sec">'+
+  return '<section class="conn-sec" id="conn-sec"'+(_connSecShown()?'':' hidden')+'>'+
     '<div class="sec-head"><h3>'+escH(T('Connected accounts'))+'</h3>'+
       '<span class="sec-sub">'+escH(T('Accounts AMV holds a key to, so Crew jobs keep running with this tab closed. Every one shows what it may do and which job used it last.'))+'</span></div>'+
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
@@ -565,8 +221,9 @@ function _intLocalRow(o){
 function _intLocalBody(cc, d){
   const row = _cwCountryRow(cc), name = row ? row[1] : (d && d.name) || cc;
   const f = (d && d.facts && typeof d.facts === 'object') ? d.facts : {};
-  /* Provider examples from the country catalog, not a measured popularity ranking.
-     Each connection still requires deployment support and the relevant scopes. */
+  /* The mailboxes people there use, most-used first (researched per country,
+     COUNTRY_MAIL on the server) - falling back to the country's own providers
+     for an older server that does not send the order. */
   const mail = Array.isArray(d && d.inbox) && d.inbox.length ? d.inbox
              : (Array.isArray(d && d.mail) ? d.mail.map(m => ({ id:m.id, name:m.name, how:'mail:' + m.id })) : []);
   const acc = _mailConnectedAccount(), notified = _appNotifiedSet();
@@ -709,7 +366,7 @@ function renderIntegrationsView(){
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
       '<span class="eyebrow">Connectors</span>'+
-      '<h2>Connections</h2>'+
+      '<h2>Everything AMV can work inside</h2>'+
       /* Counted, not claimed: the number is the length of the list below. */
       /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
          usage data or survey stands behind that ranking - the list is curated.
@@ -717,7 +374,7 @@ function renderIntegrationsView(){
          each provider every day (tools/connector-health.mjs, run daily by the
          connectors workflow), and every Notify me is recorded on the server
          (/waitlist, one entry per app). */
-      '<p class="vsub">'+escH(T('Pick your country, connect your accounts, and see exactly what each one lets AMV do.'))+'</p>'+
+      '<p class="vsub">'+escH(String(_appCount()))+' apps, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, checked against every provider daily, with a grant limited to what you allow that you can take back at any time. For the rest, press Notify me: every request is recorded, and the most-asked-for are connected next.</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -728,8 +385,7 @@ function renderIntegrationsView(){
          filled in. Up here it belongs to this view, and nothing the directory
          repaints can reach it. See cdirSearchBarHTML. */
       ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
-      _productCountryHTML('connections-country')+
-      '<section class="regional-connections" id="regional-connections" aria-live="polite"></section>'+
+      _intLocalBannerHTML()+
       _connSectionHTML()+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
@@ -748,11 +404,11 @@ function renderIntegrationsView(){
               ? 'AMV\u2019s cloud workspace \u00b7 commands and files; connectors need your own computer'
               : (typeof BRIDGE!=='undefined' && BRIDGE.connected)
               ? 'Connected \u00b7 AMV can run connectors and work in your files'
-              : 'Optional · needed only for local computer connectors')+
+              : 'Not connected \u00b7 needed before any connector below can start')+
           '</span></summary>'+
         '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
-      '<details class="global-app-catalog"><summary>Browse all app categories <span>Availability must be checked for your country</span></summary><div id="int-catalog">'+_integrationsCatalogHTML()+'</div></details>'+
+      '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
       /* NOTHING AFTER THE TOPICS. There used to be a last section called
          "Everything else, by topic" - a wall of doors into the open registry.
          Asked for: "no part should say everything else by topic, it should
@@ -760,8 +416,6 @@ function renderIntegrationsView(){
          same registry, and the search box at the top reaches all of it. */
     '</div></div>';
   _wireIntegrationCatalog(vc);
-  on($('connections-country'),'change',e=>{_cwSetCountry(e.target.value);renderIntegrationsView();});
-  _paintRegionalConnections($('regional-connections'));
   try{
     const d=vc.querySelector('details.conn-machine');
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });
@@ -1055,29 +709,3 @@ try{ window._bgAddGmailCheck=_bgAddGmailCheck; window._bgAddCalendarCheck=_bgAdd
 
 /* Here once: the page's loader reads this before fetching again. */
 try{ window._intViewHere = true; }catch(e){}
-
-async function _paintRegionalConnections(host){
-  if(!host)return;
-  const code=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';
-  if(!code){host.innerHTML='<p class="product-note">'+escH(T('Pick a country to see what connects there. Your accounts stay below.'))+'</p>';return;}
-  host.innerHTML='<p class="product-note" role="status">'+escH(T('Checking what connects there…'))+'</p>';
-  try{
-    if(!AMV_API.live)throw new Error('Backend unavailable');
-    const data=await AMV_API.everyday(code);
-    // A late response for another country must never overwrite this screen.
-    if(!host.isConnected || _cwCountryGuess()!==code)return;
-    if(!data||typeof data!=='object'||data.error)throw new Error('No regional data');
-    host.innerHTML='<h3>'+escH(_cwSayPlace('Popular in {country}', _productCountryName()))+'</h3><p class="product-note">'+escH(T('Sign-in is checked when you connect. AMV never buys or submits anything on a site without you.'))+'</p>'+_intLocalBody(code,data);
-    const pick=host.querySelector('#lc-c');if(pick){pick.closest('label')?.remove();if(pick.isConnected)pick.remove();}
-    host.querySelectorAll('[data-lc-grant]').forEach(b=>on(b,'click',()=>{if(!_intNeedsAccount(_intName(b.dataset.lcGrant)))_connGoTo(b.dataset.lcGrant);}));
-    host.querySelectorAll('[data-lc-mail]').forEach(b=>on(b,'click',()=>{if(!_intNeedsAccount(_intName('mail')))openMailConnect(b.dataset.lcMail);}));
-    host.querySelectorAll('[data-lc-inbox]').forEach(b=>on(b,'click',openMailInbox));
-    host.querySelectorAll('[data-lc-bank]').forEach(b=>on(b,'click',()=>setTab('spend')));
-    host.querySelectorAll('[data-lc-find]').forEach(b=>on(b,'click',()=>{_cwFind=String(b.dataset.lcFind||'');setTab('crew');}));
-    host.querySelectorAll('[data-app-notify]').forEach(b=>on(b,'click',()=>_appNotify(b)));
-  }catch(e){
-    if(!host.isConnected||_cwCountryGuess()!==code)return;
-    host.innerHTML='<h3>'+escH(_cwSayPlace('Popular in {country}', _productCountryName()))+'</h3><p class="product-note">'+escH(T('This list didn’t load. Your connected accounts are below.'))+'</p><button class="btn bs" id="regional-retry">'+escH(T('Try again'))+'</button>';
-    on(host.querySelector('#regional-retry'),'click',()=>_paintRegionalConnections(host));
-  }
-}

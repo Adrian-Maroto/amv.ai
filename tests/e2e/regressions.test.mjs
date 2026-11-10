@@ -213,8 +213,8 @@ ok(!sb.hasTeam, 'Team is removed from the sidebar');
 ok(!sb.projectsInSidebar, 'Projects is no longer a sidebar tab (it moved to Settings)');
 ok(sb.hasToolsRow, 'a compact bottom-left tools row exists');
 ok(sb.toolTabs.includes('memory') && sb.toolTabs.includes('tasks') &&
-   sb.toolTabs.includes('integrations') && sb.toolTabs.includes('market'),
-   'Memory / Tasks / Integrations / Marketplace live in the tools row', sb.toolTabs);
+   sb.toolTabs.includes('integrations') && !sb.toolTabs.includes('market'),
+   'Memory / Tasks / Integrations live in the tools row, and the retired Marketplace does not', sb.toolTabs);
 
 const toolNav = await page.evaluate(async () => {
   document.querySelector('.sb-tool[data-tab="tasks"]').click();
@@ -640,38 +640,6 @@ const closed = await page.evaluate(() => {
   return { on: ovr.classList.contains('on'), html: ovr.innerHTML.length };
 });
 ok(!closed.on && closed.html === 0, 'closing removes the overlay (no invisible click-trap left behind)', closed);
-
-/* Marketplace: clicking "by AMV" (official listing, no seller email) must open a
-   proper profile with a working contact button, not a dead end. Real sellers
-   (with an email) get the peer-to-peer message chat. */
-section('Marketplace seller messaging works for official and real sellers');
-
-const official = await page.evaluate(async () => {
-  await _mktSellerProfile('', 'AMV');
-  await new Promise(r => setTimeout(r, 120));
-  const btn = document.getElementById('mkt-sp-msg');
-  const ob = document.querySelector('#mkt-sp-bg .ob');
-  return { hasBtn: !!btn, onScreen: ob ? ob.getBoundingClientRect().top >= 0 : false };
-});
-ok(official.hasBtn && official.onScreen, 'clicking "by AMV" opens a profile with a contact button (no dead end)', official);
-
-const realSeller = await page.evaluate(async () => {
-  closeOvr();
-  await _mktSellerProfile('seller@shop.com', 'Shop');
-  await new Promise(r => setTimeout(r, 120));
-  const msgBtn = document.getElementById('mkt-sp-msg');
-  if (!msgBtn) return { ok:false };
-  msgBtn.click();
-  await new Promise(r => setTimeout(r, 150));
-  const input = document.getElementById('mkt-chat-txt');
-  if (!input) return { chatOpen:false };
-  input.value = 'Hi there';
-  document.getElementById('mkt-chat-send').click();
-  await new Promise(r => setTimeout(r, 200));
-  return { chatOpen:true, sent: document.querySelectorAll('.mkt-bubble').length > 0 };
-});
-ok(realSeller.chatOpen && realSeller.sent, 'a real seller can be messaged and the message sends', realSeller);
-await page.evaluate(() => closeOvr());
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

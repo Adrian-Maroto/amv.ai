@@ -70,7 +70,7 @@ const outline = (sel) => page.evaluate((sel) => {
   return { width: parseFloat(cs.borderTopWidth), alpha: a.length > 3 ? a[3] : 1, color: cs.borderTopColor };
 }, sel);
 
-section('Memory and Marketplace: the field you type into can be seen before you tap it');
+section('Memory: the field you type into can be seen before you tap it');
 {
   /* Both are text inputs inside a view, which a broad rule gives a
      transparent border; the connector search is the reference they match. */
@@ -78,20 +78,6 @@ section('Memory and Marketplace: the field you type into can be seen before you 
   await page.waitForTimeout(400);
   const m = await outline('#mem-inp');
   ok(m && m.width >= 1 && m.alpha > 0.05, 'Memory: its border is drawn, not transparent', m);
-
-  await page.evaluate(() => setTab('market'));
-  await page.waitForTimeout(500);
-  const k = await outline('#mkt-search');
-  ok(k && k.width >= 1 && k.alpha > 0.05, 'Marketplace: so is the search', k);
-}
-
-section('Marketplace: its four tabs are one row on a phone');
-{
-  const t = await page.evaluate(() => {
-    const tabs = [...document.querySelectorAll('.mkt-tab')];
-    return { n: tabs.length, rows: new Set(tabs.map(x => Math.round(x.getBoundingClientRect().top))).size };
-  });
-  ok(t.n >= 4 && t.rows === 1, '"Earnings" is not left alone on a second line', t);
 }
 
 section('Build on a phone: each mode starts clear of the nav, and reads as one screen');

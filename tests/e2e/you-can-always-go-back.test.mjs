@@ -47,24 +47,24 @@ ok(w.tab === 'chat', 'then chat', w);
 ok(!(await arrow()), 'and the arrow goes when there is nowhere left to go', await arrow());
 
 section('The browser Back does the same');
-await page.evaluate(() => setTab('market'));
+await page.evaluate(() => setTab('memory'));
 await page.evaluate(() => setTab('team'));
 await page.goBack();
 await page.waitForTimeout(250);
-ok((await where()).tab === 'market', 'browser Back from Team returns to the Marketplace', await where());
+ok((await where()).tab === 'memory', 'browser Back from Team returns to Memory', await where());
 await page.goBack();
 await page.waitForTimeout(250);
 ok((await where()).tab === 'chat', 'and again to chat, not off the site', await where());
 
 section('Closing Settings returns to the screen before it, however many sections were opened');
-await page.evaluate(() => setTab('market'));
+await page.evaluate(() => setTab('memory'));
 await page.evaluate(() => { S.settingsPane = 'account'; setTab('settings'); });
 await page.waitForSelector('.sn-btn[data-sp="privacy"]');
 await page.click('.sn-btn[data-sp="privacy"]');
 await page.click('.sn-btn[data-sp="appearance"]');
 await page.click('#set-close');
 await page.waitForTimeout(200);
-ok((await where()).tab === 'market', 'the X goes back to the Marketplace in one step', await where());
+ok((await where()).tab === 'memory', 'the X goes back to Memory in one step', await where());
 
 section('Signing out forgets the path');
 await page.evaluate(() => { setTab('team'); _wipeAccountState(); });

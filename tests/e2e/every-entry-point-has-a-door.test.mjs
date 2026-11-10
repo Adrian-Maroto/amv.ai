@@ -51,7 +51,6 @@ const NOT_A_DOOR = {
      exactly the rot this file exists to prevent. It is now the surface-specific
      half - which tools, the consent gate, the rendered extras - sitting on the
      one tested loop, and it is still exported for a surface to drive. */
-  runAgentic:  'the per-surface half of the agentic loop (tool selection + consent) over aiAgentLoop, exposed so a surface can drive it without importing across module boundaries in a single-scope bundle',
   qDecompose:  'the quality module’s task splitter, same shape: engine, not screen',
   amvOpenFile: 'the file-open bridge the desktop and editor integrations call from outside the page, so by definition nothing inside the bundle references it',
   /* THE CONSUME HALF OF A PAIR WHOSE START HALF IS LIVE.

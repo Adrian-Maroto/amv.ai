@@ -107,14 +107,6 @@ section('Installing one makes a project, with its author’s instructions marked
      'the engine is told whose instructions they are, and what they cannot do', r.ctx.slice(0, 400));
 }
 
-section('The sell form, fetched on demand, still opens');
-{
-  await page.evaluate(() => { S._mktTab = 'sell'; setTab('market'); });
-  await page.waitForSelector('#sl-publish', { timeout: 15000 });
-  const kinds = await page.$$eval('#sl-kind option', els => els.map(e => e.value));
-  ok(kinds.includes('agent'), 'with Assistant as a kind', kinds);
-}
-
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

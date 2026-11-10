@@ -21,16 +21,19 @@ const outbound = makeOutbound();
 outbound.on(/model\.example/, (_u, opts) => {
   const goal = (/USER GOAL: ([^\\\n"]+)/.exec(String(opts.body || '')) || [])[1] || '';
   const q = scripts.get(goal) || [];
-  const d = q.length ? q.shift() : { verb: 'click', ref: 2, why: 'show more' };
+  const d = q.length ? q.shift() : { verb: 'scroll', why: 'read more' };
   return new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(d) }], stop_reason: 'end_turn',
     usage: { input_tokens: 3000, output_tokens: 60 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 });
 outbound.on(/api\.stripe\.com/, () => ({ ok: true, data: [] }));
 
-const B = { launched: 0, closed: 0, shots: 0, set: [], jar: [] };
+const B = { signin: false, launched: 0, closed: 0, shots: 0, set: [], jar: [] };
 const page = { u: 'about:blank',
   async setViewport(){}, async setRequestInterception(){}, on(){},
-  async goto(u){ this.u = u; }, async url(){ return this.u; },
+  /* A site that signs you in when its account page opens. Clicking is handed to
+     the person now (a label cannot attest what a button does), so the sign-in
+     arrives on a page AMV opened rather than on one it clicked. */
+  async goto(u){ this.u = u; if (B.signin) B.jar = [{ name: 'sid', value: 'SESSION-SECRET-9c1d', domain: '.gyms.example.com', path: '/', httpOnly: true, secure: true, sameSite: 'Lax', expires: -1 }]; }, async url(){ return this.u; },
   async evaluate(x){ if (typeof x === 'string' && /getBoundingClientRect/.test(x)) return { url: this.u, title: 'Gym prices', text: 'Monthly prices.', captcha: false,
     elements: [{ ref: 1, tag: 'a', type: '', label: 'Prices' }, { ref: 2, tag: 'button', type: 'button', label: 'Show more' }] }; },
   async click(sel){ if (sel.includes('"1"')) B.jar = [{ name: 'sid', value: 'SESSION-SECRET-9c1d', domain: '.gyms.example.com', path: '/', httpOnly: true, secure: true, sameSite: 'Lax', expires: -1 }]; },
@@ -68,7 +71,7 @@ await env.AMV_KV.put('ent:' + EMAIL, JSON.stringify({ plan: 'pro', updatedAt: Da
 
 section('A run is shown step by step, with the page, and ends with the answer');
 {
-  scripts.set('Find the cheapest gym price.', [{ verb: 'click', ref: 1, why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }]);
+  scripts.set('Find the cheapest gym price.', [{ verb: 'goto', url: 'https://gyms.example.com/', why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }]);
   const r = await P.evaluate(async () => {
     try { const d = await AMVConnectors.run('browser.do', { url: 'https://gyms.example.com/', goal: 'Find the cheapest gym price.' }); return { ok: true, d }; }
     catch (e) { return { ok: false, msg: e.message, code: e.code }; }
@@ -82,7 +85,7 @@ section('A run is shown step by step, with the page, and ends with the answer');
              done: el.classList.contains('done'), btn: el.querySelector('#wlv-stop').textContent };
   });
   ok(panel && panel.label === 'AMV’s browser' && panel.host === 'gyms.example.com', 'a panel says which site AMV is on', panel);
-  ok(panel && panel.img && /Clicked/.test(panel.alt), 'with a picture of the page after the last step, described for screen readers', panel && panel.alt);
+  ok(panel && panel.img && /gyms\.example\.com/.test(panel.alt), 'with a picture of the page after the last step, described for screen readers', panel && panel.alt);
   ok(panel && /29 a month/.test(panel.now) && panel.live === 'polite' && panel.done && panel.btn === 'Close', 'ending on the answer, announced, with Close', panel);
   ok(L.hit(/\/v1\/browser\/run/).length === 1 && B.closed >= 1, 'one run, on the server, and the browser was closed', { runs: L.hit(/\/v1\/browser\/run/).length, closed: B.closed });
   const leaked = await P.evaluate(() => JSON.stringify(localStorage).includes('/9j/') || JSON.stringify(getMsgs()).includes('/9j/'));
@@ -107,7 +110,8 @@ section('Stop, pressed before anything arrives, ends it in plain words');
 section('Signed in once, still signed in next time - kept on this device, sealed');
 {
   B.set = []; B.jar = [];
-  scripts.set('Sign in and check my membership.', [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Signed in.' }]);
+  B.signin = true;
+  scripts.set('Sign in and check my membership.', [{ verb: 'goto', url: 'https://gyms.example.com/account', why: 'sign in' }, { verb: 'done', why: 'Signed in.' }]);
   const first = await P.evaluate(async () => {
     const d = await AMVConnectors.run('browser.do', { url: 'https://gyms.example.com/', goal: 'Sign in and check my membership.' });
     document.getElementById('wlv-stop').click();
@@ -211,7 +215,8 @@ section('Handed over: the person takes the browser, then AMV carries on in it');
 section('Erasing this device takes the browser sign-ins with it');
 {
   B.set = []; B.jar = [];
-  scripts.set('Sign in again.', [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Signed in.' }]);
+  B.signin = true;
+  scripts.set('Sign in again.', [{ verb: 'goto', url: 'https://gyms.example.com/account', why: 'sign in' }, { verb: 'done', why: 'Signed in.' }]);
   await P.evaluate(async () => { setTab('chat'); await AMVConnectors.run('browser.do', { url: 'https://gyms.example.com/', goal: 'Sign in again.' }); document.getElementById('wlv-stop').click(); });
   const before = await P.evaluate(async () => (await _webJarLoad('gyms.example.com')).length);
   await P.evaluate(() => eraseDeviceData());

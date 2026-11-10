@@ -142,7 +142,7 @@ const AMVCompliance = {
     'AMV is an AI assistant. It can make mistakes - check anything important before relying on it.',
     'You are responsible for what you ask AMV to do, and for actions taken from your account, including by anyone else using your device.',
     'AMV acts on your instructions. It does not guarantee results, prices, availability, delivery, or that an action can be undone.',
-    'Money features are for adults. Limits apply only to supported AMV payment paths; they do not cap purchases you complete outside AMV.',
+    'Anything involving money stays inside limits you set, and is only available to adults.',
     'You can export or delete your data at any time.'
   ]
 };

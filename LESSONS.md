@@ -15825,3 +15825,20 @@ compared with the plan's limits - `the-cron-fits-the-free-kv-budget` holds it,
 and proves an item queued after the marker is still reached on the next tick.
 Also: a cron handler hands its work to `waitUntil`, so a test must await what
 was handed over before reading what it did.
+
+## 636. An audit that did not run the browser suites has not tested the screens it rewrote (Nov 10)
+
+The build-13 audit rewrote Crew, the job panel, Spending, Connections, the
+chat answer bar and the stylesheet, and reported 399/406 Worker suites
+passing - with "427 e2e suites not run". The first full gate on the merge
+failed 41 browser suites. Most were behaviour the owner had asked for and the
+suites encoded: spending limits no longer saved on a device that was not yet
+connected, the Spending switch no longer turned spending on, the job panel
+lost its filled Connect action, Settings stayed on screen after leaving it,
+and three chat flows (temporary chat, Office download, assistants) timed out.
+The rewritten screens went back to the last version that passed; the
+server-side and safety fixes stayed. Rule: a change to a screen is not
+reviewed until the browser suites that drive that screen have run on it, and
+"not run" in somebody else's report means "not tested", not "probably fine".
+A suite that tests a feature the owner removed is updated to assert it stays
+removed, never deleted silently.

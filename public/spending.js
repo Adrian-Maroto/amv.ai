@@ -46,7 +46,7 @@ function _renderSpendingPaneNow(pane, redraw){
 
   pane.innerHTML =
     '<h2 class="set-title">What AMV may spend for you</h2>'+
-    '<div class="set-sub">Set preferences for supported payment integrations. Browser checkout is completed by you.</div>'+
+    '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
     /* What this IS, before what it is set to.
 
        The pane opened straight into three number fields. Somebody who has never
@@ -56,27 +56,41 @@ function _renderSpendingPaneNow(pane, redraw){
        about money. */
     /* Folded behind one line. The consent gate below is NOT - agreeing to it
        is the decision, and a decision is never hidden behind a tap. */
-    '<details class="set-fold mf-what"><summary class="set-fold-s">What these settings control</summary><div class="set-merged">'+
-      '<p>These are USD budget preferences for supported payment integrations. Linking a bank does not authorize payments or turn on a merchant integration.</p>'+
-      '<p>Generic browser checkout and page changes require you to finish the step. A merchant charge completed by you is outside these limits. The monthly counter includes reservations, not just settled purchases.</p>'+
+    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
+      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
+      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
+      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
+      '<p><b>It is off until you turn it on.</b> With it off, AMV will never pay for anything, however '+
+      'it is asked - it stops and tells you what it needs instead.</p>'+
+      '<ul class="mf-what-l">'+
+        '<li><b>What it buys</b> - only things a job you started actually needs. Never a subscription, '+
+          'never anything recurring, and never on a site you have not approved.</li>'+
+        '<li><b>What it never does</b> - it does not move money between your accounts, does not send '+
+          'money to people, and cannot spend anything after you switch this off.</li>'+
+        '<li><b>Why the limits matter</b> - the three numbers below are hard stops, checked before '+
+          'every purchase. The monthly ceiling is the one that decides the most you can lose in a bad '+
+          'month, so set it to a number you would not mind losing.</li>'+
+        '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
+          'and how much, and it is only visible to you.</li>'+
+      '</ul>'+
     '</div></details>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+
       '<div class="prv-pref"><div><div class="prv-pref-t">Let AMV spend money for me</div>'+
-        '<div class="prv-pref-s">Save an on/off preference. This does not activate a payment provider or authorize browser checkout.</div></div>'+
+        '<div class="prv-pref-s">Off means AMV will never pay for anything, however it is asked.</div></div>'+
         '<label class="sw"><input type="checkbox" id="mf-enabled" '+(c.enabled?'checked':'')+
         ' aria-label="Let AMV spend money for me"><span class="sw-sl"></span></label></div>'+
       '<div class="mf-grid">'+
         '<div><label class="lbl" for="mf-auto">Buy without asking, under</label>'+
           '<input class="inp" id="mf-auto" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.autoUnder))+'" '+
-          'aria-describedby="mf-auto-h"><div class="mf-hint" id="mf-auto-h">USD approval threshold for a supported purchase flow.</div></div>'+
+          'aria-describedby="mf-auto-h"><div class="mf-hint" id="mf-auto-h">Anything above this needs one tap from you.</div></div>'+
         '<div><label class="lbl" for="mf-per">Never spend more than, in one go</label>'+
           '<input class="inp" id="mf-per" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.perPurchase))+'" '+
-          'aria-describedby="mf-per-h"><div class="mf-hint" id="mf-per-h">USD limit for a supported, verified purchase flow.</div></div>'+
+          'aria-describedby="mf-per-h"><div class="mf-hint" id="mf-per-h">A hard stop for a single purchase.</div></div>'+
         '<div><label class="lbl" for="mf-cap">Monthly ceiling</label>'+
           '<input class="inp" id="mf-cap" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.monthlyCap))+'" '+
-          'aria-describedby="mf-cap-h"><div class="mf-hint" id="mf-cap-h">For supported payment integrations. Resets on the first at 00:00 UTC.</div></div>'+
+          'aria-describedby="mf-cap-h"><div class="mf-hint" id="mf-cap-h">Across everything. Resets on the first of the month.</div></div>'+
       '</div>'+
       '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
       '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
@@ -84,22 +98,22 @@ function _renderSpendingPaneNow(pane, redraw){
          a preference on this device, and saying otherwise would be the exact
          false reassurance this screen exists to avoid. */
       '<p class="mf-hint mf-where">'+ (AMVSpend.serverBacked()
-        ? 'These preferences are saved to your account after server confirmation. They do not attest a merchant checkout amount.'
-        : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Local edits do not change a server spending policy.') +'</p>'+
+        ? 'These limits are held on your account, so they apply on every device and cannot be raised from this browser.'
+        : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Once it is connected they move to your account and apply everywhere.') +'</p>'+
     '</div>'+
     '<div class="ss2"><h3>This month</h3>'+
-      '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent or reserved of '+escH(_mfMoney(cap))+'">'+
+      '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent of '+escH(_mfMoney(cap))+'">'+
         '<span style="width:'+pct+'%"></span></div>'+
-      '<div class="mf-bar-l">'+escH(_mfMoney(spent))+' spent or reserved · '+escH(_mfMoney(AMVSpend.remaining()))+' left of '+escH(_mfMoney(cap))+'</div>'+
+      '<div class="mf-bar-l">'+escH(_mfMoney(spent))+' spent · '+escH(_mfMoney(AMVSpend.remaining()))+' left of '+escH(_mfMoney(cap))+'</div>'+
     '</div>' : '')+
     '<div class="ss2"><h3>Purchases</h3>'+
       (hist.length ?
-        '<table class="mf-tbl"><caption class="mf-cap">Recorded purchase history</caption>'+
+        '<table class="mf-tbl"><caption class="mf-cap">Everything AMV has bought for you</caption>'+
         '<thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Where</th><th scope="col">Amount</th></tr></thead><tbody>'+
         hist.map(h => '<tr><td>'+escH(_mfWhen(h.at))+'</td><td>'+escH(h.item||'-')+'</td>'+
           '<td>'+escH(h.merchant||'-')+'</td><td>'+escH(_mfMoney(h.amount))+'</td></tr>').join('')+
         '</tbody></table>'
-        : '<p class="mf-empty">No purchases are recorded on this device. This is not a verified bank or merchant statement.</p>')+
+        : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
     '</div>'+
     '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
 
@@ -118,17 +132,16 @@ function _renderSpendingPaneNow(pane, redraw){
     const want = this.checked, box = this;
     box.disabled = true;
     try{
-      if(!AMVSpend.serverBacked()) throw new Error('Connect your account before changing its spending policy.');
       const cur = AMVSpend.cfg();
       await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
                             monthlyCap:cur.monthlyCap, enabled:want });
-      _mfSay('mf-limits-say', want ? 'Preference saved. Purchases still require a supported payment integration; browser checkout stays manual.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+      _mfSay('mf-limits-say', want ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
     }catch(e){
       /* Leaving the switch showing "off" while the account still allows spending
          is the one outcome worth reverting the control for. */
       box.checked = !want;
       _mfSay('mf-limits-say', (e && e.message) || 'Could not change that on your account. It is unchanged.', 'err');
-    }finally{ box.disabled = false; if(typeof _spvFillBalance==='function') _spvFillBalance(); }
+    }finally{ box.disabled = false; }
   });
   on($('mf-save-limits'),'click',async function(){
     const auto = +($('mf-auto')||{}).value, per = +($('mf-per')||{}).value, capv = +($('mf-cap')||{}).value;
@@ -145,7 +158,6 @@ function _renderSpendingPaneNow(pane, redraw){
       /* What the server stored is what gets read back - it may have pulled a
          number down to its own ceiling, and the confirmation has to say the
          number that will really apply, not the one that was typed. */
-      if(!AMVSpend.serverBacked()) throw new Error('Connect your account before saving account limits.');
       const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv });
       const L = r.limits;
       if($('mf-auto')) $('mf-auto').value = String(L.autoUnder);
@@ -154,12 +166,13 @@ function _renderSpendingPaneNow(pane, redraw){
       const changed = (L.autoUnder !== auto || L.perPurchase !== per || L.monthlyCap !== capv);
       _mfSay('mf-limits-say',
         (changed ? 'Saved, adjusted to the highest AMV allows. ' : 'Saved. ')+
-        'Saved monthly cap: '+_mfMoney(L.monthlyCap)+'. This does not activate a payment integration.', 'ok');
+        'AMV buys under '+_mfMoney(L.autoUnder)+' on its own, asks up to '+_mfMoney(L.perPurchase)+
+        ', and never passes '+_mfMoney(L.monthlyCap)+' a month.', 'ok');
     }catch(e){
       /* Saying "Saved" when the write failed would leave somebody believing a
          lower ceiling is in force while the old, higher one still is. */
       _mfSay('mf-limits-say', (e && e.message) || 'Could not save those limits. Your previous limits are still in force.', 'err');
-    }finally{ btn.disabled = false; if(typeof _spvFillBalance==='function') _spvFillBalance(); }
+    }finally{ btn.disabled = false; }
   });
 
   /* Adopt the server's numbers, then redraw once. */

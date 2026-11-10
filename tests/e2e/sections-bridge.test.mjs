@@ -22,7 +22,7 @@ const r = await page.evaluate(async () => {
 
   // empties must be honest
   const empties = {};
-  for (const id of ['memory.list', 'marketplace.my_purchases', 'handoff.list', 'projects.list', 'studio.my_designs']) {
+  for (const id of ['memory.list', 'handoff.list', 'projects.list', 'studio.my_designs']) {
     try { await C.run(id, {}); empties[id] = 'had-data'; }
     catch (e) { empties[id] = e.code || 'error'; }
   }
@@ -40,9 +40,10 @@ const r = await page.evaluate(async () => {
   };
 });
 ok(!r.missing, 'the connector registry is live');
+ok(!r.sections.includes('marketplace'), 'the retired Marketplace is not offered to chat', r.sections);
 
 section('Every major section of AMV is reachable from chat');
-['settings', 'marketplace', 'crew', 'studio', 'dev', 'memory', 'handoff', 'projects', 'chats', 'usage'].forEach(s => {
+['settings', 'crew', 'studio', 'dev', 'memory', 'handoff', 'projects', 'chats', 'usage'].forEach(s => {
   ok(r.sections.includes(s), `${s} is connected to chat`, r.sections);
 });
 ok(r.total >= 25, `a real action catalog exists (${r.total} actions)`, r.total);
@@ -55,7 +56,7 @@ ok(r.jobsCount >= 5, 'crew returns the real standing jobs', r.jobsCount);
 ok(r.memCount === 1 && /concise/.test(r.memText || ''), 'a memory written through chat reads back through chat', r.memText);
 
 section('Empty is reported as empty - never invented');
-['marketplace.my_purchases', 'handoff.list', 'projects.list', 'studio.my_designs'].forEach(id => {
+['handoff.list', 'projects.list', 'studio.my_designs'].forEach(id => {
   ok(r.empties[id] === 'needs_info' || r.empties[id] === 'had-data',
     `${id} reports honestly instead of fabricating`, r.empties[id]);
 });

@@ -226,5 +226,24 @@
     "it": "Questo elenco non si è caricato. I tuoi account collegati sono qui sotto.",
     "ko": "이 목록을 불러오지 못했습니다. 연결된 계정은 아래에 있습니다.",
     "ta": "இந்தப் பட்டியல் ஏற்றப்படவில்லை. இணைக்கப்பட்ட கணக்குகள் கீழே உள்ளன."
+  },
+  "Share selected projects, prompts and files with the workspace. Personal chats, personal memory and connected accounts are not automatically shared.": {
+    "es": "Comparte con el espacio de trabajo los proyectos, prompts y archivos que elijas. Los chats personales, la memoria personal y las cuentas conectadas no se comparten automáticamente.",
+    "zh": "可将选定的项目、提示词和文件共享到工作区。个人聊天、个人记忆和已连接的账户不会自动共享。",
+    "hi": "चुने हुए प्रोजेक्ट, प्रॉम्प्ट और फ़ाइलें वर्कस्पेस के साथ साझा करें। निजी चैट, निजी मेमोरी और जुड़े खाते अपने-आप साझा नहीं होते।",
+    "ar": "شارك المشاريع والتعليمات والملفات التي تختارها مع مساحة العمل. لا تُشارك المحادثات الشخصية والذاكرة الشخصية والحسابات المرتبطة تلقائيًا.",
+    "pt": "Compartilhe com o espaço de trabalho os projetos, prompts e arquivos que escolher. Chats pessoais, memória pessoal e contas conectadas não são compartilhados automaticamente.",
+    "fr": "Partagez avec l’espace de travail les projets, prompts et fichiers de votre choix. Les discussions personnelles, la mémoire personnelle et les comptes connectés ne sont pas partagés automatiquement.",
+    "de": "Teile ausgewählte Projekte, Prompts und Dateien mit dem Workspace. Persönliche Chats, persönliche Erinnerungen und verbundene Konten werden nicht automatisch geteilt.",
+    "ja": "選んだプロジェクト、プロンプト、ファイルをワークスペースで共有できます。個人のチャット、個人のメモリ、接続済みアカウントは自動では共有されません。",
+    "ru": "Делитесь с рабочим пространством выбранными проектами, промптами и файлами. Личные чаты, личная память и подключённые аккаунты автоматически не передаются.",
+    "id": "Bagikan proyek, prompt, dan file pilihan ke ruang kerja. Obrolan pribadi, memori pribadi, dan akun yang terhubung tidak dibagikan secara otomatis.",
+    "bn": "বেছে নেওয়া প্রজেক্ট, প্রম্পট ও ফাইল ওয়ার্কস্পেসের সঙ্গে শেয়ার করুন। ব্যক্তিগত চ্যাট, ব্যক্তিগত মেমরি ও যুক্ত অ্যাকাউন্ট আপনা থেকে শেয়ার হয় না।",
+    "ur": "منتخب پروجیکٹس، پرامپٹس اور فائلیں ورک اسپیس کے ساتھ شیئر کریں۔ ذاتی چیٹس، ذاتی میموری اور جڑے اکاؤنٹس خود بخود شیئر نہیں ہوتے۔",
+    "tr": "Seçtiğiniz projeleri, istemleri ve dosyaları çalışma alanıyla paylaşın. Kişisel sohbetler, kişisel bellek ve bağlı hesaplar otomatik olarak paylaşılmaz.",
+    "vi": "Chia sẻ dự án, prompt và tệp đã chọn với không gian làm việc. Trò chuyện cá nhân, bộ nhớ cá nhân và tài khoản đã kết nối không tự động được chia sẻ.",
+    "it": "Condividi con lo spazio di lavoro i progetti, i prompt e i file che scegli. Chat personali, memoria personale e account collegati non vengono condivisi automaticamente.",
+    "ko": "선택한 프로젝트, 프롬프트, 파일을 워크스페이스와 공유하세요. 개인 채팅, 개인 메모리, 연결된 계정은 자동으로 공유되지 않습니다.",
+    "ta": "தேர்ந்தெடுத்த திட்டங்கள், ப்ராம்ப்ட்கள், கோப்புகளைப் பணியிடத்துடன் பகிருங்கள். தனிப்பட்ட அரட்டைகள், தனிப்பட்ட நினைவகம், இணைக்கப்பட்ட கணக்குகள் தானாகப் பகிரப்படாது."
   }
 }
