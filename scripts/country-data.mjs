@@ -96,34 +96,49 @@ async function main() {
   const iso = await sparql(`SELECT ?c ?code WHERE { ?c wdt:P297 ?code . FILTER NOT EXISTS { ?c wdt:P576 ?end } }`);
   const qOf = {}; for (const b of iso) if (!qOf[b.code.value]) qOf[b.code.value] = qid(b.c.value);
 
-  for (const cc of codes) {
-    const cq = qOf[cc];
-    if (!cq) { console.log(cc, 'no Wikidata country'); continue; }
-    const out = { cc, qid: cq, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), kinds: {} };
-    let total = 0;
-    /* Three kinds at a time: Wikidata allows five concurrent queries per
-       client, and a country takes a third of the time. */
-    const one = async ([kind, [klass, keep]]) => {
-      const q = `SELECT ?i ?l ?site ?n WHERE {
-        ?i wdt:P31/wdt:P279? wd:${klass} ; wdt:P17 wd:${cq} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
+  /* One query per kind per group of countries (not per country): about two
+     hundred queries for every country AMV lists, instead of three thousand.
+     The ranking is done here, so the query has no ORDER BY to time out on.
+     Names come from the label service in the first language that has one,
+     so a bank known only by its local name is still kept. */
+  const want2 = codes.filter(cc => qOf[cc]);
+  codes.filter(cc => !qOf[cc]).forEach(cc => console.log(cc, 'no Wikidata country'));
+  const byQ = Object.fromEntries(want2.map(cc => [qOf[cc], cc]));
+  const got = Object.fromEntries(want2.map(cc => [cc, {}]));
+  const GROUP = 8, LANGS = 'en,mul,es,fr,de,pt,it,nl,sv,pl,ru,uk,tr,ar,fa,he,hi,bn,ur,id,ms,vi,th,ja,ko,zh';
+  for (const [kind, [klass, keep]] of Object.entries(KINDS)) {
+    const groups = []; for (let i = 0; i < want2.length; i += GROUP) groups.push(want2.slice(i, i + GROUP));
+    const run = async (g) => {
+      const q = `SELECT ?i ?c ?site ?n ?iLabel WHERE {
+        VALUES ?c { ${g.map(cc => 'wd:' + qOf[cc]).join(' ')} }
+        ?i wdt:P17 ?c ; wdt:P31/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended }
-        ?i rdfs:label ?l . FILTER(LANG(?l) = "en" || LANG(?l) = "mul")
-      } ORDER BY DESC(?n) LIMIT ${keep * 3}`;
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
+      }`;
       let rows = [];
-      try { rows = await sparql(q); } catch (e) { console.log(cc, kind, 'failed:', e.message); }
-      const seen = new Set(), list = [];
+      try { rows = await sparql(q); } catch (e) { console.log(kind, g.join(','), 'failed:', e.message); return; }
       for (const b of rows) {
-        const id = qid(b.i.value); if (seen.has(id)) continue; seen.add(id);
+        const cc = byQ[qid(b.c.value)]; if (!cc) continue;
+        const name = b.iLabel && b.iLabel.value; if (!name || /^Q\d+$/.test(name)) continue;   // no name in any language: skipped, never shown as an ID
         let host = ''; try { host = new URL(b.site.value).hostname.replace(/^www\./, ''); } catch (e) { continue; }
-        if (!host || list.some(x => x.s === host)) continue;
-        list.push({ q: id, n: b.l.value, s: host, w: +b.n.value });
-        if (list.length >= keep) break;
+        if (!host) continue;
+        (got[cc][kind] = got[cc][kind] || []).push({ q: qid(b.i.value), n: name, s: host, w: +b.n.value });
       }
-      out.kinds[kind] = list; total += list.length;
     };
-    const todo = Object.entries(KINDS);
-    while (todo.length) { await Promise.all(todo.splice(0, 3).map(one)); await sleep(300); }
-    out.kinds = Object.fromEntries(Object.keys(KINDS).filter(k => out.kinds[k]).map(k => [k, out.kinds[k]]));   // a fixed order, whatever finished first
+    while (groups.length) { await Promise.all(groups.splice(0, 3).map(run)); await sleep(300); }
+    console.log('kind', kind, 'done');
+  }
+  for (const cc of want2) {
+    const out = { cc, qid: qOf[cc], source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), kinds: {} };
+    let total = 0;
+    for (const [kind, [, keep]] of Object.entries(KINDS)) {
+      const rows = (got[cc][kind] || []).sort((x, y) => y.w - x.w), seen = new Set(), hosts = new Set(), list = [];
+      for (const e of rows) {
+        if (seen.has(e.q) || hosts.has(e.s)) continue; seen.add(e.q); hosts.add(e.s);
+        list.push(e); if (list.length >= keep) break;
+      }
+      if (list.length) { out.kinds[kind] = list; total += list.length; }
+    }
     out.total = total;
     writeFileSync(join(OUT, cc + '.json'), JSON.stringify(out));
     console.log(cc, total, Object.entries(out.kinds).map(([k, v]) => k + ':' + v.length).join(' '));

@@ -1,2 +1,1 @@
-# Country codes for the country-data workflow; empty means all.
-ES US IN BR JP
+# Empty = every country AMV lists (all of them, in one run).
