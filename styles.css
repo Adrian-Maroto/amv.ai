@@ -17453,3 +17453,20 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .mact-mi span{min-width:0;overflow-wrap:anywhere}
 .mact-mi:hover,.mact-mi:focus-visible{background:var(--s3);outline:none}
 @media (hover:none){.mact-mi{min-height:44px}}
+
+/* LAYER A354 - Spending's four answers as cards, each with its action
+   (Nov 10). Equal widths, the label above the number, the button pinned to
+   the bottom so a row of four lines up whatever the text. Two by two on a
+   tablet, one column on a phone. */
+.spv-fcards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3);margin:var(--sp-5) 0 var(--sp-6)}
+.spv-fc{display:flex;flex-direction:column;gap:6px;min-width:0;padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
+.spv-fc-l{font-size:var(--t-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}
+.spv-fc .spv-f-b{font-family:var(--fdisplay);font-size:var(--t-xl);font-weight:600;color:var(--tx);overflow-wrap:anywhere}
+.spv-fc .spv-f-s{font-size:var(--t-sm);color:var(--mu);overflow-wrap:anywhere}
+.spv-fc.on .spv-f-b{color:var(--grn)}
+.spv-fc-bar{margin-top:2px}
+.spv-fc-a{margin-top:auto;align-self:flex-start;min-height:36px}
+@media (hover:none){.spv-fc-a{min-height:44px}}
+@media (max-width:1100px){.spv-fcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:359px){.spv-fcards{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.spv-fc{padding:var(--sp-3)}.spv-fc .spv-f-b{font-size:var(--t-lg)}.spv-fcards{gap:var(--sp-2)}}

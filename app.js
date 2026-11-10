@@ -42084,25 +42084,73 @@ try{
 
 
 
-/* Balance and the ceiling, side by side, because the useful question is not
-   what either one is - it is which of them is smaller. */
+/* THE FOUR ANSWERS, EACH WITH ITS ONE ACTION (Nov 10, owner's words: "bank
+   account linked or no, max AMV can spend in a month, money spent this month,
+   and auto spend on or off - so easy").
+
+   They were four lines of text, which answered the question and then left the
+   person to find, further down, the control that changes it. Each is now a
+   card that says the fact and carries the thing you would do about it: link
+   a bank, change the ceiling, see how much of it is left, switch spending on
+   or off. The editors below stay the one real copy; these cards point at them
+   or press their controls, they do not duplicate them. */
 function _spvMoneyFacts() {
   const c = (typeof AMVSpend !== 'undefined') ? AMVSpend.cfg() : null;
   const linked = (() => { try { return AMVFinance.linked(); } catch (e) { return false; } })();
-  const cell = (big, small, cls) =>
-    '<div class="spv-f' + (cls ? ' ' + cls : '') + '"><div class="spv-f-b">' + escH(big) + '</div>'
-    + '<div class="spv-f-s">' + escH(small) + '</div></div>';
   const money = (n) => (typeof _mfMoney === 'function') ? _mfMoney(n) : ('$' + (+n || 0).toFixed(2));
-  return '<div class="spv-facts spv-facts-m" id="spv-money-facts">'
+  const spent = c ? (+AMVSpend.spentThisMonth() || 0) : 0;
+  const cap = c ? (+c.monthlyCap || 0) : 0;
+  const pct = cap > 0 ? Math.min(100, Math.round(spent / cap * 100)) : 0;
+  const card = (label, big, small, act, extra, cls) =>
+    '<div class="spv-f spv-fc' + (cls ? ' ' + cls : '') + '">'
+    + '<div class="spv-fc-l">' + escH(label) + '</div>'
+    + '<div class="spv-f-b">' + escH(big) + '</div>'
+    + '<div class="spv-f-s">' + escH(small) + '</div>'
+    + (extra || '')
+    + (act ? '<button class="btn bs spv-fc-a" type="button" data-spv-go="' + act[0] + '">' + escH(act[1]) + '</button>' : '')
+  + '</div>';
+  return '<div class="spv-facts spv-facts-m spv-fcards" id="spv-money-facts">'
     /* The balance is a live read from the bank, so it is not printed until it
        comes back. A number AMV made up here would be the single worst thing on
        this screen. */
-    + cell(linked ? T('Reading\u2026') : T('Not linked'),
-           linked ? T('balance across your accounts') : T('no account linked yet'), 'spv-f-bal')
-    + cell(c ? money(c.monthlyCap) : '-', T('the most AMV may spend a month'))
-    + cell(c ? money(AMVSpend.spentThisMonth()) : '-', T('spent this month'))
-    + cell(c && c.enabled ? T('On') : T('Off'), T('AMV spending on your behalf'))
+    + card(T('Bank account'), linked ? T('Linked') : T('Not linked'),
+           linked ? T('Reading…') : T('no account linked yet'),
+           ['bank', linked ? T('Manage') : T('Link a bank')], '', 'spv-f-bal')
+    + card(T('Monthly maximum'), c ? money(cap) : '-', T('the most AMV may spend a month'),
+           c ? ['cap', T('Change')] : null)
+    + card(T('Spent this month'), c ? money(spent) : '-',
+           c ? (T('Left this month') + ': ' + money(Math.max(0, cap - spent))) : T('spent this month'), null,
+           c ? '<div class="mf-bar spv-fc-bar" role="img" aria-label="' + escH(money(spent) + ' / ' + money(cap)) + '"><span style="width:' + pct + '%"></span></div>' : '')
+    + card(T('Auto-spend'), c && c.enabled ? T('On') : T('Off'),
+           c && c.enabled ? T('AMV may buy within your limits') : T('AMV will not pay for anything'),
+           c ? ['auto', c.enabled ? T('Turn off') : T('Turn on')] : null, '', c && c.enabled ? 'on' : '')
   + '</div>';
+}
+
+/* What each card's button does. The switch and the ceiling are the editor's
+   own controls, so a change made here is made by exactly the code that makes
+   it below - consent gate, server confirmation and all. */
+function _spvGo(what) {
+  const to = (id) => { const e = $(id); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); return e; };
+  if (what === 'bank') { to('spv-bank'); return; }
+  if (what === 'cap') {
+    const cap = $('mf-cap');
+    if (cap) { cap.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { try { cap.focus(); cap.select(); } catch (e) {} }, 350); }
+    else to('spv-limits');   // the consent step comes first, and that is what is shown there
+    return;
+  }
+  if (what === 'auto') {
+    const box = $('mf-enabled');
+    if (box && !box.disabled) { box.click(); return; }
+    to('spv-limits');
+    toast(T('Read and accept how spending works first - it is just below.'), 'info');
+  }
+}
+function _spvRefreshFacts() {
+  const old = $('spv-money-facts'); if (!old) return;
+  const t = document.createElement('div'); t.innerHTML = _spvMoneyFacts();
+  old.replaceWith(t.firstElementChild);
+  try { _spvFillBalance(); } catch (e) {}
 }
 
 /* Filled in once the bank answers, or replaced with why it did not. */
@@ -42112,22 +42160,17 @@ async function _spvFillBalance() {
   let linked = false;
   try { linked = AMVFinance.linked(); } catch (e) {}
   if (!linked) return;
-  const set = (big, small) => {
-    const b = z.querySelector('.spv-f-b'), s = z.querySelector('.spv-f-s');
-    if (b) b.textContent = big;
-    if (s) s.textContent = small;
-  };
+  const set = (small) => { const s = z.querySelector('.spv-f-s'); if (s) s.textContent = small; };
   try {
     const d = await AMVFinance.accounts();
     const list = (d && d.accounts) || [];
     const total = list.reduce((n, a) => n + (Number(a && a.balance) || 0), 0);
-    set((typeof _mfMoney === 'function') ? _mfMoney(total) : ('$' + total.toFixed(2)),
-        list.length === 1 ? T('balance in your account')
-                          : (list.length + ' ' + T('accounts, combined balance')));
+    const amt = (typeof _mfMoney === 'function') ? _mfMoney(total) : ('$' + total.toFixed(2));
+    set((list.length === 1 ? T('Balance') : T('Combined balance')) + ': ' + amt);
   } catch (e) {
     /* Said as what it is. A balance that failed to load and a balance of zero
        are different facts, and only one of them is somebody's. */
-    set(T('Could not read'), T('your balance did not come back just now'));
+    set(T('balance could not be read just now'));
   }
 }
 
@@ -42160,7 +42203,23 @@ function renderSpendView() {
   try { _renderInvestPane($('spv-bank')); } catch (e) {}
   try { wireWatchlist(renderSpendView); } catch (e) {}
   try { _spvFillBalance(); } catch (e) {}
+  on(vc.querySelector('.spv'), 'click', _spvFactClick);
+  /* The editor below changes the facts above: when it says something (saved,
+     switched on, refused) the cards are read again from the same store. */
+  try {
+    const lim = $('spv-limits');
+    if (lim && 'MutationObserver' in window) {
+      let t = 0;
+      new MutationObserver(() => { clearTimeout(t); t = setTimeout(_spvRefreshFacts, 120); })
+        .observe(lim, { subtree: true, childList: true, characterData: true });
+    }
+  } catch (e) {}
 }
+function _spvFactClick(e) {
+  const b = e.target && e.target.closest && e.target.closest('[data-spv-go]');
+  if (b) _spvGo(b.dataset.spvGo);
+}
+
 
 /* THE PLANS, AND NOTHING ELSE.
 
