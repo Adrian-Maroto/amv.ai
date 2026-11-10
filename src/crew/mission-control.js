@@ -1721,7 +1721,7 @@ function openCrewSettings(){
   let t = 0;
   const redraw = () => { clearTimeout(t); t = setTimeout(() => { const x = $('mc-settings'); if(x && !x.contains(document.activeElement && document.activeElement.tagName === 'TEXTAREA' ? document.activeElement : null)) x.innerHTML = body(); }, 200); };
   on(b, 'change', redraw);
-  on(b, 'click', function(e){ if(e.target && e.target.closest && e.target.closest('[data-dact]')) redraw(); });
+  on(b, 'click', function(e){ if(e.target && e.target.closest && e.target.closest('button')) redraw(); });
   try{ const f = b.querySelector('button, input, select, textarea'); if(f) f.focus(); }catch(e){}
 }
 try{ window.openCrewSettings = openCrewSettings; }catch(e){}
