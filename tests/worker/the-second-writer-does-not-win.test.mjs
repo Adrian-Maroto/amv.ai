@@ -175,47 +175,8 @@ section('Pause is not written away by the run that is under way');
   ok((after.items[0] || {}).runs === 1, 'and the run that happened is still recorded', after.items[0]);
 }
 
-section('Looking at a listing cannot put a sold item back on sale');
-{
-  /* marketView used to read the listing, add one to `views`, and write the
-     whole record back - with no auth, on every page load. So the most frequent
-     write in the marketplace raced the two that carry money. */
-  const env = mkEnv();
-  const seller = await signup(env, 'seller@example.com');
-  await isAdult(env, seller);
-  const pub = await post(env, '/v1/market/publish', { title: 'Vintage jacket', text: 'x', price: 40 }, seller);
-  const item = pub.body.item;
-  ok(!!(item && item.id), 'a listing exists', item && item.id ? item.id : pub);
-
-  await Promise.all([
-    post(env, '/v1/market/view', { id: item.id }),
-    post(env, '/v1/market/status', { id: item.id, status: 'sold' }, seller),
-  ]);
-
-  const after = JSON.parse(await env.AMV_KV.get(`market:${item.id}`));
-  ok(after.status === 'sold', 'the listing is still sold', after.status);
-}
-
-section('And a view does not rewrite the listing at all');
-{
-  /* The other half: an unauthenticated endpoint that forces a storage write per
-     request is billed, is an abuse vector, and hits the roughly one-write-per-
-     second-per-key limit exactly on the listing that gets popular. */
-  const env = mkEnv();
-  const seller = await signup(env, 'seller2@example.com');
-  await isAdult(env, seller);
-  const item = (await post(env, '/v1/market/publish', { title: 'Lamp', text: 'x', price: 10 }, seller)).body.item;
-  const before = await env.AMV_KV.get(`market:${item.id}`);
-
-  for (let i = 0; i < 5; i++) await post(env, '/v1/market/view', { id: item.id });
-  const after = await env.AMV_KV.get(`market:${item.id}`);
-  ok(after === before, 'five views wrote the record zero times', after === before);
-
-  const counted = (await W.DB.get(env, 'market', item.id));
-  ok(true, 'and the count lives in the counter instead', env._n.get(`mktviews:${item.id}`));
-  ok((env._n.get(`mktviews:${item.id}`) || 0) === 5, 'which has all five', env._n.get(`mktviews:${item.id}`));
-}
-
+/* The two sections on viewing a listing went with marketView and
+   marketSetStatus, retired with the Marketplace storefront on Nov 10. */
 section('A purchase and a refund landing together lose neither');
 {
   const env = mkEnv();

@@ -83,7 +83,10 @@ function _mcpRegMap(rec) {
     const id = _mcpRegText(p.identifier, 140);
     const ver = _mcpRegText(p.version, 80);
     // Reject, rather than truncate or reinterpret, publisher-controlled commands.
-    if(id !== p.identifier || ver !== p.version || !_mcpRegPackageSafe(registry,id,ver)) continue;
+    /* A missing version is '' on both sides: a container pinned by digest
+       carries its identity in the identifier and often has no version field,
+       and comparing '' with undefined refused every one of them. */
+    if(id !== p.identifier || ver !== (p.version == null ? '' : p.version) || !_mcpRegPackageSafe(registry,id,ver)) continue;
     if((p.runtimeArguments || []).length || (p.packageArguments || []).length) continue;
     const vars = Array.isArray(p.environmentVariables) ? p.environmentVariables : [];
     if(vars.length > 8 || vars.some(e => !e || !/^[A-Z][A-Z0-9_]{0,59}$/.test(e.name || '') ||

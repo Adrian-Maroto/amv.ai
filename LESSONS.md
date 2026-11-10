@@ -15842,3 +15842,19 @@ reviewed until the browser suites that drive that screen have run on it, and
 "not run" in somebody else's report means "not tested", not "probably fine".
 A suite that tests a feature the owner removed is updated to assert it stays
 removed, never deleted silently.
+
+## 637. A revert takes the fixes with it; run the auditor's reproduction after every revert (Nov 10)
+
+Reverting the build-13 screens that broke 41 browser suites was right, but
+the same files also carried three small, correct fixes: a session restored
+after a reload counted as local-only, a malformed spending total stored as
+zero, and a failed bank refresh shown as "not linked". The full gate passed
+without them, because none of our suites tested those cases - only the
+auditor's own reproduction did, and it lived in tests/audit where the runner
+never looked. Coverage caught a different leftover: two retired Marketplace
+handlers reachable from nowhere, deleted rather than excused. Rule: after a
+revert, rerun the reproduction of every audit the reverted files took part
+in; and an audit's reproduction is a suite (the-build-13-audit-stays-fixed),
+not a folder beside the suites. Writing the new tests for the connector
+directory found a real defect too: a container pinned by digest with no
+version field was refused, because '' was compared with undefined.

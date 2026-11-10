@@ -128,7 +128,8 @@ section('A plugin stored before a rule existed is held to it');
     plugin: { skills: [{ name: 'X', when: '', mode: 'always', instr: 'Summarise it.\u{E0041}\u{E0042}' }], prompts: [], apps: [], jobs: [] } }));
   const back = await req(env, '/v1/market/status', { id: 'usr_oldtwo', status: 'active' }, seller);
   const now = JSON.parse(await env.AMV_KV.get('market:usr_oldtwo')).status;
-  ok(back.status === 422 && now !== 'active', 'and putting it back on sale meets today’s rules', [back.status, now]);
+  /* Since Nov 10 nothing goes back on sale: the route is retired with the storefront. */
+  ok(back.status === 410 && now !== 'active', 'and it cannot be put back on sale - the Marketplace is retired', [back.status, now]);
 }
 
 section('Only what is on sale can be bought');

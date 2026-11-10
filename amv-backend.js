@@ -27280,7 +27280,10 @@ function _mcpRegMap(rec) {
     const id = _mcpRegText(p.identifier, 140);
     const ver = _mcpRegText(p.version, 80);
     // Reject, rather than truncate or reinterpret, publisher-controlled commands.
-    if(id !== p.identifier || ver !== p.version || !_mcpRegPackageSafe(registry,id,ver)) continue;
+    /* A missing version is '' on both sides: a container pinned by digest
+       carries its identity in the identifier and often has no version field,
+       and comparing '' with undefined refused every one of them. */
+    if(id !== p.identifier || ver !== (p.version == null ? '' : p.version) || !_mcpRegPackageSafe(registry,id,ver)) continue;
     if((p.runtimeArguments || []).length || (p.packageArguments || []).length) continue;
     const vars = Array.isArray(p.environmentVariables) ? p.environmentVariables : [];
     if(vars.length > 8 || vars.some(e => !e || !/^[A-Z][A-Z0-9_]{0,59}$/.test(e.name || '') ||
@@ -35725,125 +35728,8 @@ async function _refundRejectedPayout(env, rec) {
   return landed;
 }
 
-/* Seller changes a listing's status: active | sold | deactivated. Owner only. */
-async function marketSetStatus(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const { id, status } = await request.json().catch(() => ({}));
-  if (!['active', 'sold', 'deactivated'].includes(status)) return json({ error: 'bad status' }, 400);
-  const it = await _getListing(env, id);
-  if (!it) return json({ error: 'not found' }, 404);
-  if (it.authorEmail !== user.email) return json({ error: 'not your listing' }, 403);
-  // SECURITY: a seller can never flip their own listing out of review or off a
-  // moderation hold. Only deactivating is allowed while under review/removed.
-  if ((it.status === 'under_review' || it.status === 'removed') && status === 'active') {
-    return json({ error: 'This listing is under review and can\u2019t be activated until review completes.', code: 'under_review' }, 403);
-  }
-  // Re-screen on any activation, in case the stored content is prohibited.
-  if (status === 'active') {
-    /* A plugin's instructions are screened with it, and scanned for what they
-       would make AMV do - a listing put back on sale meets today's rules. */
-    let screen = _marketScreen(it.plugin ? { ...it, text: String(it.text || '') + ' ' + _mktPluginText(it.plugin) } : it,
-                                 ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
-    const ps = it.plugin ? _mktPluginScan(it.plugin) : { ok: true };
-    if (ps.refuse) screen = { ok: false, action: 'blocked', reason: ps.refuse };
-    else if (screen.ok && ps.hold) screen = { ok: true, action: 'held_for_review', signals: ps.hold };
-    if (!screen.ok) {
-      await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'removed'; });
-      /* Cleared straight away rather than left to expire. A minute of
-         staleness is fine for a catalogue and is NOT fine for something
-         moderation just pulled - that minute is the whole harm. */
-      await _marketCacheBust(env);
-      return json({ error: screen.reason, code: 'policy_violation' }, 422);
-    }
-    if (screen.action === 'held_for_review') {
-      await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'under_review'; });
-      await _marketCacheBust(env);
-      return json({ ok: true, status: 'under_review' });
-    }
-  }
-  /* Re-checked inside the lock: the listing may have SOLD between the
-     ownership check above and this write, and putting it back to active would
-     re-list something somebody has already bought. */
-  const set = await _withKV(env, 'market', id, (rec) => {
-    if (!rec) return null;
-    if (rec.status === 'sold' && status === 'active') return false;
-    rec.status = status;
-    return true;
-  });
-  if (set === false) return json({ error: 'This listing has sold, so it cannot be put back on sale.', code: 'already_sold' }, 409);
-  /* Deactivating is somebody taking their own listing down, and they will look
-     straight at the catalogue to check that it went. */
-  await _marketCacheBust(env);
-  audit(env, 'market_status', { id, status, by: user.email });
-  return json({ ok: true, status });
-}
-
-/* Increment a listing's view counter (best-effort analytics, not authed). */
-async function marketView(request, env) {
-  /* AMV-204: A VIEW COUNTER IS NOT A REASON TO REWRITE A LISTING.
-
-     This read the whole listing, added one to `views`, and wrote the whole
-     record back - with no auth, on every page load. Three things wrong with
-     that, and the first is the expensive one:
-
-       - the most FREQUENT write in the marketplace was racing the two that
-         carry money. A visitor loading the page while a sale or a status change
-         was being written put the old record back, so an item that had just
-         sold went back on sale because somebody looked at it;
-       - anyone could drive unlimited writes to one key by reloading, which is
-         billed and is an abuse vector with no account behind it;
-       - KV allows roughly one write per second per key, so the listing that
-         gets popular - the only one where the count matters - throttles and
-         loses its own views.
-
-     The count lives in the counter now, which is what a counter is for: it is
-     atomic, it is cheap, and it touches nothing else on the record. */
-  /* AND BOUNDED PER SOURCE, which the counter alone does not do.
-
-     The note above says the abuse problem "goes away" once the count moved off
-     the record. Half of it did: the lost update and the hot key are gone. What
-     did not is that this is an unauthenticated route which still costs a
-     listing read and a counter increment per request, both billed, and it was
-     the only public route in this Worker with nothing bounding it - every
-     other one carries a guard.
-
-     Generous, because a person browsing a marketplace really does open a lot of
-     listings, and because getting this wrong makes the shop look broken. */
-  const vg = await guardAction(env, 'mktview:' + (request.headers.get('CF-Connecting-IP') || 'anon'),
-                               120, 5000, 'listing views');
-  if (vg) return vg;
-
-  const { id } = await request.json().catch(() => ({}));
-  const key = String(id || '').slice(0, 64);
-  if (!key) return json({ ok: true });
-  const it = await _getListing(env, key);
-  if (!it) return json({ ok: true });
-  let views = (it.views || 0) + 1;
-  try {
-    const r = await counter(env, `mktviews:${key}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
-    /* The counter starts at zero for listings that existed before this, so the
-       number already on the record is carried alongside rather than thrown away. */
-    const since = (r && r.value) || 1;
-    views = (it.views || 0) + since;
-    /* The browse screen reads `views` off the record and cannot afford a
-       counter read per listing, so the record is refreshed from the counter -
-       under the lock, and only every MKT_VIEW_FOLD views. That is one write per
-       fifty instead of one per view: the count on screen stays right, the
-       hot-key and lost-update problems go away, and a write that does lose a
-       race now costs at most a few views rather than a sale. The abuse half is
-       the guard at the top of this function, not this - a counter makes each
-       request cheap, it does not make the number of requests finite. */
-    if (since >= MKT_VIEW_FOLD && since % MKT_VIEW_FOLD === 0) {
-      await _withKV(env, 'market', key, (rec) => {
-        if (!rec) return null;
-        rec.views = (rec.views || 0) + since;
-      });
-      await counter(env, `mktviews:${key}`, { op: 'incr', amount: -since, ttlMs: 86400000 * 400 });
-    }
-  } catch (e) { /* a view that could not be counted is not worth failing over */ }
-  return json({ ok: true, views });
-}
+/* marketSetStatus and marketView went with the Marketplace storefront (Nov 10):
+   both routes answer 410 marketplace_retired and nothing else calls them. */
 
 /* Buyer rates a listing (item rating, 1-5). Recomputes the listing average. */
 async function marketRate(request, env) {

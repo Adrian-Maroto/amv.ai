@@ -183,6 +183,46 @@ section('The same question is not asked of the registry twice');
   ok(cached.length === 1, 'under a key named for what it is', keys.join(','));
 }
 
+section('Only an exact, pinned package is offered, and nothing the publisher could slip in');
+{
+  /* The registry's text is written by whoever published the server. A
+     command built from it runs on somebody's computer, so it is offered only
+     when it can mean one thing: an exact version, a content-addressed image,
+     no launch arguments, and no environment name that changes how the
+     runtime itself behaves. */
+  const M = (pkg, extra) => W._mcpRegMap({ server: { name: 'io.github.x/t', description: 'd', version: '1.0.0', packages: [Object.assign({ transport: { type: 'stdio' } }, pkg)] }, ...(extra || {}) });
+  ok(M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0' }), 'npm at an exact version is offered');
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: 'latest' }), 'npm at a moving tag is not');
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '^2.1.0' }), 'nor at a range');
+  ok(!M({ registryType: 'npm', identifier: '@X/Bad Name', version: '2.1.0' }), 'nor a name npm would never publish');
+  const py = M({ registryType: 'pypi', identifier: 'py-tool', version: '0.3.1' });
+  ok(py && py.command === 'uvx' && py.args.indexOf('py-tool==0.3.1') >= 0, 'pypi is pinned with == - uvx reads @ differently', py && py.args);
+  ok(!M({ registryType: 'pypi', identifier: 'py-tool', version: '>=0.3' }), 'pypi with a range is not offered');
+  ok(!M({ registryType: 'oci', identifier: 'ghcr.io/x/c:latest' }), 'a container by tag is not offered - a tag can be moved');
+  const oci = M({ registryType: 'oci', identifier: 'ghcr.io/x/c@sha256:' + 'b'.repeat(64) });
+  ok(oci && oci.command === 'docker', 'a container by digest is', oci && oci.command);
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0', runtimeArguments: [{ type: 'positional', value: '--allow-all' }] }), 'a package that wants launch arguments is not offered');
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0', packageArguments: [{ type: 'positional', value: 'x' }] }), 'nor one with its own arguments');
+  for (const name of ['NODE_OPTIONS', 'LD_PRELOAD', 'PYTHONPATH', 'PATH', 'DYLD_INSERT_LIBRARIES', 'NPM_CONFIG_REGISTRY'])
+    ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0', environmentVariables: [{ name }] }), 'an environment variable named ' + name + ' is refused');
+  ok(M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0', environmentVariables: [{ name: 'GITHUB_TOKEN' }] }), 'an ordinary key name is fine');
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0', environmentVariables: Array.from({ length: 9 }, (_, i) => ({ name: 'K' + i })) }), 'more than eight variables is not offered');
+  ok(!M({ registryType: 'npm', identifier: ' @x/ok', version: '2.1.0' }), 'a name that only matches after trimming is not offered');
+  ok(!M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0' }, { _meta: { 'io.modelcontextprotocol.registry/official': { status: 'deleted' } } }), 'a server the registry marked deleted is not offered');
+  ok(!M({ registryType: 'constructor', identifier: 'x', version: '1.0.0' }), 'a registry type that is only a property of every object is not a runtime');
+  const ok1 = M({ registryType: 'npm', identifier: '@x/ok', version: '2.1.0' });
+  ok(ok1 && ok1.reviewStatus === 'unreviewed', 'and every offer says AMV has not reviewed it', ok1 && ok1.reviewStatus);
+}
+
+section('A one- or two-letter search is refused, not sent');
+{
+  const env = makeEnv();
+  const before = served;
+  const r = await W.connectorDirectory(get('?q=ab'), env);
+  const d = await r.json();
+  ok(r.status === 400 && d.code === 'search_too_short' && served === before, 'two letters: refused here, the registry is not asked', [r.status, d.code]);
+}
+
 section('A cache of a public catalogue stays out of backups');
 {
   ok(W.BACKUP_NEVER.includes('mcpcat:'),

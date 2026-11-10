@@ -41457,7 +41457,7 @@ const AMVFinance = {
 
   async refresh(){
     const base=this._base();
-    if(!base) return { ready:false, linked:false };
+    if(!base) return { ok:false, stale:true, code:'needs_service', ready:this.ready(), linked:this.linked() };
     try{
       const r = await fetchDeadline(base + '/v1/finance/status', {
         method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
@@ -41465,7 +41465,8 @@ const AMVFinance = {
       const d = await r.json().catch(()=>({}));
       /* ok:false marks these as the LAST KNOWN values rather than a fresh
          answer, so a caller cannot mistake a failed refresh for a current one. */
-      if(!r.ok) return { ok:false, stale:true, ready:this.ready(), linked:this.linked() };
+      if(!r.ok || !d || d.ok!==true || typeof d.ready!=='boolean' || typeof d.linked!=='boolean')
+        return { ok:false, stale:true, ready:this.ready(), linked:this.linked() };
       try{ saveStr('amv_fin_linked', d.linked?'1':''); saveStr('amv_fin_ready', d.ready?'1':''); }catch(e){}
       return { ok:true, ready:!!d.ready, linked:!!d.linked, linkedAt:d.linkedAt||null };
     }catch(e){ return { ok:false, stale:true, ready:this.ready(), linked:this.linked() }; }
@@ -41971,12 +41972,18 @@ const AMVSpend = {
   /* Whether these limits are the ones the server will actually enforce.
      Without a backend the local numbers are all there is, and the screen says
      so rather than implying a ceiling nobody is holding. */
-  serverBacked(){ try{ return !!(AMV_API.base && AMV_API.token); }catch(e){ return false; } },
+  /* live && hasSession, not base && token: a session restored from the cookie
+     after a reload has no token in memory, and was being treated as local-only. */
+  serverBacked(){ try{ return !!(AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
 
   /* The server is the authority - the browser copy is the editable one. */
   async pull(){
     if(!this.serverBacked()) return { ok:false, code:'local_only' };
     const d = await AMV_API.spendLimits();
+    /* A total that is missing or not a number is not zero. Storing it as 0
+       showed a whole month's spending as nothing spent. */
+    if(!d || !d.limits || !Number.isFinite(d.spentThisMonth) || d.spentThisMonth < 0)
+      throw new Error('Spending could not be verified. Your saved limits have not changed.');
     const c = this.cfg();
     c.autoUnder = this._n(d.limits.autoUnder);
     c.perPurchase = this._n(d.limits.perPurchase);
@@ -41984,8 +41991,9 @@ const AMVSpend = {
     /* Including the master switch. If the account says spending is off, the
        toggle on this screen says off, because the account is what decides. */
     c.enabled = !!d.limits.enabled;
-    c.month = this._month();
-    c.spent = +d.spentThisMonth || 0;      // counted where it cannot be edited
+    c.month = /^\d{4}-\d{2}$/.test(d.period || '') ? d.period : this._month();
+    c.verifiedAt = Date.now();
+    c.spent = d.spentThisMonth;      // counted where it cannot be edited
     this.save(c);
     return { ok:true, limits:d.limits, absoluteCap:d.absoluteCap, remaining:d.remaining };
   },
@@ -42006,6 +42014,7 @@ const AMVSpend = {
                                                     monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
     }
     const d = await AMV_API.spendSet(body);
+    if(!d || !d.limits) throw new Error('The server did not confirm these limits. Nothing was changed here.');
     const c = this.cfg();
     c.autoUnder = this._n(d.limits.autoUnder);
     c.perPurchase = this._n(d.limits.perPurchase);
@@ -42015,7 +42024,9 @@ const AMVSpend = {
     return { ok:true, limits:d.limits };
   },
 
-  _month(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); },
+  /* UTC, because the server's month is UTC: at local midnight on the 1st the
+     two disagreed for hours about which month a purchase belonged to. */
+  _month(){ const d = new Date(); return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0'); },
 
   /* Roll the monthly counter when the month genuinely changes.
      A missing or malformed month must NOT zero the total - otherwise clearing

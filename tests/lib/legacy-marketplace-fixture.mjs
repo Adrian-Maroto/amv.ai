@@ -9,8 +9,6 @@ const routes = {
   "/v1/market/check": "case '/v1/market/check':    return marketCheck(request, env);",
   "/v1/market/buy": "case '/v1/market/buy':      return marketBuy(request, env);",
   "/v1/market/mylistings": "case '/v1/market/mylistings': return marketMyListings(request, env);",
-  "/v1/market/status": "case '/v1/market/status':   return marketSetStatus(request, env);",
-  "/v1/market/view": "case '/v1/market/view':     return marketView(request, env);",
   "/v1/market/rate": "case '/v1/market/rate':     return marketRate(request, env);",
   "/v1/market/review": "case '/v1/market/review':   return marketReview(request, env);",
   "/v1/market/message": "case '/v1/market/message':  return marketMessage(request, env);",

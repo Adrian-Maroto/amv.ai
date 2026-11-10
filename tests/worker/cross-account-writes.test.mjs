@@ -207,8 +207,6 @@ section('The ones that guard by comparison still compare');
      line is the kind that gets refactored away. */
   ok(/rec\.owner !== user\.email/.test(bodyOf('shareVisibility')),
      'shareVisibility still checks the share is yours', true);
-  ok(/it\.authorEmail !== user\.email/.test(bodyOf('marketSetStatus')),
-     'marketSetStatus still checks the listing is yours', true);
   ok(/not_in_family/.test(bodyOf('familyRemove')),
      'familyRemove still requires the account to be in your family', true);
 }
