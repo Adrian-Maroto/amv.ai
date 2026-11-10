@@ -17487,3 +17487,16 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cw-simple > .mc-allow{text-align:center}
 .crew-view .mc-cmd-chips,.cw-simple > .mc-cmd .mc-cmd-chips{justify-content:center}
 @media (max-width:600px){.cw-hero h2{font-size:var(--t-2xl)}}
+
+/* LAYER A356 - The job panel reads in the order you act (Nov 10): what it
+   does, what is missing (only that, one per line), when it runs - chosen
+   here - and the action. The example is a disclosure, not the first block. */
+.cwp-need-l{list-style:none;margin:var(--sp-2) 0 var(--sp-3);padding:0;display:flex;flex-direction:column;gap:6px}
+.cwp-need-l li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);padding:8px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-sm);font-size:var(--t-sm);color:var(--tx);min-width:0}
+.cwp-need-l li span{min-width:0;overflow-wrap:anywhere}
+.cwp-need-l em{flex:none;font-style:normal;font-size:var(--t-xs);color:var(--gold);font-weight:600}
+.cwp-when{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
+.cwp-when .inp{width:auto;min-width:0;min-height:36px;padding:6px 10px;font-size:var(--t-sm)}
+.cwp-when .inp[hidden]{display:none}
+.cwp-ex{margin-top:var(--sp-3)}
+@media (hover:none){.cwp-when .inp{min-height:44px}}

@@ -212,8 +212,31 @@ function cwPeek(id){
      two facts about the same job was most of what made this feel heavy. */
   const fact = (label, value, cls) =>
     `<div class="cwp-fact${cls?' '+cls:''}"><dt>${escH(label)}</dt><dd>${value}</dd></div>`;
+  /* WHEN, SET HERE (Nov 10, owner: "you click it, you see what it does, you
+     set when you want it and you do it"). A job the server runs on its own
+     takes an exact schedule - every day, week or month, at a time, in your
+     time zone - so it is chosen in the panel rather than defaulted and left
+     to be found later. A job that runs in this browser keeps its rhythm and
+     says so; a picker for it would promise a time the tab may not be open. */
+  const canWhen = allowed && bg && !j.on && (!j.every || ['daily', 'weekly', 'monthly'].indexOf(j.every) >= 0);
+  const now = new Date();
+  const cad0 = (_cwPickedWhen[j.id] && _cwPickedWhen[j.id].cad) || (j.every === 'weekly' || j.every === 'monthly' ? j.every : 'daily');
+  const when = canWhen
+    ? `<span class="cwp-when">
+         <select class="inp cwp-when-cad" id="cwp-cad" aria-label="${escH(T('How often'))}">
+           ${[['daily', T('Every day')], ['weekly', T('Every week')], ['monthly', T('Every month')]]
+             .map(o => `<option value="${o[0]}"${o[0] === cad0 ? ' selected' : ''}>${escH(o[1])}</option>`).join('')}
+         </select>
+         <select class="inp cwp-when-day" id="cwp-day" aria-label="${escH(T('Day'))}"${cad0 === 'weekly' ? '' : ' hidden'}>
+           ${[T('Sunday'), T('Monday'), T('Tuesday'), T('Wednesday'), T('Thursday'), T('Friday'), T('Saturday')]
+             .map((d, i) => `<option value="${i}"${i === now.getDay() ? ' selected' : ''}>${escH(d)}</option>`).join('')}
+         </select>
+         <input class="inp cwp-when-time" id="cwp-time" type="time" value="08:00" aria-label="${escH(T('At'))}">
+       </span>
+       <span class="cwp-fact-ph">${escH(T('Your time zone'))}: ${escH(_myTimeZone())}</span>`
+    : escH('Runs ' + every);
   const facts =
-      fact('How often', escH('Runs ' + every))
+      fact('How often', when)
     + fact('Where it runs', bg
         ? 'On AMV\u2019s servers, whether or not this window is open'
         : 'In this browser, while AMV is open \u2014 it needs something that lives here')
@@ -255,22 +278,24 @@ function cwPeek(id){
       </div>
       <p class="cwp-desc">${escH(j.desc)}</p>
 
-      ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
-        <div class="cwp-sec-h">What you get</div>
+      ${/* WHAT IT NEEDS, AND ONLY WHAT IS MISSING. Something already connected
+            is not a step, so it is not shown; what is missing is named one
+            per line, with the button that connects it right there. */ ''}
+      ${miss.length ? `<div class="cwp-need">
+        <div class="cwp-need-t">${escH(T('Connect first'))}</div>
+        <ul class="cwp-need-l">${miss.map(m => `<li><span>${escH(m.charAt(0).toUpperCase() + m.slice(1))}</span><em>${escH(T('Not connected'))}</em></li>`).join('')}</ul>
+        <button class="btn bp" id="cwp-need-go">${escH(T('Connect'))} \u2192</button>
+      </div>` : ''}
+
+      <dl class="cwp-facts">${facts}</dl>
+
+      ${Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more cwp-ex">
+        <summary>${escH(T('See an example of what you get'))}</summary>
         <div class="cwp-sample" aria-label="Example of what this job produces">
           ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
         </div>
         <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-      </div>`:''}
-
-      ${miss.length ? `<div class="cwp-need">
-        <div class="cwp-need-t">Before this can run</div>
-        <p class="cwp-need-p">AMV needs ${escH(miss.join(' and '))} before this can do anything, and
-          it will not pretend otherwise. It takes a minute, and you come straight back here.</p>
-        <button class="btn bp" id="cwp-need-go">See what it needs \u2192</button>
-      </div>` : ''}
-
-      <dl class="cwp-facts">${facts}</dl>
+      </details>`:''}
 
       ${j.prompt?`<details class="cwp-more">
         <summary>The exact instruction AMV follows</summary>
@@ -313,8 +338,23 @@ function cwPeek(id){
   const toNeeds = () => { try{ cwNeeds(j.id); }catch(e){} };
   on($('cwp-need-go'),'click',toNeeds);
   on($('cwp-need-go2'),'click',toNeeds);
-  on($('cwp-go'),'click',()=>{ closeOvr(); try{ cwToggle(j.id); }catch(e){} });
+  const pick = () => {
+    const cad = $('cwp-cad'); if(!cad) return;
+    const t = String(($('cwp-time') || {}).value || '08:00').split(':');
+    const sc = { cad: cad.value, hour: Math.min(23, Math.max(0, +t[0] || 0)), minute: Math.min(59, Math.max(0, +t[1] || 0)), tz: _myTimeZone() };
+    if(sc.cad === 'weekly') sc.days = [+(($('cwp-day') || {}).value || 0)];
+    if(sc.cad === 'monthly') sc.dom = Math.min(28, new Date().getDate());
+    _cwPickedWhen[j.id] = sc;
+  };
+  on($('cwp-cad'),'change',function(){ const d = $('cwp-day'); if(d) d.hidden = this.value !== 'weekly'; pick(); });
+  on($('cwp-day'),'change',pick);
+  on($('cwp-time'),'change',pick);
+  on($('cwp-go'),'click',()=>{ pick(); closeOvr(); try{ cwToggle(j.id); }catch(e){} });
 }
+/* What somebody chose in the panel, read by _cwToggleReal when the job is
+   created. Per job, and only for this page's lifetime: a schedule is decided
+   when a job is switched on, not remembered as a preference. */
+const _cwPickedWhen = {};
 /* A past date in the person's own locale, for the lines that name a day rather
    than a countdown. `_mcWhen` answers "how long until", which reads as nonsense
    for something that already happened.
@@ -1127,7 +1167,8 @@ async function _cwToggleReal(jobs, j){
     try{
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
-      item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
+      const picked = _cwPickedWhen[j.id] || null;
+      item=await _scheduleTask({ detail, repeat:(picked ? picked.cad : (j.every||'daily')), sched: picked,
                                  /* Most jobs end by writing text, and 'research'
                                     is that. A job that declares its own kind
                                     ends by DOING something instead - a game job

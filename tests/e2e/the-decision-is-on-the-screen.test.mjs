@@ -37,6 +37,10 @@ section('The decision is on the screen when the panel opens');
   const r = await page.evaluate(async (id) => {
     cwPeek(id);
     await new Promise(x => setTimeout(x, 300));
+    /* The example and the full instruction are disclosures now, so the panel
+       opens short. The worst case is somebody who opened both - so open them. */
+    document.querySelectorAll('.cwp-scroll details').forEach(d => { d.open = true; });
+    await new Promise(x => setTimeout(x, 60));
     const panel = document.querySelector('.cwp');
     const go = document.getElementById('cwp-go');
     const pr = panel.getBoundingClientRect(), gr = go.getBoundingClientRect();
@@ -69,6 +73,8 @@ section('Scrolling the body does not take the decision away');
   });
   ok(r.moved, 'the body scrolled', r.moved);
   ok(r.inside, 'and the action did not move with it', r.inside);
+  /* Put back as a fresh panel would have them, for the next section. */
+  await page.evaluate(() => document.querySelectorAll('.cwp-scroll details').forEach(d => { d.open = false; }));
 }
 
 section('The exact instruction is still the exact instruction');
