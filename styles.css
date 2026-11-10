@@ -17508,3 +17508,12 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .team-land-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-5);align-items:start}
 .team-land-grid > *{min-width:0;margin-top:0!important}
 @media (min-width:1180px){.team-land .vsub{max-width:none}.team-land-grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+
+/* LAYER A359 - Settings' connected accounts as one list (Nov 10): one card,
+   one row per account divided by hairlines, the category a small label above
+   the name. */
+.set-conn-list{display:flex;flex-direction:column;gap:0;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg);overflow:hidden}
+.set-conn-list > .int-card{margin:0!important;border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important;padding:var(--sp-4)!important}
+.set-conn-list > .int-card + .int-card{border-top:1px solid var(--bd)!important}
+.set-conn-list .int-top{flex-wrap:wrap;row-gap:2px}
+.set-conn-cat{flex-basis:100%;font-size:var(--t-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}

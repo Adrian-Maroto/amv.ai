@@ -973,6 +973,24 @@ function _renderSetPaneInner(only, into){
       _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });
       _cl.querySelectorAll('.ss2').forEach(g=>{ if(!g.querySelector('.int-card')) g.remove(); });
       if(!_cl.querySelector('.int-card')) _cl.innerHTML='<p class="set-empty">'+escH(T('Nothing is connected yet.'))+'</p>';
+      else {
+        /* ONE LIST OF YOUR ACCOUNTS (Nov 10, owner: "connected accounts has to
+           actually look clear - all the accounts you are connected to"). Each
+           connection sat in a box of its own inside a category box, so three
+           accounts read as three panels. They are one list now, a row each,
+           with the category as a small label on the row. The rows are moved,
+           not redrawn: each keeps its own Disconnect and Run. */
+        const list=document.createElement('div'); list.className='int-list set-conn-list';
+        _cl.querySelectorAll('.ss2').forEach(g=>{
+          const cat=((g.querySelector('h3')||{}).textContent||'').trim();
+          g.querySelectorAll('.int-card').forEach(c=>{
+            const top=c.querySelector('.int-top');
+            if(cat && top){ const k=document.createElement('span'); k.className='set-conn-cat'; k.textContent=cat; top.prepend(k); }
+            list.appendChild(c);
+          });
+        });
+        _cl.replaceChildren(list);
+      }
     }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
