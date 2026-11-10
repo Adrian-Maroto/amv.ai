@@ -5,6 +5,11 @@
 # commits the data to the branch it was run on, so it is reviewed like code.
 name: country-data
 on:
+  # Also on a push that changes the request file, so it can run from a working
+  # branch before the workflow reaches main (dispatch needs it on main first).
+  push:
+    branches: ['claude/**']
+    paths: ['data/countries/request.txt']
   workflow_dispatch:
     inputs:
       countries:
@@ -28,7 +33,9 @@ jobs:
       - name: Query Wikidata
         env:
           COUNTRIES: ${{ github.event.inputs.countries }}
-        run: node scripts/country-data.mjs $COUNTRIES
+        run: |
+          if [ -z "$COUNTRIES" ] && [ -f data/countries/request.txt ]; then COUNTRIES="$(grep -v '^#' data/countries/request.txt | tr '\n' ' ')"; fi
+          node scripts/country-data.mjs $COUNTRIES
       - name: Commit the data
         run: |
           git config user.name "amv-data-bot"

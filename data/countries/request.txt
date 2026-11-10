@@ -1,0 +1,2 @@
+# Country codes for the country-data workflow; empty means all.
+ES US IN BR JP
