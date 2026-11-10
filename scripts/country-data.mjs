@@ -64,6 +64,13 @@ export const KINDS = {
   employer:    ['Q891723',   40, 'public company'],
 };
 
+/* kind -> classes whose members are NOT that kind for a person: a central bank
+   is a bank on Wikidata, but nobody opens an account there. Checked by name
+   like the classes above; one that is not what it says is not applied. */
+export const EXCLUDE = {
+  bank: [['Q66344', 'central bank']],
+};
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function sparql(q, tries = 4) {
   for (let i = 0; i < tries; i++) {
@@ -106,6 +113,11 @@ async function main() {
     if (fix) KINDS[kind][0] = fix; else delete KINDS[kind];
   }
 
+  const ex = Object.values(EXCLUDE).flat();
+  const exSaid = Object.fromEntries((await sparql(`SELECT ?c ?l WHERE { VALUES ?c { ${ex.map(e => 'wd:' + e[0]).join(' ')} } ?c rdfs:label ?l FILTER(LANG(?l)="en") }`)).map(b => [qid(b.c.value), b.l.value]));
+  for (const k of Object.keys(EXCLUDE)) EXCLUDE[k] = EXCLUDE[k].filter(([q, meant]) => {
+    const okk = exSaid[q] === meant; console.log('exclude', k.padEnd(12), q.padEnd(10), 'is "' + (exSaid[q] || '?') + '"', okk ? '' : '  <-- expected "' + meant + '", not applied'); return okk; });
+
   const iso = await sparql(`SELECT ?c ?code WHERE { ?c wdt:P297 ?code . FILTER NOT EXISTS { ?c wdt:P576 ?end } }`);
   const qOf = {}; for (const b of iso) if (!qOf[b.code.value]) qOf[b.code.value] = qid(b.c.value);
 
@@ -126,6 +138,7 @@ async function main() {
         VALUES ?c { ${g.map(cc => 'wd:' + qOf[cc]).join(' ')} }
         ?i wdt:P17 ?c ; wdt:P31/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended }
+        ${(EXCLUDE[kind] || []).map(([x]) => `FILTER NOT EXISTS { ?i wdt:P31 wd:${x} }`).join(' ')}
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
       }`;
       let rows = [];

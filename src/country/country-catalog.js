@@ -53,7 +53,7 @@ const CC_TASKS = {
   university:[['Apply to {n}','How do I apply to {n} for [course]? Requirements, deadlines and steps, from {s}.'],
               ['{n} deadlines','List the application and enrolment deadlines at {n} for [year], each with its official page on {s}.'],
               ['Scholarships at {n}','What scholarships and financial aid does {n} offer for [my situation]? Official sources only.'],
-              ['{n} entry requirements','What grades or tests does {n} require for [course]?'],
+              ['{n} entry requirements','What grades, tests or documents does {n} require for [course], and by when? Use {s}.'],
               ['Visit {n}','Plan a visit to {n}: open days, campus tours and how to get there.']],
   college:[['Apply to {n}','How do I apply to {n} for [course]? Requirements, deadlines and steps, from {s}.'],
            ['{n} courses and fees','What does [course] at {n} cost, and how long does it take? Use {s}.'],
@@ -62,7 +62,7 @@ const CC_TASKS = {
              ['What {n} says about it','What has {n} reported about [topic] this month? Summarise, with links.']],
   newssite:[['Today on {n}','Brief me on today’s main stories on {n} ({s}), with links.'],
             ['{n} on a topic','What has {n} published about [topic] recently? Summarise, with links.']],
-  tv:[['What is on {n} tonight','What is on {n} tonight and this week? Use {s}.'],['Watch {n} online','How can I watch {n} online or on demand, and what does it cost?']],
+  tv:[['What is on {n} tonight','What is on {n} tonight and this week, and which shows are worth it? Use {s}.'],['Watch {n} online','How can I watch {n} online or on demand, and what does it cost?']],
   radio:[['Listen to {n}','How do I listen to {n} live or catch up on a programme? Use {s}.']],
   telecom:[['A cheaper {n} plan','Find the cheapest {n} plan for [my usage] on {s}, and what changes from mine.'],
            ['Cancel {n}','How do I cancel or switch away from {n}? Notice period, fees and steps.'],
@@ -73,7 +73,7 @@ const CC_TASKS = {
   airline:[['Find a {n} flight','Find {n} flights from [A] to [B] around [dates], with prices and baggage.'],
            ['{n} baggage rules','What are {n}’s cabin and checked baggage allowances and fees for [route or fare]? Use {s}.'],
            ['Claim from {n}','My {n} flight [number, date] was [delayed / cancelled]. What am I owed, and draft the claim. Do not send it.'],
-           ['Check in with {n}','How and when do I check in with {n} for [flight]?']],
+           ['Check in with {n}','How and when do I check in with {n} for [flight], and what do I need at the airport? Use {s}.']],
   airport:[['Get to {n}','The best way to get to {n} from [place] at [time], with cost and time.'],
            ['{n} arrivals and delays','Are there delays at {n} today? Use the airport’s own pages at {s}.']],
   rail:[['Plan a trip with {n}','Plan a trip with {n} from [A] to [B] on [date]: times, fares and the cheapest ticket.'],
@@ -84,9 +84,9 @@ const CC_TASKS = {
           ['Return something to {n}','How do I return [item] to {n}? The deadline, the steps and what I get back.'],
           ['{n} offers this week','What offers does {n} have this week on [category]? Use {s}.']],
   supermarket:[['A week’s shop at {n}','Plan a week of groceries for [people] on [budget] using {n}’s current prices.'],
-               ['{n} offers this week','What is on offer at {n} this week? Use {s}.']],
+               ['{n} offers this week','What is on offer at {n} this week, and which deals are actually good? Use {s}.']],
   ecommerce:[['Best price on {n}','Find the best price for [product] on {n}, with delivery and seller ratings.'],
-             ['Return something to {n}','How do I return [item] bought on {n}?'],
+             ['Return something to {n}','How do I return [item] bought on {n} ({s}) - the deadline, who pays postage and when the refund arrives?'],
              ['Track a {n} order','How do I track my {n} order [number], and what if it is late?']],
   restaurant:[['{n} menu and allergens','What does {n} serve, and which dishes are free of [allergen]? Use {s}.'],['{n} near me','Where is the nearest {n} to [place], and what are its hours?']],
   hotel:[['Stay at a {n} hotel','Compare {n} hotels in [city] for [dates], with prices and cancellation terms.'],['{n} cancellation policy','What is {n}’s cancellation and refund policy for [rate]?']],
@@ -101,9 +101,9 @@ const CC_TASKS = {
   carmaker:[['Service my {n}','How often does my {n} [model] need servicing, and what does it cost at an official dealer?'],
             ['{n} recalls','Is my {n} [model, year] affected by any recall? Official sources only.'],
             ['Compare {n} models','Compare {n} models for [needs and budget], with prices and running costs.']],
-  museum:[['Visit {n}','Plan a visit to {n}: hours, tickets, what not to miss. Use {s}.'],['{n} exhibitions','What exhibitions are on at {n} now and coming up?']],
+  museum:[['Visit {n}','Plan a visit to {n}: hours, tickets, what not to miss. Use {s}.'],['{n} exhibitions','What exhibitions are on at {n} now and coming up, with dates and ticket prices? Use {s}.']],
   library:[['Use {n}','How do I join {n} and borrow books or e-books? Use {s}.']],
-  sportsclub:[['{n} fixtures','When does {n} play next, and where can I watch?'],['{n} tickets','How do I buy tickets for a {n} match, and what do they cost?']],
+  sportsclub:[['{n} fixtures','When does {n} play next, and where can I watch or buy a ticket? Use {s}.'],['{n} tickets','How do I buy tickets for a {n} match, and what do they cost?']],
   employer:[['Jobs at {n}','Find current [role] openings at {n}, with locations and how to apply. Use {s}.'],
             ['Interview at {n}','Prepare me for an interview at {n} for [role]: what they ask and what they value.'],
             ['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and reputation as an employer.']],
@@ -126,16 +126,16 @@ const CC_CREW = {
   rail:[['Disruptions on {n}','Each morning, check {n} for disruption on [my route] and tell me only if there is any.','daily']],
   bus:[['Disruptions on {n}','Each morning, check {n} for disruption on [my route].','daily']],
   retail:[['Price drops at {n}','Each day, check {n} for a price drop on [product] and tell me when it falls below [price].','daily'],
-          ['{n} weekly offers','Each week, the best offers at {n} on [categories].','weekly']],
+          ['{n} weekly offers','Each week, the best offers at {n} ({s}) on [categories], with prices.','weekly']],
   supermarket:[['{n} weekly offers','Each week, the offers at {n} on what I usually buy: [list].','weekly']],
-  ecommerce:[['Price drops on {n}','Each day, check {n} for a price drop on [product].','daily']],
-  restaurant:[['New offers at {n}','Each week, any new deals at {n}.','weekly']],
+  ecommerce:[['Price drops on {n}','Each day, check {n} ({s}) for a price drop on [product], with the old and new price.','daily']],
+  restaurant:[['New offers at {n}','Each week, any new deals at {n} ({s}) on [what I want], with prices.','weekly']],
   hotel:[['{n} price watch','Each day, check {n} prices in [city] for [dates] and tell me when they fall.','daily']],
   agency:[['New from {n}','Each week, any announcement, form or deadline from {n} that affects [my situation].','weekly']],
   ministry:[['New from {n}','Each week, announcements from {n} that affect [my situation].','weekly']],
   utility:[['Is {n} still my best price?','Each month, compare my {n} tariff with current offers and tell me if switching saves money.','monthly']],
   carmaker:[['{n} recall watch','Each month, check for new recalls affecting my {n} [model, year].','monthly']],
-  museum:[['New at {n}','Each month, new exhibitions and events at {n}.','monthly']],
+  museum:[['New at {n}','Each month, new exhibitions and events at {n}, with dates and how to book ({s}).','monthly']],
   sportsclub:[['{n} match week','Each week, {n}’s next fixtures, results and team news.','weekly']],
   employer:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily']],
 };
@@ -161,22 +161,32 @@ async function ccLoad(cc){
 const _ccFill = (t, e) => String(t).replace(/\{n\}/g, e.n).replace(/\{s\}/g, e.s);
 /* Every task, job and service for a country, each tied to the entry it names. */
 function ccTasks(d){
-  const out = [];
+  const by = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})){
     const tpl = CC_TASKS[kind]; if(!tpl) continue;
-    for(const e of list) tpl.forEach((t, i) => out.push({ id:'cc-' + kind + '-' + e.q + '-' + i, kind, e,
-      tpl:t[0], title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e) }));
+    by.push(list.map(e => tpl.map((t, i) => ({ id:'cc-' + kind + '-' + e.q + '-' + i, kind, e,
+      tpl:t[0], title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e) }))));
   }
+  /* Interleaved, so the first rows span many services rather than five tasks
+     for one bank: a first pass takes one task per service - rank by rank,
+     across every kind, rotating which task - and the rest follow in order. */
+  return _ccWeave(by);
+}
+/* by: [kind][entry][template] -> one list, first pass across kinds. */
+function _ccWeave(by){
+  const out = [], first = new Set(), most = Math.max(0, ...by.map(k => k.length));
+  for(let r = 0; r < most; r++) for(const k of by){ const ts = k[r]; if(!ts || !ts.length) continue; const t = ts[r % ts.length]; out.push(t); first.add(t.id); }
+  for(const k of by) for(const ts of k) for(const t of ts) if(!first.has(t.id)) out.push(t);
   return out;
 }
 function ccJobs(d){
-  const out = [];
+  const by = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})){
     const tpl = CC_CREW[kind]; if(!tpl) continue;
-    for(const e of list) tpl.forEach((t, i) => out.push({ id:'ccj-' + kind + '-' + e.q + '-' + i, kind, e,
-      title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e), every:t[2] }));
+    by.push(list.map(e => tpl.map((t, i) => ({ id:'ccj-' + kind + '-' + e.q + '-' + i, kind, e,
+      title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e), every:t[2] }))));
   }
-  return out;
+  return _ccWeave(by);
 }
 function ccServices(d){
   const out = [];

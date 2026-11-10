@@ -33,7 +33,7 @@ section('Many more ready-made tasks, in the groups people read');
 section('The country’s own, named for its services');
 {
   const r = await page.evaluate(() => ({ head: (document.querySelector('#tk-local h3') || {}).textContent || '',
-    rows: [...document.querySelectorAll('#tk-local .tk-row')].map(b => b.textContent.replace(/\s+/g, ' ').trim()) }));
+    rows: [...document.querySelectorAll('#tk-local .tk-row:not([data-darg^="cc-"])')].map(b => b.textContent.replace(/\s+/g, ' ').trim()) }));
   ok(/Spain/.test(r.head), 'a section for Spain', r.head);
   ok(r.rows.length === 7, 'one row per task its facts support - and none for what Spain has no entry for', r.rows.length);
   ok(r.rows.some(t => /Agencia Tributaria/.test(t)) && r.rows.some(t => /Bizum/.test(t)), 'naming the Agencia Tributaria and Bizum', r.rows.slice(0, 3));
@@ -46,7 +46,7 @@ section('The country’s own, named for its services');
 section('Another country, another section');
 {
   const r = await page.evaluate(async () => { _cwSetCountry('US'); setTab('tasks'); await new Promise(x => setTimeout(x, 700));
-    return [...document.querySelectorAll('#tk-local .tk-row')].map(b => b.textContent.replace(/\s+/g, ' ').trim()); });
+    return [...document.querySelectorAll('#tk-local .tk-row:not([data-darg^="cc-"])')].map(b => b.textContent.replace(/\s+/g, ' ').trim()); });
   ok(r.length === 4 && r.some(t => /IRS/.test(t)) && !r.some(t => /Agencia|Bizum/.test(t)), 'the United States gets the IRS, not Spain’s list', r);
 }
 

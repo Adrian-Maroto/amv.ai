@@ -126,7 +126,8 @@ export async function serveApp(opts = {}) {
     const rel = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
     const ext = rel.slice(rel.lastIndexOf('.'));
     if (rel && TYPES[ext] && !rel.includes('..')) {
-      const abs = join(dirname(APP), rel);
+      /* The country files are published under public/ only (build.mjs), as the host serves them. */
+      const abs = rel.startsWith('countries/') ? join(dirname(APP), 'public', rel) : join(dirname(APP), rel);
       if (existsSync(abs)) {
         res.writeHead(200, { 'Content-Type': TYPES[ext] });
         res.end(readFileSync(abs));

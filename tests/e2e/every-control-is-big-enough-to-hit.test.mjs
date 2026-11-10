@@ -118,7 +118,14 @@ for (const tab of TABS) {
     for (const e of els) {
       const b = e.getBoundingClientRect();
       if (b.width < 1 || b.height < 1) continue;
-      if (b.right > window.innerWidth + 1 || b.width > window.innerWidth + 1) {
+      /* A control in a sideways scroller of its own is reachable by scrolling
+         it - the same allowance the per-control check below makes. */
+      let inScroller = false;
+      for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+        const ov = getComputedStyle(a).overflowX;
+        if ((ov === 'auto' || ov === 'scroll') && a.scrollWidth > a.clientWidth + 4 && a.getBoundingClientRect().right <= window.innerWidth + 1) { inScroller = true; break; }
+      }
+      if (!inScroller && (b.right > window.innerWidth + 1 || b.width > window.innerWidth + 1)) {
         escaped.push(t + ' :: ' + (e.id ? '#' + e.id : (e.className || '').toString().slice(0, 30) || e.tagName)
                      + ' right=' + Math.round(b.right) + ' w=' + Math.round(b.width));
       }

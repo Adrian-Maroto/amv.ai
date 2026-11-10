@@ -17619,3 +17619,9 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cc-svcs .cc-svc.cc-off{display:none!important}
 @media (max-width:760px){.cc-svcs{grid-template-columns:minmax(0,1fr)}}
 @media (hover:none){.cc-use{min-height:44px}}
+
+/* LAYER A365 - The country catalogue's kind filters are one row that scrolls
+   sideways, not a wall: twenty-eight kinds wrapped into nine rows on a phone
+   and pushed every service below the fold. */
+.cc-chips{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:var(--sp-1);-webkit-overflow-scrolling:touch}
+.cc-chips > .cw-chip{flex:0 0 auto;white-space:nowrap}

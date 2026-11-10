@@ -261,10 +261,12 @@ async function _tkFillLocal(){
   const host=$('tk-local'); if(!host) return;
   const cc=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
   const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
-  if(!cc || !row || !(window.AMV_API && AMV_API.live)) return;
-  let facts=null;
-  try{ const d=await AMV_API.everyday(cc); facts=d && d.facts; }catch(e){ return; }
-  if(!host.isConnected || !facts || typeof facts!=='object') return;
+  if(!cc || !row) return;
+  /* The server's facts add a few rows; the catalogue below stands without
+     them, so a backend that is down or not configured still shows it. */
+  let facts={};
+  if(window.AMV_API && AMV_API.live){ try{ const d=await AMV_API.everyday(cc); if(d && d.facts && typeof d.facts==='object') facts=d.facts; }catch(e){} }
+  if(!host.isConnected) return;
   const rows=TASK_BY_FACT.filter(t=>facts[t[0]]).map((t,i)=>{
     const key='c-'+t[0]+'-'+i;
     _TASK_PROMPTS[key]=t[3].replace('{v}', String(facts[t[0]]));
@@ -294,7 +296,7 @@ async function _tkFillLocal(){
   if(!rows.length && !cat) return;
   host.innerHTML=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
       <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>
-    <div class="tk-list tk-local-list">${rows.join('')}</div>${cat}`;
+    ${rows.length?`<div class="tk-list tk-local-list">${rows.join('')}</div>`:''}${cat}`;
   host.hidden=false;
   /* Kind chips narrow the catalogue; Show all lifts the first-rows cap. */
   host.querySelectorAll('[data-cc-kind]').forEach(c=>on(c,'click',()=>{
