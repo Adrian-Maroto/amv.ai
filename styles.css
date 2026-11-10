@@ -17470,3 +17470,20 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 @media (max-width:1100px){.spv-fcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:359px){.spv-fcards{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:560px){.spv-fc{padding:var(--sp-3)}.spv-fc .spv-f-b{font-size:var(--t-lg)}.spv-fcards{gap:var(--sp-2)}}
+
+/* LAYER A355 - Crew is centred (Nov 10, owner: "Crew in the middle with an
+   explanation, the text box, clear and simple"). One header for both the
+   paid and the unpaid screen: a small label, the title, one sentence, then a
+   single row for where you are, the job count and Pause - and under it the
+   box, at a reading width rather than the width of the window. The location
+   button no longer floats in the corner; it sits in that row. */
+.cw-hero{display:flex;flex-direction:column;align-items:center;text-align:center;max-width:720px;margin:0 auto var(--sp-5);gap:var(--sp-2)}
+.cw-hero h2{margin:0;font-size:var(--t-3xl);line-height:1.15;text-wrap:balance}
+.cw-hero .vsub{margin:0;max-width:600px;text-wrap:pretty}
+.cw-hero .eyebrow{margin:0}
+.cw-hero-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2);position:static!important;width:auto!important}
+.cw-hero-row .cw-where{position:static!important}
+.crew-view .mc-cmd.cw-cmd-lead,.cw-simple > .mc-cmd.mc-cmd-lg{max-width:760px;margin-left:auto;margin-right:auto}
+.cw-simple > .mc-allow{text-align:center}
+.crew-view .mc-cmd-chips,.cw-simple > .mc-cmd .mc-cmd-chips{justify-content:center}
+@media (max-width:600px){.cw-hero h2{font-size:var(--t-2xl)}}

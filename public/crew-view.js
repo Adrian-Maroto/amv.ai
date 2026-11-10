@@ -1355,8 +1355,8 @@ function renderCrewView(){
     const jobs=_cwJobs();
     const bgJobs=jobs.filter(j=>_cwRunsUnattended(j)).length;
     vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
-      <div class="cw-where-bar">${_cwWhereBtnHTML()}</div>
-      <span class="eyebrow">Crew \u00b7 Autonomous work</span>
+      <div class="cw-hero">
+      <span class="eyebrow">Crew</span>
       <h2>AMV working while you are not</h2>
       ${/* TWO SENTENCES, NOT TWO PARAGRAPHS.
 
@@ -1369,7 +1369,8 @@ function renderCrewView(){
             one over. */ ''}
       <p class="vsub">It runs on AMV\u2019s servers on a schedule you set, so the work happens with this window
         closed and your laptop shut. You get the finished thing, not a reminder to go and do it.</p>
-      <p class="vsub cw-open-note">Say what you want below. The examples are there if you want ideas.</p>
+      <div class="cw-where-bar cw-hero-row">${_cwWhereBtnHTML()}</div>
+      </div>
 
       ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
 
@@ -1556,13 +1557,14 @@ function renderCrewView(){
      once and rarely. The examples are the last thing on the page - an
      earlier fault was work stacked under the catalogue, out of sight. */
   vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page cw-simple">
-    <header class="cw-simple-head">
-      <h2>${escH(T('Crew'))}</h2>
-      <div class="cw-simple-head-r">${_cwWhereBtnHTML()}${paused
+    <header class="cw-simple-head cw-hero">
+      <span class="eyebrow">${escH(T('Crew'))}</span>
+      <h2>${escH(T('AMV working while you are not'))}</h2>
+      <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
+      <div class="cw-simple-head-r cw-hero-row">${_cwWhereBtnHTML()}${paused
         ? `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ ${escH(T('Resume autonomy'))}</button>`
         : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
     </header>
-    <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
     ${(()=>{ const n=_crewJobAllowance();
       /* The number, before they hit it. A limit discovered by bumping into it
          reads as a fault; the same limit stated up front reads as a plan. */

@@ -61,17 +61,21 @@ const listReady = (page) => page.waitForFunction(() => { const l = document.getE
 const head = (page) => page.evaluate(() => ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim());
 const where = (page) => page.evaluate(() => ((document.getElementById('cw-where') || {}).textContent || '').replace(/\s+/g, ' ').trim());
 
-section('Crew says where it thinks you are, at the top right');
+/* Was "at the top right". On Nov 10 the owner asked for Crew centred - title,
+   explanation, then the box - so where-you-are sits centred in that header,
+   above the box, rather than floating in the corner. */
+section('Crew says where it thinks you are, centred under its title');
 const { ctx, page } = await open('ES');
 await topReady(page);
 {
   const r = await page.evaluate(() => {
     const b = document.getElementById('cw-where'), v = document.querySelector('#vc .vi') || document.getElementById('vc');
     const br = b.getBoundingClientRect(), vr = v.getBoundingClientRect();
-    return { text: b.textContent.replace(/\s+/g, ' ').trim(), right: vr.right - br.right, top: br.top - vr.top, w: vr.width };
+    const box = document.getElementById('mc-cmd-input').getBoundingClientRect();
+    return { text: b.textContent.replace(/\s+/g, ' ').trim(), off: Math.abs((br.left + br.right) / 2 - (vr.left + vr.right) / 2), above: br.bottom <= box.top, w: vr.width };
   });
   ok(/Not in Spain\?/.test(r.text), 'it names the network’s country, not the browser’s language - "' + r.text + '"', r.text);
-  ok(r.right < 40 && r.top < 80, 'and it is at the top right of the page', r);
+  ok(r.off < 24 && r.above, 'and it is centred under the title, above the box', r);
   ok(/Top 5 for you in .*Spain/.test(await head(page)), 'with the top five for Spain under it', await head(page));
   const n = await page.evaluate(() => document.querySelectorAll('#cw-foryou .cw-t10').length);
   ok(n === 5, 'five of them, as asked - ' + n, n);

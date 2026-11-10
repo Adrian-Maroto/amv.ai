@@ -435,10 +435,9 @@ the network underneath and lets the app find its own way there.
 
 ### Still open from this round
 
-- **Two suites hardcode the same port.** `every-surface-that-is-not-chat` and
-  `the-seller-actually-gets-it` both bind 9201. Not the cause of anything
-  above - it was checked and ruled out - but a collision waiting to happen,
-  and the kind that reads as a flake when it does.
+- **Two suites hardcoded the same port** (9201). Closed: both harnesses now
+  ask the kernel for a free port, and the second suite was removed with the
+  Marketplace storefront on Nov 10.
 
 ### Still unmeasured, this round
 
