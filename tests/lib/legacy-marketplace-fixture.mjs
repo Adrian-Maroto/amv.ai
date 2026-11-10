@@ -15,7 +15,18 @@ const routes = {
   "/v1/market/threads": "case '/v1/market/threads':  return marketThreads(request, env);",
   "/v1/market/thread/read": "case '/v1/market/thread/read': return marketThreadRead(request, env);"
 };
+/* LENGTH-PRESERVING. scripts/coverage.mjs maps a suite's harness back onto
+   amv-backend.js by character offset; a replacement of a different length
+   shifted every offset after the router, so every suite using this fixture
+   had its coverage of every later file misattributed (Nov 10: team task
+   notices read as never called). Each restored line is padded to exactly the
+   length of the line it replaces, and one that would not fit is an error. */
 export function legacyMarketplaceFixture(source){
- for(const [route,prior] of Object.entries(routes)) source=source.replace("case '"+route+"': return marketplaceRetired(request, env);",prior);
+ for(const [route,prior] of Object.entries(routes)){
+  const now="case '"+route+"': return marketplaceRetired(request, env);";
+  if(prior.length>now.length) throw new Error('legacy route line longer than the retired one: '+route);
+  if(!source.includes(now)) continue;
+  source=source.replace(now,prior+' '.repeat(now.length-prior.length));
+ }
  return source;
 }

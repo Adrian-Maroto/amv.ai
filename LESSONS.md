@@ -15858,3 +15858,14 @@ in; and an audit's reproduction is a suite (the-build-13-audit-stays-fixed),
 not a folder beside the suites. Writing the new tests for the connector
 directory found a real defect too: a container pinned by digest with no
 version field was refused, because '' was compared with undefined.
+
+## 638. A test fixture that edits the source must keep every offset (Nov 10)
+
+The legacy Marketplace fixture restored retired routes by replacing their
+router lines with lines of a different length. Coverage maps a suite's
+harness onto amv-backend.js by character offset, so every suite that used the
+fixture - eleven of them - had its coverage of every file after the router
+attributed to the wrong characters, and a team-task notice it really called
+read as never called. Rule: a fixture that rewrites source pads each
+replacement to the exact length it replaces, and refuses one that does not
+fit, so coverage keeps meaning what it says.
