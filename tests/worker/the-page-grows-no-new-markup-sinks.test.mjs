@@ -27,7 +27,9 @@ const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const count = (re) => (src.match(re) || []).length;
 
 const CEILING = {
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 407],
+  /* 408 (Nov 10): Spending's four cards are redrawn from _spvMoneyFacts, every
+     value through escH. */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 408],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],

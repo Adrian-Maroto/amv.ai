@@ -697,7 +697,7 @@ function renderBillingView(targetEl){
          What a plan does and does not include, and the ladder of other plans,
          live on the plans page now - one tap away from "Change plan" - instead
          of being stacked here between somebody and their invoices. */
-      (inSettings?'<div id="bill-usage-slot"></div>':'')+
+      /* (The usage slot moved below Cancellation - see the note there.) */
       /* PAYMENT METHOD - the fourth section, and the last thing anybody needs.
 
          The card itself is at the processor and AMV never held the number, so
@@ -755,6 +755,13 @@ function renderBillingView(targetEl){
 
          One line stays, because one thing here IS worth saying at the moment
          somebody looks at their card: AMV never had the number. */
+      /* USAGE LAST (Nov 10). It sat between the plan and Payment: four stat
+         tiles, a chart and a device tally standing between somebody and the
+         card, the invoice or the cancel button they opened billing for. The
+         subscription now reads the way the ones people know read - plan,
+         payment, invoices, cancel - and what has been used follows it. The one-line
+         note about the card stays last. */
+      (inSettings?'<div id="bill-usage-slot"></div>':'')+
       '<p class="bill-sec-line">Card details are held by our payment processor, never by AMV. '+
         'We keep the last four digits so you can tell which card is on file.</p>'+
       (isAdmin()?(

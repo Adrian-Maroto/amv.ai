@@ -94,9 +94,12 @@ section('The billing pane reads in the order somebody uses it');
 
     ok(current >= 0 && usage >= 0 && change >= 0 && secure >= 0,
        `[${plan}] the plan, usage, payment and the security line are all present`, hs);
-    ok(current < usage,  `[${plan}] the plan you are on comes before what you have used`, hs);
-    ok(usage < change,   `[${plan}] and usage comes before how you pay`, hs);
-    ok(change < secure,  `[${plan}] and the payment-security block is after all of it`, hs);
+    /* Nov 10, owner: subscriptions should read like the ones people know -
+       plan, how you pay, invoices, cancel. What has been used follows the
+       subscription instead of standing between somebody and their card. */
+    ok(current < change, `[${plan}] the plan you are on comes first`, hs);
+    ok(change < usage,   `[${plan}] then how you pay, before what you have used`, hs);
+    ok(usage < secure,   `[${plan}] and the payment-security line is after all of it`, hs);
     ok(secure === hs.length - 1,
        `[${plan}] in fact it is last, so it is available without being in the way`, hs.slice(-3));
   }
