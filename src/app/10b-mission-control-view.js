@@ -199,121 +199,49 @@ function _cwLockedCard(j){
    being reassuring the moment a catalogue takes a submission or somebody
    points AMV at a different backend, which Settings lets them do. */
 function cwPeek(id){
-  const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
-  const r = $('ovr'); if(!r) return;
-  const miss = _cwNeedsMissing(j);
-  const bg = _cwRunsUnattended(j);
-  const allowed = _planAllowsCrew();
-  const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
-  const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
-
-  /* One row per fact, and the row that is a PROBLEM is marked as one rather
-     than given a box of its own further down the page. Two warning panels for
-     two facts about the same job was most of what made this feel heavy. */
-  const fact = (label, value, cls) =>
-    `<div class="cwp-fact${cls?' '+cls:''}"><dt>${escH(label)}</dt><dd>${value}</dd></div>`;
-  const facts =
-      fact('How often', escH('Runs ' + every))
-    + fact('Where it runs', bg
-        ? 'On AMV\u2019s servers, whether or not this window is open'
-        : 'In this browser, while AMV is open \u2014 it needs something that lives here')
-    + (j.needs ? fact('What it uses', escH(j.needs)) : '')
-    /* SAID BEFORE THEY SWITCH IT ON, not afterwards in the answer.
-
-       A boost is not a requirement and must not read like one, so it gets a
-       row of its own with no warning class and no Connect button - the job
-       runs either way. It says what changes, because "better with a bank
-       connection" on its own invites the reader to guess, and what actually
-       changes here is whether a figure is a receipt or a real debit. */
-    + (_cwBoostList(j).length
-        ? fact('Better with', escH(_cwBoostList(j).join(', '))
-            + (_cwBoostMissing(j).length
-                ? '<span class="cwp-boostwhy"> — not connected, so this runs on what it can read</span>'
-                : '<span class="cwp-boostwhy"> — connected, so the figures are real charges</span>'))
-        : '')
-    /* The requirement is not a FACT about the job, it is the thing standing
-       between somebody and using it - so it is not a row in a definition list
-       any more. It is a block with a button, below. */
-    /* The wording is the wording it had. This row replaced a section of its
-       own, and the sentence explaining WHY it asks went with the section on
-       the first pass - which is the half that stops the question feeling like
-       an interrogation when it arrives. It is a fact about the job and it
-       belongs in the facts. */
-    + (j.asks && j.asks.q
-        ? fact('It will ask you for', '<b>'+escH(j.asks.q)+'</b>'
-            + (j.asks.ph?'<span class="cwp-fact-ph">'+escH(j.asks.ph)+'</span>':'')
-            + '<span class="cwp-fact-ph">This job works from what you tell it, so AMV asks once when you '
-            + 'switch it on rather than running on nothing.</span>')
-        : '');
-
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <button class="cwp-x" id="cwp-close" aria-label="Close">\u2715</button>
-    <div class="cwp-scroll">
-      <div class="cwp-head">
-        <span class="cwp-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-        <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-      </div>
-      <p class="cwp-desc">${escH(j.desc)}</p>
-
-      ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
-        <div class="cwp-sec-h">What you get</div>
-        <div class="cwp-sample" aria-label="Example of what this job produces">
-          ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
-        </div>
-        <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-      </div>`:''}
-
-      ${miss.length ? `<div class="cwp-need">
-        <div class="cwp-need-t">Before this can run</div>
-        <p class="cwp-need-p">AMV needs ${escH(miss.join(' and '))} before this can do anything, and
-          it will not pretend otherwise. It takes a minute, and you come straight back here.</p>
-        <button class="btn bp" id="cwp-need-go">See what it needs \u2192</button>
-      </div>` : ''}
-
-      <dl class="cwp-facts">${facts}</dl>
-
-      ${j.prompt?`<details class="cwp-more">
-        <summary>The exact instruction AMV follows</summary>
-        <pre class="cwp-prompt">${escH(j.prompt)}</pre>
-        <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
-      </details>`:''}
-    </div>
-
-    <div class="cwp-act">
-      ${allowed
-        ? `<button class="btn bs" id="cwp-cancel">Close</button>
-           ${miss.length && !j.on
-              /* A filled "Turn it on" over an unmet requirement promises
-                 something that cannot happen. The action that CAN happen is
-                 the one that gets the weight; turning it on anyway is still
-                 offered, because saving it now and connecting later is a
-                 reasonable thing to want. */
-              ? `<button class="btn bs" id="cwp-go">Turn on anyway</button>
-                 <button class="btn bp" id="cwp-need-go2">Connect what it needs \u2192</button>`
-              : `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`}`
-        : `<div class="cwp-buy">
-             <div class="cwp-buy-t">Included with ${escH(P.name)} \u00b7 $${P.price}/month</div>
-             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
-             <div class="cwp-buy-b">
-               <button class="btn bs" id="cwp-cancel">Close</button>
-               <button class="btn bp" id="cwp-plans">See plans \u2192</button>
-             </div>
-           </div>`}
-    </div>
-  </div></div>`;
-  r.classList.add('on');
-
-  /* Guarded by target===currentTarget rather than stopPropagation on the panel:
-     a panel that stops propagation kills the delegated click handler for every
-     button inside it. */
-  onBackdrop($('cwp-bg'),closeOvr);
-  on($('cwp-close'),'click',closeOvr);
-  on($('cwp-cancel'),'click',closeOvr);
-  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
-  const toNeeds = () => { try{ cwNeeds(j.id); }catch(e){} };
-  on($('cwp-need-go'),'click',toNeeds);
-  on($('cwp-need-go2'),'click',toNeeds);
-  on($('cwp-go'),'click',()=>{ closeOvr(); try{ cwToggle(j.id); }catch(e){} });
+  const j=(_cwAllJobs()||[]).find(x=>x.id===id), r=$('ovr'); if(!j||!r)return;
+  const miss=_cwNeedsMissing(j), allowed=_planAllowsCrew(), bg=_cwUnattendedReady(j);
+  const freq=['hourly','daily','weekly'].includes(j.every)?j.every:'daily';
+  const time=j.sched?String(j.sched.hour).padStart(2,'0')+':'+String(j.sched.minute||0).padStart(2,'0'):'08:00';
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  let tz=typeof _myTimeZone==='function'?_myTimeZone():Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if(j.tz){try{new Intl.DateTimeFormat('en',{timeZone:j.tz});tz=j.tz;}catch(e){/* Invalid stored zone: use the device zone. */}}
+  r.innerHTML=`<div class="ov" id="cwp-bg"><div class="cwp cwp-clean" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <button class="cwp-x" id="cwp-close" aria-label="Close">\u00d7</button>
+    <div class="cwp-scroll"><span class="eyebrow">Crew job</span><h2 id="cwp-t">${escH(j.title)}</h2>
+    <p class="cwp-desc">${escH(j.desc)}</p>
+    <section class="cwp-step"><h3>1. Choose when</h3><div class="cwp-schedule">
+      <label>Repeat<select class="inp" id="cwp-every" ${j.on?'disabled':''}>${['hourly','daily','weekly'].map(f=>`<option value="${f}" ${f===freq?'selected':''}>${escH(_CREW_EVERY_UI[f])}</option>`).join('')}</select></label>
+      <label id="cwp-time-wrap">At<input class="inp" id="cwp-time" type="time" value="${escH(time)}" ${j.on?'disabled':''}></label>
+      <label id="cwp-day-wrap">On<select class="inp" id="cwp-day" ${j.on?'disabled':''}>${days.map((d,i)=>`<option value="${i}" ${i===(j.sched&&j.sched.days?j.sched.days[0]:1)?'selected':''}>${d}</option>`).join('')}</select></label>
+    </div><p class="cwp-note">${escH(tz)}. ${bg?'Runs on the server after setup is confirmed.':'Runs only while AMV is open on this device.'}${j.on?' Stop this job before changing its schedule.':''}</p></section>
+    ${miss.length?`<section class="cwp-step cwp-need"><h3>2. Connect first</h3><p>${escH(miss.join(' and '))}</p><button class="btn bp" id="cwp-need-go">Open required connections</button></section>`:''}
+    ${j.asks&&j.asks.q?`<p class="cwp-note">Before starting, Crew will ask: ${escH(j.asks.q)}</p>`:''}
+    <details class="cwp-more"><summary>Review the exact task</summary><pre class="cwp-prompt">${escH(j.prompt||j.desc)}</pre></details>
+    ${Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more"><summary>See an example result</summary><p class="cwp-note">Illustrative example, not a completed job.</p>${j.sample.map(l=>`<p>${escH(l)}</p>`).join('')}</details>`:''}
+    <div id="cwp-status" role="status" aria-live="polite"></div></div>
+    <div class="cwp-act"><button class="btn bs" id="cwp-cancel">Close</button>
+    ${!allowed?'<button class="btn bp" id="cwp-plans">View Crew plans</button>':j.on?'<button class="btn bp" id="cwp-go">Stop job</button>':!miss.length?'<button class="btn bp" id="cwp-go">Set up job</button>':''}</div></div></div>`;
+  r.classList.add('on'); onBackdrop($('cwp-bg'),closeOvr);
+  on($('cwp-close'),'click',closeOvr);on($('cwp-cancel'),'click',closeOvr);
+  on($('cwp-plans'),'click',()=>{closeOvr();setTab('plans');});
+  on($('cwp-need-go'),'click',()=>{cwNeeds(j.id);});
+  const sync=()=>{const f=$('cwp-every').value;$('cwp-time-wrap').hidden=f==='hourly';$('cwp-day-wrap').hidden=f!=='weekly';};
+  on($('cwp-every'),'change',sync);sync();
+  on($('cwp-go'),'click',()=>{
+    if(!j.on){
+      const f=$('cwp-every').value, value=$('cwp-time').value;
+      if(f!=='hourly'&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)){$('cwp-status').textContent='Choose a valid time.';return;}
+      const [hour,minute]=value.split(':').map(Number);
+      const jobs=_cwJobs();let saved=jobs.find(x=>x.id===j.id);
+      if(!saved){saved={...j};jobs.push(saved);}
+      saved.every=f;saved.tz=tz;
+      saved.sched=f==='hourly'?null:{cad:f,hour,minute,...(f==='weekly'?{days:[Number($('cwp-day').value)]}:{})};
+      _cwSaveJobs(jobs);
+    }
+    closeOvr();cwToggle(j.id);
+  });
+  $('cwp-close').focus();
 }
 /* A past date in the person's own locale, for the lines that name a day rather
    than a countdown. `_mcWhen` answers "how long until", which reads as nonsense
@@ -936,7 +864,8 @@ function _cwSyncLocalSched(j, turningOn){
     if(turningOn){
       const freq=j.every||'daily';
       list.push({ id:key, goal:(j.prompt||j.desc||j.title), freq,
-                  next:(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5),
+                  next:(j.sched && typeof _schedNext==='function' ? _schedNext(j.sched,Date.now()) : (typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5)),
+                  sched:j.sched || null,
                   created:Date.now(), lastRun:null, localOnly:true, approval:'require',
                   fromCrewJob:j.id });
     }
@@ -1127,7 +1056,7 @@ async function _cwToggleReal(jobs, j){
     try{
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
-      item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
+      item=await _scheduleTask({ detail, repeat:(j.every||'daily'), sched:j.sched||null, tz:j.tz||_myTimeZone(),
                                  /* Most jobs end by writing text, and 'research'
                                     is that. A job that declares its own kind
                                     ends by DOING something instead - a game job

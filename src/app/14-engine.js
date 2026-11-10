@@ -1675,9 +1675,9 @@ function _crewResultsHTML(){
   if(!_CREW_RESULTS.length) return '';
   return '<div class="crew-results">'+_CREW_RESULTS.slice().reverse().map(r=>(
     '<div class="crew-res '+(r.status)+'">'+
-      '<div class="crew-res-h"><span class="crew-res-ic">'+(r.status==='running'?'<span class="spin"></span>':r.status==='done'?'✓':'✕')+'</span>'+
+      '<div class="crew-res-h"><span class="crew-res-ic">'+(r.status==='running'?'<span class="spin"></span>':r.status==='done'?'✓':r.status==='prepared'?'•':'✕')+'</span>'+
         '<span class="crew-res-t">'+escH(r.title)+'</span>'+
-        '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?'completed':'failed')+'</span></div>'+
+        '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?(r.note||'completed'):r.status==='prepared'?'response prepared':'needs attention')+'</span></div>'+
       (r.body?'<div class="crew-res-body">'+(typeof md==='function'?md(r.body):escH(r.body))+'</div>':'')+
       (r.actions?'<div class="crew-res-act">'+r.actions+'</div>':'')+
       /* A finished result can become something the group plays. Offered only
@@ -1723,7 +1723,8 @@ async function crewRun(kind, title, opts){
       let mail;
       try{ mail = await _connActRun('gmail.unread'); }
       catch(e){ up({status:'failed', body:'**'+String((e&&e.message)||'Mail could not be read')+'**'}); return res; }
-      const msgs=Array.isArray(mail)?mail:[];
+      if(!Array.isArray(mail)) throw new Error('The mailbox response could not be verified. No inbox summary was completed.');
+      const msgs=mail;
       if(!msgs.length){ up({status:'done', body:'**Inbox clear** - no unread emails.'}); return res; }
       up({note:'reading '+msgs.length+' emails…'});
       /* The server already returned the headers - a second round trip per
@@ -1739,12 +1740,19 @@ async function crewRun(kind, title, opts){
       up({status:'done', body:out});
     }
     else if(kind==='custom'){
-      const t=opts.detail || await showTextPromptAsync('What should AMV do? (it will actually do it and show the result)','');
+      const t=opts.detail || await showTextPromptAsync('What should AMV do? Available tools and your approvals determine what can run.','');
       if(!t){ up({status:'failed', note:'cancelled', body:''}); return res; }
       res.title=t.slice(0,60);
       up({note:'working…'});
-      const out=await aiComplete(t,'You are AMV, a highly capable autonomous assistant. Actually complete the task and present the finished result with markdown formatting. Do not say you will do it later - do it now.');
-      up({status:'done', body:out});
+      const out=await runAgentic('crew',t,{
+        maxRounds:8,
+        system:'You are AMV. Use the available tools for external actions. Never claim that text alone sent, bought, booked, deployed, connected or scheduled anything. State missing tools and permissions plainly. Distinguish prepared drafts from confirmed tool results.',
+        onStatus:note=>up({note})
+      });
+      const steps=Array.isArray(out.steps)?out.steps:[];
+      const incomplete=out.why!=='done'||steps.some(x=>!x.ok);
+      const receipt=steps.length?'\n\n**Tool results:**\n'+steps.map(x=>'- '+String(x.name)+': '+(x.ok?'reported success':'failed or refused')).join('\n'):'\n\n_No external action was verified. This is a prepared response._';
+      up({status:incomplete?'failed':steps.length?'done':'prepared', note:steps.length?'tool run finished':'response prepared', body:String(out.text||'No response was produced.')+receipt, actions:out.rendered||''});
     }
     else { up({status:'failed', body:'Unknown task.'}); }
   }catch(e){
@@ -2065,6 +2073,8 @@ async function _scheduleTask(t){
     const d = await _autoApi('/auto/create', {
       detail: t.detail,
       repeat: t.repeat || 'daily',
+      sched: t.sched || null,
+      tz: t.tz || (typeof _myTimeZone==='function' ? _myTimeZone() : 'UTC'),
       kind: t.kind || 'task',
       notify: wantEmail ? 'email' : 'app',
       firstRunAt: t.firstRunAt || null,

@@ -467,11 +467,11 @@ async function runAgentic(surface, userPrompt, opts){
       }
       const r = await _amvRunTool(name, input || {}, onStatus);
       if(r && r.render) rendered += r.render;
-      return { ok:true, text: String((r && r.text) || '') };
+      return { ok:!!r && r.ok !== false && !r.error, text: String((r && r.text) || 'No tool result was returned.') };
     },
   });
 
-  return { text: out.text, rendered, rounds: out.rounds,
+  return { text: out.text, rendered, rounds: out.rounds, steps:out.steps, why:out.why,
            ...(out.why === 'rounds' ? { hitLimit:true } : {}) };
 }
 try{ window.runAgentic = runAgentic; }catch(e){}
@@ -897,7 +897,7 @@ async function _amvRunTool(name, input, onStatus){
       const rcpt = '<div class="chat-mcp-rcpt' + (r && r.ok ? '' : ' bad') + '"><b>'
         + escH(who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '</b> '
         + escH(r && r.ok ? T('The connector says this worked. AMV could not check it.') : T('The connector says this failed.')) + '</div>';
-      return { text: head + String((r && r.text) || ''), render: rcpt };
+      return { ok:!!(r && r.ok), text: head + String((r && r.text) || ''), render: rcpt };
     }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
@@ -906,11 +906,11 @@ async function _amvRunTool(name, input, onStatus){
                   :                        'Looking at the project';
       onStatus && onStatus(label + '…');
       const r = await runBridgeTool(name, input);
-      if(r && r.error) return { text:'That did not work: ' + r.error, render:null };
+      if(r && r.error) return { ok:false, text:'That did not work: ' + r.error, render:null };
       if(name==='run_command'){
         const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
                    + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
-        return { text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
+        return { ok:r.exitCode === 0 && !r.timedOut, text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
                       + '\n\nstderr:\n' + (r.stderr || '(empty)'), render:null };
       }
       if(name==='read_file')  return { text:'--- ' + r.path + ' ---\n' + r.content, render:null };
@@ -925,24 +925,24 @@ async function _amvRunTool(name, input, onStatus){
     /* The search itself is in project-search.js, fetched the first time. */
     if(name==='tool_search'){
       onStatus && onStatus('Looking for the right tool\u2026');
-      if(!(await _projSearchReady())) return { text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
       return window.amvToolSearch(input);
     }
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
     if(name==='chat_search' || name==='chat_read'){
       onStatus && onStatus(name==='chat_search' ? 'Searching your past chats\u2026' : 'Reading an earlier chat\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await (name==='chat_search' ? window.amvChatSearch : window.amvChatRead)(input), render:null };
     }
     if(name==='project_search'){
       onStatus && onStatus('Searching the project\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await window.amvProjectFileSearch(input), render:null };
     }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await window.amvLibrarySearch(input), render:null };
     }
 
@@ -978,6 +978,7 @@ async function _amvRunTool(name, input, onStatus){
          fields for both callers. */
       const out = (typeof _debugOutcome === 'function') ? _debugOutcome(res) : { passed:false, why:'unknown' };
       return {
+        ok:out.passed,
         text: out.passed
           ? 'Fixed and verified: the corrected version was run and it ran cleanly.\n\nWorking code:\n'+String(fixed||'').slice(0,6000)
           : 'Could NOT fix it - ' + out.why + '. Tell the user it is still failing; do not say it works.'
@@ -995,12 +996,12 @@ async function _amvRunTool(name, input, onStatus){
          refuse. Building it and running it here still work; publishing is
          asked for again in a normal chat. */
       if(typeof _isTempChat === 'function' && _isTempChat())
-        return { text:'Not published: this is a temporary chat, so nothing from it is kept - and a live site stays on AMV\u2019s servers at a public address. Tell the user so plainly, and that they can publish it from a normal chat.', render:null };
+        return { ok:false, text:'Not published: this is a temporary chat, so nothing from it is kept - and a live site stays on AMV\u2019s servers at a public address. Tell the user so plainly, and that they can publish it from a normal chat.', render:null };
       onStatus && onStatus('Publishing it live\u2026');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
-        return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
+        return { ok:false, text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       let html = String(input.html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
-      if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };
+      if(!html) return { ok:false, text:'Nothing to publish - no HTML was given.', render:null };
       if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
       try{
         /* PUBLISHING THE SAME PAGE TWICE SHOULD NOT COST TWO OF YOUR TWENTY-FIVE.
@@ -1038,11 +1039,11 @@ async function _amvRunTool(name, input, onStatus){
            reads when a Crew run reaches this. */
         if(e && e.code === 'plan_required'){
           const why = String(e.message||'Publishing to a live URL is part of Elite.');
-          return { code:'plan_required', minPlan: e.minPlan || 'elite',
+          return { ok:false, code:'plan_required', minPlan: e.minPlan || 'elite',
                    text:'Not published: '+why+' Do not retry - it needs a plan change, not another attempt.',
                    render:_planUpsellCardHTML('Publishing is part of Elite', why) };
         }
-        return { text:'Deploy failed: '+(e.message||e), render:null };
+        return { ok:false, text:'Deploy failed: '+(e.message||e), render:null };
       }
     }
 
@@ -1075,8 +1076,8 @@ async function _amvRunTool(name, input, onStatus){
     if(name.slice(0,7) === 'memory_' || name.slice(0,8) === 'approval' || name === 'account_status')
       return await _sectionTool(name, input);
   }catch(e){
-    return { text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
+    return { ok:false, text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
   }
-  return { text:'Unknown tool: '+name, render:null };
+  return { ok:false, text:'Unknown tool: '+name, render:null };
 }
 

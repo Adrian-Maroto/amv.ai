@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* A PLUGIN IS READ FOR WHAT IT WOULD MAKE AMV DO - AND ONLY WHAT IS ON SALE
    CAN BE BOUGHT.
 
@@ -26,7 +27,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'plscan.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { _mktPluginScan, DB };\n');
+writeFileSync(harness, legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')) + '\nexport { _mktPluginScan, DB };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 function mkEnv() {

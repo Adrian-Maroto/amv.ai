@@ -9956,10 +9956,10 @@ async function _callAITurn(msgs, _opts) {
            rather than at a known action. */
         if(!_offeredTools.has(String(t.name || '')) && _toolPool.has(String(t.name || ''))){
           /* It exists, but is not switched on: the way to it is tool_search. */
-          out = { text:'"' + String(t.name || '').slice(0, 60) + '" is not switched on yet. Call tool_search with what you need to do; it switches the matching tools on, then call this again.', render:null };
+          out = { ok:false, text:'"' + String(t.name || '').slice(0, 60) + '" is not switched on yet. Call tool_search with what you need to do; it switches the matching tools on, then call this again.', render:null };
         }
         else if(!_offeredTools.has(String(t.name || ''))){
-          out = { text:'There is no tool called "' + String(t.name || '').slice(0, 60)
+          out = { ok:false, text:'There is no tool called "' + String(t.name || '').slice(0, 60)
                   + '" available in this conversation right now. Available: '
                   + ([..._offeredTools].join(', ') || 'none')
                   + '. Use one of those, or tell the user what you cannot do.', render:null };
@@ -9967,21 +9967,21 @@ async function _callAITurn(msgs, _opts) {
         }
         /* A command on the person's own never-run list is answered here,
            before they are asked to approve something that would be refused. */
-        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
+        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { ok:false, text: nr, render:null }; }
         /* THE SCREEN. Its own refusals and its own question: seeing is asked
            once per request, every action one by one with the place marked. */
         if(!out && isComputerTool(t.name)){
           const cr = computerRefusal(t.name, input);
-          if(cr) out = { text: cr, render:null };
+          if(cr) out = { ok:false, text: cr, render:null };
           else if(!(await computerConsent(t.name, input))){
-            out = { text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
+            out = { ok:false, text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
             try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
           } else out = await runComputerTool(t.name, input);
         }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
-            out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
+            out = { ok:false, text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
             try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
           }
         }
@@ -9991,8 +9991,8 @@ async function _callAITurn(msgs, _opts) {
         });
         /* A screenshot's picture stays in this tab (see computerWireResults);
            what is saved with the chat says one was taken. */
-        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), _shot:true}); }
-        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), is_error:out.ok===false, _shot:true}); }
+        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), is_error:out.ok===false});
         if(out.render) renderedExtras += out.render;
       }
       // Record what actually happened so it survives re-render and reload.
@@ -10572,7 +10572,7 @@ function bindChatEvents() {
      confirming Enter after composition has formally ended. */
   on(ta,'keydown',e=>{ if(e.isComposing||e.keyCode===229) return; if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{
-    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+    fitChatComposer(ta);
     /* Debounced: a keystroke is not worth a write, and losing the last 400ms of
        typing is not the failure this is here to prevent. */
     try{ clearTimeout(_draftTimer); }catch(e){}
@@ -10609,6 +10609,8 @@ function bindChatEvents() {
     else if(action==='retry-ai') retryLastAI();
     else if(action==='continue-ai') continueLastAI();
     else if(action==='speak') speakMessage(idx);
+    else if(action==='share-answer') shareAnswer(idx);
+    else if(action==='answer-more') answerMore(idx,btn);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
        that plan - being sent to a row of four after pressing a button with a
        plan's name on it is the nudge forgetting what it just offered. */
@@ -11246,10 +11248,12 @@ function renderChatMsgs() {
         '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="'+escH(T('Read aloud'))+'" aria-label="'+escH(T('Read aloud'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
-        '<button class="mact" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
-        '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
-        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
-        (i===msgs.length-1?'<button class="mact" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+        '<button class="mact" data-action="share-answer" data-idx="'+i+'" title="Share answer" aria-label="Share answer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m-4 4 4-4 4 4M5 12v8h14v-8"/></svg></button>'+
+        '<button class="mact" data-action="answer-more" data-idx="'+i+'" title="More actions" aria-label="More actions" aria-expanded="false" aria-haspopup="menu"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>'+
+        '<button class="mact mact-secondary" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
+        '<button class="mact mact-secondary" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
+        '<button class="mact mact-react mact-secondary" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        (i===msgs.length-1?'<button class="mact mact-secondary" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
       _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
@@ -11381,7 +11385,7 @@ function _amvBeginRec(){
   };
   _voiceRec.onresult=e=>{
     const t=Array.from(e.results).map(r=>r[0].transcript).join('');
-    const ta=$('mta'); if(ta){ ta.value=t; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
+    const ta=$('mta'); if(ta){ ta.value=t; fitChatComposer(ta); }
   };
   _voiceRec.onend=()=>{
     _isRecording=false;
@@ -14049,8 +14053,8 @@ function renderTeamView(){
           'workspace - no admin console, no seat keys to hand out.</li>'+
         '<li><b>Give each person a role.</b> That decides what they can change, not what '+
           'they can use. The owner or an admin can also choose which engines the whole team uses.</li>'+
-        '<li><b>Work in one place.</b> Projects, prompts and what AMV remembers are shared, '+
-          'so somebody joining on Tuesday has the context from Monday.</li>'+
+        '<li><b>Work in one place.</b> Share selected projects, prompts and files with the workspace. '+
+          'Personal chats, personal memory and connected accounts are not automatically shared.</li>'+
       '</ol>'+
       '<div class="team-roles">'+
         '<div class="team-role"><b>Owner</b><span>You. Pays the bill, changes seat count, '+
@@ -17651,7 +17655,7 @@ function renderBillingView(targetEl){
          opening line; it is true, it is not what somebody came here to read,
          and it is still on the screen at the bottom where the rest of the
          payment-security detail lives. */
-      '<h2 class="bill-h">Billing</h2>'+
+      '<h2 class="bill-h">Manage subscription</h2><p class="product-note">Your plan, renewal and billing controls in one place.</p>'+
       /* ONE CARD, NOT TWO THAT DISAGREE ABOUT NOTHING.
 
          Reported as looking horrible and unprofessional, and the first thing
@@ -17689,7 +17693,7 @@ function renderBillingView(targetEl){
              price rendered the same word again on the same line - the exact
              duplication this page was rebuilt to remove, reintroduced at one
              word. A free plan has no price to state, so it states none. */
-          (plan==='free'?'':'<div class="bill-sum-p">$'+P.price+' <span>/ month</span></div>')+
+          (plan==='free'?'':'<div class="bill-sum-p">'+escH(rn && rn.interval==='year' ? 'Annual billing' : 'Paid plan')+'</div>')+
           /* The way to another plan sits beside the one you are on, as it does
              in every billing screen people already know. */
           '<button type="button" class="btn '+(plan==='free'?'bp':'bs')+' bill-change" data-stab="plans">'+escH(plan==='free'?T('Upgrade plan'):T('Change plan'))+'</button>'+
@@ -17697,7 +17701,7 @@ function renderBillingView(targetEl){
         '<div class="bill-sum-sub">'+
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
           (plan==='free'
-            ? 'You are not paying for anything. Nothing is on file and nothing renews.'
+            ? 'Free plan. Open your billing provider for any historical invoices or other subscriptions.'
             /* "renews" and "ends" are opposite facts and the date alone
                cannot tell them apart. Somebody who has switched auto-renew off
                is looking for exactly this line to confirm it. */
@@ -22600,7 +22604,7 @@ function _cwForYouHead(name, flag, n, ranked){
   /* Says how many it shows - five either way: the country's ranked list, or
      AMV's own five on the fallback (no country data, or no server to ask). */
   const k = n || 5;
-  const head = k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
+  const head = ranked ? 'Most started on AMV in' : 'Suggested for';
   /* Which order this is, said rather than implied: counted once enough people
      in the country have started jobs, researched until then. */
   const counted = !!ranked && _cwRankedHere(_cwCountryGuess());
@@ -22680,7 +22684,9 @@ function _cwGo(page){
    the country it was ranked for, and without this the hundred under the new
    country's name would have been the old country's hundred. */
 function _cwSetCountry(cc){
-  _cwCountry = String(cc || '').toUpperCase();
+  const code = String(cc || '').toUpperCase();
+  if(!_cwCountryRow(code)) return false;
+  _cwCountry = code;
   try{ saveStr('amv_cw_country', _cwCountry); }catch(e){}
   _cwShowcaseCache = null;
   try{ _cwLoadLocal(_cwCountry); }catch(e){}
@@ -22823,7 +22829,7 @@ function _cwCpListHTML(cc){
   const row = _cwCountryRow(cc), name = row ? row[1] : '';
   const st = _cwLocalState[cc] || 'loading';
   if(st === 'loading'){
-    return `<div class="sec-head"><h3>${escH(T('The 100 most used in'))} ${escH(name)}</h3></div>
+    return `<div class="sec-head"><h3>${escH(T('Everyday jobs in'))} ${escH(name)}</h3></div>
       <div class="cw-jobs-grid cw-cat-grid" aria-busy="true">${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(6)}</div>`;
   }
   const list = _cwCountryHundred(cc);
@@ -22842,7 +22848,7 @@ function _cwCpListHTML(cc){
        never a generated stand-in dressed as written for it. */
     : !(_cwLocalJobs(cc) || []).length
       ? `<p class="cw-foryou-note">${escH(T('Nothing is written only for'))} ${escH(name)} ${escH(T('yet - the jobs below are the everyday ones, and each runs there and answers for'))} ${escH(name)}.</p>` : '';
-  return `<div class="sec-head"><h3>${escH(T('The'))} ${list.length} ${escH(T('most used in'))} ${escH(name)}</h3>
+  return `<div class="sec-head"><h3>${escH(T('The'))} ${list.length} ${escH(T('everyday jobs in'))} ${escH(name)}</h3>
       <span class="sec-sub">${escH(T('After the five above. Every one answers for'))} ${escH(name)} ${escH(T('- its sites, prices and rules - and runs with AMV closed where it says so.'))}</span></div>
     ${note}
     <div class="cw-chips" role="group" aria-label="${escH(T('Filter jobs by category'))}">${chip('all', 'All', list.length)}${cats.map(c => chip(c, c, list.filter(j => j.cat === c).length)).join('')}${other.length ? chip('More', 'More', other.length) : ''}</div>
@@ -23365,121 +23371,49 @@ function _cwLockedCard(j){
    being reassuring the moment a catalogue takes a submission or somebody
    points AMV at a different backend, which Settings lets them do. */
 function cwPeek(id){
-  const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
-  const r = $('ovr'); if(!r) return;
-  const miss = _cwNeedsMissing(j);
-  const bg = _cwRunsUnattended(j);
-  const allowed = _planAllowsCrew();
-  const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
-  const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
-
-  /* One row per fact, and the row that is a PROBLEM is marked as one rather
-     than given a box of its own further down the page. Two warning panels for
-     two facts about the same job was most of what made this feel heavy. */
-  const fact = (label, value, cls) =>
-    `<div class="cwp-fact${cls?' '+cls:''}"><dt>${escH(label)}</dt><dd>${value}</dd></div>`;
-  const facts =
-      fact('How often', escH('Runs ' + every))
-    + fact('Where it runs', bg
-        ? 'On AMV\u2019s servers, whether or not this window is open'
-        : 'In this browser, while AMV is open \u2014 it needs something that lives here')
-    + (j.needs ? fact('What it uses', escH(j.needs)) : '')
-    /* SAID BEFORE THEY SWITCH IT ON, not afterwards in the answer.
-
-       A boost is not a requirement and must not read like one, so it gets a
-       row of its own with no warning class and no Connect button - the job
-       runs either way. It says what changes, because "better with a bank
-       connection" on its own invites the reader to guess, and what actually
-       changes here is whether a figure is a receipt or a real debit. */
-    + (_cwBoostList(j).length
-        ? fact('Better with', escH(_cwBoostList(j).join(', '))
-            + (_cwBoostMissing(j).length
-                ? '<span class="cwp-boostwhy"> — not connected, so this runs on what it can read</span>'
-                : '<span class="cwp-boostwhy"> — connected, so the figures are real charges</span>'))
-        : '')
-    /* The requirement is not a FACT about the job, it is the thing standing
-       between somebody and using it - so it is not a row in a definition list
-       any more. It is a block with a button, below. */
-    /* The wording is the wording it had. This row replaced a section of its
-       own, and the sentence explaining WHY it asks went with the section on
-       the first pass - which is the half that stops the question feeling like
-       an interrogation when it arrives. It is a fact about the job and it
-       belongs in the facts. */
-    + (j.asks && j.asks.q
-        ? fact('It will ask you for', '<b>'+escH(j.asks.q)+'</b>'
-            + (j.asks.ph?'<span class="cwp-fact-ph">'+escH(j.asks.ph)+'</span>':'')
-            + '<span class="cwp-fact-ph">This job works from what you tell it, so AMV asks once when you '
-            + 'switch it on rather than running on nothing.</span>')
-        : '');
-
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <button class="cwp-x" id="cwp-close" aria-label="Close">\u2715</button>
-    <div class="cwp-scroll">
-      <div class="cwp-head">
-        <span class="cwp-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-        <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-      </div>
-      <p class="cwp-desc">${escH(j.desc)}</p>
-
-      ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
-        <div class="cwp-sec-h">What you get</div>
-        <div class="cwp-sample" aria-label="Example of what this job produces">
-          ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
-        </div>
-        <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-      </div>`:''}
-
-      ${miss.length ? `<div class="cwp-need">
-        <div class="cwp-need-t">Before this can run</div>
-        <p class="cwp-need-p">AMV needs ${escH(miss.join(' and '))} before this can do anything, and
-          it will not pretend otherwise. It takes a minute, and you come straight back here.</p>
-        <button class="btn bp" id="cwp-need-go">See what it needs \u2192</button>
-      </div>` : ''}
-
-      <dl class="cwp-facts">${facts}</dl>
-
-      ${j.prompt?`<details class="cwp-more">
-        <summary>The exact instruction AMV follows</summary>
-        <pre class="cwp-prompt">${escH(j.prompt)}</pre>
-        <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
-      </details>`:''}
-    </div>
-
-    <div class="cwp-act">
-      ${allowed
-        ? `<button class="btn bs" id="cwp-cancel">Close</button>
-           ${miss.length && !j.on
-              /* A filled "Turn it on" over an unmet requirement promises
-                 something that cannot happen. The action that CAN happen is
-                 the one that gets the weight; turning it on anyway is still
-                 offered, because saving it now and connecting later is a
-                 reasonable thing to want. */
-              ? `<button class="btn bs" id="cwp-go">Turn on anyway</button>
-                 <button class="btn bp" id="cwp-need-go2">Connect what it needs \u2192</button>`
-              : `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`}`
-        : `<div class="cwp-buy">
-             <div class="cwp-buy-t">Included with ${escH(P.name)} \u00b7 $${P.price}/month</div>
-             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
-             <div class="cwp-buy-b">
-               <button class="btn bs" id="cwp-cancel">Close</button>
-               <button class="btn bp" id="cwp-plans">See plans \u2192</button>
-             </div>
-           </div>`}
-    </div>
-  </div></div>`;
-  r.classList.add('on');
-
-  /* Guarded by target===currentTarget rather than stopPropagation on the panel:
-     a panel that stops propagation kills the delegated click handler for every
-     button inside it. */
-  onBackdrop($('cwp-bg'),closeOvr);
-  on($('cwp-close'),'click',closeOvr);
-  on($('cwp-cancel'),'click',closeOvr);
-  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
-  const toNeeds = () => { try{ cwNeeds(j.id); }catch(e){} };
-  on($('cwp-need-go'),'click',toNeeds);
-  on($('cwp-need-go2'),'click',toNeeds);
-  on($('cwp-go'),'click',()=>{ closeOvr(); try{ cwToggle(j.id); }catch(e){} });
+  const j=(_cwAllJobs()||[]).find(x=>x.id===id), r=$('ovr'); if(!j||!r)return;
+  const miss=_cwNeedsMissing(j), allowed=_planAllowsCrew(), bg=_cwUnattendedReady(j);
+  const freq=['hourly','daily','weekly'].includes(j.every)?j.every:'daily';
+  const time=j.sched?String(j.sched.hour).padStart(2,'0')+':'+String(j.sched.minute||0).padStart(2,'0'):'08:00';
+  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  let tz=typeof _myTimeZone==='function'?_myTimeZone():Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if(j.tz){try{new Intl.DateTimeFormat('en',{timeZone:j.tz});tz=j.tz;}catch(e){/* Invalid stored zone: use the device zone. */}}
+  r.innerHTML=`<div class="ov" id="cwp-bg"><div class="cwp cwp-clean" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <button class="cwp-x" id="cwp-close" aria-label="Close">\u00d7</button>
+    <div class="cwp-scroll"><span class="eyebrow">Crew job</span><h2 id="cwp-t">${escH(j.title)}</h2>
+    <p class="cwp-desc">${escH(j.desc)}</p>
+    <section class="cwp-step"><h3>1. Choose when</h3><div class="cwp-schedule">
+      <label>Repeat<select class="inp" id="cwp-every" ${j.on?'disabled':''}>${['hourly','daily','weekly'].map(f=>`<option value="${f}" ${f===freq?'selected':''}>${escH(_CREW_EVERY_UI[f])}</option>`).join('')}</select></label>
+      <label id="cwp-time-wrap">At<input class="inp" id="cwp-time" type="time" value="${escH(time)}" ${j.on?'disabled':''}></label>
+      <label id="cwp-day-wrap">On<select class="inp" id="cwp-day" ${j.on?'disabled':''}>${days.map((d,i)=>`<option value="${i}" ${i===(j.sched&&j.sched.days?j.sched.days[0]:1)?'selected':''}>${d}</option>`).join('')}</select></label>
+    </div><p class="cwp-note">${escH(tz)}. ${bg?'Runs on the server after setup is confirmed.':'Runs only while AMV is open on this device.'}${j.on?' Stop this job before changing its schedule.':''}</p></section>
+    ${miss.length?`<section class="cwp-step cwp-need"><h3>2. Connect first</h3><p>${escH(miss.join(' and '))}</p><button class="btn bp" id="cwp-need-go">Open required connections</button></section>`:''}
+    ${j.asks&&j.asks.q?`<p class="cwp-note">Before starting, Crew will ask: ${escH(j.asks.q)}</p>`:''}
+    <details class="cwp-more"><summary>Review the exact task</summary><pre class="cwp-prompt">${escH(j.prompt||j.desc)}</pre></details>
+    ${Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more"><summary>See an example result</summary><p class="cwp-note">Illustrative example, not a completed job.</p>${j.sample.map(l=>`<p>${escH(l)}</p>`).join('')}</details>`:''}
+    <div id="cwp-status" role="status" aria-live="polite"></div></div>
+    <div class="cwp-act"><button class="btn bs" id="cwp-cancel">Close</button>
+    ${!allowed?'<button class="btn bp" id="cwp-plans">View Crew plans</button>':j.on?'<button class="btn bp" id="cwp-go">Stop job</button>':!miss.length?'<button class="btn bp" id="cwp-go">Set up job</button>':''}</div></div></div>`;
+  r.classList.add('on'); onBackdrop($('cwp-bg'),closeOvr);
+  on($('cwp-close'),'click',closeOvr);on($('cwp-cancel'),'click',closeOvr);
+  on($('cwp-plans'),'click',()=>{closeOvr();setTab('plans');});
+  on($('cwp-need-go'),'click',()=>{cwNeeds(j.id);});
+  const sync=()=>{const f=$('cwp-every').value;$('cwp-time-wrap').hidden=f==='hourly';$('cwp-day-wrap').hidden=f!=='weekly';};
+  on($('cwp-every'),'change',sync);sync();
+  on($('cwp-go'),'click',()=>{
+    if(!j.on){
+      const f=$('cwp-every').value, value=$('cwp-time').value;
+      if(f!=='hourly'&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)){$('cwp-status').textContent='Choose a valid time.';return;}
+      const [hour,minute]=value.split(':').map(Number);
+      const jobs=_cwJobs();let saved=jobs.find(x=>x.id===j.id);
+      if(!saved){saved={...j};jobs.push(saved);}
+      saved.every=f;saved.tz=tz;
+      saved.sched=f==='hourly'?null:{cad:f,hour,minute,...(f==='weekly'?{days:[Number($('cwp-day').value)]}:{})};
+      _cwSaveJobs(jobs);
+    }
+    closeOvr();cwToggle(j.id);
+  });
+  $('cwp-close').focus();
 }
 /* A past date in the person's own locale, for the lines that name a day rather
    than a countdown. `_mcWhen` answers "how long until", which reads as nonsense
@@ -24102,7 +24036,8 @@ function _cwSyncLocalSched(j, turningOn){
     if(turningOn){
       const freq=j.every||'daily';
       list.push({ id:key, goal:(j.prompt||j.desc||j.title), freq,
-                  next:(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5),
+                  next:(j.sched && typeof _schedNext==='function' ? _schedNext(j.sched,Date.now()) : (typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5)),
+                  sched:j.sched || null,
                   created:Date.now(), lastRun:null, localOnly:true, approval:'require',
                   fromCrewJob:j.id });
     }
@@ -24293,7 +24228,7 @@ async function _cwToggleReal(jobs, j){
     try{
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
-      item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
+      item=await _scheduleTask({ detail, repeat:(j.every||'daily'), sched:j.sched||null, tz:j.tz||_myTimeZone(),
                                  /* Most jobs end by writing text, and 'research'
                                     is that. A job that declares its own kind
                                     ends by DOING something instead - a game job
@@ -27512,11 +27447,11 @@ async function runAgentic(surface, userPrompt, opts){
       }
       const r = await _amvRunTool(name, input || {}, onStatus);
       if(r && r.render) rendered += r.render;
-      return { ok:true, text: String((r && r.text) || '') };
+      return { ok:!!r && r.ok !== false && !r.error, text: String((r && r.text) || 'No tool result was returned.') };
     },
   });
 
-  return { text: out.text, rendered, rounds: out.rounds,
+  return { text: out.text, rendered, rounds: out.rounds, steps:out.steps, why:out.why,
            ...(out.why === 'rounds' ? { hitLimit:true } : {}) };
 }
 try{ window.runAgentic = runAgentic; }catch(e){}
@@ -27942,7 +27877,7 @@ async function _amvRunTool(name, input, onStatus){
       const rcpt = '<div class="chat-mcp-rcpt' + (r && r.ok ? '' : ' bad') + '"><b>'
         + escH(who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '</b> '
         + escH(r && r.ok ? T('The connector says this worked. AMV could not check it.') : T('The connector says this failed.')) + '</div>';
-      return { text: head + String((r && r.text) || ''), render: rcpt };
+      return { ok:!!(r && r.ok), text: head + String((r && r.text) || ''), render: rcpt };
     }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
@@ -27951,11 +27886,11 @@ async function _amvRunTool(name, input, onStatus){
                   :                        'Looking at the project';
       onStatus && onStatus(label + '…');
       const r = await runBridgeTool(name, input);
-      if(r && r.error) return { text:'That did not work: ' + r.error, render:null };
+      if(r && r.error) return { ok:false, text:'That did not work: ' + r.error, render:null };
       if(name==='run_command'){
         const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
                    + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
-        return { text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
+        return { ok:r.exitCode === 0 && !r.timedOut, text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
                       + '\n\nstderr:\n' + (r.stderr || '(empty)'), render:null };
       }
       if(name==='read_file')  return { text:'--- ' + r.path + ' ---\n' + r.content, render:null };
@@ -27970,24 +27905,24 @@ async function _amvRunTool(name, input, onStatus){
     /* The search itself is in project-search.js, fetched the first time. */
     if(name==='tool_search'){
       onStatus && onStatus('Looking for the right tool\u2026');
-      if(!(await _projSearchReady())) return { text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The tool search could not be loaded (the connection dropped). Nothing was switched on - try again.', render:null };
       return window.amvToolSearch(input);
     }
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
     if(name==='chat_search' || name==='chat_read'){
       onStatus && onStatus(name==='chat_search' ? 'Searching your past chats\u2026' : 'Reading an earlier chat\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await (name==='chat_search' ? window.amvChatSearch : window.amvChatRead)(input), render:null };
     }
     if(name==='project_search'){
       onStatus && onStatus('Searching the project\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await window.amvProjectFileSearch(input), render:null };
     }
     if(name==='library_search'){
       onStatus && onStatus('Searching your files\u2026');
-      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      if(!(await _projSearchReady())) return { ok:false, text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
       return { text: await window.amvLibrarySearch(input), render:null };
     }
 
@@ -28023,6 +27958,7 @@ async function _amvRunTool(name, input, onStatus){
          fields for both callers. */
       const out = (typeof _debugOutcome === 'function') ? _debugOutcome(res) : { passed:false, why:'unknown' };
       return {
+        ok:out.passed,
         text: out.passed
           ? 'Fixed and verified: the corrected version was run and it ran cleanly.\n\nWorking code:\n'+String(fixed||'').slice(0,6000)
           : 'Could NOT fix it - ' + out.why + '. Tell the user it is still failing; do not say it works.'
@@ -28040,12 +27976,12 @@ async function _amvRunTool(name, input, onStatus){
          refuse. Building it and running it here still work; publishing is
          asked for again in a normal chat. */
       if(typeof _isTempChat === 'function' && _isTempChat())
-        return { text:'Not published: this is a temporary chat, so nothing from it is kept - and a live site stays on AMV\u2019s servers at a public address. Tell the user so plainly, and that they can publish it from a normal chat.', render:null };
+        return { ok:false, text:'Not published: this is a temporary chat, so nothing from it is kept - and a live site stays on AMV\u2019s servers at a public address. Tell the user so plainly, and that they can publish it from a normal chat.', render:null };
       onStatus && onStatus('Publishing it live\u2026');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
-        return { text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
+        return { ok:false, text:'Publishing needs the AMV engine connected. Tell the user to enable it in Settings.', render:null };
       let html = String(input.html||'').replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
-      if(!html) return { text:'Nothing to publish - no HTML was given.', render:null };
+      if(!html) return { ok:false, text:'Nothing to publish - no HTML was given.', render:null };
       if(!/<html|<!doctype/i.test(html)) html = '<!DOCTYPE html><html><body>'+html+'</body></html>';
       try{
         /* PUBLISHING THE SAME PAGE TWICE SHOULD NOT COST TWO OF YOUR TWENTY-FIVE.
@@ -28083,11 +28019,11 @@ async function _amvRunTool(name, input, onStatus){
            reads when a Crew run reaches this. */
         if(e && e.code === 'plan_required'){
           const why = String(e.message||'Publishing to a live URL is part of Elite.');
-          return { code:'plan_required', minPlan: e.minPlan || 'elite',
+          return { ok:false, code:'plan_required', minPlan: e.minPlan || 'elite',
                    text:'Not published: '+why+' Do not retry - it needs a plan change, not another attempt.',
                    render:_planUpsellCardHTML('Publishing is part of Elite', why) };
         }
-        return { text:'Deploy failed: '+(e.message||e), render:null };
+        return { ok:false, text:'Deploy failed: '+(e.message||e), render:null };
       }
     }
 
@@ -28120,9 +28056,9 @@ async function _amvRunTool(name, input, onStatus){
     if(name.slice(0,7) === 'memory_' || name.slice(0,8) === 'approval' || name === 'account_status')
       return await _sectionTool(name, input);
   }catch(e){
-    return { text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
+    return { ok:false, text:'Tool "'+name+'" failed: '+(e.message||e), render:null };
   }
-  return { text:'Unknown tool: '+name, render:null };
+  return { ok:false, text:'Unknown tool: '+name, render:null };
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -29663,7 +29599,7 @@ function renderView(){
        client, inside _handoffSyncLive, which nothing called. A handoff sent to
        you was invisible until you happened to be on the device that sent it. */
     case 'handoff': renderHandoffView(); _handoffSyncLive(); break;
-    case 'market': renderMarketView(); break;
+    case 'market': setTab('tasks'); break;
     /* Its own section, because it was a row inside Integrations and that is
        the reason nobody knew any of this existed. */
     case 'admin': _openAdmin(); break;
@@ -37625,9 +37561,9 @@ function _crewResultsHTML(){
   if(!_CREW_RESULTS.length) return '';
   return '<div class="crew-results">'+_CREW_RESULTS.slice().reverse().map(r=>(
     '<div class="crew-res '+(r.status)+'">'+
-      '<div class="crew-res-h"><span class="crew-res-ic">'+(r.status==='running'?'<span class="spin"></span>':r.status==='done'?'✓':'✕')+'</span>'+
+      '<div class="crew-res-h"><span class="crew-res-ic">'+(r.status==='running'?'<span class="spin"></span>':r.status==='done'?'✓':r.status==='prepared'?'•':'✕')+'</span>'+
         '<span class="crew-res-t">'+escH(r.title)+'</span>'+
-        '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?'completed':'failed')+'</span></div>'+
+        '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?(r.note||'completed'):r.status==='prepared'?'response prepared':'needs attention')+'</span></div>'+
       (r.body?'<div class="crew-res-body">'+(typeof md==='function'?md(r.body):escH(r.body))+'</div>':'')+
       (r.actions?'<div class="crew-res-act">'+r.actions+'</div>':'')+
       /* A finished result can become something the group plays. Offered only
@@ -37673,7 +37609,8 @@ async function crewRun(kind, title, opts){
       let mail;
       try{ mail = await _connActRun('gmail.unread'); }
       catch(e){ up({status:'failed', body:'**'+String((e&&e.message)||'Mail could not be read')+'**'}); return res; }
-      const msgs=Array.isArray(mail)?mail:[];
+      if(!Array.isArray(mail)) throw new Error('The mailbox response could not be verified. No inbox summary was completed.');
+      const msgs=mail;
       if(!msgs.length){ up({status:'done', body:'**Inbox clear** - no unread emails.'}); return res; }
       up({note:'reading '+msgs.length+' emails…'});
       /* The server already returned the headers - a second round trip per
@@ -37689,12 +37626,19 @@ async function crewRun(kind, title, opts){
       up({status:'done', body:out});
     }
     else if(kind==='custom'){
-      const t=opts.detail || await showTextPromptAsync('What should AMV do? (it will actually do it and show the result)','');
+      const t=opts.detail || await showTextPromptAsync('What should AMV do? Available tools and your approvals determine what can run.','');
       if(!t){ up({status:'failed', note:'cancelled', body:''}); return res; }
       res.title=t.slice(0,60);
       up({note:'working…'});
-      const out=await aiComplete(t,'You are AMV, a highly capable autonomous assistant. Actually complete the task and present the finished result with markdown formatting. Do not say you will do it later - do it now.');
-      up({status:'done', body:out});
+      const out=await runAgentic('crew',t,{
+        maxRounds:8,
+        system:'You are AMV. Use the available tools for external actions. Never claim that text alone sent, bought, booked, deployed, connected or scheduled anything. State missing tools and permissions plainly. Distinguish prepared drafts from confirmed tool results.',
+        onStatus:note=>up({note})
+      });
+      const steps=Array.isArray(out.steps)?out.steps:[];
+      const incomplete=out.why!=='done'||steps.some(x=>!x.ok);
+      const receipt=steps.length?'\n\n**Tool results:**\n'+steps.map(x=>'- '+String(x.name)+': '+(x.ok?'reported success':'failed or refused')).join('\n'):'\n\n_No external action was verified. This is a prepared response._';
+      up({status:incomplete?'failed':steps.length?'done':'prepared', note:steps.length?'tool run finished':'response prepared', body:String(out.text||'No response was produced.')+receipt, actions:out.rendered||''});
     }
     else { up({status:'failed', body:'Unknown task.'}); }
   }catch(e){
@@ -38015,6 +37959,8 @@ async function _scheduleTask(t){
     const d = await _autoApi('/auto/create', {
       detail: t.detail,
       repeat: t.repeat || 'daily',
+      sched: t.sched || null,
+      tz: t.tz || (typeof _myTimeZone==='function' ? _myTimeZone() : 'UTC'),
       kind: t.kind || 'task',
       notify: wantEmail ? 'email' : 'app',
       firstRunAt: t.firstRunAt || null,
@@ -38603,7 +38549,6 @@ function _paletteCommands(){
     nav('go-projects','Projects','workspaces','projects workspace files'),
     nav('go-memory','Memory','memory','memory remember facts'),
     nav('go-team','Team','team','team seats members invite colleagues shared workspace collaborate'),
-    nav('go-marketplace','Marketplace','market','marketplace agents store'),
     nav('go-plans','Plans','plans','plans pricing upgrade subscription'),
     nav('go-help','Help','help','help support docs guide'),
     // Settings panes (deep links)
@@ -41142,22 +41087,7 @@ try{
           return { language:c }; } }
     } });
 
-  /* ---- Marketplace ---- */
-  R({ id:'marketplace', name:'Marketplace', auth:'none', channel:'local',
-    isLive(){ return typeof AMVMarket !== 'undefined'; },
-    actions:{
-      my_purchases:{ desc:'Everything you have bought in the marketplace.',
-        async run(){ const it=await AMVMarket.purchases();
-          if(!arr(it).length) nothing('You have not bought anything in the marketplace yet.');
-          return { count:it.length, items:it.map(x=>({ id:x.id, title:x.title, kind:x.kind, price:x.price })) }; } },
-      my_listings:{ desc:'The listings you are selling.',
-        async run(){ const it=await AMVMarket.myListings();
-          if(!arr(it).length) nothing('You have no listings up for sale yet.');
-          return { count:it.length, items:it.map(x=>({ id:x.id, title:x.title, price:x.price, sales:x.sales||0, status:x.status||'active' })) }; } },
-      my_earnings:{ desc:'Your marketplace balance and payout history.',
-        async run(){ const e=await AMVMarket.earnings();
-          return { balance:e.balance||0, lifetime:e.lifetime||0, sellerPct:e.sellerPct||80, minWithdraw:e.minWithdraw||10 }; } }
-    } });
+  // Marketplace retired. Historic receipts remain available through account export.
 
   /* ---- Crew: jobs, approvals, schedule ---- */
   R({ id:'crew', name:'Crew', auth:'none', channel:'local',
@@ -41323,7 +41253,7 @@ const AMVFinance = {
 
   async refresh(){
     const base=this._base();
-    if(!base) return { ready:false, linked:false };
+    if(!base) return { ok:false, stale:true, code:'needs_service', ready:this.ready(), linked:this.linked() };
     try{
       const r = await fetchDeadline(base + '/v1/finance/status', {
         method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
@@ -41331,7 +41261,8 @@ const AMVFinance = {
       const d = await r.json().catch(()=>({}));
       /* ok:false marks these as the LAST KNOWN values rather than a fresh
          answer, so a caller cannot mistake a failed refresh for a current one. */
-      if(!r.ok) return { ok:false, stale:true, ready:this.ready(), linked:this.linked() };
+      if(!r.ok || !d || d.ok!==true || typeof d.ready!=='boolean' || typeof d.linked!=='boolean')
+        return { ok:false, stale:true, ready:this.ready(), linked:this.linked() };
       try{ saveStr('amv_fin_linked', d.linked?'1':''); saveStr('amv_fin_ready', d.ready?'1':''); }catch(e){}
       return { ok:true, ready:!!d.ready, linked:!!d.linked, linkedAt:d.linkedAt||null };
     }catch(e){ return { ok:false, stale:true, ready:this.ready(), linked:this.linked() }; }
@@ -41793,23 +41724,10 @@ async function calendarWeek(days) {
   }
 }
 try { window.calendarWeek = calendarWeek; } catch (e) {}
-/* ============================================================
-   SPENDING CONTROLS - money AMV can spend on your behalf.
-
-   The design follows the norm every serious agent platform uses:
-   small amounts flow without interruption, larger ones get one tap,
-   and a hard ceiling can never be crossed. That is not red tape - it
-   is what keeps the payment processing alive. Unauthorised charges
-   come back as chargebacks regardless of any terms text (card network
-   rules outrank a ToS), and a high chargeback rate gets a merchant
-   dropped. Loose spending is therefore a revenue risk, not a feature.
-
-   - autoUnder: buy silently below this (the convenience case)
-   - perPurchase: never spend more than this in one go, ever
-   - monthlyCap: hard ceiling across everything, resets monthly
-   - Every attempt is logged with the outcome, so there is always a
-     record of what was authorised and by what rule.
-   ============================================================ */
+/* Spending preferences and a local display cache, not a payment authority.
+   Server-backed paths must enforce amounts and permissions independently.
+   Generic browser checkout is handed to the user; these values do not cap
+   purchases completed outside AMV. The log is not a bank statement. */
 const AMVSpend = {
   KEY:'amv_spend',
 
@@ -41837,12 +41755,15 @@ const AMVSpend = {
   /* Whether these limits are the ones the server will actually enforce.
      Without a backend the local numbers are all there is, and the screen says
      so rather than implying a ceiling nobody is holding. */
-  serverBacked(){ try{ return !!(AMV_API.base && AMV_API.token); }catch(e){ return false; } },
+  serverBacked(){ try{ return !!(AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
 
   /* The server is the authority - the browser copy is the editable one. */
   async pull(){
     if(!this.serverBacked()) return { ok:false, code:'local_only' };
     const d = await AMV_API.spendLimits();
+    if(!d || !d.limits || !Number.isFinite(d.spentThisMonth) || d.spentThisMonth < 0){
+      throw new Error('Spending could not be verified. Your saved limits have not changed.');
+    }
     const c = this.cfg();
     c.autoUnder = this._n(d.limits.autoUnder);
     c.perPurchase = this._n(d.limits.perPurchase);
@@ -41850,8 +41771,9 @@ const AMVSpend = {
     /* Including the master switch. If the account says spending is off, the
        toggle on this screen says off, because the account is what decides. */
     c.enabled = !!d.limits.enabled;
-    c.month = this._month();
-    c.spent = +d.spentThisMonth || 0;      // counted where it cannot be edited
+    c.month = /^\d{4}-\d{2}$/.test(d.period || "") ? d.period : this._month();
+    c.verifiedAt = Date.now();
+    c.spent = d.spentThisMonth;      // counted where it cannot be edited
     this.save(c);
     return { ok:true, limits:d.limits, absoluteCap:d.absoluteCap, remaining:d.remaining };
   },
@@ -41872,6 +41794,7 @@ const AMVSpend = {
                                                     monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
     }
     const d = await AMV_API.spendSet(body);
+    if(!d || !d.limits) throw new Error('The server did not confirm these limits. Nothing was changed locally.');
     const c = this.cfg();
     c.autoUnder = this._n(d.limits.autoUnder);
     c.perPurchase = this._n(d.limits.perPurchase);
@@ -41881,7 +41804,7 @@ const AMVSpend = {
     return { ok:true, limits:d.limits };
   },
 
-  _month(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); },
+  _month(){ const d = new Date(); return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0'); },
 
   /* Roll the monthly counter when the month genuinely changes.
      A missing or malformed month must NOT zero the total - otherwise clearing
@@ -42002,80 +41925,29 @@ try{
 
 /* Balance and the ceiling, side by side, because the useful question is not
    what either one is - it is which of them is smaller. */
-function _spvMoneyFacts() {
-  const c = (typeof AMVSpend !== 'undefined') ? AMVSpend.cfg() : null;
-  const linked = (() => { try { return AMVFinance.linked(); } catch (e) { return false; } })();
-  const cell = (big, small, cls) =>
-    '<div class="spv-f' + (cls ? ' ' + cls : '') + '"><div class="spv-f-b">' + escH(big) + '</div>'
-    + '<div class="spv-f-s">' + escH(small) + '</div></div>';
-  const money = (n) => (typeof _mfMoney === 'function') ? _mfMoney(n) : ('$' + (+n || 0).toFixed(2));
-  return '<div class="spv-facts spv-facts-m" id="spv-money-facts">'
-    /* The balance is a live read from the bank, so it is not printed until it
-       comes back. A number AMV made up here would be the single worst thing on
-       this screen. */
-    + cell(linked ? T('Reading\u2026') : T('Not linked'),
-           linked ? T('balance across your accounts') : T('no account linked yet'), 'spv-f-bal')
-    + cell(c ? money(c.monthlyCap) : '-', T('the most AMV may spend a month'))
-    + cell(c ? money(AMVSpend.spentThisMonth()) : '-', T('spent this month'))
-    + cell(c && c.enabled ? T('On') : T('Off'), T('AMV spending on your behalf'))
-  + '</div>';
+function _spvMoneyFacts(){
+  const c=AMVSpend.cfg(), cell=(value,label,cls)=>`<div class="spv-f ${cls}"><div class="spv-f-s">${escH(label)}</div><div class="spv-f-b">${escH(value)}</div></div>`;
+  return '<div class="spv-facts spv-facts-m" id="spv-money-facts">'+
+    cell('Checking','Bank connection','spv-f-bank')+cell('Checking','Monthly cap (USD)','spv-f-cap')+
+    cell('Checking','Spent or reserved this month (USD)','spv-f-used')+cell('Checking','Auto-spending preference','spv-f-auto')+'</div>';
 }
-
-/* Filled in once the bank answers, or replaced with why it did not. */
-async function _spvFillBalance() {
-  const z = document.querySelector('#spv-money-facts .spv-f-bal');
-  if (!z) return;
-  let linked = false;
-  try { linked = AMVFinance.linked(); } catch (e) {}
-  if (!linked) return;
-  const set = (big, small) => {
-    const b = z.querySelector('.spv-f-b'), s = z.querySelector('.spv-f-s');
-    if (b) b.textContent = big;
-    if (s) s.textContent = small;
-  };
-  try {
-    const d = await AMVFinance.accounts();
-    const list = (d && d.accounts) || [];
-    const total = list.reduce((n, a) => n + (Number(a && a.balance) || 0), 0);
-    set((typeof _mfMoney === 'function') ? _mfMoney(total) : ('$' + total.toFixed(2)),
-        list.length === 1 ? T('balance in your account')
-                          : (list.length + ' ' + T('accounts, combined balance')));
-  } catch (e) {
-    /* Said as what it is. A balance that failed to load and a balance of zero
-       are different facts, and only one of them is somebody's. */
-    set(T('Could not read'), T('your balance did not come back just now'));
-  }
+async function _spvFillBalance(){
+  const host=$('spv-money-facts');if(!host)return;
+  const set=(name,value)=>{const x=host.querySelector('.spv-f-'+name+' .spv-f-b');if(x)x.textContent=value;};
+  try{const st=await AMVFinance.refresh();if(!st||st.ok!==true||st.stale)throw new Error('Unavailable');set('bank',st.linked?'Linked':'Not linked');}
+  catch(e){set('bank','Not verified');}
+  try{
+    if(!AMVSpend.serverBacked())throw new Error('Not connected');
+    await AMVSpend.pull();const c=AMVSpend.cfg();
+    set('cap',_mfMoney(c.monthlyCap));set('used',_mfMoney(c.spent));set('auto',c.enabled?'On':'Off');
+  }catch(e){set('cap','Not verified');set('used','Not verified');set('auto','Not verified');}
 }
-
-function renderSpendView() {
-  /* SPENDING, AND ONLY SPENDING.
-
-     "Remove this from upgrade plan": Upgrade opened this page, and this page
-     opened on what Spending is, then the plan and its limits, then the money,
-     then the watchlist, then - at the bottom - the plans. Two screens in one,
-     and neither was the one somebody pressing Upgrade wanted. Now Upgrade has
-     its own screen (renderPlansView), the plan and its limits live in Plan &
-     billing, and this is the money AMV may spend for you: the balance and the
-     ceiling, the limits, the account it can see, what it is watching for. */
-  const vc = $('vc'); if (!vc) return;
-  vc.innerHTML =
-    '<div class="sv fi"><div class="vi spv">'
-      + '<div class="spv-head">'
-        + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
-        + '<p class="spv-sub">' + escH(T('What AMV may spend for you, and what it has spent. Every limit is checked on the server first.')) + '</p>'
-      + '</div>'
-      + _spvMoneyFacts()
-      /* The limits editor and the account card are the same panes Settings
-         used to render - one copy of the most consequential controls. */
-      + '<section class="spv-sec" id="spv-limits"></section>'
-      + '<section class="spv-sec" id="spv-bank"></section>'
-      + (typeof watchlistHTML === 'function' ? watchlistHTML() : '')
-    + '</div></div>';
-
-  try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
-  try { _renderInvestPane($('spv-bank')); } catch (e) {}
-  try { wireWatchlist(renderSpendView); } catch (e) {}
-  try { _spvFillBalance(); } catch (e) {}
+function renderSpendView(){
+  const vc=$('vc');if(!vc)return;
+  vc.innerHTML='<div class="sv fi"><div class="vi spv"><header class="spv-head"><span class="eyebrow">Your controls</span><h2 class="spv-t">Spending</h2><p class="spv-sub">Your account connection, budget and spending status in one place.</p></header>'+_spvMoneyFacts()+
+    '<p class="product-note">A linked bank account provides data, not permission to pay. Browser checkout requires your completion. Reserved amounts are not settled purchases. Monthly limits use UTC.</p>'+
+    '<section class="spv-sec" id="spv-limits"></section><details class="spv-bank-details"><summary>Manage linked financial account</summary><section class="spv-sec" id="spv-bank"></section></details></div></div>';
+  _renderSpendingPane($('spv-limits'),renderSpendView);_renderInvestPane($('spv-bank'));_spvFillBalance();
 }
 
 /* THE PLANS, AND NOTHING ELSE.
@@ -42459,7 +42331,7 @@ const AMVCompliance = {
     'AMV is an AI assistant. It can make mistakes - check anything important before relying on it.',
     'You are responsible for what you ask AMV to do, and for actions taken from your account, including by anyone else using your device.',
     'AMV acts on your instructions. It does not guarantee results, prices, availability, delivery, or that an action can be undone.',
-    'Anything involving money stays inside limits you set, and is only available to adults.',
+    'Money features are for adults. Limits apply only to supported AMV payment paths; they do not cap purchases you complete outside AMV.',
     'You can export or delete your data at any time.'
   ]
 };
@@ -49681,3 +49553,47 @@ function _iosInstallHint(){
   }catch(e){}
 }
 try{ window._iosInstallHint = _iosInstallHint; }catch(e){}
+/* Shared interface behavior. No new provider capability is implied by a card. */
+function fitChatComposer(el){
+  if(!el)return;
+  const viewport=(window.visualViewport&&window.visualViewport.height)||window.innerHeight||800;
+  const max=Math.max(120,Math.min(520,Math.round(viewport*0.48)));
+  el.style.height='auto';
+  const needed=Math.max(44,el.scrollHeight||44);
+  el.style.height=Math.min(needed,max)+'px';
+  el.style.maxHeight=max+'px';
+  el.style.overflowY=needed>max?'auto':'hidden';
+}
+async function shareAnswer(idx){
+  const m=getMsgs()[idx];if(!m)return;
+  const text=String(m.d||(typeof m.c==='string'?m.c:''));if(!text)return;
+  try{
+    // Share this answer's text only. No public URL, no hidden context/history.
+    if(navigator.share)await navigator.share({title:'AMV answer',text});
+    else{await navigator.clipboard.writeText(text);toast('Answer copied. No public link was created.','success');}
+  }catch(e){if(e&&e.name!=='AbortError')toast('Sharing was unavailable. Use Copy to share the answer.','info');}
+}
+function answerMore(idx,button){
+  const bar=button.closest('.mact-bar');if(!bar)return;
+  const open=bar.classList.toggle('show-secondary');
+  button.setAttribute('aria-expanded',String(open));
+}
+function _productCountryHTML(id){
+  const code=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';
+  const rows=typeof CW_WORLD_COUNTRIES!=='undefined'?CW_WORLD_COUNTRIES:[];
+  return '<div class="product-country"><label for="'+escH(id)+'">Country</label><select class="inp" id="'+escH(id)+'">'+
+    '<option value="" '+(!code?'selected':'')+'>Choose a country</option>'+
+    rows.slice().sort((a,b)=>a[1].localeCompare(b[1])).map(r=>'<option value="'+escH(r[0])+'" '+(r[0]===code?'selected':'')+'>'+escH(r[1])+'</option>').join('')+
+    '</select><span>Used for regional examples. You can change it anytime.</span></div>';
+}
+function _productCountryName(){
+  const cc=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';
+  const r=typeof _cwCountryRow==='function'?_cwCountryRow(cc):null;
+  return r?r[1]:'';
+}
+
+try{
+  window.addEventListener('resize',()=>fitChatComposer(document.getElementById('mta')),{passive:true});
+  window.visualViewport?.addEventListener('resize',()=>fitChatComposer(document.getElementById('mta')),{passive:true});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.mact-bar.show-secondary').forEach(b=>{b.classList.remove('show-secondary');b.querySelector('[data-action="answer-more"]')?.setAttribute('aria-expanded','false');});});
+}catch(e){}

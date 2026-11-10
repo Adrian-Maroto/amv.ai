@@ -65,22 +65,7 @@
           return { language:c }; } }
     } });
 
-  /* ---- Marketplace ---- */
-  R({ id:'marketplace', name:'Marketplace', auth:'none', channel:'local',
-    isLive(){ return typeof AMVMarket !== 'undefined'; },
-    actions:{
-      my_purchases:{ desc:'Everything you have bought in the marketplace.',
-        async run(){ const it=await AMVMarket.purchases();
-          if(!arr(it).length) nothing('You have not bought anything in the marketplace yet.');
-          return { count:it.length, items:it.map(x=>({ id:x.id, title:x.title, kind:x.kind, price:x.price })) }; } },
-      my_listings:{ desc:'The listings you are selling.',
-        async run(){ const it=await AMVMarket.myListings();
-          if(!arr(it).length) nothing('You have no listings up for sale yet.');
-          return { count:it.length, items:it.map(x=>({ id:x.id, title:x.title, price:x.price, sales:x.sales||0, status:x.status||'active' })) }; } },
-      my_earnings:{ desc:'Your marketplace balance and payout history.',
-        async run(){ const e=await AMVMarket.earnings();
-          return { balance:e.balance||0, lifetime:e.lifetime||0, sellerPct:e.sellerPct||80, minWithdraw:e.minWithdraw||10 }; } }
-    } });
+  // Marketplace retired. Historic receipts remain available through account export.
 
   /* ---- Crew: jobs, approvals, schedule ---- */
   R({ id:'crew', name:'Crew', auth:'none', channel:'local',

@@ -1,0 +1,36 @@
+{
+  "retiredRoutes": [
+    "/v1/market/list",
+    "/v1/market/publish",
+    "/v1/market/install",
+    "/v1/market/check",
+    "/v1/market/buy",
+    "/v1/market/mylistings",
+    "/v1/market/status",
+    "/v1/market/view",
+    "/v1/market/rate",
+    "/v1/market/review",
+    "/v1/market/message",
+    "/v1/market/threads",
+    "/v1/market/thread/read"
+  ],
+  "legacyFixtureSuites": [
+    "a-compromised-publisher-is-switched-off",
+    "a-message-reaches-the-other-person",
+    "a-payment-is-never-left-half-done",
+    "a-plugin-is-read-for-what-it-would-make-amv-do",
+    "a-rating-does-not-keep-your-address",
+    "one-persons-own-record-has-more-than-one-writer",
+    "somebody-elses-money",
+    "the-routes-nobody-tested",
+    "the-second-writer-does-not-win",
+    "two-clicks-is-not-two-purchases"
+  ],
+  "notes": [
+    "Historical Marketplace tests exercise preserved internal handlers with a test-only historical route adapter. They do not prove current public Marketplace routes work.",
+    "Current public retirement responses have their own tests.",
+    "Browser accounting fixture now navigates rather than clicks.",
+    "Spending release tests pass the original reservation key.",
+    "OCI fixture uses an immutable digest."
+  ]
+}

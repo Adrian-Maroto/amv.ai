@@ -33,7 +33,6 @@ function _paletteCommands(){
     nav('go-projects','Projects','workspaces','projects workspace files'),
     nav('go-memory','Memory','memory','memory remember facts'),
     nav('go-team','Team','team','team seats members invite colleagues shared workspace collaborate'),
-    nav('go-marketplace','Marketplace','market','marketplace agents store'),
     nav('go-plans','Plans','plans','plans pricing upgrade subscription'),
     nav('go-help','Help','help','help support docs guide'),
     // Settings panes (deep links)

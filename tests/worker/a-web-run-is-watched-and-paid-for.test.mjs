@@ -60,7 +60,7 @@ function fakeBrowser() {
   const s = { launched: 0, closed: 0, gotos: [], clicks: [], shots: 0, setBeforeGoto: null, set: [], jar: [] };
   const page = { u: 'about:blank',
     async setViewport(){}, async setRequestInterception(){}, on(){},
-    async goto(u){ if (s.setBeforeGoto === null) s.setBeforeGoto = s.set.length; s.gotos.push(u); this.u = u; }, async url(){ return this.u; },
+    async goto(u){ if (s.setBeforeGoto === null) s.setBeforeGoto = s.set.length; s.gotos.push(u); this.u = u; s.jar=[{name:'sid',value:'SESSION-SECRET-7f3a',domain:'.gyms.example.com',path:'/',httpOnly:true,secure:true,sameSite:'Lax',expires:-1},{name:'bad name',value:'x',domain:'.gyms.example.com',path:'/'}]; }, async url(){ return this.u; },
     async setCookie(...cs){ s.set.push(...cs); },
     async cookies(...urls){ s.cookieUrls = urls; return s.jar; },
     async evaluate(x){ if (typeof x === 'string' && /getBoundingClientRect/.test(x)) return { url: this.u, title: 'Gym prices', text: 'Monthly prices for the city gyms.', captcha: false,
@@ -77,7 +77,7 @@ let decisions = [], modelCalls = 0, prompts = [];
 globalThis.fetch = async (u, init) => {
   modelCalls++;
   prompts.push(String((init && init.body) || ''));
-  const d = decisions.length ? decisions.shift() : { verb: 'click', ref: 2, why: 'show more' };
+  const d = decisions.length ? decisions.shift() : { verb: 'scroll', why: 'read more', direction:'down' };
   return new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(d) }], stop_reason: 'end_turn',
     usage: { input_tokens: 3000, output_tokens: 60 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
@@ -102,7 +102,7 @@ section('Not switched on: refused before anything is held');
 section('A run is reserved for, then charged what it really used');
 {
   env.BROWSER = fakeBrowser();
-  decisions = [{ verb: 'click', ref: 1, why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }];
+  decisions = [{ verb: 'goto', url: 'https://gyms.example.com/', why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }];
   modelCalls = 0;
   const t0 = Date.now();
   const r = await run(GOAL);
@@ -133,7 +133,7 @@ section('Over the allowance, no browser is started');
 section('Live: every step with a picture of the page, then the same answer');
 {
   env.BROWSER = fakeBrowser();
-  decisions = [{ verb: 'click', ref: 1, why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }];
+  decisions = [{ verb: 'goto', url: 'https://gyms.example.com/', why: 'open prices' }, { verb: 'done', why: 'The cheapest is 29 a month.' }];
   const r = await run(GOAL, '?live=1');
   ok(r.status === 200 && /text\/event-stream/.test(r.headers.get('Content-Type') || ''), 'answered as a stream', r.headers.get('Content-Type'));
   const text = await r.text();
@@ -141,7 +141,7 @@ section('Live: every step with a picture of the page, then the same answer');
   const evs = text.split('\n\n').filter(Boolean).map(b => JSON.parse(b.replace(/^data: /, '')));
   const steps = evs.filter(e => e.type === 'step');
   const end = evs[evs.length - 1];
-  ok(steps.length >= 2 && steps[0].verb === 'open' && steps[1].verb === 'click', 'the page as it opened, then the click', steps.map(s => s.verb));
+  ok(steps.length >= 2 && steps[0].verb === 'open' && steps[1].verb === 'goto', 'the page as it opened, then read-only navigation', steps.map(s => s.verb));
   ok(steps.every(s => Buffer.from(s.shot, 'base64').toString().startsWith('jpeg-of-step-')) && steps[1].url === 'https://gyms.example.com/', 'each with a picture of the page and where it was', steps.map(s => s.url));
   ok(end && end.type === 'end' && end.status === 200 && end.ok === true && /29 a month/.test(end.result), 'ending with exactly what the plain call returns', end);
 }
@@ -151,7 +151,7 @@ section('Signed in once, signed in the next time - the sign-in going back to the
   vals.clear();
   const logs = []; const realLog = console.log; console.log = (...a) => logs.push(a.map(String).join(' '));
   env.BROWSER = fakeBrowser();
-  decisions = [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Signed in and found it.' }];
+  decisions = [{ verb: 'goto', url: 'https://gyms.example.com/', why: 'read existing session' }, { verb: 'done', why: 'Signed in and found it.' }];
   prompts = [];
   const r = await run(GOAL);
   const d = await r.json();
@@ -179,7 +179,7 @@ section('Signed in once, signed in the next time - the sign-in going back to the
 section('Live mode carries the sign-in back too');
 {
   env.BROWSER = fakeBrowser();
-  decisions = [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Done.' }];
+  decisions = [{ verb: 'goto', url: 'https://gyms.example.com/', why: 'read existing session' }, { verb: 'done', why: 'Done.' }];
   const r = await run(GOAL, '?live=1');
   const text = await r.text();
   await Promise.all(pending.splice(0));

@@ -101,27 +101,18 @@ tag = "v1"
 new_sqlite_classes = ["AMVCounter"]
 
 # ── THIS is what lets Crew operate websites that have no API ──
-# Browser Rendering gives the Worker a real headless browser, so the web agent
-# (/v1/browser/run) can navigate, fill forms, click and submit as the user - the
-# capability behind "do it on any website".
+# Browser Run provides a hosted browser when the BROWSER binding is enabled.
+# This audit patch hands generic DOM writes/checkout to the user; enabling a
+# binding does not restore unrestricted autonomous checkout or verify prices.
 #
-# Requires the Workers PAID plan. Uncomment to enable; the Worker feature-detects
-# env.BROWSER, so while this is commented out web automation degrades honestly
-# ("not enabled on this deployment") instead of failing at runtime.
+# Available on Workers Free and Paid. As checked 2026-11-09, Free includes
+# 10 minutes/day and 3 concurrent browsers. Paid has different included usage
+# and overages. Check current terms before enabling billable services:
+# https://developers.cloudflare.com/browser-run/pricing/
 #
-# This used to say "Nothing else changes when you turn it on", and that was
-# false: it also needs nodejs_compat, which is set at the top of this file now.
-# Without it the driver's own import of node:buffer fails and the feature is
-# refused for ever with a message blaming npm. The flag is on, so uncommenting
-# these two lines really is all there is to it - but the sentence only became
-# true when the flag was added, not when it was written.
-#
-# It was ALSO held back on four security findings, and those are now closed:
-#   - a page could get a saved password typed into its own form (AMV-001)
-#   - a redirect reached an internal address before anything checked (AMV-002)
-#   - the spending ceiling was optional to the caller and charged too early (AMV-036)
-# A run also refuses to start at all if the browser driver cannot block requests
-# before they are made, so turning this on cannot quietly get the weaker version.
+# Leave disabled until the driver, nodejs_compat, egress controls, model key,
+# provider smoke tests, cost controls and human handoff are verified together.
+# A paid plan or an uncommented binding is not a production-readiness test.
 #
 # [browser]
 # binding = "BROWSER"
@@ -188,7 +179,9 @@ bucket_name = "amv-backups"
 # (src/worker/15a-job-queue.js). Create both queues once, then uncomment:
 #   npx wrangler queues create amv-jobs
 #   npx wrangler queues create amv-jobs-dead
-# Queues are on Workers Paid: about 40 US cents per million operations.
+# Queues are available on Free and Paid, with different quotas and retention.
+# https://developers.cloudflare.com/queues/platform/pricing/
+# Verify the quota, retention and dead-letter policy before enabling a workload.
 #
 # [[queues.producers]]
 # binding = "AMV_JOBS"

@@ -2113,7 +2113,7 @@ function _cwForYouHead(name, flag, n, ranked){
   /* Says how many it shows - five either way: the country's ranked list, or
      AMV's own five on the fallback (no country data, or no server to ask). */
   const k = n || 5;
-  const head = k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
+  const head = ranked ? 'Most started on AMV in' : 'Suggested for';
   /* Which order this is, said rather than implied: counted once enough people
      in the country have started jobs, researched until then. */
   const counted = !!ranked && _cwRankedHere(_cwCountryGuess());
@@ -2193,7 +2193,9 @@ function _cwGo(page){
    the country it was ranked for, and without this the hundred under the new
    country's name would have been the old country's hundred. */
 function _cwSetCountry(cc){
-  _cwCountry = String(cc || '').toUpperCase();
+  const code = String(cc || '').toUpperCase();
+  if(!_cwCountryRow(code)) return false;
+  _cwCountry = code;
   try{ saveStr('amv_cw_country', _cwCountry); }catch(e){}
   _cwShowcaseCache = null;
   try{ _cwLoadLocal(_cwCountry); }catch(e){}
@@ -2336,7 +2338,7 @@ function _cwCpListHTML(cc){
   const row = _cwCountryRow(cc), name = row ? row[1] : '';
   const st = _cwLocalState[cc] || 'loading';
   if(st === 'loading'){
-    return `<div class="sec-head"><h3>${escH(T('The 100 most used in'))} ${escH(name)}</h3></div>
+    return `<div class="sec-head"><h3>${escH(T('Everyday jobs in'))} ${escH(name)}</h3></div>
       <div class="cw-jobs-grid cw-cat-grid" aria-busy="true">${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(6)}</div>`;
   }
   const list = _cwCountryHundred(cc);
@@ -2355,7 +2357,7 @@ function _cwCpListHTML(cc){
        never a generated stand-in dressed as written for it. */
     : !(_cwLocalJobs(cc) || []).length
       ? `<p class="cw-foryou-note">${escH(T('Nothing is written only for'))} ${escH(name)} ${escH(T('yet - the jobs below are the everyday ones, and each runs there and answers for'))} ${escH(name)}.</p>` : '';
-  return `<div class="sec-head"><h3>${escH(T('The'))} ${list.length} ${escH(T('most used in'))} ${escH(name)}</h3>
+  return `<div class="sec-head"><h3>${escH(T('The'))} ${list.length} ${escH(T('everyday jobs in'))} ${escH(name)}</h3>
       <span class="sec-sub">${escH(T('After the five above. Every one answers for'))} ${escH(name)} ${escH(T('- its sites, prices and rules - and runs with AMV closed where it says so.'))}</span></div>
     ${note}
     <div class="cw-chips" role="group" aria-label="${escH(T('Filter jobs by category'))}">${chip('all', 'All', list.length)}${cats.map(c => chip(c, c, list.filter(j => j.cat === c).length)).join('')}${other.length ? chip('More', 'More', other.length) : ''}</div>

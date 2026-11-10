@@ -473,6 +473,7 @@ async function browserRun(request, env, ctx, emit, out){
      same month-to-date total, both find room under the cap, and both go. This
      holds the money in one atomic step, and the run owns giving it back. */
   let heldSpend = 0;
+  let heldLedgerKey = '';
   if(declaredSpend > 0){
     const ent = await getEntitlement(env, user.email).catch(() => null);
     /* Against the limits stored on the ACCOUNT, not against whatever the client
@@ -485,13 +486,14 @@ async function browserRun(request, env, ctx, emit, out){
       return json(Object.assign({ ok:false }, booked.refused), 400);
     }
     heldSpend = booked.reserved || 0;
+    heldLedgerKey = booked.ledgerKey || '';
     audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!approvedFp, plan:(ent&&ent.plan)||'' });
   }
   /* Whatever happens below, money booked for a purchase that never happened
      goes back. Called from exactly one place so it cannot be forgotten on a
      branch, and it is idempotent because it zeroes what it holds. */
   const releaseHeld = async () => {
-    if(heldSpend > 0){ const h = heldSpend; heldSpend = 0; await _spendRelease(env, user.email, h); }
+    if(heldSpend > 0){ const h = heldSpend; await _spendRelease(env, user.email, h, heldLedgerKey); heldSpend = 0; }
   };
 
   /* THE RUN ITSELF IS PAID FOR. See WEB_STEP_EST_IN_TOK. After every refusal
@@ -685,6 +687,15 @@ async function browserRun(request, env, ctx, emit, out){
         + '\n</PAGE>\n\nHistory: ' + trace.map(t => t.verb + (t.why ? '(' + t.why + ')' : '')).join(' -> ');
 
       const decision = await _webAskModel(env, sys, prompt, meter);
+      if(_webNeedsHumanCommit(decision && decision.verb)){
+        trace.push({ step, verb:'handoff', why:'This browser step needs human completion.' });
+        const take = await handOver('human_commit', obs.url);
+        if(!take) await browser.close();
+        return json({ ok:false, code:'human_commit_required', url:obs.url, trace,
+          need:'Complete this step yourself, or use a supported account connection.',
+          message:'Browser checkout and other page changes are not automated. A spending limit is not proof of the final charge.',
+          ...(take ? { takeover:take, takeoverForMs:WEB_HOLD_MS } : {}) });
+      }
       // Resolve the label of the element the model chose, from OUR observation
       // (not from the model), so the consequence check cannot be talked around.
       const target = (decision && decision.ref)
@@ -762,7 +773,7 @@ async function browserRun(request, env, ctx, emit, out){
 
       const sel = a.ref ? '[data-amv-ref="' + String(a.ref).replace(/[^0-9]/g,'') + '"]' : null;
       if(v.verb === 'goto') await page.goto(a.url, { waitUntil:'domcontentloaded', timeout:20000 });
-      else if(v.verb === 'click' && sel) await page.click(sel).catch(() => {});
+      else if(v.verb === 'click' && sel) await page.click(sel);
       else if(v.verb === 'type' && sel){
         /* AMV-001. The model put the cursor here; everything about WHAT goes in
            is decided by _webTypePlan, from our own observation of the field. */
@@ -772,7 +783,7 @@ async function browserRun(request, env, ctx, emit, out){
 
         if(plan.do === 'fill'){
           secretsUsed.add(plan.key);
-          await page.type(sel, String(vault[plan.key])).catch(() => {});
+          await page.type(sel, String(vault[plan.key]));
           /* No name and no value. The value is in `secrets`, so _webRedact
              scrubs it from everything else that leaves here. */
           trace.push({ step, verb:'filled', ref:a.ref, why:'a saved detail' });
@@ -804,12 +815,12 @@ async function browserRun(request, env, ctx, emit, out){
              through. */
           trace.push({ step, verb:'skipped', ref:a.ref, why:'a password box with nothing of yours for it' });
         }
-        else await page.type(sel, plan.text).catch(() => {});
+        else await page.type(sel, plan.text);
       }
-      else if(v.verb === 'select' && sel) await page.select(sel, String(a.text || '')).catch(() => {});
-      else if(v.verb === 'press') await page.keyboard.press(String(a.text || 'Enter')).catch(() => {});
+      else if(v.verb === 'select' && sel) await page.select(sel, String(a.text || ''));
+      else if(v.verb === 'press') await page.keyboard.press(String(a.text || 'Enter'));
       else if(v.verb === 'scroll') await page.evaluate('window.scrollBy(0, 800)').catch(() => {});
-      else if(v.verb === 'submit' && sel) await page.click(sel).catch(() => {});
+      else if(v.verb === 'submit' && sel) await page.click(sel);
       await new Promise(r => setTimeout(r, WEB_SETTLE_MS));
       if(out) await out.collect();
       { const last = trace[trace.length - 1] || {}; await shot(step + 1, last.verb || v.verb, last.why || ''); }

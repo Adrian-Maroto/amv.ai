@@ -86,8 +86,12 @@ async function spendGet(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
   const limits = await _spendLimits(env, user.email);
-  const spent = (await counter(env, `spendmo:${user.email}:${monthKey()}`, { op:'get' })).value || 0;
-  return json({ ok:true, limits, spentThisMonth: Math.round(spent * 100) / 100,
+  const period = monthKey();
+  const state = await counter(env, `spendmo:${user.email}:${period}`, { op:'get' });
+  if(!state || state.unavailable || state.error || !Number.isFinite(state.value) || state.value < 0)
+    return json({ ok:false, error:'Spending totals are temporarily unavailable.', code:'spend_unavailable' }, 503);
+  const spent = state.value;
+  return json({ ok:true, limits, period, accounting:'spent_and_reserved', spentThisMonth: Math.round(spent * 100) / 100,
                 remaining: Math.max(0, limits.monthlyCap - spent), absoluteCap: WEB_ABSOLUTE_SPEND_CAP });
 }
 
@@ -132,8 +136,9 @@ async function spendSet(request, env){
 
    Now: reserved atomically before anything is launched, released if the run
    never reaches a purchase, and a money-shaped action refused outright unless a
-   reservation is holding money for it. Under-declaring buys a smaller ceiling,
-   not a bigger one, and declaring nothing buys none. */
+   reservation is holding money for it. Reservations alone do not verify a merchant charge. Generic browser writes
+   are now handed to the user by _webNeedsHumanCommit; these label heuristics
+   are retained for classification, not used as a universal purchase boundary. */
 
 /* Money-shaped, as opposed to merely irreversible. Sending a message is
    consequential and costs nothing; placing an order is both. */
@@ -210,8 +215,9 @@ async function _spendReserve(env, email, amount, clientLimit){
 
   const L = await _spendLimits(env, email);
   const cap = +L.monthlyCap || 0;
-  const r = await _reserveUSD(env, _spendMonthKey(email), amt, cap, SPEND_MONTH_TTL_MS);
-  if(r.allowed) return { ok:true, reserved: amt };
+  const ledgerKey = _spendMonthKey(email);
+  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS);
+  if(r.allowed) return { ok:true, reserved: amt, ledgerKey };
 
   /* AMV-032: a counter that could not answer is not a counter that said yes.
      Refusing to spend somebody's money because the ledger is unreachable is the
@@ -230,8 +236,21 @@ async function _spendReserve(env, email, amount, clientLimit){
 
 /* Give it back. A run that never reached a purchase must not have eaten the
    month, and a run that failed to start must not have eaten anything. */
-async function _spendRelease(env, email, amount){
-  await _releaseUSD(env, _spendMonthKey(email), +amount || 0, SPEND_MONTH_TTL_MS);
+async function _spendRelease(env, email, amount, ledgerKey){
+  // Release only the bucket reserved by THIS run, including across midnight UTC.
+  const prefix = `spendmo:${email}:`;
+  if(typeof ledgerKey !== 'string' || !ledgerKey.startsWith(prefix) ||
+     !/^\d{4}-(0[1-9]|1[0-2])$/.test(ledgerKey.slice(prefix.length)))
+    throw new Error('Missing or invalid original spending reservation key');
+  if(!Number.isFinite(amount) || amount <= 0) return;
+  await _releaseUSD(env, ledgerKey, amount, SPEND_MONTH_TTL_MS);
+}
+
+// Generic browser controls do not attest price, currency, or payment settlement.
+// Do not let language, button labels, approvals or a client-declared amount
+// elevate them into an autonomous payment or state-changing capability.
+function _webNeedsHumanCommit(verb){
+  return ['click','type','select','press','submit'].includes(String(verb || '').toLowerCase());
 }
 
 /* Kept for the callers that spend outside a reservation. Inside browserRun the

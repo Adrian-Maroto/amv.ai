@@ -516,7 +516,7 @@ function renderBillingView(targetEl){
          opening line; it is true, it is not what somebody came here to read,
          and it is still on the screen at the bottom where the rest of the
          payment-security detail lives. */
-      '<h2 class="bill-h">Billing</h2>'+
+      '<h2 class="bill-h">Manage subscription</h2><p class="product-note">Your plan, renewal and billing controls in one place.</p>'+
       /* ONE CARD, NOT TWO THAT DISAGREE ABOUT NOTHING.
 
          Reported as looking horrible and unprofessional, and the first thing
@@ -554,7 +554,7 @@ function renderBillingView(targetEl){
              price rendered the same word again on the same line - the exact
              duplication this page was rebuilt to remove, reintroduced at one
              word. A free plan has no price to state, so it states none. */
-          (plan==='free'?'':'<div class="bill-sum-p">$'+P.price+' <span>/ month</span></div>')+
+          (plan==='free'?'':'<div class="bill-sum-p">'+escH(rn && rn.interval==='year' ? 'Annual billing' : 'Paid plan')+'</div>')+
           /* The way to another plan sits beside the one you are on, as it does
              in every billing screen people already know. */
           '<button type="button" class="btn '+(plan==='free'?'bp':'bs')+' bill-change" data-stab="plans">'+escH(plan==='free'?T('Upgrade plan'):T('Change plan'))+'</button>'+
@@ -562,7 +562,7 @@ function renderBillingView(targetEl){
         '<div class="bill-sum-sub">'+
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
           (plan==='free'
-            ? 'You are not paying for anything. Nothing is on file and nothing renews.'
+            ? 'Free plan. Open your billing provider for any historical invoices or other subscriptions.'
             /* "renews" and "ends" are opposite facts and the date alone
                cannot tell them apart. Somebody who has switched auto-renew off
                is looking for exactly this line to confirm it. */

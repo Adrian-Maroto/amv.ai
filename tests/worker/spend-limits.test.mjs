@@ -186,7 +186,7 @@ section('Money held for a purchase that did not happen goes back');
   const blockedMeanwhile = await W._spendReserve(env, 'a@x.com', 60, 0);
   ok(blockedMeanwhile.refused, 'and while it is held nobody else can spend it', blockedMeanwhile.refused && blockedMeanwhile.refused.code);
 
-  await W._spendRelease(env, 'a@x.com', 60);
+  await W._spendRelease(env, 'a@x.com', 60, held.ledgerKey);
   const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), env)).json();
   ok(d.spentThisMonth === 0, 'a run that bought nothing gives the month back', d.spentThisMonth);
   const after = await W._spendReserve(env, 'a@x.com', 60, 0);

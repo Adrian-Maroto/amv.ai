@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* NINE RECORDS, ONE SHAPE, NINE DIFFERENT THINGS TO LOSE.
 
    A full inventory of every record kind and every function that writes it found
@@ -30,7 +31,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'secondwriter.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB, setEntitlement, _withKind, _withKV, _abuseRecord, ABUSE_DISPUTE_BLOCK, MKT_VIEW_FOLD };\n');

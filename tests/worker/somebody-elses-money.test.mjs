@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* THE MARKETPLACE MOVES MONEY THAT IS NOT AMV'S.
 
    A plan is a customer paying AMV. A marketplace sale is a stranger paying
@@ -26,7 +27,7 @@ import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'market.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB, _walletAdopt, _wallet, _creditSale, _reverseSale, MARKET_PLATFORM_FEE, MARKET_MIN_WITHDRAW };\n');

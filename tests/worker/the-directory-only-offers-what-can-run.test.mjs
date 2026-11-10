@@ -74,7 +74,7 @@ section('Only what the bridge can actually start comes back');
     server({ id: 'a', pkgs: npmPkg('@x/a') }),
     server({ id: 'remote-only', remotes: [{ type: 'streamable-http', url: 'https://x/mcp' }] }),
     server({ id: 'b', pkgs: [{ registryType: 'pypi', identifier: 'py-b', version: '0.3', transport: { type: 'stdio' } }] }),
-    server({ id: 'c', pkgs: [{ registryType: 'oci', identifier: 'ghcr.io/x/c', transport: { type: 'stdio' } }] }),
+    server({ id: 'c', pkgs: [{ registryType: 'oci', identifier: 'ghcr.io/x/c@sha256:'+'a'.repeat(64), version:'1.0.0', transport: { type: 'stdio' } }] }),
     server({ id: 'nuget-one', pkgs: [{ registryType: 'nuget', identifier: 'N', transport: { type: 'stdio' } }] }),
     server({ id: 'http-transport', pkgs: [{ registryType: 'npm', identifier: '@x/h', transport: { type: 'streamable-http' } }] }),
   ], metadata: {} }];

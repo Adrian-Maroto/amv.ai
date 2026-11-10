@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* A COMPROMISED PUBLISHER IS SWITCHED OFF, AND NOTHING ELSE IS (Nov 1 audit OPS-008).
 
    The operator takes a listing down and/or suspends its seller, with a
@@ -14,7 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'takedown.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { issueTokens, DB };\n');
+writeFileSync(harness, legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8')) + '\nexport { issueTokens, DB };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();

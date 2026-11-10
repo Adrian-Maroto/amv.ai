@@ -1660,10 +1660,10 @@ async function _callAITurn(msgs, _opts) {
            rather than at a known action. */
         if(!_offeredTools.has(String(t.name || '')) && _toolPool.has(String(t.name || ''))){
           /* It exists, but is not switched on: the way to it is tool_search. */
-          out = { text:'"' + String(t.name || '').slice(0, 60) + '" is not switched on yet. Call tool_search with what you need to do; it switches the matching tools on, then call this again.', render:null };
+          out = { ok:false, text:'"' + String(t.name || '').slice(0, 60) + '" is not switched on yet. Call tool_search with what you need to do; it switches the matching tools on, then call this again.', render:null };
         }
         else if(!_offeredTools.has(String(t.name || ''))){
-          out = { text:'There is no tool called "' + String(t.name || '').slice(0, 60)
+          out = { ok:false, text:'There is no tool called "' + String(t.name || '').slice(0, 60)
                   + '" available in this conversation right now. Available: '
                   + ([..._offeredTools].join(', ') || 'none')
                   + '. Use one of those, or tell the user what you cannot do.', render:null };
@@ -1671,21 +1671,21 @@ async function _callAITurn(msgs, _opts) {
         }
         /* A command on the person's own never-run list is answered here,
            before they are asked to approve something that would be refused. */
-        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
+        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { ok:false, text: nr, render:null }; }
         /* THE SCREEN. Its own refusals and its own question: seeing is asked
            once per request, every action one by one with the place marked. */
         if(!out && isComputerTool(t.name)){
           const cr = computerRefusal(t.name, input);
-          if(cr) out = { text: cr, render:null };
+          if(cr) out = { ok:false, text: cr, render:null };
           else if(!(await computerConsent(t.name, input))){
-            out = { text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
+            out = { ok:false, text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
             try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
           } else out = await runComputerTool(t.name, input);
         }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
-            out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
+            out = { ok:false, text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
             try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
           }
         }
@@ -1695,8 +1695,8 @@ async function _callAITurn(msgs, _opts) {
         });
         /* A screenshot's picture stays in this tab (see computerWireResults);
            what is saved with the chat says one was taken. */
-        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), _shot:true}); }
-        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), is_error:out.ok===false, _shot:true}); }
+        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), is_error:out.ok===false});
         if(out.render) renderedExtras += out.render;
       }
       // Record what actually happened so it survives re-render and reload.
@@ -2276,7 +2276,7 @@ function bindChatEvents() {
      confirming Enter after composition has formally ended. */
   on(ta,'keydown',e=>{ if(e.isComposing||e.keyCode===229) return; if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{
-    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+    fitChatComposer(ta);
     /* Debounced: a keystroke is not worth a write, and losing the last 400ms of
        typing is not the failure this is here to prevent. */
     try{ clearTimeout(_draftTimer); }catch(e){}
@@ -2313,6 +2313,8 @@ function bindChatEvents() {
     else if(action==='retry-ai') retryLastAI();
     else if(action==='continue-ai') continueLastAI();
     else if(action==='speak') speakMessage(idx);
+    else if(action==='share-answer') shareAnswer(idx);
+    else if(action==='answer-more') answerMore(idx,btn);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
        that plan - being sent to a row of four after pressing a button with a
        plan's name on it is the nudge forgetting what it just offered. */
@@ -2950,10 +2952,12 @@ function renderChatMsgs() {
         '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="'+escH(T('Read aloud'))+'" aria-label="'+escH(T('Read aloud'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
-        '<button class="mact" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
-        '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
-        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
-        (i===msgs.length-1?'<button class="mact" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+        '<button class="mact" data-action="share-answer" data-idx="'+i+'" title="Share answer" aria-label="Share answer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V3m-4 4 4-4 4 4M5 12v8h14v-8"/></svg></button>'+
+        '<button class="mact" data-action="answer-more" data-idx="'+i+'" title="More actions" aria-label="More actions" aria-expanded="false" aria-haspopup="menu"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>'+
+        '<button class="mact mact-secondary" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
+        '<button class="mact mact-secondary" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
+        '<button class="mact mact-react mact-secondary" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        (i===msgs.length-1?'<button class="mact mact-secondary" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
       _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
@@ -3085,7 +3089,7 @@ function _amvBeginRec(){
   };
   _voiceRec.onresult=e=>{
     const t=Array.from(e.results).map(r=>r[0].transcript).join('');
-    const ta=$('mta'); if(ta){ ta.value=t; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
+    const ta=$('mta'); if(ta){ ta.value=t; fitChatComposer(ta); }
   };
   _voiceRec.onend=()=>{
     _isRecording=false;

@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* THE WEBHOOK IS THE ONLY THING STANDING BETWEEN PAYING AND GETTING IT.
 
    Revocation was deliberately made not to depend on a single delivery, because
@@ -25,7 +26,7 @@ import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'reconcile.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB, reconcilePayments, _pendStart, PEND_KIND, PEND_GRACE_MS };\n');

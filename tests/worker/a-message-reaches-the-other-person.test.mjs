@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* (Every index here goes through a guard: this file's whole job is to report
    WHICH link of the delivery is broken, and a TypeError on a missing thread
    says none of that while silently skipping every assertion after it.)
@@ -39,7 +40,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'inbox.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB };\n');

@@ -128,6 +128,7 @@ async function connectorDirectory(request, env) {
   const gate = await guardAction(env, `connectors:${ip}`, 60, 1500, 'directory searches');
   if (gate) return gate;
   const q = _mcpRegText(u.searchParams.get('q'), 60);
+  if(q && [...q].length < 3) return json({ok:false,code:'search_too_short',error:'Use at least three characters to search the connector directory.'}, 400);
   const cursor = _mcpRegText(u.searchParams.get('cursor'), 200);
   const want = Math.max(1, Math.min(MCPREG_MAX, parseInt(u.searchParams.get('limit'), 10) || 24));
   /* THE KV DIRECTLY, AND THIS IS THE ONE PLACE THAT IS RIGHT.
@@ -142,7 +143,7 @@ async function connectorDirectory(request, env) {
      Named `..._CACHE_KEY` on purpose. A GET that writes is refused by
      a-link-is-not-a-command unless the thing it writes is a named cache key,
      and that rule is the reason this endpoint is allowed to be a GET at all. */
-  const MCPREG_CACHE_KEY = 'mcpcat:' + encodeURIComponent(q) + ':' + encodeURIComponent(cursor) + ':' + want;
+  const MCPREG_CACHE_KEY = 'mcpcat:v2-pinned:' + encodeURIComponent(q) + ':' + encodeURIComponent(cursor) + ':' + want;
   try {
     const hit = await env.AMV_KV.get(MCPREG_CACHE_KEY);
     if (hit) return json(JSON.parse(hit), 200, { 'Cache-Control': 'public, max-age=1800' });
@@ -159,7 +160,9 @@ async function connectorDirectory(request, env) {
        cannot walk the whole registry. */
     while (out.length < want && read < MCPREG_PAGES) {
       read++;
-      const url = MCPREG_BASE + '?limit=100&version=latest'
+      // Request only the remaining slots. Advancing past an oversized upstream
+      // page used to discard every accepted entry after the visible page filled.
+      const url = MCPREG_BASE + '?limit=' + (want-out.length) + '&version=latest'
         + (q ? '&search=' + encodeURIComponent(q) : '')
         + (next ? '&cursor=' + encodeURIComponent(next) : '');
       /* Through the wrapper, not a bare fetch. `fetchDeadline` is what every
@@ -204,7 +207,7 @@ async function connectorDirectory(request, env) {
                   code: 'directory_unreachable' });
   }
 
-  const body = { ok: true, servers: out, cursor: out.length >= want ? next : '', q };
+  const body = { ok: true, servers: out, cursor: next || '', q };
   try { await env.AMV_KV.put(MCPREG_CACHE_KEY, JSON.stringify(body), { expirationTtl: MCPREG_TTL }); } catch (e) {}
   return json(body, 200, { 'Cache-Control': 'public, max-age=1800' });
 }

@@ -15,9 +15,9 @@
    every server anybody has registered, with its real package name, its real
    version and the environment variables it actually needs, and it is the same
    list the rest of the ecosystem uses. AMV asks it, filters it to the ones its
-   own bridge can actually run, and hands back a command that works. An entry
+   own bridge can actually run, and proposes pinned commands for explicit human review. An entry
    AMV cannot start is not shown, because the promise of this screen is that
-   what is on it connects.
+   entries are metadata, not verified working integrations.
 
    THROUGH THE WORKER RATHER THAN FROM THE PAGE, for three reasons and all of
    them matter: the page's connect-src does not include the registry and is not
@@ -30,19 +30,27 @@
    catalogue of what a product can do is the thing somebody reads BEFORE they
    have an account. Nothing here is keyed to a caller and nothing is stored
    against one. */
-const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0/servers';
+const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0.1/servers';
 const MCPREG_TTL    = 6 * 3600;          // seconds a mapped page stays in KV
 const MCPREG_MAX    = 50;                // entries per answer
 const MCPREG_PAGES  = 6;                 // upstream pages read to fill one answer
 const MCPREG_TIMEOUT = 8000;
 /* What the bridge can actually start. `dnx` and anything else is left out
    rather than guessed at - a command AMV cannot run has no business being
-   offered, and the filter is the whole reason this directory is trustworthy. */
+   offered, Filtering does not establish publisher trust or runtime safety. */
 const MCPREG_RUNTIME = {
   npm:  (id, ver) => ({ command: 'npx',    args: ['-y', ver ? id + '@' + ver : id] }),
-  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '@' + ver : id] }),
+  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '==' + ver : id] }),
   oci:  (id)      => ({ command: 'docker', args: ['run', '-i', '--rm', id] }),
 };
+function _mcpRegPackageSafe(registry,id,ver){
+  if(registry === 'npm') return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(id) &&
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(ver);
+  if(registry === 'pypi') return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) && /^\d+(?:\.\d+)*(?:(?:a|b|rc)\d+|\.post\d+|\.dev\d+)?$/.test(ver);
+  // OCI accepts only a content-addressed image, never a mutable latest tag.
+  if(registry === 'oci') return /^[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}$/.test(id);
+  return false;
+}
 function _mcpRegText(v, max) {
   /* Registry text is written by whoever published the server, so it is treated
      as hostile input: printable characters only, then a hard length. It is
@@ -62,15 +70,25 @@ function _mcpRegText(v, max) {
    one would be a button that cannot work. */
 function _mcpRegMap(rec) {
   const s = (rec && rec.server) || {};
+  const official=rec && rec._meta && rec._meta['io.modelcontextprotocol.registry/official'];
+  const status=(official && official.status) || s.status;
+  if(status && status !== 'active') return null;
   const pkgs = Array.isArray(s.packages) ? s.packages : [];
   for (const p of pkgs) {
     const t = (p && p.transport && p.transport.type) || 'stdio';
     if (t !== 'stdio') continue;
-    const make = MCPREG_RUNTIME[String((p && p.registryType) || '').toLowerCase()];
-    if (!make) continue;
+    const registry = String((p && p.registryType) || '').toLowerCase();
+    if(!Object.prototype.hasOwnProperty.call(MCPREG_RUNTIME, registry)) continue;
+    const make = MCPREG_RUNTIME[registry];
     const id = _mcpRegText(p.identifier, 140);
-    if (!id) continue;
-    const run = make(id, _mcpRegText(p.version, 40));
+    const ver = _mcpRegText(p.version, 80);
+    // Reject, rather than truncate or reinterpret, publisher-controlled commands.
+    if(id !== p.identifier || ver !== p.version || !_mcpRegPackageSafe(registry,id,ver)) continue;
+    if((p.runtimeArguments || []).length || (p.packageArguments || []).length) continue;
+    const vars = Array.isArray(p.environmentVariables) ? p.environmentVariables : [];
+    if(vars.length > 8 || vars.some(e => !e || !/^[A-Z][A-Z0-9_]{0,59}$/.test(e.name || '') ||
+      /^(NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONHOME|PATH|HOME|LD_.*|DYLD_.*|UV_.*|PIP_.*|NPM_CONFIG_.*|DOCKER_.*)$/i.test(e.name))) continue;
+    const run = make(id, ver);
     /* Runtime arguments the publisher declared - `-y` and friends. Positional
        values only: a named argument needs a value from the person, and this
        screen does not ask for one, so a half-filled command is not offered. */
@@ -102,6 +120,8 @@ function _mcpRegMap(rec) {
       desc: _mcpRegText(s.description, 300),
       version: _mcpRegText(s.version, 40),
       command: run.command,
+      reviewStatus: 'unreviewed',
+      executionWarning: 'Publisher metadata only. Review the package and permissions before installing.',
       args,
       env,
     };

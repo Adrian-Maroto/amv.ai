@@ -47,6 +47,16 @@ const AUTH = new RegExp(
 
 /* Public on purpose, each with the reason it has to be. */
 const PUBLIC = {
+  '/v1/market/publish': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/install': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/buy': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/mylistings': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/status': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/rate': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/review': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/message': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/threads': 'retired feature: fixed 410 response, no account data or mutation',
+  '/v1/market/thread/read': 'retired feature: fixed 410 response, no account data or mutation',
   '/auth/signup':        'creating an account is how you get credentials',
   '/auth/login':         'signing in is how you get credentials',
   '/auth/google':        'the same, through Google',

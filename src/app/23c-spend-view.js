@@ -24,80 +24,29 @@
 
 /* Balance and the ceiling, side by side, because the useful question is not
    what either one is - it is which of them is smaller. */
-function _spvMoneyFacts() {
-  const c = (typeof AMVSpend !== 'undefined') ? AMVSpend.cfg() : null;
-  const linked = (() => { try { return AMVFinance.linked(); } catch (e) { return false; } })();
-  const cell = (big, small, cls) =>
-    '<div class="spv-f' + (cls ? ' ' + cls : '') + '"><div class="spv-f-b">' + escH(big) + '</div>'
-    + '<div class="spv-f-s">' + escH(small) + '</div></div>';
-  const money = (n) => (typeof _mfMoney === 'function') ? _mfMoney(n) : ('$' + (+n || 0).toFixed(2));
-  return '<div class="spv-facts spv-facts-m" id="spv-money-facts">'
-    /* The balance is a live read from the bank, so it is not printed until it
-       comes back. A number AMV made up here would be the single worst thing on
-       this screen. */
-    + cell(linked ? T('Reading\u2026') : T('Not linked'),
-           linked ? T('balance across your accounts') : T('no account linked yet'), 'spv-f-bal')
-    + cell(c ? money(c.monthlyCap) : '-', T('the most AMV may spend a month'))
-    + cell(c ? money(AMVSpend.spentThisMonth()) : '-', T('spent this month'))
-    + cell(c && c.enabled ? T('On') : T('Off'), T('AMV spending on your behalf'))
-  + '</div>';
+function _spvMoneyFacts(){
+  const c=AMVSpend.cfg(), cell=(value,label,cls)=>`<div class="spv-f ${cls}"><div class="spv-f-s">${escH(label)}</div><div class="spv-f-b">${escH(value)}</div></div>`;
+  return '<div class="spv-facts spv-facts-m" id="spv-money-facts">'+
+    cell('Checking','Bank connection','spv-f-bank')+cell('Checking','Monthly cap (USD)','spv-f-cap')+
+    cell('Checking','Spent or reserved this month (USD)','spv-f-used')+cell('Checking','Auto-spending preference','spv-f-auto')+'</div>';
 }
-
-/* Filled in once the bank answers, or replaced with why it did not. */
-async function _spvFillBalance() {
-  const z = document.querySelector('#spv-money-facts .spv-f-bal');
-  if (!z) return;
-  let linked = false;
-  try { linked = AMVFinance.linked(); } catch (e) {}
-  if (!linked) return;
-  const set = (big, small) => {
-    const b = z.querySelector('.spv-f-b'), s = z.querySelector('.spv-f-s');
-    if (b) b.textContent = big;
-    if (s) s.textContent = small;
-  };
-  try {
-    const d = await AMVFinance.accounts();
-    const list = (d && d.accounts) || [];
-    const total = list.reduce((n, a) => n + (Number(a && a.balance) || 0), 0);
-    set((typeof _mfMoney === 'function') ? _mfMoney(total) : ('$' + total.toFixed(2)),
-        list.length === 1 ? T('balance in your account')
-                          : (list.length + ' ' + T('accounts, combined balance')));
-  } catch (e) {
-    /* Said as what it is. A balance that failed to load and a balance of zero
-       are different facts, and only one of them is somebody's. */
-    set(T('Could not read'), T('your balance did not come back just now'));
-  }
+async function _spvFillBalance(){
+  const host=$('spv-money-facts');if(!host)return;
+  const set=(name,value)=>{const x=host.querySelector('.spv-f-'+name+' .spv-f-b');if(x)x.textContent=value;};
+  try{const st=await AMVFinance.refresh();if(!st||st.ok!==true||st.stale)throw new Error('Unavailable');set('bank',st.linked?'Linked':'Not linked');}
+  catch(e){set('bank','Not verified');}
+  try{
+    if(!AMVSpend.serverBacked())throw new Error('Not connected');
+    await AMVSpend.pull();const c=AMVSpend.cfg();
+    set('cap',_mfMoney(c.monthlyCap));set('used',_mfMoney(c.spent));set('auto',c.enabled?'On':'Off');
+  }catch(e){set('cap','Not verified');set('used','Not verified');set('auto','Not verified');}
 }
-
-function renderSpendView() {
-  /* SPENDING, AND ONLY SPENDING.
-
-     "Remove this from upgrade plan": Upgrade opened this page, and this page
-     opened on what Spending is, then the plan and its limits, then the money,
-     then the watchlist, then - at the bottom - the plans. Two screens in one,
-     and neither was the one somebody pressing Upgrade wanted. Now Upgrade has
-     its own screen (renderPlansView), the plan and its limits live in Plan &
-     billing, and this is the money AMV may spend for you: the balance and the
-     ceiling, the limits, the account it can see, what it is watching for. */
-  const vc = $('vc'); if (!vc) return;
-  vc.innerHTML =
-    '<div class="sv fi"><div class="vi spv">'
-      + '<div class="spv-head">'
-        + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
-        + '<p class="spv-sub">' + escH(T('What AMV may spend for you, and what it has spent. Every limit is checked on the server first.')) + '</p>'
-      + '</div>'
-      + _spvMoneyFacts()
-      /* The limits editor and the account card are the same panes Settings
-         used to render - one copy of the most consequential controls. */
-      + '<section class="spv-sec" id="spv-limits"></section>'
-      + '<section class="spv-sec" id="spv-bank"></section>'
-      + (typeof watchlistHTML === 'function' ? watchlistHTML() : '')
-    + '</div></div>';
-
-  try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
-  try { _renderInvestPane($('spv-bank')); } catch (e) {}
-  try { wireWatchlist(renderSpendView); } catch (e) {}
-  try { _spvFillBalance(); } catch (e) {}
+function renderSpendView(){
+  const vc=$('vc');if(!vc)return;
+  vc.innerHTML='<div class="sv fi"><div class="vi spv"><header class="spv-head"><span class="eyebrow">Your controls</span><h2 class="spv-t">Spending</h2><p class="spv-sub">Your account connection, budget and spending status in one place.</p></header>'+_spvMoneyFacts()+
+    '<p class="product-note">A linked bank account provides data, not permission to pay. Browser checkout requires your completion. Reserved amounts are not settled purchases. Monthly limits use UTC.</p>'+
+    '<section class="spv-sec" id="spv-limits"></section><details class="spv-bank-details"><summary>Manage linked financial account</summary><section class="spv-sec" id="spv-bank"></section></details></div></div>';
+  _renderSpendingPane($('spv-limits'),renderSpendView);_renderInvestPane($('spv-bank'));_spvFillBalance();
 }
 
 /* THE PLANS, AND NOTHING ELSE.

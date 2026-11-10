@@ -55,7 +55,6 @@ const CLASSIFIED = {
      record shared with another person sat outside this check entirely. A
      conversation belongs to both people in it, and _messageRecipient decides
      which conversation the sender is allowed to write to. */
-  marketMessage:     'a conversation belongs to both people in it; the recipient is derived, never taken from the caller',
   /* Newly VISIBLE rather than newly true, like marketMessage above it. The
      review list used a bare `env.AMV_KV.put(key, ...)` with the key in a
      variable, which no pattern here could match - so a route that writes a
@@ -68,7 +67,6 @@ const CLASSIFIED = {
      them - the handler refuses unless the buyer owns something of that
      seller's - and that the reviewer is stored as a one-way hash, so the list
      can be public without leaking an address. */
-  marketReview:      'a review is a buyer\'s statement about a seller, filed under the seller; the handler refuses unless the buyer owns something of theirs, and the reviewer is stored as a hash',
   apiKeyCreate:      'the lookup row is keyed by a hash of the new key, not by a person',
   shareCreate:       'a share is keyed by its own generated id',
   /* Not another account's record - a record belonging to nobody. The OAuth
@@ -122,11 +120,7 @@ const CLASSIFIED = {
   teamTaskCreate:    'the board is keyed by the caller\'s own team, resolved from their membership rather than taken from the request',
   teamTaskUpdate:    'the same board, and the task is re-found by id inside the lock so two editors cannot overwrite each other',
   smsRegister:       'a short-lived verification row keyed by the address being verified',
-  marketPublish:     'a listing keyed by an id generated here',
-  marketInstall:     'an install counter on a public listing',
   marketWithdraw:    'a payout keyed by its own generated id',
-  marketSetStatus:   'checks it.authorEmail before writing',
-  marketRate:        'an aggregate rating on a public listing',
   /* Two cross-account writes and both are the point of the route rather than a
      slip. A report is BY one person ABOUT another person's listing, so it
      cannot be keyed to the caller: keying it to the reporter would scatter one

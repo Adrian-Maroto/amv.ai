@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* A RATING KEPT THE RATER'S ADDRESS SOMEWHERE ERASURE COULD NOT REACH.
 
    marketRate stored map[user.email] = stars into mkrate:<listingId>. That
@@ -31,7 +32,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const register = readFileSync(join(ROOT, 'SECURITY-SCAMS.md'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });

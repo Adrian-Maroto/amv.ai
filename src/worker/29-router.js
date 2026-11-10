@@ -1,3 +1,7 @@
+function marketplaceRetired(request, env){
+  return json({ok:false,code:'marketplace_retired',error:'Marketplace has been retired.'},410);
+}
+
 async function _serveRequest(request, env, ctx, rid) {
     /* AMV-046: so audit() can register its deliveries with waitUntil. It has no
        ctx of its own and cannot be handed one without threading it through
@@ -1121,24 +1125,24 @@ async function _route(request, env, ctx) {
     case '/v1/entitlement':     return getEntitlement(request, env);
     case '/v1/account/export':  return accountExport(request, env);
     // --- MARKETPLACE (community templates) ---
-    case '/v1/market/list':     return marketList(request, env);
-    case '/v1/market/publish':  return marketPublish(request, env);
-    case '/v1/market/install':  return marketInstall(request, env);
-    case '/v1/market/check':    return marketCheck(request, env);
-    case '/v1/market/buy':      return marketBuy(request, env);
+    case '/v1/market/list': return marketplaceRetired(request, env);
+    case '/v1/market/publish': return marketplaceRetired(request, env);
+    case '/v1/market/install': return marketplaceRetired(request, env);
+    case '/v1/market/check': return marketplaceRetired(request, env);
+    case '/v1/market/buy': return marketplaceRetired(request, env);
     case '/v1/market/purchases': return marketPurchases(request, env);
-    case '/v1/market/mylistings': return marketMyListings(request, env);
+    case '/v1/market/mylistings': return marketplaceRetired(request, env);
     case '/v1/market/unlist':   return marketUnlist(request, env);
     case '/v1/market/earnings': return marketEarnings(request, env);
     case '/v1/market/withdraw': return marketWithdraw(request, env);
-    case '/v1/market/status':   return marketSetStatus(request, env);
-    case '/v1/market/view':     return marketView(request, env);
-    case '/v1/market/rate':     return marketRate(request, env);
-    case '/v1/market/review':   return marketReview(request, env);
+    case '/v1/market/status': return marketplaceRetired(request, env);
+    case '/v1/market/view': return marketplaceRetired(request, env);
+    case '/v1/market/rate': return marketplaceRetired(request, env);
+    case '/v1/market/review': return marketplaceRetired(request, env);
     case '/v1/market/report':   return marketReport(request, env);
-    case '/v1/market/message':  return marketMessage(request, env);
-    case '/v1/market/threads':  return marketThreads(request, env);
-    case '/v1/market/thread/read': return marketThreadRead(request, env);
+    case '/v1/market/message': return marketplaceRetired(request, env);
+    case '/v1/market/threads': return marketplaceRetired(request, env);
+    case '/v1/market/thread/read': return marketplaceRetired(request, env);
     // --- FOUNDER ADMIN (token-gated) ---
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);

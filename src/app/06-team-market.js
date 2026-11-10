@@ -93,8 +93,8 @@ function renderTeamView(){
           'workspace - no admin console, no seat keys to hand out.</li>'+
         '<li><b>Give each person a role.</b> That decides what they can change, not what '+
           'they can use. The owner or an admin can also choose which engines the whole team uses.</li>'+
-        '<li><b>Work in one place.</b> Projects, prompts and what AMV remembers are shared, '+
-          'so somebody joining on Tuesday has the context from Monday.</li>'+
+        '<li><b>Work in one place.</b> Share selected projects, prompts and files with the workspace. '+
+          'Personal chats, personal memory and connected accounts are not automatically shared.</li>'+
       '</ol>'+
       '<div class="team-roles">'+
         '<div class="team-role"><b>Owner</b><span>You. Pays the bill, changes seat count, '+

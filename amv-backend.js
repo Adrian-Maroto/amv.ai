@@ -14303,8 +14303,12 @@ async function spendGet(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
   const limits = await _spendLimits(env, user.email);
-  const spent = (await counter(env, `spendmo:${user.email}:${monthKey()}`, { op:'get' })).value || 0;
-  return json({ ok:true, limits, spentThisMonth: Math.round(spent * 100) / 100,
+  const period = monthKey();
+  const state = await counter(env, `spendmo:${user.email}:${period}`, { op:'get' });
+  if(!state || state.unavailable || state.error || !Number.isFinite(state.value) || state.value < 0)
+    return json({ ok:false, error:'Spending totals are temporarily unavailable.', code:'spend_unavailable' }, 503);
+  const spent = state.value;
+  return json({ ok:true, limits, period, accounting:'spent_and_reserved', spentThisMonth: Math.round(spent * 100) / 100,
                 remaining: Math.max(0, limits.monthlyCap - spent), absoluteCap: WEB_ABSOLUTE_SPEND_CAP });
 }
 
@@ -14349,8 +14353,9 @@ async function spendSet(request, env){
 
    Now: reserved atomically before anything is launched, released if the run
    never reaches a purchase, and a money-shaped action refused outright unless a
-   reservation is holding money for it. Under-declaring buys a smaller ceiling,
-   not a bigger one, and declaring nothing buys none. */
+   reservation is holding money for it. Reservations alone do not verify a merchant charge. Generic browser writes
+   are now handed to the user by _webNeedsHumanCommit; these label heuristics
+   are retained for classification, not used as a universal purchase boundary. */
 
 /* Money-shaped, as opposed to merely irreversible. Sending a message is
    consequential and costs nothing; placing an order is both. */
@@ -14427,8 +14432,9 @@ async function _spendReserve(env, email, amount, clientLimit){
 
   const L = await _spendLimits(env, email);
   const cap = +L.monthlyCap || 0;
-  const r = await _reserveUSD(env, _spendMonthKey(email), amt, cap, SPEND_MONTH_TTL_MS);
-  if(r.allowed) return { ok:true, reserved: amt };
+  const ledgerKey = _spendMonthKey(email);
+  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS);
+  if(r.allowed) return { ok:true, reserved: amt, ledgerKey };
 
   /* AMV-032: a counter that could not answer is not a counter that said yes.
      Refusing to spend somebody's money because the ledger is unreachable is the
@@ -14447,8 +14453,21 @@ async function _spendReserve(env, email, amount, clientLimit){
 
 /* Give it back. A run that never reached a purchase must not have eaten the
    month, and a run that failed to start must not have eaten anything. */
-async function _spendRelease(env, email, amount){
-  await _releaseUSD(env, _spendMonthKey(email), +amount || 0, SPEND_MONTH_TTL_MS);
+async function _spendRelease(env, email, amount, ledgerKey){
+  // Release only the bucket reserved by THIS run, including across midnight UTC.
+  const prefix = `spendmo:${email}:`;
+  if(typeof ledgerKey !== 'string' || !ledgerKey.startsWith(prefix) ||
+     !/^\d{4}-(0[1-9]|1[0-2])$/.test(ledgerKey.slice(prefix.length)))
+    throw new Error('Missing or invalid original spending reservation key');
+  if(!Number.isFinite(amount) || amount <= 0) return;
+  await _releaseUSD(env, ledgerKey, amount, SPEND_MONTH_TTL_MS);
+}
+
+// Generic browser controls do not attest price, currency, or payment settlement.
+// Do not let language, button labels, approvals or a client-declared amount
+// elevate them into an autonomous payment or state-changing capability.
+function _webNeedsHumanCommit(verb){
+  return ['click','type','select','press','submit'].includes(String(verb || '').toLowerCase());
 }
 
 /* Kept for the callers that spend outside a reservation. Inside browserRun the
@@ -16515,6 +16534,7 @@ async function browserRun(request, env, ctx, emit, out){
      same month-to-date total, both find room under the cap, and both go. This
      holds the money in one atomic step, and the run owns giving it back. */
   let heldSpend = 0;
+  let heldLedgerKey = '';
   if(declaredSpend > 0){
     const ent = await getEntitlement(env, user.email).catch(() => null);
     /* Against the limits stored on the ACCOUNT, not against whatever the client
@@ -16527,13 +16547,14 @@ async function browserRun(request, env, ctx, emit, out){
       return json(Object.assign({ ok:false }, booked.refused), 400);
     }
     heldSpend = booked.reserved || 0;
+    heldLedgerKey = booked.ledgerKey || '';
     audit(env, 'web_agent_spend_attempt', { by:user.email, amount:declaredSpend, approved:!!approvedFp, plan:(ent&&ent.plan)||'' });
   }
   /* Whatever happens below, money booked for a purchase that never happened
      goes back. Called from exactly one place so it cannot be forgotten on a
      branch, and it is idempotent because it zeroes what it holds. */
   const releaseHeld = async () => {
-    if(heldSpend > 0){ const h = heldSpend; heldSpend = 0; await _spendRelease(env, user.email, h); }
+    if(heldSpend > 0){ const h = heldSpend; await _spendRelease(env, user.email, h, heldLedgerKey); heldSpend = 0; }
   };
 
   /* THE RUN ITSELF IS PAID FOR. See WEB_STEP_EST_IN_TOK. After every refusal
@@ -16727,6 +16748,15 @@ async function browserRun(request, env, ctx, emit, out){
         + '\n</PAGE>\n\nHistory: ' + trace.map(t => t.verb + (t.why ? '(' + t.why + ')' : '')).join(' -> ');
 
       const decision = await _webAskModel(env, sys, prompt, meter);
+      if(_webNeedsHumanCommit(decision && decision.verb)){
+        trace.push({ step, verb:'handoff', why:'This browser step needs human completion.' });
+        const take = await handOver('human_commit', obs.url);
+        if(!take) await browser.close();
+        return json({ ok:false, code:'human_commit_required', url:obs.url, trace,
+          need:'Complete this step yourself, or use a supported account connection.',
+          message:'Browser checkout and other page changes are not automated. A spending limit is not proof of the final charge.',
+          ...(take ? { takeover:take, takeoverForMs:WEB_HOLD_MS } : {}) });
+      }
       // Resolve the label of the element the model chose, from OUR observation
       // (not from the model), so the consequence check cannot be talked around.
       const target = (decision && decision.ref)
@@ -16804,7 +16834,7 @@ async function browserRun(request, env, ctx, emit, out){
 
       const sel = a.ref ? '[data-amv-ref="' + String(a.ref).replace(/[^0-9]/g,'') + '"]' : null;
       if(v.verb === 'goto') await page.goto(a.url, { waitUntil:'domcontentloaded', timeout:20000 });
-      else if(v.verb === 'click' && sel) await page.click(sel).catch(() => {});
+      else if(v.verb === 'click' && sel) await page.click(sel);
       else if(v.verb === 'type' && sel){
         /* AMV-001. The model put the cursor here; everything about WHAT goes in
            is decided by _webTypePlan, from our own observation of the field. */
@@ -16814,7 +16844,7 @@ async function browserRun(request, env, ctx, emit, out){
 
         if(plan.do === 'fill'){
           secretsUsed.add(plan.key);
-          await page.type(sel, String(vault[plan.key])).catch(() => {});
+          await page.type(sel, String(vault[plan.key]));
           /* No name and no value. The value is in `secrets`, so _webRedact
              scrubs it from everything else that leaves here. */
           trace.push({ step, verb:'filled', ref:a.ref, why:'a saved detail' });
@@ -16846,12 +16876,12 @@ async function browserRun(request, env, ctx, emit, out){
              through. */
           trace.push({ step, verb:'skipped', ref:a.ref, why:'a password box with nothing of yours for it' });
         }
-        else await page.type(sel, plan.text).catch(() => {});
+        else await page.type(sel, plan.text);
       }
-      else if(v.verb === 'select' && sel) await page.select(sel, String(a.text || '')).catch(() => {});
-      else if(v.verb === 'press') await page.keyboard.press(String(a.text || 'Enter')).catch(() => {});
+      else if(v.verb === 'select' && sel) await page.select(sel, String(a.text || ''));
+      else if(v.verb === 'press') await page.keyboard.press(String(a.text || 'Enter'));
       else if(v.verb === 'scroll') await page.evaluate('window.scrollBy(0, 800)').catch(() => {});
-      else if(v.verb === 'submit' && sel) await page.click(sel).catch(() => {});
+      else if(v.verb === 'submit' && sel) await page.click(sel);
       await new Promise(r => setTimeout(r, WEB_SETTLE_MS));
       if(out) await out.collect();
       { const last = trace[trace.length - 1] || {}; await shot(step + 1, last.verb || v.verb, last.why || ''); }
@@ -19340,6 +19370,10 @@ async function resetPage(request, env){
   });
 }
 
+function marketplaceRetired(request, env){
+  return json({ok:false,code:'marketplace_retired',error:'Marketplace has been retired.'},410);
+}
+
 async function _serveRequest(request, env, ctx, rid) {
     /* AMV-046: so audit() can register its deliveries with waitUntil. It has no
        ctx of its own and cannot be handed one without threading it through
@@ -20463,24 +20497,24 @@ async function _route(request, env, ctx) {
     case '/v1/entitlement':     return getEntitlement(request, env);
     case '/v1/account/export':  return accountExport(request, env);
     // --- MARKETPLACE (community templates) ---
-    case '/v1/market/list':     return marketList(request, env);
-    case '/v1/market/publish':  return marketPublish(request, env);
-    case '/v1/market/install':  return marketInstall(request, env);
-    case '/v1/market/check':    return marketCheck(request, env);
-    case '/v1/market/buy':      return marketBuy(request, env);
+    case '/v1/market/list': return marketplaceRetired(request, env);
+    case '/v1/market/publish': return marketplaceRetired(request, env);
+    case '/v1/market/install': return marketplaceRetired(request, env);
+    case '/v1/market/check': return marketplaceRetired(request, env);
+    case '/v1/market/buy': return marketplaceRetired(request, env);
     case '/v1/market/purchases': return marketPurchases(request, env);
-    case '/v1/market/mylistings': return marketMyListings(request, env);
+    case '/v1/market/mylistings': return marketplaceRetired(request, env);
     case '/v1/market/unlist':   return marketUnlist(request, env);
     case '/v1/market/earnings': return marketEarnings(request, env);
     case '/v1/market/withdraw': return marketWithdraw(request, env);
-    case '/v1/market/status':   return marketSetStatus(request, env);
-    case '/v1/market/view':     return marketView(request, env);
-    case '/v1/market/rate':     return marketRate(request, env);
-    case '/v1/market/review':   return marketReview(request, env);
+    case '/v1/market/status': return marketplaceRetired(request, env);
+    case '/v1/market/view': return marketplaceRetired(request, env);
+    case '/v1/market/rate': return marketplaceRetired(request, env);
+    case '/v1/market/review': return marketplaceRetired(request, env);
     case '/v1/market/report':   return marketReport(request, env);
-    case '/v1/market/message':  return marketMessage(request, env);
-    case '/v1/market/threads':  return marketThreads(request, env);
-    case '/v1/market/thread/read': return marketThreadRead(request, env);
+    case '/v1/market/message': return marketplaceRetired(request, env);
+    case '/v1/market/threads': return marketplaceRetired(request, env);
+    case '/v1/market/thread/read': return marketplaceRetired(request, env);
     // --- FOUNDER ADMIN (token-gated) ---
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);
@@ -27133,9 +27167,9 @@ async function _autoMakeGame(env, email, item, text) {
    every server anybody has registered, with its real package name, its real
    version and the environment variables it actually needs, and it is the same
    list the rest of the ecosystem uses. AMV asks it, filters it to the ones its
-   own bridge can actually run, and hands back a command that works. An entry
+   own bridge can actually run, and proposes pinned commands for explicit human review. An entry
    AMV cannot start is not shown, because the promise of this screen is that
-   what is on it connects.
+   entries are metadata, not verified working integrations.
 
    THROUGH THE WORKER RATHER THAN FROM THE PAGE, for three reasons and all of
    them matter: the page's connect-src does not include the registry and is not
@@ -27148,19 +27182,27 @@ async function _autoMakeGame(env, email, item, text) {
    catalogue of what a product can do is the thing somebody reads BEFORE they
    have an account. Nothing here is keyed to a caller and nothing is stored
    against one. */
-const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0/servers';
+const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0.1/servers';
 const MCPREG_TTL    = 6 * 3600;          // seconds a mapped page stays in KV
 const MCPREG_MAX    = 50;                // entries per answer
 const MCPREG_PAGES  = 6;                 // upstream pages read to fill one answer
 const MCPREG_TIMEOUT = 8000;
 /* What the bridge can actually start. `dnx` and anything else is left out
    rather than guessed at - a command AMV cannot run has no business being
-   offered, and the filter is the whole reason this directory is trustworthy. */
+   offered, Filtering does not establish publisher trust or runtime safety. */
 const MCPREG_RUNTIME = {
   npm:  (id, ver) => ({ command: 'npx',    args: ['-y', ver ? id + '@' + ver : id] }),
-  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '@' + ver : id] }),
+  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '==' + ver : id] }),
   oci:  (id)      => ({ command: 'docker', args: ['run', '-i', '--rm', id] }),
 };
+function _mcpRegPackageSafe(registry,id,ver){
+  if(registry === 'npm') return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(id) &&
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(ver);
+  if(registry === 'pypi') return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) && /^\d+(?:\.\d+)*(?:(?:a|b|rc)\d+|\.post\d+|\.dev\d+)?$/.test(ver);
+  // OCI accepts only a content-addressed image, never a mutable latest tag.
+  if(registry === 'oci') return /^[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}$/.test(id);
+  return false;
+}
 function _mcpRegText(v, max) {
   /* Registry text is written by whoever published the server, so it is treated
      as hostile input: printable characters only, then a hard length. It is
@@ -27180,15 +27222,25 @@ function _mcpRegText(v, max) {
    one would be a button that cannot work. */
 function _mcpRegMap(rec) {
   const s = (rec && rec.server) || {};
+  const official=rec && rec._meta && rec._meta['io.modelcontextprotocol.registry/official'];
+  const status=(official && official.status) || s.status;
+  if(status && status !== 'active') return null;
   const pkgs = Array.isArray(s.packages) ? s.packages : [];
   for (const p of pkgs) {
     const t = (p && p.transport && p.transport.type) || 'stdio';
     if (t !== 'stdio') continue;
-    const make = MCPREG_RUNTIME[String((p && p.registryType) || '').toLowerCase()];
-    if (!make) continue;
+    const registry = String((p && p.registryType) || '').toLowerCase();
+    if(!Object.prototype.hasOwnProperty.call(MCPREG_RUNTIME, registry)) continue;
+    const make = MCPREG_RUNTIME[registry];
     const id = _mcpRegText(p.identifier, 140);
-    if (!id) continue;
-    const run = make(id, _mcpRegText(p.version, 40));
+    const ver = _mcpRegText(p.version, 80);
+    // Reject, rather than truncate or reinterpret, publisher-controlled commands.
+    if(id !== p.identifier || ver !== p.version || !_mcpRegPackageSafe(registry,id,ver)) continue;
+    if((p.runtimeArguments || []).length || (p.packageArguments || []).length) continue;
+    const vars = Array.isArray(p.environmentVariables) ? p.environmentVariables : [];
+    if(vars.length > 8 || vars.some(e => !e || !/^[A-Z][A-Z0-9_]{0,59}$/.test(e.name || '') ||
+      /^(NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONHOME|PATH|HOME|LD_.*|DYLD_.*|UV_.*|PIP_.*|NPM_CONFIG_.*|DOCKER_.*)$/i.test(e.name))) continue;
+    const run = make(id, ver);
     /* Runtime arguments the publisher declared - `-y` and friends. Positional
        values only: a named argument needs a value from the person, and this
        screen does not ask for one, so a half-filled command is not offered. */
@@ -27220,6 +27272,8 @@ function _mcpRegMap(rec) {
       desc: _mcpRegText(s.description, 300),
       version: _mcpRegText(s.version, 40),
       command: run.command,
+      reviewStatus: 'unreviewed',
+      executionWarning: 'Publisher metadata only. Review the package and permissions before installing.',
       args,
       env,
     };
@@ -27356,6 +27410,7 @@ async function connectorDirectory(request, env) {
   const gate = await guardAction(env, `connectors:${ip}`, 60, 1500, 'directory searches');
   if (gate) return gate;
   const q = _mcpRegText(u.searchParams.get('q'), 60);
+  if(q && [...q].length < 3) return json({ok:false,code:'search_too_short',error:'Use at least three characters to search the connector directory.'}, 400);
   const cursor = _mcpRegText(u.searchParams.get('cursor'), 200);
   const want = Math.max(1, Math.min(MCPREG_MAX, parseInt(u.searchParams.get('limit'), 10) || 24));
   /* THE KV DIRECTLY, AND THIS IS THE ONE PLACE THAT IS RIGHT.
@@ -27370,7 +27425,7 @@ async function connectorDirectory(request, env) {
      Named `..._CACHE_KEY` on purpose. A GET that writes is refused by
      a-link-is-not-a-command unless the thing it writes is a named cache key,
      and that rule is the reason this endpoint is allowed to be a GET at all. */
-  const MCPREG_CACHE_KEY = 'mcpcat:' + encodeURIComponent(q) + ':' + encodeURIComponent(cursor) + ':' + want;
+  const MCPREG_CACHE_KEY = 'mcpcat:v2-pinned:' + encodeURIComponent(q) + ':' + encodeURIComponent(cursor) + ':' + want;
   try {
     const hit = await env.AMV_KV.get(MCPREG_CACHE_KEY);
     if (hit) return json(JSON.parse(hit), 200, { 'Cache-Control': 'public, max-age=1800' });
@@ -27387,7 +27442,9 @@ async function connectorDirectory(request, env) {
        cannot walk the whole registry. */
     while (out.length < want && read < MCPREG_PAGES) {
       read++;
-      const url = MCPREG_BASE + '?limit=100&version=latest'
+      // Request only the remaining slots. Advancing past an oversized upstream
+      // page used to discard every accepted entry after the visible page filled.
+      const url = MCPREG_BASE + '?limit=' + (want-out.length) + '&version=latest'
         + (q ? '&search=' + encodeURIComponent(q) : '')
         + (next ? '&cursor=' + encodeURIComponent(next) : '');
       /* Through the wrapper, not a bare fetch. `fetchDeadline` is what every
@@ -27432,7 +27489,7 @@ async function connectorDirectory(request, env) {
                   code: 'directory_unreachable' });
   }
 
-  const body = { ok: true, servers: out, cursor: out.length >= want ? next : '', q };
+  const body = { ok: true, servers: out, cursor: next || '', q };
   try { await env.AMV_KV.put(MCPREG_CACHE_KEY, JSON.stringify(body), { expirationTtl: MCPREG_TTL }); } catch (e) {}
   return json(body, 200, { 'Cache-Control': 'public, max-age=1800' });
 }
@@ -41173,13 +41230,13 @@ const COUNTRY_FACTS = {
   NG: { cur:'NGN', tax:'the Nigeria Revenue Service (NRS, formerly FIRS) and your state internal revenue service', id:'NIMC (NIN) and the Immigration Service (passports)', banks:'Access Bank, GTBank, Zenith, First Bank, UBA, OPay, Moniepoint', pay:'bank transfers, OPay, PalmPay', jobs:'Jobberman, LinkedIn, MyJobMag', shop:'Jumia, Konga', groc:'Shoprite, Spar', food:'Chowdeck, Glovo', rail:'the NRC', prop:'PropertyPro, Nigeria Property Centre', car:'your vehicle licence and roadworthiness renewals', health:'the NHIA or your HMO', news:'Punch, Premium Times, The Guardian Nigeria', exams:'WAEC, NECO and the JAMB UTME', uni:'JAMB CAPS', telco:'MTN, Airtel, Glo', post:'NIPOST, GIG Logistics, DHL', weather:'NiMet' },
   ZA: { cur:'ZAR', tax:'SARS (eFiling)', id:'Home Affairs', banks:'Standard Bank, FNB, Absa, Nedbank, Capitec', pay:'instant EFT, PayShap', jobs:'PNet, LinkedIn, Careers24', shop:'Takealot, Amazon.co.za', groc:'Checkers, Pick n Pay, Woolworths, Shoprite', food:'Uber Eats, Mr D', prop:'Property24, Private Property', car:'your licence disc renewal (eNaTIS)', health:'your medical aid scheme', news:'News24, Daily Maverick, Business Day', exams:'the NSC matric exams', telco:'Vodacom, MTN, Cell C, Telkom', post:'The Courier Guy, Aramex', weather:'the South African Weather Service' },
   EG: { cur:'EGP', tax:'the Egyptian Tax Authority', gov:'Digital Egypt', banks:'National Bank of Egypt, Banque Misr, CIB', pay:'InstaPay, Vodafone Cash', jobs:'Wuzzuf, LinkedIn, Bayt', shop:'Amazon.eg, Noon, Jumia', groc:'Carrefour, Spinneys', food:'Talabat, Elmenus', rail:'Egyptian National Railways', prop:'Property Finder, Aqarmap', car:'the traffic department (licence renewals)', news:'Ahram Online, Al-Masry Al-Youm', exams:'the Thanaweya Amma', telco:'Vodafone, Orange, e&, WE', post:'Egypt Post, Aramex', weather:'the Egyptian Meteorological Authority' },
-  AU: { cur:'AUD', tax:'the ATO (through myGov)', gov:'myGov and myID', id:'the Australian Passport Office', banks:'CommBank, Westpac, NAB, ANZ', pay:'PayID and Osko', jobs:'Seek, LinkedIn, Indeed', shop:'Amazon.com.au, JB Hi-Fi, Kmart', groc:'Woolworths, Coles, Aldi', food:'Uber Eats, DoorDash, Menulog', prop:'realestate.com.au, Domain', car:'your state rego (Service NSW, VicRoads and others)', health:'Medicare and your private health fund', news:'ABC News, The Sydney Morning Herald, The Australian', exams:'the HSC, VCE and ATAR', uni:'UAC, VTAC and your state admissions centre', telco:'Telstra, Optus, Vodafone', post:'Australia Post', weather:'the Bureau of Meteorology' },
+  AU: { cur:'AUD', tax:'the ATO (through myGov)', gov:'myGov and myID', id:'the Australian Passport Office', banks:'CommBank, Westpac, NAB, ANZ', pay:'PayID and Osko', jobs:'Seek, LinkedIn, Indeed', shop:'Amazon.com.au, JB Hi-Fi, Kmart', groc:'Woolworths, Coles, Aldi', food:'Uber Eats, DoorDash', prop:'realestate.com.au, Domain', car:'your state rego (Service NSW, VicRoads and others)', health:'Medicare and your private health fund', news:'ABC News, The Sydney Morning Herald, The Australian', exams:'the HSC, VCE and ATAR', uni:'UAC, VTAC and your state admissions centre', telco:'Telstra, Optus, Vodafone', post:'Australia Post', weather:'the Bureau of Meteorology' },
   AT: { cur:'EUR', tax:'FinanzOnline', gov:'ID Austria', id:'your Bezirkshauptmannschaft or Magistrat', banks:'Erste Bank and Sparkasse, Raiffeisen, Bank Austria, BAWAG', jobs:'karriere.at, the AMS, StepStone, willhaben', shop:'Amazon.de, willhaben', groc:'Billa, Spar, Hofer, Lidl', food:'foodora, Lieferando', rail:'ÖBB', prop:'willhaben, ImmoScout24', car:'the Pickerl inspection', health:'the ÖGK and your e-card', news:'ORF, Der Standard, Die Presse', exams:'the Matura', telco:'A1, Magenta, Drei', post:'Österreichische Post', weather:'GeoSphere Austria' },
   BE: { cur:'EUR', tax:'the FPS Finance (MyMinfin, Tax-on-web)', gov:'itsme and the eID', id:'your commune or gemeente', banks:'BNP Paribas Fortis, KBC, Belfius, ING', pay:'Payconiq, Wero', jobs:'VDAB, Le Forem, Actiris, StepStone, Indeed', shop:'Bol.com, Coolblue, Amazon', groc:'Delhaize, Colruyt, Carrefour, Aldi', food:'Uber Eats, Deliveroo, Takeaway.com', rail:'SNCB/NMBS', prop:'Immoweb, Zimmo', car:'the technical inspection (contrôle technique / keuring)', health:'your mutuelle or ziekenfonds', news:'VRT, RTBF, Le Soir, De Standaard', telco:'Proximus, Orange, Telenet', post:'bpost', weather:'the RMI' },
   CZ: { cur:'CZK', tax:'the Financial Administration (Finanční správa)', gov:'the Citizen Portal and BankID', id:'your municipal office', banks:'ČSOB, Česká spořitelna, Komerční banka, Raiffeisen, Air Bank', pay:'QR payments', jobs:'Jobs.cz, Prace.cz', shop:'Alza, Allegro, Heureka', groc:'Albert, Billa, Kaufland, Lidl', food:'Wolt, Foodora, Bolt Food', rail:'České dráhy, RegioJet', prop:'Sreality, Bezrealitky', car:'the STK inspection and the highway vignette', health:'your health insurer (VZP and others)', news:'ČT24, iROZHLAS, Seznam Zprávy', exams:'the maturita', telco:'O2, T-Mobile, Vodafone', post:'Česká pošta, Zásilkovna, PPL', weather:'ČHMÚ' },
   DK: { cur:'DKK', tax:'Skattestyrelsen (skat.dk)', gov:'MitID and borger.dk', id:'your kommune', banks:'Danske Bank, Nordea, Jyske Bank', pay:'MobilePay', jobs:'Jobindex, LinkedIn', shop:'Elgiganten, Proshop', groc:'Netto, Føtex, Rema 1000, Lidl', food:'Wolt, Just Eat', rail:'DSB and Rejsekort', prop:'Boligsiden, BoligPortal', car:'Motorstyrelsen and the syn inspection', health:'sundhed.dk and MinLæge', news:'DR, Politiken, Berlingske', uni:'optagelse.dk', telco:'TDC, Telenor, Norlys, 3', post:'PostNord, GLS', weather:'DMI' },
   FI: { cur:'EUR', tax:'Vero (OmaVero)', gov:'Suomi.fi', id:'the police (passports and ID cards)', banks:'Nordea, OP, Danske Bank, S-Pankki', pay:'MobilePay', jobs:'Duunitori, Oikotie, Job Market Finland', shop:'Verkkokauppa.com, Gigantti, Tori', groc:'K-Market, S-Market, Prisma, Lidl', food:'Wolt, Foodora', rail:'VR', prop:'Oikotie, Etuovi', car:'Traficom and the katsastus inspection', health:'your wellbeing services county and Kela', news:'Yle, Helsingin Sanomat', exams:'the matriculation examination', uni:'Studyinfo', telco:'Elisa, DNA, Telia', post:'Posti', weather:'the Finnish Meteorological Institute' },
-  IE: { cur:'EUR', tax:'Revenue (myAccount, ROS)', gov:'MyGovID', id:'the Passport Office', banks:'AIB, Bank of Ireland, PTSB, Revolut', pay:'Revolut', jobs:'IrishJobs, Jobs.ie, Indeed, LinkedIn', shop:'Amazon, Argos, Currys', groc:'Tesco, Dunnes Stores, SuperValu, Lidl, Aldi', food:'Deliveroo, Just Eat', rail:'Irish Rail and the Leap card', prop:'Daft.ie, MyHome.ie', car:'motor tax and the NCT', health:'the HSE and your health insurer', news:'RTÉ, The Irish Times, Irish Independent', exams:'the Leaving Cert and Junior Cycle', uni:'the CAO', telco:'Vodafone, Three, eir', post:'An Post', weather:'Met Éireann' },
+  IE: { cur:'EUR', tax:'Revenue (myAccount, ROS)', gov:'MyGovID', id:'the Passport Office', banks:'AIB, Bank of Ireland, PTSB, Revolut', pay:'Revolut', jobs:'IrishJobs, Jobs.ie, Indeed, LinkedIn', shop:'Amazon, Currys', groc:'Tesco, Dunnes Stores, SuperValu, Lidl, Aldi', food:'Deliveroo, Just Eat', rail:'Irish Rail and the Leap card', prop:'Daft.ie, MyHome.ie', car:'motor tax and the NCT', health:'the HSE and your health insurer', news:'RTÉ, The Irish Times, Irish Independent', exams:'the Leaving Cert and Junior Cycle', uni:'the CAO', telco:'Vodafone, Three, eir', post:'An Post', weather:'Met Éireann' },
   NL: { cur:'EUR', tax:'the Belastingdienst', gov:'DigiD', id:'your gemeente', banks:'ING, Rabobank, ABN AMRO, bunq', pay:'iDEAL, Tikkie', jobs:'Indeed, LinkedIn, Nationale Vacaturebank', shop:'Bol.com, Coolblue, Amazon.nl', groc:'Albert Heijn, Jumbo, Lidl, Aldi', food:'Thuisbezorgd, Uber Eats', rail:'NS and the OV-chipkaart', prop:'Funda, Pararius', car:'the RDW (APK) and motor vehicle tax', health:'your zorgverzekeraar', news:'NOS, NRC, de Volkskrant', exams:'the eindexamen', uni:'Studielink', telco:'KPN, Vodafone, Odido', post:'PostNL, DHL', weather:'the KNMI' },
   NO: { cur:'NOK', tax:'Skatteetaten', gov:'ID-porten and BankID', id:'the police (passports)', banks:'DNB, SpareBank 1, Nordea, Handelsbanken', pay:'Vipps', jobs:'FINN jobb, NAV, LinkedIn', shop:'Komplett, Elkjøp, FINN torget', groc:'Rema 1000, Kiwi, Coop, Meny', food:'Foodora, Wolt', rail:'Vy and Entur', prop:'FINN eiendom', car:'Statens vegvesen (EU-kontroll)', health:'Helsenorge and your fastlege', news:'NRK, VG, Aftenposten', uni:'Samordna opptak', telco:'Telenor, Telia, Ice', post:'Posten and Bring', weather:'the Norwegian Meteorological Institute (Yr)' },
   PL: { cur:'PLN', tax:'the KAS (e-Urząd Skarbowy)', gov:'mObywatel and Profil Zaufany', id:'your municipal office and voivodeship passport office', banks:'PKO BP, Pekao, mBank, ING, Santander', pay:'BLIK', jobs:'Pracuj.pl, OLX Praca, LinkedIn', shop:'Allegro, Amazon.pl, OLX', groc:'Biedronka, Lidl, Żabka, Kaufland', food:'Pyszne.pl, Glovo, Wolt, Uber Eats', rail:'PKP Intercity', prop:'Otodom, OLX', car:'the technical inspection and CEPiK', health:'the NFZ and IKP', news:'TVN24, Gazeta Wyborcza, Onet', exams:'the matura and the egzamin ósmoklasisty', telco:'Orange, Play, Plus, T-Mobile', post:'InPost, Poczta Polska, DPD', weather:'IMGW' },

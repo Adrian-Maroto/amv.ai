@@ -282,7 +282,7 @@ function renderView(){
        client, inside _handoffSyncLive, which nothing called. A handoff sent to
        you was invisible until you happened to be on the device that sent it. */
     case 'handoff': renderHandoffView(); _handoffSyncLive(); break;
-    case 'market': renderMarketView(); break;
+    case 'market': setTab('tasks'); break;
     /* Its own section, because it was a row inside Integrations and that is
        the reason nobody knew any of this existed. */
     case 'admin': _openAdmin(); break;

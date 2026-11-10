@@ -1,3 +1,4 @@
+import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* THE SECOND CLICK TOOK A SECOND CARD PAYMENT AND GRANTED NOTHING.
 
    Two defects at the same door, and both end with somebody charged for
@@ -33,7 +34,7 @@ import { codeOnly, functionBody } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
-const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+const src = legacyMarketplaceFixture(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'mktbuy.harness.mjs');
 writeFileSync(harness, src + '\nexport { DB, MARKET_RESERVE_S, MARKET_SESSION_TTL_S };\n');
