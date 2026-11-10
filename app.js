@@ -20498,16 +20498,6 @@ function _cwNeedsReady(j){
    The LABEL, not the raw name: the same table, so a boost is named the way a
    need is, and where the person has actually connected something the provider's
    own name is used. */
-function _cwBoostList(j){
-  return String((j && j.boost) || '').split(',').map(s => s.trim())
-    .filter(Boolean).filter(n => n !== 'Nothing')
-    .map(n => {
-      const c = CW_NEEDS_CHECK[n];
-      const who = (c && c.cap) ? _cwProviderNameFor(c.cap) : '';
-      return who || (c ? c.label : n);
-    })
-    .filter((v, i, a) => a.indexOf(v) === i);
-}
 function _cwBoostMissing(j){
   const out = [];
   String((j && j.boost) || '').split(',').map(s => s.trim())
@@ -20522,7 +20512,7 @@ function _cwBoostMissing(j){
     });
   return out;
 }
-try{ window._cwBoostList=_cwBoostList; window._cwBoostMissing=_cwBoostMissing; }catch(e){}
+try{ window._cwBoostMissing=_cwBoostMissing; }catch(e){}
 try{ window._cwNeedsList=_cwNeedsList; window._cwNeedsAnything=_cwNeedsAnything;
      window._cwNeedsReady=_cwNeedsReady; }catch(e){}
 /* ── CONNECTING THE ONE ACCOUNT THIS JOB NEEDS ───────────────────────────────
@@ -23462,6 +23452,41 @@ function _cwLockedCard(j){
    escH exists to stop anybody having to do, and "the server sends it" stops
    being reassuring the moment a catalogue takes a submission or somebody
    points AMV at a different backend, which Settings lets them do. */
+/* THE JOB PANEL (rebuilt Nov 10 - owner: "when you click it I don't like the
+   text or anything, it seems hard to use; make it very easy, clear, and look
+   amazing").
+
+   Three numbered steps and one button, in the order somebody acts:
+     1  What it does   - one paragraph, the example a tap away.
+     2  What it uses   - every account the job reads, each with its state:
+                         Connected, or a Connect button right there. Optional
+                         ones (a bank for the money jobs) say Optional.
+     3  When it runs   - every day / week / month, a day, a time, in your time
+                         zone. Server jobs run then; browser jobs run then
+                         whenever AMV is open, and say so.
+   Where it runs and the exact instruction stay, as one line and a disclosure.
+   Every control keeps its id (cwp-go, cwp-need-go, cwp-need-go2, cwp-cad...)
+   so the paths that turn a job on, connect what it needs and send the chosen
+   schedule are the same code as before. */
+function _cwUseRows(j){
+  const rows = [];
+  const add = (n, optional) => {
+    if(n === 'Web research' || n === 'Web automation' || n === 'Nothing') return;
+    const c = CW_NEEDS_CHECK[n];
+    let met = false; try{ met = c ? !!c.has() : false; }catch(e){}
+    if(rows.some(r => r.name === n)) return;
+    rows.push({ name: n, met, optional, label: c ? c.label : n });
+  };
+  _cwNeedsList(j).forEach(n => add(n, false));
+  String((j && j.boost) || '').split(',').map(s => s.trim()).filter(Boolean).forEach(n => add(n, true));
+  return rows;
+}
+const _CW_USE_IC = {
+  Email:'<path d="M4 4h16v16H4z" opacity="0"/><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+  Calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  Bank:'<path d="M3 10h18M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18M12 3 3 8h18z"/>',
+  Classroom:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+};
 function cwPeek(id){
   const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
   const r = $('ovr'); if(!r) return;
@@ -23470,19 +23495,20 @@ function cwPeek(id){
   const allowed = _planAllowsCrew();
   const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
   const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
+  const uses = _cwUseRows(j);
+  const ic = (n) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_CW_USE_IC[n] || (/bank|card/i.test(n) ? _CW_USE_IC.Bank : /mail/i.test(n) ? _CW_USE_IC.Email : /calendar/i.test(n) ? _CW_USE_IC.Calendar : '') || '<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>'}</svg>`;
+  let firstGo = true;
+  const useRow = (u) => {
+    const btn = u.met ? `<span class="cwp-u-ok">✓ ${escH(T('Connected'))}</span>`
+      : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="1">${escH(T('Connect'))}</button>`;
+    if(!u.met && !u.optional) firstGo = false;
+    return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
+      <span class="cwp-u-t"><b>${escH(T(u.name))}</b><small>${escH(u.optional ? T('Optional - makes the figures real charges, not estimates') : (u.met ? T('Ready') : T('Needed for this job')))}</small></span>${btn}</li>`;
+  };
 
-  /* One row per fact, and the row that is a PROBLEM is marked as one rather
-     than given a box of its own further down the page. Two warning panels for
-     two facts about the same job was most of what made this feel heavy. */
-  const fact = (label, value, cls) =>
-    `<div class="cwp-fact${cls?' '+cls:''}"><dt>${escH(label)}</dt><dd>${value}</dd></div>`;
-  /* WHEN, SET HERE (Nov 10, owner: "you click it, you see what it does, you
-     set when you want it and you do it"). A job the server runs on its own
-     takes an exact schedule - every day, week or month, at a time, in your
-     time zone - so it is chosen in the panel rather than defaulted and left
-     to be found later. A job that runs in this browser keeps its rhythm and
-     says so; a picker for it would promise a time the tab may not be open. */
-  const canWhen = allowed && bg && !j.on && (!j.every || ['daily', 'weekly', 'monthly'].indexOf(j.every) >= 0);
+  /* WHEN. Every job whose rhythm is a day, a week or a month offers it - the
+     browser ones too, now: they run at that time whenever AMV is open. */
+  const canWhen = allowed && !j.on && (!j.every || ['daily', 'weekly', 'monthly'].indexOf(j.every) >= 0);
   const now = new Date();
   const cad0 = (_cwPickedWhen[j.id] && _cwPickedWhen[j.id].cad) || (j.every === 'weekly' || j.every === 'monthly' ? j.every : 'daily');
   const when = canWhen
@@ -23496,71 +23522,35 @@ function cwPeek(id){
              .map((d, i) => `<option value="${i}"${i === now.getDay() ? ' selected' : ''}>${escH(d)}</option>`).join('')}
          </select>
          <input class="inp cwp-when-time" id="cwp-time" type="time" value="08:00" aria-label="${escH(T('At'))}">
-       </span>
-       <span class="cwp-fact-ph">${escH(T('Your time zone'))}: ${escH(_myTimeZone())}</span>`
-    : escH('Runs ' + every);
-  const facts =
-      fact('How often', when)
-    + fact('Where it runs', bg
-        ? 'On AMV\u2019s servers, whether or not this window is open'
-        : 'In this browser, while AMV is open \u2014 it needs something that lives here')
-    + (j.needs ? fact('What it uses', escH(j.needs)) : '')
-    /* SAID BEFORE THEY SWITCH IT ON, not afterwards in the answer.
+       </span>`
+    : `<span>${escH('Runs ' + every)}</span>`;
+  const where = bg ? T('On AMV’s servers - with this window closed too.')
+                   : T('In this browser - at that time whenever AMV is open, or the next time you open it.');
+  const asks = (j.asks && j.asks.q)
+    ? `<div class="cwp-ask"><b>${escH(T('It will ask you once'))}:</b> ${escH(j.asks.q)}${j.asks.ph ? `<small>${escH(j.asks.ph)}</small>` : ''}<small>${escH(T('So the job works from your answer, not from nothing.'))}</small></div>` : '';
+  const step = (n, title, body, cls) => `<section class="cwp-step${cls ? ' ' + cls : ''}"><h3 class="cwp-step-h"><span class="cwp-n" aria-hidden="true">${n}</span>${escH(title)}</h3>${body}</section>`;
 
-       A boost is not a requirement and must not read like one, so it gets a
-       row of its own with no warning class and no Connect button - the job
-       runs either way. It says what changes, because "better with a bank
-       connection" on its own invites the reader to guess, and what actually
-       changes here is whether a figure is a receipt or a real debit. */
-    + (_cwBoostList(j).length
-        ? fact('Better with', escH(_cwBoostList(j).join(', '))
-            + (_cwBoostMissing(j).length
-                ? '<span class="cwp-boostwhy"> — not connected, so this runs on what it can read</span>'
-                : '<span class="cwp-boostwhy"> — connected, so the figures are real charges</span>'))
-        : '')
-    /* The requirement is not a FACT about the job, it is the thing standing
-       between somebody and using it - so it is not a row in a definition list
-       any more. It is a block with a button, below. */
-    /* The wording is the wording it had. This row replaced a section of its
-       own, and the sentence explaining WHY it asks went with the section on
-       the first pass - which is the half that stops the question feeling like
-       an interrogation when it arrives. It is a fact about the job and it
-       belongs in the facts. */
-    + (j.asks && j.asks.q
-        ? fact('It will ask you for', '<b>'+escH(j.asks.q)+'</b>'
-            + (j.asks.ph?'<span class="cwp-fact-ph">'+escH(j.asks.ph)+'</span>':'')
-            + '<span class="cwp-fact-ph">This job works from what you tell it, so AMV asks once when you '
-            + 'switch it on rather than running on nothing.</span>')
-        : '');
-
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <button class="cwp-x" id="cwp-close" aria-label="Close">\u2715</button>
+  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cwp2" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <button class="cwp-x" id="cwp-close" aria-label="Close">✕</button>
     <div class="cwp-scroll">
       <div class="cwp-head">
         <span class="cwp-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-        <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+        <div class="cwp-head-t"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+          <span class="cwp-sub">${escH(j.on ? T('On') : (bg ? T('Runs on its own') : T('Runs while AMV is open')))}</span></div>
       </div>
-      <p class="cwp-desc">${escH(j.desc)}</p>
-
-      ${/* WHAT IT NEEDS, AND ONLY WHAT IS MISSING. Something already connected
-            is not a step, so it is not shown; what is missing is named one
-            per line, with the button that connects it right there. */ ''}
-      ${miss.length ? `<div class="cwp-need">
-        <div class="cwp-need-t">${escH(T('Connect first'))}</div>
-        <ul class="cwp-need-l">${miss.map(m => `<li><span>${escH(m.charAt(0).toUpperCase() + m.slice(1))}</span><em>${escH(T('Not connected'))}</em></li>`).join('')}</ul>
-        <button class="btn bp" id="cwp-need-go">${escH(T('Connect'))} \u2192</button>
-      </div>` : ''}
-
-      <dl class="cwp-facts">${facts}</dl>
-
-      ${Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more cwp-ex">
-        <summary>${escH(T('See an example of what you get'))}</summary>
-        <div class="cwp-sample" aria-label="Example of what this job produces">
-          ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
-        </div>
-        <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-      </details>`:''}
-
+      ${step(1, T('What it does'), `<p class="cwp-desc">${escH(j.desc)}</p>`
+        + (Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more cwp-ex">
+          <summary>${escH(T('See an example of what you get'))}</summary>
+          <div class="cwp-sample" aria-label="Example of what this job produces">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>
+          <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
+        </details>`:''))}
+      ${uses.length ? step(2, T('What it uses'), `<ul class="cwp-uses">${uses.map(useRow).join('')}</ul>${asks}`, miss.length ? 'cwp-need' : '')
+                    : (asks ? step(2, T('What it uses'), asks) : '')}
+      ${step(uses.length || asks ? 3 : 2, T('When it runs'),
+        `<dl class="cwp-facts">
+          <div class="cwp-fact"><dt>${escH(T('How often'))}</dt><dd>${when}${canWhen ? `<span class="cwp-fact-ph">${escH(T('Your time zone'))}: ${escH(_myTimeZone())}</span>` : ''}</dd></div>
+          <div class="cwp-fact"><dt>${escH(T('Where it runs'))}</dt><dd>${escH(where)}</dd></div>
+        </dl>`)}
       ${j.prompt?`<details class="cwp-more">
         <summary>The exact instruction AMV follows</summary>
         <pre class="cwp-prompt">${escH(j.prompt)}</pre>
@@ -23570,22 +23560,17 @@ function cwPeek(id){
 
     <div class="cwp-act">
       ${allowed
-        ? `<button class="btn bs" id="cwp-cancel">Close</button>
+        ? `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            ${miss.length && !j.on
-              /* A filled "Turn it on" over an unmet requirement promises
-                 something that cannot happen. The action that CAN happen is
-                 the one that gets the weight; turning it on anyway is still
-                 offered, because saving it now and connecting later is a
-                 reasonable thing to want. */
-              ? `<button class="btn bs" id="cwp-go">Turn on anyway</button>
-                 <button class="btn bp" id="cwp-need-go2">Connect what it needs \u2192</button>`
-              : `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`}`
+              ? `<button class="btn bs" id="cwp-go">${escH(T('Turn on anyway'))}</button>
+                 <button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
+              : `<button class="btn bp" id="cwp-go">${escH(j.on ? T('Turn it off') : T('Turn it on'))}</button>`}`
         : `<div class="cwp-buy">
-             <div class="cwp-buy-t">Included with ${escH(P.name)} \u00b7 $${P.price}/month</div>
+             <div class="cwp-buy-t">Included with ${escH(P.name)} · $${P.price}/month</div>
              <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
              <div class="cwp-buy-b">
                <button class="btn bs" id="cwp-cancel">Close</button>
-               <button class="btn bp" id="cwp-plans">See plans \u2192</button>
+               <button class="btn bp" id="cwp-plans">See plans →</button>
              </div>
            </div>`}
     </div>
@@ -23599,8 +23584,8 @@ function cwPeek(id){
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
-  const toNeeds = () => { try{ cwNeeds(j.id); }catch(e){} };
-  on($('cwp-need-go'),'click',toNeeds);
+  const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
+  r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
   on($('cwp-need-go2'),'click',toNeeds);
   const pick = () => {
     const cad = $('cwp-cad'); if(!cad) return;
@@ -24238,9 +24223,13 @@ function _cwSyncLocalSched(j, turningOn){
     const key='cw_'+j.id;
     let list=_loadSched().filter(t=>t.id!==key);
     if(turningOn){
-      const freq=j.every||'daily';
+      /* The panel's choice, when there is one: its cadence, and the first run at
+         the time it names (each run after keeps that time of day, because the
+         next is counted from when the last one ran). */
+      const pk=_cwPickedWhen[j.id]||null;
+      const freq=pk?pk.cad:(j.every||'daily');
       list.push({ id:key, goal:(j.prompt||j.desc||j.title), freq,
-                  next:(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5),
+                  next:(pk?_cwNextLocal(pk):(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5)),
                   created:Date.now(), lastRun:null, localOnly:true, approval:'require',
                   fromCrewJob:j.id });
     }
@@ -24540,6 +24529,15 @@ try{ window._mcGoConnect=_mcGoConnect; }catch(e){}
 try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
 try{ window.cwToggle=cwToggle; window.cwReject=cwReject; }catch(e){}
 try{ window.addEventListener('resize', () => { try{ _mcCmdFit(document.getElementById('mc-cmd-input')); }catch(e){} }, { passive:true }); }catch(e){}
+
+/* The next time, on this device's clock, that a picked schedule is due. */
+function _cwNextLocal(sc){
+  const d = new Date(); d.setSeconds(0, 0); d.setHours(sc.hour, sc.minute);
+  if(sc.cad === 'weekly'){ const want = (sc.days || [d.getDay()])[0]; let add = (want - d.getDay() + 7) % 7; if(add === 0 && d.getTime() <= Date.now()) add = 7; d.setDate(d.getDate() + add); }
+  else if(sc.cad === 'monthly'){ d.setDate(sc.dom || d.getDate()); if(d.getTime() <= Date.now()) d.setMonth(d.getMonth() + 1); }
+  else if(d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
 /* ============================================================
    APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)
    ------------------------------------------------------------

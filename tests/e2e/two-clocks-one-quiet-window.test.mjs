@@ -20,6 +20,7 @@
    So this suite runs both over the same table, in the same run, and compares
    them - the server's functions in node, the browser's in a real page. Then it
    drives the real tick to prove the answer is actually acted on. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -41,6 +42,7 @@ const app = await bootApp({ apiBase: '' });
    call its functions directly, so it is here before they start. */
 await app.page.evaluate(() => _loadCrewView());
 const { page, errors } = app;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 /* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
    for here so a busy test machine cannot open Crew before it has. */
 await page.evaluate(() => _loadCrewData());

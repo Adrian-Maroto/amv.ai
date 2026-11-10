@@ -356,16 +356,6 @@ function _cwNeedsReady(j){
    The LABEL, not the raw name: the same table, so a boost is named the way a
    need is, and where the person has actually connected something the provider's
    own name is used. */
-function _cwBoostList(j){
-  return String((j && j.boost) || '').split(',').map(s => s.trim())
-    .filter(Boolean).filter(n => n !== 'Nothing')
-    .map(n => {
-      const c = CW_NEEDS_CHECK[n];
-      const who = (c && c.cap) ? _cwProviderNameFor(c.cap) : '';
-      return who || (c ? c.label : n);
-    })
-    .filter((v, i, a) => a.indexOf(v) === i);
-}
 function _cwBoostMissing(j){
   const out = [];
   String((j && j.boost) || '').split(',').map(s => s.trim())
@@ -380,7 +370,7 @@ function _cwBoostMissing(j){
     });
   return out;
 }
-try{ window._cwBoostList=_cwBoostList; window._cwBoostMissing=_cwBoostMissing; }catch(e){}
+try{ window._cwBoostMissing=_cwBoostMissing; }catch(e){}
 try{ window._cwNeedsList=_cwNeedsList; window._cwNeedsAnything=_cwNeedsAnything;
      window._cwNeedsReady=_cwNeedsReady; }catch(e){}
 /* ── CONNECTING THE ONE ACCOUNT THIS JOB NEEDS ───────────────────────────────

@@ -135,9 +135,11 @@ section('And the guarantees that remain are checked against what runs');
     ['the value that cannot be edited could be edited',
      () => /_withKind\(env, 'consent'/.test(codeOnly(src)),
      'the birth year is decided and written inside one lock'],
+    /* The handler went with the Marketplace storefront (Nov 10); the promise
+       still holds, more strongly - the route changes nothing at all. */
     ['a seller can never flip their own listing out of review',
-     () => /under_review' \|\| it\.status === 'removed'\) && status === 'active'/.test(codeOnly(src)),
-     'the check is on the stored status, not on what was sent'],
+     () => /case '\/v1\/market\/status': return marketplaceRetired\(request, env\);/.test(codeOnly(src)) && !/async function marketSetStatus/.test(codeOnly(src)),
+     'the status route is retired and the handler that could change a status is gone'],
   ];
   for (const [claim, holds, how] of claims) {
     ok(src.includes(claim.split(' could be')[0]) || true, 'claim read: ' + claim.slice(0, 48), true);

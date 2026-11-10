@@ -1425,7 +1425,7 @@ function renderCrewView(){
             Same reason "most used" moved down: it ranks what other people
             run, which is interesting once you know what this is and noise
             before. */ ''}
-      ${_cwNotHereHTML('above')}
+      <div class="sec-head"><h3>${escH(_cwJobsForHead())}</h3><span class="sec-sub">${escH(T('Wrong country, or want something from another one? Change it above, or just type it in the box.'))}</span></div>
       ${_cwForYouHTML()}
       ${_cwMadeForHTML()}
       <div class="cw-filters">
@@ -1434,7 +1434,6 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
       ${_cwMostStartedHTML()}
-      ${_cwErrandsHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
@@ -1561,7 +1560,7 @@ function renderCrewView(){
       <span class="eyebrow">${escH(T('Crew'))}</span>
       <h2>${escH(T('AMV working while you are not'))}</h2>
       <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
-      <div class="cw-simple-head-r cw-hero-row">${_cwWhereBtnHTML()}${paused
+      <div class="cw-simple-head-r cw-hero-row">${_cwWhereBtnHTML()}<button class="cw-where cw-set-btn" type="button" data-dact="openCrewSettings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>${escH(T('Crew settings'))}</button>${paused
         ? `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ ${escH(T('Resume autonomy'))}</button>`
         : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
     </header>
@@ -1584,6 +1583,9 @@ function renderCrewView(){
       <div id="mc-cmd-result" class="mc-cmd-result"></div>
     </div>
     <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
+    ${/* AMV asking you something stays on the page - it is a question, not a
+          setting, so it did not go into the settings dialog with the rest. */ ''}
+    ${_mcOfferHTML()}
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
 
     ${appr.length?`<section id="mc-appr" class="mc-sec">
@@ -1622,20 +1624,15 @@ function renderCrewView(){
       <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
     </section>`:''}
     ${_mcActivityHTML()}
-    <details id="mc-settings" class="mc-sec cw-settings">
-      <summary class="sec-head"><h3>${escH(T('Settings for background work'))}</h3><span class="sec-sub">${escH(T('How far AMV may go on its own, what it always follows, and when it stays quiet. Set once.'))}</span></summary>
-      ${_mcOfferHTML()}
-      ${_mcCeilingHTML()}
-      ${_mcStandingHTML()}
-      ${_mcQuietRowHTML()}
-      ${_mcNeverRowHTML()}
-    </details>
     <section class="mc-sec" id="crew-games-sec" hidden><div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed.</span></div><div id="crew-games"></div></section>
     ${_mcBoughtCrewsHTML()}
-
+    ${/* THE ORDER THE OWNER ASKED FOR (Nov 10): the box, what is running now,
+          then every job for where you are. The settings for background work
+          are a button in the header (openCrewSettings) - set once, rarely
+          changed, and a section of their own pushed the jobs down the page.
+          The catalogue stays the last thing on the page. */ ''}
     <div class="crew-jobs-sec mc-start">
-      <div class="sec-head"><h3>${escH(T('Examples'))}</h3><span class="sec-sub">${escH(T('For where you live - change the country at the top. Pick one, or say your own in the box.'))}</span></div>
-      ${_cwNotHereHTML('above')}
+      <div class="sec-head"><h3>${escH(_cwJobsForHead())}</h3><span class="sec-sub">${escH(T('Wrong country, or want something from another one? Change it above, or just type it in the box.'))}</span></div>
       ${_cwForYouHTML()}
       ${_cwMadeForHTML()}
       <div class="cw-filters">
@@ -1644,7 +1641,6 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
       ${_cwMostStartedHTML()}
-      ${_cwErrandsHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
@@ -1698,3 +1694,40 @@ function _cwWireCmd(vc){
 try{ window._cwWireCmd=_cwWireCmd; }catch(e){}
 /* Here once: the loader in the page reads this before fetching again. */
 try{ window._crewViewHere = true; }catch(e){}
+
+
+/* CREW SETTINGS, ONE BUTTON AWAY (Nov 10).
+
+   How far AMV may go on its own, the spending ceiling for background work,
+   standing instructions, quiet hours and the commands it must never run.
+   They are real controls with real effects, so they are kept - but they are
+   set once, and as a section on Crew they stood between the box and the jobs.
+   They open here, as one dialog, from the gear in Crew's header. Every
+   control in them is a delegated data-dact, so they work exactly as they did;
+   after each change the dialog is redrawn from the same functions so what it
+   shows is what was saved. */
+function openCrewSettings(){
+  const r = $('ovr'); if(!r) return;
+  const body = () => _mcCeilingHTML() + _mcStandingHTML() + _mcQuietRowHTML() + _mcNeverRowHTML();
+  r.innerHTML = '<div class="ov" id="crs-bg"><div class="crs" role="dialog" aria-modal="true" aria-labelledby="crs-t">'
+    + '<div class="crs-h"><div><h2 id="crs-t">' + escH(T('Crew settings')) + '</h2>'
+    + '<p>' + escH(T('How far AMV may go on its own, what it always follows, and when it stays quiet.')) + '</p></div>'
+    + '<button class="cwp-x" id="crs-x" aria-label="' + escH(T('Close')) + '">\u2715</button></div>'
+    + '<div class="crs-b" id="mc-settings">' + body() + '</div></div></div>';
+  r.classList.add('on');
+  onBackdrop($('crs-bg'), closeOvr);
+  on($('crs-x'), 'click', closeOvr);
+  const b = $('mc-settings');
+  let t = 0;
+  const redraw = () => { clearTimeout(t); t = setTimeout(() => { const x = $('mc-settings'); if(x && !x.contains(document.activeElement && document.activeElement.tagName === 'TEXTAREA' ? document.activeElement : null)) x.innerHTML = body(); }, 200); };
+  on(b, 'change', redraw);
+  on(b, 'click', function(e){ if(e.target && e.target.closest && e.target.closest('[data-dact]')) redraw(); });
+  try{ const f = b.querySelector('button, input, select, textarea'); if(f) f.focus(); }catch(e){}
+}
+try{ window.openCrewSettings = openCrewSettings; }catch(e){}
+
+/* "Jobs for Spain" when the country is known, "Jobs for you" while it is not. */
+function _cwJobsForHead(){
+  const row = _cwCountryRow(_cwCountryGuess());
+  return row ? _cwSayPlace('Jobs for {country}', row[1], _cwThe(row[1])) : T('Jobs for you');
+}

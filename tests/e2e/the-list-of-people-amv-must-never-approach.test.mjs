@@ -9,11 +9,13 @@
    and this suite is about the half that reaches a person: that it saves, that
    it comes back, that a refused entry is REPORTED rather than swallowed, and
    that what the control claims is exactly what the server does - no more. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ apiBase: '', user: { name: 'Owner', email: 'owner@amv.dev', ini: 'O' }, tab: 'crew' });
 const { page, errors } = app;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 
 const open = () => page.evaluate(() => {
   saveStr('amv_plan', 'pro');

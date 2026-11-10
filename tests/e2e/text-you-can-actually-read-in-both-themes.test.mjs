@@ -42,6 +42,7 @@
    The list included "Start Pro - $15/mo" at 4.10:1, which is the button that
    takes the money, and "Manual" on Integrations at 2.19:1. So the allowance is
    zero now, in both themes, and this file is a rule rather than a ratchet. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { bootApp } from '../lib/harness.mjs';
 import { parseColor, contrast, flatten } from '../lib/color.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -82,7 +83,9 @@ const MARGINAL_ALLOWED = { dark: 0, light: 0 };
 const collect = (page, tab) => page.evaluate(t => {
   const EMOJI = /^[\s\p{Extended_Pictographic}\p{Emoji_Component}←-⇿☀-➿️]+$/u;
   const out = [];
-  for (const el of document.querySelectorAll('#app *')) {
+  /* Dialogs too (#ovr): Crew's settings live in one since Nov 10, and text a
+     dialog draws is text somebody has to read. */
+  for (const el of document.querySelectorAll('#app *, #ovr *')) {
     const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
     if (own.length < 3 || EMOJI.test(own)) continue;
     const s = getComputedStyle(el);
@@ -164,6 +167,7 @@ const measure = async (page, theme) => {
 const app = await bootApp({ tab: 'chat', viewport: { width: 1280, height: 900 },
                             user: { name: 'T', email: 't@x.com', ini: 'T' } });
 const { page, errors } = app;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 
 const dark = await measure(page, 'dark');
 const light = await measure(page, 'light');

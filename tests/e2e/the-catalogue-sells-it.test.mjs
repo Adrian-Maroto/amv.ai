@@ -183,7 +183,7 @@ section('And the panel says so before they switch it on');
     const p = document.querySelector('.cwp');
     const t = p ? (p.textContent || '').replace(/\s+/g, ' ').trim() : '';
     closeOvr();
-    return { asks: /It will ask you for/i.test(t), why: /running on nothing/i.test(t) };
+    return { asks: /It will ask you once/i.test(t), why: /works from your answer, not from nothing/i.test(t) };
   }, id);
   ok(r.asks, 'the panel says it will ask', r);
   ok(r.why, 'and why - so the question is not a surprise on the way in', r);

@@ -122,37 +122,14 @@ section('The family jobs are in a category people can find');
      orphans.map(j => j.id + '/' + j.cat).join(', '));
 }
 
-section('The one-off errands are on the Crew screen and open a real chat');
+/* The one-off errands left the Crew screen on Nov 10 (owner: Crew is work that
+   repeats; things done once belong in chat). Their wording is still held below. */
+section('Crew shows work that repeats, not one-off errands');
 {
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
   await page.waitForTimeout(400);
-  const cards = await page.evaluate(() =>
-    [...document.querySelectorAll('.cw-errand')].map(b => ({ key: b.dataset.darg, text: b.textContent.trim() })));
-  ok(cards.length >= 5, 'the errand cards are rendered', cards.length);
-  const keys = cards.map(c => c.key);
-  ['route', 'scamcheck', 'papers', 'booking', 'pricecheck'].forEach(k =>
-    ok(keys.includes(k), 'there is a card for ' + k, keys.join(', ')));
-}
-
-section('Pressing one writes the request into the composer, and does not send it');
-{
-  const before = await page.evaluate(() => (getMsgs() || []).length);
-  await page.click('.cw-errand[data-darg="route"]');
-  await page.waitForTimeout(500);
-  const r = await page.evaluate(() => ({
-    tab: S.tab,
-    val: (document.getElementById('mta') || {}).value || '',
-    focused: document.activeElement && document.activeElement.id === 'mta',
-    msgs: (getMsgs() || []).length,
-    selStart: (document.getElementById('mta') || {}).selectionStart,
-    selEnd: (document.getElementById('mta') || {}).selectionEnd,
-  }));
-  ok(r.tab === 'chat', 'it lands in chat, where the live web search is', r.tab);
-  ok(/fastest realistic route/i.test(r.val), 'with the request already written', r.val.slice(0, 70));
-  ok(r.focused, 'and the cursor in the box');
-  ok(r.msgs === before, 'nothing was sent on the person’s behalf', r.msgs + ' vs ' + before);
-  ok(r.selEnd > r.selStart && /^\[.*\]$/.test(r.val.slice(r.selStart, r.selEnd)),
-     'the blank they have to fill is selected for them', r.val.slice(r.selStart, r.selEnd));
+  const n = await page.evaluate(() => document.querySelectorAll('.cw-errand').length);
+  ok(n === 0, 'no errand cards on Crew', n);
 }
 
 section('Each errand leaves exactly one blank to fill, and says what it will not do');

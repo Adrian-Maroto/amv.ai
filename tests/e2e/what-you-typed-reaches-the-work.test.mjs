@@ -15,6 +15,7 @@
    So this drives the real screen in a real browser against the real Worker,
    and then runs the real cron, and asserts on the system prompt the model was
    actually sent. Every link in that chain, end to end, once. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
@@ -50,6 +51,7 @@ const env = makeEnv({
 
 const L = await bootLive({ env, outbound, port: 9179 });
 const { page } = L;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 
 const EMAIL = 'standing@example.com';
 const PW = 'A-real-Passw0rd!';
@@ -114,9 +116,10 @@ section('The box is on the Crew screen, where the jobs it governs are');
   const r = await page.evaluate(async () => {
     setTab('crew');
     await new Promise(x => setTimeout(x, 900));
-    /* On Crew, one press on "Settings for background work" (folded since
-       Oct 26, when Crew became one box and its examples). */
-    document.querySelector('#mc-settings > summary').click();
+    /* On Crew, one press on the gear in its header (Nov 10: the settings left
+       the page for a dialog, so the box and the jobs come first). */
+    document.querySelector('[data-dact="openCrewSettings"]').click();
+    await new Promise(x => setTimeout(x, 200));
     const box = document.getElementById('mc-standing-box');
     if (!box) return { found: false };
     const rect = box.getBoundingClientRect();
@@ -250,6 +253,7 @@ section('And it is still there when they come back');
 
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(900);
+  await keepCrewSettingsOpen(page);   // the reload dropped it
   const back = await page.evaluate(async () => {
     if (typeof window._autoRefresh === 'function') { try { await window._autoRefresh(); } catch (e) {} }
     setTab('crew');

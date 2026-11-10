@@ -17,6 +17,7 @@
    to call is not a property of AMV. What IS a property of AMV is that when the
    model calls crew_add, a background job exists afterwards - and that when the
    person says no, one does not. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
@@ -95,6 +96,7 @@ const env = makeEnv({
 
 const L = await bootLive({ env, outbound, port: 9181 });
 const { page } = L;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 
 const EMAIL = 'chatcrew@example.com';
 const PW = 'A-real-Passw0rd!';

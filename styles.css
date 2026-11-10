@@ -17517,3 +17517,52 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .set-conn-list > .int-card + .int-card{border-top:1px solid var(--bd)!important}
 .set-conn-list .int-top{flex-wrap:wrap;row-gap:2px}
 .set-conn-cat{flex-basis:100%;font-size:var(--t-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}
+
+/* LAYER A360 - Crew settings as a dialog (Nov 10), opened from the gear in
+   Crew's header instead of a section between the box and the jobs. */
+.crs{width:min(640px,calc(100vw - 32px));max-height:min(86vh,860px);display:flex;flex-direction:column;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-xl);box-shadow:var(--sh-xl);overflow:hidden}
+.crs-h{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-5) var(--sp-5) var(--sp-3);border-bottom:1px solid var(--bd)}
+.crs-h h2{margin:0 0 4px;font-size:var(--t-xl)}
+.crs-h p{margin:0;color:var(--mu);font-size:var(--t-sm)}
+.crs-h .cwp-x{position:static;flex:none}
+.crs-b{padding:var(--sp-4) var(--sp-5) var(--sp-5);overflow:auto;display:flex;flex-direction:column;gap:var(--sp-4)}
+.cw-set-btn{display:inline-flex;align-items:center;gap:6px}
+
+/* LAYER A361 - The job panel, rebuilt (Nov 10): three numbered steps on
+   quiet cards, one row per account with its state on the right, and the
+   action pinned at the bottom. Nothing in it is wider than the panel. */
+.cwp2 .cwp-head{display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-4);padding-right:44px}
+.cwp2 .cwp-head-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cwp2 .cwp-t{margin:0;font-size:var(--t-xl);line-height:1.2;overflow-wrap:anywhere}
+.cwp2 .cwp-sub{font-size:var(--t-sm);color:var(--mu)}
+.cwp-step{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-lg);padding:var(--sp-4);margin:0 0 var(--sp-3)}
+.cwp-step.cwp-need{border-color:color-mix(in srgb,var(--gold) 45%,var(--bd));background:var(--s2)}
+.cwp-step-h{display:flex;align-items:center;gap:10px;margin:0 0 var(--sp-3);font-size:var(--t-md);font-weight:600;color:var(--tx)}
+.cwp-n{flex:none;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:var(--t-xs);font-weight:700}
+.cwp2 .cwp-desc{margin:0;font-size:var(--t-base);line-height:1.6;color:var(--tx)}
+.cwp2 .cwp-ex{margin-top:var(--sp-3)}
+.cwp-uses{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.cwp-u{display:flex;align-items:center;gap:var(--sp-3);padding:10px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md);min-width:0}
+.cwp-u-ic{flex:none;width:34px;height:34px;border-radius:var(--r-sm);display:inline-flex;align-items:center;justify-content:center;background:var(--s3);color:var(--tx)}
+.cwp-u-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cwp-u-t b{font-size:var(--t-base);font-weight:600;overflow-wrap:anywhere}
+.cwp-u-t small{font-size:var(--t-xs);color:var(--mu);overflow-wrap:anywhere}
+.cwp-u-ok{flex:none;font-size:var(--t-sm);font-weight:600;color:var(--grn)}
+.cwp-u-go{flex:none;min-height:36px;padding:6px 14px}
+.cwp-ask{margin-top:var(--sp-3);font-size:var(--t-sm);color:var(--tx);line-height:1.5}
+.cwp-ask small{display:block;color:var(--mu);margin-top:2px}
+.cwp2 .cwp-facts{margin:0}
+.cwp2 .cwp-fact{padding:10px 0}
+.cwp2 .cwp-fact:first-child{padding-top:0}
+.cwp2 .cwp-fact:last-child{padding-bottom:0;border-bottom:0}
+@media (hover:none){.cwp-u-go{min-height:44px}}
+@media (max-width:480px){.cwp-u{flex-wrap:wrap}.cwp-u-go{width:100%}}
+@media (max-width:480px){.cwp2 .cwp-act #cwp-cancel{display:none}.cwp2 .cwp-act{gap:var(--sp-2)}}
+
+/* LAYER A362 - The "Jobs for <country>" heading now sits just under the box
+   (Nov 10), inside the viewport. The section's children are skipped while off
+   screen with a 300px placeholder; the heading was being drawn at 300px for a
+   frame and then at 24, which pushed the five below it down the page and back.
+   Like the five themselves and the not-here line before it, it is always laid
+   out. Measured: a 0.046 layout shift on arrival, now none. */
+.crew-jobs-sec > .sec-head{ content-visibility:visible; contain-intrinsic-size:none; }

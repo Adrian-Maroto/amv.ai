@@ -79,8 +79,9 @@ await topReady(page);
   ok(/Top 5 for you in .*Spain/.test(await head(page)), 'with the top five for Spain under it', await head(page));
   const n = await page.evaluate(() => document.querySelectorAll('#cw-foryou .cw-t10').length);
   ok(n === 5, 'five of them, as asked - ' + n, n);
-  const banner = await page.evaluate(() => ((document.querySelector('.crew-jobs-sec .cw-nothere') || {}).textContent || '').replace(/\s+/g, ' '));
-  ok(/Not on here\? Type it in the text box/.test(banner), 'and the line saying anything else goes in the box', banner);
+  /* The banner became the line under "Jobs for <country>" on Nov 10. */
+  const banner = await page.evaluate(() => ((document.querySelector('.crew-jobs-sec > .sec-head .sec-sub') || {}).textContent || '').replace(/\s+/g, ' '));
+  ok(/type it in the box/.test(banner), 'and the line saying anything else goes in the box', banner);
 }
 
 section('It opens a page for choosing the country');

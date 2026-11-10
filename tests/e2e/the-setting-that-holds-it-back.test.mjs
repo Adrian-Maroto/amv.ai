@@ -16,6 +16,7 @@
 
    Driven against the real Worker, then the real cron, so the screen is checked
    against what the server actually did rather than against itself. */
+import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
@@ -49,6 +50,7 @@ const env = makeEnv({
 
 const L = await bootLive({ env, outbound, port: 9185 });
 const { page } = L;
+await keepCrewSettingsOpen(page);   // Crew's settings live in a dialog now (Nov 10)
 const EMAIL = 'ceiling@example.com';
 const PW = 'A-real-Passw0rd!';
 const KV = env.AMV_KV;
@@ -301,8 +303,10 @@ section('It works on a phone and without a mouse');
   const kb = await page.evaluate(async () => {
     setTab('crew');
     await new Promise(x => setTimeout(x, 900));
-    /* The settings fold away on Crew (Oct 26); somebody opens them first. */
-    document.getElementById('mc-settings').open = true;
+    /* The settings open from the gear in Crew's header (Nov 10); somebody
+       presses it first. */
+    document.querySelector('[data-dact="openCrewSettings"]').click();
+    await new Promise(x => setTimeout(x, 200));
     const opts = [...document.querySelectorAll('.mc-lv-opt')];
     const tabbable = opts.filter(o => o.getAttribute('tabindex') === '0');
     const selected = opts.filter(o => o.getAttribute('aria-checked') === 'true');

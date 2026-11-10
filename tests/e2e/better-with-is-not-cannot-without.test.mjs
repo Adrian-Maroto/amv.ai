@@ -56,7 +56,7 @@ section('A boost is never in the missing list');
     missing: _cwNeedsMissing(j),
     ready: _cwNeedsReady(j),
     readyLine: _cwReadyLine(j),
-    boosts: _cwBoostList(j),
+    boosts: _cwUseRows(j).filter(u => u.optional).map(u => u.name),
     boostMissing: _cwBoostMissing(j),
   }), LEAKS);
   ok(r.missing.length === 0,
@@ -110,15 +110,18 @@ section('The card says which way it is, before anybody switches it on');
   await page.waitForTimeout(150);
   const seen = await page.evaluate(() => {
     const t = (document.getElementById('ovr') || {}).textContent || '';
-    return { t, has: /Better with/i.test(t) };
+    return { t, has: /Optional/i.test(t) && /bank/i.test(t) };
   });
-  ok(seen.has, 'the detail carries a "Better with" row', seen.t.slice(0, 200));
-  ok(/runs on what it can read/i.test(seen.t),
-     'and says what happens without it, rather than leaving the reader to guess at what changes', true);
-  /* The row that means STOP looks different and has a button. This one must
-     not be mistaken for it. */
-  ok(!/Connect a bank/i.test(seen.t),
-     'with no Connect button attached to it, because there is nothing to unblock', true);
+  /* Nov 10, owner: the money job "connects to your email and bank account to
+     see your payments". So the bank has its own row with its own Connect - but
+     marked Optional, and the job is still ready without it: optional is not
+     missing, and the filled action is the required one. */
+  ok(seen.has, 'the detail lists the bank as optional', seen.t.slice(0, 200));
+  ok(/real charges, not estimates/i.test(seen.t),
+     'and says what it changes, rather than leaving the reader to guess', true);
+  const opt = await page.evaluate(() => { const li = [...document.querySelectorAll('#ovr .cwp-u')].find(x => /bank/i.test(x.textContent)); const b = li && li.querySelector('.cwp-u-go');
+    return { row: !!li, btn: !!b, filled: !!(b && b.classList.contains('bp')) }; });
+  ok(opt.row && opt.btn && !opt.filled, 'it can be connected from here, with a quiet button - the filled one is never an optional thing', opt);
 
   await bank(true);
   await page.evaluate(() => { try{ closeOvr(); }catch(e){} });
@@ -126,8 +129,8 @@ section('The card says which way it is, before anybody switches it on');
   await page.evaluate(() => cwPeek('money_leaks'));
   await page.waitForTimeout(150);
   const linked = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
-  ok(/figures are real charges/i.test(linked),
-     'and with a bank linked the same row says the figures are real charges', linked.slice(0, 200));
+  ok(/Bank connection\s*Ready|Connected/i.test(linked),
+     'and with a bank linked the same row says it is connected', linked.slice(0, 200));
 }
 
 section('A missing REQUIREMENT still stops the job, boost or no boost');
