@@ -14245,7 +14245,9 @@ function renderTeamView(){
     '<span class="eyebrow">For organisations</span>'+
     '<h2>AMV for your team</h2>'+
     '<p class="vsub">'+lead+'</p>'+
-    teamPlanCard+teamHowItWorks+teamPrivacy+
+    /* Side by side on a wide screen: the offer, and how it works, read together
+       rather than the explanation sitting under a card nobody scrolls past. */
+    '<div class="team-land-grid">'+teamPlanCard+teamHowItWorks+'</div>'+teamPrivacy+
   '</div></div>';
   const LEAD='One workspace for everyone you work with: each person signs in with their own account, '+
     'gets AMV’s top models, and you get one bill.';
@@ -29906,7 +29908,7 @@ const FAQ_CATS=[
   ['create','Design and 3D'],
   ['build','Building apps'],
   ['auto','Automations and approvals'],
-  ['connect','Connections, teamwork and marketplace'],
+  ['connect','Connections and teamwork'],
   ['billing','Plans and billing'],
   ['privacy','Memory, data and privacy']
 ];

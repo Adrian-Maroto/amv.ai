@@ -17501,3 +17501,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cwp-ex{margin-top:var(--sp-3)}
 @media (hover:none){.cwp-when .inp{min-height:44px}}
 
+
+/* LAYER A358 - Team's landing: the plan card and "How Teams works" side by
+   side on a wide screen, so the right half of the page is the explanation
+   instead of empty; stacked on tablets and phones. */
+.team-land-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-5);align-items:start}
+.team-land-grid > *{min-width:0;margin-top:0!important}
+@media (min-width:1180px){.team-land .vsub{max-width:none}.team-land-grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}

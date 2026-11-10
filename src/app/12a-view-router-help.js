@@ -387,7 +387,7 @@ const FAQ_CATS=[
   ['create','Design and 3D'],
   ['build','Building apps'],
   ['auto','Automations and approvals'],
-  ['connect','Connections, teamwork and marketplace'],
+  ['connect','Connections and teamwork'],
   ['billing','Plans and billing'],
   ['privacy','Memory, data and privacy']
 ];
