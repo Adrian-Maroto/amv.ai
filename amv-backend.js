@@ -1533,6 +1533,40 @@ async function _kindKnownEmpty(env, kind){
   }catch(e){ return false; }
 }
 
+/* THE SAME MARKER FOR THE THREE RAW QUEUES THE TICK LISTS.
+
+   Measured, not estimated (an empty deployment, every cron for one simulated
+   day): 906 KV lists, against a free-plan ceiling of 1,000 a day for the
+   whole ACCOUNT - staging included - before a single person had signed up.
+   Most of it was three queues that are almost always empty: pending erasures,
+   sign-in copies waiting to be forgotten, and batches. Each was listed every
+   five minutes to find nothing.
+
+   Same contract as the kinds above: whoever ADDS to a queue awaits the marker's
+   removal before saying it is queued; a sweep that walked the queue and found
+   it empty sets it; it is believed for under an hour, so the worst case for an
+   entry that raced the marker is one hour late, never lost. KV is used even
+   with D1 present, because these queues live in KV either way. */
+const QUEUE_EMPTY_PREFIX = 'qempty:';
+const CRON_QUEUES = new Set(['erasepend', 'agentjarpend', 'batchq']);
+async function _queueTouched(env, q){
+  if(!CRON_QUEUES.has(q)) return;
+  try{ await env.AMV_KV.delete(QUEUE_EMPTY_PREFIX + q); }
+  catch(e){ /* the skip it would have allowed simply does not happen */ }
+}
+async function _queueMarkEmpty(env, q){
+  if(!CRON_QUEUES.has(q)) return;
+  try{ await env.AMV_KV.put(QUEUE_EMPTY_PREFIX + q, String(Date.now()), { expirationTtl: 86400 }); }
+  catch(e){ /* best effort: failing to record emptiness only costs a list */ }
+}
+async function _queueKnownEmpty(env, q){
+  if(!CRON_QUEUES.has(q)) return false;
+  try{
+    const age = Date.now() - (+(await env.AMV_KV.get(QUEUE_EMPTY_PREFIX + q)) || 0);
+    return age >= 0 && age < KIND_EMPTY_TRUST_MS;   /* a marker from the future is not believed */
+  }catch(e){ return false; }
+}
+
 async function scan(env, kind, limit, what) {
   const cap = limit || SCAN_ALL;
   const all = await DB.list(env, kind, cap);
@@ -22566,12 +22600,15 @@ async function _erasePendNote(env, email, failed) {
   let prev = null; try { prev = JSON.parse((await env.AMV_KV.get(k)) || 'null'); } catch (e) { prev = null; }
   const rec = { email, failed, first: (prev && prev.first) || Date.now(), last: Date.now(), tries: ((prev && prev.tries) || 0) + 1 };
   await env.AMV_KV.put(k, JSON.stringify(rec));
+  await _queueTouched(env, 'erasepend');
   return rec;
 }
 async function runPendingErasures(env, max) {
   const out = { tried: 0, finished: 0, still: 0 };
+  if (await _queueKnownEmpty(env, 'erasepend')) return out;
   let page; try { page = await env.AMV_KV.list({ prefix: ERASE_PEND_PREFIX, limit: Math.max(1, Math.min(25, max || 5)) }); }
   catch (e) { audit(env, 'erase_retry_unreadable', { why: String((e && e.message) || e).slice(0, 120) }); return out; }
+  if (!(page.keys || []).length && page.list_complete !== false) await _queueMarkEmpty(env, 'erasepend');
   for (const k of page.keys || []) {
     const email = String(k.name).slice(ERASE_PEND_PREFIX.length);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) continue;
@@ -25474,6 +25511,7 @@ async function batchCreate(request, env, ctx) {
                 items: reqs.map(r => ({ cid: String(r.custom_id), state: 'pending' })) };
   await _withKind(env, 'batch', id, (r) => { Object.assign(r, rec); return { ok: true }; }, {});
   await env.AMV_KV.put('batchq:' + id, '1');
+  await _queueTouched(env, 'batchq');
   audit(env, 'batch_created', { by: user.email, n: reqs.length });
   /* Nothing is started here. Work handed to waitUntil gets about thirty
      seconds after this response, and one long answer outlives that - the item
@@ -25677,14 +25715,19 @@ async function _batchItem(env, ctx, rec, i) {
 const BATCH_LANES = 4;
 async function runBatches(env, ctx) {
   const until = Date.now() + 4 * BATCH_TICK_MS;
-  let at = { c: null, o: 0 };
-  try { const v = JSON.parse((await env.AMV_KV.get('batchcursor')) || 'null'); if (v && typeof v === 'object') at = { c: v.c || null, o: Math.max(0, v.o | 0) }; } catch (e) {}
+  let at = { c: null, o: 0 }, had = false;
+  try { const v = JSON.parse((await env.AMV_KV.get('batchcursor')) || 'null'); if (v && typeof v === 'object') { had = true; at = { c: v.c || null, o: Math.max(0, v.o | 0) }; } } catch (e) {}
+  /* Nothing queued and nowhere to resume: no list, and no delete of a cursor
+     that is not there (that delete alone was 288 writes a day). */
+  if (!had && await _queueKnownEmpty(env, 'batchq')) return [];
+  let sawAny = false; const fromTop = !at.c && !at.o;
   const out = [];
   for (let pages = 0; pages < 4 && Date.now() < until; pages++) {
     let page;
     try { page = await env.AMV_KV.list(Object.assign({ prefix: 'batchq:', limit: 50 }, at.c ? { cursor: at.c } : {})); }
     catch (e) { if (!at.c) throw e; at = { c: null, o: 0 }; continue; }   /* a cursor that no longer works starts again from the top */
     const ids = page.keys.slice(at.o).map(k => k.name.slice('batchq:'.length));
+    if (page.keys.length) sawAny = true;
     let next = 0;
     const lane = async () => {
       while (next < ids.length && Date.now() < until) {
@@ -25699,8 +25742,10 @@ async function runBatches(env, ctx) {
   }
   try {
     if (at.c || at.o) await env.AMV_KV.put('batchcursor', JSON.stringify(at));
-    else await env.AMV_KV.delete('batchcursor');
+    else if (had) await env.AMV_KV.delete('batchcursor');
   } catch (e) {}
+  /* Only a walk from the top that ended with nothing seen may call it empty. */
+  if (fromTop && !sawAny && !at.c && !at.o) await _queueMarkEmpty(env, 'batchq');
   return out;
 }
 
@@ -47255,7 +47300,7 @@ async function agentsDelete(request, env) {
     signIns = 'failed';
     /* Queued, so "AMV will keep trying" is true; the agent itself is a
        tombstone that runs nothing, so nothing can use them meanwhile. */
-    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); } catch (_) {}
+    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); } catch (_) {}
   }
   audit(env, 'agent_deleted', { email, agent: id, stopped, signIns });
   /* Its jobs are stopped and it is gone; what is said about the sign-ins it
@@ -47746,7 +47791,7 @@ async function _agentJarForget(env, email, id, site){
    sign-in is still fenced by its generation, and the answer says the copy
    could not be queued so nobody is told it will be gone shortly. */
 async function _agentJarQueue(env, email, id, site){
-  try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); return true; }
+  try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); return true; }
   catch(e){ audit(env, 'agent_signin_queue_failed', { email, agent: id }); return false; }
 }
 /* Every agent's, at once: "sign out everywhere" and erasing the account.
@@ -47782,11 +47827,11 @@ async function _agentJarForgetAll(env, email){
     }
   }catch(e){ listed = false; }
   for(const k of left){
-    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
+    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
   }
   if(!listed){
     /* `*` for every agent: the retry runs this whole forget again. */
-    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
+    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
     audit(env, 'agent_signin_list_failed', { email: em });
   }
   if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
@@ -47795,9 +47840,11 @@ async function _agentJarForgetAll(env, email){
 /* The retry, from the cron: every forget that could not be confirmed is
    tried again until the stored copy is gone. Already fenced meanwhile. */
 async function runAgentJarCleanup(env){
-  let cursor, done = 0, left = 0;
+  let cursor, done = 0, left = 0, seen = 0;
+  if(await _queueKnownEmpty(env, 'agentjarpend')) return { done, left, skipped:true };
   do {
     const page = await env.AMV_KV.list({ prefix: 'agentjarpend:', cursor, limit: 200 });
+    seen += (page.keys || []).length;
     for(const k of (page.keys || [])){
       const rest = k.name.slice('agentjarpend:'.length);
       const i = rest.lastIndexOf(':');
@@ -47826,6 +47873,7 @@ async function runAgentJarCleanup(env){
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
   if(left) audit(env, 'agent_signin_delete_still_pending', { left });
+  if(!seen) await _queueMarkEmpty(env, 'agentjarpend');
   return { done, left };
 }
 

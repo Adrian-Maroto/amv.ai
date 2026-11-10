@@ -480,7 +480,7 @@ async function _agentJarForget(env, email, id, site){
    sign-in is still fenced by its generation, and the answer says the copy
    could not be queued so nobody is told it will be gone shortly. */
 async function _agentJarQueue(env, email, id, site){
-  try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); return true; }
+  try{ await env.AMV_KV.put('agentjarpend:' + String(email).toLowerCase() + ':' + id, JSON.stringify({ site: site || '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); return true; }
   catch(e){ audit(env, 'agent_signin_queue_failed', { email, agent: id }); return false; }
 }
 /* Every agent's, at once: "sign out everywhere" and erasing the account.
@@ -516,11 +516,11 @@ async function _agentJarForgetAll(env, email){
     }
   }catch(e){ listed = false; }
   for(const k of left){
-    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
+    try{ await env.AMV_KV.put('agentjarpend:' + k.slice('agentjar:'.length), JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
   }
   if(!listed){
     /* `*` for every agent: the retry runs this whole forget again. */
-    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
+    try{ await env.AMV_KV.put('agentjarpend:' + em + ':*', JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); }catch(e) { /* already fenced by its generation; the next forget queues it again */ }
     audit(env, 'agent_signin_list_failed', { email: em });
   }
   if(left.length) audit(env, 'agent_signin_delete_pending', { email: em, left: left.length });
@@ -529,9 +529,11 @@ async function _agentJarForgetAll(env, email){
 /* The retry, from the cron: every forget that could not be confirmed is
    tried again until the stored copy is gone. Already fenced meanwhile. */
 async function runAgentJarCleanup(env){
-  let cursor, done = 0, left = 0;
+  let cursor, done = 0, left = 0, seen = 0;
+  if(await _queueKnownEmpty(env, 'agentjarpend')) return { done, left, skipped:true };
   do {
     const page = await env.AMV_KV.list({ prefix: 'agentjarpend:', cursor, limit: 200 });
+    seen += (page.keys || []).length;
     for(const k of (page.keys || [])){
       const rest = k.name.slice('agentjarpend:'.length);
       const i = rest.lastIndexOf(':');
@@ -560,6 +562,7 @@ async function runAgentJarCleanup(env){
     cursor = page.list_complete ? undefined : page.cursor;
   } while(cursor);
   if(left) audit(env, 'agent_signin_delete_still_pending', { left });
+  if(!seen) await _queueMarkEmpty(env, 'agentjarpend');
   return { done, left };
 }
 

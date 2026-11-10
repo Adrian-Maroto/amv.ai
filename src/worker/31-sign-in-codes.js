@@ -1223,12 +1223,15 @@ async function _erasePendNote(env, email, failed) {
   let prev = null; try { prev = JSON.parse((await env.AMV_KV.get(k)) || 'null'); } catch (e) { prev = null; }
   const rec = { email, failed, first: (prev && prev.first) || Date.now(), last: Date.now(), tries: ((prev && prev.tries) || 0) + 1 };
   await env.AMV_KV.put(k, JSON.stringify(rec));
+  await _queueTouched(env, 'erasepend');
   return rec;
 }
 async function runPendingErasures(env, max) {
   const out = { tried: 0, finished: 0, still: 0 };
+  if (await _queueKnownEmpty(env, 'erasepend')) return out;
   let page; try { page = await env.AMV_KV.list({ prefix: ERASE_PEND_PREFIX, limit: Math.max(1, Math.min(25, max || 5)) }); }
   catch (e) { audit(env, 'erase_retry_unreadable', { why: String((e && e.message) || e).slice(0, 120) }); return out; }
+  if (!(page.keys || []).length && page.list_complete !== false) await _queueMarkEmpty(env, 'erasepend');
   for (const k of page.keys || []) {
     const email = String(k.name).slice(ERASE_PEND_PREFIX.length);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) continue;

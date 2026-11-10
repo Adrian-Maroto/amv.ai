@@ -75,6 +75,7 @@ async function batchCreate(request, env, ctx) {
                 items: reqs.map(r => ({ cid: String(r.custom_id), state: 'pending' })) };
   await _withKind(env, 'batch', id, (r) => { Object.assign(r, rec); return { ok: true }; }, {});
   await env.AMV_KV.put('batchq:' + id, '1');
+  await _queueTouched(env, 'batchq');
   audit(env, 'batch_created', { by: user.email, n: reqs.length });
   /* Nothing is started here. Work handed to waitUntil gets about thirty
      seconds after this response, and one long answer outlives that - the item
@@ -278,14 +279,19 @@ async function _batchItem(env, ctx, rec, i) {
 const BATCH_LANES = 4;
 async function runBatches(env, ctx) {
   const until = Date.now() + 4 * BATCH_TICK_MS;
-  let at = { c: null, o: 0 };
-  try { const v = JSON.parse((await env.AMV_KV.get('batchcursor')) || 'null'); if (v && typeof v === 'object') at = { c: v.c || null, o: Math.max(0, v.o | 0) }; } catch (e) {}
+  let at = { c: null, o: 0 }, had = false;
+  try { const v = JSON.parse((await env.AMV_KV.get('batchcursor')) || 'null'); if (v && typeof v === 'object') { had = true; at = { c: v.c || null, o: Math.max(0, v.o | 0) }; } } catch (e) {}
+  /* Nothing queued and nowhere to resume: no list, and no delete of a cursor
+     that is not there (that delete alone was 288 writes a day). */
+  if (!had && await _queueKnownEmpty(env, 'batchq')) return [];
+  let sawAny = false; const fromTop = !at.c && !at.o;
   const out = [];
   for (let pages = 0; pages < 4 && Date.now() < until; pages++) {
     let page;
     try { page = await env.AMV_KV.list(Object.assign({ prefix: 'batchq:', limit: 50 }, at.c ? { cursor: at.c } : {})); }
     catch (e) { if (!at.c) throw e; at = { c: null, o: 0 }; continue; }   /* a cursor that no longer works starts again from the top */
     const ids = page.keys.slice(at.o).map(k => k.name.slice('batchq:'.length));
+    if (page.keys.length) sawAny = true;
     let next = 0;
     const lane = async () => {
       while (next < ids.length && Date.now() < until) {
@@ -300,8 +306,10 @@ async function runBatches(env, ctx) {
   }
   try {
     if (at.c || at.o) await env.AMV_KV.put('batchcursor', JSON.stringify(at));
-    else await env.AMV_KV.delete('batchcursor');
+    else if (had) await env.AMV_KV.delete('batchcursor');
   } catch (e) {}
+  /* Only a walk from the top that ended with nothing seen may call it empty. */
+  if (fromTop && !sawAny && !at.c && !at.o) await _queueMarkEmpty(env, 'batchq');
   return out;
 }
 

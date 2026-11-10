@@ -573,6 +573,40 @@ async function _kindKnownEmpty(env, kind){
   }catch(e){ return false; }
 }
 
+/* THE SAME MARKER FOR THE THREE RAW QUEUES THE TICK LISTS.
+
+   Measured, not estimated (an empty deployment, every cron for one simulated
+   day): 906 KV lists, against a free-plan ceiling of 1,000 a day for the
+   whole ACCOUNT - staging included - before a single person had signed up.
+   Most of it was three queues that are almost always empty: pending erasures,
+   sign-in copies waiting to be forgotten, and batches. Each was listed every
+   five minutes to find nothing.
+
+   Same contract as the kinds above: whoever ADDS to a queue awaits the marker's
+   removal before saying it is queued; a sweep that walked the queue and found
+   it empty sets it; it is believed for under an hour, so the worst case for an
+   entry that raced the marker is one hour late, never lost. KV is used even
+   with D1 present, because these queues live in KV either way. */
+const QUEUE_EMPTY_PREFIX = 'qempty:';
+const CRON_QUEUES = new Set(['erasepend', 'agentjarpend', 'batchq']);
+async function _queueTouched(env, q){
+  if(!CRON_QUEUES.has(q)) return;
+  try{ await env.AMV_KV.delete(QUEUE_EMPTY_PREFIX + q); }
+  catch(e){ /* the skip it would have allowed simply does not happen */ }
+}
+async function _queueMarkEmpty(env, q){
+  if(!CRON_QUEUES.has(q)) return;
+  try{ await env.AMV_KV.put(QUEUE_EMPTY_PREFIX + q, String(Date.now()), { expirationTtl: 86400 }); }
+  catch(e){ /* best effort: failing to record emptiness only costs a list */ }
+}
+async function _queueKnownEmpty(env, q){
+  if(!CRON_QUEUES.has(q)) return false;
+  try{
+    const age = Date.now() - (+(await env.AMV_KV.get(QUEUE_EMPTY_PREFIX + q)) || 0);
+    return age >= 0 && age < KIND_EMPTY_TRUST_MS;   /* a marker from the future is not believed */
+  }catch(e){ return false; }
+}
+
 async function scan(env, kind, limit, what) {
   const cap = limit || SCAN_ALL;
   const all = await DB.list(env, kind, cap);

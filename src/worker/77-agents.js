@@ -430,7 +430,7 @@ async function agentsDelete(request, env) {
     signIns = 'failed';
     /* Queued, so "AMV will keep trying" is true; the agent itself is a
        tombstone that runs nothing, so nothing can use them meanwhile. */
-    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); } catch (_) {}
+    try { await env.AMV_KV.put('agentjarpend:' + email + ':' + id, JSON.stringify({ site: '', at: Date.now() })); await _queueTouched(env, 'agentjarpend'); } catch (_) {}
   }
   audit(env, 'agent_deleted', { email, agent: id, stopped, signIns });
   /* Its jobs are stopped and it is gone; what is said about the sign-ins it

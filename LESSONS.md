@@ -15806,3 +15806,22 @@ an audit ships a reproduction, run it unchanged before touching anything, keep
 its scenarios as a permanent suite with the results turned round
 (`the-verified-failures-of-nov-8-stay-fixed`), and do not report a finding
 closed until its scenario no longer reproduces.
+
+## 635. Count the operations an idle deployment spends, against the plan it actually runs on (Nov 10)
+
+Staging answered 503 on erasure with `payout_check_unavailable`, and the code
+was right: a KV list was refused. Production's crons were spending the
+account's free daily KV allowance before anybody had signed up. Measured by
+running every cron for one simulated day on an empty store: 906 lists (free
+ceiling 1,000 a day for the whole account, staging included) and 284 deletes -
+three queues (pending erasures, sign-in copies to forget, batches) listed
+every five minutes to find nothing, and a batch cursor deleted every tick
+whether or not it existed. The kinds the tick scans already had a "known
+empty" marker; the raw queues beside them did not. Now they do (`qempty:`,
+cleared by every writer before it says the work is queued, believed for under
+an hour), and the cursor is only deleted when it was there: 123 lists and no
+deletes a day. Rule: a sweep's cost is measured idle, scaled to a day, and
+compared with the plan's limits - `the-cron-fits-the-free-kv-budget` holds it,
+and proves an item queued after the marker is still reached on the next tick.
+Also: a cron handler hands its work to `waitUntil`, so a test must await what
+was handed over before reading what it did.
