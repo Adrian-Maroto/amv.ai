@@ -1,0 +1,40 @@
+# Builds data/countries/<CC>.json from Wikidata (scripts/country-data.mjs):
+# per country, the real banks, universities, newspapers, telecom operators,
+# airlines, retailers, agencies and more - each with its official website and
+# Wikidata ID, ranked by how many Wikipedia editions cover it. Run by hand;
+# commits the data to the branch it was run on, so it is reviewed like code.
+name: country-data
+on:
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'Country codes separated by spaces (empty = all AMV lists)'
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: country-data-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Query Wikidata
+        env:
+          COUNTRIES: ${{ github.event.inputs.countries }}
+        run: node scripts/country-data.mjs $COUNTRIES
+      - name: Commit the data
+        run: |
+          git config user.name "amv-data-bot"
+          git config user.email "amv-data-bot@users.noreply.github.com"
+          git add data/countries
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -m "Country data from Wikidata: $(ls data/countries | wc -l) countries"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
