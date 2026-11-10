@@ -50,13 +50,13 @@ export const KINDS = {
   bus:         ['Q740752',   15, 'transport company'],
   retail:      ['Q507619',   40, 'retail chain'],
   supermarket: ['Q18043413', 25, 'supermarket chain'],
-  ecommerce:   ['Q484847',   25, 'e-commerce company'],
+  ecommerce:   ['Q484847',   25, 'online shop'],
   restaurant:  ['Q18534542', 20, 'restaurant chain'],
   hotel:       ['Q5893268',  15, 'hotel chain'],
   agency:      ['Q327333',   60, 'government agency'],
   ministry:    ['Q192350',   30, 'ministry'],
   hospital:    ['Q16917',    40, 'hospital'],
-  utility:     ['Q1326624',  15, 'electric utility'],
+  utility:     ['Q1326624',  15, 'electricity supply company'],
   carmaker:    ['Q786820',   15, 'automobile manufacturer'],
   museum:      ['Q33506',    30, 'museum'],
   library:     ['Q7075',     15, 'library'],
@@ -91,7 +91,20 @@ async function main() {
   const cls = Object.values(KINDS).map(k => 'wd:' + k[0]).join(' ');
   const names = await sparql(`SELECT ?c ?l WHERE { VALUES ?c { ${cls} } ?c rdfs:label ?l FILTER(LANG(?l)="en") }`);
   const said = Object.fromEntries(names.map(b => [qid(b.c.value), b.l.value]));
-  for (const [kind, [q, , meant]] of Object.entries(KINDS)) console.log('class', kind.padEnd(12), q.padEnd(10), 'is "' + (said[q] || '?') + '"', said[q] === meant ? '' : '  <-- expected "' + meant + '"');
+  for (const [kind, [q, , meant]] of Object.entries(KINDS)) {
+    if (said[q] === meant) { console.log('class', kind.padEnd(12), q.padEnd(10), 'is "' + meant + '"'); continue; }
+    /* The ID is not the class it says: find the class by its exact English
+       name - the candidate with the most members - or drop the kind. A wrong
+       ID never fills a kind with the wrong things (it once filled "insurer"
+       with every enterprise). */
+    let fix = null;
+    try {
+      const c = await sparql(`SELECT ?c (COUNT(?x) AS ?k) WHERE { ?c rdfs:label "${meant}"@en . ?x wdt:P31 ?c } GROUP BY ?c ORDER BY DESC(?k) LIMIT 1`);
+      if (c[0] && +c[0].k.value > 20) fix = qid(c[0].c.value);
+    } catch (e) {}
+    console.log('class', kind.padEnd(12), q.padEnd(10), 'is "' + (said[q] || '?') + '", not "' + meant + '" ->', fix ? 'using ' + fix : 'kind dropped');
+    if (fix) KINDS[kind][0] = fix; else delete KINDS[kind];
+  }
 
   const iso = await sparql(`SELECT ?c ?code WHERE { ?c wdt:P297 ?code . FILTER NOT EXISTS { ?c wdt:P576 ?end } }`);
   const qOf = {}; for (const b of iso) if (!qOf[b.code.value]) qOf[b.code.value] = qid(b.c.value);
