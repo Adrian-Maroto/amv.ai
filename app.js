@@ -20190,6 +20190,8 @@ function _loadCrewView(){
   });
   return _crewViewP;
 }
+/* The country catalogue (src/country/country-catalog.js): fetched once, true when its functions are here. */
+function _ccReady(){ return _lazyLoad('country-catalog.js', () => typeof window.ccFillCrew === 'function'); }
 function _cwCatalog(){ return (typeof window !== 'undefined' && window.AMV_CREW_DATA) || null; }
 function _loadCrewData(){
   if(_cwCatalog()) return Promise.resolve(true);
@@ -20220,6 +20222,7 @@ function _crewPrefetch(){
   const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
     _lazyLoad('integrations-view.js', () => window._intViewHere === true);
+    _ccReady();
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function'); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
@@ -22069,7 +22072,10 @@ function _cwAllJobs(){
                               .concat((_cwMadeMore(cc) || []).filter(j => !have.has(j.id)))
                               /* And the country being browsed at the bottom, so
                                  its cards open and switch on like any other. */
-                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).concat(_cwMadeMore(_cwBrowse) || []).filter(j => !have.has(j.id)) : []); }
+                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).concat(_cwMadeMore(_cwBrowse) || []).filter(j => !have.has(j.id)) : [])
+                              /* The country catalogue's jobs (country-catalog.js),
+                                 once its file has arrived - real named services. */
+                              .concat(((window._ccCrewJobs || {})[cc] || []).filter(j => !have.has(j.id))); }
   catch(e){ return _cwJobs() || []; }
 }
 /* THE BEST ONES FIRST, AND FEWER OF THEM.

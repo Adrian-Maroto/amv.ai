@@ -162,6 +162,9 @@ function emitSandbox() {
   writeFileSync('code-view.js', readFileSync('src/code/code-view.js'));
   /* Tasks, Integrations and Automation's screens (audit #40). */
   writeFileSync('integrations-view.js', readFileSync('src/integrations/integrations-view.js'));
+  /* The country catalogue (Tasks, Crew jobs and services by country), fetched
+     with Crew or Tasks/Integrations - out of the page, for its weight. */
+  writeFileSync('country-catalog.js', readFileSync('src/country/country-catalog.js'));
   /* What each Settings pane draws, fetched when Settings opens (code splitting). */
   writeFileSync('settings-panes.js', readFileSync('src/settings/settings-panes.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
@@ -1155,6 +1158,7 @@ const PUBLISH = [
   'crew-view.js',          // Mission Control's screen, fetched beside the catalogue
   'code-view.js',          // the code workspace's screen, fetched when it is drawn
   'integrations-view.js',  // Tasks, Integrations and Automation, fetched when drawn
+  'country-catalog.js',    // the country catalogue, fetched with Crew, Tasks and Integrations
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
@@ -1202,6 +1206,16 @@ function emitPublishDir() {
     if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(`${PUBLISH_DIR}/${f}`, readFileSync(f));
   }
+  /* The country catalogue (data/countries, from scripts/country-data.mjs):
+     one file per country, fetched when Tasks, Crew or Integrations draws for
+     it. Kept in step like the language packs - a country no longer built
+     leaves. Not precached by the service worker: a visitor needs one. */
+  const pubCC = `${PUBLISH_DIR}/countries`;
+  if (!existsSync(pubCC)) mkdirSync(pubCC, { recursive: true });
+  const ccFiles = existsSync('data/countries') ? readdirSync('data/countries').filter(f => /^[A-Z]{2}\.json$/.test(f)) : [];
+  for (const f of ccFiles) writeFileSync(`${pubCC}/${f}`, readFileSync(`data/countries/${f}`));
+  for (const f of readdirSync(pubCC)) if (!ccFiles.includes(f)) { unlinkSync(`${pubCC}/${f}`); console.warn(`  - removed ${pubCC}/${f} (no longer built)`); }
+
   /* The language packs: the one directory the build owns inside public/, kept
      exactly in step with i18n/ - a pack that is no longer built leaves. */
   const pubI18n = `${PUBLISH_DIR}/${I18N_DIR}`;
@@ -1216,7 +1230,7 @@ function emitPublishDir() {
      delete a tree is a build one typo away from deleting the wrong one. */
   const keep = new Set(PUBLISH);
   for (const name of readdirSync(PUBLISH_DIR)) {
-    if (keep.has(name) || name === I18N_DIR) continue;
+    if (keep.has(name) || name === I18N_DIR || name === 'countries') continue;
     const path = `${PUBLISH_DIR}/${name}`;
     if (statSync(path).isDirectory()) {
       console.warn(`  ! ${path} is a directory this build did not create - leaving it alone`);

@@ -241,6 +241,7 @@ function _tkWireFind(vc, total){
   const box=$('tk-find'), n=$('tk-find-n'); if(!box) return;
   const run=()=>{
     const q=box.value.trim().toLowerCase();
+    vc.classList.toggle('tk-find-on', !!q);
     let shown=0;
     vc.querySelectorAll('.tk-row').forEach(r=>{ const hit=!q || r.textContent.toLowerCase().indexOf(q)>=0; r.hidden=!hit; if(hit) shown++; });
     vc.querySelectorAll('.tk-cat, .tk-local').forEach(sec=>{ if(sec.id==='tk-local' && !sec.querySelector('.tk-row')) return; sec.hidden=!sec.querySelector('.tk-row:not([hidden])'); });
@@ -269,11 +270,39 @@ async function _tkFillLocal(){
     _TASK_PROMPTS[key]=t[3].replace('{v}', String(facts[t[0]]));
     return `<button class="tk-row" data-dact="launchTask" data-darg="${key}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${escH(T(t[2]))}</span><span class="tk-d" data-no-i18n>${escH(String(facts[t[0]]))}</span></span><span class="tk-arrow">\u2192</span></button>`;
   });
-  if(!rows.length) return;
+  /* The country catalogue: every named service there, with what people do
+     with each (country-catalog.js, fetched here). Rendered whole so search reaches every
+     one; only the first rows show until 'Show all'. */
+  let cat='';
+  try{
+    const d=(await _ccReady())?await window.ccLoad(cc):null;
+    if(!host.isConnected) return;
+    const list=d?window.ccTasks(d):[];
+    list.forEach(t=>{ _TASK_PROMPTS[t.id]=t.prompt; });
+    if(list.length){
+      const kinds=[...new Set(list.map(t=>t.kind))];
+      cat=`<div class="cc-head"><b>${list.length}</b> ${escH(T('tasks naming real services there'))}
+          <span class="cc-src">${escH(T('Source'))}: Wikidata</span></div>
+        <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
+          <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
+          ${kinds.map(k=>`<button class="cw-chip" data-cc-kind="${k}">${(CC_KINDS[k]||['',''])[0]} ${escH(T((CC_KINDS[k]||['',k])[1]))}</button>`).join('')}
+        </div>
+        <div class="tk-list tk-local-list cc-list">${list.map((t,i)=>`<button class="tk-row${i>=24?' cc-more':''}" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic">${(CC_KINDS[t.kind]||['\u2022'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow">\u2192</span></button>`).join('')}</div>
+        ${list.length>24?`<button class="btn bs cc-all" id="cc-all">${escH(T('Show all'))} (${list.length})</button>`:''}`;
+    }
+  }catch(e){}
+  if(!rows.length && !cat) return;
   host.innerHTML=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
       <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>
-    <div class="tk-list tk-local-list">${rows.join('')}</div>`;
+    <div class="tk-list tk-local-list">${rows.join('')}</div>${cat}`;
   host.hidden=false;
+  /* Kind chips narrow the catalogue; Show all lifts the first-rows cap. */
+  host.querySelectorAll('[data-cc-kind]').forEach(c=>on(c,'click',()=>{
+    host.querySelectorAll('[data-cc-kind]').forEach(x=>x.classList.toggle('on',x===c));
+    const k=c.dataset.ccKind; host.classList.toggle('cc-filtered',!!k);
+    host.querySelectorAll('.cc-list .tk-row').forEach(r=>{ r.classList.toggle('cc-off', !!k && r.dataset.cc!==k); });
+  }));
+  on($('cc-all'),'click',function(){ host.classList.add('cc-open'); this.remove(); });
   const box=$('tk-find'); if(box && box.value) box.dispatchEvent(new Event('input'));
 }
 function launchUnique(kind){
@@ -539,6 +568,8 @@ function renderIntegrationsView(){
       ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
       _intLocalBannerHTML()+
       _connSectionHTML()+
+      /* Every named service in the country, from the country catalogue. */
+      '<section class="cc-int" id="cc-int" hidden></section>'+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
          The bridge card and the connector form are two of the largest blocks
@@ -568,6 +599,7 @@ function renderIntegrationsView(){
          same registry, and the search box at the top reaches all of it. */
     '</div></div>';
   _wireIntegrationCatalog(vc);
+  _ccReady().then(ok=>{ if(ok) window.ccFillIntegrations(); });
   try{
     const d=vc.querySelector('details.conn-machine');
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });

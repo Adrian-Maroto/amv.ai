@@ -67,7 +67,9 @@ export const KINDS = {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function sparql(q, tries = 4) {
   for (let i = 0; i < tries; i++) {
-    const r = await fetch(EP + '?format=json&query=' + encodeURIComponent(q), { headers: { 'User-Agent': UA, Accept: 'application/sparql-results+json' } });
+    let r;
+    try { r = await fetch(EP + '?format=json&query=' + encodeURIComponent(q), { headers: { 'User-Agent': UA, Accept: 'application/sparql-results+json' }, signal: AbortSignal.timeout(90000) }); }
+    catch (e) { await sleep(3000 * (i + 1)); continue; }   /* a hung or dropped query is retried, never waited on for ever */
     if (r.ok) return (await r.json()).results.bindings;
     if (r.status === 429 || r.status >= 500) { await sleep(2000 * (i + 1) * (i + 1)); continue; }
     throw new Error('wikidata ' + r.status + ' ' + (await r.text()).slice(0, 200));
@@ -99,7 +101,9 @@ async function main() {
     if (!cq) { console.log(cc, 'no Wikidata country'); continue; }
     const out = { cc, qid: cq, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), kinds: {} };
     let total = 0;
-    for (const [kind, [klass, keep]] of Object.entries(KINDS)) {
+    /* Three kinds at a time: Wikidata allows five concurrent queries per
+       client, and a country takes a third of the time. */
+    const one = async ([kind, [klass, keep]]) => {
       const q = `SELECT ?i ?l ?site ?n WHERE {
         ?i wdt:P31/wdt:P279? wd:${klass} ; wdt:P17 wd:${cq} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended }
@@ -116,8 +120,10 @@ async function main() {
         if (list.length >= keep) break;
       }
       out.kinds[kind] = list; total += list.length;
-      await sleep(350);
-    }
+    };
+    const todo = Object.entries(KINDS);
+    while (todo.length) { await Promise.all(todo.splice(0, 3).map(one)); await sleep(300); }
+    out.kinds = Object.fromEntries(Object.keys(KINDS).filter(k => out.kinds[k]).map(k => [k, out.kinds[k]]));   // a fixed order, whatever finished first
     out.total = total;
     writeFileSync(join(OUT, cc + '.json'), JSON.stringify(out));
     console.log(cc, total, Object.entries(out.kinds).map(([k, v]) => k + ':' + v.length).join(' '));

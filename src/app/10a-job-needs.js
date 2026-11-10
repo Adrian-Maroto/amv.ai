@@ -1494,7 +1494,10 @@ function _cwAllJobs(){
                               .concat((_cwMadeMore(cc) || []).filter(j => !have.has(j.id)))
                               /* And the country being browsed at the bottom, so
                                  its cards open and switch on like any other. */
-                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).concat(_cwMadeMore(_cwBrowse) || []).filter(j => !have.has(j.id)) : []); }
+                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).concat(_cwMadeMore(_cwBrowse) || []).filter(j => !have.has(j.id)) : [])
+                              /* The country catalogue's jobs (country-catalog.js),
+                                 once its file has arrived - real named services. */
+                              .concat(((window._ccCrewJobs || {})[cc] || []).filter(j => !have.has(j.id))); }
   catch(e){ return _cwJobs() || []; }
 }
 /* THE BEST ONES FIRST, AND FEWER OF THEM.

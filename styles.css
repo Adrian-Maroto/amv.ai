@@ -17582,3 +17582,40 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 @media (max-width:760px){.tk-local-list{grid-template-columns:minmax(0,1fr)}}
 .tk-none{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin:0 0 var(--sp-5);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
 .tk-none p{margin:0;flex:1 1 240px;color:var(--tx)}
+
+/* LAYER A364 - The country catalogue on Tasks (Nov 10): a count with its
+   source, kind chips, the first rows, and Show all. A search reaches every
+   row, shown or not. */
+.cc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-2);margin:var(--sp-5) 0 var(--sp-2);font-size:var(--t-base);color:var(--tx)}
+.cc-src{font-size:var(--t-xs);color:var(--mu)}
+.cc-chips{margin:0 0 var(--sp-3)}
+.cc-list .tk-row.cc-more{display:none}
+.cc-open .cc-list .tk-row.cc-more,.cc-filtered .cc-list .tk-row.cc-more{display:flex}
+.cc-list .tk-row.cc-off{display:none!important}
+.cc-list .tk-row[hidden]{display:none!important}
+.tk-find-on .cc-list .tk-row.cc-more:not([hidden]){display:flex}
+.cc-all{margin-top:var(--sp-3)}
+.cc-crew{margin-top:var(--sp-6)}
+.cc-crew[hidden]{display:none}
+.cc-jobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
+.cc-job{display:flex;align-items:center;gap:var(--sp-3);min-width:0;width:100%;padding:12px 14px;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md);color:var(--tx);cursor:pointer;font:inherit}
+.cc-job:hover,.cc-job:focus-visible{background:var(--s2);border-color:var(--bdl)}
+.cc-job-ic{flex:none;font-size:18px}
+.cc-job-b{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.cc-job-t{font-size:var(--t-base);font-weight:600;overflow-wrap:anywhere}
+.cc-job-s{font-size:var(--t-xs);color:var(--mu);overflow-wrap:anywhere}
+.cc-jobs .cc-job.cc-more{display:none}
+.cc-open .cc-jobs .cc-job.cc-more,.cc-filtered .cc-jobs .cc-job.cc-more{display:flex}
+.cc-jobs .cc-job.cc-off{display:none!important}
+@media (max-width:760px){.cc-jobs{grid-template-columns:minmax(0,1fr)}}
+@media (hover:none){.cc-job{min-height:44px}}
+.cc-int{margin:var(--sp-5) 0}
+.cc-int[hidden]{display:none}
+.cc-svcs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
+.cc-svc{display:flex;align-items:center;gap:var(--sp-3);min-width:0;padding:10px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md)}
+.cc-use{flex:none;min-height:34px}
+.cc-svcs .cc-svc.cc-more{display:none}
+.cc-open .cc-svcs .cc-svc.cc-more,.cc-filtered .cc-svcs .cc-svc.cc-more{display:flex}
+.cc-svcs .cc-svc.cc-off{display:none!important}
+@media (max-width:760px){.cc-svcs{grid-template-columns:minmax(0,1fr)}}
+@media (hover:none){.cc-use{min-height:44px}}

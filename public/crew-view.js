@@ -1433,6 +1433,7 @@ function renderCrewView(){
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
+      <section class="cc-crew" id="cc-crew" hidden></section>
       ${_cwMostStartedHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
@@ -1454,6 +1455,7 @@ function renderCrewView(){
       </div>
     </div></div>`;
     _cwWireCmd(vc);
+    _ccReady().then(ok => { if(ok) window.ccFillCrew(); });
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -1640,6 +1642,7 @@ function renderCrewView(){
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
+      <section class="cc-crew" id="cc-crew" hidden></section>
       ${_cwMostStartedHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
@@ -1648,6 +1651,7 @@ function renderCrewView(){
     </div>
   </div></div>`;
   _cwWireCmd(vc);
+  _ccReady().then(ok => { if(ok) window.ccFillCrew(); });
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
   try{ if(typeof renderGames==='function') renderGames(); }catch(e){}

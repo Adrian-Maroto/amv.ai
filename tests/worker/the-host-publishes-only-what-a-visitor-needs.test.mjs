@@ -92,8 +92,15 @@ for (const f of packsBuilt) {
      `${DIR}/${I18N_DIR}/${f} is byte-identical to the built pack`);
 }
 
+/* The country catalogue: one file per country, exactly the ones built. */
+const ccBuilt = existsSync(R('data', 'countries')) ? readdirSync(R('data', 'countries')).filter(f => /^[A-Z]{2}\.json$/.test(f)).sort() : [];
+const ccPub = existsSync(R(DIR, 'countries')) ? readdirSync(R(DIR, 'countries')).sort() : [];
+ok(JSON.stringify(ccPub) === JSON.stringify(ccBuilt), `${DIR}/countries holds exactly the country files that were built, and nothing else`, { built: ccBuilt, published: ccPub });
+for (const f of ccBuilt) if (ccPub.includes(f))
+  ok(readFileSync(R('data', 'countries', f)).equals(readFileSync(R(DIR, 'countries', f))), `${DIR}/countries/${f} is byte-identical to data/countries/${f}`);
+
 section('Nothing else is in it');
-const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR);
+const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR && n !== 'countries');
 ok(extra.length === 0,
    `${DIR}/ holds only what a visitor needs`, extra);
 

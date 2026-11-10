@@ -48,6 +48,8 @@ function _loadCrewView(){
   });
   return _crewViewP;
 }
+/* The country catalogue (src/country/country-catalog.js): fetched once, true when its functions are here. */
+function _ccReady(){ return _lazyLoad('country-catalog.js', () => typeof window.ccFillCrew === 'function'); }
 function _cwCatalog(){ return (typeof window !== 'undefined' && window.AMV_CREW_DATA) || null; }
 function _loadCrewData(){
   if(_cwCatalog()) return Promise.resolve(true);
@@ -78,6 +80,7 @@ function _crewPrefetch(){
   const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
     _lazyLoad('integrations-view.js', () => window._intViewHere === true);
+    _ccReady();
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function'); }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
