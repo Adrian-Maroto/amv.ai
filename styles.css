@@ -17438,3 +17438,18 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 
 /* LAYER: a plugin AMV took down says so on its row (Nov 1 audit OPS-008). */
 .pl-down{margin-top:var(--sp-2);color:var(--red)}
+
+/* LAYER A353 - The answer bar's More menu (Nov 10). Share sits with copy and
+   read aloud; Download, Branch and React are named in a small menu under the
+   three dots instead of standing in the row as unlabelled icons. Opens
+   downward from the button, like the menus everywhere else in AMV. */
+.mact-morewrap{position:relative;display:inline-flex}
+.mact-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:240px;max-width:min(320px,calc(100vw - 32px));
+  padding:var(--sp-1);background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);box-shadow:var(--sh-lg)}
+.mact-menu[hidden]{display:none}
+.mact-mi{display:flex;align-items:center;gap:var(--sp-2);width:100%;min-height:36px;padding:8px 10px;border:0;border-radius:var(--r-sm);
+  background:none;color:var(--tx);font:inherit;font-size:var(--t-sm);text-align:left;cursor:pointer;white-space:normal}
+.mact-mi svg{flex:none;color:var(--mu)}
+.mact-mi span{min-width:0;overflow-wrap:anywhere}
+.mact-mi:hover,.mact-mi:focus-visible{background:var(--s3);outline:none}
+@media (hover:none){.mact-mi{min-height:44px}}

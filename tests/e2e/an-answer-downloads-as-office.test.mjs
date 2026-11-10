@@ -66,8 +66,13 @@ function zipCheck(buf){
   }
   return { ok: true, names };
 }
+/* Download lives in the answer's More menu (Nov 10): open it, then choose. */
+const exportOf = async (idx) => {
+  await page.click(`[data-action="answer-more"][data-idx="${idx}"]`);
+  await page.click(`.mact-menu [data-action="export"][data-idx="${idx}"]`);
+};
 const download = async (idx, kind) => {
-  await page.click(`[data-action="export"][data-idx="${idx}"]`);
+  await exportOf(idx);
   await page.waitForSelector(`.ctxm [data-exp="${kind}"]`, { timeout: 8000 });
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click(`.ctxm [data-exp="${kind}"]`)]);
   return { name: dl.suggestedFilename(), buf: readFileSync(await dl.path()) };
@@ -83,7 +88,7 @@ section('The exporter is not in the page, and a failed fetch says so');
   const before = await page.evaluate(() => typeof window.amvDocx);
   ok(before === 'undefined', 'nothing of it ships with the page', before);
   await page.route('**/office.js', r => r.abort());
-  await page.click('[data-action="export"][data-idx="1"]');
+  await exportOf(1);
   await page.waitForTimeout(400);
   const t = await page.evaluate(() => window.__toasts.slice());
   ok(t.some(x => /^error/.test(x) && /could not be loaded/.test(x)), 'when it cannot be fetched, the person is told', t);
@@ -130,7 +135,7 @@ section('PowerPoint: one slide per section');
 
 section('A spreadsheet is only offered where there is a table');
 {
-  await page.click('[data-action="export"][data-idx="3"]');
+  await exportOf(3);
   await page.waitForSelector('.ctxm [data-exp="docx"]');
   const items = await page.evaluate(() => [...document.querySelectorAll('.ctxm [data-exp]')].map(b => b.dataset.exp));
   ok(!items.includes('xlsx') && items.includes('docx') && items.includes('pptx'), 'a poem offers Word and PowerPoint, not Excel', items);

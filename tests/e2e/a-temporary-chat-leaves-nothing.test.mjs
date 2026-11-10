@@ -148,7 +148,8 @@ section('Branch from an answer: a new chat, the original untouched');
     renderChatMsgs();
     window.__orig = getCurConv().id;
   });
-  await page.click('[data-action="branch"][data-idx="1"]');
+  await page.click('[data-action="answer-more"][data-idx="1"]');
+  await page.click('.mact-menu [data-action="branch"][data-idx="1"]');
   await page.waitForTimeout(150);
   const r = await page.evaluate(() => {
     const now = getCurConv(), orig = S.convs.find(c => c.id === window.__orig);

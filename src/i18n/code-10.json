@@ -245,5 +245,24 @@
     "it": "Condividi con lo spazio di lavoro i progetti, i prompt e i file che scegli. Chat personali, memoria personale e account collegati non vengono condivisi automaticamente.",
     "ko": "선택한 프로젝트, 프롬프트, 파일을 워크스페이스와 공유하세요. 개인 채팅, 개인 메모리, 연결된 계정은 자동으로 공유되지 않습니다.",
     "ta": "தேர்ந்தெடுத்த திட்டங்கள், ப்ராம்ப்ட்கள், கோப்புகளைப் பணியிடத்துடன் பகிருங்கள். தனிப்பட்ட அரட்டைகள், தனிப்பட்ட நினைவகம், இணைக்கப்பட்ட கணக்குகள் தானாகப் பகிரப்படாது."
+  },
+  "Share": {
+    "es": "Compartir",
+    "zh": "分享",
+    "hi": "शेयर करें",
+    "ar": "مشاركة",
+    "pt": "Compartilhar",
+    "fr": "Partager",
+    "de": "Teilen",
+    "ja": "共有",
+    "ru": "Поделиться",
+    "id": "Bagikan",
+    "bn": "শেয়ার করুন",
+    "ur": "شیئر کریں",
+    "tr": "Paylaş",
+    "vi": "Chia sẻ",
+    "it": "Condividi",
+    "ko": "공유",
+    "ta": "பகிர்"
   }
 }

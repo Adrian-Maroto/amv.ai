@@ -1100,7 +1100,7 @@ function _amvStartVoice(btn){
       const base=ta.dataset.vb||'';
       ta.value=base+final+(interim?'['+interim+']':'');
       if(final) ta.dataset.vb=base+final;
-      ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+      fitChatComposer(ta);
     }
   };
   window._voiceRec.onend = ()=>{

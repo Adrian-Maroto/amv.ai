@@ -2276,7 +2276,7 @@ function bindChatEvents() {
      confirming Enter after composition has formally ended. */
   on(ta,'keydown',e=>{ if(e.isComposing||e.keyCode===229) return; if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{
-    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+    fitChatComposer(ta);
     /* Debounced: a keystroke is not worth a write, and losing the last 400ms of
        typing is not the failure this is here to prevent. */
     try{ clearTimeout(_draftTimer); }catch(e){}
@@ -2298,6 +2298,11 @@ function bindChatEvents() {
     }
     const action=btn.dataset.action, idx=parseInt(btn.dataset.idx);
     const msgs=getMsgs();
+    /* An item in the More menu acts from the More button: the menu closes as
+       it is used, and a picker anchored to a hidden element opens at 0,0. */
+    let anchor=btn;
+    const inMenu=btn.closest('.mact-menu');
+    if(inMenu){ anchor=inMenu.parentElement.querySelector('[data-action="answer-more"]')||btn; _answerMoreClose(); }
     if(action==='edit') editMsg(idx);
     else if(action==='copy-u'||action==='copy-a'){
       const m=msgs[idx];
@@ -2305,14 +2310,16 @@ function bindChatEvents() {
     }
     else if(action==='like-up') likeMsg(idx,'up');
     else if(action==='like-down') likeMsg(idx,'down');
-    else if(action==='react'){ _openReactPicker(idx, btn); }
+    else if(action==='react'){ _openReactPicker(idx, anchor); }
     else if(action==='react-toggle'){ _toggleReaction(idx, btn.dataset.emoji); }
     else if(action==='regen') regenerateMsg();
     else if(action==='branch') branchConv(idx);
-    else if(action==='export') _exportOpen(idx, btn);
+    else if(action==='export') _exportOpen(idx, anchor);
     else if(action==='retry-ai') retryLastAI();
     else if(action==='continue-ai') continueLastAI();
     else if(action==='speak') speakMessage(idx);
+    else if(action==='share-answer') shareAnswer(idx);
+    else if(action==='answer-more') _answerMoreToggle(btn);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
        that plan - being sent to a row of four after pressing a button with a
        plan's name on it is the nudge forgetting what it just offered. */
@@ -2950,10 +2957,17 @@ function renderChatMsgs() {
         '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="'+escH(T('Read aloud'))+'" aria-label="'+escH(T('Read aloud'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
-        '<button class="mact" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
-        '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
-        '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="'+escH(T('React'))+'" aria-label="'+escH(T('React'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
+        '<button class="mact" data-action="share-answer" data-idx="'+i+'" title="'+escH(T('Share'))+'" aria-label="'+escH(T('Share'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>'+
         (i===msgs.length-1?'<button class="mact" data-action="regen" title="'+escH(T('Regenerate'))+'" aria-label="'+escH(T('Regenerate'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
+        /* THE REST, ONE TAP AWAY. Six icons in a row read as noise; the ones
+           people use after almost every answer stay out, the others are named
+           in a menu rather than left to a tooltip. */
+        '<span class="mact-morewrap"><button class="mact" data-action="answer-more" data-idx="'+i+'" title="'+escH(T('More'))+'" aria-label="'+escH(T('More'))+'" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>'+
+          '<div class="mact-menu" role="menu" hidden>'+
+            '<button class="mact-mi" role="menuitem" data-action="export" data-idx="'+i+'" aria-haspopup="menu"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>'+escH(T('Download as Word, Excel or PowerPoint'))+'</span></button>'+
+            '<button class="mact-mi" role="menuitem" data-action="branch" data-idx="'+i+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg><span>'+escH(T('Branch from here'))+'</span></button>'+
+            '<button class="mact-mi mact-react" role="menuitem" data-action="react" data-idx="'+i+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg><span>'+escH(T('React'))+'</span></button>'+
+          '</div></span>'+
       '</div>'+
       _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
@@ -3085,7 +3099,7 @@ function _amvBeginRec(){
   };
   _voiceRec.onresult=e=>{
     const t=Array.from(e.results).map(r=>r[0].transcript).join('');
-    const ta=$('mta'); if(ta){ ta.value=t; ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
+    const ta=$('mta'); if(ta){ ta.value=t; fitChatComposer(ta); }
   };
   _voiceRec.onend=()=>{
     _isRecording=false;
@@ -3160,6 +3174,81 @@ function _syncSpeakButtons(){
 }
 
 // read a specific chat message aloud (by index)
+/* THE BOX GROWS WITH WHAT YOU WRITE, as far as half the screen.
+   It used to stop at 130px - four lines - so a pasted paragraph was read
+   through a slot. Past half the visible height it scrolls instead, because a
+   box that keeps growing pushes the conversation it answers off the screen.
+   visualViewport, not innerHeight: on a phone the keyboard takes the rest. */
+function fitChatComposer(el){
+  if(!el) return;
+  const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight || 800;
+  const max = Math.max(120, Math.min(480, Math.round(vh * 0.45)));
+  el.style.height = 'auto';
+  const need = el.scrollHeight || 0;
+  el.style.maxHeight = max + 'px';
+  el.style.height = Math.min(need, max) + 'px';
+  el.style.overflowY = need > max ? 'auto' : 'hidden';
+}
+try{ window.addEventListener('resize', () => fitChatComposer($('mta')), { passive:true }); }catch(e){}
+
+/* Share THIS answer's text - the device's own share sheet where there is one,
+   the clipboard where there is not. No link is made: a public link to a chat
+   is a publishing decision, and it is not taken on a tap. */
+async function shareAnswer(idx){
+  const m = getMsgs()[idx]; if(!m) return;
+  const text = String(m.d || (typeof m.c === 'string' ? m.c : '')); if(!text) return;
+  try{
+    if(navigator.share) await navigator.share({ title:'AMV', text });
+    else { await navigator.clipboard.writeText(text); toast(T('Answer copied.'), 'success'); }
+  }catch(e){
+    if(e && e.name === 'AbortError') return;   // they closed the share sheet
+    toast(T('Sharing isn’t available here. Use Copy instead.'), 'info');
+  }
+}
+
+function _answerMoreClose(except){
+  document.querySelectorAll('.mact-menu:not([hidden])').forEach(m => {
+    if(m === except) return;
+    m.hidden = true;
+    const b = m.parentElement && m.parentElement.querySelector('[data-action="answer-more"]');
+    if(b) b.setAttribute('aria-expanded', 'false');
+  });
+}
+function _answerMoreToggle(btn){
+  const menu = btn.parentElement && btn.parentElement.querySelector('.mact-menu'); if(!menu) return;
+  const open = menu.hidden;
+  _answerMoreClose(menu);
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if(open){
+    /* Kept inside the window. The row sits wherever the answer ends, which on
+       a phone can be the right-hand edge; a menu hanging off it is a menu
+       half of which cannot be tapped. */
+    menu.style.left = '';
+    const r = menu.getBoundingClientRect(), edge = (window.innerWidth || 0) - 8;
+    if(r.right > edge) menu.style.left = Math.round(Math.max(8 - r.left, -(r.right - edge))) + 'px';
+    const first = menu.querySelector('.mact-mi'); if(first) first.focus();
+  }
+}
+function _answerMoreOutside(e){
+  if(e.target && e.target.closest && e.target.closest('.mact-morewrap')) return;
+  _answerMoreClose();
+}
+function _answerMoreKeys(e){
+  if(e.key === 'Escape' && document.querySelector('.mact-menu:not([hidden])')){
+    const open = document.querySelector('.mact-menu:not([hidden])');
+    const b = open.parentElement.querySelector('[data-action="answer-more"]');
+    _answerMoreClose(); if(b) b.focus();
+    /* Handled: the page-wide Escape (which returns focus to the message box)
+       must not also act on the same key press. */
+    e.stopPropagation(); e.preventDefault();
+  }
+}
+/* Escape in the CAPTURE phase: other Escape handlers on this page close
+   whatever is open on the way up, and by then the menu is gone and the focus
+   has nowhere to return to. */
+try{ on(document, 'click', _answerMoreOutside); document.addEventListener('keydown', _answerMoreKeys, true); }catch(e){}
+
 function speakMessage(idx){
   const msgs=getMsgs(); const m=msgs[idx]; if(!m) return;
   const text=typeof m.c==='string' ? m.c : (Array.isArray(m.c)? m.c.map(x=>x.text||'').join(' ') : '');
