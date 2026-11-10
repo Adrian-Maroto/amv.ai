@@ -14,9 +14,9 @@ async function shareAnswer(idx){
   const text=String(m.d||(typeof m.c==='string'?m.c:''));if(!text)return;
   try{
     // Share this answer's text only. No public URL, no hidden context/history.
-    if(navigator.share)await navigator.share({title:'AMV answer',text});
-    else{await navigator.clipboard.writeText(text);toast('Answer copied. No public link was created.','success');}
-  }catch(e){if(e&&e.name!=='AbortError')toast('Sharing was unavailable. Use Copy to share the answer.','info');}
+    if(navigator.share)await navigator.share({title:'AMV',text});
+    else{await navigator.clipboard.writeText(text);toast(T('Answer copied.'),'success');}
+  }catch(e){if(e&&e.name!=='AbortError')toast(T('Sharing isn’t available here. Use Copy instead.'),'info');}
 }
 function answerMore(idx,button){
   const bar=button.closest('.mact-bar');if(!bar)return;
@@ -26,10 +26,10 @@ function answerMore(idx,button){
 function _productCountryHTML(id){
   const code=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';
   const rows=typeof CW_WORLD_COUNTRIES!=='undefined'?CW_WORLD_COUNTRIES:[];
-  return '<div class="product-country"><label for="'+escH(id)+'">Country</label><select class="inp" id="'+escH(id)+'">'+
-    '<option value="" '+(!code?'selected':'')+'>Choose a country</option>'+
+  return '<div class="product-country"><label for="'+escH(id)+'">'+escH(T('Country'))+'</label><select class="inp" id="'+escH(id)+'">'+
+    '<option value="" '+(!code?'selected':'')+'>'+escH(T('Choose a country'))+'</option>'+
     rows.slice().sort((a,b)=>a[1].localeCompare(b[1])).map(r=>'<option value="'+escH(r[0])+'" '+(r[0]===code?'selected':'')+'>'+escH(r[1])+'</option>').join('')+
-    '</select><span>Used for regional examples. You can change it anytime.</span></div>';
+    '</select><span>'+escH(T('Sets the banks, shops and services shown. Change it anytime.'))+'</span></div>';
 }
 function _productCountryName(){
   const cc=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';

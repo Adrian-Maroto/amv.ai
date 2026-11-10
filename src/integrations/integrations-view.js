@@ -717,7 +717,7 @@ function renderIntegrationsView(){
          each provider every day (tools/connector-health.mjs, run daily by the
          connectors workflow), and every Notify me is recorded on the server
          (/waitlist, one entry per app). */
-      '<p class="vsub">Choose a country, connect supported accounts, and see exactly what access you have granted. Directory listings are not proof of regional availability or permission to act.</p>'+
+      '<p class="vsub">'+escH(T('Pick your country, connect your accounts, and see exactly what each one lets AMV do.'))+'</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -1059,15 +1059,15 @@ try{ window._intViewHere = true; }catch(e){}
 async function _paintRegionalConnections(host){
   if(!host)return;
   const code=typeof _cwCountryGuess==='function'?_cwCountryGuess():'';
-  if(!code){host.innerHTML='<p class="product-note">Choose a country to load regional examples. Existing connections remain visible below.</p>';return;}
-  host.innerHTML='<p class="product-note" role="status">Checking regional connection options...</p>';
+  if(!code){host.innerHTML='<p class="product-note">'+escH(T('Pick a country to see what connects there. Your accounts stay below.'))+'</p>';return;}
+  host.innerHTML='<p class="product-note" role="status">'+escH(T('Checking what connects there…'))+'</p>';
   try{
     if(!AMV_API.live)throw new Error('Backend unavailable');
     const data=await AMV_API.everyday(code);
     // A late response for another country must never overwrite this screen.
     if(!host.isConnected || _cwCountryGuess()!==code)return;
     if(!data||typeof data!=='object'||data.error)throw new Error('No regional data');
-    host.innerHTML='<h3>For '+escH(_productCountryName())+'</h3><p class="product-note">Regional examples, not a popularity ranking. Sign-in availability is checked when you connect. A website listing is not permission to buy or submit.</p>'+_intLocalBody(code,data);
+    host.innerHTML='<h3>'+escH(_cwSayPlace('Popular in {country}', _productCountryName()))+'</h3><p class="product-note">'+escH(T('Sign-in is checked when you connect. AMV never buys or submits anything on a site without you.'))+'</p>'+_intLocalBody(code,data);
     const pick=host.querySelector('#lc-c');if(pick){pick.closest('label')?.remove();if(pick.isConnected)pick.remove();}
     host.querySelectorAll('[data-lc-grant]').forEach(b=>on(b,'click',()=>{if(!_intNeedsAccount(_intName(b.dataset.lcGrant)))_connGoTo(b.dataset.lcGrant);}));
     host.querySelectorAll('[data-lc-mail]').forEach(b=>on(b,'click',()=>{if(!_intNeedsAccount(_intName('mail')))openMailConnect(b.dataset.lcMail);}));
@@ -1077,7 +1077,7 @@ async function _paintRegionalConnections(host){
     host.querySelectorAll('[data-app-notify]').forEach(b=>on(b,'click',()=>_appNotify(b)));
   }catch(e){
     if(!host.isConnected||_cwCountryGuess()!==code)return;
-    host.innerHTML='<h3>For '+escH(_productCountryName())+'</h3><p class="product-note">Regional availability could not be verified. No connection is being claimed here. Your existing accounts and the clearly marked general catalog remain below.</p><button class="btn bs" id="regional-retry">Retry</button>';
+    host.innerHTML='<h3>'+escH(_cwSayPlace('Popular in {country}', _productCountryName()))+'</h3><p class="product-note">'+escH(T('This list didn’t load. Your connected accounts are below.'))+'</p><button class="btn bs" id="regional-retry">'+escH(T('Try again'))+'</button>';
     on(host.querySelector('#regional-retry'),'click',()=>_paintRegionalConnections(host));
   }
 }
