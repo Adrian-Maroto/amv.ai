@@ -48,15 +48,115 @@ const TASKS={
   edit:"Improve this - clearer and tighter, without changing what I mean or how I sound:\n\n[Paste your text]",
   translate:"Translate this into [language], keeping the tone and anything that should stay as it is:\n\n[Paste your text]"
 };
+
+/* SIXTY MORE TASKS (Nov 10), written in the build-13 audit and kept after
+   review: each asks for the detail it needs, drafts rather than sends, and
+   says what it will not invent. Filed into the groups people already read -
+   and two new ones, Study and Money & home - with Code still last. */
+const TASK_EXTRA=[
+  ["x-meeting-agenda","Work","\uD83D\uDCBC","Prepare a meeting agenda","Turn [meeting goal] into an agenda with decisions, time boxes and preparation."],
+  ["x-follow-up","Work","\uD83D\uDCBC","Draft a follow-up","Draft a polite follow-up about [topic]. Do not send it; give me text to review."],
+  ["x-weekly-update","Work","\uD83D\uDCBC","Write a weekly update","Turn [notes] into completed work, blockers and next steps. Do not invent results."],
+  ["x-project-scope","Work","\uD83D\uDCBC","Define a project scope","For [project], separate objectives, deliverables, exclusions, dependencies and acceptance tests."],
+  ["x-risk-register","Work","\uD83D\uDCBC","Build a risk register","For [project], identify risks, warning signs, mitigations and owners to assign."],
+  ["x-decision-memo","Work","\uD83D\uDCBC","Compare a decision","Compare [options] against [criteria]. Separate known evidence, assumptions and missing information."],
+  ["x-interview-practice","Work","\uD83D\uDCBC","Practice an interview","Ask me one interview question at a time for [role]. Give specific feedback after each answer."],
+  ["x-onboarding","Work","\uD83D\uDCBC","Plan onboarding","Create a first-week checklist for [role]. Flag access permissions that an administrator must grant."],
+  ["x-handover","Work","\uD83D\uDCBC","Prepare a handover","Turn [notes] into a handover with current status, open decisions and source links."],
+  ["x-proposal-review","Work","\uD83D\uDCBC","Review a proposal","Review [proposal] for unclear scope, contradictory terms, deliverables and unanswered questions."],
+  ["x-quiz-me","Study","\uD83D\uDCDA","Quiz me one question at a time","Quiz me on [topic], one question at a time. Explain errors and adjust difficulty."],
+  ["x-study-calendar","Study","\uD83D\uDCDA","Plan revision","Build a realistic revision schedule for [exam date, subjects, available time]. Ask for missing details."],
+  ["x-essay-outline","Study","\uD83D\uDCDA","Outline an argument","Help outline my argument about [topic], with thesis, counterargument and evidence gaps. Do not invent citations."],
+  ["x-rubric-check","Study","\uD83D\uDCDA","Check work against a rubric","Compare [my work] with [rubric]. Quote specific evidence and propose concrete edits."],
+  ["x-citation-audit","Study","\uD83D\uDCDA","Check citations","Check [citations] against the sources I provide. Flag unverifiable references instead of inventing them."],
+  ["x-lab-report","Study","\uD83D\uDCDA","Organize a lab report","Organize [experiment notes] into hypothesis, method, observations and limitations. Do not fabricate data."],
+  ["x-worked-example","Study","\uD83D\uDCDA","Walk through a problem","Guide me through [problem] step by step. Ask me to attempt the next step before giving it."],
+  ["x-language-practice","Study","\uD83D\uDCDA","Practice a conversation","Practice [language] with me about [topic]. Keep corrections short and explain useful expressions."],
+  ["x-debate-prep","Study","\uD83D\uDCDA","Prepare both sides of a debate","Build arguments and counterarguments for [motion]. Distinguish sourced facts from opinions."],
+  ["x-reading-questions","Study","\uD83D\uDCDA","Discuss a reading","From [reading], create questions that require close reading. Use only quotations actually in the supplied text."],
+  ["x-bill-explain","Money & home","\uD83C\uDFE0","Understand a bill","Explain [redacted bill]. Separate usage, fixed fees, taxes and due dates. Do not pay it."],
+  ["x-subscription-inventory","Money & home","\uD83C\uDFE0","List subscriptions","From [redacted receipts or connected email with consent], list subscriptions, renewals and evidence. Do not cancel anything."],
+  ["x-refund-draft","Money & home","\uD83C\uDFE0","Draft a refund request","Draft a refund request for [order issue] using the seller policy I provide or a current official source. Do not submit it."],
+  ["x-utility-compare","Money & home","\uD83C\uDFE0","Compare utility plans","Compare utility options for [postcode and needs] from current official pricing. State exclusions and dates."],
+  ["x-move-checklist","Money & home","\uD83C\uDFE0","Organize a move","Build a moving checklist for [origin, destination, date] with documents and tasks. Verify local official requirements."],
+  ["x-rental-questions","Money & home","\uD83C\uDFE0","Prepare rental questions","From [listing or lease], suggest questions about fees, repairs and renewal. Flag legal questions for a qualified adviser."],
+  ["x-insurance-compare","Money & home","\uD83C\uDFE0","Compare insurance documents","Compare [policy documents] on coverage, exclusions, limits and deductibles. Do not recommend a policy without the missing facts."],
+  ["x-renewal-calendar","Money & home","\uD83C\uDFE0","Identify renewal dates","From [documents], list renewal dates and deadlines with the exact source for each. Do not create calendar events without my review."],
+  ["x-receipt-table","Money & home","\uD83C\uDFE0","Organize receipts","Turn [receipts] into a table of merchant, date, currency, amount and category. Never add unlike currencies."],
+  ["x-savings-scenarios","Money & home","\uD83C\uDFE0","Model savings scenarios","Calculate savings scenarios from [income, expenses, target]. Label assumptions and show the arithmetic."],
+  ["x-source-check","Find out","\uD83D\uDD0E","Check a claim","Verify [claim] using primary sources when possible. Give dates, disagreement and confidence."],
+  ["x-compare-sources","Find out","\uD83D\uDD0E","Compare sources","Compare [sources] on evidence, methods, conflicts of interest and what each cannot establish."],
+  ["x-country-services","Find out","\uD83D\uDD0E","Find official local services","Find official services for [need] in the selected country. Verify domains and eligibility; do not submit personal data."],
+  ["x-market-map","Find out","\uD83D\uDD0E","Map a market","Map [market] by customer segment, competitors and evidence. Distinguish revenue data from estimates."],
+  ["x-company-brief","Find out","\uD83D\uDD0E","Research a company","Create a sourced brief on [company], including business model, recent official filings and open questions."],
+  ["x-product-compare","Find out","\uD83D\uDD0E","Compare local products","Compare [product requirements] using current country-specific prices and seller policies. I will complete any checkout."],
+  ["x-fact-timeline","Find out","\uD83D\uDD0E","Build an evidence timeline","Build a dated timeline of [topic]. Distinguish the event date from publication date."],
+  ["x-paper-explain","Find out","\uD83D\uDD0E","Explain a research paper","Explain [paper] with its question, method, results, limitations and what the evidence does not show."],
+  ["x-public-data","Find out","\uD83D\uDD0E","Find public datasets","Find datasets for [research question]. Report source, license, geography, update date and missing values."],
+  ["x-accessibility-review","Find out","\uD83D\uDD0E","Review accessibility","Review [page or interface] for keyboard access, labels, contrast and readable content. Separate measured checks from hypotheses."],
+  ["x-test-plan","Code","\uD83D\uDEE0\uFE0F","Design a test plan","For [feature], define happy paths, permission checks, failure injection and acceptance criteria."],
+  ["x-bug-repro","Code","\uD83D\uDEE0\uFE0F","Write a bug report","Turn [observations] into steps, expected versus actual behavior, environment and a minimal reproduction."],
+  ["x-api-contract","Code","\uD83D\uDEE0\uFE0F","Review an API contract","Review [API specification] for authorization, idempotency, validation, error responses and versioning."],
+  ["x-db-migration","Code","\uD83D\uDEE0\uFE0F","Plan a database migration","Plan [migration] with backups, compatibility, rollback conditions and verification. Do not run it."],
+  ["x-security-review","Code","\uD83D\uDEE0\uFE0F","Review code security","Review [code] defensively for access control, injection, secret handling and failure behavior. Cite exact lines and label untested risks."],
+  ["x-release-checklist","Code","\uD83D\uDEE0\uFE0F","Prepare a release checklist","For [application], make a release checklist with required tests, rollback, monitoring and owners."],
+  ["x-incident-notes","Code","\uD83D\uDEE0\uFE0F","Organize an incident","From [incident notes], separate timeline, observed impact, hypotheses, mitigation and follow-up evidence."],
+  ["x-sql-review","Code","\uD83D\uDEE0\uFE0F","Review a query","Review [SQL] for correctness, permissions and performance. Suggest a safe plan; do not execute production changes."],
+  ["x-docs-draft","Code","\uD83D\uDEE0\uFE0F","Write developer documentation","Document [feature or code] with setup, examples, errors and known limitations. Do not claim behavior not in the code."],
+  ["x-data-validation","Code","\uD83D\uDEE0\uFE0F","Check a dataset","Inspect [dataset] for missing values, duplicates, types and inconsistent units. Report checks, not invented cleaned data."],
+  ["x-travel-docs","Advice & how-to","\uD83E\uDDED","Check travel documents","Identify official document requirements for [nationality, destination, dates]. Verify current government sources; do not submit an application."],
+  ["x-packing","Advice & how-to","\uD83E\uDDED","Make a packing list","Make a packing list for [destination, dates, activities] and explain the assumptions."],
+  ["x-meal-budget","Advice & how-to","\uD83E\uDDED","Plan meals on a budget","Plan meals for [people, budget, restrictions] using local units. Ask about allergies before choosing ingredients."],
+  ["x-appointment-prep","Advice & how-to","\uD83E\uDDED","Prepare appointment questions","Help organize questions and information for [appointment]. Do not diagnose or replace the professional."],
+  ["x-event-plan","Advice & how-to","\uD83E\uDDED","Plan a small event","Plan [event] with budget, timeline, accessibility, roles and contingency options."],
+  ["x-gift-research","Advice & how-to","\uD83E\uDDED","Research a gift","Compare gift options for [recipient interests, budget, delivery deadline] from sellers in the selected country. Do not buy anything."],
+  ["x-document-checklist","Advice & how-to","\uD83E\uDDED","Create a document checklist","From the official rules for [process], make a checklist and show the source for each requirement."],
+  ["x-repair-options","Advice & how-to","\uD83E\uDDED","Compare repair options","For [item and issue], compare safe troubleshooting, official repair and replacement. Do not suggest hazardous repairs."],
+  ["x-calendar-review","Advice & how-to","\uD83E\uDDED","Review a week","From [calendar export or an authorized connection], identify conflicts and open blocks. Propose changes without making them."],
+  ["x-writing-tone","Advice & how-to","\uD83E\uDDED","Adjust the tone","Rewrite [text] in [tone] while preserving its meaning and all commitments. Do not add promises."],
+];
+/* What the country itself names (Nov 10, owner: "the most popular tasks in
+   the country you are in"). Built from the server's COUNTRY_FACTS for the
+   chosen country - the tax office, the banks, the job sites, the shops - so
+   "Your tax return" in Spain names the Agencia Tributaria and in Australia the
+   ATO. A field the country has no entry for is simply not offered. */
+const TASK_BY_FACT=[
+  ['tax','\uD83E\uDDFE','Your tax return','Walk me through filing my tax return with {v}, step by step, for my situation: [your income and circumstances]. Link the official pages and list this year\u2019s deadlines.'],
+  ['tax','\uD83D\uDCC5','Tax deadlines this year','List every filing and payment deadline with {v} that applies to [your situation] this year, each with its official source.'],
+  ['gov','\uD83E\uDEAA','Set up your digital ID','How do I set up and use {v}? Give the official steps, what I need ready, and what to do if it fails.'],
+  ['id','\uD83D\uDEC2','Renew a passport or ID','How do I renew my [passport / ID card] through {v}? Documents, fees, waiting times and the official link.'],
+  ['banks','\uD83C\uDFE6','Compare bank accounts','Compare everyday accounts at {v} on fees, app, overdraft and [what matters to you]. Use current official pages and say what you could not verify.'],
+  ['banks','\u26A0\uFE0F','Dispute a card charge','Help me dispute a charge of [amount] from [merchant] on my card with [my bank: one of {v}]. Draft the message; do not send it.'],
+  ['pay','\uD83D\uDCB8','Send money safely','How do I send money with {v}, what does it cost, and which scams target it right now?'],
+  ['jobs','\uD83D\uDCBC','Find jobs near you','Find current [role] jobs in [city] on {v}. List the strongest ten with pay where shown and a link to each.'],
+  ['jobs','\uD83D\uDCC4','Tailor a CV for local jobs','Tailor my CV for [role] the way employers posting on {v} expect it. Here is my CV: [paste]'],
+  ['shop','\uD83D\uDED2','Best price for something','Find the best current price for [product] at {v}, with delivery cost and return policy for each.'],
+  ['shop','\u21A9\uFE0F','Return something','How do I return [item] bought from [shop: one of {v}]? The steps, the deadline and what I get back.'],
+  ['groc','\uD83E\uDD55','A cheaper weekly shop','Plan a week of groceries for [people] on [budget] and compare what it costs at {v}.'],
+  ['food','\uD83C\uDF55','Compare food delivery','Compare delivery fees, minimum orders and service charges on {v} for [area].'],
+  ['rail','\uD83D\uDE86','Plan a train trip','Plan a trip from [A] to [B] with {v}: times, fares and the cheapest ticket type.'],
+  ['prop','\uD83C\uDFE1','Find a place to live','Search {v} for a place to [rent / buy] in [area] under [budget]. Flag listings that look like scams.'],
+  ['car','\uD83D\uDE97','Car paperwork','What do I have to do for {v}, by when, and what does it cost? Official sources only.'],
+  ['health','\uD83E\uDE7A','How healthcare covers you','How does {v} cover [treatment or visit]? What do I pay, and what do I need to bring?'],
+  ['news','\uD83D\uDCF0','Today\u2019s news, briefly','Brief me on today\u2019s top stories from {v}, each in two sentences with its source.'],
+  ['exams','\u270D\uFE0F','Exam study plan','Make a study plan for {v} in [subject], [weeks] weeks before the exam, with past-paper practice.'],
+  ['uni','\uD83C\uDF93','Apply to university','How do I apply through {v}? Deadlines, documents and the steps in order.'],
+  ['telco','\uD83D\uDCF1','A cheaper phone plan','Compare mobile plans from {v} for [your usage] and say which is cheapest for it.'],
+  ['post','\uD83D\uDCE6','Send a parcel','Cheapest way to send a [size] parcel to [place] with {v}, and how long it takes.'],
+  ['weather','\u2600\uFE0F','This week\u2019s weather','What does {v} forecast for [city] this week, and what should I plan around?'],
+];
+/* Prompts for every task that is not in TASKS - the sixty, and the country's. */
+const _TASK_PROMPTS={};
+TASK_EXTRA.forEach(t=>{ _TASK_PROMPTS[t[0]]=t[4]; });
 function launchTask(key){
-  const prompt=TASKS[key];
+  const prompt=TASKS[key]||_TASK_PROMPTS[key];
   if(!prompt){ toast('Task not found','error'); return; }
   setTab('chat');
   setTimeout(()=>{
     const ta=$('mta');
     if(ta){
       ta.value=prompt;
-      ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+      fitChatComposer(ta);
       ta.focus();
       const s=prompt.indexOf('[');
       if(s>-1) ta.setSelectionRange(s,prompt.indexOf(']')+1);
@@ -95,9 +195,13 @@ function renderTasksView(){
     {label:'Writing',tasks:[['edit','\u270D\uFE0F','Improve my writing','Clearer, still yours'],['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Ready-to-send replies'],['translate','\uD83C\uDF10','Translate','Keeps the tone'],['essay','\uD83D\uDCDD','Write an essay','On any topic']]},
     {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\uD83D\uDCE8','Cover letter','Tailored to the job'],['meeting','\uD83D\uDCCB','Meeting notes','With action items'],['excel','\uD83D\uDCCA','Analyze data','Paste it, ask anything'],['pptx','\uD83D\uDDBC\uFE0F','Presentation','Slides with a point']]},
     {label:'Create',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
+    {label:'Study',tasks:[]},
+    {label:'Money & home',tasks:[]},
     {label:'Code',tasks:[['code','\uD83D\uDCBB','Build something','Runs, not just written'],['debug','\uD83D\uDC1B','Fix my code','From the real error']]},
   ];
-  const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span><span class="tk-d">${escH(t[3])}</span></span><span class="tk-arrow">\u2192</span></button>`;
+  TASK_EXTRA.forEach(t=>{ const c=cats.find(x=>x.label===t[1]); if(c) c.tasks.push([t[0],t[2],escH(T(t[3])),'']); });
+  const total=cats.reduce((n,c)=>n+c.tasks.length,0);
+  const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span>${t[3]?`<span class="tk-d">${escH(t[3])}</span>`:''}</span><span class="tk-arrow">\u2192</span></button>`;
   vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
     <header class="tasks-hero">
       <div>
@@ -110,10 +214,15 @@ function renderTasksView(){
         <p class="vsub">Pick a ready-made task - it opens a chat set up to deliver it - or set AMV working on its own.</p>
       </div>
     </header>
+    <label class="tk-find"><span class="sr-only">${escH(T('Find a task'))}</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input class="inp" id="tk-find" type="search" autocomplete="off" placeholder="${escH(T('Find a task - email, taxes, a trip, homework…'))}">
+      <span class="tk-find-n" id="tk-find-n" aria-live="polite"></span></label>
+    <section class="tk-local" id="tk-local" hidden></section>
     ${_autoServerHTML()}
     <div class="tasks-masonry">
       ${cats.map((cat,n)=>`<section class="tk-cat">
-        <div class="sec-head"><h3>${cat.label}</h3><span class="sec-sub">${cat.tasks.length} tasks</span></div>
+        <div class="sec-head"><h3>${escH(T(cat.label))}</h3><span class="sec-sub">${cat.tasks.length} ${escH(T('tasks'))}</span></div>
         <div class="tk-list">${cat.tasks.map(row).join('')}</div>
       </section>`).join('')}
     </div>
@@ -123,6 +232,49 @@ function renderTasksView(){
     </section>
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}
+  _tkWireFind(vc, total);
+  _tkFillLocal();
+}
+/* The search box: every task on the page, narrowed as you type - the country's
+   ones included - with a count, and groups with nothing left folded away. */
+function _tkWireFind(vc, total){
+  const box=$('tk-find'), n=$('tk-find-n'); if(!box) return;
+  const run=()=>{
+    const q=box.value.trim().toLowerCase();
+    let shown=0;
+    vc.querySelectorAll('.tk-row').forEach(r=>{ const hit=!q || r.textContent.toLowerCase().indexOf(q)>=0; r.hidden=!hit; if(hit) shown++; });
+    vc.querySelectorAll('.tk-cat, .tk-local').forEach(sec=>{ if(sec.id==='tk-local' && !sec.querySelector('.tk-row')) return; sec.hidden=!sec.querySelector('.tk-row:not([hidden])'); });
+    if(n) n.textContent = q ? shown + ' ' + T('tasks') : '';
+    /* Nothing matches: the words they typed are still a task - chat takes them. */
+    let none=$('tk-none');
+    if(q && !shown){
+      if(!none){ none=document.createElement('div'); none.id='tk-none'; none.className='tk-none'; box.closest('.tk-find').after(none); }
+      none.innerHTML='<p>'+escH(T('No ready-made task for that. Ask AMV in your own words instead.'))+'</p><button class="btn bp" type="button" id="tk-none-go">'+escH(T('Ask in chat'))+' \u2192</button>';
+      on($('tk-none-go'),'click',()=>{ const v=box.value.trim(); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=v; fitChatComposer(ta); ta.focus(); } },150); });
+    } else if(none) none.remove();
+  };
+  on(box,'input',run);
+}
+/* The country's own tasks, from the same facts Crew and Connections read. */
+async function _tkFillLocal(){
+  const host=$('tk-local'); if(!host) return;
+  const cc=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
+  const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
+  if(!cc || !row || !(window.AMV_API && AMV_API.live)) return;
+  let facts=null;
+  try{ const d=await AMV_API.everyday(cc); facts=d && d.facts; }catch(e){ return; }
+  if(!host.isConnected || !facts || typeof facts!=='object') return;
+  const rows=TASK_BY_FACT.filter(t=>facts[t[0]]).map((t,i)=>{
+    const key='c-'+t[0]+'-'+i;
+    _TASK_PROMPTS[key]=t[3].replace('{v}', String(facts[t[0]]));
+    return `<button class="tk-row" data-dact="launchTask" data-darg="${key}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${escH(T(t[2]))}</span><span class="tk-d" data-no-i18n>${escH(String(facts[t[0]]))}</span></span><span class="tk-arrow">\u2192</span></button>`;
+  });
+  if(!rows.length) return;
+  host.innerHTML=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
+      <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>
+    <div class="tk-list tk-local-list">${rows.join('')}</div>`;
+  host.hidden=false;
+  const box=$('tk-find'); if(box && box.value) box.dispatchEvent(new Event('input'));
 }
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};

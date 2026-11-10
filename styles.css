@@ -17566,3 +17566,19 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
    Like the five themselves and the not-here line before it, it is always laid
    out. Measured: a 0.046 layout shift on arrival, now none. */
 .crew-jobs-sec > .sec-head{ content-visibility:visible; contain-intrinsic-size:none; }
+
+/* LAYER A363 - Tasks: a search over every task, and the country's own
+   (Nov 10). The search is one quiet field under the title; the country's
+   section is a full-width band of two columns above the groups. */
+.tk-find{position:relative;display:flex;align-items:center;margin:0 0 var(--sp-5);max-width:640px}
+.tk-find svg{position:absolute;left:14px;color:var(--mu);pointer-events:none}
+.tk-find .inp{width:100%;padding-left:40px;padding-right:90px;min-height:44px}
+.tk-find-n{position:absolute;right:14px;font-size:var(--t-sm);color:var(--mu)}
+.tk-local{margin:0 0 var(--sp-6);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
+.tk-local[hidden]{display:none}
+.tk-local .sec-head .cw-link{margin-left:6px}
+.tk-local-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px}
+.tk-cat[hidden],.tk-row[hidden]{display:none}
+@media (max-width:760px){.tk-local-list{grid-template-columns:minmax(0,1fr)}}
+.tk-none{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin:0 0 var(--sp-5);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
+.tk-none p{margin:0;flex:1 1 240px;color:var(--tx)}

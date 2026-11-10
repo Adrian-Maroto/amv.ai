@@ -31,7 +31,7 @@ section('The ready-made tasks come first, in the order people use an assistant')
 section('Every task opens a chat with a real instruction in it');
 {
   const r = await page.evaluate(() => [...document.querySelectorAll('.tk-row[data-darg]')].map(b => b.dataset.darg)
-    .filter(k => !(typeof TASKS[k] === 'string' && TASKS[k].length > 40)));
+    .filter(k => { const p = TASKS[k] || _TASK_PROMPTS[k]; return !(typeof p === 'string' && p.length > 40); }));
   ok(r.length === 0, 'none points at a missing or empty prompt', r);
   for (const k of ['compare', 'lookup', 'edit']) {
     const v = await page.evaluate(async (k) => { setTab('tasks'); launchTask(k); await new Promise(r => setTimeout(r, 300)); return (document.getElementById('mta') || {}).value || ''; }, k);

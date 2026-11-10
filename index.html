@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="8b71d510ba6fc0a7">
+<meta name="amv-build" content="5ac5c3ff98619e49">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10448,6 +10448,18 @@ background:none;color:var(--tx);font:inherit;font-size:var(--t-sm);text-align:le
 @media (max-width:480px){.cwp-u{flex-wrap:wrap}.cwp-u-go{width:100%}}
 @media (max-width:480px){.cwp2 .cwp-act #cwp-cancel{display:none}.cwp2 .cwp-act{gap:var(--sp-2)}}
 .crew-jobs-sec > .sec-head{ content-visibility:visible; contain-intrinsic-size:none; }
+.tk-find{position:relative;display:flex;align-items:center;margin:0 0 var(--sp-5);max-width:640px}
+.tk-find svg{position:absolute;left:14px;color:var(--mu);pointer-events:none}
+.tk-find .inp{width:100%;padding-left:40px;padding-right:90px;min-height:44px}
+.tk-find-n{position:absolute;right:14px;font-size:var(--t-sm);color:var(--mu)}
+.tk-local{margin:0 0 var(--sp-6);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
+.tk-local[hidden]{display:none}
+.tk-local .sec-head .cw-link{margin-left:6px}
+.tk-local-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px}
+.tk-cat[hidden],.tk-row[hidden]{display:none}
+@media (max-width:760px){.tk-local-list{grid-template-columns:minmax(0,1fr)}}
+.tk-none{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);margin:0 0 var(--sp-5);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
+.tk-none p{margin:0;flex:1 1 240px;color:var(--tx)}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
