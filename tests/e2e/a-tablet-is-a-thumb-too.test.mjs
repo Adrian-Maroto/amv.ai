@@ -48,7 +48,14 @@ const measure = (page, t) => page.evaluate(({ t, min, eps }) => {
     if (box.width < min - eps || box.height < min - eps) {
       small.push(t + ' :: ' + name + ' ' + Math.round(box.width) + 'x' + Math.round(box.height));
     }
-    if (box.right > W + 1) escaped.push(t + ' :: ' + name + ' right=' + Math.round(box.right));
+    /* A control riding in a sideways scroller of its own is reachable by
+       scrolling that strip - the same allowance the phone file makes. */
+    let strip = false;
+    for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+      const ov = getComputedStyle(a).overflowX;
+      if ((ov === 'auto' || ov === 'scroll') && a.scrollWidth > a.clientWidth + 4 && a.getBoundingClientRect().right <= W + 1) { strip = true; break; }
+    }
+    if (!strip && box.right > W + 1) escaped.push(t + ' :: ' + name + ' right=' + Math.round(box.right));
   }
   return { small, escaped, sideways: document.documentElement.scrollWidth > W + 1 };
 }, { t, min: MIN, eps: EPS });

@@ -36,6 +36,12 @@ const CC_KINDS = {
   hospital:['🏥','Hospitals'], utility:['⚡','Energy'], carmaker:['🚗','Car makers'],
   museum:['🏛️','Museums'], library:['📚','Libraries'], sportsclub:['⚽','Football clubs'],
   employer:['💼','Employers'],
+  school:['🏫','Schools'], research:['🔬','Research'], publisher:['📖','Publishers'],
+  software:['💻','Software'], pharma:['💊','Pharmaceuticals'], nonprofit:['🤝','Nonprofits'],
+  theatre:['🎭','Theatres'], stadium:['🏟️','Stadiums'], mall:['🏬','Shopping centres'],
+  park:['🏞️','National parks'], zoo:['🦁','Zoos'], festival:['🎪','Festivals'],
+  embassy:['🛂','Embassies'], union:['✊','Trade unions'], brewery:['🍺','Breweries'],
+  company:['🏢','Companies'],
 };
 
 /* What people do with each kind. [title, prompt]; {n} is the service, {s} its
@@ -107,6 +113,46 @@ const CC_TASKS = {
   employer:[['Jobs at {n}','Find current [role] openings at {n}, with locations and how to apply. Use {s}.'],
             ['Interview at {n}','Prepare me for an interview at {n} for [role]: what they ask and what they value.'],
             ['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and reputation as an employer.']],
+  school:[['Enrol at {n}','How do I enrol a child at {n}? Ages, documents, fees if any and deadlines, from {s}.'],
+          ['{n} term dates','What are the term dates, holidays and exam weeks at {n} for [year]? Use {s}.'],
+          ['Contact {n}','Who do I contact at {n} about [my question], and how? Use the official details on {s}.']],
+  research:[['{n} at a glance','Give me a short, sourced brief on {n}: what it researches, who funds it and its best-known work.'],
+            ['Latest research from {n}','Summarise the latest published research from {n} on [topic], with links to the sources.']],
+  publisher:[['New books from {n}','What has {n} published recently in [genre or subject]? Titles, authors and dates, from {s}.'],
+             ['Submit to {n}','Does {n} accept submissions for [my kind of work], and what are the guidelines? Use {s}.']],
+  software:[['{n} at a glance','Give me a short, sourced brief on {n}: its products, prices and how it compares with rivals.'],
+            ['Get help with {n}','I have this problem with a {n} product: [describe]. Find the official fix on {s} and walk me through it.'],
+            ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.']],
+  pharma:[['{n} at a glance','Give me a short, sourced brief on {n}: what it makes, recent news and where it operates.'],
+          ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.']],
+  nonprofit:[['Volunteer with {n}','How can I volunteer with {n} in [place]? What they need, the time it takes and how to apply, from {s}.'],
+             ['Donate to {n}','How does {n} use donations, and what are the ways to give? Official figures from {s}; do not pay anything.'],
+             ['Get help from {n}','Can {n} help with [my situation]? Who qualifies and how to ask, from {s}.']],
+  theatre:[['What is on at {n}','What is on at {n} this month and next, with dates and ticket prices? Use {s}.'],
+           ['{n} tickets','How do I buy tickets for [show] at {n}, what do they cost and which seats are good value?'],
+           ['Get to {n}','What is the best way to get to {n} from [place] - public transport, parking and how long to allow?']],
+  stadium:[['Events at {n}','What events are coming up at {n}, with dates and how to buy tickets? Use {s}.'],
+           ['Get to {n}','What is the best way to get to {n} from [place] on an event day - transport, parking and when to leave?'],
+           ['{n} tickets','How do I buy tickets for [event] at {n}, what do they cost and what can I bring in?']],
+  mall:[['Shops and hours at {n}','Which shops and restaurants are at {n}, and what are the opening hours this week? Use {s}.'],
+        ['Get to {n}','What is the best way to get to {n} from [place] - public transport, parking and the quiet times?']],
+  park:[['Visit {n}','Plan a visit to {n} for [dates]: how to get there, entry fees, where to stay and what not to miss.'],
+        ['Trails and rules at {n}','What are the best trails at {n} for [my level], and what permits or rules apply? Use {s}.']],
+  zoo:[['Visit {n}','Plan a visit to {n}: opening hours, ticket prices, how to get there and what not to miss. Use {s}.'],
+       ['{n} tickets','What do tickets to {n} cost for [who is going], and is it cheaper to book ahead? Use {s}.']],
+  festival:[['{n} dates and line-up','When is {n} next held, what is on the programme and where does it take place? Use {s}.'],
+            ['{n} tickets','How do I get tickets for {n}, what do they cost and when do they go on sale? Use {s}.']],
+  embassy:[['Visa at {n}','What visa do I need for [purpose of travel], and how do I apply through {n}? Documents, fees and timing, from {s}.'],
+           ['An appointment at {n}','How do I book an appointment at {n} for [service], and what must I bring? Use {s}.'],
+           ['Contact {n}','How do I contact {n} about [my question] - address, hours and the right department? Use {s}.']],
+  union:[['Join {n}','Who can join {n}, what does it cost and what do members get? Use {s}.'],
+         ['Get help from {n}','Can {n} help with [my situation at work]? What they offer members and how to ask, from {s}.']],
+  brewery:[['Visit {n}','Does {n} offer tours or tastings? Times, prices and how to book, from {s}.'],
+           ['{n} at a glance','Give me a short, sourced brief on {n}: its history, what it makes and where to find it.']],
+  company:[['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and how it is regarded.'],
+           ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.'],
+           ['Contact {n}','How do I reach the right team at {n} about [my question]? Official contact details from {s}.'],
+           ['Complain to {n}','Help me write a complaint to {n} about [what happened], with what I want done. Draft it; do not send it.']],
 };
 
 /* What is worth watching on a schedule, per kind. [title, prompt, every]. */
@@ -138,6 +184,22 @@ const CC_CREW = {
   museum:[['New at {n}','Each month, new exhibitions and events at {n}, with dates and how to book ({s}).','monthly']],
   sportsclub:[['{n} match week','Each week, {n}’s next fixtures, results and team news.','weekly']],
   employer:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily']],
+  school:[['{n} deadline watch','Watch {s} for enrolment dates, term dates and closures at {n}, and remind me a week before each.','weekly']],
+  research:[['New from {n}','Each month, new publications and announcements from {n} on [topic], with links.','monthly']],
+  publisher:[['New from {n}','Each month, new releases from {n} in [genre or subject], with dates.','monthly']],
+  software:[['New from {n}','Each week, product updates, price changes and security notices from {n} ({s}).','weekly']],
+  pharma:[['New from {n}','Each month, announcements and recalls from {n} that concern [product or topic].','monthly']],
+  nonprofit:[['New from {n}','Each month, news, appeals and volunteer openings from {n} ({s}).','monthly']],
+  theatre:[['New at {n}','Each month, new shows announced at {n}, with dates and when booking opens ({s}).','monthly']],
+  stadium:[['New at {n}','Each month, newly announced events at {n}, with dates and when tickets go on sale.','monthly']],
+  mall:[['New at {n}','Each month, new shops, events and changed opening hours at {n} ({s}).','monthly']],
+  park:[['{n} conditions','Before my visit on [dates], check {n} for closures, weather warnings and trail conditions ({s}).','weekly']],
+  zoo:[['New at {n}','Each month, new events, arrivals and ticket offers at {n} ({s}).','monthly']],
+  festival:[['New from {n}','Each week, line-up announcements and ticket release dates from {n} ({s}).','weekly']],
+  embassy:[['New from {n}','Each week, any change to visa rules, fees or appointment availability at {n} ({s}).','weekly']],
+  union:[['New from {n}','Each month, news from {n} that affects [my job or sector].','monthly']],
+  brewery:[['New from {n}','Each month, new releases, tours and events from {n} ({s}).','monthly']],
+  company:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily']],
 };
 
 /* One country's file, fetched once. */
@@ -221,7 +283,7 @@ async function ccFillCrew(){
       <span class="sec-sub"><b>${list.length}</b> ${escH(T('jobs watching real services there'))} \u00b7 ${escH(T('Source'))}: Wikidata</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}">${(CC_KINDS[k] || ['', ''])[0]} ${escH(T((CC_KINDS[k] || ['', k])[1]))}</button>`).join('')}
+      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
     </div>
     <div class="cc-list cc-jobs">${list.map((j, i) => `<button class="cc-job${i >= 24 ? ' cc-more' : ''}" data-cc="${j.ccKind}" data-dact="cwPeek" data-darg="${escH(j.id)}">
         <span class="cc-job-ic" aria-hidden="true">${j.icon}</span>
@@ -256,7 +318,7 @@ async function ccFillIntegrations(){
       <span class="sec-sub"><b>${list.length}</b> ${escH(T('real services there, each through AMV\u2019s browser - you sign in on the real site'))} \u00b7 ${escH(T('Source'))}: Wikidata</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}">${(CC_KINDS[k] || ['', ''])[0]} ${escH(T((CC_KINDS[k] || ['', k])[1]))}</button>`).join('')}
+      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
     </div>
     <div class="cc-list cc-svcs">${list.map((x, i) => `<div class="cc-svc${i >= 30 ? ' cc-more' : ''}" data-cc="${x.kind}">
         <span class="cc-job-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</span>

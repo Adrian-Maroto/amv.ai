@@ -43,7 +43,7 @@ section('Tasks: a row per task per named entry');
   await page.evaluate(() => setTab('tasks'));
   await page.waitForFunction(() => document.querySelectorAll('.cc-list .tk-row, .cc-list [data-dact="launchTask"]').length > 0, null, { timeout: 15000 });
   const r = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('#tk-local [data-darg^="cc-"]')];
+    const rows = [...document.querySelectorAll('#tk-cc [data-darg^="cc-"]')];
     return { n: rows.length, head: (document.querySelector('.cc-head b') || {}).textContent, expect: window.ccTasks ? null : -1,
       txt: rows.map(b => b.textContent.replace(/\s+/g, ' ').trim()) };
   });
@@ -51,7 +51,7 @@ section('Tasks: a row per task per named entry');
   ok(r.n === exp && exp >= file.total * 3, 'every task the file supports is a row, three or more per entry', { rows: r.n, exp });
   ok(String(r.head) === String(r.n), 'the count on screen is the count of rows', r.head);
   ok(r.txt.every(t => [...names].some(n => t.includes(n))), 'and every row names an entry from the file', r.txt.slice(0, 2));
-  await page.evaluate(() => document.querySelector('#tk-local [data-darg^="cc-bank-"]').click());
+  await page.evaluate(() => document.querySelector('#tk-cc [data-darg^="cc-bank-"]').click());
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
   ok(v.tab === 'chat' && /Banco Prueba/.test(v.val) && /bank\d+\.example\.es/.test(v.val), 'pressing one writes a prompt naming the bank and its site', v.val.slice(0, 90));

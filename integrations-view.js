@@ -226,6 +226,7 @@ function renderTasksView(){
         <div class="tk-list">${cat.tasks.map(row).join('')}</div>
       </section>`).join('')}
     </div>
+    <section class="tk-local tk-cc" id="tk-cc" hidden></section>
     <section class="uniq-sec">
       <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Work it does on its own</span></div>
       <div class="uniq-grid">${unique.map(ucard).join('')}</div>
@@ -258,7 +259,7 @@ function _tkWireFind(vc, total){
 }
 /* The country's own tasks, from the same facts Crew and Connections read. */
 async function _tkFillLocal(){
-  const host=$('tk-local'); if(!host) return;
+  let host=$('tk-local'); if(!host) return;
   const cc=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
   const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
   if(!cc || !row) return;
@@ -287,17 +288,21 @@ async function _tkFillLocal(){
           <span class="cc-src">${escH(T('Source'))}: Wikidata</span></div>
         <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
           <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-          ${kinds.map(k=>`<button class="cw-chip" data-cc-kind="${k}">${(CC_KINDS[k]||['',''])[0]} ${escH(T((CC_KINDS[k]||['',k])[1]))}</button>`).join('')}
+          ${kinds.map(k=>`<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k]||['',''])[0]}</span><span>${escH(T((CC_KINDS[k]||['',k])[1]))}</span></button>`).join('')}
         </div>
         <div class="tk-list tk-local-list cc-list">${list.map((t,i)=>`<button class="tk-row${i>=24?' cc-more':''}" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic">${(CC_KINDS[t.kind]||['\u2022'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow">\u2192</span></button>`).join('')}</div>
         ${list.length>24?`<button class="btn bs cc-all" id="cc-all">${escH(T('Show all'))} (${list.length})</button>`:''}`;
     }
   }catch(e){}
-  if(!rows.length && !cat) return;
-  host.innerHTML=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
-      <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>
-    ${rows.length?`<div class="tk-list tk-local-list">${rows.join('')}</div>`:''}${cat}`;
-  host.hidden=false;
+  const head=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
+      <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>`;
+  if(rows.length){ host.innerHTML=head+`<div class="tk-list tk-local-list">${rows.join('')}</div>`; host.hidden=false; }
+  /* The catalogue goes BELOW the general tasks (#tk-cc): it arrives after the
+     page is drawn, and growing above them moved everything somebody was
+     reading. */
+  if(!cat) return;
+  host=$('tk-cc'); if(!host) return;
+  host.innerHTML=head+cat; host.hidden=false;
   /* Kind chips narrow the catalogue; Show all lifts the first-rows cap. */
   host.querySelectorAll('[data-cc-kind]').forEach(c=>on(c,'click',()=>{
     host.querySelectorAll('[data-cc-kind]').forEach(x=>x.classList.toggle('on',x===c));
@@ -570,8 +575,6 @@ function renderIntegrationsView(){
       ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
       _intLocalBannerHTML()+
       _connSectionHTML()+
-      /* Every named service in the country, from the country catalogue. */
-      '<section class="cc-int" id="cc-int" hidden></section>'+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
          The bridge card and the connector form are two of the largest blocks
@@ -594,6 +597,10 @@ function renderIntegrationsView(){
         '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
+      /* Every named service in the country, from the country catalogue. Last
+         on the page: it arrives after the page is drawn, and anything above
+         the fold that grew then would push what somebody was reading. */
+      '<section class="cc-int" id="cc-int" hidden></section>'+
       /* NOTHING AFTER THE TOPICS. There used to be a last section called
          "Everything else, by topic" - a wall of doors into the open registry.
          Asked for: "no part should say everything else by topic, it should

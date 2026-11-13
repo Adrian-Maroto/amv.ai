@@ -552,6 +552,25 @@
    "ko": "eb4fd9fc54c2",
    "ta": "cc0c2cd8d86b"
   },
+  "Dispute a charge with {n}": {
+   "es": "09f2c3370cc4",
+   "zh": "12579a42632c",
+   "hi": "e9f8a2eab63b",
+   "ar": "b2666593bf4d",
+   "pt": "d97ab76408a4",
+   "fr": "35ed002891a4",
+   "de": "a7028a47fdb0",
+   "ja": "bb37b73745af",
+   "ru": "68509060a3e2",
+   "id": "0fe9a9578160",
+   "bn": "bfde87e70431",
+   "ur": "292b88dd30df",
+   "tr": "b61809744440",
+   "vi": "82e1aaebced9",
+   "it": "531ded96a400",
+   "ko": "f80a03890a3d",
+   "ta": "1a73543a8ca4"
+  },
   "Draft a refund request": {
    "es": "489c984dd90e",
    "zh": "fd924d10f5d1",
@@ -1482,6 +1501,25 @@
    "it": "86d0bbf827c6",
    "ko": "2124710aa253",
    "ta": "7b00519bcf30"
+  },
+  "Refund a {n} ticket": {
+   "es": "994f2a5c4884",
+   "zh": "e6baa0a067d1",
+   "hi": "01f42a25a73d",
+   "ar": "5234a821e9d7",
+   "pt": "e20cb2922c7d",
+   "fr": "2df7998040dd",
+   "de": "0d9e0c1b94cf",
+   "ja": "cf4711ae9c12",
+   "ru": "d17c36581d3b",
+   "id": "91535fb61a1a",
+   "bn": "d844e7b294c3",
+   "ur": "cd416eab1dd8",
+   "tr": "e62158e91c58",
+   "vi": "35242f235216",
+   "it": "bcc14723a549",
+   "ko": "55f31df12eb0",
+   "ta": "21697411d556"
   },
   "Refund chaser & price protection": {
    "es": "fbdd8318cded",

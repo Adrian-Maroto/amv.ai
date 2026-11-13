@@ -17625,3 +17625,4 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
    and pushed every service below the fold. */
 .cc-chips{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:var(--sp-1);-webkit-overflow-scrolling:touch}
 .cc-chips > .cw-chip{flex:0 0 auto;white-space:nowrap}
+.cc-chips > .cw-chip{display:inline-flex;align-items:center;gap:6px}
