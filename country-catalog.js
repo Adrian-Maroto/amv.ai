@@ -213,7 +213,18 @@ async function ccLoad(cc){
       const r = await fetch('countries/' + cc + '.json', { cache: 'force-cache' });
       if(!r.ok) return null;
       const d = await r.json();
-      return (d && d.kinds && typeof d.kinds === 'object') ? d : null;
+      if(!(d && d.kinds && typeof d.kinds === 'object')) return null;
+      /* The entries come from a public database anybody can edit, so each is
+         checked again here: a real ID, a plain one-line name, and a site that
+         is a bare host name. One that is not is dropped, never repaired - its
+         name goes into instructions and its address is where somebody signs in. */
+      const good = e => e && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
+        && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n)
+        && typeof e.s === 'string' && e.s.length <= 80 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s);
+      const kinds = {};
+      for(const [k, list] of Object.entries(d.kinds)) if(CC_KINDS[k] && Array.isArray(list)){ const ok = list.filter(good); if(ok.length) kinds[k] = ok; }
+      d.kinds = kinds;
+      return d;
     }catch(e){ return null; }
   })();
   const d = await _ccCache[cc];
@@ -323,7 +334,7 @@ async function ccFillIntegrations(){
   const row = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null;
   const kinds = [...new Set(list.map(x => x.kind))];
   host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Services in {country}', row[1], _cwThe(row[1])) : T('Services where you are'))}</h3>
-      <span class="sec-sub"><b>${list.length}</b> ${escH(T('real services there, each through AMV\u2019s browser - you sign in on the real site'))} \u00b7 ${escH(T('Source'))}: Wikidata</span></div>
+      <span class="sec-sub"><b>${list.length}</b> ${escH(T('real services there, each through AMV\u2019s browser - you sign in on the real site'))} \u00b7 ${escH(T('Source'))}: Wikidata. ${escH(T('Check the address before you sign in.'))}</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
       ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}

@@ -181,8 +181,12 @@ async function main() {
       for (const b of rows) {
         const cc = byQ[qid(b.c.value)]; if (!cc) continue;
         const name = b.iLabel && b.iLabel.value; if (!name || /^Q\d+$/.test(name)) continue;   // no name in any language: skipped, never shown as an ID
-        let host = ''; try { host = new URL(b.site.value).hostname.replace(/^www\./, ''); } catch (e) { continue; }
-        if (!host) continue;
+        /* Wikidata can be edited by anybody. A name goes into instructions and a
+           site is where somebody signs in, so only a plain one-line name and an
+           https site with a bare host name are kept (the page checks again). */
+        if (name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
+        let host = ''; try { const u = new URL(b.site.value); if (u.protocol !== 'https:' && u.protocol !== 'http:') continue; host = u.hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
+        if (!host || host.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(host)) continue;
         (got[cc][kind] = got[cc][kind] || []).push({ q: qid(b.i.value), n: name, s: host, w: +b.n.value });
       }
     };

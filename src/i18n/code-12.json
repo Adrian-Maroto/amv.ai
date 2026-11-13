@@ -3019,5 +3019,24 @@
   "it": "Condizioni a {n}",
   "ko": "{n} 현황",
   "ta": "{n} நிலவரம்"
+ },
+ "Check the address before you sign in.": {
+  "es": "Comprueba la dirección antes de iniciar sesión.",
+  "zh": "登录前请核对网址。",
+  "hi": "साइन इन करने से पहले पता जाँच लें।",
+  "ar": "تحقّق من العنوان قبل تسجيل الدخول.",
+  "pt": "Confira o endereço antes de entrar.",
+  "fr": "Vérifiez l’adresse avant de vous connecter.",
+  "de": "Prüfe die Adresse, bevor du dich anmeldest.",
+  "ja": "ログインの前にアドレスを確認してください。",
+  "ru": "Проверьте адрес перед входом.",
+  "id": "Periksa alamatnya sebelum masuk.",
+  "bn": "সাইন ইন করার আগে ঠিকানাটি যাচাই করুন।",
+  "ur": "سائن اِن کرنے سے پہلے پتہ چیک کر لیں۔",
+  "tr": "Giriş yapmadan önce adresi kontrol et.",
+  "vi": "Hãy kiểm tra địa chỉ trước khi đăng nhập.",
+  "it": "Controlla l’indirizzo prima di accedere.",
+  "ko": "로그인하기 전에 주소를 확인하세요.",
+  "ta": "உள்நுழையும் முன் முகவரியைச் சரிபார்க்கவும்."
  }
 }
