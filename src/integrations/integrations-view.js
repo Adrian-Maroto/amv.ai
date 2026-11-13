@@ -243,6 +243,9 @@ function _tkWireFind(vc, total){
   const run=()=>{
     const q=box.value.trim().toLowerCase();
     vc.classList.toggle('tk-find-on', !!q);
+    /* A search looks through every kind: a kind filter left on would hide
+       matches the count beside the box had just promised. */
+    if(q){ const cc=$('tk-cc'); if(cc && cc.classList.contains('cc-filtered')){ const all=cc.querySelector('[data-cc-kind=""]'); if(all) all.click(); } }
     let shown=0;
     vc.querySelectorAll('.tk-row').forEach(r=>{ const hit=!q || r.textContent.toLowerCase().indexOf(q)>=0; r.hidden=!hit; if(hit) shown++; });
     vc.querySelectorAll('.tk-cat, .tk-local').forEach(sec=>{ if(sec.id==='tk-local' && !sec.querySelector('.tk-row')) return; sec.hidden=!sec.querySelector('.tk-row:not([hidden])'); });
