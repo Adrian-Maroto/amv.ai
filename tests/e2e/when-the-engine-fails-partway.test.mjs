@@ -65,6 +65,11 @@ async function say(t) {
   await page.waitForFunction(() => S.busy === false, null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(3000);
   const n = modelSaw.length;
+  /* The page's own send-rate guard counts every send, Retry and Continue in
+     ten seconds. This file is about what the engine's answer looks like, not
+     about that guard, so its window is cleared before each send - a fast
+     machine otherwise meets "Too many requests" where a refusal was expected. */
+  await page.evaluate(() => { try { AEGIS._lastSend = 0; AEGIS._times = []; } catch (e) {} });
   await page.evaluate((t) => { setTab('chat'); const box = document.getElementById('mta'); box.value = t; box.dispatchEvent(new Event('input', { bubbles: true })); sendMsg(); }, t);
   for (let i = 0; i < 80 && modelSaw.length === n; i++) await page.waitForTimeout(100);
   await page.waitForFunction(() => S.busy === false, null, { timeout: 45000 }).catch(() => {});
