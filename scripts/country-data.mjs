@@ -62,7 +62,33 @@ export const KINDS = {
   library:     ['Q7075',     15, 'library'],
   sportsclub:  ['Q476028',   25, 'association football club'],
   employer:    ['Q891723',   40, 'public company'],
+  school:      ['Q3914',     40, 'school'],
+  research:    ['Q31855',    30, 'research institute'],
+  publisher:   ['Q2085381',  25, 'publisher'],
+  software:    ['Q1058914',  25, 'software company'],
+  pharma:      ['Q507443',   20, 'pharmaceutical company'],
+  nonprofit:   ['Q163740',   30, 'nonprofit organization'],
+  theatre:     ['Q24354',    20, 'theatre'],
+  stadium:     ['Q483110',   20, 'stadium'],
+  mall:        ['Q31374404', 25, 'shopping center'],
+  park:        ['Q46169',    20, 'national park'],
+  zoo:         ['Q43501',    10, 'zoo'],
+  festival:    ['Q132241',   25, 'festival'],
+  embassy:     ['Q3917681',  40, 'embassy'],
+  union:       ['Q178790',   15, 'trade union'],
+  brewery:     ['Q131734',   15, 'brewery'],
+  /* Last, and only what no kind above already holds: any business there. */
+  company:     ['Q4830453', 120, 'business'],
 };
+/* Kinds asked for as a direct instance only - the class is too wide for its
+   subclasses to be walked inside Wikidata's time limit. */
+const DIRECT = new Set(['company']);
+/* The ISO code sits on a wider item than the one things are filed under: NL
+   is on the Kingdom of the Netherlands, and its banks are in the Netherlands. */
+const QFIX = { NL: 'Q55' };
+/* Places whose organisations are filed under another country (Hong Kong's
+   under China): matched by where they are or are headquartered as well. */
+const PLACE = new Set(['HK', 'MO']);
 
 /* kind -> classes whose members are NOT that kind for a person: a central bank
    is a bank on Wikidata, but nobody opens an account there. Checked by name
@@ -120,6 +146,7 @@ async function main() {
 
   const iso = await sparql(`SELECT ?c ?code WHERE { ?c wdt:P297 ?code . FILTER NOT EXISTS { ?c wdt:P576 ?end } }`);
   const qOf = {}; for (const b of iso) if (!qOf[b.code.value]) qOf[b.code.value] = qid(b.c.value);
+  Object.assign(qOf, QFIX);
 
   /* One query per kind per group of countries (not per country): about two
      hundred queries for every country AMV lists, instead of three thousand.
@@ -132,17 +159,25 @@ async function main() {
   const got = Object.fromEntries(want2.map(cc => [cc, {}]));
   const GROUP = 8, LANGS = 'en,mul,es,fr,de,pt,it,nl,sv,pl,ru,uk,tr,ar,fa,he,hi,bn,ur,id,ms,vi,th,ja,ko,zh';
   for (const [kind, [klass, keep]] of Object.entries(KINDS)) {
-    const groups = []; for (let i = 0; i < want2.length; i += GROUP) groups.push(want2.slice(i, i + GROUP));
-    const run = async (g) => {
+    const plain = want2.filter(cc => !PLACE.has(cc));
+    const groups = []; for (let i = 0; i < plain.length; i += GROUP) groups.push(plain.slice(i, i + GROUP));
+    want2.filter(cc => PLACE.has(cc)).forEach(cc => groups.push([cc]));
+    const run = async (g, again) => {
+      const where = PLACE.has(g[0]) ? '(wdt:P17|wdt:P131|wdt:P159)' : 'wdt:P17';
       const q = `SELECT ?i ?c ?site ?n ?iLabel WHERE {
         VALUES ?c { ${g.map(cc => 'wd:' + qOf[cc]).join(' ')} }
-        ?i wdt:P17 ?c ; wdt:P31/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
+        ?i ${where} ?c ; ${DIRECT.has(kind) ? 'wdt:P31' : 'wdt:P31/wdt:P279?'} wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended }
         ${(EXCLUDE[kind] || []).map(([x]) => `FILTER NOT EXISTS { ?i wdt:P31 wd:${x} }`).join(' ')}
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
       }`;
       let rows = [];
-      try { rows = await sparql(q); } catch (e) { console.log(kind, g.join(','), 'failed:', e.message); return; }
+      try { rows = await sparql(q, again ? 3 : 2); } catch (e) {
+        /* A group that timed out is asked again one country at a time - eight
+           large countries in one query is what timed out, not any one of them. */
+        if (g.length > 1) { for (const cc of g) await run([cc], true); return; }
+        console.log(kind, g.join(','), 'failed:', e.message); return;
+      }
       for (const b of rows) {
         const cc = byQ[qid(b.c.value)]; if (!cc) continue;
         const name = b.iLabel && b.iLabel.value; if (!name || /^Q\d+$/.test(name)) continue;   // no name in any language: skipped, never shown as an ID
@@ -157,8 +192,14 @@ async function main() {
   for (const cc of want2) {
     const out = { cc, qid: qOf[cc], source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), kinds: {} };
     let total = 0;
+    /* Across kinds too: something that is both a bank and a public company is listed once, under the first. */
+    const seen = new Set(), hosts = new Set();
+    /* A kind whose query failed this time keeps what the last run found for
+       it, so one timeout never empties a section that was right before. */
+    let old = {}; try { old = JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).kinds || {}; } catch (e) {}
     for (const [kind, [, keep]] of Object.entries(KINDS)) {
-      const rows = (got[cc][kind] || []).sort((x, y) => y.w - x.w), seen = new Set(), hosts = new Set(), list = [];
+      if (!got[cc][kind] && old[kind] && old[kind].length && !PLACE.has(cc) && !QFIX[cc]) got[cc][kind] = old[kind];
+      const rows = (got[cc][kind] || []).sort((x, y) => y.w - x.w), list = [];
       for (const e of rows) {
         if (seen.has(e.q) || hosts.has(e.s)) continue; seen.add(e.q); hosts.add(e.s);
         list.push(e); if (list.length >= keep) break;

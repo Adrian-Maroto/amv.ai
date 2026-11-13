@@ -1,1 +1,1 @@
-# Empty = every country AMV lists (all of them, in one run). Run 3: with exclusions.
+# Empty = every country AMV lists (all of them, in one run). Run 4: more kinds, NL and HK fixed.
