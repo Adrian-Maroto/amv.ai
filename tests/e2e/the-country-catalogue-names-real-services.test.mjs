@@ -84,6 +84,11 @@ section('Crew: the jobs, as ordinary Crew jobs');
     known: [...document.querySelectorAll('#cc-crew .cc-job')].slice(0, 5).every(b => _cwAllJobs().some(j => j.id === b.dataset.darg)) }));
   ok(r.n >= file.total && String(r.head) === String(r.n), 'at least one job per entry, counted truly', r);
   ok(r.known, 'each one is a job Crew knows, so it opens and switches on like the rest');
+  /* The unattended runner reads the job's text and nothing else, so a blank
+     nobody filled would run daily against the words "[my route]". */
+  const blanks = await page.evaluate(() => { const js = window._ccCrewJobs.ES; const w = js.filter(j => /\[[^\]]+\]/.test(j.prompt));
+    return { n: w.length, asked: w.every(j => j.asks && /needs/.test(j.asks.q)), plain: js.filter(j => !/\[/.test(j.prompt)).every(j => !j.asks) }; });
+  ok(blanks.n > 0 && blanks.asked && blanks.plain, 'a job with blanks asks for them before it is switched on, and one without does not', blanks);
 }
 
 section('A country with no file shows nothing, not an empty section');

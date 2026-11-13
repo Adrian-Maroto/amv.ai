@@ -264,9 +264,17 @@ const _ccCrewJobs = {};
 try{ window._ccCrewJobs = _ccCrewJobs; }catch(e){}
 async function ccCrewLoad(cc){
   const d = await ccLoad(cc); if(!d) return [];
+  /* A job whose instruction has blanks - [my route], [product] - asks for them
+     when it is switched on. The unattended runner is given the job's text and
+     nothing else, so a blank left unfilled would run every day against the
+     words "[my route]". Crew's own switch does the asking (`asks`), refuses an
+     empty answer, and adds what was said to what the runner reads. */
+  const asks = (p) => { const b = [...new Set((p.match(/\[[^\]]*\]/g) || []).map(x => x.slice(1, -1)))];
+    return b.length ? { q: 'This job needs: ' + b.join(', ') + '.', ph: 'Type each one, in a sentence or a list.' } : null; };
   _ccCrewJobs[cc] = ccJobs(d).map(j => ({
+    asks: asks(j.prompt),
     id: j.id, icon: (CC_KINDS[j.kind] || ['\u2022'])[0], title: j.title,
-    desc: j.prompt.replace(/\[[^\]]*\]/g, '\u2026'), prompt: j.prompt, every: j.every,
+    desc: j.prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt: j.prompt, every: j.every,
     needs: 'Web research', cat: (CC_KINDS[j.kind] || ['', ''])[1], kind: 'research', ccKind: j.kind, site: j.e.s, src: j.e.q,
   }));
   return _ccCrewJobs[cc];
