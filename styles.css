@@ -17626,3 +17626,11 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cc-chips{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:var(--sp-1);-webkit-overflow-scrolling:touch}
 .cc-chips > .cw-chip{flex:0 0 auto;white-space:nowrap}
 .cc-chips > .cw-chip{display:inline-flex;align-items:center;gap:6px}
+
+/* LAYER A366 - The country catalogue's rows by the room they have, not by the
+   window: at 768 the sidebar leaves two columns 250px each and a bank's name
+   broke in the middle of a word. Columns are as many as fit at 340px; a name
+   breaks between words, and a site address stays on one line. */
+.cc-jobs,.cc-svcs{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))}
+.cc-job-t{overflow-wrap:break-word;word-break:normal}
+.cc-job-s{overflow-wrap:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

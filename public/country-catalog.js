@@ -231,14 +231,18 @@ async function ccLoad(cc){
   if(!d) delete _ccCache[cc];   // a failed fetch is tried again next time
   return d;
 }
-const _ccFill = (t, e) => String(t).replace(/\{n\}/g, e.n).replace(/\{s\}/g, e.s);
+/* English only: "a {n}" before a vowel is "an" - "Find an Iberia flight". The
+   translated titles are left alone ("a {n}" is "the" in Portuguese). */
+const _ccAn = (t, e) => /^[aeiou]/i.test(e.n) ? String(t).replace(/\b([Aa]) \{n\}/g, '$1n {n}') : String(t);
+const _ccFill = (t, e, en) => (en ? _ccAn(t, e) : String(t)).replace(/\{n\}/g, e.n).replace(/\{s\}/g, e.s);
+const _ccTitle = (t, e) => { const tr = T(t); return _ccFill(tr, e, tr === t); };
 /* Every task, job and service for a country, each tied to the entry it names. */
 function ccTasks(d){
   const by = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})){
     const tpl = CC_TASKS[kind]; if(!tpl) continue;
     by.push(list.map(e => tpl.map((t, i) => ({ id:'cc-' + kind + '-' + e.q + '-' + i, kind, e,
-      tpl:t[0], title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e) }))));
+      tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccFill(t[1], e, true) }))));
   }
   /* Interleaved, so the first rows span many services rather than five tasks
      for one bank: a first pass takes one task per service - rank by rank,
@@ -257,7 +261,7 @@ function ccJobs(d){
   for(const [kind, list] of Object.entries((d && d.kinds) || {})){
     const tpl = CC_CREW[kind]; if(!tpl) continue;
     by.push(list.map(e => tpl.map((t, i) => ({ id:'ccj-' + kind + '-' + e.q + '-' + i, kind, e,
-      title:_ccFill(T(t[0]), e), prompt:_ccFill(t[1], e), every:t[2] }))));
+      title:_ccTitle(t[0], e), prompt:_ccFill(t[1], e, true), every:t[2] }))));
   }
   return _ccWeave(by);
 }
