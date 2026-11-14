@@ -32,13 +32,14 @@ const W = await import(harness + '?t=' + Date.now());
 const ME = 'teacher@test.com';
 const store = new Map(); const vals = new Map(); const logs = [];
 const origLog = console.log; console.log = (...a) => { logs.push(a.join(' ')); };
+let atLimit = false;
 const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ALLOWED_ORIGIN: 'https://amv.test',
   CONNECT_KEY: 'a-connect-key-for-sealing-at-least-32-chars', AMV_MODEL_KEY: 'k', AMV_KV: {
     async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
   AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
-    if (b.op === 'reserve') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
+    if (b.op === 'reserve') { if (atLimit && /^cost:/.test(n)) return new Response(JSON.stringify({ allowed: false, value: cur })); vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
     return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
   } }) } };
@@ -118,6 +119,12 @@ section('Steps that are not what teaching makes are refused before anything star
   ok(nofind.status === 400 && S.launches === 0, 'a click with nothing to find it by is refused', nofind.status);
   const blocked = await req('/v1/browser/replay', { url: 'http://localhost/admin', steps: STEPS });
   ok(blocked.status === 400 && blocked.d.code === 'blocked_url', 'an address AMV may not go to is refused', blocked.status);
+  /* At the spending limit: refused before a browser starts (a mutation that
+     removed this passed every suite, Nov 14). */
+  atLimit = true;
+  const full = await req('/v1/browser/replay', { url: URL0, steps: STEPS, secrets: { 3: 'Hunter2-secret!' } });
+  atLimit = false;
+  ok(full.status >= 400 && full.status < 500 && full.status !== 401 && S.launches === 0, 'at the spending limit a run is refused, and no browser starts', [full.status, full.d.code || full.d.error, S.launches]);
   delete env.BROWSER;
   const none = await req('/v1/browser/replay', { url: URL0, steps: STEPS });
   ok(none.status === 503 && none.d.code === 'needs_service', 'a deployment without the browser says so', none.status);
