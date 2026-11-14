@@ -37,6 +37,7 @@ const vals = new Map();
 const logs = [];
 const origLog = console.log;
 console.log = (...a) => { logs.push(a.join(' ')); };
+let atLimit = false;
 const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ALLOWED_ORIGIN: 'https://amv.test',
   CONNECT_KEY: 'a-connect-key-for-sealing-at-least-32-chars', AMV_MODEL_KEY: 'k', AMV_KV: {
     async get(k){ return store.has(k) ? store.get(k) : null; },
@@ -47,7 +48,7 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
-      if (b.op === 'reserve') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
+      if (b.op === 'reserve') { if (atLimit && /^cost:/.test(n)) return new Response(JSON.stringify({ allowed: false, value: cur })); vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
@@ -170,6 +171,14 @@ section('Refused before a browser starts, or before anything is charged');
   const none = await req('/v1/browser/teach', START);
   const nd = await none.json();
   ok(none.status === 503 && nd.code === 'needs_service' && spent() === before, 'no browser on this deployment: said, and nothing charged', [none.status, spent() - before]);
+  /* At the account's spending limit: refused before a browser is started.
+     Removing this check changed nothing any suite saw (a mutation, Nov 14) -
+     every other test runs with room to spare. */
+  env.BROWSER = fakeService(); atLimit = true;
+  const full = await req('/v1/browser/teach', START);
+  const fd = await full.json().catch(() => ({}));
+  atLimit = false; delete env.BROWSER;
+  ok(full.status >= 400 && full.status < 500 && full.status !== 401 && S.launches.length === 0, 'at the spending limit it is refused, and no browser is started', [full.status, fd.code || fd.error, S.launches.length]);
   const anon = await W.default.fetch(new Request('https://api.amv.test/v1/browser/teach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(START) }), env, ctx);
   ok(anon.status === 401, 'and nobody signed out can start one', anon.status);
 }
