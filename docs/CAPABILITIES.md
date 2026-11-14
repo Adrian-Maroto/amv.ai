@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-81 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
+82 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -49,6 +49,12 @@
 |---|---|---|---|
 | A GitHub repository opened at one exact commit in the cloud workspace | `src/worker/10a-cloud-checkout.js` | - | `worker/a-repository-opens-in-the-cloud-workspace.test.mjs` |
 | Cloud changes sent back as a new branch, on the commit they were made on | `src/app/36c-cloud-repo.js` | - | `e2e/a-repository-goes-back-as-a-branch.test.mjs` |
+
+## country
+
+| What | Built in | Reads these settings | Proved by |
+|---|---|---|---|
+| Tasks, Crew jobs and services for each country, named from real organisations on Wikidata - checked by the script and again by the page, and counted truly | `src/country/country-catalog.js`, `scripts/country-data.mjs` | - | `e2e/the-country-catalogue-names-real-services.test.mjs` |
 
 ## Data
 
