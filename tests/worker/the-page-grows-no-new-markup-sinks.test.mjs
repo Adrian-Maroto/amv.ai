@@ -16,7 +16,7 @@
 
    Read from app.js with comments stripped, so a comment that names a sink is
    not counted as one. */
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -52,6 +52,28 @@ section('The APIs that turn a string into running code are not used at all');
 for (const [name, re] of Object.entries(ABSENT)) {
   const n = count(re);
   ok(n === 0, `${name}: none`, n);
+}
+
+section('The files fetched on demand are held to the same account');
+{
+  /* Everything above reads app.js. Thirty-odd screens have since left the
+     page for files of their own under public/ (Crew, Tasks, Settings, the
+     country catalogue), and a sink added there was counted by nothing - found
+     on Nov 14 when the catalogue added three and this file stayed green.
+     One total across those files, at today's count, and the same APIs absent. */
+  const dir = join(ROOT, 'public');
+  const files = readdirSync(dir).filter(f => f.endsWith('.js')).sort();
+  const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
+  const n = (re) => (all.match(re) || []).length;
+  ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 198], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 2] };
+  for (const [name, [re, max]] of Object.entries(LAZY)) {
+    const c = n(re);
+    ok(c <= max, `fetched files, ${name}: ${c}, ceiling ${max}`, c > max ? 'a new sink: escape what it draws, then raise the ceiling here in the same change' : c);
+  }
+  for (const [name, re] of Object.entries(ABSENT)) ok(n(re) === 0, `fetched files, ${name}: none`, n(re));
+  ok(n(/document\.write(ln)?\s*\(/g) === 0 && n(/\.srcdoc\s*=/g) === 0, 'and none writes a document or fills a frame from a string');
+  ok(n(/allow-same-origin/g) === 0, 'nor gives a frame the page’s own origin');
 }
 
 section('No frame on this page is given the page’s own origin');
