@@ -15,7 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'fidx.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _fidxChunks, _fidxId, _fidxSpace };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _fidxChunks, _fidxId, _fidxSpace, _withLib, _libRec };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (String(a[0]).startsWith('AUDIT')) return; quiet(...a); };
 
@@ -111,6 +111,24 @@ section('A search costs money, so an account at its limit is refused before anyt
   const r = await req(full, '/v1/library/search', { query: 'when does my tenancy finish' }, ana);
   ok(r.status >= 400 && r.status < 500 && !(r.d.results), 'at the limit the search is refused, with no results', [r.status, r.d.error || r.d.code]);
   ok(embeds === 0 && queries.length === before, 'and nothing was sent to the model or the index - so nothing was spent', { embeds, asked: queries.length - before });
+}
+
+section('A file on its way out is not an answer, even while its passages are still in the index');
+{
+  /* Deleting marks the file first and removes its bytes and its index
+     entries after. In between, the index still holds its passages - and
+     removing the check that skips a file marked as going changed nothing any
+     suite saw (a mutation, Nov 14). */
+  /* Through the library's own writer, so the mark is where the routes read. */
+  const f = (await W._libRec(env, 'ana@example.com')).files.find(x => x.name === 'flat.txt');
+  await W._withLib(env, 'ana@example.com', (rec) => { rec.files.find(x => x.id === f.id).deleting = true; });
+  const gone = await req(env, '/v1/library/search', { query: 'when does my tenancy finish' }, ana);
+  ok(gone.status === 200 && !(gone.d.results || []).some(x => x.name === 'flat.txt'), 'a file being deleted is not offered as a result', gone.d.results);
+  const opened = await req(env, '/v1/library/get?id=' + encodeURIComponent(f.id), undefined, ana);
+  ok(opened.status === 404, 'and cannot be opened either', opened.status);
+  await W._withLib(env, 'ana@example.com', (rec) => { delete rec.files.find(x => x.id === f.id).deleting; });
+  const back = await req(env, '/v1/library/search', { query: 'when does my tenancy finish' }, ana);
+  ok((back.d.results || []).some(x => x.name === 'flat.txt'), 'while one that is simply there still is');
 }
 
 section('Deleting a file takes its passages out of the index');
