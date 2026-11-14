@@ -196,6 +196,14 @@ section('A call goes to its own app with its own token - never another’s');
     gate(); const one = await first; await secondP.catch(() => {}); globalThis.fetch = realG;
     ok(one.status === 200 && second.d.error === 'idempotency_pending' && sent.filter(x => x.url.endsWith('/me/sendMail')).length === 1, 'two at once: one is sent, the other is told it is already going', [one.status, second.d.error, sent.filter(x => x.url.endsWith('/me/sendMail')).length]);
   }
+  /* No way to make sure of once: the change is not sent at all. */
+  {
+    const keep = env.AMV_COUNTER; sent = [];
+    env.AMV_COUNTER = { idFromName: n => n, get: n => ({ async fetch(u, init) { const b = JSON.parse((init && init.body) || '{}'); if (b.op === 'claim') throw new Error('object unreachable'); return keep.get(n).fetch(u, init); } }) };
+    const down = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'once?' } }, idempotencyKey: 'test-send-mail-key-0004' }, t);
+    env.AMV_COUNTER = keep;
+    ok(down.status === 503 && down.d.error === 'idempotency_unavailable' && !sent.some(x => x.url.endsWith('/me/sendMail')), 'when once cannot be guaranteed, the change is not sent', [down.status, down.d.error]);
+  }
   const nokey = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } } }, t);
   ok(nokey.status === 400 && nokey.d.error === 'idempotency_required', 'a change without a key is not sent', nokey.d);
   const realF = globalThis.fetch;
