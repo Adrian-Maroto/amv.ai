@@ -2191,3 +2191,41 @@ and has one.
 four-wide run of the Worker lane started directly with `tests/run.mjs`, and
 passes alone in both trees and inside the gate. It was excluded from
 attribution here; the cause was looked for and not found.
+
+## 14 November, second round: the library, file search, agents, the queue - and what an API key may reach
+
+Twelve more guards broken one at a time (file search, the cloud library,
+agents' kept sign-ins, the job queue), attributed by failing assertion.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 329 | a passage marked as another account's shown | **nothing** - now 1 assertion |
+| 330 | the search not limited to the account | 1 assertion |
+| 331 | file search not charged against the limit | **nothing** - now 2 assertions |
+| 332 | a file being deleted still answers a search | **nothing** - now 1 assertion |
+| 333 | a program or macro file kept | 1 assertion |
+| 334 | a file over the 12 MB limit kept | **nothing** - now 2 assertions |
+| 335 | a file being deleted still opened | 1 assertion |
+| 336 | a full library accepting more | 1 assertion |
+| 337 | an agent keeping a sign-in for an identity provider | 1 assertion |
+| 338 | an agent keeping a sign-in for a government site | 1 assertion |
+| 339 | an API key forgetting an agent's sign-in | **nothing** - see below |
+| 340 | a queue message with a forged reference acted on | 1 assertion |
+
+**339 led to the finding of the round.** An API key resolved to the same
+principal as the signed-in person, everywhere; the things only a person may
+do were refused route by route, and most of those refusals had never been
+driven with a key. A new suite (`an-api-key-is-not-the-person`) drove every
+route in the router with a real key and found it **admitted to 157 routes**,
+among them: making more keys (so revoking a leaked key ended nothing - the
+leak could mint its successor first), approving an action that was waiting
+for the person, changing the spending limit, managing a team and its company
+sign-in, exporting the account, and reading every synced chat.
+
+Fixed at the door: a key is admitted by name to the API (messages and token
+count, batches, tasks, stop and resume, usage) and to the team activity
+export a security tool fetches, and refused before any route sees it. The
+per-route refusals stay. Measured: all twenty-eight of them, and the central
+one, each fail a named assertion when removed; the router-wide pass finds no
+route outside that list that answers a key and refuses nobody-signed-in.
+AMV's own CLI, SDK and editor and browser extensions use only API routes.

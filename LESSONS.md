@@ -15913,3 +15913,16 @@ shipped thirty-three with no translation and the stage passed. Rule: each
 table of on-screen strings is named in the stage with where its string sits
 and a minimum count, so a table that moves fails the stage instead of
 passing it empty.
+
+## 643. A credential's reach is a list of what it MAY do, not of what it may not (Nov 14)
+
+An API key became the same principal as the person on every route, and each
+thing only a person should do refused a key by itself - passkeys here,
+connected apps there. Twenty-eight refusals, each correct. A mutation
+removing one passed every suite, and driving the whole router with a real key
+found it admitted to 157 routes, including making more keys - so the one
+response to a leaked key, revoking it, could be beaten by the leak minting
+its successor. Rule: a credential narrower than a person is admitted by name
+to what it is for, at the door, and refused everywhere else; a new route is
+closed to it until somebody adds it on purpose. And the test drives every
+route the router has, not the ones somebody remembered.
