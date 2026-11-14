@@ -86,6 +86,26 @@ section('A use is spent only on an account that was made (Nov 8 audit)');
   ok((await signup('third@example.com', c)).d.code === 'invite_required', 'and the code is then spent', vals.get('betainvuse:' + c));
 }
 
+section('A use that was taken and made no account is handed back');
+{
+  /* The refusals above all happen before the use is taken. This is the other
+     half: the use IS taken (the last check passed) and then the account is
+     not made, because the write fails. Nothing tested the hand-back - a
+     mutation that never returned the use passed every suite (Nov 14). */
+  const made = await call('/admin/invites', { count: 1, uses: 1 }, { Authorization: 'Bearer admin-secret-token-value' });
+  const c = made.d.codes[0];
+  const put = env.AMV_KV.put; let failed = 0;
+  env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:lost@')) { failed++; throw new Error('storage is down'); } return put(k, v); };
+  let status = 0;
+  try { status = (await signup('lost@example.com', c)).status; } catch (e) { status = 500; }
+  env.AMV_KV.put = put;
+  ok(failed > 0 && status >= 500 && !m.has('acct:lost@example.com'), 'a sign-up whose account could not be written makes no account', { failed, status });
+  ok((vals.get('betainvuse:' + c) || 0) === 0, 'and its use is back on the invite', vals.get('betainvuse:' + c));
+  const r = await signup('found@example.com', c);
+  ok(r.status === 200 && r.d.token, 'so the next person with that one-use code gets in', r.status);
+  ok((await signup('late@example.com', c)).d.code === 'invite_required', 'and then it is spent', vals.get('betainvuse:' + c));
+}
+
 section('An invite ends on its date, can be revoked, and is listed with what is spent (Nov 8 audit BETA-002)');
 {
   const A = { Authorization: 'Bearer admin-secret-token-value' };
@@ -111,6 +131,38 @@ section('Google and passkey sign-up are gated too');
   ok(/_inviteOnly\(env\) && !\(await DB\.get\(env, 'acct', em\)\)\) \? await _inviteHold\(env, body\.ref, 'google'\)/.test(src)
     && /if\(inv\) await inv\.done\(!!fed\.created\)/.test(src), 'a first Google sign-in asks for the invite, and hands it back unless an account was made');
   ok(/await _inviteHold\(env, body\.ref, 'passkey'\)/.test(src) && /if\(inv\) await inv\.done\(created\);\s*if\(!created\)\{ await _pkCredUnreserve/.test(src), 'and a passkey sign-up, the same way');
+}
+
+section('Google sign-up, driven for real: gated, spent once, and handed back');
+{
+  /* The section above reads the source, which proves a line is present and
+     nothing about what the door does. This drives it: Google's tokeninfo is
+     stubbed in the shape the Worker asks it for, as the sign-up suites do. */
+  const AUD = 'client-id.apps.googleusercontent.com';
+  env.GOOGLE_CLIENT_ID = AUD;
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const idToken = email => [b64({ alg: 'RS256', kid: 'k1' }), b64({ aud: AUD, iss: 'accounts.google.com', email, email_verified: true, name: 'G', exp: Math.floor(Date.now() / 1000) + 3600 }), 'sig'].join('.');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { const t = /tokeninfo\?id_token=([^&]+)/.exec(String(url));
+    return { ok: true, status: 200, json: async () => (t ? JSON.parse(Buffer.from(decodeURIComponent(t[1]).split('.')[1], 'base64url').toString()) : {}) }; };
+  const g = (email, ref) => call('/auth/google', { credential: idToken(email), ...(ref ? { ref } : {}) });
+  try {
+    const none = await g('g-new@example.com');
+    ok(none.status === 403 && none.d.code === 'invite_required' && !m.has('acct:g-new@example.com'), 'a first Google sign-in with no invite is refused, and no account is made', none);
+    const made = await call('/admin/invites', { count: 1, uses: 1 }, { Authorization: 'Bearer admin-secret-token-value' });
+    const c = made.d.codes[0];
+    /* The account write fails after the use is taken: the use comes back. */
+    const put = env.AMV_KV.put; let failed = 0;
+    env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:g-lost@')) { failed++; throw new Error('storage is down'); } return put(k, v); };
+    let st = 0; try { st = (await g('g-lost@example.com', c)).status; } catch (e) { st = 500; }
+    env.AMV_KV.put = put;
+    ok(failed > 0 && st >= 500 && (vals.get('betainvuse:' + c) || 0) === 0, 'a Google sign-up whose account could not be written hands its use back', { failed, st, used: vals.get('betainvuse:' + c) });
+    const inn = await g('g-in@example.com', c);
+    ok(inn.status === 200 && inn.d.token && m.has('acct:g-in@example.com'), 'with the invite, the account is made', inn.status);
+    ok((await g('g-second@example.com', c)).d.code === 'invite_required', 'and the one-use code lets no second Google account in');
+    const again = await g('g-in@example.com');
+    ok(again.status === 200 && again.d.token, 'while the account that exists signs in with no invite at all', again.status);
+  } finally { globalThis.fetch = realFetch; }
 }
 
 console.log = quiet;

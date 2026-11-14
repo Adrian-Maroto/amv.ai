@@ -42,6 +42,7 @@ const env = {
     if (b.op === 'release'){ vals.delete(n); return r({ ok: true }); }
     if (b.op === 'incr'){ vals.set(n, cur + Number(b.amount || 0)); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
+    if (b.op === 'reserve' && /^betainvuse:/.test(n)){ if (cur + (b.amount || 0) > b.cap) return r({ allowed: false, value: cur }); vals.set(n, cur + (b.amount || 0)); return r({ allowed: true, value: vals.get(n) }); }
     return r({ allowed: true, value: cur, count: 1 });
   } }) }),
 };
@@ -368,6 +369,37 @@ section('Sign up with a passkey: the account and its passkey are made together, 
   ok(taken.status === 409 && taken.d.code === 'account_exists', 'a second passkey sign-up for the same address is refused, and says to sign in', [taken.status, taken.d.code]);
   const bot = await call('/auth/passkey/options', { purpose: 'signup', email: 'bot@example.com', name: 'B', company: 'x' });
   ok(bot.status === 400, 'the hidden field bots fill stops it here too', bot.status);
+}
+
+section('Invite-only: a passkey sign-up needs the invite, spends it once, and hands it back (driven, not read)');
+{
+  /* the-beta-lets-in-only-who-was-invited read the source for this door,
+     which proves the line is there and nothing about what it does. */
+  env.SIGNUP_INVITE_ONLY = '1';
+  const CODE = 'BPASSKEY22';
+  await env.AMV_KV.put('betainv:' + CODE, JSON.stringify({ uses: 1, at: Date.now(), exp: Date.now() + 86400000 }));
+  const reg = async (email, ref, pk) => {
+    const o = await call('/auth/passkey/options', { purpose: 'signup', email, name: 'Inv' });
+    return call('/auth/passkey/register', { signup: true, email, cid: o.d.cid, ...(ref ? { ref } : {}), credential: await pk.create({ challenge: o.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
+  };
+  try {
+    const pk1 = await makeAuthenticator();
+    const none = await reg('inv-none@example.com', '', pk1);
+    ok(none.status === 403 && none.d.code === 'invite_required' && !(await W.DB.get(env, 'acct', 'inv-none@example.com')), 'no invite: refused, and no account is made', [none.status, none.d.code]);
+    /* The write fails after the use is taken: the use comes back. */
+    const pk2 = await makeAuthenticator();
+    const put = env.AMV_KV.put; let failed = 0;
+    env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:inv-lost@')) { failed++; throw new Error('storage is down'); } return put.call(env.AMV_KV, k, v); };
+    let st = 0; try { st = (await reg('inv-lost@example.com', CODE, pk2)).status; } catch (e) { st = 500; }
+    env.AMV_KV.put = put;
+    ok(failed > 0 && st >= 500 && (vals.get('betainvuse:' + CODE) || 0) === 0, 'an account that could not be written hands the use back', { failed, st, used: vals.get('betainvuse:' + CODE) });
+    const pk3 = await makeAuthenticator();
+    const inn = await reg('inv-in@example.com', CODE, pk3);
+    ok(inn.status === 200 && !!inn.d.token && !!(await W.DB.get(env, 'acct', 'inv-in@example.com')), 'with the invite the account is made', [inn.status, inn.d.error]);
+    const pk4 = await makeAuthenticator();
+    const second = await reg('inv-second@example.com', CODE, pk4);
+    ok(second.status === 403 && second.d.code === 'invite_required', 'and the one-use invite lets no second passkey account in', [second.status, second.d.code]);
+  } finally { delete env.SIGNUP_INVITE_ONLY; }
 }
 
 section('Google is not a way round the second step');
