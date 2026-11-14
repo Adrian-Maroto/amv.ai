@@ -78,6 +78,22 @@ section('A search finds the file by what it says, not its name');
   const loose = await req(env, '/v1/library/search', { query: 'vat invoice' }, ana);
   ignoreFilter = false;
   ok(loose.status === 200 && !(loose.d.results || []).some(x => x.name === 'bo-taxes.txt' || /VAT/.test(x.passage)), 'even an index that ignored the filter answers only the asker’s own passages', loose.d.results);
+  /* And the layer behind that, by itself. The check above also passes on the
+     strength of "the file must be in the asker's list", since another
+     account's file has another id - so removing the owner check changed
+     nothing any suite saw (a mutation, Nov 14). Here an entry sits in the
+     asker's own bucket, names one of the asker's own files, and belongs to
+     somebody else: only the owner mark tells it apart. */
+  {
+    const mine = [...spaces.entries()].flatMap(([ns, sp]) => [...sp.values()].map(r => ({ ns, r }))).find(x => /landlord/.test(String(x.r.metadata.t || '')));
+    ok(!!mine, 'there is an entry of the asker’s to stand beside');
+    const forged = { id: 'forged-entry', namespace: mine.ns, values: vec('vat invoice'), metadata: Object.assign({}, mine.r.metadata, { a: 'a' + 'f'.repeat(40), t: 'SOMEBODY ELSE: VAT number and bank details', i: 99 }) };
+    spaces.get(mine.ns).set(forged.id, forged);
+    ignoreFilter = true;
+    const got = await req(env, '/v1/library/search', { query: 'vat invoice' }, ana);
+    ignoreFilter = false; spaces.get(mine.ns).delete(forged.id);
+    ok(got.status === 200 && !(got.d.results || []).some(x => /SOMEBODY ELSE/.test(x.passage)), 'an entry marked as another account’s is never shown, even under one of the asker’s own file ids', got.d.results);
+  }
   ok((await req(env, '/v1/library/search', { query: 'x' }, ana)).status === 400, 'an empty question is refused');
   ok((await req(env, '/v1/library/search', { query: 'tenancy' })).status === 401, 'nobody signed out can search');
 }
