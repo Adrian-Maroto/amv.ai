@@ -147,6 +147,21 @@ section('The plan’s limit holds on the server, before a byte is stored');
   ok(r.status === 409 && d.error === 'library_full' && r2._m.size === cap, 'the next one is refused and nothing extra is stored', [r.status, r2._m.size]);
 }
 
+section('One file has a size limit of its own, held before a byte is stored');
+{
+  /* The plan's limit above is about how many and how much in total. This is
+     the limit on one file - removing it changed nothing any suite saw (a
+     mutation, Nov 14). */
+  const r2 = mkR2(), env = mkEnv(r2);
+  const tok = await signup(env, 'big@example.com');
+  const big = 'x'.repeat(12 * 1024 * 1024 + 1);
+  const r = await req(env, '/v1/library/put', file('huge.txt', big), tok);
+  const d = await jsonOf(r);
+  ok(r.status === 413 && (d.error === 'too_large' || d.code === 'body_too_large') && r2._m.size === 0, 'a file one byte over 12 MB is refused, and nothing is stored', [r.status, d.error || d.code, r2._m.size]);
+  const fine = await req(env, '/v1/library/put', file('fine.txt', 'small'), tok);
+  ok(fine.status === 200 && r2._m.size === 1, 'while an ordinary one is kept', fine.status);
+}
+
 section('Deleting removes the bytes, and so does deleting the account');
 {
   const r2 = mkR2(), env = mkEnv(r2);
