@@ -160,7 +160,7 @@ section('And an API key is the same account, so it carries the same limit');
   const key = await apiKey(env, tok);
   ok(key && key.length > 10, 'a key was issued', key ? key.slice(0, 8) + '...' : key);
 
-  const u = await W.requireUser(new Request('https://x/', { headers: { Authorization: 'Bearer ' + key } }), env);
+  const u = await W.requireUser(new Request('https://x/v1/messages', { headers: { Authorization: 'Bearer ' + key } }), env);
   ok(u && u.email === CHILD, 'the key resolves to the same person', u && u.email);
   ok(u.family && u.family.limits && u.family.limits.monthlyUSD === CAP,
      'and carries the family limit, which it used to omit entirely', u && u.family);
@@ -210,7 +210,7 @@ section('A blocked account cannot spend through a key it made earlier');
   e.blocked = true; e.blockedReason = 'chargeback';
   await W.DB.put(env, 'ent', CHILD, e);
 
-  const u = await W.requireUser(new Request('https://x/', { headers: { Authorization: 'Bearer ' + key } }), env);
+  const u = await W.requireUser(new Request('https://x/v1/messages', { headers: { Authorization: 'Bearer ' + key } }), env);
   ok(u && u.blocked === true, 'the key sees the block', u && u.blocked);
 
   const before = modelCalls;

@@ -152,6 +152,11 @@ async function apiKeyRevoke(request, env) {
 /* Resolve `Authorization: Bearer amv_sk_...` to the account it belongs to, in
    the same shape requireUser returns - so every quota, cost cap and plan check
    downstream applies to an API call exactly as it does to a browser one. */
+/* Every route an API key is admitted to. Anything else is the person's. */
+/* The one route outside the API: a team owner's security tool fetches the
+   team's activity log on a schedule (a-team-can-take-its-whole-history-away).
+   It only reads, and the route still checks the key's person owns the team. */
+const API_KEY_ROUTES = /^(?:\/v1\/(?:messages(?:\/count_tokens|\/batches(?:\/(?:list|get|results|cancel))?)?|tasks(?:\/cancel)?|resume|stop|usage)|\/team\/audit\/export)$/;
 async function _userFromApiKey(request, env) {
   const raw = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
            || request.headers.get('X-AMV-Key') || '';
@@ -182,6 +187,32 @@ async function _userFromApiKey(request, env) {
      that makes that impossible rather than merely tidy. */
   const acct = await DB.get(env, 'acct', ref.email);
   if (!acct) return null;
+
+  /* A KEY IS FOR THE API, AND FOR NOTHING ELSE (Nov 14 audit).
+
+     A key resolved to the same principal as a signed-in person on EVERY
+     route, and the things only a person may do were refused one route at a
+     time - passkeys here, connected apps there. A list of refusals is only
+     as long as the last time somebody remembered to add to it: a scan of the
+     router found a key admitted to a hundred and fifty-seven routes, among
+     them making more keys (so revoking a leaked one ended nothing),
+     approving an action that was waiting for the person, changing a
+     spending limit, managing a team and its sign-in, exporting the account
+     and reading every synced chat.
+
+     A key is something pasted into a script and committed by mistake. So it
+     is now admitted by NAME to what the API is - messages and their token
+     count, batches, tasks, stopping and resuming a stream, and usage - and
+     refused everywhere else, here, before any route sees it. The per-route
+     refusals stay; they are no longer what stands between a leaked key and
+     the account. A new route is closed to keys until it is added below. */
+  let path = ''; try { path = new URL(request.url).pathname; } catch (e) { path = ''; }
+  if (!API_KEY_ROUTES.test(path)) {
+    audit(env, 'apikey_out_of_scope', { by: ref.email, path: path.slice(0, 80) });
+    throw Object.assign(new Error('api key out of scope'), { amvRefusal: { status: 403, body: {
+      error: 'An API key works on the API only - messages, batches, tasks and usage. Sign in to AMV to do this.',
+      code: 'session_required' } } });
+  }
 
   // Last use, so a customer can tell a live key from a forgotten one. Written
   // at most once a minute: this is on the hot path of every API request.

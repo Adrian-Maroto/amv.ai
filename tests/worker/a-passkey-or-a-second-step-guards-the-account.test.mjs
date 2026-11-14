@@ -80,7 +80,7 @@ const auth = await makeAuthenticator();
   const apiKey = keyMade.d.key || '';
   ok(/^amv_/.test(apiKey), 'an API key for this account exists', [keyMade.status, keyMade.d.code]);
   const byKey = await call('/auth/passkey/options', { purpose: 'register', proof: { password: PW } }, null, { Authorization: 'Bearer ' + apiKey });
-  ok(byKey.status === 401, 'an API key cannot add one, even with the password', byKey.status);
+  ok(byKey.status === 401 || (byKey.status === 403 && byKey.d.code === 'session_required'), 'an API key cannot add one, even with the password', byKey.status);
   const stepNoSession = await call('/auth/passkey/options', { purpose: 'stepup' });
   ok(stepNoSession.status === 401, 'nor can anybody without a session ask for a proof challenge', stepNoSession.status);
 

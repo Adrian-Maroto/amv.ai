@@ -164,7 +164,7 @@ section('An API key cannot say yes for anybody');
   ok(r.status === 429 && r.d.credit && r.d.credit.held === 'stop', 'for a key, ask means stop, whatever its body claims', r.d);
   ok(spentNow() === before, 'nothing spent', spentNow() - before);
   const m = await setMode(env, key, 'auto');
-  ok(m.status === 401 && (await bal(env, tok)).mode === 'ask', 'and a key cannot change the setting', m.status);
+  ok((m.status === 401 || m.status === 403) && (await bal(env, tok)).mode === 'ask', 'and a key cannot change the setting', m.status);
 }
 
 section('Only the three choices are accepted');
