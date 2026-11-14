@@ -98,6 +98,21 @@ section('A search finds the file by what it says, not its name');
   ok((await req(env, '/v1/library/search', { query: 'tenancy' })).status === 401, 'nobody signed out can search');
 }
 
+section('A search costs money, so an account at its limit is refused before anything is asked');
+{
+  /* Removing the spend gate from this route changed nothing any suite saw
+     (a mutation, Nov 14): every other test runs with room to spare. Here the
+     account's own counter says the limit is reached. */
+  let embeds = 0;
+  const full = mkEnv({ VECTORS, AI: { async run(mdl, a) { embeds++; return AI.run(mdl, a); } },
+    AMV_COUNTER: withAuthOps({ idFromName: n => n, get: (n) => ({ async fetch() {
+      return new Response(JSON.stringify(/^cost:/.test(String(n)) ? { allowed: false, value: 999, reserved: 0 } : { allowed: true, value: 0, ok: true })); } }) }) });
+  const before = queries.length;
+  const r = await req(full, '/v1/library/search', { query: 'when does my tenancy finish' }, ana);
+  ok(r.status >= 400 && r.status < 500 && !(r.d.results), 'at the limit the search is refused, with no results', [r.status, r.d.error || r.d.code]);
+  ok(embeds === 0 && queries.length === before, 'and nothing was sent to the model or the index - so nothing was spent', { embeds, asked: queries.length - before });
+}
+
 section('Deleting a file takes its passages out of the index');
 {
   const id = lease.d.file.id;
