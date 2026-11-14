@@ -31,12 +31,15 @@ jobs:
         with:
           node-version: '22'
       - name: Query Wikidata
+        timeout-minutes: 200
         env:
           COUNTRIES: ${{ github.event.inputs.countries }}
+          BUDGET_MIN: '150'
         run: |
           if [ -z "$COUNTRIES" ] && [ -f data/countries/request.txt ]; then COUNTRIES="$(grep -v '^#' data/countries/request.txt | tr '\n' ' ')"; fi
           node scripts/country-data.mjs $COUNTRIES
       - name: Commit the data
+        if: always()
         run: |
           git config user.name "amv-data-bot"
           git config user.email "amv-data-bot@users.noreply.github.com"

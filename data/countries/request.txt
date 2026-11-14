@@ -1,1 +1,1 @@
-# Empty = every country AMV lists (all of them, in one run). Run 4: more kinds, NL and HK fixed.
+# Empty = every country AMV lists. Run 5: budgeted, saved after every kind, new kinds first.

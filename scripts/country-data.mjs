@@ -98,10 +98,10 @@ export const EXCLUDE = {
 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function sparql(q, tries = 4) {
+async function sparql(q, tries = 4, ms = 90000) {
   for (let i = 0; i < tries; i++) {
     let r;
-    try { r = await fetch(EP + '?format=json&query=' + encodeURIComponent(q), { headers: { 'User-Agent': UA, Accept: 'application/sparql-results+json' }, signal: AbortSignal.timeout(90000) }); }
+    try { r = await fetch(EP + '?format=json&query=' + encodeURIComponent(q), { headers: { 'User-Agent': UA, Accept: 'application/sparql-results+json' }, signal: AbortSignal.timeout(ms) }); }
     catch (e) { await sleep(3000 * (i + 1)); continue; }   /* a hung or dropped query is retried, never waited on for ever */
     if (r.ok) return (await r.json()).results.bindings;
     if (r.status === 429 || r.status >= 500) { await sleep(2000 * (i + 1) * (i + 1)); continue; }
@@ -158,11 +158,25 @@ async function main() {
   const byQ = Object.fromEntries(want2.map(cc => [qOf[cc], cc]));
   const got = Object.fromEntries(want2.map(cc => [cc, {}]));
   const GROUP = 8, LANGS = 'en,mul,es,fr,de,pt,it,nl,sv,pl,ru,uk,tr,ar,fa,he,hi,bn,ur,id,ms,vi,th,ja,ko,zh';
-  for (const [kind, [klass, keep]] of Object.entries(KINDS)) {
+  /* A BUDGET, AND WHAT IS NEW FIRST. The run that added sixteen kinds was
+     still going after three hours with nothing written, because files were
+     only written at the very end. Now: kinds no file has yet go first; each
+     kind has its own time limit and the run has one overall; the files are
+     written after every kind; and a kind that was cut short keeps what the
+     last run found. Stopping early loses nothing that was finished. */
+  const END = Date.now() + (+process.env.BUDGET_MIN || 150) * 60000;
+  const had = new Set();
+  for (const cc of want2) { try { Object.keys(JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).kinds || {}).forEach(k => had.add(k)); } catch (e) {} }
+  const order = Object.entries(KINDS).sort((a, b) => had.has(a[0]) - had.has(b[0]));
+  const whole = new Set();
+  for (const [kind, [klass, keep]] of order) {
+    if (Date.now() > END) { console.log('kind', kind, 'not asked: out of time'); continue; }
+    const kindEnd = Math.min(END, Date.now() + 10 * 60000); let cut = false;
     const plain = want2.filter(cc => !PLACE.has(cc));
     const groups = []; for (let i = 0; i < plain.length; i += GROUP) groups.push(plain.slice(i, i + GROUP));
     want2.filter(cc => PLACE.has(cc)).forEach(cc => groups.push([cc]));
     const run = async (g, again) => {
+      if (Date.now() > kindEnd) { cut = true; return; }
       const where = PLACE.has(g[0]) ? '(wdt:P17|wdt:P131|wdt:P159)' : 'wdt:P17';
       const q = `SELECT ?i ?c ?site ?n ?iLabel WHERE {
         VALUES ?c { ${g.map(cc => 'wd:' + qOf[cc]).join(' ')} }
@@ -172,11 +186,11 @@ async function main() {
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
       }`;
       let rows = [];
-      try { rows = await sparql(q, again ? 3 : 2); } catch (e) {
+      try { rows = await sparql(q, again ? 1 : 2, again ? 60000 : 90000); } catch (e) {
         /* A group that timed out is asked again one country at a time - eight
            large countries in one query is what timed out, not any one of them. */
         if (g.length > 1) { for (const cc of g) await run([cc], true); return; }
-        console.log(kind, g.join(','), 'failed:', e.message); return;
+        cut = true; console.log(kind, g.join(','), 'failed:', e.message); return;
       }
       for (const b of rows) {
         const cc = byQ[qid(b.c.value)]; if (!cc) continue;
@@ -191,19 +205,24 @@ async function main() {
       }
     };
     while (groups.length) { await Promise.all(groups.splice(0, 3).map(run)); await sleep(300); }
-    console.log('kind', kind, 'done');
+    if (!cut) whole.add(kind);
+    console.log('kind', kind, cut ? 'cut short - what the last run found is kept where this one has less' : 'done');
+    flush();
   }
+  flush(true);
+  function flush(say) {
   for (const cc of want2) {
-    const out = { cc, qid: qOf[cc], source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), kinds: {} };
+    const out = { cc, qid: qOf[cc], source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', generated: new Date().toISOString().slice(0, 10), v: 2, kinds: {} };
     let total = 0;
     /* Across kinds too: something that is both a bank and a public company is listed once, under the first. */
     const seen = new Set(), hosts = new Set();
     /* A kind whose query failed this time keeps what the last run found for
        it, so one timeout never empties a section that was right before. */
-    let old = {}; try { old = JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).kinds || {}; } catch (e) {}
+    let old = {}, oldV = 0; try { const f = JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')); old = f.kinds || {}; oldV = f.v || 0; } catch (e) {}
     for (const [kind, [, keep]] of Object.entries(KINDS)) {
-      if (!got[cc][kind] && old[kind] && old[kind].length && !PLACE.has(cc) && !QFIX[cc]) got[cc][kind] = old[kind];
-      const rows = (got[cc][kind] || []).sort((x, y) => y.w - x.w), list = [];
+      /* Fresh rows when the kind was asked in full; otherwise whichever of the two has more. */
+      const fresh = got[cc][kind] || [], prev = (PLACE.has(cc) || QFIX[cc]) && oldV < 2 ? [] : (old[kind] || []);   // those two were matched wrongly before v2
+      const rows = (whole.has(kind) || fresh.length >= prev.length ? fresh : prev).slice().sort((x, y) => y.w - x.w), list = [];
       for (const e of rows) {
         if (seen.has(e.q) || hosts.has(e.s)) continue; seen.add(e.q); hosts.add(e.s);
         list.push(e); if (list.length >= keep) break;
@@ -212,7 +231,8 @@ async function main() {
     }
     out.total = total;
     writeFileSync(join(OUT, cc + '.json'), JSON.stringify(out));
-    console.log(cc, total, Object.entries(out.kinds).map(([k, v]) => k + ':' + v.length).join(' '));
+    if (say) console.log(cc, total, Object.entries(out.kinds).map(([k, v]) => k + ':' + v.length).join(' '));
+  }
   }
 }
 main().catch(e => { console.error(e); process.exit(1); });
