@@ -90,7 +90,7 @@ Companion docs (do not duplicate them here - read them):
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
   `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),
   `team-sso.js` (a team owner's company sign-in settings), `api-keys.js` (the API keys pane), `library.js`
-  (the file library screen), `usage.js` (the Usage screen), `help-faqs.js` (the Help center's questions), `settings-panes.js` (what each Settings pane draws, prefetched when the page is idle), `widget-form.js` (the website widget's settings form), `live-voice.js` (the live voice conversation), `web-live.js` (the live view of AMV's browser at work), `invest.js` (the Invest settings pane), `project-search.js` (searches a project's files when they are larger than one message holds), `dna-editor.js` (the Design DNA editor), `security.js` (passkeys, the authenticator app and recovery codes), `spending.js` (the spending limits pane), `family.js` (the Family pane), `health.js` (reads an Apple Health export on the device, fetched when a .zip is attached) and `market-sell.js` (the marketplace sell form) - byte-identical copies and nothing else.
+  (the file library screen), `usage.js` (the Usage screen), `help-faqs.js` (the Help center's questions), `settings-panes.js` (what each Settings pane draws, prefetched when the page is idle), `widget-form.js` (the website widget's settings form), `live-voice.js` (the live voice conversation), `web-live.js` (the live view of AMV's browser at work), `invest.js` (the Invest settings pane), `project-search.js` (searches a project's files when they are larger than one message holds), `dna-editor.js` (the Design DNA editor), `security.js` (passkeys, the authenticator app and recovery codes), `spending.js` (the spending limits pane), `family.js` (the Family pane), `health.js` (reads an Apple Health export on the device, fetched when a .zip is attached), `country-catalog.js` (the country catalogue: Tasks, Crew jobs and services built from `countries/<CC>.json`, fetched with Crew, Tasks and Integrations) and `market-sell.js` (the marketplace sell form) - byte-identical copies and nothing else. `countries/` holds one JSON file per country, copied from `data/countries/`.
   Code only some visitors use goes in such a file, not in the page. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
@@ -227,6 +227,19 @@ Companion docs (do not duplicate them here - read them):
   formula masters and table headers, dropping `calcChain` and every formula's
   cached result so no reader shows a stale total. Nothing is offered until the
   new file is reopened and each change read back.
+- **The country catalogue is real data, checked twice** (`src/country/country-catalog.js`,
+  `data/countries/<CC>.json`, `scripts/country-data.mjs`). The data is built from
+  Wikidata by the `country-data` workflow (push a change to
+  `data/countries/request.txt` on a `claude/**` branch; `# kinds: mall` asks one
+  kind again) and committed like code. Every class ID is stated with the name it
+  must have and resolved by name when it differs; every entry is checked by the
+  script and again by the page (a real ID, a plain one-line name, a bare host),
+  because the source is editable by anybody and a name reaches an instruction
+  while a site is where somebody signs in. A Crew job whose instruction has
+  blanks declares `asks`, so the runner never works from "[my route]". Only the
+  first rows are drawn; `ccAllRows` builds the rest. `docs/COUNTRY-DATA.md`
+  (`node scripts/country-report.mjs`) holds the real count per country - never
+  claim 500 for a country it does not show. LESSONS 639-642.
 - **Every write on a connected account goes through the action protocol**
   (`src/worker/09a-action-protocol.js`): it reads its own result back
   (`verified`), and declares either an `undo` (a compensation that is itself
