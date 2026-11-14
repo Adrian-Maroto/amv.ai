@@ -70,7 +70,7 @@ export const KINDS = {
   nonprofit:   ['Q163740',   30, 'nonprofit organization'],
   theatre:     ['Q24354',    20, 'theatre building'],
   stadium:     ['Q483110',   20, 'stadium'],
-  mall:        ['Q31374404', 25, 'shopping mall'],
+  mall:        ['Q11315',    25, 'shopping center'],   // wider than 'shopping mall' (Q31374404), which left Germany with four
   park:        ['Q46169',    20, 'national park'],
   zoo:         ['Q43501',    10, 'zoo'],
   festival:    ['Q132241',   25, 'festival'],
@@ -167,7 +167,11 @@ async function main() {
   const END = Date.now() + (+process.env.BUDGET_MIN || 150) * 60000;
   const had = new Set();
   for (const cc of want2) { try { Object.keys(JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).kinds || {}).forEach(k => had.add(k)); } catch (e) {} }
-  const order = Object.entries(KINDS).sort((a, b) => had.has(a[0]) - had.has(b[0]));
+  /* `# kinds: mall union` in the request file asks only for those; every other
+     kind keeps what the last run found. */
+  let only = null;
+  try { const m = /^# kinds:\s*(.+)$/m.exec(readFileSync(join(OUT, 'request.txt'), 'utf8')); if (m) only = new Set(m[1].trim().split(/[\s,]+/)); } catch (e) {}
+  const order = Object.entries(KINDS).filter(([k]) => !only || only.has(k)).sort((a, b) => had.has(a[0]) - had.has(b[0]));
   const whole = new Set();
   for (const [kind, [klass, keep]] of order) {
     if (Date.now() > END) { console.log('kind', kind, 'not asked: out of time'); continue; }

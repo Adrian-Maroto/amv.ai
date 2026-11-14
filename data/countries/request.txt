@@ -1,1 +1,2 @@
-# Empty = every country AMV lists. Run 6: class names corrected (theatre building, shopping mall, publishing house, labor union), schools asked directly.
+# Empty = every country AMV lists. Run 7: shopping centres only.
+# kinds: mall
