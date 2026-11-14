@@ -26,12 +26,13 @@ const W = await import(harness + '?t=' + Date.now());
 
 const ME = 'reader@test.com';
 const store = new Map(); const vals = new Map();
+let atLimit = false;
 const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 'https://amv.test', ALLOWED_ORIGIN: 'https://amv.test',
   AMV_KV: { async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
   AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
-    if (b.op === 'reserve') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
+    if (b.op === 'reserve') { if (atLimit && /^cost:/.test(n)) return new Response(JSON.stringify({ allowed: false, value: cur })); vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
     return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
   } }) } };
@@ -91,6 +92,12 @@ section('Bounded, signed in, metered');
   ok(anon.status === 401, 'signed out is refused', anon.status);
   const spent = [...vals.entries()].filter(([k]) => k.startsWith('cost:' + ME)).reduce((a, [, v]) => a + v, 0);
   ok(spent > 0, 'and what it cost is counted', spent);
+  /* At the spending limit the model is not asked (a mutation that removed
+     this passed every suite, Nov 14). */
+  atLimit = true; const asked = calls.length;
+  const full = await call('/v1/meaning', { query: 'revenue', passages: ['sales grew', 'it rained'] });
+  atLimit = false;
+  ok(full.status >= 400 && full.status < 500 && full.status !== 401 && !full.d.scores && calls.length === asked, 'at the spending limit it is refused and the model is not asked', [full.status, calls.length - asked]);
 }
 
 section('A model that fails or answers short is a failure, never made-up scores');

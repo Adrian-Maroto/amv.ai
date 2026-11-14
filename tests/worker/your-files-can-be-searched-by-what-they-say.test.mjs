@@ -111,6 +111,12 @@ section('A search costs money, so an account at its limit is refused before anyt
   const r = await req(full, '/v1/library/search', { query: 'when does my tenancy finish' }, ana);
   ok(r.status >= 400 && r.status < 500 && !(r.d.results), 'at the limit the search is refused, with no results', [r.status, r.d.error || r.d.code]);
   ok(embeds === 0 && queries.length === before, 'and nothing was sent to the model or the index - so nothing was spent', { embeds, asked: queries.length - before });
+  /* And a file kept at the limit is kept, but not indexed - nothing is paid
+     for that the person could not pay for (also survived a mutation). */
+  const upBefore = [...spaces.values()].reduce((n, sp) => n + sp.size, 0);
+  const kept = await req(full, '/v1/library/put', file('at-limit.txt', 'The boiler service is due in June.'), ana);
+  const upAfter = [...spaces.values()].reduce((n, sp) => n + sp.size, 0);
+  ok(kept.status === 200 && embeds === 0 && upAfter === upBefore, 'a file kept at the limit is kept, and not sent to be indexed', { status: kept.status, embeds, added: upAfter - upBefore });
 }
 
 section('A file on its way out is not an answer, even while its passages are still in the index');

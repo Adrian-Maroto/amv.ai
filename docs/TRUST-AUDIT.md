@@ -2229,3 +2229,22 @@ per-route refusals stay. Measured: all twenty-eight of them, and the central
 one, each fail a named assertion when removed; the router-wide pass finds no
 route outside that list that answers a key and refuses nobody-signed-in.
 AMV's own CLI, SDK and editor and browser extensions use only API routes.
+
+## 14 November, third round: every route that spends against a person's limit
+
+Each of the seven `_spendGate` refusals, removed in turn.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 341 | a web-agent run started past the limit | 1 assertion |
+| 342 | an SMS turn run past the limit | 4 assertions |
+| 343 | teaching AMV's browser started past the limit | **nothing** - now 1 assertion |
+| 344 | replaying a taught task started past the limit | **nothing** - now 1 assertion |
+| 345 | search by meaning run past the limit | **nothing** - now 1 assertion |
+| 346 | a kept file indexed past the limit | **nothing** - now 1 assertion |
+| 347 | file search run past the limit (round two) | **nothing** - now 2 assertions |
+
+Five of seven had no test, for one reason: every suite gave its accounts room
+to spare, so the refusal never ran. Each now has an account whose own counter
+says the limit is reached, and asserts that nothing paid was started - no
+browser, no model call, no index write.
