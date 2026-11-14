@@ -1061,6 +1061,26 @@ step('Every on-screen string in the code has a translation', () => {
       if (!Object.prototype.hasOwnProperty.call(es, key) && !missing.has(key)) missing.set(key, f);
     }
   }
+  /* STRINGS THAT REACH T() THROUGH A TABLE. The scan above reads literal
+     calls, and a title held in a table is translated as T(row[0]) - which it
+     cannot see. The country catalogue shipped thirty-three such strings with
+     no translation and this stage said nothing; they were found by hand.
+     Each table is named here with where its on-screen string sits, and a
+     table that yields nothing is a broken pattern, not a clean file. */
+  const TABLES = [
+    ['src/country/country-catalog.js', /const CC_KINDS = \{[\s\S]*?\n\};/, /\[\s*'[^']*'\s*,\s*'((?:\\.|[^'\\])+)'\s*\]/g, 20],
+    ['src/country/country-catalog.js', /const CC_TASKS = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 60],
+    ['src/country/country-catalog.js', /const CC_CREW = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 20],
+    ['src/integrations/integrations-view.js', /const TASK_EXTRA=\[[\s\S]*?\n\];/, /\["[^"]*","[^"]*","[^"]*","((?:\\.|[^"\\])+)"/g, 40],
+    ['src/integrations/integrations-view.js', /const TASK_BY_FACT=\[[\s\S]*?\n\];/, /\['[^']*','[^']*','((?:\\.|[^'\\])+)'/g, 15],
+  ];
+  for (const [f, block, each, least] of TABLES) {
+    const src = readFileSync(R(f), 'utf8'), m = block.exec(src);
+    const keys = m ? [...m[0].matchAll(each)].map(x => unescape(x[1])) : [];
+    if (keys.length < least)
+      throw new Error(`${f}: only ${keys.length} table string(s) found where at least ${least} are expected - the table moved or the pattern broke.`);
+    for (const key of keys) { seen++; if (!Object.prototype.hasOwnProperty.call(es, key) && !missing.has(key)) missing.set(key, f); }
+  }
   /* NEGATIVE CONTROL: a pattern that silently stops matching passes on an
      empty read. There are over a thousand literal calls today. */
   if (seen < 800)
