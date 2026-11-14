@@ -15869,3 +15869,47 @@ attributed to the wrong characters, and a team-task notice it really called
 read as never called. Rule: a fixture that rewrites source pads each
 replacement to the exact length it replaces, and refuses one that does not
 fit, so coverage keeps meaning what it says.
+
+## 639. Data from a public database is checked by name, twice, and never trusted to be what its ID says (Nov 10-14)
+
+The country catalogue is built from Wikidata. Four of the class IDs written
+from memory were wrong, and the first run filled "Insurance" with Zara and
+Google - every enterprise in Spain - while hotels and internet providers came
+back empty. The script printed what each ID is called, which is the only
+reason it was seen. Rule: an ID from somebody else's database is stated with
+the name it is expected to have, and a mismatch is resolved by the name or
+the kind is dropped - it never fills a section with something else. And the
+reverse was true four times as well: the ID was right and the expected name
+was wrong ("theatre" for "theatre building"), so a mismatch is read, not
+auto-corrected in the source. The same data is editable by anybody, so each
+entry is checked by the script and again by the page (a real ID, a plain
+one-line name, a bare host) before its name reaches an instruction or its
+address reaches somebody about to sign in.
+
+## 640. A job whose instruction has blanks must ask for them before it runs (Nov 13)
+
+Catalogue Crew jobs carried templates like "check {n} for disruption on [my
+route]". Crew's switch only asks a question when the job declares one, and
+these declared none - so the unattended runner, which is given the job's
+text and nothing else, would have run daily against the words "[my route]".
+The audit found it by reading what the runner receives, not by any suite.
+Rule: anything that generates jobs derives the question from the blanks in
+the instruction, and a test asserts that every job with a blank asks.
+
+## 641. A long job that writes only at the end has written nothing when it is stopped (Nov 14)
+
+The fourth data run asked 44 kinds for 104 countries and wrote its files
+after the last one. It was still going after three hours with no way to see
+how far it had got, and a timeout would have discarded all of it. Rule: a
+long batch writes after every unit, has a budget per unit and overall, does
+what is new first, keeps the last good result for a unit that was cut short,
+and commits what is finished even when it is stopped.
+
+## 642. A string that reaches T() through a table is invisible to a scan for literal calls (Nov 14)
+
+"Every on-screen string has a translation" read literal T('...') calls. The
+catalogue's titles are held in tables and translated as T(row[0]); it
+shipped thirty-three with no translation and the stage passed. Rule: each
+table of on-screen strings is named in the stage with where its string sits
+and a minimum count, so a table that moves fails the stage instead of
+passing it empty.
