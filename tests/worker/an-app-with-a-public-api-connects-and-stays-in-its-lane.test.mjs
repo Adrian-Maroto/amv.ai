@@ -173,6 +173,29 @@ section('A call goes to its own app with its own token - never another’s');
   sent = [];
   const again = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } }, idempotencyKey: 'test-send-mail-key-0001' }, t);
   ok(again.status === 200 && again.d.replayed === true && !sent.some(x => x.url.endsWith('/me/sendMail')), 'a retry with the same key gets the first answer and sends nothing', again.d);
+  /* The same key for a DIFFERENT change is refused. Without this the second
+     request was answered with the first one's stored answer marked
+     "replayed" - told it had been sent, when nothing was (a mutation that
+     removed the comparison passed every suite, Nov 14). */
+  sent = [];
+  const other = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'a different mail' } }, idempotencyKey: 'test-send-mail-key-0001' }, t);
+  ok(other.status === 409 && other.d.error === 'idempotency_conflict' && !other.d.replayed && !sent.some(x => x.url.endsWith('/me/sendMail')), 'the same key for a different change is refused, sends nothing, and is not called a replay', other.d);
+  /* Two identical changes arriving together: one is sent, the other is told
+     it is already being sent - never both. */
+  {
+    const realG = globalThis.fetch; let gate; const held = new Promise(r => { gate = r; });
+    globalThis.fetch = async (u, i) => { if (String(u).endsWith('/me/sendMail')) await held; return realG(u, i); };
+    sent = [];
+    const body = { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'twice' } }, idempotencyKey: 'test-send-mail-key-0003' };
+    const first = call(env, '/v1/connect/api', body, t);
+    await new Promise(r => setTimeout(r, 60));
+    /* If the second is sent as well it waits on the same held request, so it
+       is raced against a short wait and read as "sent too" rather than hung. */
+    const secondP = call(env, '/v1/connect/api', body, t);
+    const second = await Promise.race([secondP, new Promise(r => setTimeout(() => r({ status: 0, d: { error: 'was_sent_too' } }), 400))]);
+    gate(); const one = await first; await secondP.catch(() => {}); globalThis.fetch = realG;
+    ok(one.status === 200 && second.d.error === 'idempotency_pending' && sent.filter(x => x.url.endsWith('/me/sendMail')).length === 1, 'two at once: one is sent, the other is told it is already going', [one.status, second.d.error, sent.filter(x => x.url.endsWith('/me/sendMail')).length]);
+  }
   const nokey = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } } }, t);
   ok(nokey.status === 400 && nokey.d.error === 'idempotency_required', 'a change without a key is not sent', nokey.d);
   const realF = globalThis.fetch;
