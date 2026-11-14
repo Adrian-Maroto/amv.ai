@@ -2141,3 +2141,52 @@ with a wrong length or extra bytes still verified. Not a forgery - the
 numbers still had to verify - but a reader accepting what the format forbids.
 It now reads strictly (lengths, no trailing bytes, minimal integers). An
 independent review of this layer is still recommended before large scale.
+
+## 14 November: November's own guards, broken one at a time
+
+Twelve guards written between 7 and 10 November (the invite-only beta, the
+private-network refusal, the once-only key on a connected app's API route,
+the fresh sign-in for a first factor, restore after erasure, the lock
+release, the once-only credit pack), each removed in turn and the whole
+Worker and security lanes run. Attributed by the failing assertion.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 312 | a name that resolves to a private network fetched anyway | 4 assertions |
+| 313 | a credential following a redirect to another origin | 2 assertions |
+| 314 | a revoked invite still letting people in | 1 assertion |
+| 315 | an expired invite still letting people in | 2 assertions |
+| 316 | an invite's use limit ignored | 1 assertion |
+| 317 | a failed sign-up keeping the invite's use | **nothing** - now 2 assertions |
+| 318 | a days-old session adding the first factor | 1 assertion |
+| 319 | a restore bringing back an erased account | 1 assertion |
+| 320 | one once-only key, a different change, answered as a replay | **nothing** - now 1 assertion |
+| 321 | a change already in flight sent again | **nothing** - now 1 assertion |
+| 322 | a late release freeing another holder's lock | 1 assertion |
+| 323 | a credit pack reported twice | **nothing** - now 2 assertions |
+
+Eight of twelve were caught. The four that were not:
+
+- **317.** Every refusal the suite tried happened BEFORE the use was taken,
+  so the hand-back was never run. Now driven at all three doors with an
+  account write that fails.
+- **320.** The worst of the four: with the comparison gone, a different
+  request under a key already used was answered with the earlier request's
+  stored answer marked `replayed` - told it had been sent when nothing was.
+  The named-action route had this test; the API route did not.
+- **321.** Same route: two identical changes arriving together were both sent.
+- **323.** The counter refuses the second credit by itself, so the balance
+  stayed right and hid that the claim above it was gone - which wrote the
+  same sale into the money log twice.
+
+**Found while writing them:** the Google and passkey sign-up doors of the
+beta were tested only by a regex over the source - the exact thing the rule
+above warns about. Both are now driven (refused, handed back, admitted once,
+spent), and four further mutations of those two doors (324-327: the refusal
+and the hand-back at each) each fail a named assertion. A fifth (328: the
+change sent when "once" cannot be guaranteed, on the API route) had no test
+and has one.
+
+**Not measured:** `check.test.mjs` fails when the Worker lane is run by
+itself outside `check.mjs` (it passes inside the gate). It was excluded from
+attribution here rather than understood.

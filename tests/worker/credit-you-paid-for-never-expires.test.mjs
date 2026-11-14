@@ -86,6 +86,24 @@ section('Credit bought before this change, with the old timer, is rescued the ne
   ok(await balance(s) === 20, 'and 600 days after it was bought, it is all still there', await balance(s));
 }
 
+section('A pack reported twice is added once and written down once');
+{
+  /* The webhook, its retries and the reconciliation sweep can all report the
+     same payment. The counter refuses the second credit by itself, so the
+     balance alone does not show whether the claim above it works - what it
+     also guards is the record of the sale. Removing it left the balance right
+     and wrote the same sale into the money log twice (a mutation, Nov 14). */
+  const s = 'twice@example.com';
+  const puts = []; const put = env.AMV_KV.put;
+  env.AMV_KV.put = async (k, v) => { puts.push(String(k)); return put(k, v); };
+  const first = await W._creditGrant(env, { subject: s, email: s, usd: 20, ref: 'pi_twice' });
+  const second = await W._creditGrant(env, { subject: s, email: s, usd: 20, ref: 'pi_twice' });
+  env.AMV_KV.put = put;
+  ok(first === true && second === false, 'the first report credits it; the second says it was already done', [first, second]);
+  ok(await balance(s) === 20, 'twenty dollars, not forty', await balance(s));
+  ok(puts.filter(k => k.startsWith('txn:e:')).length === 1, 'and the sale is in the money log once', puts.filter(k => k.startsWith('txn:')));
+}
+
 section('A spend never hands the money back by outliving its purchase');
 {
   const s = 'busy@example.com';
