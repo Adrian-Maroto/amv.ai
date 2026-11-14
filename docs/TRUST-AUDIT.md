@@ -2187,6 +2187,7 @@ and the hand-back at each) each fail a named assertion. A fifth (328: the
 change sent when "once" cannot be guaranteed, on the API route) had no test
 and has one.
 
-**Not measured:** `check.test.mjs` fails when the Worker lane is run by
-itself outside `check.mjs` (it passes inside the gate). It was excluded from
-attribution here rather than understood.
+**Not understood:** `check.test.mjs` failed its placeholder section in every
+four-wide run of the Worker lane started directly with `tests/run.mjs`, and
+passes alone in both trees and inside the gate. It was excluded from
+attribution here; the cause was looked for and not found.
