@@ -297,6 +297,20 @@ async function ccCrewLoad(cc){
   }));
   return _ccCrewJobs[cc];
 }
+/* THE FIRST ROWS NOW, THE REST WHEN SOMEBODY ASKS FOR THEM.
+
+   A large country has over three thousand tasks. Drawing every row hidden
+   cost twenty thousand elements and a megabyte of markup, and on a slow phone
+   a third of a second in which nothing answered - for rows most people never
+   open. The first rows are drawn; the rest are built the first time Show all,
+   a kind filter or a search needs them, once. */
+function ccRest(host, more){
+  const list = host && host.querySelector('.cc-list'); if(!list) return;
+  list._ccMore = () => { list._ccMore = null; const html = more(); if(html) list.insertAdjacentHTML('beforeend', html); };
+}
+function ccAllRows(host){ const l = host && host.querySelector('.cc-list'); if(l && l._ccMore) l._ccMore(); }
+try{ window.ccRest = ccRest; window.ccAllRows = ccAllRows; }catch(e){}
+
 /* The section on Crew: every job for the country, by kind, first rows then all. */
 async function ccFillCrew(){
   const host = document.getElementById('cc-crew'); if(!host) return;
@@ -305,24 +319,27 @@ async function ccFillCrew(){
   if(!host.isConnected || !list.length) return;
   const row = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null;
   const kinds = [...new Set(list.map(j => j.ccKind))];
+  const jobRow = (j, i) => `<button class="cc-job${i >= 24 ? ' cc-more' : ''}" data-cc="${j.ccKind}" data-dact="cwPeek" data-darg="${escH(j.id)}">
+        <span class="cc-job-ic" aria-hidden="true">${j.icon}</span>
+        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(j.title)}</span><span class="cc-job-s" data-no-i18n>${escH(j.site)} \u00b7 ${escH(T({ daily: 'Every day', weekly: 'Every week', monthly: 'Every month' }[j.every] || 'Every day'))}</span></span>
+        <span class="tk-arrow" aria-hidden="true">\u2192</span></button>`;
   host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Every job for {country}', row[1], _cwThe(row[1])) : T('Every job for you'))}</h3>
       <span class="sec-sub"><b>${list.length}</b> ${escH(T('jobs watching real services there'))} \u00b7 ${escH(T('Source'))}: Wikidata</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
       ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
     </div>
-    <div class="cc-list cc-jobs">${list.map((j, i) => `<button class="cc-job${i >= 24 ? ' cc-more' : ''}" data-cc="${j.ccKind}" data-dact="cwPeek" data-darg="${escH(j.id)}">
-        <span class="cc-job-ic" aria-hidden="true">${j.icon}</span>
-        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(j.title)}</span><span class="cc-job-s" data-no-i18n>${escH(j.site)} \u00b7 ${escH(T({ daily: 'Every day', weekly: 'Every week', monthly: 'Every month' }[j.every] || 'Every day'))}</span></span>
-        <span class="tk-arrow" aria-hidden="true">\u2192</span></button>`).join('')}</div>
+    <div class="cc-list cc-jobs">${list.slice(0, 24).map(jobRow).join('')}</div>
     ${list.length > 24 ? `<button class="btn bs cc-all" id="cc-crew-all">${escH(T('Show all'))} (${list.length})</button>` : ''}`;
   host.hidden = false;
   host.querySelectorAll('[data-cc-kind]').forEach(c => on(c, 'click', () => {
     host.querySelectorAll('[data-cc-kind]').forEach(x => x.classList.toggle('on', x === c));
     const k = c.dataset.ccKind; host.classList.toggle('cc-filtered', !!k);
+    if(k) ccAllRows(host);
     host.querySelectorAll('.cc-job').forEach(r => r.classList.toggle('cc-off', !!k && r.dataset.cc !== k));
   }));
-  on(document.getElementById('cc-crew-all'), 'click', function(){ host.classList.add('cc-open'); this.remove(); });
+  ccRest(host, () => list.slice(24).map((j, i) => jobRow(j, i + 24)).join(''));
+  on(document.getElementById('cc-crew-all'), 'click', function(){ ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
 }
 try{ window.ccFillCrew = ccFillCrew; }catch(e){}
 
@@ -340,24 +357,27 @@ async function ccFillIntegrations(){
   list.forEach(x => { _ccSvc[x.e.q] = x; });
   const row = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null;
   const kinds = [...new Set(list.map(x => x.kind))];
+  const svcRow = (x, i) => `<div class="cc-svc${i >= 30 ? ' cc-more' : ''}" data-cc="${x.kind}">
+        <span class="cc-job-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</span>
+        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(x.e.n)}</span><span class="cc-job-s" data-no-i18n>${escH(x.e.s)}</span></span>
+        <button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use in chat'))}</button></div>`;
   host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Services in {country}', row[1], _cwThe(row[1])) : T('Services where you are'))}</h3>
       <span class="sec-sub"><b>${list.length}</b> ${escH(T('real services there, each through AMV\u2019s browser - you sign in on the real site'))} \u00b7 ${escH(T('Source'))}: Wikidata. ${escH(T('Check the address before you sign in.'))}</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
       ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
     </div>
-    <div class="cc-list cc-svcs">${list.map((x, i) => `<div class="cc-svc${i >= 30 ? ' cc-more' : ''}" data-cc="${x.kind}">
-        <span class="cc-job-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</span>
-        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(x.e.n)}</span><span class="cc-job-s" data-no-i18n>${escH(x.e.s)}</span></span>
-        <button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use in chat'))}</button></div>`).join('')}</div>
+    <div class="cc-list cc-svcs">${list.slice(0, 30).map(svcRow).join('')}</div>
     ${list.length > 30 ? `<button class="btn bs cc-all" id="cc-int-all">${escH(T('Show all'))} (${list.length})</button>` : ''}`;
   host.hidden = false;
   host.querySelectorAll('[data-cc-kind]').forEach(c => on(c, 'click', () => {
     host.querySelectorAll('[data-cc-kind]').forEach(x => x.classList.toggle('on', x === c));
     const k = c.dataset.ccKind; host.classList.toggle('cc-filtered', !!k);
+    if(k) ccAllRows(host);
     host.querySelectorAll('.cc-svc').forEach(r => r.classList.toggle('cc-off', !!k && r.dataset.cc !== k));
   }));
-  on(document.getElementById('cc-int-all'), 'click', function(){ host.classList.add('cc-open'); this.remove(); });
+  ccRest(host, () => list.slice(30).map((x, i) => svcRow(x, i + 30)).join(''));
+  on(document.getElementById('cc-int-all'), 'click', function(){ ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
 }
 function ccUseService(q){
   const x = _ccSvc[q]; if(!x) return;

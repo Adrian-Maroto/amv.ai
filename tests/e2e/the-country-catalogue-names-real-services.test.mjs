@@ -54,8 +54,13 @@ section('Tasks: a row per task per named entry');
       txt: rows.map(b => b.textContent.replace(/\s+/g, ' ').trim()) };
   });
   const exp = await page.evaluate(f => window.ccTasks(f).length, { ...file, kinds: { ...file.kinds, bank: file.kinds.bank.filter(e => !BAD.includes(e)) } });
-  ok(r.n === exp && exp >= file.total * 3, 'every task the file supports is a row, three or more per entry', { rows: r.n, exp });
-  ok(String(r.head) === String(r.n), 'the count on screen is the count of rows', r.head);
+  /* Only the first rows are drawn (a large country has thousands); the count
+     is of everything, and Show all draws the rest. */
+  ok(r.n === 24 && String(r.head) === String(exp) && exp >= file.total * 3, 'the first rows are drawn, and the count is of every task - three or more per entry', { rows: r.n, head: r.head, exp });
+  await page.click('#cc-all');
+  const all = await page.evaluate(() => [...document.querySelectorAll('#tk-cc [data-darg^="cc-"]')].map(b => b.textContent.replace(/\s+/g, ' ').trim()));
+  ok(all.length === exp, 'Show all draws every one, and the count on screen is the count of rows', { rows: all.length, exp });
+  r.txt = all;
   ok(r.txt.every(t => [...names].some(n => t.includes(n))), 'and every row names an entry from the file', r.txt.slice(0, 2));
   await page.evaluate(() => document.querySelector('#tk-cc [data-darg^="cc-bank-"]').click());
   await page.waitForTimeout(400);
@@ -78,8 +83,7 @@ section('Integrations: every entry, through AMV’s browser');
   await page.waitForFunction(() => { const h = document.getElementById('cc-int'); return h && !h.hidden; }, null, { timeout: 15000 });
   const r = await page.evaluate(() => ({ n: document.querySelectorAll('#cc-int .cc-svc').length, shown: [...document.querySelectorAll('#cc-int .cc-svc')].filter(x => x.offsetParent).length,
     head: (document.querySelector('#cc-int .sec-sub b') || {}).textContent }));
-  ok(r.n === file.total && String(r.head) === String(r.n), 'one row per entry, counted truly', r);
-  ok(r.shown === 30, 'thirty first, the rest behind Show all', r.shown);
+  ok(r.n === 30 && r.shown === 30 && String(r.head) === String(file.total), 'thirty first, and the count is of every entry', r);
   await page.click('#cc-int-all');
   ok(await page.evaluate(() => [...document.querySelectorAll('#cc-int .cc-svc')].filter(x => x.offsetParent).length) === file.total, 'Show all shows every one');
   await page.click('#cc-int [data-cc-kind="airline"]');
@@ -97,7 +101,9 @@ section('Crew: the jobs, as ordinary Crew jobs');
   await page.waitForFunction(() => { const h = document.getElementById('cc-crew'); return h && !h.hidden; }, null, { timeout: 20000 });
   const r = await page.evaluate(() => ({ n: document.querySelectorAll('#cc-crew .cc-job').length, head: (document.querySelector('#cc-crew .sec-sub b') || {}).textContent,
     known: [...document.querySelectorAll('#cc-crew .cc-job')].slice(0, 5).every(b => _cwAllJobs().some(j => j.id === b.dataset.darg)) }));
-  ok(r.n >= file.total && String(r.head) === String(r.n), 'at least one job per entry, counted truly', r);
+  ok(r.n === 24 && +r.head >= file.total, 'the first rows, with a count of at least one job per entry', r);
+  await page.click('#cc-crew-all');
+  ok(await page.evaluate(() => document.querySelectorAll('#cc-crew .cc-job').length) === +r.head, 'Show all draws every one, counted truly');
   ok(r.known, 'each one is a job Crew knows, so it opens and switches on like the rest');
   /* The unattended runner reads the job's text and nothing else, so a blank
      nobody filled would run daily against the words "[my route]". */

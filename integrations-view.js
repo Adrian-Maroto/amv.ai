@@ -243,6 +243,8 @@ function _tkWireFind(vc, total){
   const run=()=>{
     const q=box.value.trim().toLowerCase();
     vc.classList.toggle('tk-find-on', !!q);
+    /* A search reaches every catalogue row, so the ones not drawn yet are drawn now. */
+    if(q && window.ccAllRows) window.ccAllRows($('tk-cc'));
     /* A search looks through every kind: a kind filter left on would hide
        matches the count beside the box had just promised. */
     if(q){ const cc=$('tk-cc'); if(cc && cc.classList.contains('cc-filtered')){ const all=cc.querySelector('[data-cc-kind=""]'); if(all) all.click(); } }
@@ -279,7 +281,7 @@ async function _tkFillLocal(){
   /* The country catalogue: every named service there, with what people do
      with each (country-catalog.js, fetched here). Rendered whole so search reaches every
      one; only the first rows show until 'Show all'. */
-  let cat='';
+  let cat='', ccMore=null;
   try{
     const d=(await _ccReady())?await window.ccLoad(cc):null;
     if(!host.isConnected) return;
@@ -287,13 +289,15 @@ async function _tkFillLocal(){
     list.forEach(t=>{ _TASK_PROMPTS[t.id]=t.prompt; });
     if(list.length){
       const kinds=[...new Set(list.map(t=>t.kind))];
+      const ccRow=(t,i)=>`<button class="tk-row${i>=24?' cc-more':''}" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic">${(CC_KINDS[t.kind]||['\u2022'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow">\u2192</span></button>`;
+      ccMore=()=>list.slice(24).map((t,i)=>ccRow(t,i+24)).join('');
       cat=`<div class="cc-head"><b>${list.length}</b> ${escH(T('tasks naming real services there'))}
           <span class="cc-src">${escH(T('Source'))}: Wikidata</span></div>
         <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
           <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
           ${kinds.map(k=>`<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k]||['',''])[0]}</span><span>${escH(T((CC_KINDS[k]||['',k])[1]))}</span></button>`).join('')}
         </div>
-        <div class="tk-list tk-local-list cc-list">${list.map((t,i)=>`<button class="tk-row${i>=24?' cc-more':''}" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic">${(CC_KINDS[t.kind]||['\u2022'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow">\u2192</span></button>`).join('')}</div>
+        <div class="tk-list tk-local-list cc-list">${list.slice(0,24).map(ccRow).join('')}</div>
         ${list.length>24?`<button class="btn bs cc-all" id="cc-all">${escH(T('Show all'))} (${list.length})</button>`:''}`;
     }
   }catch(e){}
@@ -310,9 +314,11 @@ async function _tkFillLocal(){
   host.querySelectorAll('[data-cc-kind]').forEach(c=>on(c,'click',()=>{
     host.querySelectorAll('[data-cc-kind]').forEach(x=>x.classList.toggle('on',x===c));
     const k=c.dataset.ccKind; host.classList.toggle('cc-filtered',!!k);
+    if(k) window.ccAllRows(host);
     host.querySelectorAll('.cc-list .tk-row').forEach(r=>{ r.classList.toggle('cc-off', !!k && r.dataset.cc!==k); });
   }));
-  on($('cc-all'),'click',function(){ host.classList.add('cc-open'); this.remove(); });
+  if(ccMore) window.ccRest(host, ccMore);
+  on($('cc-all'),'click',function(){ window.ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
   const box=$('tk-find'); if(box && box.value) box.dispatchEvent(new Event('input'));
 }
 function launchUnique(kind){
