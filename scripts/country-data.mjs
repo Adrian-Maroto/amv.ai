@@ -43,16 +43,16 @@ export const KINDS = {
   tv:          ['Q2001305',  25, 'television channel'],
   radio:       ['Q14350',    20, 'radio station'],
   telecom:     ['Q1941618',  20, 'mobile network operator'],
-  isp:         ['Q1182203',  15, 'internet service provider'],
+  isp:         ['Q11371',    15, 'internet service provider'],
   airline:     ['Q46970',    20, 'airline'],
   airport:     ['Q1248784',  25, 'airport'],
   rail:        ['Q249556',   15, 'railway company'],
   bus:         ['Q740752',   15, 'transport company'],
   retail:      ['Q507619',   40, 'retail chain'],
   supermarket: ['Q18043413', 25, 'supermarket chain'],
-  ecommerce:   ['Q484847',   25, 'online shop'],
+  ecommerce:   ['Q4382945',  25, 'online shop'],
   restaurant:  ['Q18534542', 20, 'restaurant chain'],
-  hotel:       ['Q5893268',  15, 'hotel chain'],
+  hotel:       ['Q1631129',  15, 'hotel chain'],
   agency:      ['Q327333',   60, 'government agency'],
   ministry:    ['Q192350',   30, 'ministry'],
   hospital:    ['Q16917',    40, 'hospital'],
@@ -64,25 +64,25 @@ export const KINDS = {
   employer:    ['Q891723',   40, 'public company'],
   school:      ['Q3914',     40, 'school'],
   research:    ['Q31855',    30, 'research institute'],
-  publisher:   ['Q2085381',  25, 'publisher'],
+  publisher:   ['Q2085381',  25, 'publishing house'],
   software:    ['Q1058914',  25, 'software company'],
-  pharma:      ['Q507443',   20, 'pharmaceutical company'],
+  pharma:      ['Q19644607', 20, 'pharmaceutical company'],
   nonprofit:   ['Q163740',   30, 'nonprofit organization'],
-  theatre:     ['Q24354',    20, 'theatre'],
+  theatre:     ['Q24354',    20, 'theatre building'],
   stadium:     ['Q483110',   20, 'stadium'],
-  mall:        ['Q31374404', 25, 'shopping center'],
+  mall:        ['Q31374404', 25, 'shopping mall'],
   park:        ['Q46169',    20, 'national park'],
   zoo:         ['Q43501',    10, 'zoo'],
   festival:    ['Q132241',   25, 'festival'],
   embassy:     ['Q3917681',  40, 'embassy'],
-  union:       ['Q178790',   15, 'trade union'],
+  union:       ['Q178790',   15, 'labor union'],
   brewery:     ['Q131734',   15, 'brewery'],
   /* Last, and only what no kind above already holds: any business there. */
   company:     ['Q4830453', 120, 'business'],
 };
 /* Kinds asked for as a direct instance only - the class is too wide for its
    subclasses to be walked inside Wikidata's time limit. */
-const DIRECT = new Set(['company']);
+const DIRECT = new Set(['company', 'school']);
 /* The ISO code sits on a wider item than the one things are filed under: NL
    is on the Kingdom of the Netherlands, and its banks are in the Netherlands. */
 const QFIX = { NL: 'Q55' };
@@ -225,7 +225,10 @@ async function main() {
       const rows = (whole.has(kind) || fresh.length >= prev.length ? fresh : prev).slice().sort((x, y) => y.w - x.w), list = [];
       for (const e of rows) {
         if (seen.has(e.q) || hosts.has(e.s)) continue; seen.add(e.q); hosts.add(e.s);
-        list.push(e); if (list.length >= keep) break;
+        /* Past the limit it is still marked as seen, so a football club that
+           did not make the first twenty-five clubs is not then listed as a
+           nonprofit to volunteer with. */
+        if (list.length < keep) list.push(e);
       }
       if (list.length) { out.kinds[kind] = list; total += list.length; }
     }
