@@ -2271,6 +2271,13 @@ does not exist, `/auth/sessions/end`; corrected to `/v1/sessions/end` and
   written under a per-run generation, and a signed complete manifest ends the
   run.
 
+Found while widening it: a restore ROLLBACK wrote the old values back
+without committing them, so every rolled-back guarded record (chats since
+Nov 3) read as "still settling" for good - it commits them now; and the
+nightly freshness check missed the generation path on a bucket without
+`head()`. The chat-turn cost is measured: about 20 counter-object calls a
+turn, up from about 18.4 (`no-key-is-shared-by-everybody`).
+
 All twenty-six now pass and run inside the gate
 (`the-build-15-audit-stays-fixed`). Still unmeasured: none of this has run on
 live Cloudflare KV / Durable Objects or against a live Postgres - the

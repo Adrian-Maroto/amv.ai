@@ -15948,3 +15948,17 @@ under a signed manifest (B15-19). Rule: a backup enumerates from the source of
 truth, not from a cache of it; and an output that is signed as finished is
 never written again - each run writes under a generation of its own, and a
 signed manifest means done.
+
+## 646. Every path that writes a guarded record has to commit it, the rare ones most of all (Nov 15)
+
+Widening the revision authority to account records broke 61 suites at once,
+and most were test stand-ins that did not know the commit. Two were not: a
+restore's ROLLBACK put the old values back as plain KV writes while the
+restore's own revision stayed committed, so every record it took back read
+as "still settling" for good - true for chats since Nov 3, unnoticed because
+nobody rolls a restore back until the day they have to. And the freshness
+check for a nightly backup looked for its last part at the old path whenever
+the bucket had no head(). Rule: when a record gains a source of truth, list
+every writer of that record - restore, rollback, repair, migration, erasure -
+and make each one write through it; a fault injected on the old key now
+injects nothing, so move the injection to the write that decides.
