@@ -217,10 +217,10 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
     const vc = document.getElementById('vc');
     return {
       plan: loadStr('amv_plan') || 'free',
-      cards: vc.querySelectorAll('.cw-job').length,
-      openable: vc.querySelectorAll('.cw-job-body[data-dact="cwPeek"]').length,
+      cards: vc.querySelectorAll('#cj-grid .cj-card').length, all: _cjList().length,
+      openable: vc.querySelectorAll('#cj-grid .cj-card-b[data-dact="cwPeek"]').length,
       toggles: vc.querySelectorAll('.cw-toggle').length,
-      cats: vc.querySelectorAll('.cw-chip').length,
+      cats: vc.querySelectorAll('#cj-cats .cj-chip').length,
       text: (vc.textContent || '').replace(/\s+/g, ' ').trim(),
     };
   });
@@ -229,7 +229,9 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
      "the whole catalogue" when the catalogue was rendered entire; it is a
      shelf now, and what matters to somebody deciding is that there is plenty
      of it and every card opens. */
-  ok(r.cards >= 50, 'and they can see plenty of it', r.cards);
+  /* One list now (Nov 15): its first rows drawn, every other job a search,
+     a category or Show more away. */
+  ok(r.cards >= 20 && r.all >= 200, 'and they can see plenty of it', { drawn: r.cards, all: r.all });
   ok(r.openable === r.cards, 'every card can be opened', { openable: r.openable, cards: r.cards });
   ok(r.cats >= 5, 'and browsed by category', r.cats);
   /* No switch they cannot use. A toggle that silently refuses teaches them the
@@ -248,7 +250,7 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
      card opens onto the price. So the check follows the path a person actually
      takes rather than scanning the page they are standing on. */
   const priced = await page.evaluate(async () => {
-    const card = document.querySelector('.cw-job.locked .cw-job-body');
+    const card = document.querySelector('#cj-grid .cj-card-b');
     if (!card) return { opened: false };
     card.click();
     await new Promise(r => setTimeout(r, 350));
@@ -295,7 +297,7 @@ section('Opening one shows the instruction it really runs');
   ok(r.sampleLines >= 3, 'with a specimen of what arrives', r.sampleLines);
 
   /* The specimen must never be mistaken for their own data. */
-  ok(/example of the shape|specifics will be yours/i.test(r.text),
+  ok(/example of the shape|specifics will be yours|Example of what you get/i.test(r.text),
      'labelled plainly as an example rather than as their result', r.text.slice(-220));
 
   ok(r.hasPlans && !r.hasGo,
@@ -329,7 +331,7 @@ section('It can be browsed without a mouse');
     closeOvr();
     setTab('crew');
     await new Promise(x => setTimeout(x, 700));
-    const btn = document.querySelector('.cw-job-body');
+    const btn = document.querySelector('#cj-grid .cj-card-b');
     btn.focus();
     const focused = document.activeElement === btn;
     btn.click();
@@ -475,7 +477,7 @@ section('And it works on a phone, which is where it will be read');
     closeOvr();
     setTab('crew');
     await new Promise(x => setTimeout(x, 800));
-    const first = document.querySelector('.cw-job-body');
+    const first = document.querySelector('#cj-grid .cj-card-b');
     const id = first ? first.dataset.darg : null;
     cwPeek(id);
     await new Promise(x => setTimeout(x, 400));

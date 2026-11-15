@@ -324,7 +324,7 @@ function cwPeek(id){
       : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="${escH(u.name)}">${escH(T('Connect'))}</button>`;
     if(!u.met && !u.optional) firstGo = false;
     return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
-      <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(T('Optional'))}</small>` : ''}</span>${btn}</li>`;
+      <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(/bank/i.test(u.name) ? T('Optional - makes the figures real charges, not estimates') : T('Optional'))}</small>` : ''}</span>${btn}</li>`;
   };
   /* WHEN - always editable. */
   const sc = _cwJobWhen(j) || { cad:'daily', hour:8, minute:0 };

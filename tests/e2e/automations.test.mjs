@@ -61,9 +61,9 @@ section('Autonomy is a paid capability, said once and calmly');
     saveStr('amv_plan', 'free');
     renderCrewView();
     const t = document.getElementById('vc').textContent;
-    return { text: t, jobs: document.querySelectorAll('.cw-job').length,
+    return { text: t, jobs: document.querySelectorAll('#cj-grid .cj-card').length, all: _cjList().length,
              toggles: document.querySelectorAll('.cw-toggle').length,
-             openable: document.querySelectorAll('[data-dact="cwPeek"]').length,
+             openable: document.querySelectorAll('#cj-grid .cj-card [data-dact="cwPeek"]').length,
              cta: !!document.querySelector('[data-stab="plans"]') };
   });
   ok(!/\brisk\b/i.test(free.text), 'no talk of risk anywhere on the screen');
@@ -75,17 +75,19 @@ section('Autonomy is a paid capability, said once and calmly');
      "what does this cost" is finally the question they have.
      the-catalogue-sells-it walks that path and checks what is on it. */
   ok(free.toggles === 0, 'and no switch underneath it that would refuse them', free.toggles);
-  ok(free.jobs > 50 && free.openable === free.jobs,
+  /* One list now (Nov 15): its first rows drawn, the rest a search or Show
+     more away - every one of them openable. */
+  ok(free.jobs >= 20 && free.all > 500 && free.openable === free.jobs,
      'while every job is there to be opened and read, which is what they are deciding about',
-     { jobs: free.jobs, openable: free.openable });
+     { jobs: free.jobs, all: free.all, openable: free.openable });
   ok(free.cta, 'with the one control that resolves it');
 
   const paid = await page.evaluate(() => {
     saveStr('amv_plan', 'pro');
     renderCrewView();
     const t = document.getElementById('vc').textContent;
-    return { risk: /\brisk\b/i.test(t), allowance: /of 5 background jobs/.test(t),
-             jobs: document.querySelectorAll('.cw-job').length };
+    return { risk: /\brisk\b/i.test(t), allowance: /\d+ of 5 jobs on/.test(t),
+             jobs: document.querySelectorAll('#cj-grid .cj-card .cw-toggle').length };
   });
   ok(!paid.risk, 'and an entitled account is not warned about risk either');
   ok(paid.allowance, 'it is told how many jobs it has, before it hits the limit');

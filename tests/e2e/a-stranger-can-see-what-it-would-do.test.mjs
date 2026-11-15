@@ -44,35 +44,24 @@ section('A visitor with no account can open Crew at all');
 
 section('What they get is the catalogue, not a pitch');
 {
-  const seen = await page.evaluate(() => ({
-    locked: document.querySelectorAll('.cw-locked').length,
-    jobs: document.querySelectorAll('#vc .cw-job').length,
-    /* The jobs that hold in every country used to live in a panel of their
-       own under a "The same everywhere" heading. That panel is gone - they are
-       ordinary catalogue jobs now - so what is checked is that they are STILL
-       ON THE PAGE, by id, rather than that a heading above them still exists.
-       A heading is how they were presented; being reachable is the promise. */
-    /* On the page, or one See all away: All draws the first few of each
-       category and every category with more ends in See all. */
-    universal: (() => {
-      const ids = new Set(_cwUniversalJobs().map(j => j.id));
-      const drawn = [...document.querySelectorAll('#vc [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
-      const more = new Set([...document.querySelectorAll('#vc .cw-cat-more [data-darg]')].map(b => b.dataset.darg));
-      const shelved = _cwShowcase().filter(j => ids.has(j.id));
-      const oneAway = shelved.filter(j => more.has(j.cat)).length;
-      return shelved.length && shelved.length === drawn + oneAway ? shelved.length : 0;
-    })(),
-    /* No country dropdown any more: the top of Crew is the five for where the
-       visitor is, and every other country is at the bottom. Both are what a
-       stranger sees before signing up. */
-    picker: !!(document.getElementById('cw-foryou') || document.getElementById('cw-pop')) && !!document.getElementById('cw-morec'),
-    find: !!document.getElementById('cw-find'),
-  }));
+  /* Crew is one list now (Nov 15): the box, then the country's jobs with a
+     country button and a search, and the jobs that hold everywhere are in the
+     same list. All of it is what a stranger sees before signing up. */
+  const seen = await page.evaluate(() => {
+    const ids = new Set(_cwUniversalJobs().map(j => j.id));
+    return {
+      locked: document.querySelectorAll('.cw-locked').length,
+      jobs: document.querySelectorAll('#vc #cj-grid .cj-card').length,
+      picker: !!document.querySelector('#vc [data-dact="cjCountry"]') && !!document.querySelector('#vc [data-dact="cjDirectory"]'),
+      find: !!document.getElementById('cx-q') && !!document.getElementById('mc-cmd-input'),
+      universal: _cjList().filter(j => ids.has(j.id)).length,
+    };
+  });
   ok(seen.locked === 1, 'they get the same screen somebody on the free plan gets', seen.locked);
   ok(seen.jobs > 20, 'with real jobs on it, not a description of jobs', seen.jobs);
-  ok(seen.picker, 'the five for where they are, and every other country, are there', seen.picker);
-  ok(seen.find, 'and so is the search box', seen.find);
-  ok(seen.universal > 0, 'the work that holds in every country is on the page, or one See all away', seen.universal);
+  ok(seen.picker, 'their country, a way to change it, and every job in every country, are there', seen.picker);
+  ok(seen.find, 'and so are the box and the search', seen.find);
+  ok(seen.universal > 0, 'the work that holds in every country is in the list', seen.universal);
 }
 
 section('The half that is only true where they live reaches them too');
