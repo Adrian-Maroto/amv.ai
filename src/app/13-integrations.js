@@ -712,7 +712,12 @@ function _integrationsCatalogHTML(opts){
     /* Connected, then connectable, then the rest - so a connection somebody
        has is never hidden behind Show all, and Settings (which keeps only the
        connected rows of the first screenful) always finds it. */
-    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i }; })
+    /* In Email, the national mailboxes of where the visitor is come straight
+       after Gmail and Outlook - inside the first screenful - ahead of every
+       other country's. */
+    const here=(()=>{ try{ return c.id==='email' ? _cwCountryGuess() : ''; }catch(e){ return ''; } })();
+    const local=(a)=>{ const m=/^mail:(.+)$/.exec(a.how||''); return !!(here && m && AMV_MAIL_CC[m[1]]===here); };
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i:local(a)?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.i-y.i);
     let list=rows;
     if(only){

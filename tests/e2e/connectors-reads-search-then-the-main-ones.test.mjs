@@ -146,8 +146,8 @@ section('The bank account is on the page, and says what it really is');
      'and that it reads and cannot move money', r.desc.slice(0, 200));
   ok(!r.autonomous, 'with no Autonomous badge - the row is its name, what it does, and its button', String(r.autonomous));
   ok(!r.connected, 'not claiming to be connected when nothing is linked', String(r.connected));
-  ok(r.action === 'bank' && /Spending/i.test(r.label),
-     'and the button names where the linking happens', r.label);
+  ok(r.action === 'bank' && /^Link$/.test(r.label),
+     'and the button says what it does - Link', r.label);
   ok(!r.disconnect && !r.connect,
      'with no Connect or Disconnect this page could not actually carry out',
      JSON.stringify(r));
@@ -159,24 +159,25 @@ section('Linking is done in one place, not copied onto this page');
      that must not be spent on an await, and a returning "I have finished
      linking" step on a replaced node. A second implementation of that here
      would be two copies of a money flow, and whichever one somebody forgets to
-     fix is the one that breaks. So the button navigates. */
+     fix is the one that breaks. So the button opens the one bank dialog
+     (openBankLink) - the same one a Crew job that needs a bank opens. Spending
+     is the monthly budget only since Nov 15. */
   const r = await page.evaluate(async () => {
     let said = '';
     window.toast = (m) => { said = m; };
-    const before = S.tab;
     const card = [...document.querySelectorAll('.int-card')]
       .find(c => /Bank account/i.test((c.querySelector('.int-name') || {}).textContent || ''));
     card.querySelector('[data-int-use]').click();
-    await new Promise(r => setTimeout(r, 400));
-    return { before, after: S.tab, said };
+    for (let i = 0; i < 100 && !/password/.test((document.getElementById('bank-pane') || {}).textContent || ''); i++) await new Promise(r => setTimeout(r, 50));
+    const out = { tab: S.tab, dialog: !!document.querySelector('#ovr .bank-dlg'), text: ((document.getElementById('bank-pane') || {}).textContent || ''), said };
+    closeOvr();
+    return out;
   });
-  ok(r.before === 'integrations' && r.after === 'spend',
-     'pressing it goes to Spending', JSON.stringify(r));
-  ok(/never sees your password/i.test(r.said),
-     'and says what is about to happen rather than the upload sentence every other row gets',
-     r.said);
+  ok(r.dialog && r.tab === 'integrations', 'pressing it opens the bank link dialog, where it is', r);
+  ok(/never sees your username or password/i.test(r.text),
+     'which says what is about to happen', r.text.slice(0, 160));
   ok(!/Upload your file/i.test(r.said),
-     'which would have been the fall-through, and is baffling for a bank account', r.said);
+     'not the upload sentence, which would have been the fall-through and is baffling for a bank account', r.said);
 }
 
 section('Once a bank is linked the row says so, and offers Manage');

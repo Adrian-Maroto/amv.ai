@@ -33821,7 +33821,12 @@ function _integrationsCatalogHTML(opts){
     /* Connected, then connectable, then the rest - so a connection somebody
        has is never hidden behind Show all, and Settings (which keeps only the
        connected rows of the first screenful) always finds it. */
-    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i }; })
+    /* In Email, the national mailboxes of where the visitor is come straight
+       after Gmail and Outlook - inside the first screenful - ahead of every
+       other country's. */
+    const here=(()=>{ try{ return c.id==='email' ? _cwCountryGuess() : ''; }catch(e){ return ''; } })();
+    const local=(a)=>{ const m=/^mail:(.+)$/.exec(a.how||''); return !!(here && m && AMV_MAIL_CC[m[1]]===here); };
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i:local(a)?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.i-y.i);
     let list=rows;
     if(only){
@@ -35728,6 +35733,9 @@ try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdir
    The third field is the sentence under the name. Rows that connect say what
    AMV does there; rows that do not say what the app is, and nothing more. */
 
+/* Where each national mailbox above is used - the country MAIL_PROVIDERS on
+   the server gives it - so the Email topic leads with the visitor's own. */
+const AMV_MAIL_CC = { qq:'CN', sina:'CN', aliyun:'CN', naver:'KR', daum:'KR', yahoojp:'JP', yandex:'RU', yandextr:'TR', mailru:'RU', ukrnet:'UA', webde:'DE', tonline:'DE', bluewin:'CH', orange:'FR', free:'FR', laposte:'FR', telenet:'BE', kpn:'NL', ziggo:'NL', xs4all:'NL', libero:'IT', tiscali:'IT', sapo:'PT', seznam:'CZ', wppl:'PL', onet:'PL', interia:'PL', telia:'SE', rediff:'IN', uol:'BR', bol:'BR', mweb:'ZA', comcast:'US', att:'US', spectrum:'US', cox:'US', bell:'CA', shaw:'CA', telus:'CA', telstra:'AU', bt:'GB' };
 const AMV_APP_CATS = [
   { id:'email', t:'Email', q:'email', apps:[
     'Gmail|g|Reads, sorts and drafts your email. You choose what AMV may do.',
@@ -35735,6 +35743,54 @@ const AMV_APP_CATS = [
     'Mail worldwide|mail|Any provider that speaks IMAP, in 24 countries. Pick yours from the list.',
     'Yahoo Mail|mail:yahoo|', 'iCloud Mail|mail:icloud|', 'AOL Mail|mail:aol|', 'Zoho Mail|mail:zoho|',
     'Fastmail|mail:fastmail|', 'GMX|mail:gmx|',
+    /* EVERY MAILBOX THE SERVER CONNECTS, one row each (Nov 15, owner: "more
+       connections for email ... for all options"). These were all reachable
+       behind "Mail worldwide" and listed nowhere, so somebody in Seoul or
+       Warsaw saw Gmail and Yahoo and none of the mailbox they actually use.
+       Ids are the server's MAIL_PROVIDERS keys; AMV_MAIL_CC says whose each
+       is, so the visitor's own country's come first (13-integrations.js). */
+    'mail.com|mail:mailcom|',
+    'QQ Mail (QQ邮箱)|mail:qq|',
+    'Sina Mail (新浪邮箱)|mail:sina|',
+    'Alibaba Mail (阿里邮箱)|mail:aliyun|',
+    'Naver Mail (네이버 메일)|mail:naver|',
+    'Daum / Hanmail (다음 한메일)|mail:daum|',
+    'Yahoo! Japan Mail (ヤフーメール)|mail:yahoojp|',
+    'Yandex Mail (Яндекс Почта)|mail:yandex|',
+    'Yandex Mail (Yandex Posta)|mail:yandextr|',
+    'Mail.ru (Почта Mail.ru)|mail:mailru|',
+    'UKR.NET|mail:ukrnet|',
+    'WEB.DE|mail:webde|',
+    'T-Online|mail:tonline|',
+    'Bluewin (Swisscom)|mail:bluewin|',
+    'Orange|mail:orange|',
+    'Free|mail:free|',
+    'La Poste|mail:laposte|',
+    'Telenet|mail:telenet|',
+    'KPN Mail|mail:kpn|',
+    'Ziggo|mail:ziggo|',
+    'Freedom / XS4ALL|mail:xs4all|',
+    'Libero Mail|mail:libero|',
+    'Tiscali|mail:tiscali|',
+    'SAPO Mail|mail:sapo|',
+    'Seznam.cz|mail:seznam|',
+    'WP.pl Poczta|mail:wppl|',
+    'Onet Poczta|mail:onet|',
+    'Interia Poczta|mail:interia|',
+    'Telia|mail:telia|',
+    'Rediffmail Pro|mail:rediff|',
+    'UOL Mail|mail:uol|',
+    'BOL Mail|mail:bol|',
+    'Mweb|mail:mweb|',
+    'Xfinity (Comcast)|mail:comcast|',
+    'AT&T / Yahoo hosted|mail:att|',
+    'Spectrum (Charter)|mail:spectrum|',
+    'Cox (now Yahoo Mail)|mail:cox|',
+    'Bell / Sympatico|mail:bell|',
+    'Shaw / Rogers|mail:shaw|',
+    'TELUS|mail:telus|',
+    'Telstra (BigPond)|mail:telstra|',
+    'BT Mail|mail:bt|',
     'Proton Mail||Encrypted email from Switzerland.',
     'HEY||Email with a screener for new senders.', 'Superhuman||A fast email app for Gmail and Outlook.',
     'Spark Mail||Email for individuals and teams.', 'Front||Shared inboxes for teams.',
