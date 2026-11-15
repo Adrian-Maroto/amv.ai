@@ -1433,12 +1433,15 @@ function renderCrewView(){
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
-      <section class="cc-crew" id="cc-crew" hidden></section>
       ${_cwMostStartedHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
+      <!-- The country catalogue arrives after the page is drawn, so it is the
+           last thing on it: growing above anything would move what somebody
+           was reading (a layout shift a CI runner caught, Nov 14). -->
+      <section class="cc-crew" id="cc-crew" hidden></section>
       ${/* ONE LINE, NOT A BAND.
 
             The stats band came out because it was three numbers and a price
@@ -1642,12 +1645,15 @@ function renderCrewView(){
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
-      <section class="cc-crew" id="cc-crew" hidden></section>
       ${_cwMostStartedHTML()}
       <section class="cw-morec" id="cw-morec">
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
+      <!-- The country catalogue arrives after the page is drawn, so it is the
+           last thing on it: growing above anything would move what somebody
+           was reading (a layout shift a CI runner caught, Nov 14). -->
+      <section class="cc-crew" id="cc-crew" hidden></section>
     </div>
   </div></div>`;
   _cwWireCmd(vc);
