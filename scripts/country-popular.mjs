@@ -102,7 +102,15 @@ function rankOf(c, site) {
 
 async function main() {
   const want = process.argv.slice(2).map(s => s.toUpperCase());
-  const files = readdirSync(OUT).filter(f => /^[A-Z]{2}\.json$/.test(f)).map(f => f.slice(0, 2)).filter(cc => !want.length || want.includes(cc));
+  /* Named countries are always done again; otherwise a country already ranked
+     (v 3) is skipped, so a run that ran out of time is picked up where it
+     stopped rather than redone from A. SHARD/SHARDS split the rest across
+     parallel jobs, one file each, so no two jobs write the same file. */
+  const SHARDS = Math.max(1, +process.env.SHARDS || 1), SHARD = (+process.env.SHARD || 0) % SHARDS;
+  const files = readdirSync(OUT).filter(f => /^[A-Z]{2}\.json$/.test(f)).map(f => f.slice(0, 2))
+    .filter(cc => want.length ? want.includes(cc) : (() => { try { return JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).v !== 3; } catch (e) { return true; } })())
+    .filter((cc, i) => i % SHARDS === SHARD);
+  console.log('to do (shard ' + SHARD + ' of ' + SHARDS + '):', files.join(' ') || 'nothing');
   const END = Date.now() + (+process.env.BUDGET_MIN || 200) * 60000;
   /* The classes, checked by name exactly as country-data.mjs checks them. */
   const cls = Object.values(KINDS).map(k => 'wd:' + k[0]).join(' ');

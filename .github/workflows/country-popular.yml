@@ -22,6 +22,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    # Five at once: one country takes about nine minutes, so a full run in one
+    # job did 24 of 104 before its time ran out. Each shard writes its own files.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +38,8 @@ jobs:
         env:
           COUNTRIES: ${{ github.event.inputs.countries }}
           BUDGET_MIN: '220'
+          SHARD: ${{ matrix.shard }}
+          SHARDS: '5'
         run: |
           if [ -z "$COUNTRIES" ] && [ -f data/countries/popular-request.txt ]; then COUNTRIES="$(grep -v '^#' data/countries/popular-request.txt | tr '\n' ' ')"; fi
           node scripts/country-popular.mjs $COUNTRIES
@@ -42,6 +50,10 @@ jobs:
           git config user.email "amv-data-bot@users.noreply.github.com"
           git add data/countries
           if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
-          git commit -m "Country data ranked by Chrome UX Report visits: $(ls data/countries/*.json | wc -l) countries"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git commit -m "Country data ranked by Chrome UX Report visits: $(git diff --cached --name-only | wc -l) countries (shard ${{ matrix.shard }})"
+          # The other shards push to the same branch; their files never overlap, so a rebase always applies.
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 7))
+          done
+          exit 1
