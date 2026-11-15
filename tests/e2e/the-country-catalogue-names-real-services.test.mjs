@@ -47,22 +47,25 @@ section('Not in the page: its own file, fetched when needed');
 section('Tasks: a row per task per named entry');
 {
   await page.evaluate(() => setTab('tasks'));
-  await page.waitForFunction(() => document.querySelectorAll('.cc-list .tk-row, .cc-list [data-dact="launchTask"]').length > 0, null, { timeout: 15000 });
-  const r = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('#tk-cc [data-darg^="cc-"]')];
-    return { n: rows.length, head: (document.querySelector('.cc-head b') || {}).textContent, expect: window.ccTasks ? null : -1,
-      txt: rows.map(b => b.textContent.replace(/\s+/g, ' ').trim()) };
-  });
+  await page.waitForFunction(() => /\d/.test((document.getElementById('tk2-sub') || {}).textContent || '') && document.querySelector('#tk2-body .tk-row'), null, { timeout: 15000 });
   const exp = await page.evaluate(f => window.ccTasks(f).length, { ...file, kinds: { ...file.kinds, bank: file.kinds.bank.filter(e => !BAD.includes(e)) } });
-  /* Only the first rows are drawn (a large country has thousands); the count
-     is of everything, and Show all draws the rest. */
-  ok(r.n === 24 && String(r.head) === String(exp) && exp >= file.total * 3, 'the first rows are drawn, and the count is of every task - three or more per entry', { rows: r.n, head: r.head, exp });
-  await page.click('#cc-all');
-  const all = await page.evaluate(() => [...document.querySelectorAll('#tk-cc [data-darg^="cc-"]')].map(b => b.textContent.replace(/\s+/g, ' ').trim()));
-  ok(all.length === exp, 'Show all draws every one, and the count on screen is the count of rows', { rows: all.length, exp });
-  r.txt = all;
-  ok(r.txt.every(t => [...names].some(n => t.includes(n))), 'and every row names an entry from the file', r.txt.slice(0, 2));
-  await page.evaluate(() => document.querySelector('#tk-cc [data-darg^="cc-bank-"]').click());
+  const head = await page.evaluate(() => +((document.querySelector('#tk2-sub b') || {}).textContent || '').replace(/[^\d]/g, ''));
+  ok(head === exp && exp >= file.total * 3, 'the count is of every task - three or more per entry', { head, exp });
+  /* Every one reachable: each category opened whole, Show more until there is no more. */
+  const all = await page.evaluate(async () => {
+    const seen = new Map();
+    const cats = [...document.querySelectorAll('#tk2-cats [data-tkcat]')].map(c => c.dataset.tkcat).filter(c => c !== 'all');
+    for (const c of cats) {
+      document.querySelector('#tk2-cats [data-tkcat="' + c + '"]').click(); await new Promise(r => setTimeout(r, 60));
+      for (let i = 0; i < 100 && document.getElementById('tk-more'); i++) { document.getElementById('tk-more').click(); await new Promise(r => setTimeout(r, 30)); }
+      document.querySelectorAll('#tk2-body .tk-row').forEach(b => seen.set(b.dataset.darg, b.textContent.replace(/\s+/g, ' ').trim()));
+    }
+    document.querySelector('#tk2-cats [data-tkcat="all"]').click();
+    return [...seen.values()];
+  });
+  ok(all.length === exp, 'every one can be reached, and the count on screen is the count of rows', { rows: all.length, exp });
+  ok(all.every(t => [...names].some(n => t.includes(n)) || /\.example\.es/.test(t)), 'and every row names an entry from the file', all.slice(0, 2));
+  await page.evaluate(() => document.querySelector('#tk2-body .tk-row[data-cc="bank"]').click());
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
   ok(v.tab === 'chat' && /Banco Prueba/.test(v.val) && /bank\d+\.example\.es/.test(v.val), 'pressing one writes a prompt naming the bank and its site', v.val.slice(0, 90));
@@ -71,40 +74,48 @@ section('Tasks: a row per task per named entry');
 section('An entry that is not a plain name and a bare host is dropped');
 {
   await page.evaluate(() => setTab('integrations'));
-  await page.waitForFunction(() => { const h = document.getElementById('cc-int'); return h && !h.hidden; }, null, { timeout: 15000 });
-  const t = await page.evaluate(() => document.getElementById('cc-int').innerHTML);
+  await page.waitForFunction(() => document.querySelector('#int-catalog .cc-svc'), null, { timeout: 15000 });
+  const t = await page.evaluate(() => document.getElementById('vc').innerHTML);
   ok(!/evil\.example|Banco Falso|Sin Ficha|onerror|Ignore your rules/.test(t), 'none of the four bad entries reaches the page');
-  ok(/Check the address before you sign in/.test(t), 'and the section says to check the address before signing in');
+  ok(/Check the address before you sign in/.test(t), 'and the page says to check the address before signing in');
+  await page.evaluate(() => setTab('tasks'));
+  await page.waitForTimeout(300);
+  ok(!/evil\.example|Banco Falso|Sin Ficha|onerror|Ignore your rules/.test(await page.evaluate(() => document.getElementById('vc').innerHTML)), 'nor Tasks');
 }
 
-section('Integrations: every entry, through AMV’s browser');
+section('Integrations: every entry, in its topic, through AMV’s browser');
 {
   await page.evaluate(() => setTab('integrations'));
-  await page.waitForFunction(() => { const h = document.getElementById('cc-int'); return h && !h.hidden; }, null, { timeout: 15000 });
-  const r = await page.evaluate(() => ({ n: document.querySelectorAll('#cc-int .cc-svc').length, shown: [...document.querySelectorAll('#cc-int .cc-svc')].filter(x => x.offsetParent).length,
-    head: (document.querySelector('#cc-int .sec-sub b') || {}).textContent }));
-  ok(r.n === 30 && r.shown === 30 && String(r.head) === String(file.total), 'thirty first, and the count is of every entry', r);
-  await page.click('#cc-int-all');
-  ok(await page.evaluate(() => [...document.querySelectorAll('#cc-int .cc-svc')].filter(x => x.offsetParent).length) === file.total, 'Show all shows every one');
-  await page.click('#cc-int [data-cc-kind="airline"]');
-  const f = await page.evaluate(() => [...document.querySelectorAll('#cc-int .cc-svc')].filter(x => x.offsetParent).map(x => x.dataset.cc));
-  ok(f.length === 12 && f.every(k => k === 'airline'), 'a kind filter leaves only that kind', f.length);
-  await page.evaluate(() => document.querySelector('#cc-int .cc-svc[data-cc="airline"] .cc-use').click());
+  await page.waitForFunction(() => document.querySelector('#int-catalog .cc-svc'), null, { timeout: 15000 });
+  const r = await page.evaluate(async () => {
+    for (let i = 0; i < 40 && document.querySelector('#int-catalog .cc-int-more'); i++) { document.querySelector('#int-catalog .cc-int-more').click(); await new Promise(r => setTimeout(r, 30)); }
+    const rows = [...document.querySelectorAll('#int-catalog .cc-svc')];
+    const topicOf = (k) => [...new Set(rows.filter(x => x.dataset.cc === k).map(x => (x.closest('[data-topic]') || {}).dataset?.topic))];
+    return { n: rows.length, airline: topicOf('airline'), bank: topicOf('bank'),
+             btns: [...new Set(rows.map(x => (x.querySelector('.int-act') || {}).textContent.trim()))] };
+  });
+  ok(r.n === file.total, 'every entry is there once its topic is opened whole', { n: r.n, total: file.total });
+  ok(r.airline.length === 1 && r.bank.length === 1, 'each kind sits in one topic - the airlines together, the banks together', { airline: r.airline, bank: r.bank });
+  ok(r.btns.length === 1 && r.btns[0] === 'Use', 'and each says Use, since AMV cannot connect it', r.btns);
+  await page.evaluate(() => document.querySelector('#int-catalog .cc-svc[data-cc="airline"] .cc-use').click());
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
-  ok(v.tab === 'chat' && /AMV’s browser/.test(v.val) && /Aerolínea Prueba 1\b/.test(v.val) && /sign in myself/.test(v.val), '"Use in chat" opens a chat naming the site, the person signs in', v.val.slice(0, 100));
+  ok(v.tab === 'chat' && /AMV’s browser/.test(v.val) && /Aerolínea Prueba 1\b/.test(v.val) && /sign in myself/.test(v.val), 'Use opens a chat naming the site, the person signs in', v.val.slice(0, 100));
 }
 
 section('Crew: the jobs, as ordinary Crew jobs');
 {
   await page.evaluate(() => setTab('crew'));
-  await page.waitForFunction(() => { const h = document.getElementById('cc-crew'); return h && !h.hidden; }, null, { timeout: 20000 });
-  const r = await page.evaluate(() => ({ n: document.querySelectorAll('#cc-crew .cc-job').length, head: (document.querySelector('#cc-crew .sec-sub b') || {}).textContent,
-    known: [...document.querySelectorAll('#cc-crew .cc-job')].slice(0, 5).every(b => _cwAllJobs().some(j => j.id === b.dataset.darg)) }));
-  ok(r.n === 24 && +r.head >= file.total, 'the first rows, with a count of at least one job per entry', r);
-  await page.click('#cc-crew-all');
-  ok(await page.evaluate(() => document.querySelectorAll('#cc-crew .cc-job').length) === +r.head, 'Show all draws every one, counted truly');
-  ok(r.known, 'each one is a job Crew knows, so it opens and switches on like the rest');
+  await page.waitForFunction(() => window._ccCrewJobs && (window._ccCrewJobs.ES || []).length > 0 && typeof _cjList === 'function', null, { timeout: 20000 });
+  const r = await page.evaluate(() => {
+    const js = window._ccCrewJobs.ES, list = new Set(_cjList().map(j => j.id));
+    return { n: js.length, inList: js.every(j => list.has(j.id)),
+             known: js.slice(0, 5).every(j => !!_cwFindJob(j.id)),
+             named: js.every(j => [j.title, j.desc, j.prompt].join(' ').includes('Prueba') || /example\.es/.test(j.prompt)) };
+  });
+  ok(r.n >= file.total, 'at least one job per entry', r.n);
+  ok(r.inList, 'every one is in Crew’s list - searched, or a category away', r.inList);
+  ok(r.known && r.named, 'each one is a job Crew knows, named from the file, so it opens and switches on like the rest', r);
   /* The unattended runner reads the job's text and nothing else, so a blank
      nobody filled would run daily against the words "[my route]". */
   const blanks = await page.evaluate(() => { const js = window._ccCrewJobs.ES; const w = js.filter(j => /\[[^\]]+\]/.test(j.prompt));
@@ -115,7 +126,7 @@ section('Crew: the jobs, as ordinary Crew jobs');
 section('A country with no file shows nothing, not an empty section');
 {
   await page.evaluate(async () => { _cwSetCountry('XK'); setTab('integrations'); await new Promise(x => setTimeout(x, 900)); });
-  ok(await page.evaluate(() => { const h = document.getElementById('cc-int'); return !h || h.hidden; }), 'no section when there is no data');
+  ok(await page.evaluate(() => document.querySelectorAll('#int-catalog .cc-svc').length === 0 && !document.querySelector('#int-catalog .int-cc:not([hidden])')), 'no rows and no empty section when there is no data');
   ok(fetched.includes('XK'), 'though it was asked for', fetched);
 }
 

@@ -95,13 +95,17 @@ section('The exact instruction is still the exact instruction');
 
 section('The facts are one list, not scattered through the page');
 {
+  /* One column since Nov 15: what it is, its schedule, what it connects to -
+     each a labelled row, each said once - and how often it runs on the line
+     under the title. */
   const r = await page.evaluate(() => {
-    const labels = [...document.querySelectorAll('.cwp-facts dt')].map(e => e.textContent.trim());
-    return { labels, lists: document.querySelectorAll('.cwp-facts').length };
+    const labels = [...document.querySelectorAll('#ovr .cj-p-row .cj-p-k')].map(e => e.textContent.trim());
+    return { labels, bodies: document.querySelectorAll('#ovr .cj-p-b').length,
+             status: ((document.getElementById('cwp-status') || {}).textContent || '').trim() };
   });
-  ok(r.lists === 1, 'one list', String(r.lists));
-  ok(r.labels.includes('How often') && r.labels.includes('Where it runs'),
-     'saying how often it runs and where', r.labels.join(' | '));
+  ok(r.bodies === 1 && new Set(r.labels).size === r.labels.length, 'one list, each fact once', r.labels.join(' | '));
+  ok(r.labels.includes('Schedule') && /\b(hour|day|week|month|Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(r.status),
+     'saying how often it runs, under the title and editable in the list', { labels: r.labels, status: r.status });
   await page.evaluate(() => closeOvr());
 }
 

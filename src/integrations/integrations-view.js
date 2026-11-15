@@ -301,7 +301,11 @@ function renderIntegrationsView(){
       /* Two ways in, said once (Nov 15): Connect is a key AMV holds and you can
          take back; Use is AMV's browser on the real site, where you sign in
          yourself. Nothing on this page claims more than that. */
-      '<p class="vsub int2-sub">'+escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.'))+'</p>'+
+      '<p class="vsub int2-sub">'+escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.'))+' '+
+        /* The sites come from a source anybody can edit, and a site is where
+           somebody types a password - so the one habit that protects them is
+           said where they meet the sites. */
+        escH(T('Check the address before you sign in.'))+'</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main

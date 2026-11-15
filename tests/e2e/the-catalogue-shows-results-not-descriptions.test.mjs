@@ -25,65 +25,49 @@ const { page, errors } = app;
 await page.evaluate(() => document.getElementById('ck')?.remove());
 await page.waitForTimeout(900);
 
-section('The examples are on the cards, not behind them');
+/* THE EXAMPLE MOVED, AND STAYED REAL (Nov 15). It was a strip on every card;
+   the owner asked for the cards to be plain - a title, one line, when it runs -
+   and called the extra lines on them clutter. So the example is in the job's
+   panel, labelled as an example, and only where a real one exists. */
+section('The example is in the job, labelled, and never invented');
 {
-  const r = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('#vc .cw-job')];
-    const strips = [...document.querySelectorAll('#vc .cw-job-out')];
-    return {
-      cards: cards.length,
-      strips: strips.length,
-      lines: strips.slice(0, 3).map(s => (s.querySelector('.cw-job-out-l') || {}).textContent || ''),
-      labelled: strips.every(s => !!s.querySelector('.cw-job-out-k')),
-    };
+  const r = await page.evaluate(async () => {
+    const list = _cjList();
+    const withS = list.find(j => Array.isArray(j.sample) && j.sample.length >= 3);
+    const without = list.find(j => !(Array.isArray(j.sample) && j.sample.length));
+    const look = async (j) => { cwPeek(j.id); await new Promise(r => setTimeout(r, 150));
+      const o = document.getElementById('ovr');
+      const out = { lines: [...o.querySelectorAll('.cwp-sample .cwp-line')].map(l => l.textContent), text: o.textContent };
+      closeOvr(); return out; };
+    return { cards: document.querySelectorAll('#cj-grid .cj-card').length,
+             strips: document.querySelectorAll('#cj-grid .cw-job-out').length,
+             a: withS ? await look(withS) : null, aN: withS ? withS.sample.length : 0,
+             b: without ? await look(without) : null };
   });
   ok(r.cards > 20, 'there is a catalogue to look at', String(r.cards));
-  ok(r.strips > 10, 'and a real share of it shows what it sends you', r.strips + '/' + r.cards);
-  ok(r.strips < r.cards, 'only the jobs that HAVE an example show one - none is invented',
-     r.strips + '/' + r.cards);
-  ok(r.labelled, 'each is labelled as output rather than read as more description');
-  ok(r.lines.every(l => l.trim().length > 10), 'and carries a real line', JSON.stringify(r.lines));
+  ok(r.strips === 0, 'and its cards stay plain - no output strip on them', r.strips);
+  ok(r.a && r.a.lines.length === r.aN && r.a.lines.every(l => l.trim().length > 10), 'a job with an example shows every line of it', r.a && r.a.lines.slice(0, 2));
+  ok(r.a && /Example of what you get/.test(r.a.text), 'labelled as an example, not read as their result', '');
+  ok(r.b && r.b.lines.length === 0, 'and a job without one shows none - nothing is invented', r.b && r.b.lines);
 }
 
-section('One line, and the card’s own facts do not move');
+section('Cards side by side say when they run on the same line');
 {
+  /* Two cards in a row whose last lines disagree read as broken before anybody
+     works out why - so a REAL row is measured, one whose descriptions differ
+     in length. */
   const r = await page.evaluate(() => {
-    /* A card that unfolds into five lines of output is a card nobody scans
-       past, so the example is clamped. And two cards side by side whose
-       footers disagree read as broken before anybody works out why - so the
-       measurement is of a REAL ROW holding one card of each kind, not of a
-       CSS property: `margin-top:auto` resolves to a different used value on
-       each card by design, and comparing those proves nothing. */
-    const cards = [...document.querySelectorAll('#vc .cw-job')];
+    const cards = [...document.querySelectorAll('#cj-grid .cj-card')];
     const rows = new Map();
-    cards.forEach(c => {
-      const t = Math.round(c.getBoundingClientRect().top);
-      if(!rows.has(t)) rows.set(t, []);
-      rows.get(t).push(c);
-    });
-    let mixed = null;
-    for(const g of rows.values()){
-      if(g.length < 2) continue;
-      const kinds = g.map(c => !!c.querySelector('.cw-job-out'));
-      if(new Set(kinds).size > 1){ mixed = g; break; }
-    }
-    const host = cards.find(c => c.querySelector('.cw-job-out'));
-    const strip = host ? host.querySelector('.cw-job-out-l') : null;
-    const lh = strip ? (parseFloat(getComputedStyle(strip).lineHeight) || 20) : 20;
-    return {
-      hasMixedRow: !!mixed,
-      stripLines: strip ? Math.round(strip.getBoundingClientRect().height / lh) : 0,
-      clamped: strip ? getComputedStyle(strip).webkitLineClamp : '',
-      needBottoms: mixed
-        ? mixed.map(c => { const n = c.querySelector('.cw-job-need'); return n ? Math.round(n.getBoundingClientRect().bottom) : -1; })
-        : [],
-    };
+    cards.forEach(c => { const t = Math.round(c.getBoundingClientRect().top); if(!rows.has(t)) rows.set(t, []); rows.get(t).push(c); });
+    const multi = [...rows.values()].filter(g => g.length >= 2);
+    const bad = multi.filter(g => new Set(g.map(c => Math.round((c.querySelector('.cj-card-w') || c).getBoundingClientRect().bottom))).size > 1);
+    const d = cards.find(c => c.querySelector('.cj-card-d'));
+    return { rows: multi.length, bad: bad.length, clamp: d ? getComputedStyle(d.querySelector('.cj-card-d')).webkitLineClamp : '' };
   });
-  ok(r.stripLines <= 2, 'the example is at most two lines', String(r.stripLines));
-  ok(r.clamped === '2', 'because it is clamped, not because this one happened to be short', r.clamped);
-  ok(r.hasMixedRow, 'there is a row holding a card with an example and one without');
-  ok(r.needBottoms.length > 1 && new Set(r.needBottoms).size === 1,
-     'and their facts sit on the same line as each other', JSON.stringify(r.needBottoms));
+  ok(r.rows > 2, 'there are rows of cards', r.rows);
+  ok(r.bad === 0, 'and in each, when it runs sits on the same line', r);
+  ok(r.clamp === '2', 'because the line of what it does is clamped, not because these happen to be short', r.clamp);
 }
 
 section('A price in dollars says it is in dollars');

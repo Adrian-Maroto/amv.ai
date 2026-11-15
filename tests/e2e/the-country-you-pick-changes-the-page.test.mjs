@@ -15,9 +15,8 @@
    it out, and a country with nothing written for it says so rather than
    showing another country's.
 
-   Also pinned: the five at the top are five, they are real cards you can act
-   on, and they only carry a count when a count exists. A curated order wearing
-   a number would be the one thing this product may not ship. */
+   Also pinned: no card wears a count. A curated order wearing a number would
+   be the one thing this product may not ship. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -48,45 +47,32 @@ await page.evaluate(() => {
   AMV_API.where = async () => ({ country: 'US', name: 'United States' });
 });
 
-const catalogue = () => page.evaluate(() => {
-  const g = document.getElementById('cw-foryou');
-  return {
-    head: g ? ((g.querySelector('h3') || {}).textContent || '').replace(/\s+/g, ' ').trim() : '',
-    top: g ? [...g.querySelectorAll('.cw-job-t')].map(e => e.textContent.trim()) : [],
-    note: g ? ((g.querySelector('.cw-foryou-note') || {}).textContent || '') : '',
-    dropdown: !!document.getElementById('cw-country'),
-  };
-});
+/* Crew is one list since Nov 15: "Jobs for <country>", the country as a
+   button beside it, and the country's own work leading the list. */
+const catalogue = () => page.evaluate(() => ({
+  head: ((document.getElementById('cx-jobs-h') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+  top: [...document.querySelectorAll('#cj-grid .cj-card-t')].slice(0, 8).map(e => e.textContent.trim()),
+  all: (typeof _cjList === 'function' ? _cjList() : []).map(j => j.title),
+  dropdown: !!document.getElementById('cw-country'),
+  numbers: [...document.querySelectorAll('#cj-grid .cj-card')].filter(c => /\b\d+ (starts|people|uses)\b/.test(c.textContent)).length,
+}));
 
 const CW_N = await page.evaluate(() => CW_WORLD_COUNTRIES.length);
 
-/* THE COUNTRY IS WHERE SOMEBODY IS, NOT A DROPDOWN.
-
-   The owner: the first thing under the box is the top five for YOU, for the
-   country you are in, with no countries control - and every other country at
-   the very bottom. So what is pinned now is that the top five follow the
-   country, that another country is one press away at the bottom, and that a
-   country with nothing written for it says so rather than borrowing another's. */
-section('The five at the top are five real cards, for the country you are in');
+section('The list is for the country you are in, led by its own work');
 {
   await page.evaluate(() => setTab('crew'));
   await page.waitForTimeout(600);
-  const out = await page.evaluate(() => ({
-    items: document.querySelectorAll('#cw-foryou .cw-top5-item').length,
-    cards: document.querySelectorAll('#cw-foryou .cw-top5-item .cw-job').length,
-    toggles: document.querySelectorAll('#cw-foryou .cw-top5-item [data-dact="cwToggle"]').length,
-    ranks: document.querySelectorAll('#cw-foryou .cw-top5-rank').length,
-  }));
   const a = await catalogue();
-  ok(out.items === 5 && out.cards === 5, 'five of them, each a catalogue card', JSON.stringify(out));
-  ok(out.toggles === 5, 'and each one can be turned on from there', JSON.stringify(out));
-  ok(out.ranks === 0, 'with nothing on them claiming a worldwide count', JSON.stringify(out));
-  ok(/^Top 5 for you in .*United States/.test(a.head), 'headed for where the visitor is', a.head);
+  ok(/^Jobs for .*United States/.test(a.head), 'headed for where the visitor is', a.head);
   ok(a.top.filter(t => /^US /.test(t)).length === 2, 'led by the work written for that country', a.top);
+  ok(a.numbers === 0, 'with nothing on a card claiming a worldwide count', a.numbers);
   ok(!a.dropdown, 'and there is no country dropdown', a.dropdown);
+  const sw = await page.evaluate(() => document.querySelectorAll('#cj-grid .cj-card [data-dact="cwToggle"]').length === document.querySelectorAll('#cj-grid .cj-card').length);
+  ok(sw, 'and every card can be turned on from there', sw);
 }
 
-section('A server that never says where you are does not leave the five as placeholders');
+section('A server that never says where you are does not leave the list waiting');
 {
   const r = await page.evaluate(async () => {
     const real = AMV_API.where;
@@ -94,106 +80,64 @@ section('A server that never says where you are does not leave the five as place
     _cwHere = ''; _cwHereAsked = false; _cwHereDone = false; cwCountry('-');
     try { sessionStorage.removeItem('amv_cw_here'); } catch (e) {}
     setTab('chat'); setTab('crew');
-    await new Promise(res => setTimeout(res, 200));
-    const early = !!document.querySelector('#cw-foryou[aria-busy]');
-    await new Promise(res => setTimeout(res, 2000));
-    const out = { early, busy: !!document.querySelector('#cw-foryou[aria-busy]'),
-      cards: document.querySelectorAll('#cw-foryou .cw-job').length,
-      head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').trim() };
+    await new Promise(res => setTimeout(res, 2200));
+    const out = { cards: document.querySelectorAll('#cj-grid .cj-card').length,
+      head: ((document.getElementById('cx-jobs-h') || {}).textContent || '').trim() };
     AMV_API.where = real;
     return out;
   });
-  ok(r.early, 'it waits a moment for the answer', r);
-  ok(!r.busy && r.cards === 5, 'and then shows five anyway, for the browser\u2019s best guess', r);
+  ok(r.cards > 0 && r.head.length > 3, 'it shows the list anyway, for the browser’s best guess', r);
 }
 
-section('A different country changes the five');
+section('A different country changes the list');
 {
   await page.evaluate(() => cwCountry('UZ'));
   await page.waitForTimeout(500);
   const a = await catalogue();
   ok(/Uzbekistan/.test(a.head), 'the heading names Uzbekistan', a.head);
-  ok(a.top.some(t => /^UZ /.test(t)), 'holding work that only exists there', a.top);
+  ok(a.top.some(t => /^UZ /.test(t)), 'led by work that only exists there', a.top);
   await page.evaluate(() => cwCountry('JP'));
   await page.waitForTimeout(500);
   const b = await catalogue();
   ok(/Japan/.test(b.head) && b.top.some(t => /^JP /.test(t)), 'and Japan’s own work when it is Japan', b.top);
-  ok(!b.top.some(t => /^UZ /.test(t)), 'with none of the country left behind', b.top);
+  ok(!b.all.some(t => /^UZ /.test(t)), 'with none of the last country left anywhere in the list', b.all.filter(t => /^UZ /.test(t)));
 }
 
-section('A country with nothing written for it says so');
+section('A country with nothing written for it borrows nothing');
 {
   await page.evaluate(() => cwCountry('MN'));
   await page.waitForTimeout(500);
   const c = await catalogue();
-  ok(/Mongolia/.test(c.head) && c.top.length === 5, 'Mongolia still gets five', c);
-  ok(!c.top.some(t => /^(JP|UZ|US) /.test(t)), 'none of them another country’s', c.top);
-  const panel = await page.evaluate(async () => {
-    cwMoreCountries(); cwBrowse('MN');
-    await new Promise(r => setTimeout(r, 300));
-    const t = (document.getElementById('cw-cp-list') || {}).textContent || '';
-    cwBackMain();
-    return t;
-  });
-  ok(/Nothing is written only for Mongolia/.test(panel), 'and its page says nothing is written only for it yet', panel.replace(/\s+/g, ' ').slice(0, 160));
+  ok(/Mongolia/.test(c.head) && c.all.length > 0, 'Mongolia still gets a list', c.head);
+  ok(!c.all.some(t => /^(JP|UZ|US) /.test(t)), 'none of it another country’s', c.all.filter(t => /^(JP|UZ|US) /.test(t)));
 }
 
-section('Every other country is one press away, on a page of its own');
+section('Every other country is one press away');
 {
   const r = await page.evaluate(async () => {
     cwCountry('US'); await new Promise(res => setTimeout(res, 300));
-    const secs = [...document.querySelectorAll('.crew-jobs-sec > *')].map(e => e.id || e.className);
-    cwMoreCountries(); await new Promise(res => setTimeout(res, 100));
-    const n = document.querySelectorAll('#cw-cp-grid .cw-cpick').length;
-    cwBrowse('JP'); await new Promise(res => setTimeout(res, 300));
-    const titles = [...document.querySelectorAll('#cw-cp-list .cw-job-t')].map(e => e.textContent.trim());
-    const out = { n, titles, mine: loadStr('amv_cw_country') === 'JP', page: S.crewPage,
-      last: secs.indexOf('cw-morec') === secs.length - 1, secs: secs.slice(-3) };
-    cwCountry('US'); cwBackMain();
+    cjCountry(); for (let i = 0; i < 40 && !document.getElementById('ccp-list'); i++) await new Promise(res => setTimeout(res, 50));
+    const n = document.querySelectorAll('#ccp-list [data-ccp]').length;
+    document.querySelector('#ccp-list [data-ccp="JP"]').click();
+    await new Promise(res => setTimeout(res, 500));
+    const titles = (_cjList() || []).map(j => j.title);
+    const out = { n, titles: titles.slice(0, 8), jp: titles.filter(t => /^JP /.test(t)).length, other: titles.filter(t => /^(UZ|US) /.test(t)).length,
+      mine: loadStr('amv_cw_country') === 'JP', head: document.getElementById('cx-jobs-h').textContent };
+    cwCountry('US');
     return out;
   });
   ok(r.n === CW_N, 'every country with work written for it is listed', r.n);
-  ok(r.page === 'country' && r.titles.filter(t => /^JP /.test(t)).length === 2 && !r.titles.some(t => /^(UZ|US) /.test(t)), 'choosing Japan opens Japan’s page, with Japan’s own work', r.titles.slice(0, 4));
+  ok(/Japan/.test(r.head) && r.jp === 2 && r.other === 0, 'choosing Japan makes the list Japan’s, with Japan’s own work', r);
   ok(r.mine, 'and choosing it makes it the country the page is for', r.mine);
-  ok(r.last, 'and "See more countries" is the last thing on Crew', r.secs);
-}
-
-section('When there IS a worldwide count, it is shown under the list, in its order');
-{
-  const out = await page.evaluate(async () => {
-    const ids = (_cwJobs() || []).slice(0, 6).map(j => j.id);
-    AMV_API.crewPopular = async () => ({
-      enough: true, total: 412,
-      top: [{ id: ids[3], n: 99 }, { id: ids[1], n: 70 }, { id: ids[5], n: 55 },
-            { id: ids[0], n: 40 }, { id: ids[2], n: 31 }, { id: ids[4], n: 12 }],
-    });
-    cwPopReload();
-    await new Promise(r => setTimeout(r, 300));
-    const byId = {}; (_cwJobs() || []).forEach(j => { byId[j.id] = j.title; });
-    const box = document.getElementById('cw-popc') || document;
-    return {
-      head: (box.querySelector('h3') || {}).textContent || '',
-      shown: [...box.querySelectorAll('.cw-top5-item .cw-job-t')].map(e => e.textContent.trim()),
-      counts: [...box.querySelectorAll('.cw-top5-n')].map(e => e.textContent.trim()),
-      ranks: [...box.querySelectorAll('.cw-top5-rank')].map(e => e.textContent.trim()),
-      expect: [ids[3], ids[1], ids[5], ids[0], ids[2]].map(i => byId[i]),
-      topStill: /^Top 5 for you/.test(((document.querySelector('#cw-foryou h3') || {}).textContent || '').trim()),
-    };
-  });
-  ok(/most started/i.test(out.head), 'the counted block says what it is', out.head.trim());
-  ok(JSON.stringify(out.shown) === JSON.stringify(out.expect),
-     'in the order the server counted, not the order AMV picked', out.shown.join(' | '));
-  ok(out.ranks.join(',') === '1,2,3,4,5', 'numbered', out.ranks.join(','));
-  ok(out.counts[0] === '99 starts', 'and each one carries its real count', out.counts.join(' | '));
-  ok(out.topStill, 'while the top of the page stays the five for you', out.topStill);
 }
 
 section('Nothing follows the catalogue');
 {
+  await page.waitForTimeout(300);
   const out = await page.evaluate(() => {
     const page_ = document.querySelector('.crew-page');
-    const cat = document.querySelector('.crew-jobs-sec');
     const kids = [...page_.children];
+    const cat = document.getElementById('cj-jobs');
     return { last: kids.indexOf(cat) === kids.length - 1,
              after: kids.slice(kids.indexOf(cat) + 1).map(e => e.className).join(',') };
   });

@@ -1,4 +1,8 @@
-/* THE COUNTRY YOU CHOOSE STAYS CHOSEN, AND HAS A PAGE OF ITS OWN.
+/* THE COUNTRY YOU CHOOSE STAYS CHOSEN.
+
+   (Its own pages became one picker on Nov 15, shared by Crew and Tasks, with
+   Use my location - the owner's "not in this country? select your country".
+   What this file holds is unchanged: choosing sticks.)
 
    Asked for: "put 'Not in the US?' on the top right and then it sends you to
    the page selecting countries. Then when you select you go to a new page and
@@ -54,132 +58,120 @@ async function open(from, width = 1280, hash = 'crew', ctx0 = null) {
   return { ctx, page };
 }
 const settle = (page, ms = 300) => page.waitForTimeout(ms);
-const topReady = (page) => page.waitForFunction(() => { const g = document.getElementById('cw-foryou');
-  return g && !g.hasAttribute('aria-busy') && g.querySelectorAll('.cw-t10:not(.cw-t10-ph)').length === 5; }, null, { timeout: 15000 }).catch(() => {});
-const listReady = (page) => page.waitForFunction(() => { const l = document.getElementById('cw-cp-list');
-  return l && !l.querySelector('[aria-busy]') && l.querySelectorAll('.cw-job, .cw-lock-card, [data-dact="cwPeek"]').length > 0; }, null, { timeout: 15000 }).catch(() => {});
-const head = (page) => page.evaluate(() => ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+/* Crew is one page since Nov 15: the box, then "Jobs for <country>" with the
+   country as a button beside it, which opens the one country picker (shared
+   with Tasks, with Use my location). */
+const listReady = (page) => page.waitForFunction(() => typeof _cjList === 'function' && document.querySelector('#cj-grid .cj-card'), null, { timeout: 15000 }).catch(() => {});
+const head = (page) => page.evaluate(() => ((document.getElementById('cx-jobs-h') || {}).textContent || '').replace(/\s+/g, ' ').trim());
 const where = (page) => page.evaluate(() => ((document.getElementById('cw-where') || {}).textContent || '').replace(/\s+/g, ' ').trim());
+const pick = async (page, name) => {
+  await page.click('#cw-where');
+  await page.waitForSelector('#ccp-list', { timeout: 8000 });
+  await page.fill('#ccp-q', name);
+  await page.keyboard.press('Enter');
+  await settle(page, 500);
+  await listReady(page);
+};
 
-/* Was "at the top right". On Nov 10 the owner asked for Crew centred - title,
-   explanation, then the box - so where-you-are sits centred in that header,
-   above the box, rather than floating in the corner. */
-section('Crew says where it thinks you are, centred under its title');
+section('Crew says where it thinks you are, beside the list it is for');
 const { ctx, page } = await open('ES');
-await topReady(page);
-{
-  const r = await page.evaluate(() => {
-    const b = document.getElementById('cw-where'), v = document.querySelector('#vc .vi') || document.getElementById('vc');
-    const br = b.getBoundingClientRect(), vr = v.getBoundingClientRect();
-    const box = document.getElementById('mc-cmd-input').getBoundingClientRect();
-    return { text: b.textContent.replace(/\s+/g, ' ').trim(), off: Math.abs((br.left + br.right) / 2 - (vr.left + vr.right) / 2), above: br.bottom <= box.top, w: vr.width };
-  });
-  ok(/Not in Spain\?/.test(r.text), 'it names the network’s country, not the browser’s language - "' + r.text + '"', r.text);
-  ok(r.off < 24 && r.above, 'and it is centred under the title, above the box', r);
-  ok(/Top 5 for you in .*Spain/.test(await head(page)), 'with the top five for Spain under it', await head(page));
-  const n = await page.evaluate(() => document.querySelectorAll('#cw-foryou .cw-t10').length);
-  ok(n === 5, 'five of them, as asked - ' + n, n);
-  /* The banner became the line under "Jobs for <country>" on Nov 10. */
-  const banner = await page.evaluate(() => ((document.querySelector('.crew-jobs-sec > .sec-head .sec-sub') || {}).textContent || '').replace(/\s+/g, ' '));
-  ok(/type it in the box/.test(banner), 'and the line saying anything else goes in the box', banner);
-}
-
-section('It opens a page for choosing the country');
-await page.click('#cw-where');
-await settle(page);
-{
-  const r = await page.evaluate(() => ({ page: S.crewPage, n: document.querySelectorAll('#cw-cp-grid .cw-cpick').length,
-    here: ((document.querySelector('.cw-cpick-here') || {}).closest ? document.querySelector('.cw-cpick-here').closest('.cw-cpick').dataset.darg : ''),
-    selected: document.querySelectorAll('.cw-cpick.on').length, h2: (document.querySelector('.cw-cpage h2') || {}).textContent }));
-  ok(r.page === 'countries' && r.n >= 100, 'a page of its own, with every country - ' + r.n, r);
-  ok(r.here === 'ES' && r.selected === 0, 'Spain marked as where you are, and nothing marked chosen before anything is', r);
-  await page.fill('#cw-cfind', 'jap');
-  const vis = await page.evaluate(() => [...document.querySelectorAll('.cw-cpick')].filter(b => !b.hidden).map(b => b.dataset.darg));
-  ok(vis.length === 1 && vis[0] === 'JP', 'searching narrows it to Japan', vis);
-  await page.press('#cw-cfind', 'Enter');
-}
-
-section('Choosing a country opens its page: its five, then exactly a hundred');
 await listReady(page);
-await topReady(page);
+await page.waitForFunction(() => /Spain/.test((document.getElementById('cx-jobs-h') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
 {
   const r = await page.evaluate(() => {
-    const ids = [...document.querySelectorAll('#cw-cp-list [data-dact="cwPeek"]')].map(b => b.dataset.darg);
-    const cards = [...new Set(ids)];
-    const top = [...document.querySelectorAll('#cw-foryou [data-darg]')].map(b => b.dataset.darg);
-    return { page: S.crewPage, saved: loadStr('amv_cw_country'), h2: (document.querySelector('.cw-cpage h2') || {}).textContent,
-      banner: ((document.querySelector('.cw-cpage .cw-nothere') || {}).textContent || '').replace(/\s+/g, ' '),
-      top: [...new Set(top)], cards, listHead: (document.querySelector('#cw-cp-list h3') || {}).textContent,
-      boxFirst: !!document.querySelector('.cw-cpage .cw-nothere ~ .mc-cmd #mc-cmd-input') };
+    const b = document.getElementById('cw-where'), h = document.getElementById('cx-jobs-h');
+    const br = b.getBoundingClientRect(), hr = h.getBoundingClientRect();
+    return { text: b.textContent.replace(/\s+/g, ' ').trim(), sameRow: Math.abs((br.top + br.bottom) / 2 - (hr.top + hr.bottom) / 2) < 24,
+             box: !!document.getElementById('mc-cmd-input') };
   });
-  ok(r.page === 'country' && /Japan/.test(r.h2), 'Japan’s page - "' + r.h2 + '"', r.h2);
-  ok(/Not on here\? Type it in the text box below/.test(r.banner) && /Only 100 jobs are shown/.test(r.banner),
-     'the top of it says: not on here, type it in the box; only 100 shown', r.banner);
-  ok(r.boxFirst, 'and the box it points at is right under that line', r.boxFirst);
-  ok(r.top.length === 5, 'the top five', r.top);
-  ok(r.cards.length === 100, 'exactly a hundred more, because the page says a hundred - ' + r.cards.length, r.cards.length);
-  ok(!r.cards.some(id => r.top.includes(id)), 'none of them one of the five', r.cards.filter(id => r.top.includes(id)));
-  ok(!r.cards.some(id => /^(cc|top)_[a-z]{2}_/.test(id) && !/^(cc|top)_jp_/.test(id)), 'and none written for another country',
-     r.cards.filter(id => /^(cc|top)_[a-z]{2}_/.test(id) && !/^(cc|top)_jp_/.test(id)).slice(0, 3));
-  ok(r.cards.filter(id => /^(cc|top)_jp_/.test(id)).length >= 50, 'most of them Japan’s own - ' + r.cards.filter(id => /^(cc|top)_jp_/.test(id)).length, null);
+  ok(/Spain/.test(r.text), 'it names the network’s country, not the browser’s language - "' + r.text + '"', r.text);
+  ok(r.sameRow, 'on the row of the list it is for', r);
+  ok(/Jobs for .*Spain/.test(await head(page)), 'and the list is Spain’s', await head(page));
+  ok(r.box, 'with the box above it for anything that is not on the list', r.box);
+}
+
+section('It opens a picker with every country');
+await page.click('#cw-where');
+await page.waitForSelector('#ccp-list', { timeout: 8000 });
+{
+  const r = await page.evaluate(() => ({ n: document.querySelectorAll('#ccp-list [data-ccp]').length,
+    cur: [...document.querySelectorAll('#ccp-list [data-ccp][aria-current="true"]')].map(b => b.dataset.ccp),
+    loc: !!document.getElementById('ccp-loc') }));
+  ok(r.n >= 100, 'every country - ' + r.n, r.n);
+  ok(r.cur.length === 1 && r.cur[0] === 'ES', 'Spain marked as the one in use', r.cur);
+  ok(r.loc, 'and Use my location beside the search', r.loc);
+  await page.fill('#ccp-q', 'jap');
+  const vis = await page.evaluate(() => [...document.querySelectorAll('#ccp-list [data-ccp]')].filter(b => !b.hidden).map(b => b.dataset.ccp));
+  ok(vis.length === 1 && vis[0] === 'JP', 'searching narrows it to Japan', vis);
+  await page.keyboard.press('Enter');
+  await settle(page, 500);
+  await listReady(page);
+}
+
+section('Choosing a country makes the list that country’s');
+{
+  await page.waitForFunction(() => /Japan/.test((document.getElementById('cx-jobs-h') || {}).textContent || '') && (_cwMadeMore('JP') || []).length >= 100, null, { timeout: 15000 }).catch(() => {});
+  const r = await page.evaluate(() => {
+    const ids = _cjList().map(j => j.id);
+    const drawn = [...document.querySelectorAll('#cj-grid .cj-card-b')].map(b => b.dataset.darg);
+    return { saved: loadStr('amv_cw_country'), open: !!document.getElementById('ccp-list'), ids, drawn };
+  });
+  ok(!r.open, 'the picker closes', r.open);
+  ok(/Jobs for Japan/.test(await head(page)) && /Japan/.test(await where(page)), 'the list and the button say Japan', [await head(page), await where(page)]);
+  ok(r.ids.filter(id => /^(cc|top)_jp_/.test(id)).length >= 100, 'a hundred or more of Japan’s own - ' + r.ids.filter(id => /^(cc|top)_jp_/.test(id)).length, null);
+  ok(!r.ids.some(id => /^(cc|top)_[a-z]{2}_/.test(id) && !/^(cc|top)_jp_/.test(id)), 'and none written for another country',
+     r.ids.filter(id => /^(cc|top)_[a-z]{2}_/.test(id) && !/^(cc|top)_jp_/.test(id)).slice(0, 3));
+  ok(r.drawn.slice(0, 5).every(id => /^(cc|top|ev)_jp_/.test(id) || (_cwLocalJobs('JP') || []).some(j => j.id === id)), 'Japan’s own lead it', r.drawn.slice(0, 5));
   ok(r.saved === 'JP', 'and choosing it kept it - saved on this device', r.saved);
-  ok(/100 most used in Japan/.test(r.listHead), 'the list says what it is', r.listHead);
-  /* The chips filter the hundred in place, and All puts them back. */
-  const chip = await page.evaluate(() => { const c = [...document.querySelectorAll('#cw-cp-list .cw-chip')].find(c => c.dataset.darg !== 'all');
-    const want = +c.querySelector('.cw-chip-n').textContent; c.click();
-    const got = new Set([...document.querySelectorAll('#cw-cp-body [data-dact="cwPeek"]')].map(b => b.dataset.darg)).size;
-    document.querySelector('#cw-cp-list .cw-chip[data-darg="all"]').click();
-    const back = new Set([...document.querySelectorAll('#cw-cp-body [data-dact="cwPeek"]')].map(b => b.dataset.darg)).size;
-    return { want, got, back }; });
-  ok(chip.want === chip.got && chip.back === 100, 'a category shows its own count, and All shows the hundred again', chip);
+  /* A category narrows the list in place, and All puts it back. */
+  const chip = await page.evaluate(async () => { const c = [...document.querySelectorAll('#cj-cats .cj-chip')].find(c => c.dataset.darg !== 'all');
+    const want = +((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, ''); c.click(); await new Promise(r => setTimeout(r, 60));
+    while (document.querySelector('#cj-grid .cj-more')) { document.querySelector('#cj-grid .cj-more').click(); await new Promise(r => setTimeout(r, 20)); }
+    const got = document.querySelectorAll('#cj-grid .cj-card').length;
+    document.querySelector('#cj-cats .cj-chip[data-darg="all"]').click(); await new Promise(r => setTimeout(r, 60));
+    return { want, got, back: document.querySelectorAll('#cj-grid .cj-card').length, all: _cjList().length }; });
+  ok(chip.want === chip.got && chip.back > 0 && chip.back < chip.all, 'a category shows its own count, and All shows the first rows again', chip);
 }
 
 section('Leaving the tab does not undo it');
 await page.evaluate(() => setTab('chat'));
 await settle(page);
 await page.evaluate(() => setTab('crew'));
-await topReady(page);
-{
-  ok(await page.evaluate(() => S.crewPage) === '', 'coming back opens Crew’s own page', await page.evaluate(() => S.crewPage));
-  ok(/Japan/.test(await head(page)) && /Not in Japan\?/.test(await where(page)), 'and it is still Japan - "' + await where(page) + '"', await head(page));
-}
+await listReady(page);
+ok(/Japan/.test(await head(page)) && /Japan/.test(await where(page)), 'coming back, it is still Japan - "' + await where(page) + '"', await head(page));
 await page.reload({ waitUntil: 'load' });
-await topReady(page);
-ok(/Japan/.test(await head(page)) && /Not in Japan\?/.test(await where(page)),
+await listReady(page);
+await settle(page, 600);
+ok(/Japan/.test(await head(page)) && /Japan/.test(await where(page)),
    'nor does a reload, although the network still says Spain', [await head(page), await where(page)]);
 
 section('Changing it again changes it everywhere');
-await page.click('#cw-where');
-await settle(page);
-await page.click('.cw-cpick[data-darg="MX"]');
-await listReady(page);
-ok(/Mexico/.test(await page.evaluate(() => document.querySelector('.cw-cpage h2').textContent)), 'Mexico’s page', null);
+await pick(page, 'mexico');
+ok(/Mexico/.test(await head(page)), 'Mexico’s list', await head(page));
 await page.evaluate(() => setTab('settings'));
 await settle(page);
+/* Tasks asks a visitor to sign up first, so here it is the one setting it
+   reads that is checked; tasks-know-where-you-are opens Tasks itself. */
+ok(await page.evaluate(() => _cwCountryGuess()) === 'MX', 'the country Tasks reads is Mexico too', await page.evaluate(() => _cwCountryGuess()));
 await page.evaluate(() => setTab('crew'));
-await topReady(page);
-ok(/Mexico/.test(await head(page)) && /Not in Mexico\?/.test(await where(page)), 'and Crew is Mexico’s from then on', await head(page));
+await listReady(page);
+ok(/Mexico/.test(await head(page)) && /Mexico/.test(await where(page)), 'and Crew is Mexico’s from then on', await head(page));
 {
-  const r = await page.evaluate(() => ({ saved: loadStr('amv_cw_country'), sel: (() => { cwMoreCountries(); return [...document.querySelectorAll('.cw-cpick.on')].map(b => b.dataset.darg); })() }));
-  ok(r.saved === 'MX' && r.sel.join() === 'MX', 'the countries page marks Mexico as chosen', r);
+  const r = await page.evaluate(async () => { cjCountry(); for (let i = 0; i < 40 && !document.getElementById('ccp-list'); i++) await new Promise(r => setTimeout(r, 50));
+    const cur = [...document.querySelectorAll('#ccp-list [aria-current="true"]')].map(b => b.dataset.ccp); closeOvr(); return { saved: loadStr('amv_cw_country'), cur }; });
+  ok(r.saved === 'MX' && r.cur.join() === 'MX', 'the picker marks Mexico as the one in use', r);
 }
 
-section('Back walks out the way you came in');
+section('Closing the picker changes nothing');
 {
-  await page.click('.cw-cpick[data-darg="JP"]');
-  await listReady(page);
-  await page.goBack();
-  await settle(page, 500);
-  const a = await page.evaluate(() => S.crewPage);
-  await page.goBack();
-  await settle(page, 500);
-  const b = await page.evaluate(() => ({ p: S.crewPage, tab: S.tab }));
-  ok(a === 'countries' && b.p === '' && b.tab === 'crew', 'country page, then the countries page, then Crew', { a, b });
-  await page.evaluate(() => cwBrowse('JP'));
+  await page.click('#cw-where');
+  await page.waitForSelector('#ccp-list', { timeout: 8000 });
+  await page.keyboard.press('Escape');
   await settle(page);
-  await page.click('.cw-cpage [data-dact="cwBackMain"]');
+  const r = await page.evaluate(() => ({ open: !!document.getElementById('ccp-list'), saved: loadStr('amv_cw_country') }));
+  if (r.open) await page.click('#ccp-x');
   await settle(page);
-  ok(await page.evaluate(() => S.crewPage) === '', '"Back to Crew" goes to Crew', null);
+  ok(!(await page.evaluate(() => !!document.getElementById('ccp-list'))) && r.saved === 'MX', 'it closes, and Mexico is still chosen', r);
 }
 await ctx.close();
 
@@ -191,7 +183,7 @@ section('Where somebody is, asked as AMV loads - not when Crew is opened');
   const r = await o.page.evaluate(() => ({ tab: S.tab, here: _cwHere }));
   ok(r.tab === 'chat' && r.here === 'KE' && whereAsked === 1, 'asked once, on the chat screen, before Crew was ever opened', { ...r, whereAsked });
   await o.page.evaluate(() => setTab('crew'));
-  await topReady(o.page);
+  await listReady(o.page);
   ok(/Kenya/.test(await head(o.page)), 'so Crew opens already for Kenya', await head(o.page));
   await o.ctx.close();
 }
@@ -200,25 +192,27 @@ section('A slow answer is still used, not thrown away');
 {
   WHERE_SLOW = 2600;
   const o = await open('NG', 1280, 'crew');
-  await o.page.waitForFunction(() => { const g = document.querySelector('#cw-foryou h3'); return g && /Nigeria/.test(g.textContent); }, null, { timeout: 12000 }).catch(() => {});
-  ok(/Nigeria/.test(await head(o.page)) && /Not in Nigeria\?/.test(await where(o.page)),
+  await o.page.waitForFunction(() => /Nigeria/.test((document.getElementById('cx-jobs-h') || {}).textContent || ''), null, { timeout: 12000 }).catch(() => {});
+  ok(/Nigeria/.test(await head(o.page)) && /Nigeria/.test(await where(o.page)),
      'the network answered after the wait gave up, and the page moved to it - "' + await head(o.page) + '"', await where(o.page));
   WHERE_SLOW = 0;
   await o.ctx.close();
 }
 
-section('On a phone, both pages fit');
+section('On a phone, it all fits');
 {
   const o = await open('ES', 390, 'crew');
-  await topReady(o.page);
+  await listReady(o.page);
   const fits = async () => o.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   ok(await fits(), 'Crew', null);
   await o.page.click('#cw-where');
-  await settle(o.page);
-  ok(await fits(), 'the countries page', null);
-  await o.page.click('.cw-cpick[data-darg="IN"]');
+  await o.page.waitForSelector('#ccp-list', { timeout: 8000 });
+  ok(await fits(), 'the picker', null);
+  await o.page.fill('#ccp-q', 'india');
+  await o.page.keyboard.press('Enter');
+  await settle(o.page, 500);
   await listReady(o.page);
-  ok(await fits(), 'India’s page', null);
+  ok(await fits() && /India/.test(await head(o.page)), 'India’s list', await head(o.page));
   const box = await o.page.evaluate(() => { const t = document.getElementById('mc-cmd-input'); return { h: t.offsetHeight, sh: (() => { t.value = t.placeholder; const s = t.scrollHeight; t.value = ''; return s; })() }; });
   ok(box.h >= box.sh, 'and the box shows its whole example, not half a line of it', box);
   await o.ctx.close();
