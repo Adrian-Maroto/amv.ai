@@ -19,6 +19,9 @@ const { page, errors } = app;
 
 section('Each address is the app’s own, and each app is in the catalogue');
 {
+  /* The map lives in the Integrations screen's own file, fetched when it opens. */
+  await page.evaluate(() => { document.getElementById('ck')?.remove(); setTab('integrations'); });
+  await page.waitForFunction(() => typeof window.AMV_APP_WEB === 'object', null, { timeout: 15000 });
   const r = await page.evaluate(() => {
     const byName = {};
     AMV_APP_CATS.forEach(c => c.apps.forEach(a => { const [n, how] = a.split('|'); byName[n] = { cat: c.id, how }; }));

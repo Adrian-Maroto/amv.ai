@@ -696,7 +696,7 @@ function _integrationsCatalogHTML(opts){
     else return null;
     return o;
   };
-  /* An app with no connector but a real website (AMV_APP_WEB, 13c): Use opens
+  /* An app with no connector but a real website (AMV_APP_WEB, integrations-view.js): Use opens
      it in AMV's browser, where the person signs in. A quiet button, because
      it is not a connection AMV holds - the intro above says the difference. */
   const webRow=(a)=>{
