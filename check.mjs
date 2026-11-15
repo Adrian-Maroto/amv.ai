@@ -122,7 +122,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 19 : 23;
+const TOTAL = FAST ? 20 : 24;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -1308,6 +1308,33 @@ step('No guard names a function that does not exist', () => {
    suite here. What makes it findable mechanically is the shape: a KV kind that
    is READ and never WRITTEN is a drawer somebody emptied and nobody stopped
    opening. */
+step('No screen loaded later replaces a function the page already has', () => {
+  /* LESSONS 647. A screen fetched on first use (crew-view.js, the country
+     catalogue, ...) runs as a classic script in the page's own global scope.
+     A top-level `let` or `const` that repeats one of the page's throws, loudly.
+     A FUNCTION that repeats one does not: the later declaration silently
+     replaces the page's, everywhere, from the moment the screen loads. That is
+     how a Crew card helper named `_cxCard` replaced the card the connector
+     directory drew, and nothing failed - the directory just showed Crew cards.
+
+     The view stubs are the one deliberate case: the page defines
+     render<X>View to fetch its screen, and the screen's own render<X>View
+     replaces the stub on purpose. */
+  const ALLOWED = new Set(['renderCodeView', 'renderCrewView', 'renderTasksView', 'renderIntegrationsView', 'renderAutomationView']);
+  const top = (t) => new Set([...codeOnly(t, { blankStrings: true }).matchAll(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]));
+  const page = top(readFileSync(R('app.js'), 'utf8'));
+  const build = readFileSync(R('build.mjs'), 'utf8');
+  const lazy = [...new Set([...build.matchAll(/readFileSync\('(src\/(?!app\/|worker\/)[^']+\.js)'\)/g)].map(m => m[1]))];
+  if (lazy.length < 15) throw new Error('only ' + lazy.length + ' lazily loaded screens found in build.mjs - the pattern broke, not the code');
+  const hits = [];
+  for (const f of lazy) {
+    const dup = [...top(readFileSync(R(f), 'utf8'))].filter(n => page.has(n) && !ALLOWED.has(n));
+    if (dup.length) hits.push(f + ': ' + dup.join(', '));
+  }
+  if (hits.length) throw new Error('A screen fetched later declares a function the page already defines, and would silently replace it:\n    '
+    + hits.join('\n    ') + '\n  Rename the screen’s function (a prefix of its own, as crew-view.js uses _cj), or, for a deliberate stub, add it to ALLOWED here.');
+});
+
 step('No decision is read out of a store nothing writes', () => {
   const src = codeOnly(readFileSync(R('amv-backend.js'), 'utf8'));
 

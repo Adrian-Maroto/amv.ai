@@ -15962,3 +15962,36 @@ the bucket had no head(). Rule: when a record gains a source of truth, list
 every writer of that record - restore, rollback, repair, migration, erasure -
 and make each one write through it; a fault injected on the old key now
 injects nothing, so move the injection to the write that decides.
+
+## 647. A screen loaded later shares the page's names, and a function quietly wins (Nov 15)
+
+Crew's rebuilt list named its card helper `_cxCard`. The page already had a
+`_cxCard` - the connector directory's card - and crew-view.js is a classic
+script fetched into the same global scope, so its declaration replaced the
+page's the moment Crew was first opened. Nothing threw: the directory simply
+drew Crew cards from then on. A repeated `let` or `const` fails loudly; a
+repeated function declaration is a silent overwrite. Rule: everything a
+lazily loaded screen declares carries a prefix of its own (`_cj` for Crew's
+list), and the gate fails when a screen declares a function the page already
+has - the deliberate `render<X>View` stubs excepted by name.
+
+## 648. A placeholder that guesses a height moves the page when the real one arrives (Nov 15)
+
+The Crew page kept `content-visibility:auto` with a 300px intrinsic size on
+every section. Drawing only the first rows had made the list short, so a
+repaint measured the skipped section at 300px and clamped the scroll position
+of somebody reading below it, and scroll anchoring then moved them again.
+Rule: `content-visibility` is for long content that is genuinely skipped; a
+section that is already drawn small gets `visible`, and a list that draws a
+few rows at a time never needs a guessed size.
+
+## 649. A deleted section can take a safety sentence with it (Nov 15)
+
+Removing "Services in <country>" from Integrations, at the owner's word, also
+removed the one line under it - "Check the address before you sign in" - on
+the only page where people meet sites taken from a source anybody can edit,
+and sign in to them. Removing the Spending bank card left the bank link
+showing the Investing pane, investment check-ins and all. Rule: before
+deleting a section, list what it SAID as well as what it showed - the
+warnings, the honest states, the doors into flows that live nowhere else -
+and give each one a new home or a reason it is no longer true.
