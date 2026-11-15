@@ -132,16 +132,20 @@ section('Refreshing the screen you are on keeps your place');
   await page.waitForTimeout(1600);
   const r = await page.evaluate(async () => {
     const sv = document.querySelector('#vc .sv');
-    sv.scrollTop = 400;
+    /* Somewhere the page can actually be scrolled to: Crew draws its first
+       jobs and Show more since Nov 15, so at a tall window it may be shorter
+       than 400px of scroll. The claim is that a repaint keeps your place. */
+    const want = Math.min(400, sv.scrollHeight - sv.clientHeight);
+    sv.scrollTop = want;
     sv.dispatchEvent(new Event('scroll', { bubbles: true }));
     await new Promise(x => setTimeout(x, 60));
     renderCrewView();
     await new Promise(x => setTimeout(x, 120));
     const now = document.querySelector('#vc .sv');
-    return { top: Math.round(now.scrollTop), repaint: now.closest('#vc > *').classList.contains('vc-repaint') };
+    return { top: Math.round(now.scrollTop), want: Math.round(want), repaint: now.closest('#vc > *').classList.contains('vc-repaint') };
   });
   ok(r.repaint, 'the repaint is marked as one', JSON.stringify(r));
-  ok(r.top === 400, 'and it leaves you where you were reading', JSON.stringify(r));
+  ok(r.want > 100 && r.top === r.want, 'and it leaves you where you were reading', JSON.stringify(r));
 }
 
 section('Leaving and coming back is an arrival, not a refresh');

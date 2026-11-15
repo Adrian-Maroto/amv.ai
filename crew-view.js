@@ -1419,6 +1419,7 @@ function _cjRepaint(){
   _cjCache = null;
   try{ const h = document.getElementById('cx-jobs-h'); if(h) h.textContent = _cwJobsForHead(); }catch(e){}
   try{ const b = document.getElementById('cw-where'); if(b && b.classList.contains('cj-country')) b.outerHTML = _cjCountryBtnHTML(); }catch(e){}
+  try{ const n = document.getElementById('cj-note'); if(n){ const t = _cjNoteText(); n.textContent = t; n.hidden = !t; } }catch(e){}
   _cjPaint();
 }
 try{ window._cjRepaint = _cjRepaint; }catch(e){}
@@ -1440,8 +1441,18 @@ function _cjCountryBtnHTML(){
   return `<button class="cj-country" id="cw-where" data-dact="cjCountry" aria-label="${escH(T('Change country'))}">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(T(row[1]))}` : escH(T('Choose your country'))}
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
 }
+/* Said when it is true: the country's own jobs live on AMV's servers, and a
+   list that silently lacks them reads exactly like a country with none. */
+function _cjNoteText(){
+  try{
+    const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
+    if(!row || _cwLocalState[cc] !== 'offline' || !(window.AMV_API && AMV_API.live)) return '';
+    return _cwSayPlace('The jobs written for {country} are on AMV’s servers, which cannot be reached right now - everything else is below.', row[1]);
+  }catch(e){ return ''; }
+}
 /* The jobs section, the same on both screens. */
 function _cjJobsHTML(){
+  const note = _cjNoteText();
   return `<section class="cj-jobs" id="cj-jobs" aria-labelledby="cx-jobs-h">
     <div class="cj-jobs-top">
       <h2 id="cx-jobs-h">${escH(_cwJobsForHead())}</h2>
@@ -1450,6 +1461,7 @@ function _cjJobsHTML(){
     </div>
     <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="cx-q" type="search" autocomplete="off" value="${escH(_cjQ)}" placeholder="${escH(T('Search jobs'))}" aria-label="${escH(T('Search jobs'))}"></div>
+    <p class="cj-note" id="cj-note" role="status"${note ? '' : ' hidden'}>${escH(note)}</p>
     <div class="cj-cats" id="cj-cats" role="group" aria-label="${escH(T('Categories'))}">${_cjChipsHTML()}</div>
     <div id="cj-grid">${_cjGridHTML()}</div>
   </section>`;

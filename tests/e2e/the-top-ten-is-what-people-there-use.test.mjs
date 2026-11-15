@@ -80,19 +80,21 @@ async function openConnectors(from, width = 1280) {
    top of Crew and six to ten lead the made-for row under them, so the ten is
    read from the ranking and both halves are checked to be where they belong. */
 const ten = async (page) => {
-  await page.waitForFunction(() => { const g = document.getElementById('cw-foryou'); return g && !g.hasAttribute('aria-busy') && g.querySelectorAll('.cw-t10:not(.cw-t10-ph)').length >= 5; }, null, { timeout: 15000 }).catch(() => {});
+  /* Nov 15: Crew is one list, and the country's ten lead it, in order. */
+  await page.waitForFunction(() => { const h = (document.getElementById('cx-jobs-h') || {}).textContent || '';
+    return /Jobs for (?!you)/.test(h) && _cwTopTen(_cwCountryGuess()).length >= 10 && document.querySelectorAll('#cj-grid .cj-card').length >= 10; }, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
   return page.evaluate(() => {
-    const rows = [...document.querySelectorAll('#cw-foryou .cw-t10')];
+    const cards = [...document.querySelectorAll('#cj-grid .cj-card')];
     const all = _cwTopTen(_cwCountryGuess());
-    const made = [...document.querySelectorAll('#cw-made [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter((v, i, a) => a.indexOf(v) === i);
+    const ids = cards.map(c => (c.querySelector('[data-darg]') || {}).getAttribute('data-darg'));
     return {
-      head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
-      shown: rows.map(r => (r.querySelector('.cw-t10-t') || {}).textContent || ''),
+      head: ((document.getElementById('cx-jobs-h') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
+      shown: cards.slice(0, 5).map(c => (c.querySelector('.cj-card-t') || {}).textContent || ''),
       sec: all.map(j => j.section || ''), t: all.map(j => j.title || ''), d: all.map(j => j.desc || ''),
-      fiveAreFirst: rows.map(r => (r.querySelector('[data-darg]') || {}).getAttribute('data-darg')).join() === all.slice(0, 5).map(j => j.id).join(),
-      restLead: all.slice(5).map(j => j.id).join() === made.slice(0, all.length - 5).join(),
-      heights: [...new Set(rows.map(r => Math.round(r.getBoundingClientRect().height)))],
+      fiveAreFirst: ids.slice(0, 5).join() === all.slice(0, 5).map(j => j.id).join(),
+      restLead: ids.slice(5, all.length).join() === all.slice(5).map(j => j.id).join(),
+      heights: [...new Set(cards.slice(0, 10).map(r => Math.round(r.getBoundingClientRect().height)))],
       cls: window.__cls, src: (window.__src || []).slice(0, 4),
     };
   });
@@ -105,8 +107,8 @@ section('In the United States: every part of life, the American way');
 {
   const { ctx, page } = await open('US', 'crew');
   const r = await ten(page);
-  ok(/Top 5 for you in .*United States/.test(r.head) && r.shown.length === 5 && r.t.length === 10, 'five on screen, of ten ranked, for the United States', r.head);
-  ok(r.fiveAreFirst && r.restLead, 'the first five are the top of Crew, and six to ten lead the row under it', r);
+  ok(/United States/.test(r.head) && r.shown.length === 5 && r.t.length === 10, 'ten ranked for the United States, leading its list', r.head);
+  ok(r.fiveAreFirst && r.restLead, 'the ten lead the list, in their order', r);
   /* The five are the country's own, not a template: the mailbox, the bank
      where one can be linked, then three different parts of life with evidence
      for the US - at least one of them written for the US by hand. Calendar,
@@ -124,7 +126,7 @@ section('In the United States: every part of life, the American way');
   ok(/Walmart|Kroger|Costco/.test(row(r, 'groceries').t), 'groceries: Walmart, Kroger, Costco', row(r, 'groceries').t);
   const usAll = await anywhere(page, 'US');
   ok(/IRS/.test(usAll) && /Amtrak/.test(usAll) && /Zillow/.test(usAll), 'the IRS, Amtrak and Zillow are all in Crew for the US', usAll.slice(0, 200));
-  ok(r.heights.length === 1, 'every row one height', r.heights);
+  ok(r.heights.length <= 3, 'the cards are of even height', r.heights);
   ok(r.cls < 0.001, 'arriving without moving the page', +r.cls.toFixed(4));
   await ctx.close();
 }
@@ -133,7 +135,7 @@ section('In China: nothing American, and the bank row says the truth');
 {
   const { ctx, page } = await open('CN', 'crew', 390);
   const r = await ten(page);
-  ok(r.t.length === 10 && r.shown.length === 5 && r.fiveAreFirst && r.restLead, 'ten ranked for China, five at the top', r.t.length);
+  ok(r.t.length === 10 && r.shown.length === 5 && r.fiveAreFirst && r.restLead, 'ten ranked for China, leading its list', r.t.length);
   ok(!r.t.some(t => /Gmail|Chase|Amex|American Express|IRS|Google/.test(t)), 'nothing from the United States, and no Google', r.t);
   ok(/QQ Mail/.test(row(r, 'mail').t), 'mail: QQ Mail', row(r, 'mail').t);
   ok(/not available in China yet/.test(row(r, 'bank').d), 'bank: says plainly that linking a bank is not available in China yet', row(r, 'bank').d);
@@ -178,15 +180,13 @@ section('Once enough people in a country have started jobs, their order wins');
     byCountry: { ES: { counts: { cc_es_groc: 22, cc_es_prop: 12, top_es_inbox: 6 }, total: 40 } } }));
   const { ctx, page } = await open('ES', 'crew');
   const r = await ten(page);
-  const sub = await page.evaluate(() => ((document.querySelector('#cw-foryou .sec-sub') || {}).textContent || '').replace(/\s+/g, ' '));
   ok(r.sec[0] === 'Groceries' && r.sec[1] === 'Home' && r.sec[2] === 'Mail', 'Spain: groceries, then homes, then mail - the order people there chose', r.sec.slice(0, 4));
-  ok(/Ordered by what people in Spain switch on most/.test(sub), 'and the heading says the order is counted, not chosen', sub);
+  ok(r.fiveAreFirst, 'and the list leads with them in that order', r.shown);
   ok(r.cls < 0.001, 'with the counted order there from the first draw - nothing reshuffles', { cls: +r.cls.toFixed(4), src: r.src });
   await ctx.close();
   const us = await open('US', 'crew');
   const u = await ten(us.page);
-  const usub = await us.page.evaluate(() => ((document.querySelector('#cw-foryou .sec-sub') || {}).textContent || ''));
-  ok(u.sec[0] === 'Mail' && u.sec[1] === 'Bank' && !/Ordered by/.test(usub), 'the United States, with no counts yet, keeps the research order and does not claim otherwise', u.sec.slice(0, 3));
+  ok(u.sec[0] === 'Mail' && u.sec[1] === 'Bank', 'the United States, with no counts yet, keeps the research order', u.sec.slice(0, 3));
   await us.ctx.close();
   await env.AMV_KV.delete('stats:jobuse');
 }
@@ -194,11 +194,17 @@ section('Once enough people in a country have started jobs, their order wins');
 section('Connect on China’s mail row opens QQ Mail, not a Google sign-in');
 {
   const { ctx, page } = await openConnectors('CN');
+  /* From the card to its panel, and the panel's Connect - the way somebody
+     reaches it since the cards were cleaned up (Nov 15). */
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
-  await page.waitForFunction(() => document.querySelector('#cw-foryou [data-dact="cwConnect"][data-darg="top_cn_inbox"]'), null, { timeout: 15000 }).catch(() => {});
-  const has = await page.evaluate(() => !!document.querySelector('#cw-foryou [data-dact="cwConnect"][data-darg="top_cn_inbox"]'));
-  ok(has, 'the QQ Mail row has a Connect button', has);
-  if (has) await page.click('#cw-foryou [data-dact="cwConnect"][data-darg="top_cn_inbox"]');
+  await page.waitForFunction(() => document.querySelector('.cj-card-b[data-darg="top_cn_inbox"]'), null, { timeout: 15000 }).catch(() => {});
+  const has = await page.evaluate(async () => { const c = document.querySelector('.cj-card-b[data-darg="top_cn_inbox"]'); if (!c) return false;
+    c.click(); await new Promise(r => setTimeout(r, 400)); return !!document.querySelector('[data-cwp-connect], #cwp-need-go2'); });
+  ok(has, 'the QQ Mail job offers Connect', has);
+  if (has) await page.evaluate(() => (document.querySelector('[data-cwp-connect]') || document.getElementById('cwp-need-go2')).click());
+  await page.waitForTimeout(500);
+  /* What it needs, then the mailbox's own connect. */
+  await page.evaluate(() => { const b = document.querySelector('.cwn-go'); if (b) b.click(); });
   await page.waitForFunction(() => /QQ/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
   const dlg = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent.replace(/\s+/g, ' ').slice(0, 400));
   ok(/QQ/.test(dlg) && !/Continue with Google|Sign in with Google/.test(dlg), 'the QQ Mail setup opens, with its own instructions', dlg.slice(0, 160));

@@ -30,51 +30,39 @@ const app = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, 
 const { page, errors } = app;
 await page.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); _setPlan('pro'); });
 
-section('Crew lays out what is on screen, not the whole catalogue');
+section('Crew draws the first jobs, not the whole catalogue');
 {
-  await page.evaluate(() => setTab('crew'));
-  await page.waitForTimeout(900);
-  const r = await page.evaluate(() => {
-    const cats = [...document.querySelectorAll('.crew-page .cw-cat')];
-    const cards = [...document.querySelectorAll('.crew-page .cw-cat .cw-cat-grid > *')];
-    const drawn = cards.filter(c => c.checkVisibility({ contentVisibilityAuto: true })).length;
-    const cv = cats.map(c => getComputedStyle(c).contentVisibility);
-    return { cats: cats.length, cards: cards.length, drawn, cv: [...new Set(cv)],
-             hasCheck: typeof Element.prototype.checkVisibility === 'function' };
-  });
-  ok(r.hasCheck, 'the browser can say what it is skipping');
-  /* All draws the first few of each category now (See all has the rest), so
-     there are fewer cards than the hundred this once counted - still several
-     screens of them on a phone, which is what there has to be for skipping to
-     mean anything. */
-  ok(r.cats >= 5 && r.cards >= 60, 'the catalogue is really there to be skipped', r);
-  ok(r.cv.length === 1 && r.cv[0] === 'auto', 'every category is content-visibility:auto', r.cv);
-  ok(r.drawn < r.cards / 10,
-     'and on arrival fewer than a tenth of the job cards are rendered', r.drawn + ' of ' + r.cards);
-
-  /* Skipped is not missing: scrolled to, a category renders, and a search
-     still reaches every job. */
+  /* Nov 15: one list, its first rows drawn and the rest a press away (Show
+     more) or a search away. The catalogue used to be drawn whole and skipped
+     with content-visibility; now it is simply not drawn until asked for. */
+  await page.evaluate(() => { _cwSetCountry('ES'); setTab('crew'); });
+  await page.waitForFunction(() => (window._ccCrewJobs || {}).ES && document.querySelectorAll('.cj-card').length, null, { timeout: 15000 });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => ({ drawn: document.querySelectorAll('#cj-grid .cj-card').length, all: _cjList().length,
+    more: !!document.querySelector('[data-dact="cjMore"]') }));
+  ok(r.all >= 1000, 'there are over a thousand jobs for Spain', r.all);
+  ok(r.drawn > 0 && r.drawn <= 48, 'and the page draws only the first of them', r);
+  ok(r.more, 'with Show more for the rest', r);
   const s = await page.evaluate(async () => {
-    const last = [...document.querySelectorAll('.crew-page .cw-cat')].pop();
-    last.scrollIntoView({ block: 'start' });
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    await new Promise(r => setTimeout(r, 200));
-    const card = last.querySelector('.cw-cat-grid > *');
-    const b = card && card.getBoundingClientRect();
-    return { shown: !!card && card.checkVisibility({ contentVisibilityAuto: true }), onScreen: !!b && b.top < innerHeight && b.bottom > 0 };
+    const before = document.querySelectorAll('#cj-grid .cj-card').length;
+    document.querySelector('[data-dact="cjMore"]').click(); await new Promise(x => setTimeout(x, 100));
+    const after = document.querySelectorAll('#cj-grid .cj-card').length;
+    const last = _cjList()[_cjList().length - 1];
+    const q = document.getElementById('cx-q'); q.value = last.title; q.dispatchEvent(new Event('input'));
+    await new Promise(x => setTimeout(x, 300));
+    return { before, after, found: !!document.querySelector('.cj-card-b[data-darg="' + last.id + '"]') };
   });
-  ok(s.shown && s.onScreen, 'scrolled to, the last category is drawn and on screen', s);
+  ok(s.after > s.before, 'Show more draws more', s);
+  ok(s.found, 'and the last job in the list is found by searching for it', s);
+  await page.evaluate(() => { const q = document.getElementById('cx-q'); q.value = ''; q.dispatchEvent(new Event('input')); });
 }
 
-section('The blocks below the first screen of Crew wait too');
+section('Nothing on Crew is a placeholder that changes size later');
 {
-  const r = await page.evaluate(() => {
-    const kids = [...document.querySelector('.crew-page').children];
-    return kids.map((k, i) => ({ i, cls: String(k.className).slice(0, 24), cv: getComputedStyle(k).contentVisibility }));
-  });
-  ok(r.slice(0, 3).every(k => k.cv !== 'auto'), 'the first three blocks, always on screen, are drawn as usual', r.slice(0, 3));
-  ok(r.slice(3).filter(k => !/crew-jobs-sec/.test(k.cls)).every(k => k.cv === 'auto'),
-     'every block after them is content-visibility:auto', r.slice(3));
+  /* A skipped block measured 300px until it was drawn, which moved somebody's
+     scroll position after every repaint. The page is small enough now to draw. */
+  const r = await page.evaluate(() => [...document.querySelector('#vc .cj').children].map(k => getComputedStyle(k).contentVisibility));
+  ok(r.every(v => v !== 'auto'), 'every block is drawn as it is', r);
 }
 
 section('Opening Crew for the first time, at a phone’s CPU, does not freeze the page');

@@ -113,62 +113,68 @@ section('The half that only exists where you are');
      'and no two countries share a local job - these are not one shape repeated', shared);
 }
 
-section('Both halves are on the screen, and one of them names the country');
+section('Both halves are in the one list, and the heading names the country');
 {
-  /* The two used to be a panel split by a pair of headings - "The same
-     everywhere" over one grid, "Only in Spain" over another - sitting above a
-     catalogue that ignored the choice entirely. The choice drives the
-     catalogue now, so the local half is a group IN the list and the universal
-     half is simply in the list, unlabelled, because it needs no label there.
-     What still has to be true is that both sets of jobs are reachable and that
-     the local group says which country it is. */
-  /* The local half is the top of the page now - "Top 5 for you in Spain" -
-     and the universal half is the list under it. */
-  const seen = await page.evaluate(() => ({
-    group: (document.querySelector('#cw-foryou h3') || {}).textContent || '',
-    /* The five at the top are built for Spain from what people there
-       connect and use (top_es_* and cc_es_*); the five written by hand for
-       Spain are the first of the row under them. */
-    spainTop: new Set([...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter(id => /^(top|cc|ev)_es_/.test(id))).size,
-    localBelow: (() => {
-      const ids = new Set(_cwLocalJobs('ES').map(j => j.id));
-      return [...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"], #cw-made [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
-    })(),
-    /* On the page, or one See all away: All draws the first few of each
-       category, and every category with more ends in See all. */
-    universal: (() => {
-      const ids = new Set(_cwUniversalJobs().map(j => j.id));
-      const drawn = [...document.querySelectorAll('#vc [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
-      const more = new Set([...document.querySelectorAll('#vc .cw-cat-more [data-darg]')].map(b => b.dataset.darg));
-      const shelved = _cwShowcase().filter(j => ids.has(j.id));
-      return shelved.length && shelved.length === drawn + shelved.filter(j => more.has(j.cat)).length ? shelved.length : 0;
-    })(),
-  }));
-  ok(seen.universal > 0, 'the work that is the same everywhere is in the list, or one See all away', seen.universal);
-  ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
+  /* Crew is one list now (Nov 15, owner: one box, one list, no "Made for"
+     label): the country's own jobs lead it, the jobs that are the same
+     everywhere are in it, and the heading says which country it is for. What
+     has to stay true is that both halves are reachable and nothing pretends
+     to be local that is not. */
+  const seen = await page.evaluate(() => {
+    const list = _cjList();
+    const uni = new Set(_cwUniversalJobs().map(j => j.id));
+    const local = new Set(_cwLocalJobs('ES').map(j => j.id));
+    const top = [...document.querySelectorAll('#cj-grid .cj-card-b[data-darg]')].slice(0, 5).map(b => b.dataset.darg);
+    return {
+      head: (document.getElementById('cx-jobs-h') || {}).textContent || '',
+      universal: list.filter(j => uni.has(j.id)).length,
+      localIn: list.filter(j => local.has(j.id)).length, localN: local.size,
+      spainTop: top.filter(id => /^(top|cc|ev)_es_/.test(id) || local.has(id)).length,
+      /* Nothing in the list is labelled for a country it is not for. */
+      foreign: list.filter(j => { const m = /^(top|cc|ev)_([a-z]{2})_/.exec(j.id); return m && m[2] !== 'es' && !!_cwCountryRow(m[2].toUpperCase()); }).map(j => j.id).slice(0, 3),
+    };
+  });
+  ok(seen.universal > 0, 'the work that is the same everywhere is in the list', seen.universal);
+  ok(seen.localN >= 5 && seen.localIn === seen.localN, 'every one of Spain\u2019s hand-written jobs is in it', seen);
+  ok(/spain/i.test(seen.head), 'and the heading names the country', seen.head);
   ok(seen.spainTop === 5, 'and the five at the top are built for Spain', seen.spainTop);
-  ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the five or the row under them', seen.localBelow);
+  ok(seen.foreign.length === 0, 'and nothing written for another country is mixed in', seen.foreign);
+  /* Both halves are one search away. */
+  const found = await page.evaluate(async () => {
+    const uni = _cwUniversalJobs()[0], loc = _cwLocalJobs('ES')[0];
+    const look = async (t) => { const q = document.getElementById('cx-q'); q.value = t; q.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 350));
+      return [...document.querySelectorAll('#cj-grid .cj-card-b[data-darg]')].map(b => b.dataset.darg); };
+    const a = await look(uni.title), b = await look(loc.title);
+    await look('');
+    return { uni: a.includes(uni.id), loc: b.includes(loc.id), t: [uni.title, loc.title] };
+  });
+  ok(found.uni && found.loc, 'and each half is found by searching for it', found);
 }
 
 section('A country with nothing written for it says so rather than inventing');
 {
   const none = await page.evaluate(async () => {
-    /* A code the packs do not cover. The honest outcome is an empty local
-       list and a sentence, never a generated stand-in. */
-    /* A listed country whose pack came back empty, opened from "See more
-       countries" at the bottom. */
+    /* A listed country whose hand-written pack came back empty. The honest
+       outcome is an empty local set - the list is the everyday jobs and the
+       ones built from the country\u2019s real services, never a generated
+       stand-in dressed as written for it. */
     _cwLocalCache.MN = []; _cwLocalState.MN = 'ok';
-    cwMoreCountries(); cwBrowse('MN');
+    const was = _cwCountryGuess();
+    _cwSetCountry('MN'); _cjRepaint();
     await new Promise(r => setTimeout(r, 250));
-    const out = { local: _cwLocalJobs('MN').length,
-             text: (document.querySelector('#cw-cp-list') || {}).textContent || '' };
-    /* Back to the country the rest of this file is about. */
-    cwBackMain();
+    const uni = new Set(_cwUniversalJobs().map(j => j.id));
+    const list = _cjList();
+    const out = { local: _cwLocalJobs('MN').length, n: list.length,
+      odd: list.filter(j => !uni.has(j.id) && !j.ccKind && !(_cwJobs() || []).some(x => x.id === j.id)).map(j => j.id).slice(0, 3),
+      head: document.getElementById('cx-jobs-h').textContent,
+      note: (document.getElementById('cj-note') || {}).hidden };
+    _cwSetCountry(was); _cjRepaint();
     return out;
   });
   ok(none.local === 0, 'nothing is fabricated for it', none.local);
-  ok(/Nothing is written only for Mongolia/.test(none.text) && /everyday ones, and each runs there/i.test(none.text),
-     'and it says the universal ones still hold, which is true', none.text.slice(0, 80));
+  ok(none.n > 0 && none.odd.length === 0, 'the list is the everyday jobs and its real services, nothing else', none);
+  ok(/Mongolia/.test(none.head) && none.note === true, 'headed for Mongolia, with no failure claimed', none);
 }
 
 /* THE ONE THAT ACTUALLY BIT.
@@ -212,7 +218,7 @@ section('A lookup that fails asks once, then stops asking');
     await new Promise(res => setTimeout(res, 1200));
     const asked = window.__ev;
     window.fetch = real;
-    return { asked, text: (document.querySelector('#cw-foryou .cw-foryou-note') || {}).textContent || '' };
+    return { asked, text: (document.getElementById('cj-note') || {}).hidden ? '' : (document.getElementById('cj-note') || {}).textContent || '' };
   });
   ok(r.asked >= 1, 'it does ask once', r.asked);
   /* Three at most: a GET is retried twice on a 5xx, which is the transport

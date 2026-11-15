@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="a8482f64241cb69b">
+<meta name="amv-build" content="4a3c7d42beef30a9">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10694,6 +10694,9 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 .cj-p .cj-p-v small{display:block;margin-top:4px;color:var(--dim);font-size:var(--t-xs)}
 .bank-dlg{height:auto;max-height:min(88vh,760px)}
 .bank-b{overflow-y:auto;padding:0 var(--sp-5) var(--sp-5)}
+#app .cj.crew-page > *{content-visibility:visible;contain-intrinsic-size:none}
+.cj-note{margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--t-sm);color:var(--mu);border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s1)}
+.cj-note[hidden]{display:none}
 </style>
 <!-- BUILD:CSS:END -->
 <script>

@@ -17854,3 +17854,10 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 .cj-p .cj-p-v small{display:block;margin-top:4px;color:var(--dim);font-size:var(--t-xs)}
 .bank-dlg{height:auto;max-height:min(88vh,760px)}
 .bank-b{overflow-y:auto;padding:0 var(--sp-5) var(--sp-5)}
+/* Crew's one job list draws its first rows only (24, then Show more), so there
+   is nothing to skip - and as a skipped block it measured 300px right after a
+   repaint, which clamped the scroll position somebody was reading at. */
+#app .cj.crew-page > *{content-visibility:visible;contain-intrinsic-size:none}
+/* Said when the country's own jobs could not be fetched - one quiet line. */
+.cj-note{margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--t-sm);color:var(--mu);border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s1)}
+.cj-note[hidden]{display:none}

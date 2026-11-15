@@ -139,17 +139,20 @@ section('And each kind is routed as the kind it is');
   ok(r.rows === r.needs && r.rows > 0, 'with every requirement listed here too', r);
 }
 
-section('The bank goes to Spending, which is where a bank is actually linked');
+section('The bank opens the bank link, which is where a bank is actually linked');
 {
-  /* THE DEFECT. It went to Connectors, which has nothing to offer for this. */
+  /* THE DEFECT. It went to Connectors, which has nothing to offer for this.
+     Since Nov 15 the link is a dialog of its own (openBankLink) - Spending is
+     the budget only - and the requirement opens it directly. */
   const r = await page.evaluate(async () => {
     document.querySelector('.cwn-go[data-cwn-kind="bank"]').click();
     await new Promise(res => setTimeout(res, 700));
-    return { tab: S.tab, onSpend: !!document.querySelector('.spv-t'),
-             hasAccountCard: !!document.getElementById('spv-bank') };
+    const d = document.querySelector('.bank-dlg');
+    return { dialog: !!d, pane: !!(d && d.querySelector('#bank-pane').textContent.trim()) };
   });
-  ok(r.tab === 'spend' && r.onSpend, 'it lands on Spending', r);
-  ok(r.hasAccountCard, 'where the card that links an account actually is', r);
+  ok(r.dialog, 'it opens the bank link', r);
+  ok(r.pane, 'with the real link pane in it, not a sentence about it', r);
+  await page.evaluate(() => closeOvr());
 }
 
 section('And the job is remembered, so finishing comes back to it');
@@ -196,29 +199,30 @@ section('A job needing only a mailbox still gets the grant flow');
   ok(r.kinds.indexOf('oauth') >= 0, 'and the mailbox is routed as a grant, not as a bank', r.kinds);
 }
 
-section('The Connect button ON THE CARD goes there too');
+section('From the card, the way to what is missing is one press away');
 {
-  /* THE ONE THE DEFECT WAS ACTUALLY ON, and the first version of this file
-     never pressed it - every other section drives cwPeek and cwNeeds
-     directly, so putting the old OAuth-only call back passed cleanly. The
-     card is where somebody meets this: the panel is already one click in. */
+  /* THE ONE THE DEFECT WAS ACTUALLY ON: the route from where somebody meets
+     the job. The card itself is clean since Nov 15 (no requirement line, no
+     button of its own - the owner's call); pressing it opens the panel, whose
+     one filled button is Connect what it needs, and that must reach the
+     bank, not a grant flow that has nothing for one. */
   const r = await page.evaluate(async (jid) => {
     closeOvr(); await new Promise(res => setTimeout(res, 150));
-    setTab('crew'); await new Promise(res => setTimeout(res, 700));
-    const btn = document.querySelector('.cw-job-fix[data-darg="' + jid + '"]');
-    if (!btn) return { noButton: true };
-    btn.click();
-    await new Promise(res => setTimeout(res, 600));
-    return {
-      onNeeds: !!document.getElementById('cwn-back'),
-      rows: document.querySelectorAll('.cwn-row').length,
-      kinds: [...document.querySelectorAll('.cwn-go')].map(b => b.dataset.cwnKind),
-    };
+    _cwSetCountry('US'); setTab('crew'); await new Promise(res => setTimeout(res, 900));
+    const q = document.getElementById('cx-q'); if (q) { q.value = (_cwFindJob(jid) || {}).title || ''; q.dispatchEvent(new Event('input')); }
+    await new Promise(res => setTimeout(res, 400));
+    const card = document.querySelector('.cj-card-b[data-darg="' + jid + '"]');
+    if (!card) return { noCard: true };
+    card.click(); await new Promise(res => setTimeout(res, 400));
+    const go = document.getElementById('cwp-need-go2');
+    if (!go) return { noButton: true };
+    go.click(); await new Promise(res => setTimeout(res, 600));
+    return { onNeeds: !!document.getElementById('cwn-back'), rows: document.querySelectorAll('.cwn-row').length,
+             kinds: [...document.querySelectorAll('.cwn-go')].map(b => b.dataset.cwnKind) };
   }, shapes.bank);
-  ok(!r.noButton, 'the card offers a way to fix what is missing', r);
-  ok(r.onNeeds && r.rows > 0, 'and it opens what the job needs', r);
-  ok(r.kinds.indexOf('bank') >= 0,
-     'routed as a bank, rather than at a grant flow that has nothing for one', r.kinds);
+  ok(!r.noCard && !r.noButton, 'the card opens the panel, and the panel offers Connect what it needs', r);
+  ok(r.onNeeds && r.rows > 0, 'which opens what the job needs', r);
+  ok((r.kinds || []).indexOf('bank') >= 0, 'routed as a bank, rather than at a grant flow that has nothing for one', r.kinds);
 }
 
 ok(errors.length === 0, 'and none of it raised an error', errors);

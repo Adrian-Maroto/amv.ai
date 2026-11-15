@@ -1100,5 +1100,24 @@
   "it": "Collega dà ad AMV una chiave dell’account che puoi revocare in qualsiasi momento. Usa apre il sito vero nel browser di AMV e accedi tu.",
   "ko": "연결은 언제든 회수할 수 있는 계정 키를 AMV에 줍니다. 사용은 AMV 브라우저에서 실제 사이트를 열며, 로그인은 직접 합니다.",
   "ta": "இணை என்பது AMV-க்குக் கணக்கின் சாவியைத் தருகிறது, அதை எப்போது வேண்டுமானாலும் திரும்பப் பெறலாம். பயன்படுத்து என்பது உண்மையான தளத்தை AMV உலாவியில் திறக்கிறது, நீங்களே உள்நுழைகிறீர்கள்."
+ },
+ "The jobs written for {country} are on AMV’s servers, which cannot be reached right now - everything else is below.": {
+  "es": "Las tareas escritas para {country} están en los servidores de AMV, que ahora no responden; todo lo demás está abajo.",
+  "zh": "为{country}编写的任务存放在 AMV 的服务器上，目前无法连接——其余的都在下面。",
+  "hi": "{country} के लिए लिखे गए काम AMV के सर्वर पर हैं, जिन तक अभी पहुँचा नहीं जा सकता - बाकी सब नीचे है।",
+  "ar": "المهام المكتوبة لـ{country} موجودة على خوادم AMV، ويتعذّر الوصول إليها الآن - وكل ما عداها أدناه.",
+  "pt": "As tarefas escritas para {country} ficam nos servidores da AMV, que não estão acessíveis agora - todo o resto está abaixo.",
+  "fr": "Les tâches écrites pour {country} sont sur les serveurs d’AMV, injoignables pour le moment ; tout le reste est ci-dessous.",
+  "de": "Die für {country} geschriebenen Aufträge liegen auf den AMV-Servern, die gerade nicht erreichbar sind – alles andere steht unten.",
+  "ja": "{country}向けのジョブはAMVのサーバーにあり、現在接続できません。それ以外はすべて下にあります。",
+  "ru": "Задачи, написанные для страны {country}, хранятся на серверах AMV, которые сейчас недоступны, — всё остальное ниже.",
+  "id": "Tugas yang ditulis untuk {country} ada di server AMV, yang saat ini tidak dapat dihubungi - semua yang lain ada di bawah.",
+  "bn": "{country}-এর জন্য লেখা কাজগুলো AMV-এর সার্ভারে আছে, যেগুলোতে এখন পৌঁছানো যাচ্ছে না - বাকি সব নিচে আছে।",
+  "ur": "{country} کے لیے لکھے گئے کام AMV کے سرورز پر ہیں، جن تک ابھی رسائی نہیں ہو سکتی - باقی سب نیچے ہے۔",
+  "tr": "{country} için yazılan görevler AMV sunucularında ve şu anda bunlara ulaşılamıyor - geri kalan her şey aşağıda.",
+  "vi": "Các công việc viết riêng cho {country} nằm trên máy chủ AMV, hiện không kết nối được - mọi thứ khác ở bên dưới.",
+  "it": "Le attività scritte per {country} sono sui server di AMV, che al momento non sono raggiungibili: tutto il resto è qui sotto.",
+  "ko": "{country}용으로 작성된 작업은 AMV 서버에 있는데 지금은 연결할 수 없습니다. 나머지는 모두 아래에 있습니다.",
+  "ta": "{country}க்காக எழுதப்பட்ட பணிகள் AMV சேவையகங்களில் உள்ளன, அவற்றை இப்போது அணுக முடியவில்லை - மற்ற அனைத்தும் கீழே உள்ளன."
  }
 }

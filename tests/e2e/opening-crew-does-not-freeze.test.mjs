@@ -27,12 +27,13 @@ section('The structure that keeps it fast is in place');
   await page.evaluate(() => setTab('crew'));
   await page.waitForTimeout(600);
   const r = await page.evaluate(() => {
-    const body = document.getElementById('cw-jobs-body');
     const box = document.getElementById('mc-cmd-input');
-    return { cv: body && getComputedStyle(body).contentVisibility, sizing: box && getComputedStyle(box).fieldSizing,
+    return { drawn: document.querySelectorAll('#cj-grid .cj-card').length, sizing: box && getComputedStyle(box).fieldSizing,
              native: typeof _MC_FIELD_SIZING !== 'undefined' && _MC_FIELD_SIZING };
   });
-  ok(r.cv === 'auto', 'the catalogue below the fold is laid out only when it is near', r);
+  /* Nov 15: the catalogue is not drawn and skipped any more - only its first
+     rows are drawn at all, the rest on Show more or a search. */
+  ok(r.drawn > 0 && r.drawn <= 48, 'only the first jobs are drawn on arrival', r);
   ok(r.native && r.sizing === 'content', 'and the Crew box sizes itself with no measuring script', r);
   const reads = await page.evaluate(() => {
     let n = 0; const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
