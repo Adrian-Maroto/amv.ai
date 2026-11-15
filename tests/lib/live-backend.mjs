@@ -136,7 +136,9 @@ export async function serveArtifact(port, apiBase) {
   const server = createServer((req, res) => {
     const rel = decodeURIComponent((req.url || '/').split('?')[0]);
     const file = rel === '/' ? 'index.html' : rel.replace(/^\/+/, '');
-    const abs = join(ROOT, file);
+    /* The country files are published under public/ only (build.mjs), as the
+       host serves them - the same mapping serveApp in harness.mjs makes. */
+    const abs = file.startsWith('countries/') ? join(ROOT, 'public', file) : join(ROOT, file);
     if (!abs.startsWith(ROOT) || !/\.[a-z0-9]+$/i.test(file)) { res.writeHead(404); res.end(); return; }
     let body;
     try { body = readFileSync(abs); } catch (e) { res.writeHead(404); res.end(); return; }

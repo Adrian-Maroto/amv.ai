@@ -3899,14 +3899,6 @@ svg[stroke]{stroke-linecap:round;stroke-linejoin:round}
 .sess-badge{font-size:var(--t-2xs);font-weight:600;padding:2px 7px;border-radius:var(--r-xs);background:var(--accent-soft);color:var(--accent-txt)}
 .sess-meta{font-size:var(--t-sm);color:var(--mu);margin-top:2px}
 
-.inv-row{display:grid;grid-template-columns:1.4fr 1fr 1fr .6fr;align-items:center;gap:10px;padding:11px 15px;
-  border-bottom:1px solid var(--bd);font-size:var(--t-base);color:var(--tx)}
-.inv-row:last-child{border-bottom:none}
-
-.inv-total{font-variant-numeric:tabular-nums}
-
-.inv-view{background:none;border:none;color:var(--accent-txt);font-size:var(--t-base);font-weight:600;cursor:pointer;font-family:inherit;padding:0}
-.inv-view:hover{text-decoration:underline}
 
 /* ── Privacy pane ── */
 .prv-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -7522,40 +7514,7 @@ html,body{height:100%;height:100dvh}
   font-size:var(--t-sm);color:var(--tx);line-height:1.6;
   display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
 
-/* ============================================================
-   LAYER A55 - The investing check-in
-
-   A change, not a dashboard. The total is the headline, the
-   movement sits under it in a colour that means something, and
-   each account carries its own delta. Numbers are tabular so a
-   column of them lines up.
-   ============================================================ */
-.inv-res{margin:0 0 var(--sp-4)}
-.inv-total{font-size:var(--t-3xl);font-weight:700;color:var(--tx);
-  font-variant-numeric:tabular-nums;line-height:1.15}
-.inv-change{font-size:var(--t-md);font-weight:600;margin-top:var(--sp-1);
-  font-variant-numeric:tabular-nums}
-.inv-change.up{color:var(--grn-txt)}
-.inv-change.down{color:var(--red-txt)}
-.inv-change.flat{color:var(--mu)}
-.inv-since{font-weight:400;color:var(--mu);font-size:var(--t-sm)}
-.inv-sub{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:var(--sp-2)}
-.inv-rows{margin-top:var(--sp-4);display:flex;flex-direction:column;gap:var(--sp-2)}
-.inv-row{display:flex;align-items:baseline;gap:var(--sp-3);
-  padding-bottom:var(--sp-2);border-bottom:1px solid var(--bd)}
-.inv-row:last-child{border-bottom:0;padding-bottom:0}
-.inv-row-n{flex:1 1 auto;min-width:0;font-size:var(--t-sm);color:var(--tx);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.inv-row-b{font-size:var(--t-sm);color:var(--tx);font-variant-numeric:tabular-nums}
-.inv-row-c{font-size:var(--t-xs);font-variant-numeric:tabular-nums;min-width:72px;text-align:right}
-.inv-row-c.up{color:var(--grn-txt)}
-.inv-row-c.down{color:var(--red-txt)}
-.inv-row-c.new{color:var(--mu)}
-.inv-when{display:flex;gap:var(--sp-2);flex-wrap:wrap}
-@media (max-width:520px){ .inv-when-b{flex:1 1 45%} }
-/* A figure kept on screen after a failed refresh has to say so. */
-.inv-stale{font-size:var(--t-xs);color:var(--gold-txt);font-weight:600;
-  margin-bottom:var(--sp-2)}
+/* LAYER A55 (the investing check-in) removed Nov 15 with investing itself. */
 
 /* ==========================================================================
    LAYER A56 - The jobs that run while AMV is shut
@@ -17865,3 +17824,12 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 .cj-card.blocked{border-color:color-mix(in srgb,var(--gold) 45%,var(--bd))}
 .cj-wait{color:var(--gold-txt);font-weight:600}
 .cj-wait::after{content:'\00b7';margin-left:6px;color:var(--dim);font-weight:400}
+.cj-p .cwp-loc{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+/* The bank link dialog (openBankLink): what it does, three facts, one button. */
+.bank-lead{margin:0 0 var(--sp-3);font-size:var(--t-md);color:var(--tx);line-height:1.5}
+.bank-facts{margin:0 0 var(--sp-4);padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--sp-2)}
+.bank-facts li{position:relative;padding-left:20px;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+.bank-facts li::before{content:'';position:absolute;left:4px;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.bank-st{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1)}
+.bank-st p{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+.bank-st.on b{color:var(--grn-txt)}

@@ -75,41 +75,37 @@ async function openConnectors(from, width = 1280) {
   await page.evaluate(() => { window.__cls = 0; window.__src = []; setTab('integrations'); });
   return { ctx, page };
 }
-/* Every card's line, across the whole catalogue. All shows the first few of
-   each category and See all the rest, so the lines are read category by
-   category - the way somebody pressing the chips would see them - and the
-   screen is put back on All. The switching is this test's doing, not the
-   page's, so the layout-shift tally is put back as it was too. */
-const lines = (page) => page.evaluate(async () => {
-  const read = () => [...document.querySelectorAll('.cw-job-loc')].map(e => ({ id: e.dataset.loc, t: e.textContent.trim(), h: e.getBoundingClientRect().height }));
-  const cls = window.__cls, src = (window.__src || []).slice();
-  const seen = new Map(read().map(x => [x.id, x]));
-  const cats = [...document.querySelectorAll('.cw-chip')].map(c => c.dataset.darg).filter(c => c && c !== 'all');
-  for (const c of cats) { cwCat(c); read().forEach(x => { if (!seen.has(x.id)) seen.set(x.id, x); }); }
-  if (cats.length) cwCat('all');
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 150))));
-  window.__cls = cls; window.__src = src;
-  return [...seen.values()];
-});
+/* WHERE A JOB LOOKS, IN ITS PANEL (Nov 15). The line used to sit on every card
+   ("In Spain: InfoJobs · SEPE") and the owner asked for the cards to be plain,
+   so it moved to the job's panel - where somebody is deciding - and the server
+   still adds the country's starting points to every run. Read job by job. */
+const panelLoc = (page, ids) => page.evaluate(async (ids) => {
+  const out = {};
+  for (const id of ids) {
+    cwPeek(id); await new Promise(r => setTimeout(r, 120));
+    out[id] = ((document.querySelector('#ovr .cwp-loc') || {}).textContent || '').trim();
+    closeOvr();
+  }
+  return out;
+}, ids);
+const LOC_IDS = ['job_hunt', 'tax_catch', 'groceries', 'salary_bench', 'morning_brief'];
 
-section('Crew, from Spain: the hundred below the five name Spain’s own services');
+section('Crew, from Spain: a job says where it looks in Spain');
 {
   const { ctx, page } = await open('ES', 'crew');
-  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /InfoJobs/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => typeof _cwFacts !== 'undefined' && _cwFacts.ES && /InfoJobs/.test(_cwLocText('job_hunt', 'ES')), null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
-  const L = await lines(page);
-  const byId = Object.fromEntries(L.map(x => [x.id, x.t]));
-  ok(L.length >= 30, 'dozens of cards say where they look in Spain', L.length);
-  ok(/^In Spain: .*InfoJobs/.test(byId.job_hunt || ''), 'the job hunt looks on InfoJobs and the SEPE', byId.job_hunt);
-  const shop = L.find(x => /Mercadona/.test(x.t));
-  ok(!!shop, 'the shopping jobs compare Mercadona and the rest', L.map(x => x.id).join(','));
-  ok(/Agencia Tributaria/.test(byId.tax_catch || ''), 'the tax job uses the Agencia Tributaria', byId.tax_catch);
-  ok(L.every(x => /Spain/.test(x.t)), 'every line is for Spain - none for the browser’s United States', L.filter(x => !/Spain/.test(x.t)).slice(0, 3));
-  ok(L.every(x => x.h > 10 && x.h < 24), 'each is one line, however long the list of names', L.filter(x => !(x.h > 10 && x.h < 24)).slice(0, 3));
-  const five = await page.evaluate(() => document.querySelectorAll('#cw-foryou .cw-job-loc').length);
-  ok(five === 0, 'the five written for Spain need no line - they are Spain’s already', five);
+  const L = await panelLoc(page, LOC_IDS);
+  ok(/InfoJobs/.test(L.job_hunt), 'the job hunt looks on InfoJobs and the SEPE', L.job_hunt);
+  ok(/Agencia Tributaria/.test(L.tax_catch), 'the tax job uses the Agencia Tributaria', L.tax_catch);
+  ok(Object.values(L).filter(Boolean).length >= 4, 'and the others name Spain’s own services too', L);
+  ok(!Object.values(L).some(t => /\bIRS\b|Walmart|Indeed\.com/.test(t)), 'none of them the browser’s United States', L);
+  const plain = await page.evaluate(() => document.querySelectorAll('#cj-grid .cw-job-loc').length);
+  ok(plain === 0, 'and the cards themselves stay plain - the line is in the panel', plain);
+  const own = await page.evaluate(() => (_cwLocalJobs('ES') || []).map(j => j.id).filter(id => { cwPeek(id); const has = !!document.querySelector('#ovr .cwp-loc'); closeOvr(); return has; }));
+  ok(own.length === 0, 'the jobs written for Spain need no line - they are Spain’s already', own);
   const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
-  ok(cls.v < 0.001, 'and the Spanish names arrive without moving the page', { cls: +cls.v.toFixed(4), src: cls.s });
+  ok(cls.v < 0.001, 'and Spain’s jobs arrive without moving the page', { cls: +cls.v.toFixed(4), src: cls.s });
   const run = await page.evaluate(() => typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '');
   ok(run === 'ES', 'and a job switched on here is created for Spain', run);
   await ctx.close();
@@ -118,42 +114,41 @@ section('Crew, from Spain: the hundred below the five name Spain’s own service
 section('Crew, from Spain, on a phone');
 {
   const { ctx, page } = await open('ES', 'crew', 390);
-  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /InfoJobs/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => typeof _cwFacts !== 'undefined' && _cwFacts.ES && /InfoJobs/.test(_cwLocText('job_hunt', 'ES')), null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
-  const L = await lines(page);
-  ok(L.length >= 30 && L.every(x => /Spain/.test(x.t)), 'the same lines on a phone', L.length);
+  const L = await panelLoc(page, ['job_hunt']);
+  ok(/InfoJobs/.test(L.job_hunt), 'the same line on a phone', L.job_hunt);
   const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
   ok(cls.v < 0.001, 'and nothing moves there either', { cls: +cls.v.toFixed(4), src: cls.s });
-  const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  const wide = await page.evaluate(async () => { cwPeek('job_hunt'); await new Promise(r => setTimeout(r, 150)); const w = document.documentElement.scrollWidth - innerWidth; closeOvr(); return w; });
   ok(wide <= 0, 'and no line pushes the page sideways', wide);
   await ctx.close();
 }
 
-section('Crew, from Spain: a row of jobs made for Spain');
+section('Crew, from Spain: Spain’s own jobs lead the list');
 {
   const { ctx, page } = await open('ES', 'crew');
-  await page.waitForFunction(() => document.querySelectorAll('#cw-made .cw-made-card').length > 0, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => typeof _cjList === 'function' && (_cwMadeForJobs('ES') || []).length > 0 && (_cwLocalJobs('ES') || []).length > 0, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
-  const r = await page.evaluate(() => ({
-    head: document.querySelector('#cw-made h3').textContent.replace(/\s+/g, ' ').trim(),
-    titles: [...document.querySelectorAll('#cw-made .cw-made-t')].map(e => e.textContent.trim()),
-    heights: [...document.querySelectorAll('#cw-made .cw-made-it')].map(e => Math.round(e.getBoundingClientRect().height)),
-    clipped: [...document.querySelectorAll('#cw-made .cw-made-d')].filter(e => e.scrollHeight > e.clientHeight + 30).length,
-    cls: window.__cls, src: (window.__src || []).slice(0, 6),
-  }));
-  ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
-  ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
-  const five = await page.evaluate(() => [...document.querySelectorAll('#cw-foryou .cw-t10-t')].map(e => e.textContent.trim()));
-  ok(five.concat(r.titles).some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
-     'Spain’s own work - the Renta and the DNI, written for Spain, in the five or the row', { five, row: r.titles.slice(0, 7) });
-  ok(five.length === 5 && !r.titles.some(t => five.includes(t)), 'and nothing already in the five above is repeated', { five, row: r.titles.slice(0, 6) });
-  ok(r.titles.some(t => /AEAT|Mercadona/.test(t)), 'while six to ten of the ranking - the AEAT, Mercadona - lead it', r.titles.slice(0, 6));
-  ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
-  ok(r.cls < 0.001, 'and the row arrives without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
-  await page.click('#cw-made .cw-made-body');
-  await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  const r = await page.evaluate(() => {
+    const list = _cjList();
+    const titles = list.slice(0, 60).map(j => j.title);
+    return { head: (document.getElementById('cx-jobs-h') || {}).textContent || '', titles,
+             made: (_cwMadeForJobs('ES') || []).length, firstIds: list.slice(0, 12).map(j => j.id),
+             uni: _cwUniversalJobs().map(j => j.id), cls: window.__cls, src: (window.__src || []).slice(0, 6) };
+  });
+  ok(/Spain/.test(r.head), 'headed for Spain', r.head);
+  ok(r.made >= 12, 'with a dozen or more of Spain’s own jobs', r.made);
+  ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
+     'Spain’s own work - the Renta and the DNI, written for Spain, near the top', r.titles.slice(0, 12));
+  ok(r.titles.some(t => /AEAT|Mercadona/.test(t)), 'and the AEAT and Mercadona among them', r.titles.filter(t => /AEAT|Mercadona/.test(t)).slice(0, 3));
+  ok(!r.firstIds.some(id => r.uni.includes(id)), 'nothing that is the same everywhere ahead of them', r.firstIds);
+  ok(r.cls < 0.001, 'and the list arrives without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
+  const id = await page.evaluate(() => { const b = document.querySelector('#cj-grid .cj-card-b'); return b && b.dataset.darg; });
+  await page.click('#cj-grid .cj-card-b');
+  await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa|Spain/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
   const peek = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
-  ok(/Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
+  ok(/Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa|Spain/.test(peek), 'pressing a card opens what it does, in Spain’s terms', { id, t: peek.slice(0, 120) });
   await ctx.close();
 }
 
@@ -161,12 +156,16 @@ section('Switching one on creates real work for Spain');
 {
   const { ctx, page } = await openConnectors('ES');
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
-  await page.waitForFunction(() => document.querySelector('.cw-toggle[data-darg="cc_es_jobs"]'), null, { timeout: 15000 }).catch(() => {});
-  const id = await page.evaluate(() => { const b = document.querySelector('#cw-foryou .cw-toggle[data-darg="cc_es_jobs"]'); return b ? b.dataset.darg : ''; });
-  ok(id === 'cc_es_jobs', 'Spain’s job hunt has a switch in the top five', id);
+  await page.waitForFunction(() => typeof _cjList === 'function' && _cjList().some(j => j.id === 'cc_es_jobs'), null, { timeout: 15000 }).catch(() => {});
+  /* Found the way somebody would: searched for. */
+  await page.evaluate(() => { const j = _cjList().find(x => x.id === 'cc_es_jobs'); const q = document.getElementById('cx-q'); q.value = j.title; q.dispatchEvent(new Event('input', { bubbles: true })); });
+  const sel = '#cj-grid .cw-toggle[data-darg="cc_es_jobs"]';
+  await page.waitForSelector(sel, { timeout: 15000 }).catch(() => {});
+  const id = await page.evaluate((sel) => { const b = document.querySelector(sel); return b ? b.dataset.darg : ''; }, sel);
+  ok(id === 'cc_es_jobs', 'Spain’s job hunt has a switch', id);
   const before = created.length;
-  await page.click('#cw-foryou .cw-toggle[data-darg="cc_es_jobs"]');
-  const box = await page.waitForSelector('#ovr input, #ovr textarea', { timeout: 5000 }).catch(() => null);
+  await page.click(sel);
+  const box = await page.waitForSelector('#ovr input:not([type=time]), #ovr textarea', { timeout: 5000 }).catch(() => null);
   ok(!!box, 'it asks what work, before it runs on nothing');
   if (box) { await box.fill('junior accountant in Valencia, full-time'); await page.click('#ovr button.bp'); }
   for (let i = 0; i < 40 && created.length === before; i++) await page.waitForTimeout(150);
@@ -178,92 +177,58 @@ section('Switching one on creates real work for Spain');
   await ctx.close();
 }
 
-section('Crew, from the United States: the same cards, for the United States');
+section('Crew, from the United States: the same jobs, for the United States');
 {
   const { ctx, page } = await open('US', 'crew');
-  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /^In United States/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
-  const L = await lines(page);
-  const byId = Object.fromEntries(L.map(x => [x.id, x.t]));
-  ok(/^In United States/.test(byId.job_hunt || '') && !/InfoJobs/.test(byId.job_hunt || ''), 'the job hunt is the United States’ one', byId.job_hunt);
-  ok(/IRS/.test(byId.tax_catch || ''), 'and the tax job uses the IRS', byId.tax_catch);
+  await page.waitForFunction(() => typeof _cwFacts !== 'undefined' && _cwFacts.US && /IRS/.test(_cwLocText('tax_catch', 'US')), null, { timeout: 15000 }).catch(() => {});
+  const L = await panelLoc(page, ['job_hunt', 'tax_catch']);
+  ok(L.job_hunt && !/InfoJobs/.test(L.job_hunt), 'the job hunt is the United States’ one', L.job_hunt);
+  ok(/IRS/.test(L.tax_catch), 'and the tax job uses the IRS', L.tax_catch);
   await ctx.close();
 }
 
-section('Other countries: Mexico’s facts, on Mexico’s own page');
+section('Another country: Mexico’s jobs, chosen from the top');
 {
   const { ctx, page } = await open('ES', 'crew');
-  await page.waitForSelector('#cw-where[data-dact="cwMoreCountries"]', { timeout: 15000 });
+  await page.waitForSelector('#cw-where[data-dact="cjCountry"]', { timeout: 15000 });
   await page.click('#cw-where');
-  await page.click('.cw-cpick[data-darg="MX"]');
-  await page.waitForFunction(() => document.querySelector('.cw-cp-facts .cw-facts') && document.querySelector('#cw-cp-list [data-dact="cwPeek"]'), null, { timeout: 10000 }).catch(() => {});
-  const r = await page.evaluate(() => ({
-    h: ((document.querySelector('.cw-cp-facts h3') || {}).textContent || '').trim(),
-    facts: [...document.querySelectorAll('.cw-cp-facts .cw-facts-r')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
-  }));
-  ok(/Mexico/.test(r.h), 'Mexico says where AMV looks there', r.h);
-  ok(r.facts.length >= 8 && r.facts.some(t => /SAT/.test(t)), 'with Mexico’s tax office and the rest', r.facts.slice(0, 4));
-  const mx = await page.evaluate(() => [...document.querySelectorAll('#cw-foryou .cw-t10-t, #cw-cp-list .cw-job-t, #cw-cp-list .cw-made-t, #cw-cp-list h4, #cw-cp-list [class*="-t"]')].map(e => e.textContent.trim()));
-  ok(mx.length >= 10 && mx.some(t => /SAT/.test(t)) && !mx.some(t => /InfoJobs|Mercadona/.test(t)), 'and Mexico’s own jobs, none of Spain’s', mx.filter(t => /SAT/.test(t)).slice(0, 3));
-  await page.click('#cw-cp-list [data-dact="cwPeek"]');
+  await page.waitForSelector('#ccp-list', { timeout: 10000 });
+  await page.fill('#ccp-q', 'mexico');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /Mexico/.test((document.getElementById('cx-jobs-h') || {}).textContent || '') && (_cwMadeForJobs('MX') || []).length > 0, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => ({ h: document.getElementById('cx-jobs-h').textContent,
+    titles: _cjList().map(j => j.title), loc: _cwLocText('tax_catch', 'MX') }));
+  ok(/Mexico/.test(r.h), 'the list is headed for Mexico', r.h);
+  ok(/SAT/.test(r.loc), 'its tax job looks at Mexico’s tax office', r.loc);
+  ok(r.titles.length >= 100 && r.titles.some(t => /SAT/.test(t)) && !r.titles.some(t => /InfoJobs|Mercadona/.test(t)), 'and Mexico’s own jobs, none of Spain’s', r.titles.filter(t => /SAT/.test(t)).slice(0, 3));
+  await page.click('#cj-grid .cj-card-b');
   await page.waitForFunction(() => ((document.getElementById('ovr') || {}).textContent || '').length > 40, null, { timeout: 5000 }).catch(() => {});
   ok(((await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '')).length > 40), 'which open from there too');
   await ctx.close();
 }
 
-section('Connectors, from Spain: popular in Spain, honestly');
+section('Integrations, from Spain: Spain’s services are used, never falsely connected');
 {
+  /* "Services in Spain" was a card and a dialog of its own, removed at the
+     owner's word (Nov 15) - Spain's services now sit in the topics they
+     belong to. What still has to hold: a service AMV cannot connect is used
+     in AMV's own browser and says so, and nothing offers to link a bank it
+     cannot link. */
   const { ctx, page } = await openConnectors('ES');
-  await page.waitForSelector('#int-local', { timeout: 15000 });
-  await page.waitForFunction(() => /Spain/.test((document.getElementById('int-local-t') || {}).textContent || ''), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector('#app .cc-svc'), null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
-  const head = await page.evaluate(() => document.getElementById('int-local-t').textContent);
-  ok(/Services in Spain/.test(head), 'the card near the top says Spain', head);
-  const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
-  ok(cls.v < 0.001, 'and learning the country moved nothing on the page', { cls: +cls.v.toFixed(4), src: cls.s });
-  await page.click('#int-local');
-  await page.waitForFunction(() => document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
-  const d = await page.evaluate(() => {
-    const secs = [...document.querySelectorAll('#lc-body .ss2')].map(s => ({
-      h: s.querySelector('h3').textContent,
-      rows: [...s.querySelectorAll('.int-card')].map(c => ({ n: c.querySelector('.int-name').textContent, t: c.textContent.replace(/\s+/g, ' '), b: (c.querySelector('.int-act') || {}).textContent.trim() })),
-    }));
-    return { title: document.getElementById('lc-h').textContent, secs };
-  });
-  const find = (re) => d.secs.flatMap(s => s.rows.map(r => Object.assign({ sec: s.h }, r))).find(r => re.test(r.t));
-  ok(/Services in Spain/.test(d.title), 'the dialog is for Spain', d.title);
-  const connectSec = d.secs.find(s => /^Connect in Spain/.test(s.h));
-  ok(connectSec && connectSec.rows.length >= 1 && connectSec.rows.every(r => r.b === 'Connect'), 'Spain’s own mailboxes, each with a real Connect', connectSec);
-  const jobs = find(/InfoJobs/);
-  ok(jobs && /no sign-in/.test(jobs.sec) && jobs.b === 'See the jobs', 'InfoJobs is used without a sign-in, and leads to the jobs that use it', jobs);
-  const bank = find(/Santander/);
-  ok(bank && bank.b === 'Notify me' && /Not available in Spain/.test(bank.t), 'Spain’s banks get Notify me and a reason - never a Connect', bank);
-  ok(!d.secs.some(s => s.rows.some(r => /Link in Spending/.test(r.b))), 'and nothing offers to link a Spanish bank', d.secs.map(s => s.h));
-  await page.click('#lc-body [data-lc-find="job"]');
-  await page.waitForFunction(() => document.getElementById('cw-find') && document.getElementById('cw-find').value === 'job', null, { timeout: 8000 }).catch(() => {});
-  const crew = await page.evaluate(() => ({ v: (document.getElementById('cw-find') || {}).value, n: document.querySelectorAll('#cw-jobs-body .cw-job').length }));
-  ok(crew.v === 'job' && crew.n >= 3, 'See the jobs opens Crew already searched, with jobs in it', crew);
-  await ctx.close();
-}
-
-section('Connectors, from the United States: the bank really links there');
-{
-  const { ctx, page } = await openConnectors('US');
-  await page.waitForSelector('#int-local', { timeout: 15000 });
-  await page.click('#int-local');
-  await page.waitForFunction(() => document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
-  const r = await page.evaluate(() => [...document.querySelectorAll('#lc-body .int-card')].map(c => c.textContent.replace(/\s+/g, ' ')));
-  ok(r.some(t => /Your bank/.test(t) && /Link in Spending/.test(t)), 'the bank row goes to the real link in Spending', r.filter(t => /bank/i.test(t)));
-  ok(!r.some(t => /Bank sign-in in/.test(t)), 'and is not on a waiting list there', r.length);
-  ok(r.some(t => /Google Calendar/.test(t)) && r.some(t => /Google Classroom/.test(t)),
-     'with the calendar and the school system people there use, as in Crew’s top ten', r.filter(t => /Google/.test(t)).map(t => t.slice(0, 40)));
-  await page.selectOption('#lc-c', 'BR');
-  await page.waitForFunction(() => /Brazil/.test((document.getElementById('lc-h') || {}).textContent || '') && document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
-  const br = await page.evaluate(() => document.getElementById('lc-body').textContent.replace(/\s+/g, ' '));
-  ok(/Bank sign-in in Brazil/.test(br) && /Open Finance Brasil/.test(br), 'Brazil: no bank link yet, and what it would take', br.slice(br.indexOf('Bank sign-in'), br.indexOf('Bank sign-in') + 200));
-  await page.selectOption('#lc-c', 'JP');
-  await page.waitForFunction(() => /Japan/.test((document.getElementById('lc-h') || {}).textContent || '') && document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
-  const jp = await page.evaluate(() => ({ h: document.getElementById('lc-h').textContent, t: document.getElementById('lc-body').textContent }));
-  ok(/Japan/.test(jp.h) && /Bank sign-in in Japan/.test(jp.t), 'choosing another country shows that country, honestly', jp.h);
+  const d = await page.evaluate(() => ({
+    text: document.getElementById('vc').textContent.replace(/\s+/g, ' '),
+    svc: [...document.querySelectorAll('#app .cc-svc')].map(c => ({ n: (c.querySelector('.int-name') || {}).textContent, b: (c.querySelector('.int-act') || {}).textContent.trim(), k: c.dataset.cc })),
+    cls: window.__cls, src: (window.__src || []).slice(0, 4),
+  }));
+  ok(!/Services in Spain|Popular in Spain/.test(d.text), 'no "Services in" or "Popular in" Spain block', '');
+  ok(d.svc.length >= 20, 'Spain’s own services are in the topics', d.svc.length);
+  ok(d.svc.every(x => x.b === 'Use'), 'each one is Use - opened in AMV’s browser - never a Connect it cannot keep', d.svc.filter(x => x.b !== 'Use').slice(0, 3));
+  const banks = d.svc.filter(x => x.k === 'bank');
+  ok(banks.length === 0 || banks.every(x => !/Link|Connect/.test(x.b)), 'and no Spanish bank offers to link money', banks.slice(0, 3));
+  ok(d.cls < 0.001, 'and learning the country moved nothing on the page', { cls: +d.cls.toFixed(4), src: d.src });
   await ctx.close();
 }
 

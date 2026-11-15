@@ -317,6 +317,15 @@ function cwPeek(id){
   const allowed = _planAllowsCrew();
   const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
   const uses = _cwUseRows(j);
+  /* Where it looks, for the country it runs in - said here, where somebody is
+     deciding, and not on every card (owner, Nov 15). Only for the jobs that
+     are the same everywhere; a country's own jobs name its services already. */
+  const loc = (() => { try{
+    if(j.local || j.top || j.made || j.ccKind || !_cwLocKeys(j).length) return '';
+    _cwLocJobs[j.id] = j;
+    const t = _cwLocText(j.id, _cwCountryGuess());
+    return /:\s*\S/.test(t) ? t.replace(/^[^:]*:\s*/, '') : '';
+  }catch(e){ return ''; } })();
   const ic = (n) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_CW_USE_IC[n] || (/bank|card/i.test(n) ? _CW_USE_IC.Bank : /mail/i.test(n) ? _CW_USE_IC.Email : /calendar/i.test(n) ? _CW_USE_IC.Calendar : '') || '<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>'}</svg>`;
   let firstGo = true;
   const useRow = (u) => {
@@ -365,6 +374,7 @@ function cwPeek(id){
     <div class="cwp-scroll cj-p-b">
       <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
       <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
+      ${loc ? `<div class="cj-p-row"><div class="cj-p-k">${escH(T('Where it looks'))}</div><p class="cwp-loc" data-no-i18n>${escH(loc)}</p></div>` : ''}
       ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
       ${asks}
       ${sample || prompt ? `<details class="cwp-more cj-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}

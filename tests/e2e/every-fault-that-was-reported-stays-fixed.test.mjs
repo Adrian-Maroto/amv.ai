@@ -248,28 +248,25 @@ section('4. A design in Recents opens, and Build goes to Build');
   ok(r.kept > 0, 'without throwing the design away', String(r.kept));
 }
 
-section('5. Crew: the country changes the five at the top, and five lead it');
+section('5. Crew: the country changes the jobs, and its own lead them');
 {
+  /* One list since Nov 15: the heading names the country, its own jobs lead,
+     and choosing another country redraws both. */
   const r = await page.evaluate(async () => {
     setTab('crew'); await new Promise(x => setTimeout(x, 1800));
-    const five = document.querySelectorAll('.cw-top5-item .cw-job').length;
-    /* The dropdown is gone: the top is the five for where somebody is, and a
-       country chosen from "See more countries" becomes the one it is for. */
+    const uni = new Set(_cwUniversalJobs().map(j => j.id));
+    const lead = (cc) => [...document.querySelectorAll('#cj-grid .cj-card-b')].slice(0, 5).map(b => b.dataset.darg)
+      .filter(id => !uni.has(id) && new RegExp('^(top|cc|ev)_' + cc + '_').test(id)).length;
     cwCountry('UZ'); await new Promise(x => setTimeout(x, 900));
-    const uz = ((document.getElementById('cw-foryou') || {}).querySelector || (() => null)).call(document.getElementById('cw-foryou'), 'h3');
-    const uzT = uz ? uz.textContent : '';
+    const uz = { h: (document.getElementById('cx-jobs-h') || {}).textContent || '', lead: lead('uz') };
     cwCountry('JP'); await new Promise(x => setTimeout(x, 900));
-    const jpEl = document.querySelector('#cw-foryou h3');
-    const jpT = jpEl ? jpEl.textContent : '';
+    const jp = { h: (document.getElementById('cx-jobs-h') || {}).textContent || '', lead: lead('jp') };
     const page_ = document.querySelector('.crew-page');
-    const cat = document.querySelector('.crew-jobs-sec');
     const kids = [...page_.children];
-    return { five, uz: uzT.slice(0, 40), jp: jpT.slice(0, 40),
-             last: kids.indexOf(cat) === kids.length - 1 };
+    return { uz, jp, last: kids.indexOf(document.getElementById('cj-jobs')) === kids.length - 1 };
   });
-  ok(r.five === 5, 'five jobs lead the catalogue', String(r.five));
-  ok(/Uzbekistan/.test(r.uz), 'choosing Uzbekistan changes the five at the top', r.uz);
-  ok(/Japan/.test(r.jp), 'and choosing Japan changes them again', r.jp);
+  ok(/Uzbekistan/.test(r.uz.h) && r.uz.lead === 5, 'choosing Uzbekistan heads the list for it, its own five first', r.uz);
+  ok(/Japan/.test(r.jp.h) && r.jp.lead === 5, 'and choosing Japan changes them again', r.jp);
   ok(r.last, 'and nothing follows the catalogue', r.last);
 }
 
@@ -435,7 +432,11 @@ section('9. The round after that one');
        no longer a link under each one - it is reached by searching, or from a
        Crew job that needs an app - so a topic is counted by its heading, and
        its query is the one the list itself carries. */
-    const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
+    /* The app topics only. Since Nov 15 the country's own services join
+       these sections, and add two topics apps have none of (Government &
+       paperwork, Going out) - those are the country's, counted elsewhere. */
+    const extra = Object.keys(typeof CC_EXTRA_TOPICS !== 'undefined' ? CC_EXTRA_TOPICS : { gov: 1, out: 1 });
+    const secs = [...document.querySelectorAll('#int-catalog > .ss2')].filter(s => extra.indexOf(s.dataset.topic) < 0);
     const overview = { cats: secs.length,
       queries: AMV_APP_CATS.map(c => c.q),
       named: secs.filter(s => s.querySelector('h3')).length,

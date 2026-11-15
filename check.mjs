@@ -1072,7 +1072,8 @@ step('Every on-screen string in the code has a translation', () => {
     ['src/country/country-catalog.js', /const CC_TASKS = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 60],
     ['src/country/country-catalog.js', /const CC_CREW = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 20],
     ['src/integrations/integrations-view.js', /const TASK_EXTRA=\[[\s\S]*?\n\];/, /\["[^"]*","[^"]*","[^"]*","((?:\\.|[^"\\])+)"/g, 40],
-    ['src/integrations/integrations-view.js', /const TASK_BY_FACT=\[[\s\S]*?\n\];/, /\['[^']*','[^']*','((?:\\.|[^'\\])+)'/g, 15],
+    /* TASK_BY_FACT left with the advice and find-out groups (Nov 15, the
+       owner: Tasks is the country's own tasks and nothing else). */
   ];
   for (const [f, block, each, least] of TABLES) {
     const src = readFileSync(R(f), 'utf8'), m = block.exec(src);

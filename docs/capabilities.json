@@ -334,7 +334,7 @@
     "tests": ["tests/worker/configured-is-not-the-same-as-working.test.mjs"],
     "says": ["proved working", "configured and broken"] },
   { "id": "country.catalogue", "status": "built", "name": "Tasks, Crew jobs and services for each country, named from real organisations on Wikidata - checked by the script and again by the page, and counted truly",
-    "code": [["src/country/country-catalog.js", "ccLoad"], ["src/country/country-catalog.js", "ccFillCrew"], ["src/country/country-catalog.js", "ccFillIntegrations"], ["scripts/country-data.mjs", "EXCLUDE"]],
+    "code": [["src/country/country-catalog.js", "ccLoad"], ["src/country/country-catalog.js", "ccCrewLoad"], ["src/country/country-catalog.js", "ccFillIntegrations"], ["scripts/country-data.mjs", "EXCLUDE"]],
     "tests": ["tests/e2e/the-country-catalogue-names-real-services.test.mjs"],
     "says": ["country catalogue", "services per country"] }
  ]

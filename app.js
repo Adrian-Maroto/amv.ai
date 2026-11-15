@@ -23608,6 +23608,15 @@ function cwPeek(id){
   const allowed = _planAllowsCrew();
   const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
   const uses = _cwUseRows(j);
+  /* Where it looks, for the country it runs in - said here, where somebody is
+     deciding, and not on every card (owner, Nov 15). Only for the jobs that
+     are the same everywhere; a country's own jobs name its services already. */
+  const loc = (() => { try{
+    if(j.local || j.top || j.made || j.ccKind || !_cwLocKeys(j).length) return '';
+    _cwLocJobs[j.id] = j;
+    const t = _cwLocText(j.id, _cwCountryGuess());
+    return /:\s*\S/.test(t) ? t.replace(/^[^:]*:\s*/, '') : '';
+  }catch(e){ return ''; } })();
   const ic = (n) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_CW_USE_IC[n] || (/bank|card/i.test(n) ? _CW_USE_IC.Bank : /mail/i.test(n) ? _CW_USE_IC.Email : /calendar/i.test(n) ? _CW_USE_IC.Calendar : '') || '<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>'}</svg>`;
   let firstGo = true;
   const useRow = (u) => {
@@ -23656,6 +23665,7 @@ function cwPeek(id){
     <div class="cwp-scroll cj-p-b">
       <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
       <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
+      ${loc ? `<div class="cj-p-row"><div class="cj-p-k">${escH(T('Where it looks'))}</div><p class="cwp-loc" data-no-i18n>${escH(loc)}</p></div>` : ''}
       ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
       ${asks}
       ${sample || prompt ? `<details class="cwp-more cj-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
@@ -41768,63 +41778,11 @@ const AMVFinance = {
 try{ window.AMVFinance = AMVFinance; }catch(e){}
 
 /* ============================================================
-   AMV-104  THE INVESTING CHECK-IN, ON SCREEN.
-
-   The finance layer has been complete and read-only for a while and had no
-   screen at all - nothing in the app referenced it, so the only way to reach it
-   was to ask AMV in chat. This is the surface: link an account, see how the
-   money is doing, and set how often you want to be told.
-
-   It is written to be unable to lie. Every figure comes from the server call
-   that just ran; nothing is remembered and re-displayed as though it were
-   current, and if the provider cannot be reached the screen says that rather
-   than showing the last number it saw. On a screen about somebody's savings a
-   stale figure presented as live is the same as a false one.
+   LINKING A BANK, ON SCREEN (was the investing check-in until Nov 15, when
+   the owner removed investing and kept the link). The link itself is the
+   finance layer above; this is where somebody starts and ends it, and every
+   state is asked of the server rather than assumed.
    ============================================================ */
-const INVEST_WHEN = [
-  { k:'daily',    label:'Every morning',  detail:'each morning' },
-  { k:'evening',  label:'Every evening',  detail:'each evening' },
-  { k:'weekly',   label:'Once a week',    detail:'once a week' },
-  { k:'monthly',  label:'Once a month',   detail:'once a month' },
-];
-function _invWhen(){ try{ return loadStr('amv_inv_when')||''; }catch(e){ return ''; } }
-/* When the figures on screen were actually taken, so a failed check can label
-   them honestly instead of implying they are current. */
-let _INV_LAST_OK = 0;
-function _invMoney(n, cur){
-  const v=Math.round((+n||0)*100)/100;
-  try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(v); }
-  catch(e){ return '$'+v.toFixed(2); }
-}
-
-function _invResultHTML(d){
-  if(!d) return '';
-  if(d.first){
-    /* The honest first answer. Reporting 0% here would be a claim about the
-       market rather than a statement about what AMV knows. */
-    return '<div class="inv-res"><div class="inv-total">'+escH(_invMoney(d.total,d.currency))+'</div>'+
-      '<div class="inv-sub">This is the first check-in, so there is nothing to compare it against yet. '+
-      'The next one will tell you what changed.</div></div>';
-  }
-  const up=d.direction==='up', flat=d.direction==='flat';
-  const cls=flat?'flat':(up?'up':'down');
-  const sign=up?'+':'';
-  const pct=(d.changePct==null)?'':(' \u00b7 '+sign+d.changePct+'%');
-  const rows=(d.byAccount||[]).map(a=>
-    '<div class="inv-row"><span class="inv-row-n">'+escH(a.name||'Account')+'</span>'+
-    '<span class="inv-row-b">'+escH(_invMoney(a.balance,d.currency))+'</span>'+
-    (a.isNew
-      ? '<span class="inv-row-c new">new</span>'
-      : '<span class="inv-row-c '+((a.change||0)>=0?'up':'down')+'">'+((a.change||0)>=0?'+':'')+escH(_invMoney(a.change,d.currency))+'</span>')+
-    '</div>').join('');
-  return '<div class="inv-res">'+
-    '<div class="inv-total">'+escH(_invMoney(d.total,d.currency))+'</div>'+
-    '<div class="inv-change '+cls+'">'+(flat?'No change':(sign+_invMoney(d.changeUSD,d.currency)+pct))+
-      '<span class="inv-since"> since your last check-in</span></div>'+
-    (rows?'<div class="inv-rows">'+rows+'</div>':'')+
-  '</div>';
-}
-
 /* Coming back from the provider. The server is asked whether a session actually
    completed - the browser cannot know, and must not guess, because "linked"
    decides whether AMV starts reading somebody's accounts. */
@@ -41832,18 +41790,18 @@ function _wireInvDone(pane){
   on($('inv-link-done'),'click',async()=>{
     const say=$('inv-link-say');
     const btn=$('inv-link-done'); if(btn) btn.disabled=true;
-    if(say) say.textContent='Checking…';
+    if(say) say.textContent=T('Checking…');
     const r=await AMVFinance.linkFinish();
     if(btn) btn.disabled=false;
     if(r.ok){
       try{ saveStr('amv_fin_pending',''); }catch(e){}
       _renderInvestPane(pane);
-      const s=$('inv-say'); if(s) s.textContent='Linked. Check now to see where you stand.';
+      const s=$('inv-say'); if(s) s.textContent=T('Linked. Crew and chat can read it now.');
       return;
     }
     if(say) say.textContent = r.code==='not_finished'
-      ? 'That link was not completed, so nothing was connected. Start it again when you are ready.'
-      : (r.error||'Could not finish the link.')+' Nothing was connected.';
+      ? T('That link was not completed, so nothing was connected. Start it again when you are ready.')
+      : (r.error||T('Could not finish the link.'))+' '+T('Nothing was connected.');
   });
 }
 
@@ -41882,7 +41840,7 @@ function openBankLink(){
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="ov" id="bank-bg"><div class="ccp bank-dlg" role="dialog" aria-modal="true" aria-label="'+escH(T('Link a bank'))+'">'
     +'<header class="ccp-h"><h2>'+escH(T('Link a bank'))+'</h2><button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button></header>'
-    +'<div class="bank-b" id="bank-pane"></div></div></div>';
+    +'<div class="bank-b" id="bank-pane" data-mode="bank"></div></div></div>';
   r.classList.add('on');
   onBackdrop($('bank-bg'), closeOvr);
   on($('bank-x'),'click',closeOvr);
