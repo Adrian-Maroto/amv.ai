@@ -649,7 +649,9 @@ function _cwMadeForJobs(cc){
     cat: m.cat, icon: m.icon, every: m.every, on: false, needs: 'Web research',
     title: m.t(f), desc: m.d(f, C), where: String(f[m.k]),
     asks: { q: m.ask[0], ph: m.ask[1] },
-    prompt: m.p(f, C) + ' The user is in ' + C + '.',
+    /* The same closing rule as every other country job: a made-for job is
+       no less able to invent a date, a price or a listing. */
+    prompt: m.p(f, C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
   }));
 }
 /* ── A HUNDRED AND MORE FOR EVERY COUNTRY ─────────────────────────────────────

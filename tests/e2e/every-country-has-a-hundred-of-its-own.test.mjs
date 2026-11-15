@@ -7,10 +7,10 @@
    Mongolia's and the one in the United States is America's.
 
    Measured with the real Worker behind a real server, told where the request
-   comes from. The list below the top ten is counted card by card: how many are
-   the country's own, that they lead, that none of another country's leak in,
-   that nothing at the top of the page is repeated, that the page does not move
-   while they arrive, and that one of them opens and switches on for real. */
+   comes from. Crew's one list is counted job by job: how many are the
+   country's own, that they lead, that none of another country's leak in, that
+   none repeats, that the page does not move while they arrive, and that one
+   of them opens and switches on for real. */
 import { createServer } from 'http';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
@@ -71,124 +71,96 @@ async function open(from, width = 1280) {
   return { ctx, page };
 }
 
-/* What the catalogue holds once the country is known: every card's job id,
-   in order, and the ids already shown in the top ten and the made-for row. */
+/* What the list holds once the country is known: every job in it, in order,
+   what is drawn, and the categories. Crew is one list now (Nov 15): the
+   country's own lead it, the jobs that run anywhere follow, then the jobs
+   built from the country's real services. */
 async function catalogue(page, cc) {
-  const low = cc.toLowerCase();
-  await page.waitForFunction((low) => {
-    const g = document.getElementById('cw-foryou');
-    return g && !g.hasAttribute('aria-busy')
-      && document.querySelectorAll('#cw-jobs-body .cw-job-body[data-darg^="cc_' + low + '_"]').length >= 20;
-  }, low, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction((cc) => typeof _cjList === 'function' && _cwLocalState[cc] === 'ok'
+      && (_cwMadeMore(cc) || []).length >= 100 && !!document.querySelector('#cj-grid .cj-card-b'), cc, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
-  return page.evaluate(() => ({
-    ids: [...document.querySelectorAll('#cw-jobs-body .cw-job-body')].map(b => b.getAttribute('data-darg')),
-    titles: [...document.querySelectorAll('#cw-jobs-body .cw-job-t')].map(t => t.textContent),
-    groups: [...document.querySelectorAll('#cw-jobs-body .cw-cat')].map(g => [...g.querySelectorAll('.cw-job-body')].map(b => b.getAttribute('data-darg'))),
-    catOf: Object.fromEntries(_cwShowcase().map(j => [j.id, j.cat])),
-    top: [...document.querySelectorAll('#cw-foryou [data-darg], #cw-madefor [data-darg]')].map(b => b.getAttribute('data-darg')),
-    cls: window.__cls, src: window.__clsSrc,
-  }));
-}
-
-/* Every card the category views hold, category by category - the whole pool,
-   which All only previews. Pressed through the chips, the way a person would. */
-async function everyCategory(page) {
-  const cats = await page.evaluate(() => [...document.querySelectorAll('.cw-chip')].map(c => c.dataset.darg).filter(c => c && c !== 'all'));
-  const ids = [];
-  for (const c of cats) {
-    await page.evaluate((c) => cwCat(c), c);
-    ids.push(...await page.evaluate(() => [...document.querySelectorAll('#cw-jobs-body .cw-job-body')].map(b => b.getAttribute('data-darg'))));
-  }
-  await page.evaluate(() => cwCat('all'));
-  return ids;
+  return page.evaluate(() => {
+    const list = _cjList();
+    return {
+      ids: list.map(j => j.id), titles: list.map(j => j.title),
+      cat: Object.fromEntries(list.map(j => [j.id, _cjCat(j)])),
+      drawn: [...document.querySelectorAll('#cj-grid .cj-card-b')].map(b => b.getAttribute('data-darg')),
+      uni: _cwUniversalJobs().map(j => j.id),
+      cls: window.__cls, src: window.__clsSrc,
+    };
+  });
 }
 
 const NAMES = { ES: 'Spain', US: 'United States', MN: 'Mongolia', CN: 'China', JP: 'Japan', NG: 'Nigeria', IN: 'India' };
 for (const [cc, width] of [['ES', 1280], ['US', 1280], ['MN', 1280], ['CN', 390], ['JP', 1280], ['NG', 390], ['IN', 1280]]) {
   section(NAMES[cc] + (width === 390 ? ', on a phone' : ''));
   const { ctx, page } = await open(cc, width);
-  const low = 'cc_' + cc.toLowerCase() + '_';
+  const low = cc.toLowerCase();
   const r = await catalogue(page, cc);
-  const top = new Set(r.top);
   const more = await page.evaluate((cc) => new Set((_cwMadeMore(cc) || []).map(j => j.id)).size, cc);
-  ok(more >= 100, 'a hundred or more jobs made for ' + NAMES[cc] + ', before the top ten - ' + more, more);
-  const pool = await everyCategory(page);
-  const own = new Set(pool.filter(id => id.startsWith(low)));
-  ok(own.size >= 100, 'the categories hold them - ' + own.size + ' of the country’s own, besides the top of the page', own.size);
-  ok(new Set(pool).size === pool.length, 'each in one category only', pool.length);
-  /* Only where a category has both kinds to show - Inbox & calendar is all
-     connected-account work, and a country's own jobs are never about a mailbox. */
-  const both = new Set(pool.filter(id => id.startsWith(low)).map(id => r.catOf[id]).filter(Boolean));
-  const mixed = r.groups.filter(g => g.length >= 4 && r.catOf[g.find(id => !id.startsWith(low))] && both.has(r.catOf[g[0]])
-    && !(g.some(id => id.startsWith(low)) && g.some(id => !/^cc_/.test(id))));
-  /* And alternated: never three of one kind in a row while the other kind
-     still has cards to show in that category. */
-  const alt = r.groups.filter(g => {
-    const k = g.map(id => id.startsWith(low) ? 'o' : 'e').join('');
-    return both.has(r.catOf[g[0]]) && /ooo|eee/.test(k.slice(0, Math.min(k.length, 2 * Math.min((k.match(/o/g) || []).length, (k.match(/e/g) || []).length))));
-  });
-  ok(mixed.length === 0 && alt.length === 0, 'the first cards of each category are both the country’s own and the ones that run on your accounts', mixed.slice(0, 1));
-  ok(r.ids.length <= 120, 'All is a shelf, not a wall - ' + r.ids.length + ' cards', r.ids.length);
-  ok(!pool.some(id => /^cc_[a-z]{2}_/.test(id) && !id.startsWith(low)), 'none written for another country', pool.filter(id => /^cc_[a-z]{2}_/.test(id) && !id.startsWith(low)).slice(0, 3));
-  ok(!pool.some(id => top.has(id)), 'nothing already at the top of the page repeated below it', pool.filter(id => top.has(id)).slice(0, 3));
+  ok(more >= 100, 'a hundred or more jobs made for ' + NAMES[cc] + ' - ' + more, more);
+  const own = new Set(r.ids.filter(id => id.startsWith('cc_' + low + '_')));
+  ok(own.size >= 100, 'the list holds them - ' + own.size + ' of the country’s own', own.size);
+  ok(new Set(r.ids).size === r.ids.length, 'each once', r.ids.length);
+  /* The country's own lead: what is drawn first is written or built for it,
+     not the jobs that are the same everywhere. */
+  const uni = new Set(r.uni);
+  const lead = r.drawn.slice(0, 12).filter(id => uni.has(id));
+  ok(lead.length === 0, 'the first cards are the country’s own', lead);
+  ok(r.drawn.length > 0 && r.drawn.length <= 48, 'only the first rows are drawn - ' + r.drawn.length + ' cards', r.drawn.length);
+  ok(r.ids.some(id => uni.has(id)), 'and the jobs that run on your accounts anywhere are in it too', '');
+  const foreign = r.ids.filter(id => { const m = /^(top|cc|ev)_([a-z]{2})_/.exec(id); return m && m[2] !== low && m[2] !== 'ev'; });
+  ok(foreign.length === 0, 'none written for another country', foreign.slice(0, 3));
   ok(!r.titles.some(t => /\{[A-Za-z0-9]\}|undefined|null/.test(t)), 'no unfilled blanks in any title', r.titles.filter(t => /\{[A-Za-z0-9]\}|undefined|null/.test(t)).slice(0, 3));
   ok(r.cls < 0.001, 'arriving without moving the page', { cls: +r.cls.toFixed(4), moved: r.src });
   await ctx.close();
 }
 
-section('When the country\u2019s data arrives late, the list and its chips are redrawn together');
+section('When the country’s data arrives late, the list and its chips are redrawn together');
 {
-  /* The list draws first from the jobs that are the same everywhere, and the
-     country's own arrive a moment later. On a phone the list is below the
-     fold then, so it is re-ranked in place - and the chips over it are counted
-     from the same list, so they must be redrawn with it, or they say the old
-     numbers and miss the categories only the country's own jobs fill. */
+  /* The list draws first from what is already here, and the country's own
+     arrive a moment later. The chips over it are counted from the same list,
+     so they must be redrawn with it, or they say the old numbers and miss the
+     categories only the country's own jobs fill. */
   SLOW = 1500;
   const { ctx, page } = await open('ES', 390);
-  await page.waitForFunction(() => document.querySelectorAll('#cw-jobs-body .cw-job-body[data-darg^="cc_es_"]').length >= 20, null, { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(400);
+  await catalogue(page, 'ES');
   SLOW = 0;
   const r = await page.evaluate(() => {
-    const pool = _cwShowcase();
-    const want = { all: pool.length };
-    pool.forEach(j => { want[j.cat] = (want[j.cat] || 0) + 1; });
+    const list = _cjList();
+    const want = { all: list.length };
+    list.forEach(j => { const c = _cjCat(j); want[c] = (want[c] || 0) + 1; });
     const got = {};
-    document.querySelectorAll('.cw-chip').forEach(c => { got[c.dataset.darg] = Number((c.querySelector('.cw-chip-n') || {}).textContent); });
-    return { want, got, own: document.querySelectorAll('#cw-jobs-body .cw-job-body[data-darg^="cc_es_"]').length, cls: window.__cls, src: window.__clsSrc };
+    document.querySelectorAll('#cj-cats .cj-chip').forEach(c => { got[c.dataset.darg] = Number(((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, '')); });
+    return { want, got, own: list.filter(j => /^cc_es_/.test(j.id)).length, cls: window.__cls, src: window.__clsSrc };
   });
-  ok(r.own >= 20, 'Spain\u2019s own arrived in the list', r.own);
+  ok(r.own >= 100, 'Spain’s own arrived in the list', r.own);
   const wrong = Object.keys(r.want).filter(k => r.got[k] !== r.want[k]);
   ok(wrong.length === 0, 'every chip counts the list under it, and every category has its chip', wrong.map(k => k + ': ' + r.got[k] + ' vs ' + r.want[k]));
   ok(r.cls < 0.001, 'and nothing on the screen moved', { cls: +r.cls.toFixed(4), moved: r.src });
   await ctx.close();
 }
 
-section('See all opens the whole category, at its top');
+section('A category opens whole, through Show more');
 {
   const { ctx, page } = await open('ES', 390);
   await catalogue(page, 'ES');
-  const before = await page.evaluate(() => {
-    const b = document.querySelector('#cw-jobs-body .cw-cat-more .int-seemore');
-    const cat = b && b.dataset.darg;
-    const shown = b ? b.closest('.cw-cat').querySelectorAll('.cw-job').length : 0;
-    const n = b ? Number((b.textContent.match(/\d+/) || [0])[0]) : 0;
-    return { cat, shown, n, h: b ? Math.round(b.getBoundingClientRect().height) : 0 };
+  const chip = await page.evaluate(() => {
+    const c = [...document.querySelectorAll('#cj-cats .cj-chip')].filter(c => c.dataset.darg !== 'all')
+      .map(c => ({ cat: c.dataset.darg, n: Number(((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, '')), h: Math.round(c.getBoundingClientRect().height) }))
+      .sort((a, b) => b.n - a.n)[0];
+    return c;
   });
-  ok(before.cat && before.n > before.shown, 'a category shows a few and says how many there are', before);
-  ok(before.h >= 32, 'and See all is big enough to press', before.h);
-  await page.click('#cw-jobs-body .cw-cat-more .int-seemore');
-  await page.waitForTimeout(400);
+  ok(chip && chip.n > 24, 'a category says how many it holds', chip);
+  ok(chip && chip.h >= 32, 'and its chip is big enough to press', chip && chip.h);
+  await page.click('#cj-cats .cj-chip[data-darg="' + chip.cat + '"]');
+  for (let i = 0; i < 400 && await page.$('#cj-grid .cj-more'); i++) { await page.click('#cj-grid .cj-more'); await page.waitForTimeout(30); }
   const after = await page.evaluate(() => ({
-    cards: document.querySelectorAll('#cw-jobs-body .cw-job').length,
-    chip: (document.querySelector('.cw-chip.on') || {}).dataset?.darg,
-    chipTop: Math.round((document.querySelector('.cw-chips') || document.body).getBoundingClientRect().top),
-    more: document.querySelectorAll('#cw-jobs-body .cw-cat-more').length,
+    cards: document.querySelectorAll('#cj-grid .cj-card').length,
+    on: (document.querySelector('#cj-cats .cj-chip.on') || {}).dataset?.darg,
   }));
-  ok(after.cards === before.n, 'all ' + before.n + ' are there', after.cards);
-  ok(after.chip === before.cat, 'with the category’s chip marked', after.chip);
-  ok(after.chipTop >= 0 && after.chipTop < 300, 'opened at its top, not scrolled past it', after.chipTop);
-  ok(after.more === 0, 'and no See all inside a category that is already whole', after.more);
+  ok(after.cards === chip.n, 'all ' + chip.n + ' are there', after.cards);
+  ok(after.on === chip.cat, 'with the category’s chip marked', after.on);
   await ctx.close();
 }
 
@@ -196,9 +168,9 @@ section('Each country’s own work is its own - Spain names Spain’s, the US na
 {
   const es = await open('ES');
   const e = await catalogue(es.page, 'ES');
-  const et = e.titles.join(' | ');
+  const et = e.titles.slice(0, 200).join(' | ');
   ok(/Spain|Spanish|Hacienda|Mercadona|Renfe|Idealista|Selectividad|PAU|EvAU|InfoJobs|BBVA|Santander|CaixaBank/i.test(et), 'Spain’s list names Spain and its institutions', et.slice(0, 240));
-  ok(!/\bIRS\b|Walmart|Zillow/.test(et), 'and nothing American', et.match(/\bIRS\b|Walmart|Zillow/));
+  ok(!/\bIRS\b|Walmart|Zillow/.test(e.titles.join(' | ')), 'and nothing American', e.titles.join(' | ').match(/\bIRS\b|Walmart|Zillow/));
   await es.ctx.close();
   const cn = await open('CN');
   const c = await catalogue(cn.page, 'CN');
@@ -211,11 +183,11 @@ section('One of them opens, and switches on for real');
 {
   const { ctx, page } = await open('ES');
   const r = await catalogue(page, 'ES');
-  const id = r.ids.find(x => x.startsWith('cc_es_'));
-  await page.click('#cw-jobs-body .cw-job-body[data-darg="' + id + '"]');
-  await page.waitForFunction(() => /How often/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
-  const dlg = await page.evaluate(() => ((document.getElementById('ovr') || {}).textContent || '').replace(/\s+/g, ' '));
-  ok(/How often/.test(dlg), 'pressing the card opens what it does', dlg.slice(0, 200));
+  const id = r.drawn.find(x => x.startsWith('cc_es_'));
+  await page.click('#cj-grid .cj-card-b[data-darg="' + id + '"]');
+  await page.waitForSelector('#ovr #cwp-cad', { timeout: 8000 }).catch(() => {});
+  const dlg = await page.evaluate(() => ({ cad: !!document.querySelector('#ovr #cwp-cad'), text: ((document.getElementById('ovr') || {}).textContent || '').replace(/\s+/g, ' ') }));
+  ok(dlg.cad, 'pressing the card opens what it does, with when it runs', dlg.text.slice(0, 200));
   await page.keyboard.press('Escape');
   /* Switched on through the Worker, as a signed-in person on the plan Crew
      needs - on it for real, the way a verified payment leaves it, because the
@@ -228,11 +200,11 @@ section('One of them opens, and switches on for real');
   ok(signed === 'ok', 'signed up', signed);
   await page.waitForTimeout(300);
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
-  const sel = '#cw-jobs-body .cw-toggle[data-darg="' + id + '"]';
+  const sel = '#cj-grid .cw-toggle[data-darg="' + id + '"]';
   await page.waitForSelector(sel, { timeout: 15000 }).catch(() => {});
   const before = created.length;
   await page.click(sel);
-  const box = await page.waitForSelector('#ovr input, #ovr textarea', { timeout: 5000 }).catch(() => null);
+  const box = await page.waitForSelector('#ovr input:not([type=time]), #ovr textarea', { timeout: 5000 }).catch(() => null);
   if (box) { await box.fill('Valencia'); await page.click('#ovr button.bp'); }
   for (let i = 0; i < 40 && created.length === before; i++) await page.waitForTimeout(150);
   const c = created[created.length - 1] || {};

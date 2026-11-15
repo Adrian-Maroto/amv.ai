@@ -1357,7 +1357,10 @@ function _cjList(){
   safe(() => _cwTopTen(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
-  safe(() => _cwMadeMore(cc)).forEach(push);
+  /* The country's own, most used there first (_cwPopScore - counted where
+     there are counts, researched where there are not). */
+  safe(() => _cwMadeMore(cc)).map((j, i) => [j, (() => { try{ return _cwPopScore(j, cc); }catch(e){ return 0; } })(), i])
+    .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   cat.forEach(push);
   _cjCache = out; _cjCacheKey = key;
