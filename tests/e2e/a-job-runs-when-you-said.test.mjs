@@ -52,7 +52,10 @@ section('A browser job gets the same choice, and its first run is at that time')
   const r = await page.evaluate(async () => {
     closeOvr(); await new Promise(s => setTimeout(s, 100));
     window._cwUnattendedReady = () => false;   // the section above stood it in for a server job
-    const j = (_cwAllJobs() || []).find(x => !_cwRunsUnattended(x) && (!x.every || ['daily','weekly','monthly'].includes(x.every)) && !(x.asks && x.asks.q) && x.id !== 'job_hunt');
+    const j = (_cwAllJobs() || []).find(x => !_cwRunsUnattended(x) && (!x.every || ['daily','weekly','monthly'].includes(x.every)) && !(x.asks && x.asks.q) && x.id !== 'job_hunt'
+      /* One that has what it needs: since the Build 15 audit a job missing something
+         is not turned on at all - it goes to what it needs instead. */
+      && !_cwNeedsMissing(x).length);
     if (!j) return { none: true };
     cwPeek(j.id); await new Promise(s => setTimeout(s, 300));
     const cad = document.getElementById('cwp-cad'); if (!cad) return { picker: false };

@@ -29,8 +29,9 @@
 
    THE PRIMARY BUTTON DOES NOT PROMISE WHAT CANNOT HAPPEN. "Turn it on" filled
    and blue over an unmet requirement is a button that saves a setting and
-   changes nothing. Turning it on anyway is still offered - saving now and
-   connecting later is reasonable - it is just not the loud one.
+   changes nothing. (Turning it on anyway was offered as the quiet choice
+   until the Build 15 audit removed it: saved on, it only failed at its first
+   run.)
 
    BROKEN FIVE WAYS, AND THREE OF THEM SURVIVED THE FIRST VERSION OF THIS
    FILE. Pointing the bank at Connectors and dropping the remembered job were
@@ -99,7 +100,10 @@ section('A job that is not ready says so, with the way out attached');
   const p = await openPanel(shapes.bank);
   ok(p.block, 'the requirement is a block with a button, not a line in a list', p);
   ok(p.connectPrimary, 'and connecting is the filled action', p);
-  ok(/anyway/i.test(p.anyway), 'while turning it on regardless is still offered', p.anyway);
+  /* Build 15 audit: "Turn on anyway" is gone. A job missing what it needs was
+     saved switched on and then failed at its first run, which reads as AMV
+     not working; now the only way forward is to connect what it needs. */
+  ok(!p.anyway, 'and there is no way to turn it on regardless', p.anyway);
 }
 
 const readNeeds = (jid) => page.evaluate(async (id) => {
