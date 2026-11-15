@@ -123,27 +123,33 @@ async function apiKeyRevoke(request, env) {
      revoked key as active, which is a screen telling somebody the opposite of
      the truth about a credential. */
   let hash = '';
-  const found = await _withKind(env, 'apikeys', user.email, (rec) => {
+  const found = await _withKind(env, 'apikeys', user.email, async (rec) => {
     const item = (rec.items || []).find(k => k.id === id);
-    if (!item) return false;
+    if (!item) return { commit: false, missing: true };
     hash = item.hash || '';
+    if(env.AMV_COUNTER){
+      try {
+        if(!hash) throw new Error('missing key identity');
+        const proof = await counter(env, 'apikeyrev:' + hash, { op: 'incr', amount: 1, keep: true, strict: true });
+        if(!proof || !Number.isFinite(proof.value) || proof.value < 1) throw new Error('revocation not acknowledged');
+      } catch(e) {
+        audit(env, 'apikey_revoke_unconfirmed', { email: user.email, id });
+        /* Do not mark the UI record revoked before the authority commits. */
+        return { commit: false, error: 'revocation_unconfirmed', status: 503 };
+      }
+    }
     if (!item.revoked) item.revoked = Date.now();
-    return true;
+    return { found: true };
   }, { items: [] });
-  if (!found) return json({ error: 'not found' }, 404);
-  /* Delete the lookup too - this is what the request path reads, and deleting
-     it is what revocation really is. Marking the record without removing this
-     would leave the key working. */
-  if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
-  /* AND IN ONE PLACE EVERY LOCATION READS AT ONCE (scale audit, owner yes,
-     Oct 26). The KV delete above can take a minute or more to be seen
-     everywhere, and for that minute the key still worked somewhere. A key's
-     own object, raised once, is what _userFromApiKey asks first. Failing to
-     raise it is said, and the KV delete still ends the key within the minute. */
-  if (hash && env.AMV_COUNTER) {
-    try { await counter(env, 'apikeyrev:' + hash, { op: 'incr', amount: 1, keep: true, strict: true }); }
-    catch (e) { audit(env, 'apikey_revoke_slow', { email: user.email, id, error: String((e && e.message) || e).slice(0, 120) }); }
-  }
+  if (!found || found.missing) return json({ error: 'not found' }, 404);
+  if(found.error) return json({ ok: false, id, revoked: false, code: 'revocation_unconfirmed',
+    error: 'Revocation could not be confirmed everywhere. Retry this request; do not assume the key is disabled yet.' }, 503);
+  /* A strong revocation is already committed; deletion only clears a cache.
+     In unbound development mode, the local flag/delete still reduce access
+     but cannot prove immediate revocation in every KV region. */
+  if(hash){ try { await env.AMV_KV.delete(`apikey:${hash}`); } catch(e) { /* Revocation is decided above, not by this cache cleanup. */ } }
+  if(!env.AMV_COUNTER) return json({ ok: false, id, revoked: false, pending: true, code: 'revocation_unconfirmed',
+    error: 'The key was marked for revocation locally, but global confirmation is unavailable.' }, 503);
   audit(env, 'apikey_revoked', { email: user.email, id });
   await _userEvent(env, request, user.email, 'api_key_revoked');
   return json({ ok: true, id, revoked: true });

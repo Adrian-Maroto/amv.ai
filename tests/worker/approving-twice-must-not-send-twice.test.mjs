@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* APPROVING IS WHAT SENDS IT, AND THERE WAS NOTHING TO STOP IT HAPPENING TWICE.
 
    `crewApprovalAct` reads the queued item, sends the email, and THEN removes it
@@ -49,7 +51,7 @@ function makeEnv() {
       delete: async k => { kv.delete(k); },
       list: async ({ prefix }) => ({ keys: [...kv.keys()].filter(k => k.startsWith(prefix || '')).map(name => ({ name })), list_complete: true }),
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -68,7 +70,7 @@ function makeEnv() {
         if (b.op === 'incr') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const tokenFor = (env, email) => W.signToken({ email }, env.JWT_SECRET, 3600, env, 'access');

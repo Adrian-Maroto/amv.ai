@@ -38,11 +38,10 @@
 const D1_ROW_MAX_BYTES = 1900000;
 /* Records whose writes go through putIfRev, and are read as committed. */
 const REV_KINDS = new Set(['data']);
-const REV_BLOB_TTL_S = 2 * 86400;
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
-const _revBlobKey = (kind, id, rev) => 'revblob:' + kind + ':' + id + ':' + rev;
-/* The only shape such a key has: a known kind, an id with no spaces, a revision. */
-const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}$/.test(String(k));
+const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
+/* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
+const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -51,9 +50,8 @@ async function _revDigest(text){
    and digest are committed; the usual key answers if it matches, else the
    committed value under its own key (and the usual key is repaired). Nothing
    committed yet - a record from before this, or no object bound - is read as
-   it always was. A committed value that cannot be found anywhere this region
-   can see is answered from the usual key, marked `_revStale`, so a writer
-   building on it is refused by the commit rather than overwriting. */
+   it always was. A committed value that cannot be found in this region is refused with a
+   retryable 503; known-stale data is never returned as current. */
 async function _revRead(env, kind, id, raw){
   if(!env.AMV_COUNTER) return raw;
   let st = null;
@@ -72,7 +70,9 @@ async function _revRead(env, kind, id, raw){
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
   let blob = null;
-  try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; }
+  try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev, st.digest)); } catch(e) { blob = null; }
+  /* Reader-first compatibility with records written before build 15. */
+  if(blob == null){ try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; } }
   if(blob != null && (await _revDigest(blob)) === st.digest){
     try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
@@ -192,27 +192,32 @@ const DB = {
      decides - refuse the signup, send the payout to review, apply the strictest
      limits - rather than being handed a null that means the opposite of the
      truth. */
-  async getStrict(env, kind, id){
+  async getStrict(env, kind, id, shape = 'object'){
     let raw = null;
     if(this._hasD1(env)){
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
-      raw = row && row.json ? row.json : null;
+      raw = row == null ? null : row.json;
     } else {
       const pg = await _pgReadServe(env, kind, id);
-      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
-      raw = await env.AMV_KV.get(`${kind}:${id}`);
+      raw = pg !== undefined ? pg : await env.AMV_KV.get(`${kind}:${id}`);
+      if(REV_KINDS.has(kind)) raw = await _revRead(env, kind, id, raw);
     }
-    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
-    try { const value = JSON.parse(raw); _pgShadowRead(env, kind, id, raw); return value; }
-    catch (e) {
+    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }
+    try {
+      const value = JSON.parse(raw);
+      /* Security records must be objects. Generic mutation lists explicitly
+         request container shape so real arrays remain supported. In neither
+         case may stored null/scalars masquerade as an absent record. */
+      if(!value || typeof value !== 'object' || (shape !== 'container' && Array.isArray(value))) throw new Error('invalid record shape');
+      _pgShadowRead(env, kind, id, raw);
+      return value;
+    } catch(e) {
       try {
         audit(env, 'record_unreadable_strict', { kind, id, bytes: String(raw).length });
         await alertOnce(env, 'record_unreadable:' + kind,
-          'A stored ' + kind + ' record could not be parsed. This one decides whether somebody is allowed '
-          + 'something, so it is being treated as unreadable rather than as absent - the request was refused '
-          + 'instead of being granted by default. Repair the record.', 30);
-      } catch(_) { /* logging: it never decides anything */ }
-      throw new UnreadableRecordError(`${kind}:${id}`, 'invalid JSON');
+          'A stored ' + kind + ' authorization record is not a readable JSON object. Repair it; absence must not grant permission.', 30);
+      } catch(_) { /* Observability never changes the refusal. */ }
+      throw new UnreadableRecordError(`${kind}:${id}`, 'invalid record');
     }
   },
   async put(env, kind, id, obj, kvOpts){
@@ -300,40 +305,58 @@ const DB = {
        writer that died between the two left the revision ahead of the value,
        a later writer overtook it after a timeout, and a reader in another
        region could see either. Now the value is written first, under a key
-       of its own that is never changed (`revblob:<kind>:<id>:<rev>`), and
+       of its own that is never changed (`revblob:<kind>:<id>:<rev>:<digest>`), and
        the object commits revision AND digest in one step - the commit is the
        write. The usual key is a copy of the committed value; a reader takes
        whichever copy matches the committed digest (_revRead), so a copy that
        failed, or a region that has not seen it yet, never answers as current.
        Nothing is ever overtaken by a timer. */
     if(env.AMV_COUNTER){
-      /* Created after a delete: the writer read "absent", so it goes on from
-         the tombstone's generation (revCommit refuses any other). */
+      let st = null;
+      try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+      if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
       let j2 = j;
-      if(!(+expectedRev)){
-        let st = null;
-        try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
-        if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
-        if(st.absent){ expectedRev = +st.rev || 0; obj._rev = expectedRev + 1; j2 = JSON.stringify(obj); }
+      if(!(+expectedRev) && st.absent){
+        expectedRev = +st.rev || 0;
+        obj._rev = expectedRev + 1;
+        j2 = JSON.stringify(obj);
       }
-      const nextRev = +obj._rev || 0;
+      const base = +expectedRev || 0, nextRev = +obj._rev || 0;
+      if(!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(nextRev) || nextRev <= base)
+        return { ok: false, guarded: true };
+      if(st.committed && st.rev !== base) return { ok: false, guarded: true };
       const digest = await _revDigest(j2);
-      const blob = _revBlobKey(kind, id, nextRev);
+      const blob = _revBlobKey(kind, id, nextRev, digest);
       if(!_revBlobKeyOK(blob)) throw new Error('bad_record_key');
-      await env.AMV_KV.put(blob, j2, { expirationTtl: REV_BLOB_TTL_S });
-      const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
+      /* Write durable bytes ONCE before publication. A TTL followed by an
+         immediate TTL-removal write violates KV's same-key write limit and
+         can expire the only acknowledged copy. Different candidates never
+         overwrite one another, even when they propose the same revision. */
+      await env.AMV_KV.put(blob, j2);
+      const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: base, set: nextRev, digest });
       if(!cas || !cas.ok){
-        try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+        /* A lost response can mean the commit succeeded. Never delete an
+           uncertain candidate. Definite conflicts can be collected only after
+           a fresh authority read proves this digest is not the current one. */
+        if(cas && !cas.unavailable){
+          try {
+            const now = await counter(env, _revName(kind, id), { op: 'revGet' });
+            if(now && !now.unavailable && now.committed &&
+               (now.rev > nextRev || (now.rev === nextRev && now.digest !== digest)))
+              await env.AMV_KV.delete(blob);
+          } catch(_) { /* Retain uncertain bytes for reconciliation. */ }
+        }
         return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
       }
-      /* Committed. The copy is for readers; if it cannot be written, the
-         committed value is kept with no expiry until a reader repairs it. */
       try { await env.AMV_KV.put(`${kind}:${id}`, j2); }
-      catch(e){
-        try { await env.AMV_KV.put(blob, j2); } catch(_) { /* said by the audit on the next line */ }
-        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
+      catch(e){ try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* Logging cannot undo a committed write. */ } }
+      /* The previous committed snapshot is no longer authoritative. A new
+         writer cannot return to it: revCommit enforces exact monotonic CAS. */
+      if(base){
+        const oldKeys = [_revBlobKey(kind, id, base)];
+        if(st.digest && /^[a-f0-9]{64}$/.test(st.digest)) oldKeys.push(_revBlobKey(kind, id, base, st.digest));
+        for(const key of oldKeys){ try { await env.AMV_KV.delete(key); } catch(_) { /* Old snapshots are harmless; retain them for reconciliation. */ } }
       }
-      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
       await _forgetKindEmpty(env, kind);
       return { ok: true, guarded: true };
     }

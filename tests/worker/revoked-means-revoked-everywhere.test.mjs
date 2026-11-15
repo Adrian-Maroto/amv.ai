@@ -143,7 +143,7 @@ section('An API key revoked at A stops working at B, now');
   ok(!(await use(B)), 'and B refuses the key anyway - its object says revoked');
 }
 
-section('The object down: reading is fine, changing how the account is protected is not (risk tiers)');
+section('The object down: private reads and actions fail closed; logout remains possible');
 {
   /* Audit, Oct 31: availability over immediate revocation is defensible for
      chat, not for the routes that change security, money, permissions or the
@@ -165,7 +165,8 @@ section('The object down: reading is fine, changing how the account is protected
   };
   DO.down = true;
   const sync = await go('/sync/pull', 'POST');
-  ok(sync.status === 200, 'with the object unreachable, reading your own chats still works', sync);
+  // Build 15 deliberately closes the former private-read availability exception.
+  ok(sync.status === 503 && sync.d.code === 'auth_unconfirmed', 'with authority unavailable, private chats are not returned to a possibly revoked token', sync);
   for (const [path, method] of [['/auth/security', 'POST'], ['/v1/keys/create', 'POST'], ['/auth/delete', 'POST'], ['/v1/spend/set', 'POST'], ['/team/invite', 'POST'],
       /* Nov 1 audit STATE-005: money out, everything handed over, and stored sign-ins. */
       ['/v1/market/withdraw', 'POST'], ['/v1/account/export', 'GET'], ['/team/audit/export', 'POST'], ['/v1/agents/save', 'POST']]) {

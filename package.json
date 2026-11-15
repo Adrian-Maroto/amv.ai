@@ -18,7 +18,8 @@
     "restore": "node backup.mjs restore",
     "audit": "node audit-deps.mjs",
     "coverage": "node scripts/coverage.mjs",
-    "evals": "node tools/evals.mjs"
+    "evals": "node tools/evals.mjs",
+    "audit:build15": "node tests/audit/run-build15.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

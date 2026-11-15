@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* "Responses stream by default."
 
    That sentence was shown to every developer who created an API key, and it is
@@ -60,7 +62,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -72,7 +74,7 @@ function mkEnv() {
         if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

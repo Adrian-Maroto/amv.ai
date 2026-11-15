@@ -99,7 +99,9 @@ section('The committed copy cannot be found: the stale one is not answered (Nov 
   const OTHER = 'lee@example.com';
   ok((await W.DB.putIfRev(env, 'data', OTHER, rec(1, 'committed'), 0)).ok, 'a committed value');
   kv.set('data:' + OTHER, JSON.stringify(rec(0, 'stale')));
-  kv.delete('revblob:data:' + OTHER + ':1');
+  /* Build 15 snapshots include a digest. Remove every candidate to model
+     the same missing-committed-copy condition, not just the legacy key. */
+  for(const key of kv.keys()) if(key.startsWith('revblob:data:' + OTHER + ':1')) kv.delete(key);
   let threw = null;
   try { await W.DB.get(env, 'data', OTHER); } catch (e) { threw = e; }
   ok(threw && threw.name === 'RecordSettlingError' && threw.amvRefusal && threw.amvRefusal.status === 503 && threw.amvRefusal.body.code === 'record_settling',

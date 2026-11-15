@@ -245,27 +245,27 @@ section('A cursor never moves backwards');
      'a late run with older mail cannot pull the cursor back', { high, after: after.src[W.INGEST_SRC_MAIL].cursor });
 }
 
-section('An unreadable record repeats rather than drops, and then heals');
+section('An unreadable cursor is preserved until explicit repair');
 {
-  /* The direction is what matters. Treating a corrupt record as "has seen
-     everything" would silently discard mail; treating it as "has seen nothing"
-     costs one repeated digest. It falls the second way.
-
-     And unlike a wallet, this record is DERIVED - everything in it can be
-     rebuilt by reporting the newest mail again - so it is replaced rather than
-     preserved. Refusing to write would leave deduplication broken for that
-     account for ever, which is the worse of the two. */
-  store.set('ingest:' + EMAIL, '{ this is not json');
+  /* Build 15 audit: the generic mutation guard must not erase unreadable
+     records by replacing them with defaults. Ingest is derived, but its
+     repair must be explicit and quarantined rather than a generic exception
+     shared by security and account records. Until that workflow exists,
+     mail can repeat; this test deliberately documents that tradeoff. */
+  const broken = '{ this is not json';
+  store.set('ingest:' + EMAIL, broken);
   INBOX.push(mail(77, T0 + 4_000_000));
   const r = await run();
-  ok(listed(r.text) > 0, 'it still reports mail rather than reporting nothing', listed(r.text));
-
-  const healed = JSON.parse(store.get('ingest:' + EMAIL));
-  ok(healed && healed.src && healed.src[W.INGEST_SRC_MAIL].cursor > 0,
-     'and the corrupt record is replaced, so dedup works again next time', healed);
-
+  ok(listed(r.text) > 0, 'mail is still reported, not silently discarded');
+  ok(store.get('ingest:' + EMAIL) === broken, 'the unreadable original is not overwritten');
   const next = await run();
-  ok(listed(next.text) === 0, 'which it does - the repeat is a one-off, not permanent', next.text);
+  ok(listed(next.text) > 0, 'without an explicit reset, a repeated digest remains possible');
+  /* Simulate an operator-authorized reset of this derived cursor only. This
+     is a test fixture action, not a production reset workflow. */
+  store.delete('ingest:' + EMAIL);
+  await run();
+  const afterRepair = await run();
+  ok(listed(afterRepair.text) === 0, 'after explicit reset, normal deduplication resumes');
 }
 
 section('And the commit is actually wired to the run that delivers');

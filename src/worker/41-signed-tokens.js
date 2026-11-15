@@ -68,14 +68,10 @@ async function _hmacKey(secret) {
    and it is read once per account to seed the object. Every failure throws:
    the caller refuses, it never guesses. */
 const _authName = (email) => 'auth:' + String(email).toLowerCase();
-/* AND WHEN THE OBJECT CANNOT BE ASKED, SIGN-IN STAYS UP.
-
-   Failing closed there would turn an outage of one Durable Object into every
-   person signed out of AMV at once. So an object that throws or answers
-   nonsense falls back to the KV epoch - revocation within about a minute,
-   which is how it always worked - with the operator alerted. KV failing is
-   still a refusal, as it always was: no number at all is never read as zero.
-   The floor is max(object, KV), so the object can only make it stricter. */
+/* If the revocation object cannot be confirmed, token parsing may retain a
+   degraded state for access-reducing operations, but requireUser refuses
+   authenticated data and action routes. A stale KV number is not proof that
+   a session has not been revoked. This availability tradeoff is intentional. */
 /* Both are read, in parallel, every time, and the higher wins. Reading the
    object alone was the first version, and its own test found the hole: a
    revocation made while the object was down lands in KV only, and when the
@@ -88,12 +84,12 @@ async function _authState(env, email, sid) {
   let s = null, why = '';
   try {
     s = await counter(env, _authName(email), { op: 'authGet', sid: sid || '', strict: true });
-    if (!s || typeof s.epoch !== 'number') { why = 'the revocation object answered without an epoch'; s = null; }
+    if (!s || !Number.isSafeInteger(s.epoch) || s.epoch < 0) { why = 'the revocation object answered without an epoch'; s = null; }
   } catch (e) { why = String((e && e.message) || e); s = null; }
   const kv = await kvP;
   if (!s) {
     try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch(_) { /* logging: it never decides anything */ }
-    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read. Authenticated data and action requests are refused until authority recovers; only access-reducing operations remain eligible.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
@@ -101,28 +97,22 @@ async function _authState(env, email, sid) {
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
-/* RISK TIERS FOR A REVOCATION THAT CANNOT BE CONFIRMED.
-
-   When the account's revocation object cannot be asked, sign-in stays up on
-   the KV epoch (above): an outage of one object must not sign everybody out of
-   their chats. But KV may be a minute behind, and in that minute a session
-   somebody just ended could still be used - which is acceptable for reading a
-   chat and not for changing how the account is protected, where it is spent,
-   who can act for it, or deleting it. Those routes refuse with a 503 that says
-   so, rather than a 401 that would send the page into a sign-in loop.
-   Nov 1 audit STATE-005 added the rest of what a stolen session would go
-   for in that minute: money out (a marketplace withdrawal), everything the
-   account holds handed over (the data export and a team's activity export),
-   and an agent told to keep sign-ins. Ending a session or signing out
-   everywhere is never on this list - those only take access away. */
-const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$|v1\/market\/withdraw$|v1\/account\/export$|team\/audit\/export$|v1\/agents\/save$)/;
+/* An unconfirmed session is not authority to read private data or act.
+   New routes fail closed by default instead of depending on an ever-growing
+   blacklist. Explicit access-reducing actions may remain available. This is
+   a deliberate availability tradeoff: an authority outage returns 503 rather
+   than trusting a potentially revoked token and a stale KV epoch. */
+/* The routes as the router names them (29-router.js). The audit's first
+   draft named /auth/sessions/end, which does not exist, so ending a session
+   was refused in exactly the outage where somebody most needs to (Nov 15). */
+const REVOCATION_ACCESS_REDUCING = new Set(['/auth/logout', '/v1/sessions/end', '/v1/keys/revoke']);
 function _revocationRefusal() {
   return Object.assign(new Error('revocation unconfirmed'), { amvRefusal: {
-    status: 503, body: { error: 'AMV could not confirm your sign-in is still current, so this change was not made. Nothing else is affected - try again in a minute.',
+    status: 503, body: { error: 'AMV could not confirm your sign-in is still current. This request was not authorized. Please try again shortly.',
                          code: 'auth_unconfirmed' } } });
 }
 function _revocationMustBeSure(request) {
-  try { return REVOCATION_MUST_BE_SURE.test(new URL(request.url).pathname); } catch (e) { return true; }
+  try { return !REVOCATION_ACCESS_REDUCING.has(new URL(request.url).pathname); } catch (e) { return true; }
 }
 
 async function _tokenEpoch(env, email) { return (await _authState(env, email)).epoch; }

@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* NINE RECORDS, ONE SHAPE, NINE DIFFERENT THINGS TO LOSE.
 
@@ -65,7 +67,7 @@ function mkEnv(readDelayMs = 12) {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = n.get(x) || 0;
@@ -76,7 +78,7 @@ function mkEnv(readDelayMs = 12) {
         if (b.op === 'rateCheck') { n.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

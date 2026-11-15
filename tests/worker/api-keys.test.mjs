@@ -136,7 +136,7 @@ section('A revocation the cleanup could not finish still kills the key');
   env._failDelete = /^apikey:/;                     // the cleanup will lose
   const res = await W.apiKeyRevoke(post('/v1/keys/revoke', t, { id: d.item.id }), env);
   const body = await res.json();
-  ok(body.revoked === true, 'the route still reports the key revoked', body.revoked);
+  ok(res.status === 503 && body.revoked === false && body.pending === true, 'without a strong store local revocation is not called globally confirmed', body);
 
   const hashKeys = [...env._kv.keys()].filter(k => k.startsWith('apikey:'));
   ok(hashKeys.length === 1, 'and the lookup row really did survive, so this is not a false alarm', hashKeys.length);

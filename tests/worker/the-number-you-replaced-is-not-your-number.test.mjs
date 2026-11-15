@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE OLD PHONE STILL WORKED, AND THE SCREEN SAID IT DID NOT.
 
    Linking a phone writes two rows: `sms:user:<email>`, which is the number this
@@ -64,7 +66,7 @@ function mkEnv() {
         return { keys: [...m.keys()].filter(k => k.startsWith(prefix || '')).map(name => ({ name })), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -75,7 +77,7 @@ function mkEnv() {
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   }, TWILIO);
 }
 const tokFor = async (env, email) => (await W.issueTokens(env, email, 'U')).token;

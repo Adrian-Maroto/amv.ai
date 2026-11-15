@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE RETRY NOBODY REFUNDED.
 
    `aiProxy` books a token reservation before it calls the model, and every way
@@ -74,7 +76,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -89,7 +91,7 @@ function mkEnv() {
         if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

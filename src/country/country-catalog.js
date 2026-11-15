@@ -362,7 +362,7 @@ async function ccFillIntegrations(){
         <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(x.e.n)}</span><span class="cc-job-s" data-no-i18n>${escH(x.e.s)}</span></span>
         <button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use in chat'))}</button></div>`;
   host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Services in {country}', row[1], _cwThe(row[1])) : T('Services where you are'))}</h3>
-      <span class="sec-sub"><b>${list.length}</b> ${escH(T('real services there, each through AMV\u2019s browser - you sign in on the real site'))} \u00b7 ${escH(T('Source'))}: Wikidata. ${escH(T('Check the address before you sign in.'))}</span></div>
+      <span class="sec-sub"><b>${list.length}</b> ${escH(T('website directory entries, not linked accounts or verified integrations'))} \u00b7 ${escH(T('Source'))}: Wikidata. ${escH(T('Check the address before you sign in.'))}</span></div>
     <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
       <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
       ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}

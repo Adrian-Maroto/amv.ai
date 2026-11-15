@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* A TAUGHT TASK REPLAYS EXACTLY, AND CHECKS ITSELF AS IT GOES.
 
    Oct 26 audit: Teach AMV, upgraded from "steps the engine reads" to steps
@@ -37,12 +39,12 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
   CONNECT_KEY: 'a-connect-key-for-sealing-at-least-32-chars', AMV_MODEL_KEY: 'k', AMV_KV: {
     async get(k){ return store.has(k) ? store.get(k) : null; }, async put(k, v){ store.set(k, v); }, async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-  AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
     if (b.op === 'reserve') { if (atLimit && /^cost:/.test(n)) return new Response(JSON.stringify({ allowed: false, value: cur })); vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: cur + b.amount })); }
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
     return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
-  } }) } };
+  } }) }) };
 store.set('ent:' + ME, JSON.stringify({ plan: 'pro', renewedAt: Date.now() }));
 const pair = await W.issueTokens(env, ME, 'Teacher');
 

@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* THE SECOND CLICK TOOK A SECOND CARD PAYMENT AND GRANTED NOTHING.
 
@@ -83,7 +85,7 @@ function mkEnv() {
     /* Serialised, one op at a time, the way the real counter is - so a claim
        that is really a read followed by a write still has a window to lose in,
        and cannot win by accident. */
-    AMV_COUNTER: (() => {
+    AMV_COUNTER: withAuthOnly((() => {
       let chain = Promise.resolve();
       return {
         idFromName: (n) => n,
@@ -102,7 +104,7 @@ function mkEnv() {
           }));
         } }),
       };
-    })(),
+    })()),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

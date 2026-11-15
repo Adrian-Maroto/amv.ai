@@ -196,7 +196,7 @@ section('The wrapper really sets one, rather than being a rename');
 {
   const body = functionBody(src, 'fetchDeadline');
   ok(/AbortSignal\.timeout/.test(body), 'fetchDeadline attaches an abort signal', /AbortSignal\.timeout/.test(body));
-  ok(/signal:/.test(body), 'as the request signal', /signal:/.test(body));
+  ok(/(?:signal:|\.signal\s*=)/.test(body), 'as the request signal', /(?:signal:|\.signal\s*=)/.test(body));
   const guard = functionBody(src, 'fetchGuarded');
   ok(/redirect:\s*'manual'/.test(guard), 'and fetchGuarded refuses to let the platform follow redirects', true);
   ok(/_webHostAllowed\(/.test(guard), 'while re-checking the gate on each hop', true);

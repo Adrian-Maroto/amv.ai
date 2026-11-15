@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* EVERY DOLLAR LIMIT IN AMV WAS TWO CALLS WITH A GAP IN THE MIDDLE.
 
    Read the total, compare it to the ceiling, do the work, add what it cost.
@@ -80,7 +82,7 @@ function mkEnv(extra) {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ fetch(_u, init) {
         return serialise(async () => {
@@ -105,7 +107,7 @@ function mkEnv(extra) {
           return new Response(JSON.stringify({ allowed: true, value: cur }));
         });
       } }),
-    },
+    }),
   }, extra || {});
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

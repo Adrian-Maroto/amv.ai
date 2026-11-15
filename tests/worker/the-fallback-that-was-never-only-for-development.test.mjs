@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* "ONLY A DEV FALLBACK", SAID THE COMMENT, TO CODE THAT CANNOT TELL.
 
    The three payment redirects read `APP_URL || APP_ORIGIN || request Origin`,
@@ -69,7 +71,7 @@ function mkEnv(extra = {}) {
         return { keys: [...m.keys()].filter(k => k.startsWith(prefix || '')).map(name => ({ name })), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -80,7 +82,7 @@ function mkEnv(extra = {}) {
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   }, extra);
 }
 const EMAIL = 'buyer@example.com';
@@ -201,14 +203,14 @@ section('A remove that cannot lift the block does not delete the evidence');
   await W.DB.put(env, 'abuse', BAD, { blocked: true, reason: 'chargeback' });
   await W.DB.put(env, 'ent', BAD, { plan: 'pro', blocked: true });
   const broken = Object.assign({}, env, {
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: () => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
       /* The record lock cannot be taken, so the entitlement cannot be written.
          Rate limiting still answers, or the gate refuses first and this tests
          nothing. */
       if (b.op === 'claim') return new Response(JSON.stringify({ claimed: false }));
       return new Response(JSON.stringify({ allowed: true, value: 0 }));
-    } }) },
+    } }) }),
   });
   const r = await read(await W.abuseClear(new Request('https://api.amv.test/admin/abuse/clear', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ADMIN, 'CF-Connecting-IP': '3.1.1.3' },

@@ -176,7 +176,7 @@ function renderTasksView(){
     ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
     ['\uD83D\uDD10','Act on your real accounts','Connect an account once and AMV works inside it - reading, drafting, organizing - with a scoped grant you can take back at any time.','connect'],
     ['🏗️','Build & ship a working app','Not just code - AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
-    ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - written for 105 countries, not translated from one.','world'],
+    ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - built from the selected country\'s service directory. Availability must be checked.','world'],
     ['\uD83D\uDCAC','Just say it, and it goes and does it','Describe the outcome in a sentence. AMV works out which accounts and sites it needs, does the work, and stops for your approval before anything leaves.','say'],
   ];
   const ucard=(u)=>`<button class="uniq-card" data-dact="launchUnique" data-darg="${u[3]}">
@@ -374,7 +374,7 @@ function _intLocalBannerHTML(){
   return '<button class="int-local" id="int-local" data-dact="openLocalConnect">'+
     '<span class="int-local-flag" id="int-local-flag" aria-hidden="true">'+(row ? row[2] : '\uD83C\uDF0D')+'</span>'+
     '<span class="int-local-b"><span class="int-local-t" id="int-local-t">'+
-      escH(row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular where you are'))+'</span>'+
+      escH(row ? _cwSayPlace('Services in {country}', row[1]) : T('Services where you are'))+'</span>'+
       '<span class="int-local-s">'+escH(T('The mail, banks, job sites and shops people there use - and what AMV does with each.'))+'</span></span>'+
     '<span class="int-local-go">'+escH(T('See them'))+
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
@@ -386,7 +386,7 @@ function _intLocalFill(){
   try{
     const t = $('int-local-t'), f = $('int-local-flag'); if(!t) return;
     const row = _cwCountryRow(_cwCountryGuess());
-    const words = row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular where you are');
+    const words = row ? _cwSayPlace('Services in {country}', row[1]) : T('Services where you are');
     if(t.textContent !== words) t.textContent = words;
     if(f && row && f.textContent !== row[2]) f.textContent = row[2];
   }catch(e){}
@@ -492,7 +492,7 @@ async function openLocalConnect(code){
   if(!_cwCountryRow(cc)) cc = _cwCountryGuess() || 'US';
   const row = _cwCountryRow(cc);
   r.innerHTML = _ovShell({ id:'lc', wide:true, eyebrow:T('Where you are'),
-                           title:row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular in')+' '+cc,
+                           title:row ? _cwSayPlace('Services in {country}', row[1]) : T('Popular in')+' '+cc,
                            body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
   _ovWire('lc');
   let d = null;
@@ -504,7 +504,7 @@ async function openLocalConnect(code){
   }
   try{ if(d.facts && typeof d.facts === 'object') _cwFacts[cc] = d.facts; }catch(e){}
   b.innerHTML = _intLocalBody(cc, d);
-  const h = $('lc-h'); if(h && row) h.textContent = _cwSayPlace('Popular in {country}', row[1]);
+  const h = $('lc-h'); if(h && row) h.textContent = _cwSayPlace('Services in {country}', row[1]);
   on($('lc-c'), 'change', e => { openLocalConnect(e.target.value); });
   b.querySelectorAll('[data-lc-mail]').forEach(x => on(x, 'click', () => {
     if(_intNeedsAccount(_intName('mail'))) return;
@@ -563,7 +563,7 @@ function renderIntegrationsView(){
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
       '<span class="eyebrow">Connectors</span>'+
-      '<h2>Everything AMV can work inside</h2>'+
+      '<h2>Your accounts and available connections</h2>'+
       /* Counted, not claimed: the number is the length of the list below. */
       /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
          usage data or survey stands behind that ranking - the list is curated.
@@ -571,7 +571,7 @@ function renderIntegrationsView(){
          each provider every day (tools/connector-health.mjs, run daily by the
          connectors workflow), and every Notify me is recorded on the server
          (/waitlist, one entry per app). */
-      '<p class="vsub">'+escH(String(_appCount()))+' apps, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, checked against every provider daily, with a grant limited to what you allow that you can take back at any time. For the rest, press Notify me: every request is recorded, and the most-asked-for are connected next.</p>'+
+      '<p class="vsub">'+escH(String(_appCount()))+' directory entries, by topic. Supported sign-ins appear first; provider availability, permissions and setup still apply. Discovery checks do not prove that an account is connected or that every action works. For entries not available yet, use Notify me to register interest.</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -601,7 +601,7 @@ function renderIntegrationsView(){
               ? 'AMV\u2019s cloud workspace \u00b7 commands and files; connectors need your own computer'
               : (typeof BRIDGE!=='undefined' && BRIDGE.connected)
               ? 'Connected \u00b7 AMV can run connectors and work in your files'
-              : 'Not connected \u00b7 needed before any connector below can start')+
+              : 'Not connected \u00b7 required for local computer connectors')+
           '</span></summary>'+
         '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+

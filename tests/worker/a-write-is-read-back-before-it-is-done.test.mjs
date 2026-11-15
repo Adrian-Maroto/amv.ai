@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* A WRITE IS READ BACK BEFORE IT IS CALLED DONE.
 
    Sending a mail, adding a calendar event, copying and sharing a file, pushing
@@ -116,11 +118,11 @@ function mkEnv() {
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
     /* One object per name, as the real one is: a claim is taken once. */
-    AMV_COUNTER: (() => { const taken = new Set(); return { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOnly((() => { const taken = new Set(); return { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse((init && init.body) || '{}');
       if (b.op === 'claim') { if (taken.has(n)) return new Response(JSON.stringify({ claimed: false })); taken.add(n); return new Response(JSON.stringify({ claimed: true, owner: n })); }
       if (b.op === 'release') { taken.delete(n); return new Response(JSON.stringify({ released: true })); }
-      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }; })(),
+      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }; })()),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
   };

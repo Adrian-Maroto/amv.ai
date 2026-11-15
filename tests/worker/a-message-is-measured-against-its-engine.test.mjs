@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* A MESSAGE IS MEASURED AGAINST THE ENGINE THAT WILL READ IT.
 
    Every AMV engine reads a million tokens. The server used to refuse anything
@@ -60,7 +62,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -72,7 +74,7 @@ function mkEnv() {
         if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

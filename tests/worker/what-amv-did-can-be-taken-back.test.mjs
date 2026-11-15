@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* WHAT AMV DID CAN BE TAKEN BACK - OR AMV SAYS WHY NOT.
 
    Every write on a connected account comes back with a receipt: whether it
@@ -85,7 +87,7 @@ function mkEnv() {
     },
     /* Every other counter answers as before; the outcome tallies keep their
        numbers, so the owner's figure can be read at the end. */
-    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
       if (String(n).startsWith('actout:')) {
         const b = JSON.parse(init.body);
         if (b.op === 'incr') outcomes.set(n, (outcomes.get(n) || 0) + (b.amount || 0));
@@ -96,7 +98,7 @@ function mkEnv() {
           if (claimsDown) return new Response('down', { status: 503 });
           if (claims.has(n)) return new Response(JSON.stringify({ claimed: false }));
           claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: 'o' })); } }
-      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
   };

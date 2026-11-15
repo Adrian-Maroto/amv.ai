@@ -461,6 +461,18 @@ async function _adminOk(request, env){
   return _adminTokenOK(request, env);
 }
 
+/* A known key must be backed up from its committed value, not a stale
+   display/export cache. This does NOT make a KV listing a point-in-time
+   inventory: missing keys still require authoritative enumeration. */
+async function _backupValue(env, key){
+  const colon = String(key).indexOf(':');
+  const kind = String(key).slice(0, colon), id = String(key).slice(colon + 1);
+  const raw = await env.AMV_KV.get(key);
+  if(REV_KINDS.has(kind)) return _revRead(env, kind, id, raw);
+  if(kind === 'wallet' && env.AMV_COUNTER) return JSON.stringify((await _walletStrong(env, id)).w);
+  return raw;
+}
+
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
 async function backupExport(request, env){
   /* The most expensive route in the product: it reads every record under every
@@ -507,11 +519,11 @@ async function backupExport(request, env){
   const failed = [];
   const enc = new TextEncoder();
 
-  const body = new ReadableStream({
-    async pull(controller) {
-      const send = (s) => controller.enqueue(enc.encode(s));
+  /* One yielded chunk per demand from the response consumer. A single pull
+     must not scan and enqueue the whole namespace for a slow downloader. */
+  async function* chunks(){
       try {
-        send('{"_amv_backup":1'
+        yield ('{"_amv_backup":1'
           + ',"createdAt":' + Date.now()
           + ',"createdISO":' + JSON.stringify(new Date().toISOString())
           + ',"prefixes":' + JSON.stringify(BACKUP_PREFIXES)
@@ -531,9 +543,10 @@ async function backupExport(request, env){
               + ' bytes, larger than the ' + BACKUP_MAX_VALUE_BYTES
               + ' a restore will accept, so this snapshot could not be restored in full');
           }
-          send((first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw));
+          const chunk = (first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw);
           first = false;
           count++; bytes += raw.length + key.length;
+          return chunk;
         };
 
         for (const prefix of BACKUP_PREFIXES) {
@@ -541,8 +554,8 @@ async function backupExport(request, env){
           do {
             const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
             for (const k of page.keys) {
-              const raw = await env.AMV_KV.get(k.name);
-              if (raw != null) emit(k.name, raw);
+              const raw = await _backupValue(env, k.name);
+              if (raw != null) yield emit(k.name, raw);
             }
             cursor = page.list_complete ? undefined : page.cursor;
           } while (cursor);
@@ -559,7 +572,7 @@ async function backupExport(request, env){
                 const key = `${kind}:${r.id}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
-                emit(key, JSON.stringify(r.value));
+                yield emit(key, JSON.stringify(r.value));
               }
             } catch (e) {
               /* Named, and then the whole file is abandoned. Reporting the gap
@@ -571,9 +584,9 @@ async function backupExport(request, env){
           }
         }
 
-        send('},"keyCount":' + count + ',"approxBytes":' + bytes + ',"complete":true}');
+        yield ('},"keyCount":' + count + ',"approxBytes":' + bytes + ',"complete":true}');
         audit(env, 'backup_export', { keyCount: count, bytes });
-        controller.close();
+
       } catch (e) {
         audit(env, 'backup_export_failed', { keyCount: count, failed: failed.join(',') || 'read', why: String((e && e.message) || e).slice(0, 160) });
         try { await alertOnce(env, 'backup_failed',
@@ -582,9 +595,21 @@ async function backupExport(request, env){
           + 'There is no usable backup from this attempt.', 30); } catch (_) { /* logging: it never decides anything */ }
         /* Errors the stream. A download that stops mid-file is a download the
            operator can SEE failed - which a quietly short one is not. */
-        controller.error(e);
+        throw e;
       }
+  }
+  const iterator = chunks();
+  let cancelled = false;
+  const body = new ReadableStream({
+    async pull(controller){
+      try {
+        const part = await iterator.next();
+        if(cancelled) return;
+        if(part.done) controller.close();
+        else controller.enqueue(enc.encode(part.value));
+      } catch(e){ if(!cancelled) controller.error(e); }
     },
+    async cancel(){ cancelled = true; await iterator.return(); }
   });
 
   return new Response(body, {

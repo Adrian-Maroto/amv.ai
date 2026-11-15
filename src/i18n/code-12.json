@@ -3038,5 +3038,24 @@
   "it": "Controlla l’indirizzo prima di accedere.",
   "ko": "로그인하기 전에 주소를 확인하세요.",
   "ta": "உள்நுழையும் முன் முகவரியைச் சரிபார்க்கவும்."
+ },
+ "website directory entries, not linked accounts or verified integrations": {
+  "es": "entradas del directorio de sitios web, no cuentas vinculadas ni integraciones verificadas",
+  "zh": "个网站目录条目，并非已关联的账户或经过验证的集成",
+  "hi": "वेबसाइट निर्देशिका की प्रविष्टियाँ - जुड़े हुए खाते या सत्यापित इंटीग्रेशन नहीं",
+  "ar": "إدخالات في دليل المواقع، وليست حسابات مرتبطة أو تكاملات موثّقة",
+  "pt": "entradas do diretório de sites, não contas vinculadas nem integrações verificadas",
+  "fr": "entrées d’un annuaire de sites, pas des comptes liés ni des intégrations vérifiées",
+  "de": "Einträge eines Website-Verzeichnisses, keine verknüpften Konten oder geprüften Integrationen",
+  "ja": "件のウェブサイト一覧の項目。連携済みアカウントや検証済みの連携ではありません",
+  "ru": "записей каталога сайтов - это не подключённые аккаунты и не проверенные интеграции",
+  "id": "entri direktori situs web, bukan akun tertaut atau integrasi terverifikasi",
+  "bn": "টি ওয়েবসাইট তালিকার এন্ট্রি - যুক্ত অ্যাকাউন্ট বা যাচাই করা ইন্টিগ্রেশন নয়",
+  "ur": "ویب سائٹ ڈائریکٹری کے اندراجات - منسلک اکاؤنٹس یا تصدیق شدہ انٹیگریشنز نہیں",
+  "tr": "web sitesi dizini kaydı; bağlı hesap ya da doğrulanmış entegrasyon değil",
+  "vi": "mục trong danh bạ trang web, không phải tài khoản đã liên kết hay tích hợp đã xác minh",
+  "it": "voci di un elenco di siti web, non account collegati né integrazioni verificate",
+  "ko": "개 웹사이트 목록 항목이며, 연결된 계정이나 검증된 연동이 아닙니다",
+  "ta": "இணையதளப் பட்டியல் பதிவுகள் - இணைக்கப்பட்ட கணக்குகளோ சரிபார்க்கப்பட்ட ஒருங்கிணைப்புகளோ அல்ல"
  }
 }

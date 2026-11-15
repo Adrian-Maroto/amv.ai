@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* WHAT AMV HEARS AND SAYS IS PAID FOR, AND NEVER WRITTEN DOWN.
 
    Server speech (69-speech.js): a recording in, the words out with timestamps;
@@ -38,7 +40,7 @@ const env = Object.assign({ JWT_SECRET: 'a-long-random-secret-at-least-32-chars-
     async put(k, v){ store.set(k, v); },
     async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOnly({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body);
@@ -51,7 +53,7 @@ const env = Object.assign({ JWT_SECRET: 'a-long-random-secret-at-least-32-chars-
       if (b.op === 'rateCheck' || b.op === 'limit') return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  } }, SPEECH);
+  }) }, SPEECH);
 const ctx = { waitUntil(){}, passThroughOnException(){} };
 
 store.set('ent:' + ME, JSON.stringify({ plan: 'pro', renewedAt: Date.now() }));

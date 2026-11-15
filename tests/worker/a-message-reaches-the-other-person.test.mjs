@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 import { legacyMarketplaceFixture } from '../lib/legacy-marketplace-fixture.mjs';
 /* (Every index here goes through a guard: this file's whole job is to report
    WHICH link of the delivery is broken, and a TypeError on a missing thread
@@ -83,7 +85,7 @@ function mkEnv(extra, readDelayMs = 0) {
         return { keys: page, list_complete: from + page.length >= all.length, cursor: String(from + page.length) };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -100,7 +102,7 @@ function mkEnv(extra, readDelayMs = 0) {
         if (b.op === 'release') { vals.delete('c:' + n); return new Response(JSON.stringify({ ok: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   }, extra || {});
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

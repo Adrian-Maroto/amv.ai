@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE TOP-LEVEL CATCH HAD NEVER CAUGHT A SINGLE ROUTE.
 
    The Worker's fetch handler wraps its routing in a try/catch whose comment
@@ -132,7 +134,7 @@ function mkEnv() {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
@@ -149,7 +151,7 @@ function mkEnv() {
         if (b.op === 'release') { vals.delete('c:' + x); return new Response(JSON.stringify({ ok: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { (this._p = this._p || []).push(Promise.resolve(p).catch(() => {})); },
@@ -195,7 +197,7 @@ section('A throw the router cannot foresee still becomes AMV’s 500');
               async put() { throw new Error('KV is down'); },
               async delete() { throw new Error('KV is down'); },
               async list() { throw new Error('KV is down'); } },
-    AMV_COUNTER: { idFromName: (x) => x, get: () => ({ async fetch() { throw new Error('counter is down'); } }) },
+    AMV_COUNTER: withAuthOnly({ idFromName: (x) => x, get: () => ({ async fetch() { throw new Error('counter is down'); } }) }),
   });
   const hit = async (path, init) => {
     let threw = null, res = null;

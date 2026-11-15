@@ -7,6 +7,7 @@ node_modules/
 # caused it, on a file nothing reads.
 tests/worker/.build/
 tests/e2e/.build/
+tests/audit/.build/
 /tmp/
 *.log
 .DS_Store
@@ -51,3 +52,6 @@ mcp-session.txt
 # one session scratchpad, so committing it would push one machine state into the
 # repository - and the "local" in its name is the clue.
 .claude/settings.local.json
+
+# Local audit evidence (never deploy as static assets)
+audit-output/

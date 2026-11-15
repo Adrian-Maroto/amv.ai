@@ -8,9 +8,9 @@
    up by itself, in slices:
 
      each five-minute tick does about twenty seconds of it - one page of up to
-     a thousand records per part, written as one object - and saves where it
-     got to after every part, so a tick that dies costs a repeated part, never
-     a gap;
+     a thousand records per part, written as one object - and checkpoints once at the end of the slice. A failed slice may
+     replay its already-written parts. KV checkpoints remain a migration
+     requirement, not proof of a transactional point-in-time snapshot;
      the same records the export takes (BACKUP_PREFIXES), held to the same
      size a restore accepts: a record too large to restore abandons the night
      and says so, rather than writing a backup that cannot be restored;
@@ -80,7 +80,7 @@ async function _nightlyBackupSlice(env, atMs){
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
     const lines = [];
     for (const k of (page.keys || [])) {
-      const raw = await env.AMV_KV.get(k.name);
+      const raw = await _backupValue(env, k.name);
       if (raw == null) continue;
       if (raw.length > BACKUP_MAX_VALUE_BYTES) {
         st.failed = k.name + ' is ' + raw.length + ' bytes, larger than a restore accepts';
@@ -106,10 +106,15 @@ async function _nightlyBackupSlice(env, atMs){
     }
     if (page.list_complete) { st.prefix++; st.cursor = null; }
     else st.cursor = page.cursor;
-    await save();
+    /* No same-key checkpoint rewrite per page: KV permits one write per
+       second, and an empty prefix can advance far faster than that. A crash
+       replays the current slice; do not claim KV is a transactional cursor. */
   }
 
-  if (st.prefix < BACKUP_PREFIXES.length) return { on: true, day, parts, count: st.count, more: true };
+  if (st.prefix < BACKUP_PREFIXES.length) {
+    await save();
+    return { on: true, day, parts, count: st.count, more: true };
+  }
 
   /* Written last: a night without a manifest is not a backup. Signed (Nov 3
      audit REL-017), so a manifest somebody edited in the bucket - or one

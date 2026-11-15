@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* YOU CAN TAKE OVER AMV'S BROWSER - AND IT STAYS AS SAFE IN YOUR HANDS.
 
    A run that meets a captcha, or a sign-in AMV has nothing for, used to close
@@ -42,7 +44,7 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
     async put(k, v){ store.set(k, v); },
     async delete(k){ store.delete(k); },
     async list({ prefix }){ return { keys: [...store.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOnly({
     idFromName: (n) => n,
     get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -50,7 +52,7 @@ const env = { JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx', APP_URL: 
       if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
       return new Response(JSON.stringify({ allowed: true, ok: true, value: cur }));
     } }),
-  } };
+  }) };
 store.set('ent:' + ME, JSON.stringify({ plan: 'pro', renewedAt: Date.now() }));
 store.set('ent:' + OTHER, JSON.stringify({ plan: 'pro', renewedAt: Date.now() }));
 const pair = await W.issueTokens(env, ME, 'Surfer');

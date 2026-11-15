@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* WHOEVER GETS TURNED AWAY ON A BUSY DAY, IT IS NOT THE PERSON WHO PAID.
 
    There is one global daily spend cap, and it existed for a good reason: a
@@ -68,7 +70,7 @@ function mkEnv() {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
@@ -90,7 +92,7 @@ function mkEnv() {
         if (b.op === 'release') { vals.delete('c:' + x); return new Response(JSON.stringify({ ok: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

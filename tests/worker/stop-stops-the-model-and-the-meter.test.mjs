@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* STOP STOPS THE MODEL, AND THE METER CHARGES FOR WHAT WAS WRITTEN.
 
    The proxy tee()d the model's stream - one branch to the browser, one to the
@@ -80,7 +82,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -95,7 +97,7 @@ function mkEnv() {
         if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const mkCtx = () => ({ _p: [], waitUntil(p) { if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* EXTRA USAGE IS PREPAID, SPENT ONLY PAST THE PLAN, AND CANNOT BE OVERSPENT.
 
    The money path for buying more when a plan runs out, driven through the
@@ -62,7 +64,7 @@ function mkEnv(extra) {
     STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: WHSEC, _vals: vals,
     AMV_KV: { _map: m, async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ fetch(_u, init) { return serialise(async () => {
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: (n) => ({ fetch(_u, init) { return serialise(async () => {
       await Promise.resolve();
       const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
       const r = (o) => new Response(JSON.stringify(o));
@@ -80,7 +82,7 @@ function mkEnv(extra) {
       if (b.op === 'release') { claims.delete(n); return r({ ok: true }); }
       if (b.op === 'get') return r({ value: cur });
       return r({ allowed: true, value: cur });
-    }); } }) },
+    }); } }) }),
   }, extra || {});
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

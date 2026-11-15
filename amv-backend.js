@@ -998,11 +998,10 @@ let _killCache = { val: false, ts: 0 };
 const D1_ROW_MAX_BYTES = 1900000;
 /* Records whose writes go through putIfRev, and are read as committed. */
 const REV_KINDS = new Set(['data']);
-const REV_BLOB_TTL_S = 2 * 86400;
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
-const _revBlobKey = (kind, id, rev) => 'revblob:' + kind + ':' + id + ':' + rev;
-/* The only shape such a key has: a known kind, an id with no spaces, a revision. */
-const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}$/.test(String(k));
+const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
+/* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
+const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1011,9 +1010,8 @@ async function _revDigest(text){
    and digest are committed; the usual key answers if it matches, else the
    committed value under its own key (and the usual key is repaired). Nothing
    committed yet - a record from before this, or no object bound - is read as
-   it always was. A committed value that cannot be found anywhere this region
-   can see is answered from the usual key, marked `_revStale`, so a writer
-   building on it is refused by the commit rather than overwriting. */
+   it always was. A committed value that cannot be found in this region is refused with a
+   retryable 503; known-stale data is never returned as current. */
 async function _revRead(env, kind, id, raw){
   if(!env.AMV_COUNTER) return raw;
   let st = null;
@@ -1032,7 +1030,9 @@ async function _revRead(env, kind, id, raw){
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
   let blob = null;
-  try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; }
+  try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev, st.digest)); } catch(e) { blob = null; }
+  /* Reader-first compatibility with records written before build 15. */
+  if(blob == null){ try { blob = await env.AMV_KV.get(_revBlobKey(kind, id, st.rev)); } catch(e) { blob = null; } }
   if(blob != null && (await _revDigest(blob)) === st.digest){
     try { await env.AMV_KV.put(`${kind}:${id}`, blob); } catch(e) { /* the committed copy was just answered; the usual key is repaired on the next read */ }
     return blob;
@@ -1152,27 +1152,32 @@ const DB = {
      decides - refuse the signup, send the payout to review, apply the strictest
      limits - rather than being handed a null that means the opposite of the
      truth. */
-  async getStrict(env, kind, id){
+  async getStrict(env, kind, id, shape = 'object'){
     let raw = null;
     if(this._hasD1(env)){
       const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
-      raw = row && row.json ? row.json : null;
+      raw = row == null ? null : row.json;
     } else {
       const pg = await _pgReadServe(env, kind, id);
-      if(pg !== undefined) return pg == null ? null : JSON.parse(pg);
-      raw = await env.AMV_KV.get(`${kind}:${id}`);
+      raw = pg !== undefined ? pg : await env.AMV_KV.get(`${kind}:${id}`);
+      if(REV_KINDS.has(kind)) raw = await _revRead(env, kind, id, raw);
     }
-    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }   // genuinely absent, which is a real answer
-    try { const value = JSON.parse(raw); _pgShadowRead(env, kind, id, raw); return value; }
-    catch (e) {
+    if(raw == null){ _pgShadowRead(env, kind, id, 'null'); return null; }
+    try {
+      const value = JSON.parse(raw);
+      /* Security records must be objects. Generic mutation lists explicitly
+         request container shape so real arrays remain supported. In neither
+         case may stored null/scalars masquerade as an absent record. */
+      if(!value || typeof value !== 'object' || (shape !== 'container' && Array.isArray(value))) throw new Error('invalid record shape');
+      _pgShadowRead(env, kind, id, raw);
+      return value;
+    } catch(e) {
       try {
         audit(env, 'record_unreadable_strict', { kind, id, bytes: String(raw).length });
         await alertOnce(env, 'record_unreadable:' + kind,
-          'A stored ' + kind + ' record could not be parsed. This one decides whether somebody is allowed '
-          + 'something, so it is being treated as unreadable rather than as absent - the request was refused '
-          + 'instead of being granted by default. Repair the record.', 30);
-      } catch(_) { /* logging: it never decides anything */ }
-      throw new UnreadableRecordError(`${kind}:${id}`, 'invalid JSON');
+          'A stored ' + kind + ' authorization record is not a readable JSON object. Repair it; absence must not grant permission.', 30);
+      } catch(_) { /* Observability never changes the refusal. */ }
+      throw new UnreadableRecordError(`${kind}:${id}`, 'invalid record');
     }
   },
   async put(env, kind, id, obj, kvOpts){
@@ -1260,40 +1265,58 @@ const DB = {
        writer that died between the two left the revision ahead of the value,
        a later writer overtook it after a timeout, and a reader in another
        region could see either. Now the value is written first, under a key
-       of its own that is never changed (`revblob:<kind>:<id>:<rev>`), and
+       of its own that is never changed (`revblob:<kind>:<id>:<rev>:<digest>`), and
        the object commits revision AND digest in one step - the commit is the
        write. The usual key is a copy of the committed value; a reader takes
        whichever copy matches the committed digest (_revRead), so a copy that
        failed, or a region that has not seen it yet, never answers as current.
        Nothing is ever overtaken by a timer. */
     if(env.AMV_COUNTER){
-      /* Created after a delete: the writer read "absent", so it goes on from
-         the tombstone's generation (revCommit refuses any other). */
+      let st = null;
+      try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+      if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
       let j2 = j;
-      if(!(+expectedRev)){
-        let st = null;
-        try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
-        if(!st || st.unavailable) return { ok: false, guarded: true, unavailable: true };
-        if(st.absent){ expectedRev = +st.rev || 0; obj._rev = expectedRev + 1; j2 = JSON.stringify(obj); }
+      if(!(+expectedRev) && st.absent){
+        expectedRev = +st.rev || 0;
+        obj._rev = expectedRev + 1;
+        j2 = JSON.stringify(obj);
       }
-      const nextRev = +obj._rev || 0;
+      const base = +expectedRev || 0, nextRev = +obj._rev || 0;
+      if(!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(nextRev) || nextRev <= base)
+        return { ok: false, guarded: true };
+      if(st.committed && st.rev !== base) return { ok: false, guarded: true };
       const digest = await _revDigest(j2);
-      const blob = _revBlobKey(kind, id, nextRev);
+      const blob = _revBlobKey(kind, id, nextRev, digest);
       if(!_revBlobKeyOK(blob)) throw new Error('bad_record_key');
-      await env.AMV_KV.put(blob, j2, { expirationTtl: REV_BLOB_TTL_S });
-      const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: +expectedRev || 0, set: nextRev, digest });
+      /* Write durable bytes ONCE before publication. A TTL followed by an
+         immediate TTL-removal write violates KV's same-key write limit and
+         can expire the only acknowledged copy. Different candidates never
+         overwrite one another, even when they propose the same revision. */
+      await env.AMV_KV.put(blob, j2);
+      const cas = await counter(env, _revName(kind, id), { op: 'revCommit', expect: base, set: nextRev, digest });
       if(!cas || !cas.ok){
-        try { await env.AMV_KV.delete(blob); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+        /* A lost response can mean the commit succeeded. Never delete an
+           uncertain candidate. Definite conflicts can be collected only after
+           a fresh authority read proves this digest is not the current one. */
+        if(cas && !cas.unavailable){
+          try {
+            const now = await counter(env, _revName(kind, id), { op: 'revGet' });
+            if(now && !now.unavailable && now.committed &&
+               (now.rev > nextRev || (now.rev === nextRev && now.digest !== digest)))
+              await env.AMV_KV.delete(blob);
+          } catch(_) { /* Retain uncertain bytes for reconciliation. */ }
+        }
         return { ok: false, guarded: true, ...(cas && cas.unavailable ? { unavailable: true } : {}) };
       }
-      /* Committed. The copy is for readers; if it cannot be written, the
-         committed value is kept with no expiry until a reader repairs it. */
       try { await env.AMV_KV.put(`${kind}:${id}`, j2); }
-      catch(e){
-        try { await env.AMV_KV.put(blob, j2); } catch(_) { /* said by the audit on the next line */ }
-        try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* logging: it never decides anything */ }
+      catch(e){ try { audit(env, 'rev_copy_failed', { kind, id }); } catch(_) { /* Logging cannot undo a committed write. */ } }
+      /* The previous committed snapshot is no longer authoritative. A new
+         writer cannot return to it: revCommit enforces exact monotonic CAS. */
+      if(base){
+        const oldKeys = [_revBlobKey(kind, id, base)];
+        if(st.digest && /^[a-f0-9]{64}$/.test(st.digest)) oldKeys.push(_revBlobKey(kind, id, base, st.digest));
+        for(const key of oldKeys){ try { await env.AMV_KV.delete(key); } catch(_) { /* Old snapshots are harmless; retain them for reconciliation. */ } }
       }
-      if(expectedRev) { try { await env.AMV_KV.delete(_revBlobKey(kind, id, +expectedRev)); } catch(_) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ } }
       await _forgetKindEmpty(env, kind);
       return { ok: true, guarded: true };
     }
@@ -4263,12 +4286,16 @@ export class AMVCounter {
        (`gen` unset) kept the old revision, so it counts as one above it. */
     if (op === 'revCommit') {
       const cur = await this.state.storage.get('rev');
-      const expect = +body.expect || 0, set = +body.set || 0;
+      const expect = body.expect, set = body.set;
+      if (!Number.isSafeInteger(expect) || expect < 0 || !Number.isSafeInteger(set) || set <= expect ||
+          typeof body.digest !== 'string' || !body.digest) return json({ ok: false, code: 'bad_revision' });
       if (cur && cur.absent) {
         const tomb = _revTombRev(cur);
         if (expect !== tomb || set <= tomb) return json({ ok: false, cur: tomb, absent: true });
-      } else if (cur && cur.rev > expect) return json({ ok: false, cur: cur.rev });
-      await this.state.storage.put('rev', { rev: set, digest: String(body.digest || ''), at: Date.now() });
+      } else if (cur && cur.rev !== expect) return json({ ok: false, cur: cur.rev });
+      /* No current authority permits one-time adoption of an existing KV
+         revision. Once initialized, only an exact base can advance it. */
+      await this.state.storage.put('rev', { rev: set, digest: body.digest, at: Date.now() });
       return json({ ok: true });
     }
     if (op === 'revGet') {
@@ -4535,6 +4562,17 @@ async function counter(env, name, payload) {
         if (!r || !r.ok) throw new Error('counter answered ' + (r ? r.status : 'nothing'));
         const out = await Promise.race([r.json(), stall]);
         if (!out || typeof out !== 'object' || Array.isArray(out)) throw new Error('counter answered something that is not a record');
+        /* HTTP 200 and an object are not an operation-specific answer. In
+           particular {} must not mean 'not revoked' or 'no committed data'. */
+        if (payload.strict && ['get', 'incr'].includes(payload.op) &&
+            (typeof out.value !== 'number' || !Number.isFinite(out.value) || out.value < 0))
+          throw new Error('counter answered without a valid value');
+        if (payload.op === 'revGet' &&
+            (typeof out.committed !== 'boolean' || !Number.isSafeInteger(out.rev) || out.rev < 0 ||
+             (out.committed && out.absent !== true && (typeof out.digest !== 'string' || !out.digest))))
+          throw new Error('counter answered without a valid committed revision');
+        if (['revCommit', 'revReset'].includes(payload.op) && typeof out.ok !== 'boolean')
+          throw new Error('counter answered without a commit decision');
         return out;
       } finally { if (timer) clearTimeout(timer); }
     }
@@ -14592,9 +14630,11 @@ const OUTBOUND_MAX_HOPS = 5;
 
 /* A fetch that cannot hang. Everything else here goes through it. */
 function fetchDeadline(url, init, ms){
-  return fetch(url, Object.assign({}, init || {}, {
-    signal: AbortSignal.timeout(Math.max(1000, +ms || OUTBOUND_TIMEOUT_MS)),
-  }));
+  const options = Object.assign({}, init || {});
+  const timeout = AbortSignal.timeout(Math.max(1000, +ms || OUTBOUND_TIMEOUT_MS));
+  const caller = options.signal;
+  options.signal = caller ? AbortSignal.any([caller, timeout]) : timeout;
+  return fetch(url, options);
 }
 
 /* A fetch to an address somebody else chose. Every hop is re-gated, and the
@@ -14602,27 +14642,37 @@ function fetchDeadline(url, init, ms){
 async function fetchGuarded(rawUrl, init, ms){
   let target = String(rawUrl || '');
   let opts = Object.assign({}, init || {});
-  const firstOrigin = (() => { try { return new URL(target).origin; } catch(e){ return ''; } })();
   for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
     if(await _resolvesPrivate(new URL(gate.url).hostname)) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
-    if(!(r.status >= 300 && r.status < 400)) return { blocked: false, response: r };
+    if(![301, 302, 303, 307, 308].includes(r.status)) return { blocked: false, response: r };
     const loc = r.headers.get('location');
     if(!loc) return { blocked: false, response: r };
-    let next; try { next = new URL(loc, gate.url).toString(); } catch(e){ return { blocked: false, response: r }; }
-    /* Leaving the origin the credential was issued for: the credential stays
-       behind. A 302 is not a reason to hand somebody else's server a token. */
-    let nextOrigin = ''; try { nextOrigin = new URL(next).origin; } catch(e){}
-    if(nextOrigin !== firstOrigin && opts.headers){
-      const h = {};
-      for(const [k, v] of Object.entries(opts.headers)){
-        if(!/^authorization$/i.test(k) && !/^cookie$/i.test(k)) h[k] = v;
-      }
-      opts = Object.assign({}, opts, { headers: h });
+    let next; try { next = new URL(loc, gate.url); } catch(e){ return { blocked: false, response: r }; }
+    const current = new URL(gate.url);
+    const crossOrigin = next.origin !== current.origin;
+    const method = String(opts.method || 'GET').toUpperCase();
+    /* OAuth secrets can be in the form body, and API keys can use arbitrary
+       headers. Stripping Authorization alone does not protect either one. */
+    const denyBody = crossOrigin && (opts.body != null || !['GET', 'HEAD'].includes(method));
+    const downgrade = current.protocol === 'https:' && next.protocol !== 'https:';
+    try { if(r.body && typeof r.body.cancel === 'function') await r.body.cancel(); } catch(_) {}
+    if(denyBody || downgrade) return { blocked: true, why: 'Blocked redirect: this request cannot safely be forwarded to a different or less secure endpoint.', url: target, hop };
+    const entries = opts.headers instanceof Headers ? [...opts.headers.entries()]
+      : Array.isArray(opts.headers) ? opts.headers : Object.entries(opts.headers || {});
+    if(crossOrigin){
+      /* An allowlist also catches provider-specific secret header names.
+         Same-origin requests retain their original header representation. */
+      opts.headers = Object.fromEntries(entries.filter(([k]) => /^(accept|accept-language|content-type|user-agent)$/i.test(k)));
     }
-    target = next;
+    if((r.status === 303 && !['GET', 'HEAD'].includes(method)) ||
+       ([301, 302].includes(r.status) && method === 'POST')){
+      opts.method = 'GET'; delete opts.body;
+      opts.headers = Object.fromEntries(entries.filter(([k]) => !/^(content-type|content-length|content-encoding|content-language|content-location)$/i.test(k)));
+    }
+    target = next.toString();
   }
   return { blocked: true, why: 'That address redirected too many times.', url: target, hop: OUTBOUND_MAX_HOPS };
 }
@@ -14685,7 +14735,8 @@ function _sameOrigin(a, b){
 function _webHostAllowed(raw){
   let u; try{ u = new URL(String(raw)); }catch(e){ return { ok:false, why:'That is not a valid URL.' }; }
   if(u.protocol !== 'http:' && u.protocol !== 'https:') return { ok:false, why:'Only http and https are allowed.' };
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(u.username || u.password) return { ok:false, why:'Credentials in a URL are not allowed.' };
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/, '');
   if(h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local'))
     return { ok:false, why:'Internal hosts are not reachable from the agent.' };
   if(h === 'metadata.google.internal') return { ok:false, why:'Blocked host.' };
@@ -14721,7 +14772,8 @@ function _webHostAllowed(raw){
      run through the same table. */
   if(h.includes(':')){
     if(h === '::' || h === '::1') return { ok:false, why:'That address range is blocked (internal network).' };
-    if(h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+    const firstWord = parseInt(h.split(':')[0] || '0', 16);
+    if((firstWord & 0xfe00) === 0xfc00 || (firstWord & 0xffc0) === 0xfe80 || (firstWord & 0xff00) === 0xff00)
       return { ok:false, why:'That address range is blocked (internal network).' };
     const embedsV4 = /^::ffff:/i.test(h) || /^64:ff9b:/i.test(h) || /^::/.test(h);
     if(embedsV4){
@@ -18102,6 +18154,18 @@ async function _adminOk(request, env){
   return _adminTokenOK(request, env);
 }
 
+/* A known key must be backed up from its committed value, not a stale
+   display/export cache. This does NOT make a KV listing a point-in-time
+   inventory: missing keys still require authoritative enumeration. */
+async function _backupValue(env, key){
+  const colon = String(key).indexOf(':');
+  const kind = String(key).slice(0, colon), id = String(key).slice(colon + 1);
+  const raw = await env.AMV_KV.get(key);
+  if(REV_KINDS.has(kind)) return _revRead(env, kind, id, raw);
+  if(kind === 'wallet' && env.AMV_COUNTER) return JSON.stringify((await _walletStrong(env, id)).w);
+  return raw;
+}
+
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
 async function backupExport(request, env){
   /* The most expensive route in the product: it reads every record under every
@@ -18148,11 +18212,11 @@ async function backupExport(request, env){
   const failed = [];
   const enc = new TextEncoder();
 
-  const body = new ReadableStream({
-    async pull(controller) {
-      const send = (s) => controller.enqueue(enc.encode(s));
+  /* One yielded chunk per demand from the response consumer. A single pull
+     must not scan and enqueue the whole namespace for a slow downloader. */
+  async function* chunks(){
       try {
-        send('{"_amv_backup":1'
+        yield ('{"_amv_backup":1'
           + ',"createdAt":' + Date.now()
           + ',"createdISO":' + JSON.stringify(new Date().toISOString())
           + ',"prefixes":' + JSON.stringify(BACKUP_PREFIXES)
@@ -18172,9 +18236,10 @@ async function backupExport(request, env){
               + ' bytes, larger than the ' + BACKUP_MAX_VALUE_BYTES
               + ' a restore will accept, so this snapshot could not be restored in full');
           }
-          send((first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw));
+          const chunk = (first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw);
           first = false;
           count++; bytes += raw.length + key.length;
+          return chunk;
         };
 
         for (const prefix of BACKUP_PREFIXES) {
@@ -18182,8 +18247,8 @@ async function backupExport(request, env){
           do {
             const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
             for (const k of page.keys) {
-              const raw = await env.AMV_KV.get(k.name);
-              if (raw != null) emit(k.name, raw);
+              const raw = await _backupValue(env, k.name);
+              if (raw != null) yield emit(k.name, raw);
             }
             cursor = page.list_complete ? undefined : page.cursor;
           } while (cursor);
@@ -18200,7 +18265,7 @@ async function backupExport(request, env){
                 const key = `${kind}:${r.id}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
-                emit(key, JSON.stringify(r.value));
+                yield emit(key, JSON.stringify(r.value));
               }
             } catch (e) {
               /* Named, and then the whole file is abandoned. Reporting the gap
@@ -18212,9 +18277,9 @@ async function backupExport(request, env){
           }
         }
 
-        send('},"keyCount":' + count + ',"approxBytes":' + bytes + ',"complete":true}');
+        yield ('},"keyCount":' + count + ',"approxBytes":' + bytes + ',"complete":true}');
         audit(env, 'backup_export', { keyCount: count, bytes });
-        controller.close();
+
       } catch (e) {
         audit(env, 'backup_export_failed', { keyCount: count, failed: failed.join(',') || 'read', why: String((e && e.message) || e).slice(0, 160) });
         try { await alertOnce(env, 'backup_failed',
@@ -18223,9 +18288,21 @@ async function backupExport(request, env){
           + 'There is no usable backup from this attempt.', 30); } catch (_) { /* logging: it never decides anything */ }
         /* Errors the stream. A download that stops mid-file is a download the
            operator can SEE failed - which a quietly short one is not. */
-        controller.error(e);
+        throw e;
       }
+  }
+  const iterator = chunks();
+  let cancelled = false;
+  const body = new ReadableStream({
+    async pull(controller){
+      try {
+        const part = await iterator.next();
+        if(cancelled) return;
+        if(part.done) controller.close();
+        else controller.enqueue(enc.encode(part.value));
+      } catch(e){ if(!cancelled) controller.error(e); }
     },
+    async cancel(){ cancelled = true; await iterator.return(); }
   });
 
   return new Response(body, {
@@ -18545,9 +18622,9 @@ async function _workerError(env, where, err, extra){
    up by itself, in slices:
 
      each five-minute tick does about twenty seconds of it - one page of up to
-     a thousand records per part, written as one object - and saves where it
-     got to after every part, so a tick that dies costs a repeated part, never
-     a gap;
+     a thousand records per part, written as one object - and checkpoints once at the end of the slice. A failed slice may
+     replay its already-written parts. KV checkpoints remain a migration
+     requirement, not proof of a transactional point-in-time snapshot;
      the same records the export takes (BACKUP_PREFIXES), held to the same
      size a restore accepts: a record too large to restore abandons the night
      and says so, rather than writing a backup that cannot be restored;
@@ -18617,7 +18694,7 @@ async function _nightlyBackupSlice(env, atMs){
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
     const lines = [];
     for (const k of (page.keys || [])) {
-      const raw = await env.AMV_KV.get(k.name);
+      const raw = await _backupValue(env, k.name);
       if (raw == null) continue;
       if (raw.length > BACKUP_MAX_VALUE_BYTES) {
         st.failed = k.name + ' is ' + raw.length + ' bytes, larger than a restore accepts';
@@ -18643,10 +18720,15 @@ async function _nightlyBackupSlice(env, atMs){
     }
     if (page.list_complete) { st.prefix++; st.cursor = null; }
     else st.cursor = page.cursor;
-    await save();
+    /* No same-key checkpoint rewrite per page: KV permits one write per
+       second, and an empty prefix can advance far faster than that. A crash
+       replays the current slice; do not claim KV is a transactional cursor. */
   }
 
-  if (st.prefix < BACKUP_PREFIXES.length) return { on: true, day, parts, count: st.count, more: true };
+  if (st.prefix < BACKUP_PREFIXES.length) {
+    await save();
+    return { on: true, day, parts, count: st.count, more: true };
+  }
 
   /* Written last: a night without a manifest is not a backup. Signed (Nov 3
      audit REL-017), so a manifest somebody edited in the bucket - or one
@@ -29106,14 +29188,10 @@ async function _hmacKey(secret) {
    and it is read once per account to seed the object. Every failure throws:
    the caller refuses, it never guesses. */
 const _authName = (email) => 'auth:' + String(email).toLowerCase();
-/* AND WHEN THE OBJECT CANNOT BE ASKED, SIGN-IN STAYS UP.
-
-   Failing closed there would turn an outage of one Durable Object into every
-   person signed out of AMV at once. So an object that throws or answers
-   nonsense falls back to the KV epoch - revocation within about a minute,
-   which is how it always worked - with the operator alerted. KV failing is
-   still a refusal, as it always was: no number at all is never read as zero.
-   The floor is max(object, KV), so the object can only make it stricter. */
+/* If the revocation object cannot be confirmed, token parsing may retain a
+   degraded state for access-reducing operations, but requireUser refuses
+   authenticated data and action routes. A stale KV number is not proof that
+   a session has not been revoked. This availability tradeoff is intentional. */
 /* Both are read, in parallel, every time, and the higher wins. Reading the
    object alone was the first version, and its own test found the hole: a
    revocation made while the object was down lands in KV only, and when the
@@ -29126,12 +29204,12 @@ async function _authState(env, email, sid) {
   let s = null, why = '';
   try {
     s = await counter(env, _authName(email), { op: 'authGet', sid: sid || '', strict: true });
-    if (!s || typeof s.epoch !== 'number') { why = 'the revocation object answered without an epoch'; s = null; }
+    if (!s || !Number.isSafeInteger(s.epoch) || s.epoch < 0) { why = 'the revocation object answered without an epoch'; s = null; }
   } catch (e) { why = String((e && e.message) || e); s = null; }
   const kv = await kvP;
   if (!s) {
     try { audit(env, 'revocation_degraded', { error: why.slice(0, 120) }); } catch(_) { /* logging: it never decides anything */ }
-    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read; sign-in is using the KV epoch, so a revoked session may keep working for up to a minute.', 15); } catch (_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'revocation_degraded', 'The account revocation object could not be read. Authenticated data and action requests are refused until authority recovers; only access-reducing operations remain eligible.', 15); } catch (_) { /* logging: it never decides anything */ }
     return { epoch: kv, ended: false, degraded: true };
   }
   if (!s.seeded || kv > s.epoch) {
@@ -29139,28 +29217,22 @@ async function _authState(env, email, sid) {
   }
   return { epoch: Math.max(kv, s.epoch), ended: !!s.ended };
 }
-/* RISK TIERS FOR A REVOCATION THAT CANNOT BE CONFIRMED.
-
-   When the account's revocation object cannot be asked, sign-in stays up on
-   the KV epoch (above): an outage of one object must not sign everybody out of
-   their chats. But KV may be a minute behind, and in that minute a session
-   somebody just ended could still be used - which is acceptable for reading a
-   chat and not for changing how the account is protected, where it is spent,
-   who can act for it, or deleting it. Those routes refuse with a 503 that says
-   so, rather than a 401 that would send the page into a sign-in loop.
-   Nov 1 audit STATE-005 added the rest of what a stolen session would go
-   for in that minute: money out (a marketplace withdrawal), everything the
-   account holds handed over (the data export and a team's activity export),
-   and an agent told to keep sign-ins. Ending a session or signing out
-   everywhere is never on this list - those only take access away. */
-const REVOCATION_MUST_BE_SURE = /^\/(auth\/(passkey\/(register|remove)|totp\/|recovery\/|delete$|security$)|v1\/keys\/(create|revoke)$|v1\/admin\/|admin\/|v1\/spend\/set$|v1\/family\/(limits|remove)$|v1\/subscribe$|v1\/stripe\/portal$|v1\/paypal\/subscribe$|v1\/connect\/(start|finish|remove)$|v1\/mail\/connect$|v1\/telegram\/connect$|team\/(invite|remove|role|policy|sso|data)$|v1\/computer\/delete$|v1\/market\/withdraw$|v1\/account\/export$|team\/audit\/export$|v1\/agents\/save$)/;
+/* An unconfirmed session is not authority to read private data or act.
+   New routes fail closed by default instead of depending on an ever-growing
+   blacklist. Explicit access-reducing actions may remain available. This is
+   a deliberate availability tradeoff: an authority outage returns 503 rather
+   than trusting a potentially revoked token and a stale KV epoch. */
+/* The routes as the router names them (29-router.js). The audit's first
+   draft named /auth/sessions/end, which does not exist, so ending a session
+   was refused in exactly the outage where somebody most needs to (Nov 15). */
+const REVOCATION_ACCESS_REDUCING = new Set(['/auth/logout', '/v1/sessions/end', '/v1/keys/revoke']);
 function _revocationRefusal() {
   return Object.assign(new Error('revocation unconfirmed'), { amvRefusal: {
-    status: 503, body: { error: 'AMV could not confirm your sign-in is still current, so this change was not made. Nothing else is affected - try again in a minute.',
+    status: 503, body: { error: 'AMV could not confirm your sign-in is still current. This request was not authorized. Please try again shortly.',
                          code: 'auth_unconfirmed' } } });
 }
 function _revocationMustBeSure(request) {
-  try { return REVOCATION_MUST_BE_SURE.test(new URL(request.url).pathname); } catch (e) { return true; }
+  try { return !REVOCATION_ACCESS_REDUCING.has(new URL(request.url).pathname); } catch (e) { return true; }
 }
 
 async function _tokenEpoch(env, email) { return (await _authState(env, email)).epoch; }
@@ -34066,7 +34138,7 @@ async function _withWallet(env, email, mutate) {
 }
 
 /* The two records where a lost write is worse than money. */
-const _loadAcct = async (env, em) => (await DB.get(env, 'acct', em)) || null;
+const _loadAcct = async (env, em) => (await DB.getStrict(env, 'acct', em)) || null;
 const _saveAcct = async (env, em, a) => { if (a) await DB.put(env, 'acct', em, a); };
 async function _withAcct(env, email, mutate) {
   return _withRecord(env, 'acct', String(email || '').toLowerCase(), _loadAcct, _saveAcct, mutate);
@@ -34090,12 +34162,12 @@ async function _withAcct(env, email, mutate) {
    now rather than what was true when the request started. Returning
    `{ error, status, code }` refuses without writing; returning anything else
    commits. */
-const _loadTeam = async (env, id) => (await DB.get(env, 'team', id)) || null;
+const _loadTeam = async (env, id) => (await DB.getStrict(env, 'team', id)) || null;
 const _saveTeam = async (env, id, t) => { if (t) await DB.put(env, 'team', id, t); };
 async function _withTeam(env, id, mutate) {
   return _withRecord(env, 'team', id, _loadTeam, _saveTeam, mutate);
 }
-const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
+const _loadFam = async (env, id) => (await DB.getStrict(env, 'fam', id)) || null;
 const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
 /* AMV-203: the same lock for any record that is read, changed and written back.
 
@@ -34106,7 +34178,7 @@ const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f);
    every one after it. */
 async function _withKind(env, kind, id, mutate, empty) {
   return _withRecord(env, kind, String(id || ''),
-    async (e, k) => (await DB.get(e, kind, k)) || (empty === undefined ? null : JSON.parse(JSON.stringify(empty))),
+    async (e, k) => (await DB.getStrict(e, kind, k, 'container')) ?? (empty === undefined ? null : JSON.parse(JSON.stringify(empty))),
     async (e, k, rec) => { if (rec) await DB.put(e, kind, k, rec); },
     mutate);
 }
@@ -34177,7 +34249,7 @@ async function _withKV(env, name, key, mutate, empty) {
    address. Whatever `load` returned is written back, so a mutate that decides
    there is nothing to do rewrites the record it just read inside the lock -
    which is a no-op, not a lost write. */
-const _loadEnt = async (env, em) => (await DB.get(env, 'ent', em)) || null;
+const _loadEnt = async (env, em) => (await DB.getStrict(env, 'ent', em)) || null;
 const _saveEnt = async (env, em, e) => { if (e) await DB.put(env, 'ent', em, e); };
 async function _withEnt(env, email, mutate) {
   return _withRecord(env, 'ent', String(email || '').toLowerCase(), _loadEnt, _saveEnt, mutate);
@@ -37165,27 +37237,33 @@ async function apiKeyRevoke(request, env) {
      revoked key as active, which is a screen telling somebody the opposite of
      the truth about a credential. */
   let hash = '';
-  const found = await _withKind(env, 'apikeys', user.email, (rec) => {
+  const found = await _withKind(env, 'apikeys', user.email, async (rec) => {
     const item = (rec.items || []).find(k => k.id === id);
-    if (!item) return false;
+    if (!item) return { commit: false, missing: true };
     hash = item.hash || '';
+    if(env.AMV_COUNTER){
+      try {
+        if(!hash) throw new Error('missing key identity');
+        const proof = await counter(env, 'apikeyrev:' + hash, { op: 'incr', amount: 1, keep: true, strict: true });
+        if(!proof || !Number.isFinite(proof.value) || proof.value < 1) throw new Error('revocation not acknowledged');
+      } catch(e) {
+        audit(env, 'apikey_revoke_unconfirmed', { email: user.email, id });
+        /* Do not mark the UI record revoked before the authority commits. */
+        return { commit: false, error: 'revocation_unconfirmed', status: 503 };
+      }
+    }
     if (!item.revoked) item.revoked = Date.now();
-    return true;
+    return { found: true };
   }, { items: [] });
-  if (!found) return json({ error: 'not found' }, 404);
-  /* Delete the lookup too - this is what the request path reads, and deleting
-     it is what revocation really is. Marking the record without removing this
-     would leave the key working. */
-  if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
-  /* AND IN ONE PLACE EVERY LOCATION READS AT ONCE (scale audit, owner yes,
-     Oct 26). The KV delete above can take a minute or more to be seen
-     everywhere, and for that minute the key still worked somewhere. A key's
-     own object, raised once, is what _userFromApiKey asks first. Failing to
-     raise it is said, and the KV delete still ends the key within the minute. */
-  if (hash && env.AMV_COUNTER) {
-    try { await counter(env, 'apikeyrev:' + hash, { op: 'incr', amount: 1, keep: true, strict: true }); }
-    catch (e) { audit(env, 'apikey_revoke_slow', { email: user.email, id, error: String((e && e.message) || e).slice(0, 120) }); }
-  }
+  if (!found || found.missing) return json({ error: 'not found' }, 404);
+  if(found.error) return json({ ok: false, id, revoked: false, code: 'revocation_unconfirmed',
+    error: 'Revocation could not be confirmed everywhere. Retry this request; do not assume the key is disabled yet.' }, 503);
+  /* A strong revocation is already committed; deletion only clears a cache.
+     In unbound development mode, the local flag/delete still reduce access
+     but cannot prove immediate revocation in every KV region. */
+  if(hash){ try { await env.AMV_KV.delete(`apikey:${hash}`); } catch(e) { /* Revocation is decided above, not by this cache cleanup. */ } }
+  if(!env.AMV_COUNTER) return json({ ok: false, id, revoked: false, pending: true, code: 'revocation_unconfirmed',
+    error: 'The key was marked for revocation locally, but global confirmation is unavailable.' }, 503);
   audit(env, 'apikey_revoked', { email: user.email, id });
   await _userEvent(env, request, user.email, 'api_key_revoked');
   return json({ ok: true, id, revoked: true });

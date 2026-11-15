@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* A PHOTO IS BOOKED BY WHAT IT COSTS TO READ, AND A REQUEST WITH ONE IS ACCEPTED.
 
    Two bounds made attaching a picture fail in production, and neither was
@@ -68,7 +70,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -85,7 +87,7 @@ function mkEnv() {
         if (b.op === 'claim') return r({ claimed: true });
         return r({ allowed: true, value: cur });
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

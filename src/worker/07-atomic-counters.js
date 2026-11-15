@@ -160,12 +160,16 @@ export class AMVCounter {
        (`gen` unset) kept the old revision, so it counts as one above it. */
     if (op === 'revCommit') {
       const cur = await this.state.storage.get('rev');
-      const expect = +body.expect || 0, set = +body.set || 0;
+      const expect = body.expect, set = body.set;
+      if (!Number.isSafeInteger(expect) || expect < 0 || !Number.isSafeInteger(set) || set <= expect ||
+          typeof body.digest !== 'string' || !body.digest) return json({ ok: false, code: 'bad_revision' });
       if (cur && cur.absent) {
         const tomb = _revTombRev(cur);
         if (expect !== tomb || set <= tomb) return json({ ok: false, cur: tomb, absent: true });
-      } else if (cur && cur.rev > expect) return json({ ok: false, cur: cur.rev });
-      await this.state.storage.put('rev', { rev: set, digest: String(body.digest || ''), at: Date.now() });
+      } else if (cur && cur.rev !== expect) return json({ ok: false, cur: cur.rev });
+      /* No current authority permits one-time adoption of an existing KV
+         revision. Once initialized, only an exact base can advance it. */
+      await this.state.storage.put('rev', { rev: set, digest: body.digest, at: Date.now() });
       return json({ ok: true });
     }
     if (op === 'revGet') {
@@ -432,6 +436,17 @@ async function counter(env, name, payload) {
         if (!r || !r.ok) throw new Error('counter answered ' + (r ? r.status : 'nothing'));
         const out = await Promise.race([r.json(), stall]);
         if (!out || typeof out !== 'object' || Array.isArray(out)) throw new Error('counter answered something that is not a record');
+        /* HTTP 200 and an object are not an operation-specific answer. In
+           particular {} must not mean 'not revoked' or 'no committed data'. */
+        if (payload.strict && ['get', 'incr'].includes(payload.op) &&
+            (typeof out.value !== 'number' || !Number.isFinite(out.value) || out.value < 0))
+          throw new Error('counter answered without a valid value');
+        if (payload.op === 'revGet' &&
+            (typeof out.committed !== 'boolean' || !Number.isSafeInteger(out.rev) || out.rev < 0 ||
+             (out.committed && out.absent !== true && (typeof out.digest !== 'string' || !out.digest))))
+          throw new Error('counter answered without a valid committed revision');
+        if (['revCommit', 'revReset'].includes(payload.op) && typeof out.ok !== 'boolean')
+          throw new Error('counter answered without a commit decision');
         return out;
       } finally { if (timer) clearTimeout(timer); }
     }

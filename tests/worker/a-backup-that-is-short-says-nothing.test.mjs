@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE FILE ANNOUNCED ITSELF AS A BACKUP AND WAS MISSING A KIND.
 
    The export pulled every prefix out of KV, then - when D1 is the store - every
@@ -57,7 +59,7 @@ function mkEnv(opts = {}) {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -68,7 +70,7 @@ function mkEnv(opts = {}) {
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const adminReq = () => new Request('https://api.amv.test/admin/backup/export', {

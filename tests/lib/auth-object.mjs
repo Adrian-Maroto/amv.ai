@@ -118,3 +118,22 @@ export function withAuthOps(ns) {
   });
   return self;
 }
+
+/* Authentication-only adapter for older, narrowly scoped counter test doubles.
+   This does not implement or replace their locks, limits, revisions, failures
+   or assertions. Production imports none of this test helper. Tests of auth
+   outages use the real counter or deliberately broken namespaces instead. */
+export function withAuthOnly(ns) {
+  const store = new Map();
+  return Object.assign({}, ns, {
+    idFromName: ns.idFromName ? ns.idFromName.bind(ns) : (n) => n,
+    get(id) {
+      const inner = ns.get(id);
+      return { async fetch(u, init) {
+        let body = {}; try { body = JSON.parse(init?.body || '{}'); } catch(_) { /* Pass malformed requests to the existing double. */ }
+        const response = authObjectOp(String(id), body, store);
+        return response || inner.fetch(u, init);
+      } };
+    },
+  });
+}

@@ -23568,8 +23568,7 @@ function cwPeek(id){
       ${allowed
         ? `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            ${miss.length && !j.on
-              ? `<button class="btn bs" id="cwp-go">${escH(T('Turn on anyway'))}</button>
-                 <button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
+              ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
               : `<button class="btn bp" id="cwp-go">${escH(j.on ? T('Turn it off') : T('Turn it on'))}</button>`}`
         : `<div class="cwp-buy">
              <div class="cwp-buy-t">Included with ${escH(P.name)} · $${P.price}/month</div>
@@ -24378,6 +24377,7 @@ function _cwUnattendedReady(j){
 async function _cwToggleReal(jobs, j){
   const turningOn=!j.on;
   if(turningOn){
+    if(_cwNeedsMissing(j).length){ cwNeeds(j.id); return; }
     if(typeof _scheduleTask!=='function'){ toast('Connect the AMV engine in Settings so jobs can run in the background.','error',6000); return; }
     if(_cwPending.has(j.id)) return;         // already being set up
 

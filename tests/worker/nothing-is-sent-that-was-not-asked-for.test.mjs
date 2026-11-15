@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE ROUTES THAT SPEAK TO OTHER PEOPLE, AND HAD NO TEST AT ALL.
 
    Mapped every route in the table against every test file: 159 routes, and
@@ -53,7 +55,7 @@ const mkEnv = (extra) => {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: withAuthOps({ idFromName: n => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0, count: 1 })); } }) }),
+    AMV_COUNTER: withAuthOnly(withAuthOps({ idFromName: n => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0, count: 1 })); } }) })),
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     /* A bot token is stored encrypted, and without a key the connect route
        refuses to store one at all rather than keeping it in the clear - which
@@ -153,11 +155,11 @@ section('The rate limit on an outward-facing route is real');
      working. A refusal for the wrong reason is not the refusal being tested. */
   const permissive = env.AMV_COUNTER;
   outbound = [];
-  env.AMV_COUNTER = { idFromName: n => n, get: () => ({ async fetch(_u, init) {
+  env.AMV_COUNTER = withAuthOnly({ idFromName: n => n, get: () => ({ async fetch(_u, init) {
     const p = JSON.parse((init && init.body) || '{}');
     if (p.op === 'rateCheck') return new Response(JSON.stringify({ allowed: false, count: 999 }));
     return new Response(JSON.stringify({ allowed: true, value: 0 }));
-  } }) };
+  } }) });
   const r = await call(env, '/v1/telegram/send', { text: 'flood' }, token);
   env.AMV_COUNTER = permissive;
   ok(r.status === 429, 'over the cap, the send is refused', r.status);

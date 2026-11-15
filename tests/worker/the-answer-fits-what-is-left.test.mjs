@@ -1,3 +1,5 @@
+import { withAuthOnly } from '../lib/auth-object.mjs';
+// Build 15: model healthy revocation authority explicitly; assertions are unchanged.
 /* THE ANSWER FITS WHAT IS LEFT, RATHER THAN THE QUESTION BEING REFUSED.
 
    The proxy books the longest answer a request allows before calling the
@@ -67,7 +69,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -84,7 +86,7 @@ function mkEnv() {
         if (b.op === 'claim') return r({ claimed: true });
         return r({ allowed: true, value: cur });
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

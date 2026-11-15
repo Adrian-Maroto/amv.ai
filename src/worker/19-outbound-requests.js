@@ -39,9 +39,11 @@ const OUTBOUND_MAX_HOPS = 5;
 
 /* A fetch that cannot hang. Everything else here goes through it. */
 function fetchDeadline(url, init, ms){
-  return fetch(url, Object.assign({}, init || {}, {
-    signal: AbortSignal.timeout(Math.max(1000, +ms || OUTBOUND_TIMEOUT_MS)),
-  }));
+  const options = Object.assign({}, init || {});
+  const timeout = AbortSignal.timeout(Math.max(1000, +ms || OUTBOUND_TIMEOUT_MS));
+  const caller = options.signal;
+  options.signal = caller ? AbortSignal.any([caller, timeout]) : timeout;
+  return fetch(url, options);
 }
 
 /* A fetch to an address somebody else chose. Every hop is re-gated, and the
@@ -49,27 +51,37 @@ function fetchDeadline(url, init, ms){
 async function fetchGuarded(rawUrl, init, ms){
   let target = String(rawUrl || '');
   let opts = Object.assign({}, init || {});
-  const firstOrigin = (() => { try { return new URL(target).origin; } catch(e){ return ''; } })();
   for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
     if(await _resolvesPrivate(new URL(gate.url).hostname)) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
-    if(!(r.status >= 300 && r.status < 400)) return { blocked: false, response: r };
+    if(![301, 302, 303, 307, 308].includes(r.status)) return { blocked: false, response: r };
     const loc = r.headers.get('location');
     if(!loc) return { blocked: false, response: r };
-    let next; try { next = new URL(loc, gate.url).toString(); } catch(e){ return { blocked: false, response: r }; }
-    /* Leaving the origin the credential was issued for: the credential stays
-       behind. A 302 is not a reason to hand somebody else's server a token. */
-    let nextOrigin = ''; try { nextOrigin = new URL(next).origin; } catch(e){}
-    if(nextOrigin !== firstOrigin && opts.headers){
-      const h = {};
-      for(const [k, v] of Object.entries(opts.headers)){
-        if(!/^authorization$/i.test(k) && !/^cookie$/i.test(k)) h[k] = v;
-      }
-      opts = Object.assign({}, opts, { headers: h });
+    let next; try { next = new URL(loc, gate.url); } catch(e){ return { blocked: false, response: r }; }
+    const current = new URL(gate.url);
+    const crossOrigin = next.origin !== current.origin;
+    const method = String(opts.method || 'GET').toUpperCase();
+    /* OAuth secrets can be in the form body, and API keys can use arbitrary
+       headers. Stripping Authorization alone does not protect either one. */
+    const denyBody = crossOrigin && (opts.body != null || !['GET', 'HEAD'].includes(method));
+    const downgrade = current.protocol === 'https:' && next.protocol !== 'https:';
+    try { if(r.body && typeof r.body.cancel === 'function') await r.body.cancel(); } catch(_) {}
+    if(denyBody || downgrade) return { blocked: true, why: 'Blocked redirect: this request cannot safely be forwarded to a different or less secure endpoint.', url: target, hop };
+    const entries = opts.headers instanceof Headers ? [...opts.headers.entries()]
+      : Array.isArray(opts.headers) ? opts.headers : Object.entries(opts.headers || {});
+    if(crossOrigin){
+      /* An allowlist also catches provider-specific secret header names.
+         Same-origin requests retain their original header representation. */
+      opts.headers = Object.fromEntries(entries.filter(([k]) => /^(accept|accept-language|content-type|user-agent)$/i.test(k)));
     }
-    target = next;
+    if((r.status === 303 && !['GET', 'HEAD'].includes(method)) ||
+       ([301, 302].includes(r.status) && method === 'POST')){
+      opts.method = 'GET'; delete opts.body;
+      opts.headers = Object.fromEntries(entries.filter(([k]) => !/^(content-type|content-length|content-encoding|content-language|content-location)$/i.test(k)));
+    }
+    target = next.toString();
   }
   return { blocked: true, why: 'That address redirected too many times.', url: target, hop: OUTBOUND_MAX_HOPS };
 }
@@ -132,7 +144,8 @@ function _sameOrigin(a, b){
 function _webHostAllowed(raw){
   let u; try{ u = new URL(String(raw)); }catch(e){ return { ok:false, why:'That is not a valid URL.' }; }
   if(u.protocol !== 'http:' && u.protocol !== 'https:') return { ok:false, why:'Only http and https are allowed.' };
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(u.username || u.password) return { ok:false, why:'Credentials in a URL are not allowed.' };
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/, '');
   if(h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local'))
     return { ok:false, why:'Internal hosts are not reachable from the agent.' };
   if(h === 'metadata.google.internal') return { ok:false, why:'Blocked host.' };
@@ -168,7 +181,8 @@ function _webHostAllowed(raw){
      run through the same table. */
   if(h.includes(':')){
     if(h === '::' || h === '::1') return { ok:false, why:'That address range is blocked (internal network).' };
-    if(h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+    const firstWord = parseInt(h.split(':')[0] || '0', 16);
+    if((firstWord & 0xfe00) === 0xfc00 || (firstWord & 0xffc0) === 0xfe80 || (firstWord & 0xff00) === 0xff00)
       return { ok:false, why:'That address range is blocked (internal network).' };
     const embedsV4 = /^::ffff:/i.test(h) || /^64:ff9b:/i.test(h) || /^::/.test(h);
     if(embedsV4){

@@ -377,7 +377,7 @@ async function _withWallet(env, email, mutate) {
 }
 
 /* The two records where a lost write is worse than money. */
-const _loadAcct = async (env, em) => (await DB.get(env, 'acct', em)) || null;
+const _loadAcct = async (env, em) => (await DB.getStrict(env, 'acct', em)) || null;
 const _saveAcct = async (env, em, a) => { if (a) await DB.put(env, 'acct', em, a); };
 async function _withAcct(env, email, mutate) {
   return _withRecord(env, 'acct', String(email || '').toLowerCase(), _loadAcct, _saveAcct, mutate);
@@ -401,12 +401,12 @@ async function _withAcct(env, email, mutate) {
    now rather than what was true when the request started. Returning
    `{ error, status, code }` refuses without writing; returning anything else
    commits. */
-const _loadTeam = async (env, id) => (await DB.get(env, 'team', id)) || null;
+const _loadTeam = async (env, id) => (await DB.getStrict(env, 'team', id)) || null;
 const _saveTeam = async (env, id, t) => { if (t) await DB.put(env, 'team', id, t); };
 async function _withTeam(env, id, mutate) {
   return _withRecord(env, 'team', id, _loadTeam, _saveTeam, mutate);
 }
-const _loadFam = async (env, id) => (await DB.get(env, 'fam', id)) || null;
+const _loadFam = async (env, id) => (await DB.getStrict(env, 'fam', id)) || null;
 const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f); };
 /* AMV-203: the same lock for any record that is read, changed and written back.
 
@@ -417,7 +417,7 @@ const _saveFam = async (env, id, f) => { if (f) await DB.put(env, 'fam', id, f);
    every one after it. */
 async function _withKind(env, kind, id, mutate, empty) {
   return _withRecord(env, kind, String(id || ''),
-    async (e, k) => (await DB.get(e, kind, k)) || (empty === undefined ? null : JSON.parse(JSON.stringify(empty))),
+    async (e, k) => (await DB.getStrict(e, kind, k, 'container')) ?? (empty === undefined ? null : JSON.parse(JSON.stringify(empty))),
     async (e, k, rec) => { if (rec) await DB.put(e, kind, k, rec); },
     mutate);
 }
@@ -488,7 +488,7 @@ async function _withKV(env, name, key, mutate, empty) {
    address. Whatever `load` returned is written back, so a mutate that decides
    there is nothing to do rewrites the record it just read inside the lock -
    which is a no-op, not a lost write. */
-const _loadEnt = async (env, em) => (await DB.get(env, 'ent', em)) || null;
+const _loadEnt = async (env, em) => (await DB.getStrict(env, 'ent', em)) || null;
 const _saveEnt = async (env, em, e) => { if (e) await DB.put(env, 'ent', em, e); };
 async function _withEnt(env, email, mutate) {
   return _withRecord(env, 'ent', String(email || '').toLowerCase(), _loadEnt, _saveEnt, mutate);
