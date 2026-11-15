@@ -1434,14 +1434,17 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
       ${_cwMostStartedHTML()}
-      <section class="cw-morec" id="cw-morec">
+      <!-- The country catalogue arrives after the page is drawn. It sits under
+           the most-started list and "See more countries" stays last, so that
+           button is held back until the catalogue has arrived (or failed):
+           appearing at the very bottom moves nothing, where a section growing
+           above it would move what somebody was reading (a layout shift a CI
+           runner caught, Nov 14). -->
+      <section class="cc-crew" id="cc-crew" hidden></section>
+      <section class="cw-morec" id="cw-morec" hidden>
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
-      <!-- The country catalogue arrives after the page is drawn, so it is the
-           last thing on it: growing above anything would move what somebody
-           was reading (a layout shift a CI runner caught, Nov 14). -->
-      <section class="cc-crew" id="cc-crew" hidden></section>
       ${/* ONE LINE, NOT A BAND.
 
             The stats band came out because it was three numbers and a price
@@ -1458,7 +1461,7 @@ function renderCrewView(){
       </div>
     </div></div>`;
     _cwWireCmd(vc);
-    _ccReady().then(ok => { if(ok) window.ccFillCrew(); });
+    _ccReady().then(ok => ok ? window.ccFillCrew() : null).catch(() => {}).finally(() => { const m = document.getElementById('cw-morec'); if(m) m.hidden = false; });
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -1646,18 +1649,21 @@ function renderCrewView(){
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
       ${_cwMostStartedHTML()}
-      <section class="cw-morec" id="cw-morec">
+      <!-- The country catalogue arrives after the page is drawn. It sits under
+           the most-started list and "See more countries" stays last, so that
+           button is held back until the catalogue has arrived (or failed):
+           appearing at the very bottom moves nothing, where a section growing
+           above it would move what somebody was reading (a layout shift a CI
+           runner caught, Nov 14). -->
+      <section class="cc-crew" id="cc-crew" hidden></section>
+      <section class="cw-morec" id="cw-morec" hidden>
         <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
-      <!-- The country catalogue arrives after the page is drawn, so it is the
-           last thing on it: growing above anything would move what somebody
-           was reading (a layout shift a CI runner caught, Nov 14). -->
-      <section class="cc-crew" id="cc-crew" hidden></section>
     </div>
   </div></div>`;
   _cwWireCmd(vc);
-  _ccReady().then(ok => { if(ok) window.ccFillCrew(); });
+  _ccReady().then(ok => ok ? window.ccFillCrew() : null).catch(() => {}).finally(() => { const m = document.getElementById('cw-morec'); if(m) m.hidden = false; });
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
   try{ if(typeof renderGames==='function') renderGames(); }catch(e){}
