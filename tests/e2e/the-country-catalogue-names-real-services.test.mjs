@@ -92,11 +92,15 @@ section('Integrations: every entry, in its topic, through AMV’s browser');
     const rows = [...document.querySelectorAll('#int-catalog .cc-svc')];
     const topicOf = (k) => [...new Set(rows.filter(x => x.dataset.cc === k).map(x => (x.closest('[data-topic]') || {}).dataset?.topic))];
     return { n: rows.length, airline: topicOf('airline'), bank: topicOf('bank'),
-             btns: [...new Set(rows.map(x => (x.querySelector('.int-act') || {}).textContent.trim()))] };
+             btns: [...new Set(rows.filter(x => x.dataset.cc !== 'bank').map(x => (x.querySelector('.int-act') || {}).textContent.trim()))],
+             bankBtns: [...new Set(rows.filter(x => x.dataset.cc === 'bank').map(x => (x.querySelector('.int-act button') || {}).dataset?.dact + ':' + (x.querySelector('.int-act') || {}).textContent.trim()))] };
   });
   ok(r.n === file.total, 'every entry is there once its topic is opened whole', { n: r.n, total: file.total });
   ok(r.airline.length === 1 && r.bank.length === 1, 'each kind sits in one topic - the airlines together, the banks together', { airline: r.airline, bank: r.bank });
   ok(r.btns.length === 1 && r.btns[0] === 'Use', 'and each says Use, since AMV cannot connect it', r.btns);
+  /* A bank is never opened in AMV's browser, where a signed-in session could
+     move money: its row is Link, the read-only bank connection. */
+  ok(r.bankBtns.length === 1 && r.bankBtns[0] === 'openBankLink:Link', 'except a bank, which says Link and opens the read-only bank link', r.bankBtns);
   await page.evaluate(() => document.querySelector('#int-catalog .cc-svc[data-cc="airline"] .cc-use').click());
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));

@@ -399,7 +399,12 @@ async function ccFillIntegrations(){
   const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${x.kind}">
       <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
-      <div class="int-act"><button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button></div></div>`;
+      <div class="int-act">${x.kind === 'bank'
+        /* A bank is never opened in AMV's browser, where a signed-in session
+           could move money. Link is the read-only connection - balances and
+           transactions, never a payment - and it says where it is available. */
+        ? `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`
+        : `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`}</div></div>`;
   for(const [topic, rows] of Object.entries(by)){
     let sec = root.querySelector('[data-topic="' + topic + '"]');
     if(!sec){

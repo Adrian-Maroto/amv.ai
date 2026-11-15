@@ -220,14 +220,16 @@ section('Integrations, from Spain: Spain’s services are used, never falsely co
   await page.waitForTimeout(300);
   const d = await page.evaluate(() => ({
     text: document.getElementById('vc').textContent.replace(/\s+/g, ' '),
-    svc: [...document.querySelectorAll('#app .cc-svc')].map(c => ({ n: (c.querySelector('.int-name') || {}).textContent, b: (c.querySelector('.int-act') || {}).textContent.trim(), k: c.dataset.cc })),
+    svc: [...document.querySelectorAll('#app .cc-svc')].map(c => ({ n: (c.querySelector('.int-name') || {}).textContent, b: (c.querySelector('.int-act') || {}).textContent.trim(), k: c.dataset.cc, act: (c.querySelector('.int-act button') || {}).dataset?.dact })),
     cls: window.__cls, src: (window.__src || []).slice(0, 4),
   }));
   ok(!/Services in Spain|Popular in Spain/.test(d.text), 'no "Services in" or "Popular in" Spain block', '');
   ok(d.svc.length >= 20, 'Spain’s own services are in the topics', d.svc.length);
-  ok(d.svc.every(x => x.b === 'Use'), 'each one is Use - opened in AMV’s browser - never a Connect it cannot keep', d.svc.filter(x => x.b !== 'Use').slice(0, 3));
+  ok(d.svc.filter(x => x.k !== 'bank').every(x => x.b === 'Use'), 'each one is Use - opened in AMV’s browser - never a Connect it cannot keep', d.svc.filter(x => x.k !== 'bank' && x.b !== 'Use').slice(0, 3));
+  /* A bank is never opened in AMV's browser: Link opens the read-only bank
+     connection, which says itself whether linking works in Spain. */
   const banks = d.svc.filter(x => x.k === 'bank');
-  ok(banks.length === 0 || banks.every(x => !/Link|Connect/.test(x.b)), 'and no Spanish bank offers to link money', banks.slice(0, 3));
+  ok(banks.length > 0 && banks.every(x => x.b === 'Link' && x.act === 'openBankLink'), 'and a Spanish bank says Link, the read-only connection - never Use, never Connect', banks.slice(0, 3));
   ok(d.cls < 0.001, 'and learning the country moved nothing on the page', { cls: +d.cls.toFixed(4), src: d.src });
   await ctx.close();
 }

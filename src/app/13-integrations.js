@@ -590,7 +590,7 @@ function _integrationsCatalogHTML(opts){
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
           /* The same button as every other Connect: the difference it used to
              show was the Manual badge's, and the badge is gone. */
-          : '<button class="btn bp" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
+          : '<button class="btn '+(o.web?'bs':'bp')+'" data-int-use="'+escH(o.use||'chat')+'" style="font-size:var(--t-sm)">'+escH(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -696,6 +696,15 @@ function _integrationsCatalogHTML(opts){
     else return null;
     return o;
   };
+  /* An app with no connector but a real website (AMV_APP_WEB, 13c): Use opens
+     it in AMV's browser, where the person signs in. A quiet button, because
+     it is not a connection AMV holds - the intro above says the difference. */
+  const webRow=(a)=>{
+    const host=(typeof AMV_APP_WEB!=='undefined') && Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name) ? AMV_APP_WEB[a.name] : '';
+    if(!host) return null;
+    return { id:'web', web:true, name:escH(a.name), desc:escH(a.desc||''), auto:false, icon:_appMarkHTML(a.name),
+             use:'web:'+host+'|'+a.name, useLabel:T('Use'), connected:false };
+  };
   /* A row AMV cannot connect yet. It says what the app is and offers the one
      honest action: tell me when. */
   const notified=_appNotifiedSet();
@@ -717,7 +726,9 @@ function _integrationsCatalogHTML(opts){
        other country's. */
     const here=(()=>{ try{ return c.id==='email' ? _cwCountryGuess() : ''; }catch(e){ return ''; } })();
     const local=(a)=>{ const m=/^mail:(.+)$/.exec(a.how||''); return !!(here && m && AMV_MAIL_CC[m[1]]===here); };
-    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i:local(a)?1.5:i }; })
+    /* Connected, then what connects, then what is used in AMV's browser,
+       then what AMV cannot reach yet. */
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):webRow(a); return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, i:local(a)?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.i-y.i);
     let list=rows;
     if(only){
@@ -942,9 +953,22 @@ function _intUse(use){
      because the whole point of sending them to Spending is that the link
      happens there and they should know that before they arrive. */
   if(use==='bank'){ try{ openBankLink(); }catch(e){} return; }
+  /* An app used in AMV's browser: the same sentence the country's services
+     write (country-catalog.js ccUseService), naming the official address. */
+  if(String(use||'').indexOf('web:')===0){
+    const v=String(use).slice(4), i=v.indexOf('|'), host=v.slice(0, i), name=v.slice(i + 1);
+    return amvUseSite(name, host);
+  }
   setTab(use||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500);
 }
-try{ window._intConnect=_intConnect; window._intUse=_intUse; }catch(e){}
+function amvUseSite(name, host){
+  const text='Using AMV\u2019s browser, open '+host+' ('+name+'). I will sign in myself if it asks. Then help me [what you want to do there].';
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(!ta) return;
+    ta.value=text; try{ fitChatComposer(ta); }catch(e){} ta.focus();
+    const a=text.indexOf('['); if(a>=0) ta.setSelectionRange(a, text.indexOf(']')+1); }, 150);
+}
+try{ window._intConnect=_intConnect; window._intUse=_intUse; window.amvUseSite=amvUseSite; }catch(e){}
 
 function _wireIntegrationCatalog(root){
   root=root||document;

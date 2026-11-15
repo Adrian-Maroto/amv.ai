@@ -33702,7 +33702,7 @@ function _integrationsCatalogHTML(opts){
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
           /* The same button as every other Connect: the difference it used to
              show was the Manual badge's, and the badge is gone. */
-          : '<button class="btn bp" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
+          : '<button class="btn '+(o.web?'bs':'bp')+'" data-int-use="'+escH(o.use||'chat')+'" style="font-size:var(--t-sm)">'+escH(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -33808,6 +33808,15 @@ function _integrationsCatalogHTML(opts){
     else return null;
     return o;
   };
+  /* An app with no connector but a real website (AMV_APP_WEB, 13c): Use opens
+     it in AMV's browser, where the person signs in. A quiet button, because
+     it is not a connection AMV holds - the intro above says the difference. */
+  const webRow=(a)=>{
+    const host=(typeof AMV_APP_WEB!=='undefined') && Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name) ? AMV_APP_WEB[a.name] : '';
+    if(!host) return null;
+    return { id:'web', web:true, name:escH(a.name), desc:escH(a.desc||''), auto:false, icon:_appMarkHTML(a.name),
+             use:'web:'+host+'|'+a.name, useLabel:T('Use'), connected:false };
+  };
   /* A row AMV cannot connect yet. It says what the app is and offers the one
      honest action: tell me when. */
   const notified=_appNotifiedSet();
@@ -33829,7 +33838,9 @@ function _integrationsCatalogHTML(opts){
        other country's. */
     const here=(()=>{ try{ return c.id==='email' ? _cwCountryGuess() : ''; }catch(e){ return ''; } })();
     const local=(a)=>{ const m=/^mail:(.+)$/.exec(a.how||''); return !!(here && m && AMV_MAIL_CC[m[1]]===here); };
-    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i:local(a)?1.5:i }; })
+    /* Connected, then what connects, then what is used in AMV's browser,
+       then what AMV cannot reach yet. */
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):webRow(a); return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, i:local(a)?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.i-y.i);
     let list=rows;
     if(only){
@@ -34054,9 +34065,22 @@ function _intUse(use){
      because the whole point of sending them to Spending is that the link
      happens there and they should know that before they arrive. */
   if(use==='bank'){ try{ openBankLink(); }catch(e){} return; }
+  /* An app used in AMV's browser: the same sentence the country's services
+     write (country-catalog.js ccUseService), naming the official address. */
+  if(String(use||'').indexOf('web:')===0){
+    const v=String(use).slice(4), i=v.indexOf('|'), host=v.slice(0, i), name=v.slice(i + 1);
+    return amvUseSite(name, host);
+  }
   setTab(use||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500);
 }
-try{ window._intConnect=_intConnect; window._intUse=_intUse; }catch(e){}
+function amvUseSite(name, host){
+  const text='Using AMV\u2019s browser, open '+host+' ('+name+'). I will sign in myself if it asks. Then help me [what you want to do there].';
+  setTab('chat');
+  setTimeout(()=>{ const ta=$('mta'); if(!ta) return;
+    ta.value=text; try{ fitChatComposer(ta); }catch(e){} ta.focus();
+    const a=text.indexOf('['); if(a>=0) ta.setSelectionRange(a, text.indexOf(']')+1); }, 150);
+}
+try{ window._intConnect=_intConnect; window._intUse=_intUse; window.amvUseSite=amvUseSite; }catch(e){}
 
 function _wireIntegrationCatalog(root){
   root=root||document;
@@ -35739,6 +35763,232 @@ try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdir
 /* Where each national mailbox above is used - the country MAIL_PROVIDERS on
    the server gives it - so the Email topic leads with the visitor's own. */
 const AMV_MAIL_CC = { qq:'CN', sina:'CN', aliyun:'CN', naver:'KR', daum:'KR', yahoojp:'JP', yandex:'RU', yandextr:'TR', mailru:'RU', ukrnet:'UA', webde:'DE', tonline:'DE', bluewin:'CH', orange:'FR', free:'FR', laposte:'FR', telenet:'BE', kpn:'NL', ziggo:'NL', xs4all:'NL', libero:'IT', tiscali:'IT', sapo:'PT', seznam:'CZ', wppl:'PL', onet:'PL', interia:'PL', telia:'SE', rediff:'IN', uol:'BR', bol:'BR', mweb:'ZA', comcast:'US', att:'US', spectrum:'US', cox:'US', bell:'CA', shaw:'CA', telus:'CA', telstra:'AU', bt:'GB' };
+/* WHERE AN APP WITHOUT A CONNECTOR IS USED (Nov 15, the owner: "how is Crew
+   going to do it if it is not connected?"). AMV's own browser is how chat and
+   Crew reach any service with a sign-in: the person signs in on the real
+   site, and every action there is asked for one at a time. So an app with a
+   real website offers Use, which opens it there, instead of only Notify me.
+
+   Each is the app's own official web address, written out - never searched
+   for, because a search result is where a look-alike site would come in.
+   Deliberately NOT here, so they stay Notify me: money and banking apps and
+   health apps (AMV's saved sign-ins refuse both, for the same reason),
+   accounting, cloud consoles and databases (a browser session there can
+   delete infrastructure), smart-home and car apps (they move physical
+   things), apps with no website at all, and apps whose sign-in is a school's
+   or a company's own address (Moodle, Zendesk, a Mastodon server) - there is
+   no one right site to open for those. */
+const AMV_APP_WEB = {
+  "Proton Mail":'mail.proton.me',
+  "HEY":'app.hey.com',
+  "Superhuman":'mail.superhuman.com',
+  "Spark Mail":'web.sparkmailapp.com',
+  "Front":'app.frontapp.com',
+  "Cal.com":'app.cal.com',
+  "Microsoft Bookings":'outlook.office.com/bookings',
+  "Doodle":'doodle.com',
+  "Notion Calendar":'calendar.notion.so',
+  "Acuity Scheduling":'secure.acuityscheduling.com',
+  "WhatsApp":'web.whatsapp.com',
+  "Microsoft Teams":'teams.microsoft.com',
+  "Messenger":'www.messenger.com',
+  "Google Chat":'chat.google.com',
+  "Google Meet":'meet.google.com',
+  "Webex":'web.webex.com',
+  "iCloud Drive":'www.icloud.com/iclouddrive',
+  "Evernote":'www.evernote.com',
+  "OneNote":'www.onenote.com',
+  "Adobe Acrobat":'acrobat.adobe.com',
+  "Google Keep":'keep.google.com',
+  "Coda":'coda.io',
+  "Bitbucket":'bitbucket.org',
+  "Netlify":'app.netlify.com',
+  "Firebase":'console.firebase.google.com',
+  "Stack Overflow":'stackoverflow.com',
+  "Docker Hub":'hub.docker.com',
+  "npm":'www.npmjs.com',
+  "Replit":'replit.com',
+  "Expo":'expo.dev',
+  "Schoology":'app.schoology.com',
+  "Seesaw":'app.seesaw.me',
+  "ClassDojo":'www.classdojo.com',
+  "Remind":'www.remind.com',
+  "Duolingo":'www.duolingo.com',
+  "Khan Academy":'www.khanacademy.org',
+  "Coursera":'www.coursera.org',
+  "Udemy":'www.udemy.com',
+  "edX":'www.edx.org',
+  "Quizlet":'quizlet.com',
+  "Zotero":'www.zotero.org',
+  "Mendeley":'www.mendeley.com',
+  "Google Scholar":'scholar.google.com',
+  "LinkedIn":'www.linkedin.com',
+  "Indeed":'www.indeed.com',
+  "Glassdoor":'www.glassdoor.com',
+  "ZipRecruiter":'www.ziprecruiter.com',
+  "Upwork":'www.upwork.com',
+  "Fiverr":'www.fiverr.com',
+  "Monster":'www.monster.com',
+  "Handshake":'app.joinhandshake.com',
+  "Wellfound":'wellfound.com',
+  "Freelancer":'www.freelancer.com',
+  "Seek":'www.seek.com.au',
+  "Dice":'www.dice.com',
+  "Toptal":'www.toptal.com',
+  "CareerBuilder":'www.careerbuilder.com',
+  "Trello":'trello.com',
+  "ClickUp":'app.clickup.com',
+  "Microsoft To Do":'to-do.office.com',
+  "Basecamp":'basecamp.com',
+  "Wrike":'www.wrike.com',
+  "Smartsheet":'app.smartsheet.com',
+  "TickTick":'ticktick.com',
+  "Microsoft Planner":'tasks.office.com',
+  "Zoho Projects":'projects.zoho.com',
+  "Loom":'www.loom.com',
+  "Adobe Express":'new.express.adobe.com',
+  "Framer":'framer.com',
+  "Squarespace":'www.squarespace.com',
+  "WordPress":'wordpress.com',
+  "Behance":'www.behance.net',
+  "Dribbble":'dribbble.com',
+  "Unsplash":'unsplash.com',
+  "Picsart":'picsart.com',
+  "CapCut":'www.capcut.com',
+  "TikTok":'www.tiktok.com',
+  "Netflix":'www.netflix.com',
+  "Twitch":'www.twitch.tv',
+  "Vimeo":'vimeo.com',
+  "Disney+":'www.disneyplus.com',
+  "Prime Video":'www.primevideo.com',
+  "Max":'play.max.com',
+  "Hulu":'www.hulu.com',
+  "Crunchyroll":'www.crunchyroll.com',
+  "Plex":'app.plex.tv',
+  "Riverside":'riverside.fm',
+  "StreamYard":'streamyard.com',
+  "Apple Music":'music.apple.com',
+  "YouTube Music":'music.youtube.com',
+  "SoundCloud":'soundcloud.com',
+  "Amazon Music":'music.amazon.com',
+  "Deezer":'www.deezer.com',
+  "Tidal":'listen.tidal.com',
+  "Pandora":'www.pandora.com',
+  "Audible":'www.audible.com',
+  "Apple Podcasts":'podcasts.apple.com',
+  "Pocket Casts":'play.pocketcasts.com',
+  "JioSaavn":'www.jiosaavn.com',
+  "Anghami":'play.anghami.com',
+  "Boomplay":'www.boomplay.com',
+  "Bandcamp":'bandcamp.com',
+  "Last.fm":'www.last.fm',
+  "Instagram":'www.instagram.com',
+  "Facebook":'www.facebook.com',
+  "X":'x.com',
+  "Threads":'www.threads.net',
+  "Bluesky":'bsky.app',
+  "Tumblr":'www.tumblr.com',
+  "Quora":'www.quora.com',
+  "Nextdoor":'nextdoor.com',
+  "Amazon":'www.amazon.com',
+  "eBay":'www.ebay.com',
+  "Walmart":'www.walmart.com',
+  "Etsy":'www.etsy.com',
+  "Mercado Libre":'www.mercadolibre.com',
+  "Flipkart":'www.flipkart.com',
+  "Rakuten":'www.rakuten.co.jp',
+  "Shopee":'shopee.com',
+  "Lazada":'www.lazada.com',
+  "Coupang":'www.coupang.com',
+  "Target":'www.target.com',
+  "Costco":'www.costco.com',
+  "IKEA":'www.ikea.com',
+  "Zalando":'www.zalando.com',
+  "Best Buy":'www.bestbuy.com',
+  "Instacart":'www.instacart.com',
+  "Vinted":'www.vinted.com',
+  "Wayfair":'www.wayfair.com',
+  "Airbnb":'www.airbnb.com',
+  "Booking.com":'www.booking.com',
+  "Expedia":'www.expedia.com',
+  "Tripadvisor":'www.tripadvisor.com',
+  "Skyscanner":'www.skyscanner.net',
+  "Google Flights":'www.google.com/travel/flights',
+  "Kayak":'www.kayak.com',
+  "Trip.com":'www.trip.com',
+  "Agoda":'www.agoda.com',
+  "Hotels.com":'www.hotels.com',
+  "Hopper":'www.hopper.com',
+  "TripIt":'www.tripit.com',
+  "Trainline":'www.thetrainline.com',
+  "Rome2Rio":'www.rome2rio.com',
+  "Hostelworld":'www.hostelworld.com',
+  "Google Maps":'www.google.com/maps',
+  "Citymapper":'citymapper.com',
+  "Moovit":'moovitapp.com',
+  "BlaBlaCar":'www.blablacar.com',
+  "Uber Eats":'www.ubereats.com',
+  "DoorDash":'www.doordash.com',
+  "Deliveroo":'deliveroo.co.uk',
+  "Just Eat":'www.just-eat.co.uk',
+  "Swiggy":'www.swiggy.com',
+  "Rappi":'www.rappi.com',
+  "Glovo":'glovoapp.com',
+  "Grubhub":'www.grubhub.com',
+  "iFood":'www.ifood.com.br',
+  "foodpanda":'www.foodpanda.com',
+  "Talabat":'www.talabat.com',
+  "OpenTable":'www.opentable.com',
+  "Yelp":'www.yelp.com',
+  "Kindle":'read.amazon.com',
+  "Goodreads":'www.goodreads.com',
+  "Medium":'medium.com',
+  "Substack":'substack.com',
+  "Feedly":'feedly.com',
+  "Flipboard":'flipboard.com',
+  "Google News":'news.google.com',
+  "The New York Times":'www.nytimes.com',
+  "BBC News":'www.bbc.com/news',
+  "Instapaper":'www.instapaper.com',
+  "Readwise":'readwise.io',
+  "Wattpad":'www.wattpad.com',
+  "Webtoon":'www.webtoons.com',
+  "Inoreader":'www.inoreader.com',
+  "Salesforce":'login.salesforce.com',
+  "Pipedrive":'app.pipedrive.com',
+  "Zoho CRM":'crm.zoho.com',
+  "Copper":'app.copper.com',
+  "Google Forms":'docs.google.com/forms',
+  "SurveyMonkey":'www.surveymonkey.com',
+  "Tally":'tally.so',
+  "Mailchimp":'login.mailchimp.com',
+  "Klaviyo":'www.klaviyo.com',
+  "Google Ads":'ads.google.com',
+  "Meta Ads Manager":'adsmanager.facebook.com',
+  "Google Analytics":'analytics.google.com',
+  "Semrush":'www.semrush.com',
+  "Ahrefs":'app.ahrefs.com',
+  "Hootsuite":'hootsuite.com',
+  "Buffer":'buffer.com',
+  "Later":'later.com',
+  "Brevo":'app.brevo.com',
+  "Constant Contact":'www.constantcontact.com',
+  "LinkedIn Ads":'www.linkedin.com/campaignmanager',
+  "TikTok Ads":'ads.tiktok.com',
+  "Sprout Social":'app.sproutsocial.com',
+  "Intercom":'app.intercom.com',
+  "Help Scout":'secure.helpscout.net',
+  "Zoho Desk":'desk.zoho.com',
+  "Crisp":'app.crisp.chat',
+  "LiveChat":'my.livechatinc.com',
+  "Tidio":'www.tidio.com',
+  "Trustpilot":'www.trustpilot.com',
+  "Power Automate":'make.powerautomate.com',
+  "Pipedream":'pipedream.com',
+  "Power BI":'app.powerbi.com',
+  "Looker Studio":'lookerstudio.google.com',
+  "Mixpanel":'mixpanel.com',
+};
 const AMV_APP_CATS = [
   { id:'email', t:'Email', q:'email', apps:[
     'Gmail|g|Reads, sorts and drafts your email. You choose what AMV may do.',

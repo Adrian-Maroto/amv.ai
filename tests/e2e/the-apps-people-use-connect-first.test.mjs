@@ -45,7 +45,8 @@ section('Every topic is the same shape, and there is no "everything else"');
       sixThenMore: secs.filter(s => {
         const cat = _appCats().find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
         if (!cat) return false;
-        const live = cat.apps.filter(a => a.how).length, want = Math.min(6, live);
+        /* What connects, then what opens in AMV's browser (AMV_APP_WEB, Nov 15). */
+        const live = cat.apps.filter(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name)).length, want = Math.min(6, live);
         const rows = s.querySelectorAll('.int-card:not(.cc-svc)').length, more = s.querySelector('.int-seemore[data-app-more]');
         const none = !!s.querySelector('.int-none');
         return rows === want && (cat.apps.length > want ? !!more : !more) && (want === 0) === none;
@@ -62,7 +63,8 @@ section('Every topic is the same shape, and there is no "everything else"');
   ok(r.shaped === r.n, 'each with a heading and rows', r.shaped + ' of ' + r.n);
   ok(r.sixThenMore === r.n, 'each shows what connects (up to six), then one small See all where there are more', r.sixThenMore + ' of ' + r.n);
   ok(r.firstScreenNotify === 0, 'and no Notify me row on the first screen - it was 119 of 191', r.firstScreenNotify);
-  ok(r.emptyTopics.includes('Shopping') && r.emptyTopics.length < r.n / 2, 'a topic where nothing connects yet says so in one line', r.emptyTopics);
+  const reachable = await page.evaluate(() => Object.fromEntries(_appCats().map(c => [c.t.replace(/&amp;/g, '&'), c.apps.some(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name))])));
+  ok(r.emptyTopics.length > 0 && r.emptyTopics.length < r.n / 2 && r.emptyTopics.every(t => reachable[t] === false), 'a topic where nothing connects or opens yet says so in one line', r.emptyTopics);
   ok(r.registryDoors === 0, 'and no second door into the open registry under a topic', r.registryDoors);
   ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');
@@ -108,7 +110,8 @@ section('Connect only where AMV really connects, and those come first');
       && !rows.some(c => !c.classList.contains('int-notify') && c.closest('.int-req'))
       && [...document.querySelectorAll('#int-catalog .int-req .int-req-h')].every(h => /Request an integration/.test(h.textContent));
     return { conn, use, order, apart, notifyN: notify.length,
-      temu: notifyOf('Amazon'), netflix: notifyOf('Netflix'), capcut: notifyOf('CapCut'),
+      web: ['Amazon', 'Netflix', 'CapCut'].map(n => { const c = byName(n); return !!(c && c.querySelector('[data-int-use^="web:"]') && !c.querySelector('[data-int-conn]')); }),
+      signal: notifyOf('Signal'), revolut: notifyOf('Revolut'),
       slackConn: !!(byName('Slack') && byName('Slack').querySelector('[data-int-conn="prov"]')),
       canva: (byName('Canva') || {}).querySelector && byName('Canva').querySelector('[data-int-conn="rmcp"]') ? true : false,
       notion: (byName('Notion') || {}).querySelector && byName('Notion').querySelector('[data-int-conn="rmcp"]') ? true : false,
@@ -116,14 +119,18 @@ section('Connect only where AMV really connects, and those come first');
   });
   ok(r.apart, 'what AMV cannot connect yet is listed apart, under Request an integration', r.notifyN);
   ok(r.conn.length >= 8 && r.conn.every(c => CONNECTS.includes(c)), 'every Connect button opens a flow that exists', [...new Set(r.conn)]);
-  ok(r.use.every(u => USES.includes(u)), 'and every other action goes somewhere real', [...new Set(r.use)]);
+  ok(r.use.every(u => USES.includes(u) || /^web:[a-z0-9.-]+\.[a-z]+(\/[A-Za-z0-9/_-]*)?\|.+/.test(u)), 'and every other action goes somewhere real - a flow on this page, or the app’s own address in AMV’s browser', [...new Set(r.use)].filter(u => u.indexOf('web:') !== 0));
   /* Slack and Discord publish no official connector, so they are Notify me -
      their old Connect only ever said the sign-in was unfinished. Notion and
      Canva do publish one, verified in the registry, so theirs really connects. */
   /* Apps with no public API anybody may use - CapCut, Netflix, Snapchat - are
      Notify me: there is nothing to connect to, and a Connect would be a lie.
      Slack has a public API, so it connects through its own sign-in. */
-  ok(r.temu && r.netflix && r.capcut, 'CapCut, Netflix and Amazon are Notify me, not a Connect that goes nowhere', r);
+  /* Since Nov 15 they open in AMV's browser instead (Use) - still never a
+     Connect, because there is still nothing to connect to. An app with no
+     website, or a money app, stays Notify me. */
+  ok(r.web.every(Boolean), 'CapCut, Netflix and Amazon open in AMV’s browser - Use, never a Connect that goes nowhere', r.web);
+  ok(r.signal && r.revolut, 'while Signal (no website) and Revolut (money) stay Notify me', { signal: r.signal, revolut: r.revolut });
   ok(r.slackConn, 'Slack connects through its own sign-in', r.slackConn);
   ok(r.notion && r.canva, 'Notion and Canva connect through their own official connectors', r);
   ok(r.order.every(o => o.ok), 'in every topic the ones that connect come before the ones that do not', r.order.filter(o => !o.ok));
@@ -168,16 +175,16 @@ section('Notify me says what happened');
     store('amv_app_notified', []);
     /* No server: nothing recorded, and it says so. */
     AMV_API.base = '';
-    const off = await click('capcut');
+    const off = await click('signal');
     /* The server refuses: not marked, and the reason is given. */
     AMV_API.base = 'https://api.example.workers.dev';
     AMV_API._fetch = async (path, o) => { sent.push({ path, body: JSON.parse(o.body) }); return new Response('{"error":"slow down"}', { status: 429 }); };
-    const busy = await click('capcut');
+    const busy = await click('signal');
     /* The server records it. */
     AMV_API._fetch = async (path, o) => { sent.push({ path, body: JSON.parse(o.body) }); return new Response('{"ok":true}', { status: 200 }); };
-    const good = await click('capcut');
+    const good = await click('signal');
     await new Promise(r => setTimeout(r, 200));
-    const row = [...document.querySelectorAll('#int-catalog .int-card')].find(c => (c.querySelector('.int-name') || {}).textContent === 'CapCut');
+    const row = [...document.querySelectorAll('#int-catalog .int-card')].find(c => (c.querySelector('.int-name') || {}).textContent === 'Signal');
     AMV_API.base = realBase; AMV_API._fetch = realFetch;
     return { off, busy, good, sent, onList: !!(row && row.querySelector('.int-onlist')), stillButton: !!(row && row.querySelector('[data-app-notify]')) };
   });
@@ -185,7 +192,7 @@ section('Notify me says what happened');
   ok(!r.busy.marked && /try again/i.test(r.busy.toast), 'refused, it is not marked and says why', r.busy);
   ok(r.good.marked, 'recorded, it is marked', r.good);
   const last = r.sent.filter(x => x.path === '/waitlist').pop() || {};
-  ok(last.path === '/waitlist' && last.body.product === 'app-capcut' && last.body.email === 'alex@x.com',
+  ok(last.path === '/waitlist' && last.body.product === 'app-signal' && last.body.email === 'alex@x.com',
      'on the server’s waitlist, one product per app, under the account’s own address', last);
   ok(r.onList && !r.stillButton, 'and the row now says On the list', r);
   await page.evaluate(() => { _appOpen.clear(); _paintIntegrations(); });
@@ -194,7 +201,7 @@ section('Notify me says what happened');
 section('Show all opens the rest of a topic, and keeps it open');
 {
   const r = await page.evaluate(async () => {
-    const sec = () => [...document.querySelectorAll('#int-catalog > .ss2')].find(s => s.querySelector('h3').textContent === 'Shopping');
+    const sec = () => [...document.querySelectorAll('#int-catalog > .ss2')].find(s => s.querySelector('h3').textContent === 'Games');
     const before = sec().querySelectorAll('.int-card:not(.cc-svc)').length;
     sec().querySelector('[data-app-more]').click();
     await new Promise(r => setTimeout(r, 200));
@@ -202,10 +209,10 @@ section('Show all opens the rest of a topic, and keeps it open');
     _paintIntegrations();
     await new Promise(r => setTimeout(r, 100));
     const repaint = sec().querySelectorAll('.int-card:not(.cc-svc)').length;
-    const total = AMV_APP_CATS.find(c => c.id === 'shop').apps.length;
+    const total = AMV_APP_CATS.find(c => c.id === 'games').apps.length;
     return { before, after, repaint, total };
   });
-  ok(r.before === 0, 'Shopping, where nothing connects yet, shows no cards at first', r.before);
+  ok(r.before === 0, 'Games, where nothing connects or opens yet, shows no cards at first', r.before);
   ok(r.after === r.total, 'Show all shows every one', r);
   ok(r.repaint === r.total, 'and a repaint does not snap it shut', r);
 }
