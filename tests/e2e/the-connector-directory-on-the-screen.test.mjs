@@ -74,13 +74,15 @@ section('A topic is a door, and the page asks for nothing until one is opened');
   await CONNECT('ok');
   await open();
   const r = await page.evaluate(() => ({
-    doors: document.querySelectorAll('#int-catalog > .ss2 > h3').length,
+    /* The app list's topics; the country's own two (government, going out)
+       are added beside them since Nov 15 and are not doors to the registry. */
+    doors: document.querySelectorAll('#int-catalog > .ss2:not([data-topic="gov"]):not([data-topic="out"]) > h3').length,
     rows: document.querySelectorAll('.cdir-row').length,
     tiles: document.querySelectorAll('.cdir-tile').length,
     /* Every door carries the query it really sends, so a heading cannot
        promise a search it does not run. */
     queries: AMV_APP_CATS.map(c => c.q),
-    titles: [...document.querySelectorAll('#int-catalog .ss2 > h3')].map(x => x.textContent.trim()),
+    titles: [...document.querySelectorAll('#int-catalog > .ss2:not([data-topic="gov"]):not([data-topic="out"]) > h3')].map(x => x.textContent.trim()),
     asked: window.__asked.length,
     find: !!document.getElementById('cdir-find'),
   }));

@@ -120,7 +120,7 @@ section('It closes on X and on Esc, back to where it was opened, and leaves noth
   ok(e.tab === 'crew' && !e.layer, 'Esc: the same', e);
   const t = await page.evaluate(async () => {
     setTab('settings'); await new Promise(r => setTimeout(r, 200)); setTab('tasks'); await new Promise(r => setTimeout(r, 300));
-    return { layer: !!document.getElementById('set-modal'), tasks: !!document.querySelector('#vc .tasks-page') };
+    return { layer: !!document.getElementById('set-modal'), tasks: !!document.querySelector('#vc .tk2') };
   });
   ok(!t.layer && t.tasks, 'going to any other screen from inside it removes the panel', t);
 }

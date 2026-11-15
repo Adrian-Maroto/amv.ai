@@ -189,8 +189,7 @@ function cwNeeds(jobId){
       /* Spending, because that is where the account card lives and where the
          link actually starts. Not Connectors, which is where this used to go
          and which has nothing to offer for a bank. */
-      try{ closeOvr(); setTab('spend'); }catch(e){}
-      try{ toast('Link your account under "Investing" here, then come back to the job.', 'info', 7000); }catch(e){}
+      try{ openBankLink(); }catch(e){}
       return;
     }
     /* An app: the directory, searched for the one it wants, so the thing they
@@ -1449,6 +1448,7 @@ function _cwLocalRepaint(cc){
      rebuilds per open. The fallback is still a full render, for the case where
      the block is not on the page - a search, or a category other than all. */
   try{
+    if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ window._cjRepaint(); return; }
     if(S.tab === 'crew'){
       let done = false;
       if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
@@ -1595,10 +1595,10 @@ function _cwReRank(){
 }
 /* THE CATEGORIES CREW AND TASKS ARE ORGANIZED BY (Nov 15) - one set, so a
    bank is under Money on both screens. */
-const CX_CATS = ['Money', 'Inbox & calendar', 'Work & career', 'Shopping', 'Travel', 'Government & paperwork',
+const CJ_CATS = ['Money', 'Inbox & calendar', 'Work & career', 'Shopping', 'Travel', 'Government & paperwork',
                  'Health', 'Learning', 'News', 'Going out', 'Home & life', 'Family & kids', 'Growing a business', 'Making things'];
 /* The country catalogue's kinds, in the categories a person looks under. */
-const CX_KIND_CAT = {
+const CJ_KIND_CAT = {
   bank:'Money', insurer:'Money', utility:'Home & life', telecom:'Home & life', isp:'Home & life', carmaker:'Home & life',
   university:'Learning', college:'Learning', school:'Learning', library:'Learning', research:'Learning', publisher:'Learning',
   newspaper:'News', newssite:'News', tv:'News', radio:'News',
@@ -1610,13 +1610,13 @@ const CX_KIND_CAT = {
   museum:'Going out', theatre:'Going out', stadium:'Going out', sportsclub:'Going out', park:'Going out', zoo:'Going out', festival:'Going out', brewery:'Going out',
 };
 /* The older category names, folded into the same set. */
-const CX_OLD_CAT = { 'Watching the world':'News' };
-function _cxCat(j){
-  if(j && j.ccKind && CX_KIND_CAT[j.ccKind]) return CX_KIND_CAT[j.ccKind];
+const CJ_OLD_CAT = { 'Watching the world':'News' };
+function _cjCat(j){
+  if(j && j.ccKind && CJ_KIND_CAT[j.ccKind]) return CJ_KIND_CAT[j.ccKind];
   const c = (j && j.cat) || '';
-  return CX_OLD_CAT[c] || (CX_CATS.indexOf(c) >= 0 ? c : 'Home & life');
+  return CJ_OLD_CAT[c] || (CJ_CATS.indexOf(c) >= 0 ? c : 'Home & life');
 }
-try{ window._cxCat = _cxCat; }catch(e){}
+try{ window._cjCat = _cjCat; }catch(e){}
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
   _cwRankedFor = _cwRankKey();
@@ -1995,6 +1995,7 @@ function _cwRedrawIfChanged(){
      third rebuild is now one block redrawing in place. The fallback is a full
      render for the states where that block is not on the page. */
   try{
+    if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ window._cjRepaint(); return; }
     const body = document.getElementById('cw-jobs-body');
     if(body && S.tab === 'crew'){
       body.innerHTML = _cwJobsBody(_cwShowcase(), _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
@@ -2166,6 +2167,7 @@ function _cwMostStartedHTML(){
 }
 function _cwForYouRepaint(){
   _cwGuessDrawn = _cwCountryGuess();
+  if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ try{ _cwLoadLocal(_cwGuessDrawn); }catch(e){} window._cjRepaint(); return; }
   _cwWhereRepaint();
   try{
     const el = document.getElementById('cw-foryou') || document.getElementById('cw-pop');

@@ -32,7 +32,10 @@ const USES = ['bank', 'calfeeds', 'jobs', 'everyday', 'coverage', 'chat', 'vscod
 section('Every topic is the same shape, and there is no "everything else"');
 {
   const r = await page.evaluate(() => {
-    const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
+    /* The app list's own topics. The country's services join their topic (and
+       add two topics of their own, government and going out) since Nov 15;
+       they are their own rows, `.cc-svc`, and are held by their own suite. */
+    const secs = [...document.querySelectorAll('#int-catalog > .ss2')].filter(s => !/^(gov|out)$/.test(s.dataset.topic || ''));
     return {
       n: secs.length, cats: AMV_APP_CATS.length, count: _appCount(),
       shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card, .int-list .int-none')).length,
@@ -43,7 +46,7 @@ section('Every topic is the same shape, and there is no "everything else"');
         const cat = _appCats().find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
         if (!cat) return false;
         const live = cat.apps.filter(a => a.how).length, want = Math.min(6, live);
-        const rows = s.querySelectorAll('.int-card').length, more = s.querySelector('.int-seemore[data-app-more]');
+        const rows = s.querySelectorAll('.int-card:not(.cc-svc)').length, more = s.querySelector('.int-seemore[data-app-more]');
         const none = !!s.querySelector('.int-none');
         return rows === want && (cat.apps.length > want ? !!more : !more) && (want === 0) === none;
       }).length,
@@ -64,7 +67,9 @@ section('Every topic is the same shape, and there is no "everything else"');
   ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');
   ok(r.count >= 400, 'the list is hundreds of real apps', r.count);
-  ok(r.intro.indexOf(String(r.count)) === 0, 'and the number on the page is the length of the list, not a claim', r.intro.slice(0, 40));
+  /* The intro says what Connect and Use do and states no number (Nov 15): a
+     count is only on the page where it is the length of a list. */
+  ok(!/\d/.test(r.intro) && /Connect/.test(r.intro) && /Use/.test(r.intro), 'and the intro claims no number, only what Connect and Use do', r.intro.slice(0, 80));
 }
 
 section('The apps people named are there');
@@ -190,13 +195,13 @@ section('Show all opens the rest of a topic, and keeps it open');
 {
   const r = await page.evaluate(async () => {
     const sec = () => [...document.querySelectorAll('#int-catalog > .ss2')].find(s => s.querySelector('h3').textContent === 'Shopping');
-    const before = sec().querySelectorAll('.int-card').length;
+    const before = sec().querySelectorAll('.int-card:not(.cc-svc)').length;
     sec().querySelector('[data-app-more]').click();
     await new Promise(r => setTimeout(r, 200));
-    const after = sec().querySelectorAll('.int-card').length;
+    const after = sec().querySelectorAll('.int-card:not(.cc-svc)').length;
     _paintIntegrations();
     await new Promise(r => setTimeout(r, 100));
-    const repaint = sec().querySelectorAll('.int-card').length;
+    const repaint = sec().querySelectorAll('.int-card:not(.cc-svc)').length;
     const total = AMV_APP_CATS.find(c => c.id === 'shop').apps.length;
     return { before, after, repaint, total };
   });

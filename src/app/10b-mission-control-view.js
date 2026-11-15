@@ -233,7 +233,7 @@ const _CW_USE_IC = {
 const _CX_CADS = [['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Every weekday'], ['weekly', 'Every week'], ['monthly', 'Every month']];
 const _CX_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 /* A schedule in the words a person uses: "Every day at 6:00 AM". */
-function _cxWhenLabel(sc){
+function _cjWhenLabel(sc){
   if(!sc) return T('Every day');
   const cad = sc.cad || 'daily';
   if(cad === 'hourly' || cad === '10min' || cad === '30min') return T({ hourly:'Every hour', '10min':'Every 10 minutes', '30min':'Every 30 minutes' }[cad]);
@@ -267,7 +267,7 @@ function _cwJobWhen(j){
 }
 /* The panel's controls, read into a schedule the server and this device both
    keep: 'weekdays' is a weekly schedule on Monday to Friday. */
-function _cxReadWhen(){
+function _cjReadWhen(){
   const cad = String(($('cwp-cad') || {}).value || 'daily');
   if(cad === 'hourly') return { cad: 'hourly' };
   const t = String(($('cwp-time') || {}).value || '08:00').split(':');
@@ -299,7 +299,7 @@ async function _cwApplyWhen(j, sc){
       _saveSched(l);
     }
   }catch(e){}
-  toast(T('Schedule saved') + ': ' + _cxWhenLabel(sc), 'success', 4000);
+  toast(T('Schedule saved') + ': ' + _cjWhenLabel(sc), 'success', 4000);
   return true;
 }
 /* A job by id: this country's list, or any country's catalogue that has
@@ -332,7 +332,7 @@ function cwPeek(id){
     : (['hourly', 'daily', 'weekly', 'monthly'].indexOf(sc.cad) >= 0 ? sc.cad : 'hourly');
   const hh = String(sc.hour != null ? sc.hour : 8).padStart(2, '0') + ':' + String(sc.minute || 0).padStart(2, '0');
   const day0 = Array.isArray(sc.days) && sc.days.length ? sc.days[0] : 1;
-  const when = `<div class="cwp-when cx-when">
+  const when = `<div class="cwp-when cj-when">
       <select class="inp" id="cwp-cad" aria-label="${escH(T('How often'))}">
         ${_CX_CADS.map(o => `<option value="${o[0]}"${o[0] === cadNow ? ' selected' : ''}>${escH(T(o[1]))}</option>`).join('')}
       </select>
@@ -345,27 +345,31 @@ function cwPeek(id){
       <input class="inp" id="cwp-time" type="time" value="${hh}" aria-label="${escH(T('Time'))}"${cadNow === 'hourly' ? ' hidden' : ''}>
     </div>`;
   const asks = (j.asks && j.asks.q)
-    ? `<div class="cx-p-row"><div class="cx-p-k">${escH(T('It will ask you'))}</div><p class="cx-p-v">${escH(j.asks.q)}</p></div>` : '';
+    ? `<div class="cj-p-row cwp-ask"><div class="cj-p-k">${escH(T('It will ask you once'))}</div><p class="cj-p-v">${escH(j.asks.q)}<small>${escH(T('So the job works from your answer, not from nothing.'))}</small></p></div>` : '';
   const sample = Array.isArray(j.sample) && j.sample.length
-    ? `<div class="cx-p-sub">${escH(T('Example of what you get'))}</div><div class="cwp-sample">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>` : '';
-  const prompt = j.prompt ? `<div class="cx-p-sub">${escH(T('The instruction AMV follows'))}</div><pre class="cwp-prompt">${escH(j.prompt)}</pre>` : '';
-  const status = j.on ? T('On') + ' · ' + _cxWhenLabel(sc) : _cxWhenLabel(sc);
+    ? `<div class="cj-p-sub">${escH(T('Example of what you get'))}</div><div class="cwp-sample">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>` : '';
+  const prompt = j.prompt ? `<div class="cj-p-sub">${escH(T('The instruction AMV follows'))}</div><pre class="cwp-prompt">${escH(j.prompt)}</pre>` : '';
+  /* Where it runs, in a few words where it matters: a job that needs this
+     browser says so beside its schedule, so "every day at 8" is not read as
+     "with AMV closed" when it is not. */
+  const here = !_cwRunsUnattended(j) && !_cwUnattendedReady(j) ? ' \u00b7 ' + T('whenever AMV is open') : '';
+  const status = (j.on ? T('On') + ' \u00b7 ' : '') + _cjWhenLabel(sc) + here;
 
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cx-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <header class="cx-p-h">
-      <span class="cx-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-      <div class="cx-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-        <span class="cx-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
+  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cj-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <header class="cj-p-h">
+      <span class="cj-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <div class="cj-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+        <span class="cj-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
       <button class="cwp-x" id="cwp-close" aria-label="${escH(T('Close'))}">✕</button>
     </header>
-    <div class="cwp-scroll cx-p-b">
-      <p class="cwp-desc cx-p-d">${escH(j.desc)}</p>
-      <div class="cx-p-row"><div class="cx-p-k">${escH(T('Schedule'))}</div>${when}</div>
-      ${uses.length ? `<div class="cx-p-row${miss.length ? ' cwp-need' : ''}"><div class="cx-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
+    <div class="cwp-scroll cj-p-b">
+      <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
+      <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
+      ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
       ${asks}
-      ${sample || prompt ? `<details class="cwp-more cx-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
+      ${sample || prompt ? `<details class="cwp-more cj-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
     </div>
-    <div class="cwp-act cx-p-f">
+    <div class="cwp-act cj-p-f">
       ${allowed
         ? (j.on
             ? `<button class="btn bs" id="cwp-go">${escH(T('Turn it off'))}</button>
@@ -374,7 +378,7 @@ function cwPeek(id){
                ${miss.length
                   ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
                   : `<button class="btn bp" id="cwp-go">${escH(T('Turn it on'))}</button>`}`)
-        : `<span class="cx-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
+        : `<span class="cj-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
            <button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            <button class="btn bp" id="cwp-plans">${escH(T('See plans'))} →</button>`}
     </div>
@@ -388,7 +392,7 @@ function cwPeek(id){
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
-  const pick = () => { _cwPickedWhen[j.id] = _cxReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cxWhenLabel(_cwPickedWhen[j.id]); };
+  const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
   const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
   r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
   on($('cwp-need-go2'),'click',toNeeds);
@@ -404,7 +408,7 @@ function cwPeek(id){
   on($('cwp-time'),'change',pick);
   on($('cwp-save'),'click',async function(){
     this.disabled = true;
-    const ok = await _cwApplyWhen(j, _cxReadWhen());
+    const ok = await _cwApplyWhen(j, _cjReadWhen());
     this.disabled = false;
     if(ok){ closeOvr(); try{ renderCrewView(); }catch(e){} }
   });

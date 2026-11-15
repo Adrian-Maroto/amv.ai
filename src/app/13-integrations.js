@@ -663,7 +663,7 @@ function _integrationsCatalogHTML(opts){
     /* CONNECT GOES TO SPENDING. The link is a hosted sign-in at the bank with
        a pre-opened window and a returning step; a second copy of that money
        flow on this page is the one somebody forgets to fix. */
-    else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link in Spending'; o.manageLabel='Manage in Spending';
+    else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link'; o.manageLabel='Manage';
       o.connected=(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(); }
     else if(h==='cal'){ o.id='calfeeds'; o.auto=false; o.use='calfeeds'; o.useLabel='Connect'; o.connected=false; }
     else if(h==='jobs'){ o.id='jobboards'; o.auto=false; o.use='jobs'; o.useLabel='Browse boards'; o.connected=false; }
@@ -936,11 +936,7 @@ function _intUse(use){
      and a baffling one for a bank account. Named rather than folded in,
      because the whole point of sending them to Spending is that the link
      happens there and they should know that before they arrive. */
-  if(use==='bank'){
-    try{ setTab('spend'); }catch(e){}
-    try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
-    return;
-  }
+  if(use==='bank'){ try{ openBankLink(); }catch(e){} return; }
   setTab(use||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500);
 }
 try{ window._intConnect=_intConnect; window._intUse=_intUse; }catch(e){}

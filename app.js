@@ -20767,8 +20767,7 @@ function cwNeeds(jobId){
       /* Spending, because that is where the account card lives and where the
          link actually starts. Not Connectors, which is where this used to go
          and which has nothing to offer for a bank. */
-      try{ closeOvr(); setTab('spend'); }catch(e){}
-      try{ toast('Link your account under "Investing" here, then come back to the job.', 'info', 7000); }catch(e){}
+      try{ openBankLink(); }catch(e){}
       return;
     }
     /* An app: the directory, searched for the one it wants, so the thing they
@@ -22027,6 +22026,7 @@ function _cwLocalRepaint(cc){
      rebuilds per open. The fallback is still a full render, for the case where
      the block is not on the page - a search, or a category other than all. */
   try{
+    if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ window._cjRepaint(); return; }
     if(S.tab === 'crew'){
       let done = false;
       if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
@@ -22173,10 +22173,10 @@ function _cwReRank(){
 }
 /* THE CATEGORIES CREW AND TASKS ARE ORGANIZED BY (Nov 15) - one set, so a
    bank is under Money on both screens. */
-const CX_CATS = ['Money', 'Inbox & calendar', 'Work & career', 'Shopping', 'Travel', 'Government & paperwork',
+const CJ_CATS = ['Money', 'Inbox & calendar', 'Work & career', 'Shopping', 'Travel', 'Government & paperwork',
                  'Health', 'Learning', 'News', 'Going out', 'Home & life', 'Family & kids', 'Growing a business', 'Making things'];
 /* The country catalogue's kinds, in the categories a person looks under. */
-const CX_KIND_CAT = {
+const CJ_KIND_CAT = {
   bank:'Money', insurer:'Money', utility:'Home & life', telecom:'Home & life', isp:'Home & life', carmaker:'Home & life',
   university:'Learning', college:'Learning', school:'Learning', library:'Learning', research:'Learning', publisher:'Learning',
   newspaper:'News', newssite:'News', tv:'News', radio:'News',
@@ -22188,13 +22188,13 @@ const CX_KIND_CAT = {
   museum:'Going out', theatre:'Going out', stadium:'Going out', sportsclub:'Going out', park:'Going out', zoo:'Going out', festival:'Going out', brewery:'Going out',
 };
 /* The older category names, folded into the same set. */
-const CX_OLD_CAT = { 'Watching the world':'News' };
-function _cxCat(j){
-  if(j && j.ccKind && CX_KIND_CAT[j.ccKind]) return CX_KIND_CAT[j.ccKind];
+const CJ_OLD_CAT = { 'Watching the world':'News' };
+function _cjCat(j){
+  if(j && j.ccKind && CJ_KIND_CAT[j.ccKind]) return CJ_KIND_CAT[j.ccKind];
   const c = (j && j.cat) || '';
-  return CX_OLD_CAT[c] || (CX_CATS.indexOf(c) >= 0 ? c : 'Home & life');
+  return CJ_OLD_CAT[c] || (CJ_CATS.indexOf(c) >= 0 ? c : 'Home & life');
 }
-try{ window._cxCat = _cxCat; }catch(e){}
+try{ window._cjCat = _cjCat; }catch(e){}
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
   _cwRankedFor = _cwRankKey();
@@ -22573,6 +22573,7 @@ function _cwRedrawIfChanged(){
      third rebuild is now one block redrawing in place. The fallback is a full
      render for the states where that block is not on the page. */
   try{
+    if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ window._cjRepaint(); return; }
     const body = document.getElementById('cw-jobs-body');
     if(body && S.tab === 'crew'){
       body.innerHTML = _cwJobsBody(_cwShowcase(), _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
@@ -22744,6 +22745,7 @@ function _cwMostStartedHTML(){
 }
 function _cwForYouRepaint(){
   _cwGuessDrawn = _cwCountryGuess();
+  if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ try{ _cwLoadLocal(_cwGuessDrawn); }catch(e){} window._cjRepaint(); return; }
   _cwWhereRepaint();
   try{
     const el = document.getElementById('cw-foryou') || document.getElementById('cw-pop');
@@ -23518,7 +23520,7 @@ const _CW_USE_IC = {
 const _CX_CADS = [['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Every weekday'], ['weekly', 'Every week'], ['monthly', 'Every month']];
 const _CX_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 /* A schedule in the words a person uses: "Every day at 6:00 AM". */
-function _cxWhenLabel(sc){
+function _cjWhenLabel(sc){
   if(!sc) return T('Every day');
   const cad = sc.cad || 'daily';
   if(cad === 'hourly' || cad === '10min' || cad === '30min') return T({ hourly:'Every hour', '10min':'Every 10 minutes', '30min':'Every 30 minutes' }[cad]);
@@ -23552,7 +23554,7 @@ function _cwJobWhen(j){
 }
 /* The panel's controls, read into a schedule the server and this device both
    keep: 'weekdays' is a weekly schedule on Monday to Friday. */
-function _cxReadWhen(){
+function _cjReadWhen(){
   const cad = String(($('cwp-cad') || {}).value || 'daily');
   if(cad === 'hourly') return { cad: 'hourly' };
   const t = String(($('cwp-time') || {}).value || '08:00').split(':');
@@ -23584,7 +23586,7 @@ async function _cwApplyWhen(j, sc){
       _saveSched(l);
     }
   }catch(e){}
-  toast(T('Schedule saved') + ': ' + _cxWhenLabel(sc), 'success', 4000);
+  toast(T('Schedule saved') + ': ' + _cjWhenLabel(sc), 'success', 4000);
   return true;
 }
 /* A job by id: this country's list, or any country's catalogue that has
@@ -23617,7 +23619,7 @@ function cwPeek(id){
     : (['hourly', 'daily', 'weekly', 'monthly'].indexOf(sc.cad) >= 0 ? sc.cad : 'hourly');
   const hh = String(sc.hour != null ? sc.hour : 8).padStart(2, '0') + ':' + String(sc.minute || 0).padStart(2, '0');
   const day0 = Array.isArray(sc.days) && sc.days.length ? sc.days[0] : 1;
-  const when = `<div class="cwp-when cx-when">
+  const when = `<div class="cwp-when cj-when">
       <select class="inp" id="cwp-cad" aria-label="${escH(T('How often'))}">
         ${_CX_CADS.map(o => `<option value="${o[0]}"${o[0] === cadNow ? ' selected' : ''}>${escH(T(o[1]))}</option>`).join('')}
       </select>
@@ -23630,27 +23632,31 @@ function cwPeek(id){
       <input class="inp" id="cwp-time" type="time" value="${hh}" aria-label="${escH(T('Time'))}"${cadNow === 'hourly' ? ' hidden' : ''}>
     </div>`;
   const asks = (j.asks && j.asks.q)
-    ? `<div class="cx-p-row"><div class="cx-p-k">${escH(T('It will ask you'))}</div><p class="cx-p-v">${escH(j.asks.q)}</p></div>` : '';
+    ? `<div class="cj-p-row cwp-ask"><div class="cj-p-k">${escH(T('It will ask you once'))}</div><p class="cj-p-v">${escH(j.asks.q)}<small>${escH(T('So the job works from your answer, not from nothing.'))}</small></p></div>` : '';
   const sample = Array.isArray(j.sample) && j.sample.length
-    ? `<div class="cx-p-sub">${escH(T('Example of what you get'))}</div><div class="cwp-sample">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>` : '';
-  const prompt = j.prompt ? `<div class="cx-p-sub">${escH(T('The instruction AMV follows'))}</div><pre class="cwp-prompt">${escH(j.prompt)}</pre>` : '';
-  const status = j.on ? T('On') + ' · ' + _cxWhenLabel(sc) : _cxWhenLabel(sc);
+    ? `<div class="cj-p-sub">${escH(T('Example of what you get'))}</div><div class="cwp-sample">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>` : '';
+  const prompt = j.prompt ? `<div class="cj-p-sub">${escH(T('The instruction AMV follows'))}</div><pre class="cwp-prompt">${escH(j.prompt)}</pre>` : '';
+  /* Where it runs, in a few words where it matters: a job that needs this
+     browser says so beside its schedule, so "every day at 8" is not read as
+     "with AMV closed" when it is not. */
+  const here = !_cwRunsUnattended(j) && !_cwUnattendedReady(j) ? ' \u00b7 ' + T('whenever AMV is open') : '';
+  const status = (j.on ? T('On') + ' \u00b7 ' : '') + _cjWhenLabel(sc) + here;
 
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cx-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <header class="cx-p-h">
-      <span class="cx-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-      <div class="cx-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-        <span class="cx-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
+  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cj-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <header class="cj-p-h">
+      <span class="cj-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <div class="cj-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+        <span class="cj-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
       <button class="cwp-x" id="cwp-close" aria-label="${escH(T('Close'))}">✕</button>
     </header>
-    <div class="cwp-scroll cx-p-b">
-      <p class="cwp-desc cx-p-d">${escH(j.desc)}</p>
-      <div class="cx-p-row"><div class="cx-p-k">${escH(T('Schedule'))}</div>${when}</div>
-      ${uses.length ? `<div class="cx-p-row${miss.length ? ' cwp-need' : ''}"><div class="cx-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
+    <div class="cwp-scroll cj-p-b">
+      <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
+      <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
+      ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
       ${asks}
-      ${sample || prompt ? `<details class="cwp-more cx-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
+      ${sample || prompt ? `<details class="cwp-more cj-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
     </div>
-    <div class="cwp-act cx-p-f">
+    <div class="cwp-act cj-p-f">
       ${allowed
         ? (j.on
             ? `<button class="btn bs" id="cwp-go">${escH(T('Turn it off'))}</button>
@@ -23659,7 +23665,7 @@ function cwPeek(id){
                ${miss.length
                   ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
                   : `<button class="btn bp" id="cwp-go">${escH(T('Turn it on'))}</button>`}`)
-        : `<span class="cx-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
+        : `<span class="cj-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
            <button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            <button class="btn bp" id="cwp-plans">${escH(T('See plans'))} →</button>`}
     </div>
@@ -23673,7 +23679,7 @@ function cwPeek(id){
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
-  const pick = () => { _cwPickedWhen[j.id] = _cxReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cxWhenLabel(_cwPickedWhen[j.id]); };
+  const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
   const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
   r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
   on($('cwp-need-go2'),'click',toNeeds);
@@ -23689,7 +23695,7 @@ function cwPeek(id){
   on($('cwp-time'),'change',pick);
   on($('cwp-save'),'click',async function(){
     this.disabled = true;
-    const ok = await _cwApplyWhen(j, _cxReadWhen());
+    const ok = await _cwApplyWhen(j, _cjReadWhen());
     this.disabled = false;
     if(ok){ closeOvr(); try{ renderCrewView(); }catch(e){} }
   });
@@ -30631,8 +30637,11 @@ function renderSettingsView(){
      address that still asks for them - a link, an error message, an older
      build - opens that tab rather than landing on Account. */
   if(S.settingsPane==='spending' || S.settingsPane==='investing'){
+    const inv=S.settingsPane==='investing';
     S.settingsPane=null;
     setTab('spend');
+    /* Investing is not on Spending any more; the account link has a dialog. */
+    if(inv){ try{ openBankLink(); }catch(e){} }
     return;
   }
   const vc=_settingsLayer();
@@ -33746,7 +33755,7 @@ function _integrationsCatalogHTML(opts){
     /* CONNECT GOES TO SPENDING. The link is a hosted sign-in at the bank with
        a pre-opened window and a returning step; a second copy of that money
        flow on this page is the one somebody forgets to fix. */
-    else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link in Spending'; o.manageLabel='Manage in Spending';
+    else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link'; o.manageLabel='Manage';
       o.connected=(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(); }
     else if(h==='cal'){ o.id='calfeeds'; o.auto=false; o.use='calfeeds'; o.useLabel='Connect'; o.connected=false; }
     else if(h==='jobs'){ o.id='jobboards'; o.auto=false; o.use='jobs'; o.useLabel='Browse boards'; o.connected=false; }
@@ -34019,11 +34028,7 @@ function _intUse(use){
      and a baffling one for a bank account. Named rather than folded in,
      because the whole point of sending them to Spending is that the link
      happens there and they should know that before they arrive. */
-  if(use==='bank'){
-    try{ setTab('spend'); }catch(e){}
-    try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
-    return;
-  }
+  if(use==='bank'){ try{ openBankLink(); }catch(e){} return; }
   setTab(use||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500);
 }
 try{ window._intConnect=_intConnect; window._intUse=_intUse; }catch(e){}
@@ -41859,6 +41864,24 @@ function _renderInvestPane(pane){
   });
 }
 try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
+/* LINKING A BANK, WHEREVER IT IS ASKED FOR (Nov 15).
+
+   Spending is the monthly budget only now (the owner's call), so the link
+   that used to sit at the bottom of it opens here instead: the same pane, the
+   same flow at the institution's own sign-in, in a dialog that a Crew job
+   needing a bank and the Bank & money row in Integrations both open. One copy
+   of the money flow, as before - this only gives it a door of its own. */
+function openBankLink(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="bank-bg"><div class="ccp bank-dlg" role="dialog" aria-modal="true" aria-label="'+escH(T('Link a bank'))+'">'
+    +'<header class="ccp-h"><h2>'+escH(T('Link a bank'))+'</h2><button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button></header>'
+    +'<div class="bank-b" id="bank-pane"></div></div></div>';
+  r.classList.add('on');
+  onBackdrop($('bank-bg'), closeOvr);
+  on($('bank-x'),'click',closeOvr);
+  try{ _renderInvestPane($('bank-pane')); }catch(e){}
+}
+try{ window.openBankLink=openBankLink; }catch(e){}
 
 /* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
    reason about it, but has no action that moves it. */

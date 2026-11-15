@@ -148,7 +148,7 @@ function launchTask(key){
    a press away. Anything the person has set running (_autoServerHTML) stays,
    because it is theirs. */
 let _tkQ = '', _tkC = 'all', _tkN = 60, _tkList = [], _tkCc = '';
-function _tkCatOf(t){ try{ return _cxCat({ ccKind: t.kind }); }catch(e){ return 'Home & life'; } }
+function _tkCatOf(t){ try{ return _cjCat({ ccKind: t.kind }); }catch(e){ return 'Home & life'; } }
 function _tkRow(t){
   return `<button class="tk-row tk2-row" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${(CC_KINDS[t.kind]||['•'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
 }
@@ -159,22 +159,22 @@ function _tkListHTML(){
   /* A search or a category: one list, the first rows and Show more. */
   if(words.length || _tkC !== 'all'){
     const rows = _tkList.filter(t => (_tkC === 'all' || _tkCatOf(t) === _tkC) && hit(t));
-    if(!rows.length) return `<div class="cx-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cx-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
+    if(!rows.length) return `<div class="cj-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cj-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
     return `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
-      + (rows.length > _tkN ? `<div class="cx-more-w"><button class="btn bs" id="tk-more">${escH(T('Show more'))} <span class="cx-n">${(rows.length - _tkN).toLocaleString()}</span></button></div>` : '');
+      + (rows.length > _tkN ? `<div class="cj-more-w"><button class="btn bs" id="tk-more">${escH(T('Show more'))} <span class="cj-n">${(rows.length - _tkN).toLocaleString()}</span></button></div>` : '');
   }
   /* Everything: under each category, the first few and See all. */
   const by = {}; _tkList.forEach(t => { const c = _tkCatOf(t); (by[c] = by[c] || []).push(t); });
-  return CX_CATS.filter(c => by[c]).map(c => `<section class="tk2-cat">
+  return CJ_CATS.filter(c => by[c]).map(c => `<section class="tk2-cat">
       <div class="tk2-cat-h"><h2>${escH(T(c))}</h2><span>${by[c].length.toLocaleString()}</span></div>
       <div class="tk2-list">${by[c].slice(0, 6).map(_tkRow).join('')}</div>
-      ${by[c].length > 6 ? `<button class="cx-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
+      ${by[c].length > 6 ? `<button class="cj-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
     </section>`).join('');
 }
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
-  const chip = (k, label, c) => `<button class="cx-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), _tkList.length) + CX_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
+  return chip('all', T('All'), _tkList.length) + CJ_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
 function _tkPaint(){
   const l = $('tk2-body'); if(l) l.innerHTML = _tkListHTML();
@@ -192,16 +192,16 @@ function renderTasksView(){
   const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
   if(cc !== _tkCc){ _tkList = []; _tkCc = cc; }
   const head = row ? _cwSayPlace('For {country}', row[1], _cwThe(row[1])) : T('Tasks');
-  vc.innerHTML = `<div class="sv fi"><div class="cx tk2">
+  vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
         <p class="tk2-sub" id="tk2-sub">${_tkList.length ? `<b>${_tkList.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}` : escH(T('Loading…'))}</p></div>
-      <button class="cx-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
+      <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
     ${_autoServerHTML()}
-    <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="tk-find" type="search" autocomplete="off" value="${escH(_tkQ)}" placeholder="${escH(T('Search tasks'))}" aria-label="${escH(T('Search tasks'))}"></div>
-    <div class="cx-cats" id="tk2-cats" role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
+    <div class="cj-cats" id="tk2-cats" role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
     <div id="tk2-body">${_tkListHTML()}</div>
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}

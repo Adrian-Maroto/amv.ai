@@ -61,12 +61,14 @@ section('A browser job gets the same choice, and its first run is at that time')
     const cad = document.getElementById('cwp-cad'); if (!cad) return { picker: false };
     cad.value = 'monthly'; cad.dispatchEvent(new Event('change', { bubbles: true }));
     const time = document.getElementById('cwp-time'); time.value = '21:15'; time.dispatchEvent(new Event('change', { bubbles: true }));
-    const where = [...document.querySelectorAll('.cwp-facts dd')][1].textContent;
+    /* Where it runs is said beside the schedule since the panel was rebuilt (Nov 15). */
+    const where = (document.getElementById('cwp-status') || {}).textContent || '';
     document.getElementById('cwp-go').click();
     await new Promise(s => setTimeout(s, 300));
     const row = (_loadSched() || []).find(t => t.id === 'cw_' + j.id);
     const at = row ? new Date(row.next) : null;
-    return { picker: true, where, freq: row && row.freq, h: at && at.getHours(), m: at && at.getMinutes(), future: !!(row && row.next > Date.now()) };
+    /* A picked calendar is kept whole on the row (sched), so the runner keeps the date and the time. */
+    return { picker: true, where, freq: row && (row.sched ? row.sched.cad : row.freq), h: at && at.getHours(), m: at && at.getMinutes(), future: !!(row && row.next > Date.now()) };
   });
   ok(!r.none && r.picker, 'a browser job has the picker too', r);
   ok(/whenever AMV is open/.test(r.where || ''), 'and says it runs then whenever AMV is open', r.where);

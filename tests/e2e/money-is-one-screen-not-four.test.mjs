@@ -102,7 +102,10 @@ section('The editors are the real ones, not a second copy');
      'the spending editor is the pane Settings renders, controls and all',
      { inputs: s.hasLimitInputs, gate: s.hasGate });
   ok(/spend/i.test(s.limitsText), 'and it is about spending', s.limitsText.slice(0, 60));
-  ok(s.bankText.length > 40, 'the connected-account card is on it too', s.bankText.slice(0, 60));
+  /* Nov 15 (owner): Spending is the budget only. The account link that sat
+     under it opens in its own dialog (openBankLink) - one copy of that flow,
+     a different door. */
+  ok(s.bankText === '', 'and the investing card is no longer on it', s.bankText.slice(0, 60));
 }
 
 section('A redraw stays on this screen instead of jumping to Settings');

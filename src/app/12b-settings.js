@@ -514,8 +514,11 @@ function renderSettingsView(){
      address that still asks for them - a link, an error message, an older
      build - opens that tab rather than landing on Account. */
   if(S.settingsPane==='spending' || S.settingsPane==='investing'){
+    const inv=S.settingsPane==='investing';
     S.settingsPane=null;
     setTab('spend');
+    /* Investing is not on Spending any more; the account link has a dialog. */
+    if(inv){ try{ openBankLink(); }catch(e){} }
     return;
   }
   const vc=_settingsLayer();

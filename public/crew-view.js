@@ -1336,17 +1336,19 @@ try{ window.mcNeverSave = mcNeverSave; }catch(e){}
    or a category never redraws the page - and only the first rows are drawn,
    more as somebody asks for them.
    ══════════════════════════════════════════════════════════════════════════ */
-let _cxQ = '', _cxC = 'all', _cxN = 24;
-let _cxCache = null, _cxCacheKey = '';
+let _cjQ = '', _cjC = 'all', _cjN = 24;
+let _cjCache = null, _cjCacheKey = '';
 /* Every job for the country being shown, best first: anything switched on,
    then the country's own (written for it), then the jobs that work on a
    connected account anywhere, strongest first, then the catalogue of the
    country's real services in the order the data ranks them. */
-function _cxList(){
+function _cjList(){
   const cc = _cwCountryGuess();
   const cat = ((window._ccCrewJobs || {})[cc] || []);
-  const key = cc + '|' + cat.length + '|' + (_cwJobs() || []).filter(j => j.on).map(j => j.id).join(',');
-  if(_cxCache && _cxCacheKey === key) return _cxCache;
+  const len = (f) => { try{ return (f(cc) || []).length; }catch(e){ return 0; } };
+  const key = [cc, cat.length, len(_cwTopTen), len(_cwMadeForJobs), len(_cwLocalJobs), len(_cwMadeMore),
+               (_cwJobs() || []).filter(j => j.on).map(j => j.id).join(',')].join('|');
+  if(_cjCache && _cjCacheKey === key) return _cjCache;
   const seen = new Set(), out = [];
   const push = (j) => { if(j && j.id && !seen.has(j.id)){ seen.add(j.id); out.push(j); } };
   const safe = (f) => { try{ return f() || []; }catch(e){ return []; } };
@@ -1358,112 +1360,123 @@ function _cxList(){
   safe(() => _cwMadeMore(cc)).forEach(push);
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   cat.forEach(push);
-  _cxCache = out; _cxCacheKey = key;
+  _cjCache = out; _cjCacheKey = key;
   return out;
 }
-function _cxMatch(j, words){
+function _cjMatch(j, words){
   if(!words.length) return true;
-  const hay = (j._cxHay || (j._cxHay = [j.title, j.desc, j.cat, _cxCat(j), j.needs, j.site].filter(Boolean).join(' ').toLowerCase()));
+  const hay = (j._cjHay || (j._cjHay = [j.title, j.desc, j.cat, _cjCat(j), j.needs, j.site].filter(Boolean).join(' ').toLowerCase()));
   return words.every(w => hay.indexOf(w) >= 0);
 }
-function _cxFiltered(){
-  const words = _cxQ.toLowerCase().split(/\s+/).filter(Boolean);
-  return _cxList().filter(j => (_cxC === 'all' || _cxCat(j) === _cxC) && _cxMatch(j, words));
+function _cjFiltered(){
+  const words = _cjQ.toLowerCase().split(/\s+/).filter(Boolean);
+  return _cjList().filter(j => (_cjC === 'all' || _cjCat(j) === _cjC) && _cjMatch(j, words));
 }
 /* A card: icon, title, one line of what it does, when it runs. */
 /* How often, and the time only once one is set: a job that is not on yet has
    no time but the one its panel would suggest. */
-function _cxEvery(j){
-  try{ const sc = _cwJobWhen(j); return (j.on || _cwPickedWhen[j.id]) ? _cxWhenLabel(sc) : _cxWhenLabel({ cad: sc.cad, days: sc.days && sc.days.length === 5 ? sc.days : null }); }catch(e){ return ''; }
+function _cjEvery(j){
+  try{ const sc = _cwJobWhen(j); return (j.on || _cwPickedWhen[j.id]) ? _cjWhenLabel(sc) : _cjWhenLabel({ cad: sc.cad, days: sc.days && sc.days.length === 5 ? sc.days : null }); }catch(e){ return ''; }
 }
-function _cxCard(j){
+function _cjCard(j){
   const allowed = _planAllowsCrew();
-  const when = _cxEvery(j);
-  return `<div class="cx-card${j.on ? ' on' : ''}">
-    <button class="cx-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
-      <span class="cx-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-      <span class="cx-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.title)}</span>
-      <span class="cx-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.desc || '')}</span>
-      <span class="cx-card-w">${j.on ? `<span class="cx-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
+  const when = _cjEvery(j);
+  return `<div class="cj-card${j.on ? ' on' : ''}">
+    <button class="cj-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
+      <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <span class="cj-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.title)}</span>
+      <span class="cj-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.desc || '')}</span>
+      <span class="cj-card-w">${j.on ? `<span class="cj-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
     </button>
-    ${allowed ? `<button class="cw-toggle cx-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + j.title)}"><span class="cw-knob"></span></button>` : ''}
+    ${allowed ? `<button class="cw-toggle cj-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + j.title)}"><span class="cw-knob"></span></button>` : ''}
   </div>`;
 }
-function _cxGridHTML(){
-  const list = _cxFiltered();
+function _cjGridHTML(){
+  const list = _cjFiltered();
   if(!list.length){
-    return `<div class="cx-empty">${escH(T('No job here matches that.'))} <button class="cx-link" data-dact="cxAsk">${escH(T('Type it in the box above instead'))}</button></div>`;
+    return `<div class="cj-empty">${escH(T('No job here matches that.'))} <button class="cj-link" data-dact="cjAsk">${escH(T('Type it in the box above instead'))}</button></div>`;
   }
-  const shown = list.slice(0, _cxN);
-  return `<div class="cx-grid">${shown.map(_cxCard).join('')}</div>`
-    + (list.length > shown.length ? `<div class="cx-more-w"><button class="btn bs cx-more" data-dact="cxMore">${escH(T('Show more'))} <span class="cx-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
+  const shown = list.slice(0, _cjN);
+  return `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
+    + (list.length > shown.length ? `<div class="cj-more-w"><button class="btn bs cj-more" data-dact="cjMore">${escH(T('Show more'))} <span class="cj-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
 }
-function _cxChipsHTML(){
-  const all = _cxList();
-  const n = {}; all.forEach(j => { const c = _cxCat(j); n[c] = (n[c] || 0) + 1; });
-  const chip = (k, label, c) => `<button class="cx-chip${_cxC === k ? ' on' : ''}" data-dact="cxCat" data-darg="${escH(k)}" aria-pressed="${_cxC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), all.length) + CX_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+function _cjChipsHTML(){
+  const all = _cjList();
+  const n = {}; all.forEach(j => { const c = _cjCat(j); n[c] = (n[c] || 0) + 1; });
+  const chip = (k, label, c) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
+  return chip('all', T('All'), all.length) + CJ_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
 /* Only the grid, the chips and the count change - the page stays put. */
-function _cxPaint(){
-  const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML();
-  const c = document.getElementById('cx-cats'); if(c) c.innerHTML = _cxChipsHTML();
-  const k = document.getElementById('cx-count'); if(k) k.textContent = _cxList().length.toLocaleString() + ' ' + T('jobs');
+function _cjPaint(){
+  const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML();
+  const c = document.getElementById('cj-cats'); if(c) c.innerHTML = _cjChipsHTML();
+  const k = document.getElementById('cj-count'); if(k) k.textContent = _cjList().length.toLocaleString() + ' ' + T('jobs');
 }
-function cxCat(c){ _cxC = c || 'all'; _cxN = 24; _cxPaint(); }
-function cxMore(){ _cxN += 48; _cxPaint(); }
-function cxAsk(){
+/* What changes when the server answers, a country's own jobs arrive or the
+   country becomes known: the heading, the country button and the jobs - drawn
+   in place, so the page never rebuilds under somebody reading it. */
+function _cjRepaint(){
+  _cjCache = null;
+  try{ const h = document.getElementById('cx-jobs-h'); if(h) h.textContent = _cwJobsForHead(); }catch(e){}
+  try{ const b = document.getElementById('cw-where'); if(b && b.classList.contains('cj-country')) b.outerHTML = _cjCountryBtnHTML(); }catch(e){}
+  _cjPaint();
+}
+try{ window._cjRepaint = _cjRepaint; }catch(e){}
+function cjCat(c){ _cjC = c || 'all'; _cjN = 24; _cjPaint(); }
+function cjMore(){ _cjN += 48; _cjPaint(); }
+function cjAsk(){
   const el = document.getElementById('mc-cmd-input'); if(!el) return;
-  if(_cxQ && !el.value) el.value = _cxQ;
+  if(_cjQ && !el.value) el.value = _cjQ;
   try{ el.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(e){}
   el.focus();
 }
 /* The country: the shared picker (country-catalog.js), with Use my location. */
-function cxCountry(){
-  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _cxQ = ''; _cxC = 'all'; _cxN = 24; renderCrewView(); }); else _cwGo('countries'); }).catch(() => _cwGo('countries'));
+function cjCountry(){
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _cjQ = ''; _cjC = 'all'; _cjN = 24; renderCrewView(); }); else _cwGo('countries'); }).catch(() => _cwGo('countries'));
 }
-try{ window.cxCat = cxCat; window.cxMore = cxMore; window.cxAsk = cxAsk; window.cxCountry = cxCountry; }catch(e){}
-function _cxCountryBtnHTML(){
+try{ window.cjCat = cjCat; window.cjMore = cjMore; window.cjAsk = cjAsk; window.cjCountry = cjCountry; }catch(e){}
+function _cjCountryBtnHTML(){
   const row = _cwCountryRow(_cwCountryGuess());
-  return `<button class="cx-country" id="cw-where" data-dact="cxCountry" aria-label="${escH(T('Change country'))}">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(T(row[1]))}` : escH(T('Choose your country'))}
+  return `<button class="cj-country" id="cw-where" data-dact="cjCountry" aria-label="${escH(T('Change country'))}">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(T(row[1]))}` : escH(T('Choose your country'))}
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
 }
 /* The jobs section, the same on both screens. */
-function _cxJobsHTML(){
-  return `<section class="cx-jobs" id="cx-jobs" aria-labelledby="cx-jobs-h">
-    <div class="cx-jobs-top">
+function _cjJobsHTML(){
+  return `<section class="cj-jobs" id="cj-jobs" aria-labelledby="cx-jobs-h">
+    <div class="cj-jobs-top">
       <h2 id="cx-jobs-h">${escH(_cwJobsForHead())}</h2>
-      <span class="cx-count" id="cx-count">${_cxList().length.toLocaleString()} ${escH(T('jobs'))}</span>
-      <div class="cx-tools">${_cxCountryBtnHTML()}<button class="cx-all" data-dact="cxDirectory">${escH(T('See all jobs'))}</button></div>
+      <span class="cj-count" id="cj-count">${_cjList().length.toLocaleString()} ${escH(T('jobs'))}</span>
+      <div class="cj-tools">${_cjCountryBtnHTML()}<button class="cj-all" data-dact="cjDirectory">${escH(T('See all jobs'))}</button></div>
     </div>
-    <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="cx-q" type="search" autocomplete="off" value="${escH(_cxQ)}" placeholder="${escH(T('Search jobs'))}" aria-label="${escH(T('Search jobs'))}"></div>
-    <div class="cx-cats" id="cx-cats" role="group" aria-label="${escH(T('Categories'))}">${_cxChipsHTML()}</div>
-    <div id="cx-grid">${_cxGridHTML()}</div>
+    <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="cx-q" type="search" autocomplete="off" value="${escH(_cjQ)}" placeholder="${escH(T('Search jobs'))}" aria-label="${escH(T('Search jobs'))}"></div>
+    <div class="cj-cats" id="cj-cats" role="group" aria-label="${escH(T('Categories'))}">${_cjChipsHTML()}</div>
+    <div id="cj-grid">${_cjGridHTML()}</div>
   </section>`;
 }
 /* The box at the top, the same on both screens: a heading, the field, Run. */
-function _cxAskHTML(extra){
-  return `<section class="cx-ask mc-cmd" aria-labelledby="cx-ask-h">
-    <div class="cx-ask-top"><h1 id="cx-ask-h">${escH(T('Tell AMV what to do'))}</h1>${extra || ''}</div>
-    <div class="cx-box">
-      <textarea id="mc-cmd-input" class="mc-cmd-input cx-input" rows="1" autocomplete="off" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go"
+function _cjAskHTML(extra){
+  return `<section class="cj-ask mc-cmd" aria-labelledby="cx-ask-h">
+    <div class="cj-ask-top"><h1 id="cx-ask-h">${escH(T('Tell AMV what to do'))}</h1>${extra || ''}</div>
+    <div class="cj-box">
+      <textarea id="mc-cmd-input" class="mc-cmd-input cj-input" rows="1" autocomplete="off" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go"
         placeholder="${escH(T('e.g. every morning at 8, summarize my unread email'))}"></textarea>
-      <button class="mc-cmd-go cx-run" id="mc-cmd-go">${escH(T('Run'))}</button>
+      <button class="mc-cmd-go cj-run" id="mc-cmd-go">${escH(T('Run'))}</button>
     </div>
     <div id="mc-cmd-result" class="mc-cmd-result"></div>
   </section>`;
 }
-function _cxWire(vc){
+function _cjWire(vc){
   const q = document.getElementById('cx-q');
   if(q){
     let t = 0;
-    on(q, 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cxQ = v.trim(); _cxN = 24; const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML(); }, 120); });
-    on(q, 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(t); _cxQ = this.value.trim(); _cxN = 24; const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML(); } });
+    on(q, 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cjQ = v.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); }, 120); });
+    on(q, 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(t); _cjQ = this.value.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); } });
   }
   /* The catalogue of the country's real services arrives after the page: its
      jobs join the list in place. */
-  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(() => { if(document.getElementById('cx-grid')) _cxPaint(); }).catch(() => {});
+  try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){}
+  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(() => { if(document.getElementById('cj-grid')) _cjRepaint(); }).catch(() => {});
 }
 
 /* SEE ALL JOBS (Nov 15). The owner: "an option to see all jobs - a directory
@@ -1475,34 +1488,34 @@ function _cxWire(vc){
    time, the count rising as they land) and searched in memory. Only the rows
    on screen are drawn. A job found here opens the same panel and switches on
    the same way as one on the main list. */
-let _cxdQ = '', _cxdCc = '', _cxdN = 60, _cxdAll = [], _cxdLoading = false;
-function _cxdRows(){
-  const words = _cxdQ.toLowerCase().split(/\s+/).filter(Boolean);
-  return _cxdAll.filter(j => (!_cxdCc || j.country === _cxdCc) && _cxMatch(j, words));
+let _cjdQ = '', _cjdCc = '', _cjdN = 60, _cjdAll = [], _cjdLoading = false;
+function _cjdRows(){
+  const words = _cjdQ.toLowerCase().split(/\s+/).filter(Boolean);
+  return _cjdAll.filter(j => (!_cjdCc || j.country === _cjdCc) && _cjMatch(j, words));
 }
-function _cxdPaint(){
+function _cjdPaint(){
   const box = document.getElementById('cxd-list'); if(!box) return;
-  const rows = _cxdRows();
+  const rows = _cjdRows();
   const n = document.getElementById('cxd-n');
-  if(n) n.textContent = rows.length.toLocaleString() + ' ' + T('jobs') + (_cxdLoading ? ' · ' + T('loading more countries…') : '');
-  const shown = rows.slice(0, _cxdN);
+  if(n) n.textContent = rows.length.toLocaleString() + ' ' + T('jobs') + (_cjdLoading ? ' · ' + T('loading more countries…') : '');
+  const shown = rows.slice(0, _cjdN);
   box.innerHTML = shown.length
     ? shown.map(j => { const c = _cwCountryRow(j.country);
         return `<button class="cxd-row" data-dact="cwPeek" data-darg="${escH(j.id)}">
-          <span class="cx-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+          <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
           <span class="cxd-b"><span class="cxd-t" data-no-i18n>${escH(j.title)}</span>
-            <span class="cxd-s">${c ? `<span aria-hidden="true">${c[2]}</span> ${escH(T(c[1]))} · ` : ''}${escH(T(_cxCat(j)))} · ${escH(_cxEvery(j))}</span></span></button>`; }).join('')
-      + (rows.length > shown.length ? `<div class="cx-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cx-n">${(rows.length - shown.length).toLocaleString()}</span></button></div>` : '')
-    : `<div class="cx-empty">${_cxdLoading ? escH(T('Loading…')) : escH(T('No job matches that.'))}</div>`;
-  on(document.getElementById('cxd-more'), 'click', () => { _cxdN += 120; _cxdPaint(); });
+            <span class="cxd-s">${c ? `<span aria-hidden="true">${c[2]}</span> ${escH(T(c[1]))} · ` : ''}${escH(T(_cjCat(j)))} · ${escH(_cjEvery(j))}</span></span></button>`; }).join('')
+      + (rows.length > shown.length ? `<div class="cj-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cj-n">${(rows.length - shown.length).toLocaleString()}</span></button></div>` : '')
+    : `<div class="cj-empty">${_cjdLoading ? escH(T('Loading…')) : escH(T('No job matches that.'))}</div>`;
+  on(document.getElementById('cxd-more'), 'click', () => { _cjdN += 120; _cjdPaint(); });
 }
-async function _cxdLoad(){
-  if(_cxdLoading) return;
-  _cxdLoading = true;
+async function _cjdLoad(){
+  if(_cjdLoading) return;
+  _cjdLoading = true;
   const here = _cwCountryGuess();
   const codes = [here].concat((CW_WORLD_COUNTRIES || []).map(c => c[0]).filter(c => c !== here)).filter(Boolean);
-  const have = new Set(_cxdAll.map(j => j.id));
-  const add = (cc, list) => { for(const j of list || []){ if(!have.has(j.id)){ have.add(j.id); if(!j.country) j.country = cc; _cxdAll.push(j); } } };
+  const have = new Set(_cjdAll.map(j => j.id));
+  const add = (cc, list) => { for(const j of list || []){ if(!have.has(j.id)){ have.add(j.id); if(!j.country) j.country = cc; _cjdAll.push(j); } } };
   /* The jobs that work everywhere first, so the directory is never empty. */
   try{ add('', (_cwJobs() || []).concat(_cwUniversalJobs() || [])); }catch(e){}
   let i = 0, last = 0;
@@ -1510,23 +1523,23 @@ async function _cxdLoad(){
     while(i < codes.length){
       const cc = codes[i++];
       try{ add(cc, await ccCrewLoad(cc)); }catch(e){}
-      if(Date.now() - last > 250){ last = Date.now(); _cxdPaint(); }
+      if(Date.now() - last > 250){ last = Date.now(); _cjdPaint(); }
     }
   };
   await Promise.all([next(), next(), next(), next(), next(), next()]);
-  _cxdLoading = false;
-  _cxdPaint();
+  _cjdLoading = false;
+  _cjdPaint();
 }
-function cxDirectory(){
+function cjDirectory(){
   const r = $('ovr'); if(!r) return;
   const opts = (CW_WORLD_COUNTRIES || []).slice().sort((a, b) => T(a[1]).localeCompare(T(b[1])))
-    .map(c => `<option value="${c[0]}"${c[0] === _cxdCc ? ' selected' : ''}>${c[2]} ${escH(T(c[1]))}</option>`).join('');
+    .map(c => `<option value="${c[0]}"${c[0] === _cjdCc ? ' selected' : ''}>${c[2]} ${escH(T(c[1]))}</option>`).join('');
   r.innerHTML = `<div class="ov" id="cxd-bg"><div class="cxd" role="dialog" aria-modal="true" aria-labelledby="cxd-h">
-    <header class="cxd-h"><div><h2 id="cxd-h">${escH(T('All jobs'))}</h2><span class="cx-count" id="cxd-n"></span></div>
+    <header class="cxd-h"><div><h2 id="cxd-h">${escH(T('All jobs'))}</h2><span class="cj-count" id="cxd-n"></span></div>
       <button class="cwp-x" id="cxd-x" aria-label="${escH(T('Close'))}">✕</button></header>
     <div class="cxd-tools">
-      <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="cxd-q" type="search" autocomplete="off" value="${escH(_cxdQ)}" placeholder="${escH(T('Search every job in every country'))}" aria-label="${escH(T('Search every job in every country'))}"></div>
+      <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="cxd-q" type="search" autocomplete="off" value="${escH(_cjdQ)}" placeholder="${escH(T('Search every job in every country'))}" aria-label="${escH(T('Search every job in every country'))}"></div>
       <select class="inp" id="cxd-cc" aria-label="${escH(T('Country'))}"><option value="">${escH(T('All countries'))}</option>${opts}</select>
     </div>
     <div class="cxd-list" id="cxd-list"></div>
@@ -1535,13 +1548,13 @@ function cxDirectory(){
   onBackdrop($('cxd-bg'), closeOvr);
   on($('cxd-x'), 'click', closeOvr);
   let t = 0;
-  on($('cxd-q'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cxdQ = v.trim(); _cxdN = 60; _cxdPaint(); }, 150); });
-  on($('cxd-cc'), 'change', function(){ _cxdCc = this.value; _cxdN = 60; _cxdPaint(); });
-  _cxdPaint();
+  on($('cxd-q'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cjdQ = v.trim(); _cjdN = 60; _cjdPaint(); }, 150); });
+  on($('cxd-cc'), 'change', function(){ _cjdCc = this.value; _cjdN = 60; _cjdPaint(); });
+  _cjdPaint();
   try{ $('cxd-q').focus(); }catch(e){}
-  _ccReady().then(ok => { if(ok) _cxdLoad(); }).catch(() => {});
+  _ccReady().then(ok => { if(ok) _cjdLoad(); }).catch(() => {});
 }
-try{ window.cxDirectory = cxDirectory; window._cxdAll = _cxdAll; }catch(e){}
+try{ window.cjDirectory = cjDirectory; window._cjdAll = _cjdAll; }catch(e){}
 
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
@@ -1581,15 +1594,15 @@ function renderCrewView(){
      Nothing here is a teaser version of a job that does not exist. */
   if(!_planAllowsCrew()){
     const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
-    vc.innerHTML=`<div class="sv fi"><div class="cx cw-locked">
-      ${_cxAskHTML()}
-      ${_cxJobsHTML()}
-      <div class="cx-plan">
+    vc.innerHTML=`<div class="sv fi"><div class="cj cw-locked">
+      ${_cjAskHTML()}
+      ${_cjJobsHTML()}
+      <div class="cj-plan">
         <span>${escH(T('Crew runs on {0} and above, with AMV closed.').replace('{0}', P.name))}</span>
-        <button class="cx-link" data-stab="plans">${escH(T('See plans'))} \u2192</button>
+        <button class="cj-link" data-stab="plans">${escH(T('See plans'))} \u2192</button>
       </div>
     </div></div>`;
-    _cwWireCmd(vc); _cxWire(vc);
+    _cwWireCmd(vc); _cjWire(vc);
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -1692,11 +1705,11 @@ function renderCrewView(){
      once and rarely. The examples are the last thing on the page - an
      earlier fault was work stacked under the catalogue, out of sight. */
   const allow=_crewJobAllowance();
-  const tools=`<div class="cx-ask-tools">${allow?`<span class="cx-allow">${escH(T('{0} of {1} jobs on').replace('{0}', running).replace('{1}', allow))}</span>`:''}${paused
-        ? `<button class="cx-icon-btn" data-dact="resumeAllAutonomous">${escH(T('Resume all'))}</button>`
-        : running ? `<button class="cx-icon-btn" data-dact="pauseAllAutonomous">${escH(T('Pause all'))}</button>` : ''}<button class="cx-icon-btn" type="button" data-dact="openCrewSettings" aria-label="${escH(T('Crew settings'))}" title="${escH(T('Crew settings'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button></div>`;
-  vc.innerHTML = `<div class="sv fi"><div class="cx crew-page mc-page">
-    ${_cxAskHTML(tools)}
+  const tools=`<div class="cj-ask-tools cw-simple-head-r">${allow?`<span class="cj-allow">${escH(T('{0} of {1} jobs on').replace('{0}', running).replace('{1}', allow))}</span>`:''}${paused
+        ? `<button class="cj-icon-btn mc-pause paused" data-dact="resumeAllAutonomous">${escH(T('Resume all'))}</button>`
+        : running ? `<button class="cj-icon-btn mc-pause" data-dact="pauseAllAutonomous">${escH(T('Pause all'))}</button>` : ''}<button class="cj-icon-btn" type="button" data-dact="openCrewSettings" aria-label="${escH(T('Crew settings'))}" title="${escH(T('Crew settings'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button></div>`;
+  vc.innerHTML = `<div class="sv fi"><div class="cj crew-page mc-page">
+    ${_cjAskHTML(tools)}
     <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
     ${/* AMV asking you something stays on the page - it is a question, not a
           setting, so it did not go into the settings dialog with the rest. */ ''}
@@ -1746,9 +1759,9 @@ function renderCrewView(){
           are a button in the header (openCrewSettings) - set once, rarely
           changed, and a section of their own pushed the jobs down the page.
           The catalogue stays the last thing on the page. */ ''}
-    ${_cxJobsHTML()}
+    ${_cjJobsHTML()}
   </div></div>`;
-  _cwWireCmd(vc); _cxWire(vc);
+  _cwWireCmd(vc); _cjWire(vc);
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
   try{ if(typeof renderGames==='function') renderGames(); }catch(e){}

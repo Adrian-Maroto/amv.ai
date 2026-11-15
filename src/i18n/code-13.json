@@ -132,25 +132,6 @@
   "ko": "시간",
   "ta": "நேரம்"
  },
- "It will ask you": {
-  "es": "Te preguntará",
-  "zh": "它会问你",
-  "hi": "यह आपसे पूछेगा",
-  "ar": "سيسألك",
-  "pt": "Vai perguntar a você",
-  "fr": "Il vous demandera",
-  "de": "Es fragt dich",
-  "ja": "確認されること",
-  "ru": "Он спросит вас",
-  "id": "AMV akan bertanya",
-  "bn": "এটি আপনাকে জিজ্ঞেস করবে",
-  "ur": "یہ آپ سے پوچھے گا",
-  "tr": "Size soracak",
-  "vi": "AMV sẽ hỏi bạn",
-  "it": "Ti chiederà",
-  "ko": "물어볼 내용",
-  "ta": "இது உங்களிடம் கேட்கும்"
- },
  "Example of what you get": {
   "es": "Ejemplo de lo que recibes",
   "zh": "你会收到的示例",

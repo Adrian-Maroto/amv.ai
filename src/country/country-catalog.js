@@ -489,8 +489,14 @@ async function ccCountryAt(lat, lon){
 /* Ask the browser where this device is - only now, because somebody pressed
    the button - and answer with a country code, or a sentence saying why not. */
 function ccLocate(){
-  return new Promise((resolve) => {
-    if(!(navigator && navigator.geolocation)) return resolve({ error: T('This browser cannot share a location. Choose your country from the list.') });
+  return new Promise((resolve0) => {
+    if(!(navigator && navigator.geolocation)) return resolve0({ error: T('This browser cannot share a location. Choose your country from the list.') });
+    /* The browser's own timeout does not start until the person answers its
+       prompt, so a prompt left unanswered waited for ever. This one always
+       ends: the list is right there either way. */
+    let settled = false;
+    const resolve = (v) => { if(!settled){ settled = true; clearTimeout(cap); resolve0(v); } };
+    const cap = setTimeout(() => resolve({ error: T('The location could not be found right now. Choose your country from the list.') }), 20000);
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try{
         const cc = await ccCountryAt(pos.coords.latitude, pos.coords.longitude);
@@ -514,7 +520,7 @@ function ccPickCountry(done){
     <header class="ccp-h"><h2 id="ccp-h">${escH(T('Choose your country'))}</h2><button class="cwp-x" id="ccp-x" aria-label="${escH(T('Close'))}">✕</button></header>
     <div class="ccp-tools">
       <button class="btn bs ccp-loc" id="ccp-loc"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>${escH(T('Use my location'))}</button>
-      <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="ccp-q" type="search" autocomplete="off" placeholder="${escH(T('Search countries'))}" aria-label="${escH(T('Search countries'))}"></div>
       <p class="ccp-msg" id="ccp-msg" role="status" aria-live="polite"></p>
     </div>

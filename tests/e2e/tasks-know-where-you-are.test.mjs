@@ -1,80 +1,116 @@
-/* TASKS KNOW WHERE YOU ARE (Nov 10, owner: "update Tasks with so many more
-   things; depending on where I am it shows the most popular tasks there").
+/* TASKS KNOW WHERE YOU ARE (Nov 15, owner: "remove Only on AMV, remove the
+   advice / find out / writing sections - all of that - and only keep 'For
+   Spain', the tasks naming real services there, without 'Source: Wikidata'.
+   For all countries: show all of them, with a search bar, organized - and at
+   the top, 'not in this country' so you can choose yours. Make sure AMV can
+   access location.").
 
-   What is held: the ready-made tasks number well past the old twenty-five;
-   a country's own section is built from the server's facts for it and names
-   its real services, and pressing one writes a prompt that names them too;
-   the search narrows every task, the country's included; and a search with
-   nothing behind it offers to ask in chat, carrying the words across. */
+   What is held: the page is the country's own tasks and nothing else; every
+   one of them is reachable (a category's See all, Show more, search); the
+   country can be changed from the top, by hand or from the device's position -
+   resolved on the device, the coordinates sent nowhere; pressing a task writes
+   a prompt that names the service, in chat; nothing found offers chat with the
+   words carried across. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const app = await bootApp({ tab: 'chat' });
+const app = await bootApp({ tab: 'chat', viewport: { width: 1280, height: 900 } });
 const { page, errors } = app;
-await page.evaluate(() => {
-  Object.defineProperty(window.AMV_API, 'live', { get: () => true, configurable: true });
-  window.AMV_API.everyday = async (cc) => ({ facts: cc === 'ES'
-    ? { tax: 'the Agencia Tributaria', pay: 'Bizum', jobs: 'InfoJobs, LinkedIn', rail: 'Renfe', post: 'Correos' }
-    : { tax: 'the IRS', jobs: 'Indeed, LinkedIn' } });
-  _cwSetCountry('ES');
-  setTab('tasks');
-});
-await page.waitForTimeout(900);
+const sent = [];
+page.on('request', r => sent.push(r.url() + ' ' + (r.postData() || '')));
+const openTasks = async (cc) => {
+  await page.evaluate((c) => { _cwSetCountry(c); setTab('tasks'); }, cc);
+  await page.waitForFunction(() => /\d/.test((document.getElementById('tk2-sub') || {}).textContent || ''), null, { timeout: 15000 });
+  await page.waitForTimeout(200);
+};
 
-section('Many more ready-made tasks, in the groups people read');
+section('Only the country’s own tasks');
 {
-  const r = await page.evaluate(() => ({ n: document.querySelectorAll('.tasks-masonry .tk-row').length,
-    groups: [...document.querySelectorAll('.tasks-masonry .tk-cat h3')].map(h => h.textContent.trim()) }));
-  ok(r.n >= 80, 'eighty or more general tasks', r.n);
-  ok(r.groups.includes('Study') && r.groups.includes('Money & home'), 'with Study and Money & home among the groups', r.groups);
-  ok(r.groups[r.groups.length - 1] === 'Code', 'and code still last', r.groups);
+  await openTasks('ES');
+  const r = await page.evaluate(() => ({ h: document.querySelector('.tk2-h h1').textContent, sub: document.getElementById('tk2-sub').textContent,
+    text: document.querySelector('.tk2').textContent, cats: [...document.querySelectorAll('.tk2-cat-h h2')].map(h => h.textContent),
+    uniq: document.querySelectorAll('.uniq-card').length, general: document.querySelectorAll('[data-darg^="x-"], .tasks-masonry').length }));
+  ok(/Spain/.test(r.h), 'headed for Spain', r.h);
+  const n = +r.sub.replace(/[^\d]/g, '');
+  ok(n >= 1000, 'with the count of what is really there - ' + n, r.sub);
+  ok(r.uniq === 0 && !/Only on AMV/.test(r.text), 'no "Only on AMV"', r.uniq);
+  ok(r.general === 0 && !/Advice & how-to|Find out/.test(r.text), 'no general advice, find-out or writing groups', r.general);
+  ok(!/Wikidata/.test(r.text), 'and no "Source: Wikidata"', '');
+  ok(r.cats.length >= 6 && r.cats.includes('Money'), 'organized under categories', r.cats);
 }
 
-section('The country’s own, named for its services');
+section('Every one of them can be reached');
 {
-  const r = await page.evaluate(() => ({ head: (document.querySelector('#tk-local h3') || {}).textContent || '',
-    rows: [...document.querySelectorAll('#tk-local .tk-row:not([data-darg^="cc-"])')].map(b => b.textContent.replace(/\s+/g, ' ').trim()) }));
-  ok(/Spain/.test(r.head), 'a section for Spain', r.head);
-  ok(r.rows.length === 7, 'one row per task its facts support - and none for what Spain has no entry for', r.rows.length);
-  ok(r.rows.some(t => /Agencia Tributaria/.test(t)) && r.rows.some(t => /Bizum/.test(t)), 'naming the Agencia Tributaria and Bizum', r.rows.slice(0, 3));
-  await page.click('#tk-local .tk-row');
+  const before = await page.evaluate(() => document.querySelectorAll('#tk2-body .tk-row').length);
+  await page.click('.tk2-all');
+  await page.waitForTimeout(200);
+  const r = await page.evaluate(() => ({ rows: document.querySelectorAll('#tk2-body .tk-row').length, on: (document.querySelector('#tk2-cats .cj-chip.on') || {}).textContent || '',
+    more: !!document.getElementById('tk-more') }));
+  ok(r.rows > 6 && r.on && !/^All/.test(r.on), 'a category’s See all opens the whole category', r);
+  await page.evaluate(() => document.querySelector('#tk2-cats [data-tkcat="all"]').click());
+  await page.waitForTimeout(150);
+  ok(before > 0, 'All shows the first few of each', before);
+}
+
+section('A task opens chat, naming the service');
+{
+  const want = await page.evaluate(() => { const b = document.querySelector('#tk2-body .tk-row'); const s = b.querySelector('.tk-d').textContent; b.click(); return s; });
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
-  ok(v.tab === 'chat' && /Agencia Tributaria/.test(v.val), 'and pressing one writes a prompt that names it, in chat', v.val.slice(0, 80));
+  ok(v.tab === 'chat' && v.val.indexOf(want) >= 0, 'the prompt is in chat and names ' + want, v.val.slice(0, 100));
 }
 
-section('Another country, another section');
+section('Search, and nothing found goes to chat');
 {
-  const r = await page.evaluate(async () => { _cwSetCountry('US'); setTab('tasks'); await new Promise(x => setTimeout(x, 700));
-    return [...document.querySelectorAll('#tk-local .tk-row:not([data-darg^="cc-"])')].map(b => b.textContent.replace(/\s+/g, ' ').trim()); });
-  ok(r.length === 4 && r.some(t => /IRS/.test(t)) && !r.some(t => /Agencia|Bizum/.test(t)), 'the United States gets the IRS, not Spain’s list', r);
-}
-
-section('One of the sixty opens with its own prompt');
-{
-  await page.evaluate(() => document.querySelector('[data-darg="x-' + 'writing-tone' + '"]').click());
-  await page.waitForTimeout(400);
-  const v = await page.evaluate(() => (document.getElementById('mta') || {}).value || '');
-  ok(/Rewrite \[text\] in \[tone\]/.test(v), 'the prompt is there, with its blanks', v.slice(0, 60));
-}
-
-section('Search narrows everything, and nothing found goes to chat');
-{
-  await page.evaluate(() => setTab('tasks'));
-  await page.waitForTimeout(700);
-  await page.fill('#tk-find', 'interview');
-  await page.waitForTimeout(150);
-  const r = await page.evaluate(() => ({ shown: [...document.querySelectorAll('.tk-row:not([hidden])')].map(b => b.querySelector('.tk-t').textContent),
-    n: document.getElementById('tk-find-n').textContent, emptyGroups: [...document.querySelectorAll('.tk-cat')].filter(c => !c.hidden && !c.querySelector('.tk-row:not([hidden])')).length }));
-  ok(r.shown.length >= 1 && r.shown.every(t => /interview/i.test(t)), 'only matching tasks are left', r.shown);
-  ok(/\d+/.test(r.n) && r.emptyGroups === 0, 'with a count, and no empty group left standing', r);
-  await page.fill('#tk-find', 'renew my fishing licence');
-  await page.waitForTimeout(150);
-  ok(await page.evaluate(() => !!document.getElementById('tk-none')), 'no match: an offer to ask in chat');
+  await openTasks('ES');
+  await page.fill('#tk-find', 'renfe');
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => [...document.querySelectorAll('#tk2-body .tk-row')].map(b => b.textContent.toLowerCase()));
+  ok(r.length >= 1 && r.every(t => t.indexOf('renfe') >= 0), 'only matching tasks are left', r.slice(0, 3));
+  await page.fill('#tk-find', 'renew my fishing licence on the moon');
+  await page.waitForTimeout(300);
+  ok(await page.evaluate(() => !!document.getElementById('tk-none-go')), 'no match: an offer to ask in chat');
   await page.click('#tk-none-go');
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
-  ok(v.tab === 'chat' && v.val === 'renew my fishing licence', 'carrying the words across', v);
+  ok(v.tab === 'chat' && v.val === 'renew my fishing licence on the moon', 'carrying the words across', v);
+}
+
+section('Not in Spain? Choose, by hand or by where you are');
+{
+  await openTasks('ES');
+  await page.click('[data-dact="tkCountry"]');
+  await page.waitForSelector('#ccp-list');
+  await page.fill('#ccp-q', 'united states');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /United States/.test((document.querySelector('.tk2-h h1') || {}).textContent || ''), null, { timeout: 15000 });
+  ok(true, 'choosing the United States redraws Tasks for it');
+  /* A position in Madrid, given by the browser - resolved here, sent nowhere. */
+  await page.context().grantPermissions(['geolocation']);
+  await page.context().setGeolocation({ latitude: 40.4168, longitude: -3.7038 });
+  sent.length = 0;
+  await page.click('[data-dact="tkCountry"]');
+  await page.waitForSelector('#ccp-loc');
+  await page.click('#ccp-loc');
+  await page.waitForFunction(() => /Spain/.test((document.querySelector('.tk2-h h1') || {}).textContent || ''), null, { timeout: 15000 });
+  ok(true, 'Use my location chooses Spain for a position in Madrid');
+  ok(!sent.some(u => /40\.41|-3\.70/.test(u)), 'and the coordinates were sent nowhere', sent.filter(u => /40\.41|-3\.70/.test(u)).slice(0, 2));
+  /* Lisbon, Lesotho (inside South Africa), and the sea. */
+  const at = await page.evaluate(async () => [await ccCountryAt(38.72, -9.14), await ccCountryAt(-29.6, 28.2), await ccCountryAt(-29.0, 25.0), await ccCountryAt(0, -30)]);
+  ok(at[0] === 'PT' && at[1] === 'LS' && at[2] === 'ZA' && !at[3], 'Lisbon is Portugal, Lesotho is not South Africa, the open sea is nowhere', at);
+}
+
+section('Refused location is said, and the list still works');
+{
+  /* The browser answering "denied", as it does when somebody blocks the site. */
+  await page.evaluate(() => { navigator.geolocation.getCurrentPosition = (ok, fail) => setTimeout(() => fail({ code: 1, message: 'denied' }), 50); });
+  await page.click('[data-dact="tkCountry"]');
+  await page.waitForSelector('#ccp-loc');
+  await page.click('#ccp-loc');
+  await page.waitForFunction(() => { const t = (document.getElementById('ccp-msg') || {}).textContent || ''; return t.length > 10 && !/Finding/.test(t); }, null, { timeout: 30000 });
+  const m = await page.evaluate(() => ({ msg: document.getElementById('ccp-msg').textContent, rows: document.querySelectorAll('#ccp-list [data-ccp]').length }));
+  ok(/location|list/i.test(m.msg) && m.rows > 50, 'it says why, and every country is still there to pick', m);
+  await page.evaluate(() => closeOvr());
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

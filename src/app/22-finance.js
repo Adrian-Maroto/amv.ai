@@ -319,6 +319,24 @@ function _renderInvestPane(pane){
   });
 }
 try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
+/* LINKING A BANK, WHEREVER IT IS ASKED FOR (Nov 15).
+
+   Spending is the monthly budget only now (the owner's call), so the link
+   that used to sit at the bottom of it opens here instead: the same pane, the
+   same flow at the institution's own sign-in, in a dialog that a Crew job
+   needing a bank and the Bank & money row in Integrations both open. One copy
+   of the money flow, as before - this only gives it a door of its own. */
+function openBankLink(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="bank-bg"><div class="ccp bank-dlg" role="dialog" aria-modal="true" aria-label="'+escH(T('Link a bank'))+'">'
+    +'<header class="ccp-h"><h2>'+escH(T('Link a bank'))+'</h2><button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button></header>'
+    +'<div class="bank-b" id="bank-pane"></div></div></div>';
+  r.classList.add('on');
+  onBackdrop($('bank-bg'), closeOvr);
+  on($('bank-x'),'click',closeOvr);
+  try{ _renderInvestPane($('bank-pane')); }catch(e){}
+}
+try{ window.openBankLink=openBankLink; }catch(e){}
 
 /* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
    reason about it, but has no action that moves it. */

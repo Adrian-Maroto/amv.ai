@@ -1,6 +1,10 @@
-/* SPENDING IS FOUR ANSWERS YOU CAN ACT ON (Nov 10, owner's request: "bank
-   account linked or no, max AMV can spend in a month, money spent this month,
-   and auto spend on or off - so easy").
+/* SPENDING IS THE MONTHLY BUDGET (Nov 15, owner: "remove watching for a
+   price, remove the investing section - just keep it like: if you tell chat
+   or Crew to spend money, this regulates the total monthly budget").
+
+   It was four answers (Nov 10): the bank card is gone with Investing, because
+   the bank link it showed decides nothing about what AMV may buy. Three
+   remain - the maximum, what is spent, and whether AMV may pay at all.
 
    Each card says its fact and carries its action, and the action is the real
    editor's: switching auto-spend on from the card goes through the same
@@ -20,16 +24,27 @@ const cards = () => page.evaluate(() => [...document.querySelectorAll('#spv-mone
   label: c.querySelector('.spv-fc-l').textContent, big: c.querySelector('.spv-f-b').textContent,
   act: (c.querySelector('[data-spv-go]') || {}).dataset ? c.querySelector('[data-spv-go]').dataset.spvGo : null })));
 
-section('Four cards, in the order asked for');
+section('Three cards, the budget and nothing else');
 {
   await open();
   const c = await cards();
-  ok(c.length === 4, 'four of them', c);
-  ok(c.map(x => x.label.toLowerCase()).join('|') === 'bank account|monthly maximum|spent this month|auto-spend', 'bank, maximum, spent, auto-spend', c.map(x => x.label));
-  ok(/Not linked/.test(c[0].big) && c[0].act === 'bank', 'no bank says so, with a way to link one', c[0]);
-  ok(/^\$500\.00$/.test(c[1].big) && c[1].act === 'cap', 'the monthly maximum, with Change', c[1]);
-  ok(/^\$0\.00$/.test(c[2].big), 'nothing spent', c[2]);
-  ok(c[3].big === 'Off' && c[3].act === 'auto', 'auto-spend off, with a switch', c[3]);
+  ok(c.length === 3, 'three of them', c);
+  ok(c.map(x => x.label.toLowerCase()).join('|') === 'monthly maximum|spent this month|auto-spend', 'maximum, spent, auto-spend', c.map(x => x.label));
+  ok(/^\$500\.00$/.test(c[0].big) && c[0].act === 'cap', 'the monthly maximum, with Change', c[0]);
+  ok(/^\$0\.00$/.test(c[1].big), 'nothing spent', c[1]);
+  ok(c[2].big === 'Off' && c[2].act === 'auto', 'auto-spend off, with a switch', c[2]);
+  const rest = await page.evaluate(() => ({ text: document.querySelector('.spv').textContent,
+    watch: !!document.querySelector('.wl, #wl-add, [id^="wl-"]'), invest: !!document.getElementById('spv-bank') }));
+  ok(!rest.watch && !/Watching for a price/.test(rest.text), 'no price watchlist on it', rest.watch);
+  ok(!rest.invest && !/Investing/.test(rest.text), 'and no investing section', rest.invest);
+  ok(/chat or Crew/.test(rest.text), 'it says what it is for: what chat and Crew may buy', rest.text.slice(0, 160));
+}
+
+section('A bank is still linked where a job asks for one');
+{
+  const b = await page.evaluate(async () => { openBankLink(); await new Promise(r => setTimeout(r, 500));
+    const d = document.querySelector('.bank-dlg'); const t = d ? d.textContent : ''; closeOvr(); return { open: !!d, text: t.slice(0, 200) }; });
+  ok(b.open && /Link|link|account/.test(b.text), 'the bank link opens in a dialog of its own', b);
 }
 
 section('Turning it on from the card goes through the consent first');
@@ -42,7 +57,7 @@ section('Turning it on from the card goes through the consent first');
   await page.click('[data-spv-go="auto"]');
   await page.waitForTimeout(900);
   const after = await page.evaluate(() => ({ on: AMVSpend.cfg().enabled, box: (document.getElementById('mf-enabled') || {}).checked,
-    big: document.querySelectorAll('#spv-money-facts .spv-fc')[3].querySelector('.spv-f-b').textContent }));
+    big: document.querySelectorAll('#spv-money-facts .spv-fc')[2].querySelector('.spv-f-b').textContent }));
   ok(after.on && after.box, 'after consent it switches spending on, through the real switch', after);
   ok(after.big === 'On', 'and the card reads it back', after.big);
 }
