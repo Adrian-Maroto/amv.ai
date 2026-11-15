@@ -361,7 +361,10 @@ function cwPeek(id){
   /* Where it runs, in a few words where it matters: a job that needs this
      browser says so beside its schedule, so "every day at 8" is not read as
      "with AMV closed" when it is not. */
-  const here = !_cwRunsUnattended(j) && !_cwUnattendedReady(j) ? ' \u00b7 ' + T('whenever AMV is open') : '';
+  /* Only when the job genuinely needs this tab. A mailbox job that is not
+     connected yet runs with AMV closed once it is - the server holds the
+     grant - so it is not hedged here; its Connect row says what is missing. */
+  const here = (()=>{ try{ return _cwWhereState(j) === 'open'; }catch(e){ return false; } })() ? ' \u00b7 ' + T('whenever AMV is open') : '';
   const status = (j.on ? T('On') + ' \u00b7 ' : '') + _cjWhenLabel(sc) + here;
 
   r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cj-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">

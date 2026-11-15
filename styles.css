@@ -17833,3 +17833,22 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 .bank-st{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1)}
 .bank-st p{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
 .bank-st.on b{color:var(--grn-txt)}
+/* Spending has three cards since Nov 15 (the bank card left): three equal
+   columns, and where they wrap to two, the odd one out spans the row rather
+   than leaving a hole beside it. */
+.spv-fcards{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1100px){.spv-fcards{grid-template-columns:repeat(2,minmax(0,1fr))}.spv-fcards > .spv-fc:last-child:nth-child(odd){grid-column:1 / -1}}
+@media (max-width:359px){.spv-fcards > .spv-fc:last-child:nth-child(odd){grid-column:auto}}
+/* A SWITCH THAT IS STILL A SWITCH ON A PHONE. The touch rule makes every
+   control 44px tall (LAYER A54), which stretched the 42x24 switch into a dark
+   blob with its knob in a corner. The button keeps the 44px target; only its
+   middle 24px is painted as the track, and the knob sits in that middle. */
+@media (pointer: coarse), (max-width: 560px){
+  #app .cw-toggle{height:44px;min-height:44px;padding:10px 0;background-clip:content-box;margin-top:0}
+  #app .cw-toggle .cw-knob{top:13px}
+  #app .cj-card .cj-tg{top:calc(var(--sp-4) - 10px)}
+}
+/* The card's last line wraps as whole phrases on a narrow card, not as two
+   ragged columns. */
+.cj-card-w{flex-wrap:wrap;row-gap:2px}
+.cj-on,.cj-wait{white-space:nowrap}
