@@ -242,4 +242,6 @@ async function main() {
   }
   }
 }
-main().catch(e => { console.error(e); process.exit(1); });
+/* Run as a script, not when another script imports KINDS from here
+   (country-popular.mjs). */
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1); });

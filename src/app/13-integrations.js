@@ -616,8 +616,9 @@ function _integrationsCatalogHTML(opts){
      ones. So the one control is a small link that opens the rest of this list
      in place. The registry is still there for somebody who searches for a
      name, and for a Crew job that needs an app this list does not have. */
-  const cat=(title,rows,q,more)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
-    (more||'')+'</div>';
+  /* data-topic: the country's own services join their topic here (country-catalog.js). */
+  const cat=(title,rows,q,more,id)=>'<div class="ss2"'+(id?' data-topic="'+escH(id)+'"':'')+'><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
+    '<div class="int-cc" hidden></div>'+(more||'')+'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
      The click gate above is the correctness fix; on its own it still means a
@@ -754,7 +755,7 @@ function _integrationsCatalogHTML(opts){
           +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
-    return cat(c.t, html, only?'':c.q, req+more);
+    return cat(c.t, html, only?'':c.q, req+more, only?'':c.id);
   }).join('');
   return ''+
     (guest && !only
@@ -784,7 +785,12 @@ function _appToggle(id){
 /* A letter, rather than anybody's logo: a directory of five hundred brand
    marks is five hundred trademarks, and none of them would say anything the
    name beside it does not. */
-function _appMarkHTML(name){ return '<span class="int-mono" aria-hidden="true">'+escH(String(name||'?').trim().charAt(0).toUpperCase())+'</span>'; }
+/* A tile per app, its hue taken from its name - the same app is the same
+   colour everywhere, and a column of them is not a column of grey letters. */
+function _appMarkHTML(name){
+  const n=String(name||'?').trim(); let h=0; for(let i=0;i<n.length;i++) h=(h*31+n.charCodeAt(i))>>>0;
+  return '<span class="int-mono" aria-hidden="true" style="--mono-h:'+(h%360)+'">'+escH(n.charAt(0).toUpperCase())+'</span>';
+}
 /* Which apps this account asked to hear about. Written only after the server
    said it recorded the request, so "On the list" is never a guess. */
 function _appNotifiedSet(){ const v=load('amv_app_notified'); return new Set(Array.isArray(v)?v:[]); }

@@ -49,7 +49,7 @@ function _loadCrewView(){
   return _crewViewP;
 }
 /* The country catalogue (src/country/country-catalog.js): fetched once, true when its functions are here. */
-function _ccReady(){ return _lazyLoad('country-catalog.js', () => typeof window.ccFillCrew === 'function'); }
+function _ccReady(){ return _lazyLoad('country-catalog.js', () => typeof window.ccFillIntegrations === 'function'); }
 function _cwCatalog(){ return (typeof window !== 'undefined' && window.AMV_CREW_DATA) || null; }
 function _loadCrewData(){
   if(_cwCatalog()) return Promise.resolve(true);

@@ -115,36 +115,6 @@ const TASK_EXTRA=[
   ["x-calendar-review","Advice & how-to","\uD83E\uDDED","Review a week","From [calendar export or an authorized connection], identify conflicts and open blocks. Propose changes without making them."],
   ["x-writing-tone","Advice & how-to","\uD83E\uDDED","Adjust the tone","Rewrite [text] in [tone] while preserving its meaning and all commitments. Do not add promises."],
 ];
-/* What the country itself names (Nov 10, owner: "the most popular tasks in
-   the country you are in"). Built from the server's COUNTRY_FACTS for the
-   chosen country - the tax office, the banks, the job sites, the shops - so
-   "Your tax return" in Spain names the Agencia Tributaria and in Australia the
-   ATO. A field the country has no entry for is simply not offered. */
-const TASK_BY_FACT=[
-  ['tax','\uD83E\uDDFE','Your tax return','Walk me through filing my tax return with {v}, step by step, for my situation: [your income and circumstances]. Link the official pages and list this year\u2019s deadlines.'],
-  ['tax','\uD83D\uDCC5','Tax deadlines this year','List every filing and payment deadline with {v} that applies to [your situation] this year, each with its official source.'],
-  ['gov','\uD83E\uDEAA','Set up your digital ID','How do I set up and use {v}? Give the official steps, what I need ready, and what to do if it fails.'],
-  ['id','\uD83D\uDEC2','Renew a passport or ID','How do I renew my [passport / ID card] through {v}? Documents, fees, waiting times and the official link.'],
-  ['banks','\uD83C\uDFE6','Compare bank accounts','Compare everyday accounts at {v} on fees, app, overdraft and [what matters to you]. Use current official pages and say what you could not verify.'],
-  ['banks','\u26A0\uFE0F','Dispute a card charge','Help me dispute a charge of [amount] from [merchant] on my card with [my bank: one of {v}]. Draft the message; do not send it.'],
-  ['pay','\uD83D\uDCB8','Send money safely','How do I send money with {v}, what does it cost, and which scams target it right now?'],
-  ['jobs','\uD83D\uDCBC','Find jobs near you','Find current [role] jobs in [city] on {v}. List the strongest ten with pay where shown and a link to each.'],
-  ['jobs','\uD83D\uDCC4','Tailor a CV for local jobs','Tailor my CV for [role] the way employers posting on {v} expect it. Here is my CV: [paste]'],
-  ['shop','\uD83D\uDED2','Best price for something','Find the best current price for [product] at {v}, with delivery cost and return policy for each.'],
-  ['shop','\u21A9\uFE0F','Return something','How do I return [item] bought from [shop: one of {v}]? The steps, the deadline and what I get back.'],
-  ['groc','\uD83E\uDD55','A cheaper weekly shop','Plan a week of groceries for [people] on [budget] and compare what it costs at {v}.'],
-  ['food','\uD83C\uDF55','Compare food delivery','Compare delivery fees, minimum orders and service charges on {v} for [area].'],
-  ['rail','\uD83D\uDE86','Plan a train trip','Plan a trip from [A] to [B] with {v}: times, fares and the cheapest ticket type.'],
-  ['prop','\uD83C\uDFE1','Find a place to live','Search {v} for a place to [rent / buy] in [area] under [budget]. Flag listings that look like scams.'],
-  ['car','\uD83D\uDE97','Car paperwork','What do I have to do for {v}, by when, and what does it cost? Official sources only.'],
-  ['health','\uD83E\uDE7A','How healthcare covers you','How does {v} cover [treatment or visit]? What do I pay, and what do I need to bring?'],
-  ['news','\uD83D\uDCF0','Today\u2019s news, briefly','Brief me on today\u2019s top stories from {v}, each in two sentences with its source.'],
-  ['exams','\u270D\uFE0F','Exam study plan','Make a study plan for {v} in [subject], [weeks] weeks before the exam, with past-paper practice.'],
-  ['uni','\uD83C\uDF93','Apply to university','How do I apply through {v}? Deadlines, documents and the steps in order.'],
-  ['telco','\uD83D\uDCF1','A cheaper phone plan','Compare mobile plans from {v} for [your usage] and say which is cheapest for it.'],
-  ['post','\uD83D\uDCE6','Send a parcel','Cheapest way to send a [size] parcel to [place] with {v}, and how long it takes.'],
-  ['weather','\u2600\uFE0F','This week\u2019s weather','What does {v} forecast for [city] this week, and what should I plan around?'],
-];
 /* Prompts for every task that is not in TASKS - the sixty, and the country's. */
 const _TASK_PROMPTS={};
 TASK_EXTRA.forEach(t=>{ _TASK_PROMPTS[t[0]]=t[4]; });
@@ -164,162 +134,99 @@ function launchTask(key){
   },150);
 }
 
-/* 4. TASKS VIEW */
+/* 4. TASKS VIEW (rebuilt Nov 15).
+
+   The owner: "remove Only on AMV, remove the advice / find out / writing
+   sections - all of that - and only keep 'For Spain': the tasks naming the
+   real services there, without 'Source: Wikidata'. For every country. Show
+   all of them, with a search bar, organized - and at the top, 'Not in this
+   country?' so you can choose your country."
+
+   So the page is the country's own tasks and nothing else: a heading for the
+   country, the country switch, a search, the categories, and the tasks -
+   grouped under their category with the first few showing, every one of them
+   a press away. Anything the person has set running (_autoServerHTML) stays,
+   because it is theirs. */
+let _tkQ = '', _tkC = 'all', _tkN = 60, _tkList = [], _tkCc = '';
+function _tkCatOf(t){ try{ return _cxCat({ ccKind: t.kind }); }catch(e){ return 'Home & life'; } }
+function _tkRow(t){
+  return `<button class="tk-row tk2-row" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${(CC_KINDS[t.kind]||['•'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
+}
+function _tkListHTML(){
+  if(!_tkList.length) return '';
+  const words = _tkQ.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + t.e.n + ' ' + t.e.s + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
+  /* A search or a category: one list, the first rows and Show more. */
+  if(words.length || _tkC !== 'all'){
+    const rows = _tkList.filter(t => (_tkC === 'all' || _tkCatOf(t) === _tkC) && hit(t));
+    if(!rows.length) return `<div class="cx-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cx-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
+    return `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
+      + (rows.length > _tkN ? `<div class="cx-more-w"><button class="btn bs" id="tk-more">${escH(T('Show more'))} <span class="cx-n">${(rows.length - _tkN).toLocaleString()}</span></button></div>` : '');
+  }
+  /* Everything: under each category, the first few and See all. */
+  const by = {}; _tkList.forEach(t => { const c = _tkCatOf(t); (by[c] = by[c] || []).push(t); });
+  return CX_CATS.filter(c => by[c]).map(c => `<section class="tk2-cat">
+      <div class="tk2-cat-h"><h2>${escH(T(c))}</h2><span>${by[c].length.toLocaleString()}</span></div>
+      <div class="tk2-list">${by[c].slice(0, 6).map(_tkRow).join('')}</div>
+      ${by[c].length > 6 ? `<button class="cx-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
+    </section>`).join('');
+}
+function _tkChipsHTML(){
+  const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
+  const chip = (k, label, c) => `<button class="cx-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
+  return chip('all', T('All'), _tkList.length) + CX_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+}
+function _tkPaint(){
+  const l = $('tk2-body'); if(l) l.innerHTML = _tkListHTML();
+  const c = $('tk2-cats'); if(c) c.innerHTML = _tkChipsHTML();
+  on($('tk-more'), 'click', () => { _tkN += 120; _tkPaint(); });
+  on($('tk-none-go'), 'click', () => { const v = _tkQ; setTab('chat'); setTimeout(() => { const ta = $('mta'); if(ta){ ta.value = v; fitChatComposer(ta); ta.focus(); } }, 150); });
+}
+function tkCountry(){
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _tkQ = ''; _tkC = 'all'; _tkN = 60; renderTasksView(); }); }).catch(() => {});
+}
+try{ window.tkCountry = tkCountry; }catch(e){}
 function renderTasksView(){
   const vc=$('vc'); if(!vc) return;
-  /* WHAT ONLY AMV DOES, CUT TO THE SIX THAT ARE NOT ALREADY A TAB AWAY.
-     The daily brief is a Crew job, the brand canvas is Build, the debug loop
-     is Lab and the handoff has its own tab - four cards that each restated a
-     button already in the rail. These six are the reasons to be here. */
-  const unique=[
-    ['🔭','Set up a research watch','AMV monitors any topic on a schedule - a stock, a company, a trend - and reports what\'s happening. Info, not advice.','researchwatch'],
-    ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
-    ['\uD83D\uDD10','Act on your real accounts','Connect an account once and AMV works inside it - reading, drafting, organizing - with a scoped grant you can take back at any time.','connect'],
-    ['🏗️','Build & ship a working app','Not just code - AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
-    ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - built from the selected country\'s service directory. Availability must be checked.','world'],
-    ['\uD83D\uDCAC','Just say it, and it goes and does it','Describe the outcome in a sentence. AMV works out which accounts and sites it needs, does the work, and stops for your approval before anything leaves.','say'],
-  ];
-  const ucard=(u)=>`<button class="uniq-card" data-dact="launchUnique" data-darg="${u[3]}">
-    <span class="uniq-ic">${u[0]}</span>
-    <span class="uniq-t">${u[1]}</span>
-    <span class="uniq-d">${escH(u[2])}</span>
-    <span class="uniq-go">Try it →</span>
-  </button>`;
-  /* IN THE ORDER PEOPLE ACTUALLY USE AN ASSISTANT. Practical guidance,
-     looking things up and writing - most of it improving text the person
-     brought - are nearly 80% of conversations; programming is a small share
-     (NBER w34255, 2025). The groups follow that, not who the person is. */
-  const cats=[
-    {label:'Advice & how-to',tasks:[['trip','\u2708\uFE0F','Plan a trip','Days, stays, costs and tips'],['meal','\uD83C\uDF7D\uFE0F','Meal plan','A week, with the shopping list'],['fitness','\uD83D\uDCAA','Workout plan','For your goal and your kit'],['budget','\uD83D\uDCB8','Make a budget','From what you actually spend'],['explain','\uD83D\uDCA1','Explain anything','Simply, step by step'],['homework','\uD83D\uDCDA','Help with homework','Worked through, not just answered']]},
-    {label:'Find out',tasks:[['compare','\uD83D\uDED2','Compare before you buy','Three options, one pick'],['lookup','\uD83D\uDD0E','Look it up, with sources','The current answer, dated'],['cook','\uD83C\uDF73','Cook with what you have','Two dinners from your fridge'],['summarize','\uD83D\uDD0D','Summarize anything','Articles, docs or books']]},
-    {label:'Writing',tasks:[['edit','\u270D\uFE0F','Improve my writing','Clearer, still yours'],['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Ready-to-send replies'],['translate','\uD83C\uDF10','Translate','Keeps the tone'],['essay','\uD83D\uDCDD','Write an essay','On any topic']]},
-    {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\uD83D\uDCE8','Cover letter','Tailored to the job'],['meeting','\uD83D\uDCCB','Meeting notes','With action items'],['excel','\uD83D\uDCCA','Analyze data','Paste it, ask anything'],['pptx','\uD83D\uDDBC\uFE0F','Presentation','Slides with a point']]},
-    {label:'Create',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
-    {label:'Study',tasks:[]},
-    {label:'Money & home',tasks:[]},
-    {label:'Code',tasks:[['code','\uD83D\uDCBB','Build something','Runs, not just written'],['debug','\uD83D\uDC1B','Fix my code','From the real error']]},
-  ];
-  TASK_EXTRA.forEach(t=>{ const c=cats.find(x=>x.label===t[1]); if(c) c.tasks.push([t[0],t[2],escH(T(t[3])),'']); });
-  const total=cats.reduce((n,c)=>n+c.tasks.length,0);
-  const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span>${t[3]?`<span class="tk-d">${escH(t[3])}</span>`:''}</span><span class="tk-arrow">\u2192</span></button>`;
-  vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
-    <header class="tasks-hero">
-      <div>
-        <!-- Was "What AMV can do", which is now the name of the tab NEXT to
-             this one in the rail. Two neighbouring tools cannot introduce
-             themselves with the same sentence; this one is the ready-made
-             jobs, so it says so. -->
-        <span class="eyebrow">Tasks</span>
-        <h2>Get something done.</h2>
-        <p class="vsub">Pick a ready-made task - it opens a chat set up to deliver it - or set AMV working on its own.</p>
-      </div>
-    </header>
-    <label class="tk-find"><span class="sr-only">${escH(T('Find a task'))}</span>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-      <input class="inp" id="tk-find" type="search" autocomplete="off" placeholder="${escH(T('Find a task - email, taxes, a trip, homework…'))}">
-      <span class="tk-find-n" id="tk-find-n" aria-live="polite"></span></label>
-    <section class="tk-local" id="tk-local" hidden></section>
-    ${_autoServerHTML()}
-    <div class="tasks-masonry">
-      ${cats.map((cat,n)=>`<section class="tk-cat">
-        <div class="sec-head"><h3>${escH(T(cat.label))}</h3><span class="sec-sub">${cat.tasks.length} ${escH(T('tasks'))}</span></div>
-        <div class="tk-list">${cat.tasks.map(row).join('')}</div>
-      </section>`).join('')}
-    </div>
-    <section class="tk-local tk-cc" id="tk-cc" hidden></section>
-    <section class="uniq-sec">
-      <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Work it does on its own</span></div>
-      <div class="uniq-grid">${unique.map(ucard).join('')}</div>
-    </section>
-  </div></div>`;
-  try{ _wireAutoServer(vc); }catch(e){}
-  _tkWireFind(vc, total);
-  _tkFillLocal();
-}
-/* The search box: every task on the page, narrowed as you type - the country's
-   ones included - with a count, and groups with nothing left folded away. */
-function _tkWireFind(vc, total){
-  const box=$('tk-find'), n=$('tk-find-n'); if(!box) return;
-  const run=()=>{
-    const q=box.value.trim().toLowerCase();
-    vc.classList.toggle('tk-find-on', !!q);
-    /* A search reaches every catalogue row, so the ones not drawn yet are drawn now. */
-    if(q && window.ccAllRows) window.ccAllRows($('tk-cc'));
-    /* A search looks through every kind: a kind filter left on would hide
-       matches the count beside the box had just promised. */
-    if(q){ const cc=$('tk-cc'); if(cc && cc.classList.contains('cc-filtered')){ const all=cc.querySelector('[data-cc-kind=""]'); if(all) all.click(); } }
-    let shown=0;
-    vc.querySelectorAll('.tk-row').forEach(r=>{ const hit=!q || r.textContent.toLowerCase().indexOf(q)>=0; r.hidden=!hit; if(hit) shown++; });
-    vc.querySelectorAll('.tk-cat, .tk-local').forEach(sec=>{ if(sec.id==='tk-local' && !sec.querySelector('.tk-row')) return; sec.hidden=!sec.querySelector('.tk-row:not([hidden])'); });
-    if(n) n.textContent = q ? shown + ' ' + T('tasks') : '';
-    /* Nothing matches: the words they typed are still a task - chat takes them. */
-    let none=$('tk-none');
-    if(q && !shown){
-      if(!none){ none=document.createElement('div'); none.id='tk-none'; none.className='tk-none'; box.closest('.tk-find').after(none); }
-      none.innerHTML='<p>'+escH(T('No ready-made task for that. Ask AMV in your own words instead.'))+'</p><button class="btn bp" type="button" id="tk-none-go">'+escH(T('Ask in chat'))+' \u2192</button>';
-      on($('tk-none-go'),'click',()=>{ const v=box.value.trim(); setTab('chat'); setTimeout(()=>{ const ta=$('mta'); if(ta){ ta.value=v; fitChatComposer(ta); ta.focus(); } },150); });
-    } else if(none) none.remove();
-  };
-  on(box,'input',run);
-}
-/* The country's own tasks, from the same facts Crew and Connections read. */
-async function _tkFillLocal(){
-  let host=$('tk-local'); if(!host) return;
   const cc=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
   const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
-  if(!cc || !row) return;
-  /* The server's facts add a few rows; the catalogue below stands without
-     them, so a backend that is down or not configured still shows it. */
-  let facts={};
-  if(window.AMV_API && AMV_API.live){ try{ const d=await AMV_API.everyday(cc); if(d && d.facts && typeof d.facts==='object') facts=d.facts; }catch(e){} }
-  if(!host.isConnected) return;
-  const rows=TASK_BY_FACT.filter(t=>facts[t[0]]).map((t,i)=>{
-    const key='c-'+t[0]+'-'+i;
-    _TASK_PROMPTS[key]=t[3].replace('{v}', String(facts[t[0]]));
-    return `<button class="tk-row" data-dact="launchTask" data-darg="${key}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${escH(T(t[2]))}</span><span class="tk-d" data-no-i18n>${escH(String(facts[t[0]]))}</span></span><span class="tk-arrow">\u2192</span></button>`;
-  });
-  /* The country catalogue: every named service there, with what people do
-     with each (country-catalog.js, fetched here). Rendered whole so search reaches every
-     one; only the first rows show until 'Show all'. */
-  let cat='', ccMore=null;
+  if(cc !== _tkCc){ _tkList = []; _tkCc = cc; }
+  const head = row ? _cwSayPlace('For {country}', row[1], _cwThe(row[1])) : T('Tasks');
+  vc.innerHTML = `<div class="sv fi"><div class="cx tk2">
+    <div class="tk2-top">
+      <div class="tk2-h"><h1>${escH(head)}</h1>
+        <p class="tk2-sub" id="tk2-sub">${_tkList.length ? `<b>${_tkList.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}` : escH(T('Loading…'))}</p></div>
+      <button class="cx-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
+    </div>
+    ${_autoServerHTML()}
+    <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="tk-find" type="search" autocomplete="off" value="${escH(_tkQ)}" placeholder="${escH(T('Search tasks'))}" aria-label="${escH(T('Search tasks'))}"></div>
+    <div class="cx-cats" id="tk2-cats" role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
+    <div id="tk2-body">${_tkListHTML()}</div>
+  </div></div>`;
+  try{ _wireAutoServer(vc); }catch(e){}
+  let t = 0;
+  on($('tk-find'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _tkQ = v.trim(); _tkN = 60; _tkPaint(); }, 120); });
+  on($('tk2-cats'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); } });
+  on($('tk2-body'), 'click', (e) => { const b = e.target.closest && e.target.closest('.tk2-all[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); try{ $('tk2-cats').scrollIntoView({ block:'nearest' }); }catch(_){} } });
+  on($('tk-more'), 'click', () => { _tkN += 120; _tkPaint(); });
+  if(!_tkList.length) _tkLoad(cc);
+}
+/* The country's tasks, from its file (country-catalog.js). */
+async function _tkLoad(cc){
   try{
-    const d=(await _ccReady())?await window.ccLoad(cc):null;
-    if(!host.isConnected) return;
-    const list=d?window.ccTasks(d):[];
-    list.forEach(t=>{ _TASK_PROMPTS[t.id]=t.prompt; });
-    if(list.length){
-      const kinds=[...new Set(list.map(t=>t.kind))];
-      const ccRow=(t,i)=>`<button class="tk-row${i>=24?' cc-more':''}" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic">${(CC_KINDS[t.kind]||['\u2022'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow">\u2192</span></button>`;
-      ccMore=()=>list.slice(24).map((t,i)=>ccRow(t,i+24)).join('');
-      cat=`<div class="cc-head"><b>${list.length}</b> ${escH(T('tasks naming real services there'))}
-          <span class="cc-src">${escH(T('Source'))}: Wikidata</span></div>
-        <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
-          <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-          ${kinds.map(k=>`<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k]||['',''])[0]}</span><span>${escH(T((CC_KINDS[k]||['',k])[1]))}</span></button>`).join('')}
-        </div>
-        <div class="tk-list tk-local-list cc-list">${list.slice(0,24).map(ccRow).join('')}</div>
-        ${list.length>24?`<button class="btn bs cc-all" id="cc-all">${escH(T('Show all'))} (${list.length})</button>`:''}`;
-    }
-  }catch(e){}
-  const head=`<div class="sec-head"><h3>${escH(_cwSayPlace('For {country}', row[1], _cwThe(row[1])))}</h3>
-      <span class="sec-sub">${escH(T('Named for the services there.'))} <button class="cw-link" data-dact="setTab" data-darg="crew">${escH(T('Crew jobs for there'))} \u2192</button></span></div>`;
-  if(rows.length){ host.innerHTML=head+`<div class="tk-list tk-local-list">${rows.join('')}</div>`; host.hidden=false; }
-  /* The catalogue goes BELOW the general tasks (#tk-cc): it arrives after the
-     page is drawn, and growing above them moved everything somebody was
-     reading. */
-  if(!cat) return;
-  host=$('tk-cc'); if(!host) return;
-  host.innerHTML=head+cat; host.hidden=false;
-  /* Kind chips narrow the catalogue; Show all lifts the first-rows cap. */
-  host.querySelectorAll('[data-cc-kind]').forEach(c=>on(c,'click',()=>{
-    host.querySelectorAll('[data-cc-kind]').forEach(x=>x.classList.toggle('on',x===c));
-    const k=c.dataset.ccKind; host.classList.toggle('cc-filtered',!!k);
-    if(k) window.ccAllRows(host);
-    host.querySelectorAll('.cc-list .tk-row').forEach(r=>{ r.classList.toggle('cc-off', !!k && r.dataset.cc!==k); });
-  }));
-  if(ccMore) window.ccRest(host, ccMore);
-  on($('cc-all'),'click',function(){ window.ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
-  const box=$('tk-find'); if(box && box.value) box.dispatchEvent(new Event('input'));
+    const d = (cc && await _ccReady()) ? await window.ccLoad(cc) : null;
+    const list = d ? window.ccTasks(d) : [];
+    list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
+    if(cc !== _tkCc) return;
+    _tkList = list;
+    const sub = $('tk2-sub');
+    if(sub) sub.innerHTML = list.length ? `<b>${list.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}`
+      : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.'));
+    _tkPaint();
+  }catch(e){
+    const sub = $('tk2-sub'); if(sub) sub.textContent = T('The tasks could not load. Check your connection and try again.');
+  }
 }
 function launchUnique(kind){
   const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
@@ -351,185 +258,6 @@ function _connSectionHTML(){
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
   '</section>';
 }
-/* ── POPULAR WHERE YOU ARE ─────────────────────────────────────────────────
-
-   Asked for: what people in each country actually use, on this page, so they
-   can connect it. One card near the top that is always there - so nothing
-   arrives late and pushes the page down - and a dialog that lists, for the
-   country, three honest kinds of thing:
-
-     · what AMV really connects there (that country's own mailboxes; the bank
-       where bank sign-in exists), with Connect;
-     · what AMV already uses there WITHOUT a sign-in (its job sites, shops,
-       trains, official pages), with the Crew jobs that use them;
-     · what cannot be connected yet (a bank outside the US), with Notify me.
-
-   A bank in Spain gets Notify me and a sentence saying why, never a Connect
-   that goes nowhere: a button that looks like it links your money and does not
-   is the most expensive kind of wrong on this page. */
-function _intLocalBannerHTML(){
-  let cc = '', row = null, pending = false;
-  try{ pending = _cwHerePending(); cc = pending ? '' : _cwCountryGuess(); row = _cwCountryRow(cc); }catch(e){}
-  try{ setTimeout(() => { Promise.resolve(_cwAskWhere()).then(_intLocalFill, _intLocalFill); }, 0); }catch(e){}
-  return '<button class="int-local" id="int-local" data-dact="openLocalConnect">'+
-    '<span class="int-local-flag" id="int-local-flag" aria-hidden="true">'+(row ? row[2] : '\uD83C\uDF0D')+'</span>'+
-    '<span class="int-local-b"><span class="int-local-t" id="int-local-t">'+
-      escH(row ? _cwSayPlace('Services in {country}', row[1]) : T('Services where you are'))+'</span>'+
-      '<span class="int-local-s">'+escH(T('The mail, banks, job sites and shops people there use - and what AMV does with each.'))+'</span></span>'+
-    '<span class="int-local-go">'+escH(T('See them'))+
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
-  '</button>';
-}
-/* The card's words change in place when the country is known; its size does
-   not, so the page under it never moves. */
-function _intLocalFill(){
-  try{
-    const t = $('int-local-t'), f = $('int-local-flag'); if(!t) return;
-    const row = _cwCountryRow(_cwCountryGuess());
-    const words = row ? _cwSayPlace('Services in {country}', row[1]) : T('Services where you are');
-    if(t.textContent !== words) t.textContent = words;
-    if(f && row && f.textContent !== row[2]) f.textContent = row[2];
-  }catch(e){}
-}
-/* Which Crew search each fact leads to - words that really occur in the jobs
-   that use it, so "See the jobs" never lands on "no matches". */
-const INT_LOCAL_USES = [
-  { keys:['jobs'], t:'Job sites', d:'AMV searches these for roles that fit you and prepares each application. Nothing to sign in to.', find:'job' },
-  { keys:['shop','groc'], t:'Shops and supermarkets', d:'AMV watches their public prices for your deals, price drops and weekly shop.', find:'price' },
-  { keys:['food'], t:'Food delivery', d:'AMV compares what is open and what it costs. You place the order.', find:'table' },
-  { keys:['rail'], t:'Trains', d:'AMV checks live times and disruption before your trips.', find:'trip' },
-  { keys:['prop'], t:'Property', d:'AMV watches new listings and rents where you want to live.', find:'property' },
-  { keys:['post'], t:'Post and parcels', d:'AMV tracks what is coming and what is late.', find:'parcel' },
-  { keys:['telco'], t:'Mobile networks', d:'AMV compares plans when your contract is up and flags a bill that jumped.', find:'bill' },
-  { keys:['tax','gov','id','car'], t:'Government and official', d:'AMV reads the official pages for deadlines, fees and rules and reminds you in time. It never signs in, pays or files anything for you.', find:'renew' },
-  { keys:['health'], t:'Health', d:'Appointments, prescriptions and check-ups, tracked so nobody misses one.', find:'appointment' },
-  { keys:['exams','uni'], t:'School and university', d:'Exam dates and application deadlines, tracked for you.', find:'school' },
-  { keys:['news','weather'], t:'News and weather', d:'What your morning briefing reads.', find:'brief' },
-];
-function _intLocalRow(o){
-  return '<div class="int-card'+(o.notify?' int-notify':'')+'">'+
-    '<div class="int-ic">'+_appMarkHTML(o.mark||o.name)+'</div>'+
-    '<div class="int-body"><div class="int-top"><span class="int-name">'+escH(o.name)+'</span>'+
-      (o.connected?'<span class="int-ok">\u2713 '+escH(T('Connected'))+'</span>':'')+'</div>'+
-      (o.names?'<div class="int-local-names">'+escH(o.names)+'</div>':'')+
-      '<div class="int-desc">'+escH(o.desc)+'</div></div>'+
-    '<div class="int-act">'+o.act+'</div></div>';
-}
-function _intLocalBody(cc, d){
-  const row = _cwCountryRow(cc), name = row ? row[1] : (d && d.name) || cc;
-  const f = (d && d.facts && typeof d.facts === 'object') ? d.facts : {};
-  /* The mailboxes people there use, most-used first (researched per country,
-     COUNTRY_MAIL on the server) - falling back to the country's own providers
-     for an older server that does not send the order. */
-  const mail = Array.isArray(d && d.inbox) && d.inbox.length ? d.inbox
-             : (Array.isArray(d && d.mail) ? d.mail.map(m => ({ id:m.id, name:m.name, how:'mail:' + m.id })) : []);
-  const acc = _mailConnectedAccount(), notified = _appNotifiedSet();
-  const btn = (attrs, label, cls) => '<button class="btn '+(cls||'bp')+'" '+attrs+' style="font-size:var(--t-sm)">'+escH(label)+'</button>';
-  /* CONNECT: only what really connects. */
-  const connect = mail.map(m => {
-    const grant = m.how === 'g' ? 'google' : m.how === 'ms' ? 'outlook' : '';
-    const on = grant ? _rowConnected(grant) : (!!acc && acc.provider === m.id);
-    return _intLocalRow({ name:m.name, connected:on,
-      desc: grant ? T('Read, summarized and answered. Sign in at the provider; you choose what AMV may do.')
-          : on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
-      act: grant ? (on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')))
-         : on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
-  });
-  /* The calendar that goes with the mailbox people there use, and school
-     where schools run on Google Classroom - the same connections the top ten
-     in Crew is built on, so the two screens never disagree about a country. */
-  const m1 = mail[0];
-  if(m1 && (m1.how === 'g' || m1.how === 'ms')){
-    const grant = m1.how === 'g' ? 'google' : 'outlook', calName = m1.how === 'g' ? 'Google Calendar' : 'Outlook Calendar';
-    const on = _rowConnected(grant);
-    connect.push(_intLocalRow({ name:calName, connected:on,
-      desc:T('Your week, read - never changed. Comes with the same sign-in as your mail.'),
-      act: on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')) }));
-  }
-  if(d && d.classroom){
-    const on = _rowConnected('google');
-    connect.push(_intLocalRow({ name:'Google Classroom', connected:on,
-      desc:T('What is due and what is late, read-only - AMV cannot hand anything in.'),
-      act: on ? '' : btn('data-lc-grant="google"', T('Connect')) }));
-  }
-  /* A bank wherever this deployment may link one (FINANCE_COUNTRIES on the
-     server), not only in the US - linked at the bank, read-only. */
-  if(d && d.bank){
-    const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
-    connect.push(_intLocalRow({ name:T('Your bank'), names:[f.cards, f.banks].filter(Boolean).join(' · '), connected:linked,
-      desc:T('Balances and transactions for your money jobs, through your bank’s own sign-in. AMV never sees your password and cannot move money.'),
-      act: btn('data-lc-bank="1"', linked ? T('Manage in Spending') : T('Link in Spending'), linked ? 'bs' : 'bp') }));
-  }
-  /* WORKS NOW, NO SIGN-IN. */
-  const uses = INT_LOCAL_USES.map(u => {
-    const names = u.keys.map(k => String(f[k] || '')).filter(Boolean).join(' · ');
-    if(!names) return '';
-    return _intLocalRow({ name:T(u.t), names, desc:T(u.d), act: btn('data-lc-find="'+escH(u.find)+'"', T('See the jobs'), 'bs') });
-  }).filter(Boolean);
-  /* NOT YET: said, with the one honest action. */
-  const later = [];
-  if(!(d && d.bank) && (f.banks || f.pay)){
-    const slug = 'bank-' + cc.toLowerCase(), label = T('Bank sign-in in')+' '+name;
-    const needs = d && d.bankElsewhere ? ' ' + T('It needs') + ' ' + d.bankElsewhere + '.' : '';
-    later.push(_intLocalRow({ name:label, mark:'B', names:[f.banks, f.pay].filter(Boolean).join(' · '), notify:true,
-      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it.')+needs+' '+T('Money jobs work from the bills in your mailbox meanwhile.'),
-      act: notified.has(slug) ? '<span class="int-onlist">\u2713 '+escH(T('On the list'))+'</span>'
-                              : btn('data-app-notify="'+escH(slug)+'" data-app-name="'+escH(label)+'"', T('Notify me'), 'bs') }));
-  }
-  const sec = (h, rows) => rows.length ? '<div class="ss2"><h3>'+escH(h)+'</h3><div class="int-list">'+rows.join('')+'</div></div>' : '';
-  const opts = CW_WORLD_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1]))
-    .map(c => '<option value="'+escH(c[0])+'"'+(c[0]===cc?' selected':'')+'>'+escH(c[1])+'</option>').join('');
-  return '<label class="ml-f cv-find"><span>'+escH(T('Country'))+'</span><select id="lc-c">'+opts+'</select></label>'+
-    sec(T('Connect in')+' '+name, connect)+
-    sec(T('Already works in')+' '+name+' - '+T('no sign-in'), uses)+
-    sec(T('Not yet'), later)+
-    (connect.length || uses.length ? '' : '<p class="mu">'+escH(T('Nothing is written down for')+' '+name+' '+T('yet. Every job still runs there.'))+'</p>')+
-    '<p class="cw-anything">'+escH(T('Every Crew job answers for')+' '+name+' '+T('- its sites, prices and rules. None of this is the limit: type anything in the Crew box and AMV works out what it needs.'))+'</p>';
-}
-async function openLocalConnect(code){
-  const r = $('ovr'); if(!r) return;
-  let cc = String(code || '').toUpperCase();
-  if(!_cwCountryRow(cc)) cc = _cwCountryGuess() || 'US';
-  const row = _cwCountryRow(cc);
-  r.innerHTML = _ovShell({ id:'lc', wide:true, eyebrow:T('Where you are'),
-                           title:row ? _cwSayPlace('Services in {country}', row[1]) : T('Popular in')+' '+cc,
-                           body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
-  _ovWire('lc');
-  let d = null;
-  if(window.AMV_API && AMV_API.live){ try{ d = await AMV_API.everyday(cc); }catch(e){ d = null; } }
-  const b = $('lc-body'); if(!b) return;
-  if(!d || typeof d !== 'object'){
-    b.innerHTML = '<div class="ml-err">'+escH(_cwSayPlace('AMV’s servers cannot be reached right now, so the list for {country} cannot be shown. Try again in a moment.', row ? row[1] : cc))+'</div>';
-    return;
-  }
-  try{ if(d.facts && typeof d.facts === 'object') _cwFacts[cc] = d.facts; }catch(e){}
-  b.innerHTML = _intLocalBody(cc, d);
-  const h = $('lc-h'); if(h && row) h.textContent = _cwSayPlace('Services in {country}', row[1]);
-  on($('lc-c'), 'change', e => { openLocalConnect(e.target.value); });
-  b.querySelectorAll('[data-lc-mail]').forEach(x => on(x, 'click', () => {
-    if(_intNeedsAccount(_intName('mail'))) return;
-    r.innerHTML = ''; openMailConnect(x.dataset.lcMail);
-  }));
-  b.querySelectorAll('[data-lc-inbox]').forEach(x => on(x, 'click', () => { r.innerHTML = ''; openMailInbox(); }));
-  b.querySelectorAll('[data-lc-grant]').forEach(x => on(x, 'click', () => {
-    if(_intNeedsAccount(_intName(x.dataset.lcGrant))) return;
-    r.innerHTML = ''; _connGoTo(x.dataset.lcGrant);
-  }));
-  b.querySelectorAll('[data-lc-bank]').forEach(x => on(x, 'click', () => {
-    r.innerHTML = '';
-    try{ setTab('spend'); }catch(e){}
-    try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
-  }));
-  b.querySelectorAll('[data-lc-find]').forEach(x => on(x, 'click', () => {
-    r.innerHTML = '';
-    /* Set before the tab opens, so Crew draws once, already searched. */
-    try{ _cwFind = String(x.dataset.lcFind || ''); }catch(e){}
-    setTab('crew');
-  }));
-  b.querySelectorAll('[data-app-notify]').forEach(x => on(x, 'click', () => { _appNotify(x); }));
-}
-try{ window.openLocalConnect = openLocalConnect; window._intLocalBody = _intLocalBody; }catch(e){}
-
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
@@ -562,8 +290,7 @@ function renderIntegrationsView(){
          buttons; what matters now, and what somebody deciding whether to hand
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
-      '<span class="eyebrow">Connectors</span>'+
-      '<h2>Your accounts and available connections</h2>'+
+      '<h2 class="int2-h">'+escH(T('Integrations'))+'</h2>'+
       /* Counted, not claimed: the number is the length of the list below. */
       /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
          usage data or survey stands behind that ranking - the list is curated.
@@ -571,7 +298,10 @@ function renderIntegrationsView(){
          each provider every day (tools/connector-health.mjs, run daily by the
          connectors workflow), and every Notify me is recorded on the server
          (/waitlist, one entry per app). */
-      '<p class="vsub">'+escH(String(_appCount()))+' directory entries, by topic. Supported sign-ins appear first; provider availability, permissions and setup still apply. Discovery checks do not prove that an account is connected or that every action works. For entries not available yet, use Notify me to register interest.</p>'+
+      /* Two ways in, said once (Nov 15): Connect is a key AMV holds and you can
+         take back; Use is AMV's browser on the real site, where you sign in
+         yourself. Nothing on this page claims more than that. */
+      '<p class="vsub int2-sub">'+escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.'))+'</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -582,7 +312,6 @@ function renderIntegrationsView(){
          filled in. Up here it belongs to this view, and nothing the directory
          repaints can reach it. See cdirSearchBarHTML. */
       ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
-      _intLocalBannerHTML()+
       _connSectionHTML()+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
@@ -606,10 +335,6 @@ function renderIntegrationsView(){
         '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
-      /* Every named service in the country, from the country catalogue. Last
-         on the page: it arrives after the page is drawn, and anything above
-         the fold that grew then would push what somebody was reading. */
-      '<section class="cc-int" id="cc-int" hidden></section>'+
       /* NOTHING AFTER THE TOPICS. There used to be a last section called
          "Everything else, by topic" - a wall of doors into the open registry.
          Asked for: "no part should say everything else by topic, it should

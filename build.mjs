@@ -165,6 +165,9 @@ function emitSandbox() {
   /* The country catalogue (Tasks, Crew jobs and services by country), fetched
      with Crew or Tasks/Integrations - out of the page, for its weight. */
   writeFileSync('country-catalog.js', readFileSync('src/country/country-catalog.js'));
+  /* Country outlines (scripts/geo-countries.mjs, Natural Earth): a position
+     becomes a country on the device, and the coordinates go nowhere. */
+  writeFileSync('geo-countries.json', readFileSync('data/geo/countries.json'));
   /* What each Settings pane draws, fetched when Settings opens (code splitting). */
   writeFileSync('settings-panes.js', readFileSync('src/settings/settings-panes.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
@@ -1159,6 +1162,7 @@ const PUBLISH = [
   'code-view.js',          // the code workspace's screen, fetched when it is drawn
   'integrations-view.js',  // Tasks, Integrations and Automation, fetched when drawn
   'country-catalog.js',    // the country catalogue, fetched with Crew, Tasks and Integrations
+  'geo-countries.json',    // country outlines, fetched only when somebody presses Use my location
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page

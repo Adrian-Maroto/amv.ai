@@ -297,87 +297,58 @@ async function ccCrewLoad(cc){
   }));
   return _ccCrewJobs[cc];
 }
-/* THE FIRST ROWS NOW, THE REST WHEN SOMEBODY ASKS FOR THEM.
+/* INTEGRATIONS: every service in the country, under its own topic (Nov 15).
 
-   A large country has over three thousand tasks. Drawing every row hidden
-   cost twenty thousand elements and a megabyte of markup, and on a slow phone
-   a third of a second in which nothing answered - for rows most people never
-   open. The first rows are drawn; the rest are built the first time Show all,
-   a kind filter or a search needs them, once. */
-function ccRest(host, more){
-  const list = host && host.querySelector('.cc-list'); if(!list) return;
-  list._ccMore = () => { list._ccMore = null; const html = more(); if(html) list.insertAdjacentHTML('beforeend', html); };
-}
-function ccAllRows(host){ const l = host && host.querySelector('.cc-list'); if(l && l._ccMore) l._ccMore(); }
-try{ window.ccRest = ccRest; window.ccAllRows = ccAllRows; }catch(e){}
-
-/* The section on Crew: every job for the country, by kind, first rows then all. */
-async function ccFillCrew(){
-  const host = document.getElementById('cc-crew'); if(!host) return;
-  const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
-  const list = await ccCrewLoad(cc);
-  if(!host.isConnected || !list.length) return;
-  const row = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null;
-  const kinds = [...new Set(list.map(j => j.ccKind))];
-  const jobRow = (j, i) => `<button class="cc-job${i >= 24 ? ' cc-more' : ''}" data-cc="${j.ccKind}" data-dact="cwPeek" data-darg="${escH(j.id)}">
-        <span class="cc-job-ic" aria-hidden="true">${j.icon}</span>
-        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(j.title)}</span><span class="cc-job-s" data-no-i18n>${escH(j.site)} \u00b7 ${escH(T({ daily: 'Every day', weekly: 'Every week', monthly: 'Every month' }[j.every] || 'Every day'))}</span></span>
-        <span class="tk-arrow" aria-hidden="true">\u2192</span></button>`;
-  host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Every job for {country}', row[1], _cwThe(row[1])) : T('Every job for you'))}</h3>
-      <span class="sec-sub"><b>${list.length}</b> ${escH(T('jobs watching real services there'))} \u00b7 ${escH(T('Source'))}: Wikidata</span></div>
-    <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
-      <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
-    </div>
-    <div class="cc-list cc-jobs">${list.slice(0, 24).map(jobRow).join('')}</div>
-    ${list.length > 24 ? `<button class="btn bs cc-all" id="cc-crew-all">${escH(T('Show all'))} (${list.length})</button>` : ''}`;
-  host.hidden = false;
-  host.querySelectorAll('[data-cc-kind]').forEach(c => on(c, 'click', () => {
-    host.querySelectorAll('[data-cc-kind]').forEach(x => x.classList.toggle('on', x === c));
-    const k = c.dataset.ccKind; host.classList.toggle('cc-filtered', !!k);
-    if(k) ccAllRows(host);
-    host.querySelectorAll('.cc-job').forEach(r => r.classList.toggle('cc-off', !!k && r.dataset.cc !== k));
-  }));
-  ccRest(host, () => list.slice(24).map((j, i) => jobRow(j, i + 24)).join(''));
-  on(document.getElementById('cc-crew-all'), 'click', function(){ ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
-}
-try{ window.ccFillCrew = ccFillCrew; }catch(e){}
-
-/* INTEGRATIONS: every service in the country, reached through AMV's own
-   browser - the person signs in on the real site themselves and AMV keeps no
-   password. "Use in chat" opens a chat set up to work on that site. */
+   The owner: "remove 'popular in <country>'"; "if it says it on Crew or Tasks,
+   add it - how is Crew going to do it if it is not connected?". So the
+   services the country's jobs and tasks name are not a separate block with
+   the country's name on it: each is a row under the topic it belongs to -
+   banks under Bank & money, airlines under Travel - with the one honest
+   action there is for a site AMV holds no key to: Use, which opens it in
+   AMV's browser where the person signs in themselves. Topics the app list
+   does not have (government, going out) are added at the end. */
+const CC_KIND_TOPIC = {
+  bank:'money', insurer:'money', airline:'travel', airport:'travel', rail:'travel', bus:'travel', hotel:'travel',
+  retail:'shop', supermarket:'shop', ecommerce:'shop', mall:'shop', restaurant:'food',
+  newspaper:'news', newssite:'news', tv:'news', radio:'news', publisher:'news',
+  university:'school', college:'school', school:'school', library:'school', research:'school',
+  hospital:'health', pharma:'health', telecom:'home', isp:'home', utility:'home', carmaker:'home',
+  employer:'jobs', company:'jobs', software:'work', nonprofit:'home',
+  agency:'gov', ministry:'gov', embassy:'gov', union:'gov',
+  museum:'out', theatre:'out', stadium:'out', sportsclub:'out', park:'out', zoo:'out', festival:'out', brewery:'out',
+};
+const CC_EXTRA_TOPICS = { gov:'Government & paperwork', out:'Going out' };
 const _ccSvc = {};
 async function ccFillIntegrations(){
-  const host = document.getElementById('cc-int'); if(!host) return;
+  const root = document.getElementById('int-catalog'); if(!root) return;
   const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
   const d = await ccLoad(cc);
-  if(!host.isConnected || !d) return;
+  if(!root.isConnected || !d) return;
   const list = ccServices(d);
   if(!list.length) return;
   list.forEach(x => { _ccSvc[x.e.q] = x; });
-  const row = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null;
-  const kinds = [...new Set(list.map(x => x.kind))];
-  const svcRow = (x, i) => `<div class="cc-svc${i >= 30 ? ' cc-more' : ''}" data-cc="${x.kind}">
-        <span class="cc-job-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</span>
-        <span class="cc-job-b"><span class="cc-job-t" data-no-i18n>${escH(x.e.n)}</span><span class="cc-job-s" data-no-i18n>${escH(x.e.s)}</span></span>
-        <button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use in chat'))}</button></div>`;
-  host.innerHTML = `<div class="sec-head"><h3>${escH(row ? _cwSayPlace('Services in {country}', row[1], _cwThe(row[1])) : T('Services where you are'))}</h3>
-      <span class="sec-sub"><b>${list.length}</b> ${escH(T('website directory entries, not linked accounts or verified integrations'))} \u00b7 ${escH(T('Source'))}: Wikidata. ${escH(T('Check the address before you sign in.'))}</span></div>
-    <div class="cw-chips cc-chips" role="group" aria-label="${escH(T('Filter by kind'))}">
-      <button class="cw-chip on" data-cc-kind="">${escH(T('All'))}</button>
-      ${kinds.map(k => `<button class="cw-chip" data-cc-kind="${k}"><span aria-hidden="true">${(CC_KINDS[k] || ['', ''])[0]}</span><span>${escH(T((CC_KINDS[k] || ['', k])[1]))}</span></button>`).join('')}
-    </div>
-    <div class="cc-list cc-svcs">${list.slice(0, 30).map(svcRow).join('')}</div>
-    ${list.length > 30 ? `<button class="btn bs cc-all" id="cc-int-all">${escH(T('Show all'))} (${list.length})</button>` : ''}`;
-  host.hidden = false;
-  host.querySelectorAll('[data-cc-kind]').forEach(c => on(c, 'click', () => {
-    host.querySelectorAll('[data-cc-kind]').forEach(x => x.classList.toggle('on', x === c));
-    const k = c.dataset.ccKind; host.classList.toggle('cc-filtered', !!k);
-    if(k) ccAllRows(host);
-    host.querySelectorAll('.cc-svc').forEach(r => r.classList.toggle('cc-off', !!k && r.dataset.cc !== k));
-  }));
-  ccRest(host, () => list.slice(30).map((x, i) => svcRow(x, i + 30)).join(''));
-  on(document.getElementById('cc-int-all'), 'click', function(){ ccAllRows(host); host.classList.add('cc-open'); this.remove(); });
+  const by = {};
+  list.forEach(x => { const t = CC_KIND_TOPIC[x.kind] || 'home'; (by[t] = by[t] || []).push(x); });
+  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${x.kind}">
+      <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
+      <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
+      <div class="int-act"><button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button></div></div>`;
+  for(const [topic, rows] of Object.entries(by)){
+    let sec = root.querySelector('[data-topic="' + topic + '"]');
+    if(!sec){
+      if(!CC_EXTRA_TOPICS[topic]) continue;
+      sec = document.createElement('div'); sec.className = 'ss2'; sec.dataset.topic = topic;
+      sec.innerHTML = '<h3>' + escH(T(CC_EXTRA_TOPICS[topic])) + '</h3><div class="int-cc" hidden></div>';
+      root.appendChild(sec);
+    }
+    const box = sec.querySelector('.int-cc'); if(!box) continue;
+    const first = 6;
+    box.innerHTML = `<div class="int-list">${rows.slice(0, first).map(svcRow).join('')}</div>`
+      + (rows.length > first ? `<div class="int-more"><button class="int-seemore cc-int-more" type="button">${escH(T('See all {0}').replace('{0}', rows.length.toLocaleString()))}</button></div>` : '');
+    box.hidden = false;
+    const more = box.querySelector('.cc-int-more');
+    if(more) on(more, 'click', function(){ box.querySelector('.int-list').insertAdjacentHTML('beforeend', rows.slice(first).map(svcRow).join('')); this.parentNode.remove(); });
+  }
 }
 function ccUseService(q){
   const x = _ccSvc[q]; if(!x) return;
@@ -386,4 +357,125 @@ function ccUseService(q){
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }
-try{ window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; }catch(e){}
+try{ window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   WHERE YOU ARE (Nov 15). The owner: "at the top of Tasks you can click 'not
+   in this country' so you can select your country if it is wrong - and make
+   sure AMV can access location".
+
+   One picker for Crew, Tasks and Integrations: a search over every country
+   AMV has a list for, and Use my location. The position is asked of the
+   browser only when somebody presses that button, and it is turned into a
+   country HERE, against country outlines fetched for the purpose
+   (geo-countries.json, Natural Earth) - the coordinates are never sent to AMV
+   or to anybody else, and are not kept.
+   ══════════════════════════════════════════════════════════════════════════ */
+let _ccGeo = null;
+async function _ccGeoLoad(){
+  if(_ccGeo) return _ccGeo;
+  const r = await fetch('geo-countries.json', { cache: 'force-cache' });
+  if(!r.ok) throw new Error('outlines ' + r.status);
+  const d = await r.json();
+  const step = +d.step || 0.05, out = [];
+  for(const [cc, rings] of Object.entries(d.c || {})){
+    if(!/^[A-Z]{2}$/.test(cc)) continue;
+    for(const enc of rings){
+      if(!Array.isArray(enc) || enc.length < 8) continue;
+      const pts = []; let x = enc[0], y = enc[1]; pts.push([x * step, y * step]);
+      for(let i = 2; i + 1 < enc.length; i += 2){ x += enc[i]; y += enc[i + 1]; pts.push([x * step, y * step]); }
+      let a = 0, minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+      for(let i = 0; i < pts.length; i++){ const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1];
+        if(p[0] < minx) minx = p[0]; if(p[0] > maxx) maxx = p[0]; if(p[1] < miny) miny = p[1]; if(p[1] > maxy) maxy = p[1]; }
+      out.push({ cc, pts, area: Math.abs(a / 2), box: [minx, miny, maxx, maxy] });
+    }
+  }
+  _ccGeo = out;
+  return out;
+}
+function _ccInRing(pts, x, y){
+  let inside = false;
+  for(let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if(((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+  }
+  return inside;
+}
+/* The country a point is in: the smallest outline that holds it (so a
+   country inside another wins), or the nearest within about 30 km when the
+   point is just off a coast the outlines round away. */
+async function ccCountryAt(lat, lon){
+  const rings = await _ccGeoLoad();
+  let best = null;
+  for(const r of rings){
+    const b = r.box; if(lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) continue;
+    if(_ccInRing(r.pts, lon, lat) && (!best || r.area < best.area)) best = r;
+  }
+  if(best) return best.cc;
+  let near = null, nd = 0.3 * 0.3;
+  for(const r of rings){
+    const b = r.box; if(lon < b[0] - 0.3 || lon > b[2] + 0.3 || lat < b[1] - 0.3 || lat > b[3] + 0.3) continue;
+    for(const p of r.pts){ const d = (p[0] - lon) * (p[0] - lon) + (p[1] - lat) * (p[1] - lat); if(d < nd){ nd = d; near = r.cc; } }
+  }
+  return near;
+}
+/* Ask the browser where this device is - only now, because somebody pressed
+   the button - and answer with a country code, or a sentence saying why not. */
+function ccLocate(){
+  return new Promise((resolve) => {
+    if(!(navigator && navigator.geolocation)) return resolve({ error: T('This browser cannot share a location. Choose your country from the list.') });
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try{
+        const cc = await ccCountryAt(pos.coords.latitude, pos.coords.longitude);
+        resolve(cc ? { cc } : { error: T('AMV could not tell which country that position is in. Choose it from the list.') });
+      }catch(e){ resolve({ error: T('AMV could not read the country outlines right now. Choose your country from the list.') }); }
+    }, (err) => {
+      resolve({ error: err && err.code === 1
+        ? T('Location is turned off for AMV in this browser. Allow it in the browser’s site settings, or choose your country from the list.')
+        : T('The location could not be found right now. Choose your country from the list.') });
+    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 3600000 });
+  });
+}
+/* The picker. `done(cc)` runs after the choice is saved. */
+function ccPickCountry(done){
+  const r = document.getElementById('ovr'); if(!r) return;
+  const list = (typeof CW_WORLD_COUNTRIES !== 'undefined' ? CW_WORLD_COUNTRIES : []).slice()
+    .sort((a, b) => T(a[1]).localeCompare(T(b[1])));
+  const cur = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
+  const item = (c) => `<button class="ccp-row${c[0] === cur ? ' on' : ''}" data-ccp="${c[0]}" data-n="${escH((T(c[1]) + ' ' + c[1]).toLowerCase())}"${c[0] === cur ? ' aria-current="true"' : ''}><span class="ccp-flag" aria-hidden="true">${c[2]}</span><span>${escH(T(c[1]))}</span>${c[0] === cur ? `<span class="ccp-cur">${escH(T('Selected'))}</span>` : ''}</button>`;
+  r.innerHTML = `<div class="ov" id="ccp-bg"><div class="ccp" role="dialog" aria-modal="true" aria-labelledby="ccp-h">
+    <header class="ccp-h"><h2 id="ccp-h">${escH(T('Choose your country'))}</h2><button class="cwp-x" id="ccp-x" aria-label="${escH(T('Close'))}">✕</button></header>
+    <div class="ccp-tools">
+      <button class="btn bs ccp-loc" id="ccp-loc"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>${escH(T('Use my location'))}</button>
+      <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="ccp-q" type="search" autocomplete="off" placeholder="${escH(T('Search countries'))}" aria-label="${escH(T('Search countries'))}"></div>
+      <p class="ccp-msg" id="ccp-msg" role="status" aria-live="polite"></p>
+    </div>
+    <div class="ccp-list" id="ccp-list">${list.map(item).join('')}</div>
+  </div></div>`;
+  r.classList.add('on');
+  const close = () => { try{ closeOvr(); }catch(e){} };
+  onBackdrop(document.getElementById('ccp-bg'), close);
+  on(document.getElementById('ccp-x'), 'click', close);
+  const choose = (cc) => { try{ _cwSetCountry(cc); }catch(e){} close(); try{ if(done) done(cc); }catch(e){} };
+  on(document.getElementById('ccp-list'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-ccp]'); if(b) choose(b.dataset.ccp); });
+  const q = document.getElementById('ccp-q');
+  on(q, 'input', function(){ const v = this.value.trim().toLowerCase();
+    document.querySelectorAll('#ccp-list [data-ccp]').forEach(b => { b.hidden = !!v && b.dataset.n.indexOf(v) < 0; }); });
+  on(q, 'keydown', function(e){ if(e.key === 'Enter'){ const f = document.querySelector('#ccp-list [data-ccp]:not([hidden])'); if(f){ e.preventDefault(); choose(f.dataset.ccp); } } });
+  on(document.getElementById('ccp-loc'), 'click', async function(){
+    const msg = document.getElementById('ccp-msg');
+    this.disabled = true; if(msg) msg.textContent = T('Finding where you are…');
+    const res = await ccLocate();
+    this.disabled = false;
+    if(res.cc){
+      const known = list.find(c => c[0] === res.cc);
+      if(known){ choose(res.cc); return; }
+      if(msg) msg.textContent = T('AMV does not have a list for where you are yet. Choose the closest country.');
+      return;
+    }
+    if(msg) msg.textContent = res.error || '';
+  });
+  try{ q.focus(); }catch(e){}
+}
+try{ window.ccPickCountry = ccPickCountry; window.ccLocate = ccLocate; window.ccCountryAt = ccCountryAt; }catch(e){}

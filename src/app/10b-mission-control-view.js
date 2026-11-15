@@ -198,22 +198,6 @@ function _cwLockedCard(j){
    escH exists to stop anybody having to do, and "the server sends it" stops
    being reassuring the moment a catalogue takes a submission or somebody
    points AMV at a different backend, which Settings lets them do. */
-/* THE JOB PANEL (rebuilt Nov 10 - owner: "when you click it I don't like the
-   text or anything, it seems hard to use; make it very easy, clear, and look
-   amazing").
-
-   Three numbered steps and one button, in the order somebody acts:
-     1  What it does   - one paragraph, the example a tap away.
-     2  What it uses   - every account the job reads, each with its state:
-                         Connected, or a Connect button right there. Optional
-                         ones (a bank for the money jobs) say Optional.
-     3  When it runs   - every day / week / month, a day, a time, in your time
-                         zone. Server jobs run then; browser jobs run then
-                         whenever AMV is open, and say so.
-   Where it runs and the exact instruction stay, as one line and a disclosure.
-   Every control keeps its id (cwp-go, cwp-need-go, cwp-need-go2, cwp-cad...)
-   so the paths that turn a job on, connect what it needs and send the chosen
-   schedule are the same code as before. */
 function _cwUseRows(j){
   const rows = [];
   const add = (n, optional) => {
@@ -233,91 +217,166 @@ const _CW_USE_IC = {
   Bank:'<path d="M3 10h18M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18M12 3 3 8h18z"/>',
   Classroom:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
 };
+/* THE JOB PANEL (rebuilt Nov 15 - owner: "when you click the job it still
+   looks unprofessional and unclean"; "make sure you can edit crew jobs ... u
+   can always edit: every day, every hour, every day at 6").
+
+   One column, read top to bottom: what it is, when it runs, what it connects
+   to, and the button. The schedule is ALWAYS editable - before a job is on it
+   is what turning it on uses; while it is on, Save changes the running job
+   (on AMV's servers and on this device) to exactly that. Every hour, every
+   day, every weekday, every week on a day, every month on a date - each with a
+   time. The example and the exact instruction stay, folded under Details.
+   Control ids are kept (cwp-go, cwp-need-go, cwp-need-go2, cwp-cad, cwp-day,
+   cwp-time, data-cwp-connect) so the paths that turn a job on, connect what it
+   needs and send the schedule are the same code as before. */
+const _CX_CADS = [['hourly', 'Every hour'], ['daily', 'Every day'], ['weekdays', 'Every weekday'], ['weekly', 'Every week'], ['monthly', 'Every month']];
+const _CX_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/* A schedule in the words a person uses: "Every day at 6:00 AM". */
+function _cxWhenLabel(sc){
+  if(!sc) return T('Every day');
+  const cad = sc.cad || 'daily';
+  if(cad === 'hourly' || cad === '10min' || cad === '30min') return T({ hourly:'Every hour', '10min':'Every 10 minutes', '30min':'Every 30 minutes' }[cad]);
+  let at = '';
+  if(sc.hour != null){ try{ at = new Date(2000, 0, 1, +sc.hour, +sc.minute || 0).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }catch(e){ at = String(sc.hour).padStart(2, '0') + ':' + String(sc.minute || 0).padStart(2, '0'); } }
+  const t = (s) => at ? T(s).replace('{0}', at) : T(s).replace(/ at \{0\}$/, '').replace('{0}', '');
+  const days = Array.isArray(sc.days) ? sc.days : null;
+  if(cad === 'weekly' && days && days.join() === '1,2,3,4,5') return t('Every weekday at {0}');
+  if(cad === 'weekly' && days && days.length === 1) return t('Every ' + _CX_DAYS[days[0]] + ' at {0}');
+  if(cad === 'weekly') return t('Every week at {0}');
+  if(cad === 'monthly') return (sc.dom ? T('Every month on day {1}').replace('{1}', sc.dom) : T('Every month')) + (at ? ' · ' + at : '');
+  return t('Every day at {0}');
+}
+/* The schedule a job has now: the running one when it is on, the one picked
+   in this panel, or its own rhythm at 8:00. */
+function _cwJobWhen(j){
+  if(!j) return null;
+  if(j.on){
+    try{ const a = j.autoId ? (_AUTOS || []).find(x => x && x.id === j.autoId) : null;
+         if(a) return a.sched ? Object.assign({}, a.sched) : { cad: a.repeat || 'daily' }; }catch(e){}
+    try{ const l = (typeof _loadSched === 'function' ? _loadSched() : []).find(t => t.id === 'cw_' + j.id);
+         if(l) return l.sched ? Object.assign({}, l.sched) : { cad: l.freq || 'daily', hour: 8, minute: 0 }; }catch(e){}
+  }
+  if(_cwPickedWhen[j.id]) return Object.assign({}, _cwPickedWhen[j.id]);
+  const e = String(j.every || 'daily');
+  const cad = ['hourly', 'daily', 'weekly', 'monthly'].indexOf(e) >= 0 ? e : 'daily';
+  const sc = { cad, hour: 8, minute: 0, tz: _myTimeZone() };
+  if(cad === 'weekly') sc.days = [1];
+  if(cad === 'monthly') sc.dom = 1;
+  return sc;
+}
+/* The panel's controls, read into a schedule the server and this device both
+   keep: 'weekdays' is a weekly schedule on Monday to Friday. */
+function _cxReadWhen(){
+  const cad = String(($('cwp-cad') || {}).value || 'daily');
+  if(cad === 'hourly') return { cad: 'hourly' };
+  const t = String(($('cwp-time') || {}).value || '08:00').split(':');
+  const sc = { cad: cad === 'weekdays' ? 'weekly' : cad, hour: Math.min(23, Math.max(0, +t[0] || 0)), minute: Math.min(59, Math.max(0, +t[1] || 0)), tz: _myTimeZone() };
+  if(cad === 'weekdays') sc.days = [1, 2, 3, 4, 5];
+  if(cad === 'weekly') sc.days = [+(($('cwp-day') || {}).value || 1)];
+  if(cad === 'monthly') sc.dom = Math.min(28, Math.max(1, +(($('cwp-dom') || {}).value || 1)));
+  return sc;
+}
+/* A running job moved to a new schedule - on the server first when it lives
+   there (the copy here only changes once the server has), and on this
+   device's own schedule when it runs here. */
+async function _cwApplyWhen(j, sc){
+  const repeat = sc.cad === 'hourly' ? 'hourly' : (sc.cad === 'monthly' ? 'weekly' : sc.cad);
+  if(j.autoId){
+    try{
+      await _autoApi('/auto/update', { id: j.autoId, action: 'edit', repeat, sched: sc.cad === 'hourly' ? null : sc, tz: _myTimeZone() });
+      try{ const a = (_AUTOS || []).find(x => x && x.id === j.autoId); if(a){ a.repeat = repeat; if(sc.cad === 'hourly') delete a.sched; else a.sched = sc; } }catch(e){}
+    }catch(e){
+      toast(T('The schedule was not changed - AMV’s server could not be reached. The job still runs on its old schedule.'), 'error', 7000);
+      return false;
+    }
+  }
+  try{
+    const l = _loadSched(); const t = l.find(x => x.id === 'cw_' + j.id);
+    if(t){
+      if(sc.cad === 'hourly'){ delete t.sched; t.freq = 'hourly'; t.next = _freqNext('hourly', Date.now()); }
+      else { t.sched = sc; delete t.freq; t.next = _schedNext(sc, Date.now()); }
+      _saveSched(l);
+    }
+  }catch(e){}
+  toast(T('Schedule saved') + ': ' + _cxWhenLabel(sc), 'success', 4000);
+  return true;
+}
+/* A job by id: this country's list, or any country's catalogue that has
+   arrived (the directory of every job opens them all). */
+function _cwFindJob(id){
+  const j = (()=>{ try{ return (_cwAllJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
+  if(j) return j;
+  try{ for(const l of Object.values(window._ccCrewJobs || {})){ const k = (l || []).find(x => x.id === id); if(k) return k; } }catch(e){}
+  return null;
+}
 function cwPeek(id){
-  const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
+  const j = _cwFindJob(id); if(!j) return;
   const r = $('ovr'); if(!r) return;
   const miss = _cwNeedsMissing(j);
-  const bg = _cwRunsUnattended(j);
   const allowed = _planAllowsCrew();
-  const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
   const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
   const uses = _cwUseRows(j);
   const ic = (n) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_CW_USE_IC[n] || (/bank|card/i.test(n) ? _CW_USE_IC.Bank : /mail/i.test(n) ? _CW_USE_IC.Email : /calendar/i.test(n) ? _CW_USE_IC.Calendar : '') || '<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>'}</svg>`;
   let firstGo = true;
   const useRow = (u) => {
-    const btn = u.met ? `<span class="cwp-u-ok">✓ ${escH(T('Connected'))}</span>`
+    const btn = u.met ? `<span class="cwp-u-ok">${escH(T('Connected'))}</span>`
       : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="1">${escH(T('Connect'))}</button>`;
     if(!u.met && !u.optional) firstGo = false;
     return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
-      <span class="cwp-u-t"><b>${escH(T(u.name))}</b><small>${escH(u.optional ? T('Optional - makes the figures real charges, not estimates') : (u.met ? T('Ready') : T('Needed for this job')))}</small></span>${btn}</li>`;
+      <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(T('Optional'))}</small>` : ''}</span>${btn}</li>`;
   };
-
-  /* WHEN. Every job whose rhythm is a day, a week or a month offers it - the
-     browser ones too, now: they run at that time whenever AMV is open. */
-  const canWhen = allowed && !j.on && (!j.every || ['daily', 'weekly', 'monthly'].indexOf(j.every) >= 0);
-  const now = new Date();
-  const cad0 = (_cwPickedWhen[j.id] && _cwPickedWhen[j.id].cad) || (j.every === 'weekly' || j.every === 'monthly' ? j.every : 'daily');
-  const when = canWhen
-    ? `<span class="cwp-when">
-         <select class="inp cwp-when-cad" id="cwp-cad" aria-label="${escH(T('How often'))}">
-           ${[['daily', T('Every day')], ['weekly', T('Every week')], ['monthly', T('Every month')]]
-             .map(o => `<option value="${o[0]}"${o[0] === cad0 ? ' selected' : ''}>${escH(o[1])}</option>`).join('')}
-         </select>
-         <select class="inp cwp-when-day" id="cwp-day" aria-label="${escH(T('Day'))}"${cad0 === 'weekly' ? '' : ' hidden'}>
-           ${[T('Sunday'), T('Monday'), T('Tuesday'), T('Wednesday'), T('Thursday'), T('Friday'), T('Saturday')]
-             .map((d, i) => `<option value="${i}"${i === now.getDay() ? ' selected' : ''}>${escH(d)}</option>`).join('')}
-         </select>
-         <input class="inp cwp-when-time" id="cwp-time" type="time" value="08:00" aria-label="${escH(T('At'))}">
-       </span>`
-    : `<span>${escH('Runs ' + every)}</span>`;
-  const where = bg ? T('On AMV’s servers - with this window closed too.')
-                   : T('In this browser - at that time whenever AMV is open, or the next time you open it.');
+  /* WHEN - always editable. */
+  const sc = _cwJobWhen(j) || { cad:'daily', hour:8, minute:0 };
+  const cadNow = sc.cad === 'weekly' && Array.isArray(sc.days) && sc.days.join() === '1,2,3,4,5' ? 'weekdays'
+    : (['hourly', 'daily', 'weekly', 'monthly'].indexOf(sc.cad) >= 0 ? sc.cad : 'hourly');
+  const hh = String(sc.hour != null ? sc.hour : 8).padStart(2, '0') + ':' + String(sc.minute || 0).padStart(2, '0');
+  const day0 = Array.isArray(sc.days) && sc.days.length ? sc.days[0] : 1;
+  const when = `<div class="cwp-when cx-when">
+      <select class="inp" id="cwp-cad" aria-label="${escH(T('How often'))}">
+        ${_CX_CADS.map(o => `<option value="${o[0]}"${o[0] === cadNow ? ' selected' : ''}>${escH(T(o[1]))}</option>`).join('')}
+      </select>
+      <select class="inp" id="cwp-day" aria-label="${escH(T('Day'))}"${cadNow === 'weekly' ? '' : ' hidden'}>
+        ${_CX_DAYS.map((d, i) => `<option value="${i}"${i === day0 ? ' selected' : ''}>${escH(T(d))}</option>`).join('')}
+      </select>
+      <select class="inp" id="cwp-dom" aria-label="${escH(T('Day of the month'))}"${cadNow === 'monthly' ? '' : ' hidden'}>
+        ${Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}"${i + 1 === (+sc.dom || 1) ? ' selected' : ''}>${escH(T('Day {0}').replace('{0}', i + 1))}</option>`).join('')}
+      </select>
+      <input class="inp" id="cwp-time" type="time" value="${hh}" aria-label="${escH(T('Time'))}"${cadNow === 'hourly' ? ' hidden' : ''}>
+    </div>`;
   const asks = (j.asks && j.asks.q)
-    ? `<div class="cwp-ask"><b>${escH(T('It will ask you once'))}:</b> ${escH(j.asks.q)}${j.asks.ph ? `<small>${escH(j.asks.ph)}</small>` : ''}<small>${escH(T('So the job works from your answer, not from nothing.'))}</small></div>` : '';
-  const step = (n, title, body, cls) => `<section class="cwp-step${cls ? ' ' + cls : ''}"><h3 class="cwp-step-h"><span class="cwp-n" aria-hidden="true">${n}</span>${escH(title)}</h3>${body}</section>`;
+    ? `<div class="cx-p-row"><div class="cx-p-k">${escH(T('It will ask you'))}</div><p class="cx-p-v">${escH(j.asks.q)}</p></div>` : '';
+  const sample = Array.isArray(j.sample) && j.sample.length
+    ? `<div class="cx-p-sub">${escH(T('Example of what you get'))}</div><div class="cwp-sample">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>` : '';
+  const prompt = j.prompt ? `<div class="cx-p-sub">${escH(T('The instruction AMV follows'))}</div><pre class="cwp-prompt">${escH(j.prompt)}</pre>` : '';
+  const status = j.on ? T('On') + ' · ' + _cxWhenLabel(sc) : _cxWhenLabel(sc);
 
-  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cwp2" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <button class="cwp-x" id="cwp-close" aria-label="Close">✕</button>
-    <div class="cwp-scroll">
-      <div class="cwp-head">
-        <span class="cwp-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-        <div class="cwp-head-t"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-          <span class="cwp-sub">${escH(j.on ? T('On') : (bg ? T('Runs on its own') : T('Runs while AMV is open')))}</span></div>
-      </div>
-      ${step(1, T('What it does'), `<p class="cwp-desc">${escH(j.desc)}</p>`
-        + (Array.isArray(j.sample)&&j.sample.length?`<details class="cwp-more cwp-ex">
-          <summary>${escH(T('See an example of what you get'))}</summary>
-          <div class="cwp-sample" aria-label="Example of what this job produces">${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}</div>
-          <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-        </details>`:''))}
-      ${uses.length ? step(2, T('What it uses'), `<ul class="cwp-uses">${uses.map(useRow).join('')}</ul>${asks}`, miss.length ? 'cwp-need' : '')
-                    : (asks ? step(2, T('What it uses'), asks) : '')}
-      ${step(uses.length || asks ? 3 : 2, T('When it runs'),
-        `<dl class="cwp-facts">
-          <div class="cwp-fact"><dt>${escH(T('How often'))}</dt><dd>${when}${canWhen ? `<span class="cwp-fact-ph">${escH(T('Your time zone'))}: ${escH(_myTimeZone())}</span>` : ''}</dd></div>
-          <div class="cwp-fact"><dt>${escH(T('Where it runs'))}</dt><dd>${escH(where)}</dd></div>
-        </dl>`)}
-      ${j.prompt?`<details class="cwp-more">
-        <summary>The exact instruction AMV follows</summary>
-        <pre class="cwp-prompt">${escH(j.prompt)}</pre>
-        <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
-      </details>`:''}
+  r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cx-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
+    <header class="cx-p-h">
+      <span class="cx-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <div class="cx-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
+        <span class="cx-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
+      <button class="cwp-x" id="cwp-close" aria-label="${escH(T('Close'))}">✕</button>
+    </header>
+    <div class="cwp-scroll cx-p-b">
+      <p class="cwp-desc cx-p-d">${escH(j.desc)}</p>
+      <div class="cx-p-row"><div class="cx-p-k">${escH(T('Schedule'))}</div>${when}</div>
+      ${uses.length ? `<div class="cx-p-row${miss.length ? ' cwp-need' : ''}"><div class="cx-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
+      ${asks}
+      ${sample || prompt ? `<details class="cwp-more cx-p-more"><summary>${escH(T('Details'))}</summary>${sample}${prompt}</details>` : ''}
     </div>
-
-    <div class="cwp-act">
+    <div class="cwp-act cx-p-f">
       ${allowed
-        ? `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
-           ${miss.length && !j.on
-              ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
-              : `<button class="btn bp" id="cwp-go">${escH(j.on ? T('Turn it off') : T('Turn it on'))}</button>`}`
-        : `<div class="cwp-buy">
-             <div class="cwp-buy-t">Included with ${escH(P.name)} · $${P.price}/month</div>
-             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
-             <div class="cwp-buy-b">
-               <button class="btn bs" id="cwp-cancel">Close</button>
-               <button class="btn bp" id="cwp-plans">See plans →</button>
-             </div>
-           </div>`}
+        ? (j.on
+            ? `<button class="btn bs" id="cwp-go">${escH(T('Turn it off'))}</button>
+               <button class="btn bp" id="cwp-save">${escH(T('Save schedule'))}</button>`
+            : `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
+               ${miss.length
+                  ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
+                  : `<button class="btn bp" id="cwp-go">${escH(T('Turn it on'))}</button>`}`)
+        : `<span class="cx-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
+           <button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
+           <button class="btn bp" id="cwp-plans">${escH(T('See plans'))} →</button>`}
     </div>
   </div></div>`;
   r.classList.add('on');
@@ -329,21 +388,27 @@ function cwPeek(id){
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
+  const pick = () => { _cwPickedWhen[j.id] = _cxReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cxWhenLabel(_cwPickedWhen[j.id]); };
   const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
   r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
   on($('cwp-need-go2'),'click',toNeeds);
-  const pick = () => {
-    const cad = $('cwp-cad'); if(!cad) return;
-    const t = String(($('cwp-time') || {}).value || '08:00').split(':');
-    const sc = { cad: cad.value, hour: Math.min(23, Math.max(0, +t[0] || 0)), minute: Math.min(59, Math.max(0, +t[1] || 0)), tz: _myTimeZone() };
-    if(sc.cad === 'weekly') sc.days = [+(($('cwp-day') || {}).value || 0)];
-    if(sc.cad === 'monthly') sc.dom = Math.min(28, new Date().getDate());
-    _cwPickedWhen[j.id] = sc;
-  };
-  on($('cwp-cad'),'change',function(){ const d = $('cwp-day'); if(d) d.hidden = this.value !== 'weekly'; pick(); });
+  on($('cwp-cad'),'change',function(){
+    const v = this.value;
+    const d = $('cwp-day'); if(d) d.hidden = v !== 'weekly';
+    const m = $('cwp-dom'); if(m) m.hidden = v !== 'monthly';
+    const t = $('cwp-time'); if(t) t.hidden = v === 'hourly';
+    pick();
+  });
   on($('cwp-day'),'change',pick);
+  on($('cwp-dom'),'change',pick);
   on($('cwp-time'),'change',pick);
-  on($('cwp-go'),'click',()=>{ pick(); closeOvr(); try{ cwToggle(j.id); }catch(e){} });
+  on($('cwp-save'),'click',async function(){
+    this.disabled = true;
+    const ok = await _cwApplyWhen(j, _cxReadWhen());
+    this.disabled = false;
+    if(ok){ closeOvr(); try{ renderCrewView(); }catch(e){} }
+  });
+  on($('cwp-go'),'click',()=>{ if(!j.on) pick(); closeOvr(); try{ cwToggle(j.id); }catch(e){} });
 }
 /* What somebody chose in the panel, read by _cwToggleReal when the job is
    created. Per job, and only for this page's lifetime: a schedule is decided
@@ -876,7 +941,7 @@ function cwToggle(id){
      adds it and then follows exactly the same path as any other job - the
      allowance check, the setup questions, the scheduling. */
   if(!j){
-    const w=(()=>{ try{ return (_cwAllJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
+    const w=_cwFindJob(id);
     if(!w) return;
     j={...w}; jobs.push(j); _cwSaveJobs(jobs);
   }
@@ -972,11 +1037,15 @@ function _cwSyncLocalSched(j, turningOn){
          the time it names (each run after keeps that time of day, because the
          next is counted from when the last one ran). */
       const pk=_cwPickedWhen[j.id]||null;
-      const freq=pk?pk.cad:(j.every||'daily');
-      list.push({ id:key, goal:(j.prompt||j.desc||j.title), freq,
-                  next:(pk?_cwNextLocal(pk):(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5)),
+      /* A picked calendar (a time, the weekdays, a date) is kept whole, so the
+         runner here keeps it run after run; every hour, or nothing picked, is
+         a rhythm. */
+      const cal = pk && pk.cad !== 'hourly' && typeof _schedNext === 'function';
+      const freq=pk?(pk.cad==='hourly'?'hourly':pk.cad):(j.every||'daily');
+      list.push(Object.assign({ id:key, goal:(j.prompt||j.desc||j.title),
+                  next:(cal?_schedNext(pk,Date.now()):(typeof _freqNext==='function'?_freqNext(freq,Date.now()):Date.now()+864e5)),
                   created:Date.now(), lastRun:null, localOnly:true, approval:'require',
-                  fromCrewJob:j.id });
+                  fromCrewJob:j.id }, cal ? { sched:Object.assign({}, pk) } : { freq }));
     }
     _saveSched(list);
   }catch(e){}
@@ -1167,7 +1236,7 @@ async function _cwToggleReal(jobs, j){
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
       const picked = _cwPickedWhen[j.id] || null;
-      item=await _scheduleTask({ detail, repeat:(picked ? picked.cad : (j.every||'daily')), sched: picked,
+      item=await _scheduleTask({ detail, repeat:(picked ? picked.cad : (j.every||'daily')), sched: (picked && picked.cad !== 'hourly') ? picked : null,
                                  /* Most jobs end by writing text, and 'research'
                                     is that. A job that declares its own kind
                                     ends by DOING something instead - a game job

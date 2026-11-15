@@ -34,7 +34,6 @@
    or press their controls, they do not duplicate them. */
 function _spvMoneyFacts() {
   const c = (typeof AMVSpend !== 'undefined') ? AMVSpend.cfg() : null;
-  const linked = (() => { try { return AMVFinance.linked(); } catch (e) { return false; } })();
   const money = (n) => (typeof _mfMoney === 'function') ? _mfMoney(n) : ('$' + (+n || 0).toFixed(2));
   const spent = c ? (+AMVSpend.spentThisMonth() || 0) : 0;
   const cap = c ? (+c.monthlyCap || 0) : 0;
@@ -47,13 +46,11 @@ function _spvMoneyFacts() {
     + (extra || '')
     + (act ? '<button class="btn bs spv-fc-a" type="button" data-spv-go="' + act[0] + '">' + escH(act[1]) + '</button>' : '')
   + '</div>';
+  /* THREE, NOT FOUR (Nov 15, owner: "if you tell chat or Crew to spend money,
+     this regulates the total monthly budget"). The bank card is gone: it was
+     the investing check-in's link, which decides nothing about what AMV may
+     buy, and on this screen it read as if it did. */
   return '<div class="spv-facts spv-facts-m spv-fcards" id="spv-money-facts">'
-    /* The balance is a live read from the bank, so it is not printed until it
-       comes back. A number AMV made up here would be the single worst thing on
-       this screen. */
-    + card(T('Bank account'), linked ? T('Linked') : T('Not linked'),
-           linked ? T('Reading…') : T('no account linked yet'),
-           ['bank', linked ? T('Manage') : T('Link a bank')], '', 'spv-f-bal')
     + card(T('Monthly maximum'), c ? money(cap) : '-', T('the most AMV may spend a month'),
            c ? ['cap', T('Change')] : null)
     + card(T('Spent this month'), c ? money(spent) : '-',
@@ -70,7 +67,6 @@ function _spvMoneyFacts() {
    it below - consent gate, server confirmation and all. */
 function _spvGo(what) {
   const to = (id) => { const e = $(id); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); return e; };
-  if (what === 'bank') { to('spv-bank'); return; }
   if (what === 'cap') {
     const cap = $('mf-cap');
     if (cap) { cap.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { try { cap.focus(); cap.select(); } catch (e) {} }, 350); }
@@ -88,28 +84,6 @@ function _spvRefreshFacts() {
   const old = $('spv-money-facts'); if (!old) return;
   const t = document.createElement('div'); t.innerHTML = _spvMoneyFacts();
   old.replaceWith(t.firstElementChild);
-  try { _spvFillBalance(); } catch (e) {}
-}
-
-/* Filled in once the bank answers, or replaced with why it did not. */
-async function _spvFillBalance() {
-  const z = document.querySelector('#spv-money-facts .spv-f-bal');
-  if (!z) return;
-  let linked = false;
-  try { linked = AMVFinance.linked(); } catch (e) {}
-  if (!linked) return;
-  const set = (small) => { const s = z.querySelector('.spv-f-s'); if (s) s.textContent = small; };
-  try {
-    const d = await AMVFinance.accounts();
-    const list = (d && d.accounts) || [];
-    const total = list.reduce((n, a) => n + (Number(a && a.balance) || 0), 0);
-    const amt = (typeof _mfMoney === 'function') ? _mfMoney(total) : ('$' + total.toFixed(2));
-    set((list.length === 1 ? T('Balance') : T('Combined balance')) + ': ' + amt);
-  } catch (e) {
-    /* Said as what it is. A balance that failed to load and a balance of zero
-       are different facts, and only one of them is somebody's. */
-    set(T('balance could not be read just now'));
-  }
 }
 
 function renderSpendView() {
@@ -127,20 +101,16 @@ function renderSpendView() {
     '<div class="sv fi"><div class="vi spv">'
       + '<div class="spv-head">'
         + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
-        + '<p class="spv-sub">' + escH(T('What AMV may spend for you, and what it has spent. Every limit is checked on the server first.')) + '</p>'
+        + '<p class="spv-sub">' + escH(T('When you ask chat or Crew to buy something, this decides whether AMV may pay for it, and caps what it spends in a month.')) + '</p>'
       + '</div>'
       + _spvMoneyFacts()
-      /* The limits editor and the account card are the same panes Settings
-         used to render - one copy of the most consequential controls. */
+      /* The limits editor is the same pane Settings renders - one copy of the
+         most consequential control. Investing and the price watchlist are no
+         longer on this screen (Nov 15, the owner's call): this is the budget. */
       + '<section class="spv-sec" id="spv-limits"></section>'
-      + '<section class="spv-sec" id="spv-bank"></section>'
-      + (typeof watchlistHTML === 'function' ? watchlistHTML() : '')
     + '</div></div>';
 
   try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
-  try { _renderInvestPane($('spv-bank')); } catch (e) {}
-  try { wireWatchlist(renderSpendView); } catch (e) {}
-  try { _spvFillBalance(); } catch (e) {}
   on(vc.querySelector('.spv'), 'click', _spvFactClick);
   /* The editor below changes the facts above: when it says something (saved,
      switched on, refused) the cards are read again from the same store. */

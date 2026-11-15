@@ -1314,6 +1314,235 @@ async function mcNeverSave(){
 }
 try{ window.mcNeverSave = mcNeverSave; }catch(e){}
 
+/* ══════════════════════════════════════════════════════════════════════════
+   CREW'S JOBS, ONE LIST (Nov 15).
+
+   The owner: "it should be tell AMV what to do and then a text box and run,
+   simple"; "remove made for <country>"; "the text boxes plus 'runs with AMV
+   closed', 'needs a mailbox', 'in the United States Gmail etc it sends you
+   blah' all looks horrible and unprofessional - make every block clean";
+   "Crew lags".
+
+   The page had grown seven lists - a top five, a made-for row, a hundred
+   examples by category, a most-started list, the country catalogue under
+   them, a country page and a page of countries - each with its own heading
+   and its own sentence. It is one list now: every job for the chosen country
+   (the jobs that work everywhere, the country's own, and the catalogue built
+   from its real services), one search, one row of categories, and cards that
+   say what the job is and when it runs, nothing else. What a job needs is in
+   its panel, where somebody is deciding.
+
+   And it does not lag: the list is cut and drawn into one element - a search
+   or a category never redraws the page - and only the first rows are drawn,
+   more as somebody asks for them.
+   ══════════════════════════════════════════════════════════════════════════ */
+let _cxQ = '', _cxC = 'all', _cxN = 24;
+let _cxCache = null, _cxCacheKey = '';
+/* Every job for the country being shown, best first: anything switched on,
+   then the country's own (written for it), then the jobs that work on a
+   connected account anywhere, strongest first, then the catalogue of the
+   country's real services in the order the data ranks them. */
+function _cxList(){
+  const cc = _cwCountryGuess();
+  const cat = ((window._ccCrewJobs || {})[cc] || []);
+  const key = cc + '|' + cat.length + '|' + (_cwJobs() || []).filter(j => j.on).map(j => j.id).join(',');
+  if(_cxCache && _cxCacheKey === key) return _cxCache;
+  const seen = new Set(), out = [];
+  const push = (j) => { if(j && j.id && !seen.has(j.id)){ seen.add(j.id); out.push(j); } };
+  const safe = (f) => { try{ return f() || []; }catch(e){ return []; } };
+  const home = safe(() => (_cwJobs() || []).concat(_cwUniversalJobs() || []));
+  home.filter(j => j.on).forEach(push);
+  safe(() => _cwTopTen(cc)).forEach(push);
+  safe(() => _cwMadeForJobs(cc)).forEach(push);
+  safe(() => _cwLocalJobs(cc)).forEach(push);
+  safe(() => _cwMadeMore(cc)).forEach(push);
+  home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
+  cat.forEach(push);
+  _cxCache = out; _cxCacheKey = key;
+  return out;
+}
+function _cxMatch(j, words){
+  if(!words.length) return true;
+  const hay = (j._cxHay || (j._cxHay = [j.title, j.desc, j.cat, _cxCat(j), j.needs, j.site].filter(Boolean).join(' ').toLowerCase()));
+  return words.every(w => hay.indexOf(w) >= 0);
+}
+function _cxFiltered(){
+  const words = _cxQ.toLowerCase().split(/\s+/).filter(Boolean);
+  return _cxList().filter(j => (_cxC === 'all' || _cxCat(j) === _cxC) && _cxMatch(j, words));
+}
+/* A card: icon, title, one line of what it does, when it runs. */
+/* How often, and the time only once one is set: a job that is not on yet has
+   no time but the one its panel would suggest. */
+function _cxEvery(j){
+  try{ const sc = _cwJobWhen(j); return (j.on || _cwPickedWhen[j.id]) ? _cxWhenLabel(sc) : _cxWhenLabel({ cad: sc.cad, days: sc.days && sc.days.length === 5 ? sc.days : null }); }catch(e){ return ''; }
+}
+function _cxCard(j){
+  const allowed = _planAllowsCrew();
+  const when = _cxEvery(j);
+  return `<div class="cx-card${j.on ? ' on' : ''}">
+    <button class="cx-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
+      <span class="cx-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <span class="cx-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.title)}</span>
+      <span class="cx-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.desc || '')}</span>
+      <span class="cx-card-w">${j.on ? `<span class="cx-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
+    </button>
+    ${allowed ? `<button class="cw-toggle cx-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + j.title)}"><span class="cw-knob"></span></button>` : ''}
+  </div>`;
+}
+function _cxGridHTML(){
+  const list = _cxFiltered();
+  if(!list.length){
+    return `<div class="cx-empty">${escH(T('No job here matches that.'))} <button class="cx-link" data-dact="cxAsk">${escH(T('Type it in the box above instead'))}</button></div>`;
+  }
+  const shown = list.slice(0, _cxN);
+  return `<div class="cx-grid">${shown.map(_cxCard).join('')}</div>`
+    + (list.length > shown.length ? `<div class="cx-more-w"><button class="btn bs cx-more" data-dact="cxMore">${escH(T('Show more'))} <span class="cx-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
+}
+function _cxChipsHTML(){
+  const all = _cxList();
+  const n = {}; all.forEach(j => { const c = _cxCat(j); n[c] = (n[c] || 0) + 1; });
+  const chip = (k, label, c) => `<button class="cx-chip${_cxC === k ? ' on' : ''}" data-dact="cxCat" data-darg="${escH(k)}" aria-pressed="${_cxC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
+  return chip('all', T('All'), all.length) + CX_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+}
+/* Only the grid, the chips and the count change - the page stays put. */
+function _cxPaint(){
+  const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML();
+  const c = document.getElementById('cx-cats'); if(c) c.innerHTML = _cxChipsHTML();
+  const k = document.getElementById('cx-count'); if(k) k.textContent = _cxList().length.toLocaleString() + ' ' + T('jobs');
+}
+function cxCat(c){ _cxC = c || 'all'; _cxN = 24; _cxPaint(); }
+function cxMore(){ _cxN += 48; _cxPaint(); }
+function cxAsk(){
+  const el = document.getElementById('mc-cmd-input'); if(!el) return;
+  if(_cxQ && !el.value) el.value = _cxQ;
+  try{ el.scrollIntoView({ block:'center', behavior:'smooth' }); }catch(e){}
+  el.focus();
+}
+/* The country: the shared picker (country-catalog.js), with Use my location. */
+function cxCountry(){
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _cxQ = ''; _cxC = 'all'; _cxN = 24; renderCrewView(); }); else _cwGo('countries'); }).catch(() => _cwGo('countries'));
+}
+try{ window.cxCat = cxCat; window.cxMore = cxMore; window.cxAsk = cxAsk; window.cxCountry = cxCountry; }catch(e){}
+function _cxCountryBtnHTML(){
+  const row = _cwCountryRow(_cwCountryGuess());
+  return `<button class="cx-country" id="cw-where" data-dact="cxCountry" aria-label="${escH(T('Change country'))}">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(T(row[1]))}` : escH(T('Choose your country'))}
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
+}
+/* The jobs section, the same on both screens. */
+function _cxJobsHTML(){
+  return `<section class="cx-jobs" id="cx-jobs" aria-labelledby="cx-jobs-h">
+    <div class="cx-jobs-top">
+      <h2 id="cx-jobs-h">${escH(_cwJobsForHead())}</h2>
+      <span class="cx-count" id="cx-count">${_cxList().length.toLocaleString()} ${escH(T('jobs'))}</span>
+      <div class="cx-tools">${_cxCountryBtnHTML()}<button class="cx-all" data-dact="cxDirectory">${escH(T('See all jobs'))}</button></div>
+    </div>
+    <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="cx-q" type="search" autocomplete="off" value="${escH(_cxQ)}" placeholder="${escH(T('Search jobs'))}" aria-label="${escH(T('Search jobs'))}"></div>
+    <div class="cx-cats" id="cx-cats" role="group" aria-label="${escH(T('Categories'))}">${_cxChipsHTML()}</div>
+    <div id="cx-grid">${_cxGridHTML()}</div>
+  </section>`;
+}
+/* The box at the top, the same on both screens: a heading, the field, Run. */
+function _cxAskHTML(extra){
+  return `<section class="cx-ask mc-cmd" aria-labelledby="cx-ask-h">
+    <div class="cx-ask-top"><h1 id="cx-ask-h">${escH(T('Tell AMV what to do'))}</h1>${extra || ''}</div>
+    <div class="cx-box">
+      <textarea id="mc-cmd-input" class="mc-cmd-input cx-input" rows="1" autocomplete="off" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go"
+        placeholder="${escH(T('e.g. every morning at 8, summarize my unread email'))}"></textarea>
+      <button class="mc-cmd-go cx-run" id="mc-cmd-go">${escH(T('Run'))}</button>
+    </div>
+    <div id="mc-cmd-result" class="mc-cmd-result"></div>
+  </section>`;
+}
+function _cxWire(vc){
+  const q = document.getElementById('cx-q');
+  if(q){
+    let t = 0;
+    on(q, 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cxQ = v.trim(); _cxN = 24; const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML(); }, 120); });
+    on(q, 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(t); _cxQ = this.value.trim(); _cxN = 24; const g = document.getElementById('cx-grid'); if(g) g.innerHTML = _cxGridHTML(); } });
+  }
+  /* The catalogue of the country's real services arrives after the page: its
+     jobs join the list in place. */
+  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(() => { if(document.getElementById('cx-grid')) _cxPaint(); }).catch(() => {});
+}
+
+/* SEE ALL JOBS (Nov 15). The owner: "an option to see all jobs - a directory
+   of every job from all countries, and you search what you want. I'd rather
+   people use the main text box, but the directory is so people can see
+   everything."
+
+   Every country's catalogue, fetched when the directory opens (a few at a
+   time, the count rising as they land) and searched in memory. Only the rows
+   on screen are drawn. A job found here opens the same panel and switches on
+   the same way as one on the main list. */
+let _cxdQ = '', _cxdCc = '', _cxdN = 60, _cxdAll = [], _cxdLoading = false;
+function _cxdRows(){
+  const words = _cxdQ.toLowerCase().split(/\s+/).filter(Boolean);
+  return _cxdAll.filter(j => (!_cxdCc || j.country === _cxdCc) && _cxMatch(j, words));
+}
+function _cxdPaint(){
+  const box = document.getElementById('cxd-list'); if(!box) return;
+  const rows = _cxdRows();
+  const n = document.getElementById('cxd-n');
+  if(n) n.textContent = rows.length.toLocaleString() + ' ' + T('jobs') + (_cxdLoading ? ' · ' + T('loading more countries…') : '');
+  const shown = rows.slice(0, _cxdN);
+  box.innerHTML = shown.length
+    ? shown.map(j => { const c = _cwCountryRow(j.country);
+        return `<button class="cxd-row" data-dact="cwPeek" data-darg="${escH(j.id)}">
+          <span class="cx-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+          <span class="cxd-b"><span class="cxd-t" data-no-i18n>${escH(j.title)}</span>
+            <span class="cxd-s">${c ? `<span aria-hidden="true">${c[2]}</span> ${escH(T(c[1]))} · ` : ''}${escH(T(_cxCat(j)))} · ${escH(_cxEvery(j))}</span></span></button>`; }).join('')
+      + (rows.length > shown.length ? `<div class="cx-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cx-n">${(rows.length - shown.length).toLocaleString()}</span></button></div>` : '')
+    : `<div class="cx-empty">${_cxdLoading ? escH(T('Loading…')) : escH(T('No job matches that.'))}</div>`;
+  on(document.getElementById('cxd-more'), 'click', () => { _cxdN += 120; _cxdPaint(); });
+}
+async function _cxdLoad(){
+  if(_cxdLoading) return;
+  _cxdLoading = true;
+  const here = _cwCountryGuess();
+  const codes = [here].concat((CW_WORLD_COUNTRIES || []).map(c => c[0]).filter(c => c !== here)).filter(Boolean);
+  const have = new Set(_cxdAll.map(j => j.id));
+  const add = (cc, list) => { for(const j of list || []){ if(!have.has(j.id)){ have.add(j.id); if(!j.country) j.country = cc; _cxdAll.push(j); } } };
+  /* The jobs that work everywhere first, so the directory is never empty. */
+  try{ add('', (_cwJobs() || []).concat(_cwUniversalJobs() || [])); }catch(e){}
+  let i = 0, last = 0;
+  const next = async () => {
+    while(i < codes.length){
+      const cc = codes[i++];
+      try{ add(cc, await ccCrewLoad(cc)); }catch(e){}
+      if(Date.now() - last > 250){ last = Date.now(); _cxdPaint(); }
+    }
+  };
+  await Promise.all([next(), next(), next(), next(), next(), next()]);
+  _cxdLoading = false;
+  _cxdPaint();
+}
+function cxDirectory(){
+  const r = $('ovr'); if(!r) return;
+  const opts = (CW_WORLD_COUNTRIES || []).slice().sort((a, b) => T(a[1]).localeCompare(T(b[1])))
+    .map(c => `<option value="${c[0]}"${c[0] === _cxdCc ? ' selected' : ''}>${c[2]} ${escH(T(c[1]))}</option>`).join('');
+  r.innerHTML = `<div class="ov" id="cxd-bg"><div class="cxd" role="dialog" aria-modal="true" aria-labelledby="cxd-h">
+    <header class="cxd-h"><div><h2 id="cxd-h">${escH(T('All jobs'))}</h2><span class="cx-count" id="cxd-n"></span></div>
+      <button class="cwp-x" id="cxd-x" aria-label="${escH(T('Close'))}">✕</button></header>
+    <div class="cxd-tools">
+      <div class="cx-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="cxd-q" type="search" autocomplete="off" value="${escH(_cxdQ)}" placeholder="${escH(T('Search every job in every country'))}" aria-label="${escH(T('Search every job in every country'))}"></div>
+      <select class="inp" id="cxd-cc" aria-label="${escH(T('Country'))}"><option value="">${escH(T('All countries'))}</option>${opts}</select>
+    </div>
+    <div class="cxd-list" id="cxd-list"></div>
+  </div></div>`;
+  r.classList.add('on');
+  onBackdrop($('cxd-bg'), closeOvr);
+  on($('cxd-x'), 'click', closeOvr);
+  let t = 0;
+  on($('cxd-q'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cxdQ = v.trim(); _cxdN = 60; _cxdPaint(); }, 150); });
+  on($('cxd-cc'), 'change', function(){ _cxdCc = this.value; _cxdN = 60; _cxdPaint(); });
+  _cxdPaint();
+  try{ $('cxd-q').focus(); }catch(e){}
+  _ccReady().then(ok => { if(ok) _cxdLoad(); }).catch(() => {});
+}
+try{ window.cxDirectory = cxDirectory; window._cxdAll = _cxdAll; }catch(e){}
+
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;
   /* THE CATALOGUE FIRST. Fetched the first time Crew opens (see
@@ -1352,116 +1581,15 @@ function renderCrewView(){
      Nothing here is a teaser version of a job that does not exist. */
   if(!_planAllowsCrew()){
     const P=(typeof PLANS!=='undefined'&&PLANS[CREW_REQUIRED_PLAN])||{name:'Pro',price:15};
-    const jobs=_cwJobs();
-    const bgJobs=jobs.filter(j=>_cwRunsUnattended(j)).length;
-    vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
-      <div class="cw-hero">
-      <span class="eyebrow">Crew</span>
-      <h2>AMV working while you are not</h2>
-      ${/* TWO SENTENCES, NOT TWO PARAGRAPHS.
-
-            Everything the long version said was true and none of it was the
-            first thing anybody needs. Crew answers one question - what runs
-            while you are not here - and a screen that takes four sentences to
-            get there has already lost the person it was written for. The
-            detail about grants and passwords has not gone; it is on
-            Connectors, where somebody is actually deciding whether to hand
-            one over. */ ''}
-      <p class="vsub">It runs on AMV\u2019s servers on a schedule you set, so the work happens with this window
-        closed and your laptop shut. You get the finished thing, not a reminder to go and do it.</p>
-      <div class="cw-where-bar cw-hero-row">${_cwWhereBtnHTML()}</div>
-      </div>
-
-      ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
-
-            "have the text box remember where you can type something it
-            recognizes it and does it i still want that" - said twice, because
-            it was there and could not be seen: the command box lived on the
-            unlocked Crew view only. Anybody on Free, which is everybody
-            before they pay, got a catalogue and no way to say a sentence.
-
-            It is the first thing on the screen now, and it is the SAME box -
-            same input id, same run path, so what somebody types here is
-            treated exactly as it would be on the paid screen. */ ''}
-      <div class="mc-cmd mc-cmd-lg cw-cmd-lead">
-        <div class="mc-cmd-label">Tell AMV what to do
-          <span>- say it in your own words and it works out the rest</span></div>
-        <div class="mc-cmd-inner">
-          <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-          <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" autocomplete="off"
-                 aria-label="Tell AMV what to do" enterkeyhint="go"
-                 placeholder="e.g. summarize my last meetings"></textarea>
-          <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
-        </div>
-        <div class="mc-cmd-chips">${[
-          'Summarize my last meetings',
-          'What did I agree to this week?',
-          'Find the cheapest supermarket near me',
-          'What paperwork do I need to renew?'
-        ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
-        <div id="mc-cmd-result" class="mc-cmd-result"></div>
-      </div>
-      ${/* THE STATS BAND IS GONE.
-
-            It said "104 examples, not a limit / 49 run with AMV closed /
-            5 jobs at once on Pro / Included with Pro - $15/month", and the
-            owner asked for it to come out. It was three numbers and a price
-            standing between somebody and the thing that would actually
-            convince them, which is the catalogue underneath. The plan and
-            the price are on the Plans screen, where somebody who wants them
-            goes looking. */ ''}
-    </div>
-    <div class="crew-jobs-sec cw-locked">
-      ${/* THE ORDER IS THE ARGUMENT.
-
-            Crew is autonomous work, so the screen goes: what it is, the box
-            where you say what you want, where you live, and then a hundred
-            examples if you want ideas. The one-off errands - the ones that
-            open a chat rather than run on a schedule - are real and useful
-            and are NOT what Crew is, so they sit at the bottom where somebody
-            who wants one will still find them, instead of being the first
-            thing between you and the point.
-
-            Same reason "most used" moved down: it ranks what other people
-            run, which is interesting once you know what this is and noise
-            before. */ ''}
-      <div class="sec-head"><h3>${escH(_cwJobsForHead())}</h3><span class="sec-sub">${escH(T('Wrong country, or want something from another one? Change it above, or just type it in the box.'))}</span></div>
-      ${_cwForYouHTML()}
-      ${_cwMadeForHTML()}
-      <div class="cw-filters">
-        ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
-      </div>
-      ${_cwCatChips(_cwShowcase())}
-      <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
-      ${_cwMostStartedHTML()}
-      <!-- The country catalogue arrives after the page is drawn. It sits under
-           the most-started list and "See more countries" stays last, so that
-           button is held back until the catalogue has arrived (or failed):
-           appearing at the very bottom moves nothing, where a section growing
-           above it would move what somebody was reading (a layout shift a CI
-           runner caught, Nov 14). -->
-      <section class="cc-crew" id="cc-crew" hidden></section>
-      <section class="cw-morec" id="cw-morec" hidden>
-        <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      </section>
-      ${/* ONE LINE, NOT A BAND.
-
-            The stats band came out because it was three numbers and a price
-            standing in front of the catalogue. Taking it out left no route to
-            the plan at all from this screen, which is the opposite mistake:
-            somebody who reads a hundred jobs and decides they want it should
-            not have to guess where to go. Every card already opens onto the
-            price; this is for the person who has finished browsing and is
-            looking for the way forward, and it is a sentence rather than a
-            sales panel. */ ''}
-      <div class="cw-plan-foot">
-        <span>Crew runs on ${escH(P.name)} and above - AMV keeps working when you close it.</span>
-        <button class="mc-sec-link" data-stab="plans">See plans \u2192</button>
+    vc.innerHTML=`<div class="sv fi"><div class="cx cw-locked">
+      ${_cxAskHTML()}
+      ${_cxJobsHTML()}
+      <div class="cx-plan">
+        <span>${escH(T('Crew runs on {0} and above, with AMV closed.').replace('{0}', P.name))}</span>
+        <button class="cx-link" data-stab="plans">${escH(T('See plans'))} \u2192</button>
       </div>
     </div></div>`;
-    _cwWireCmd(vc);
-    _ccReady().then(ok => ok ? window.ccFillCrew() : null).catch(() => {}).finally(() => { const m = document.getElementById('cw-morec'); if(m) m.hidden = false; });
+    _cwWireCmd(vc); _cxWire(vc);
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
@@ -1563,33 +1691,12 @@ function renderCrewView(){
      settings for background work sit folded above the examples; they are set
      once and rarely. The examples are the last thing on the page - an
      earlier fault was work stacked under the catalogue, out of sight. */
-  vc.innerHTML = `<div class="sv fi"><div class="crew-page mc-page cw-simple">
-    <header class="cw-simple-head cw-hero">
-      <span class="eyebrow">${escH(T('Crew'))}</span>
-      <h2>${escH(T('AMV working while you are not'))}</h2>
-      <p class="vsub cw-simple-sub">${escH(T('Say what you want done. AMV checks what it needs - an account to connect, a time to run - asks you for it, then does it, even with AMV closed.'))}</p>
-      <div class="cw-simple-head-r cw-hero-row">${_cwWhereBtnHTML()}<button class="cw-where cw-set-btn" type="button" data-dact="openCrewSettings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>${escH(T('Crew settings'))}</button>${paused
-        ? `<button class="mc-pause paused" data-dact="resumeAllAutonomous">▶ ${escH(T('Resume autonomy'))}</button>`
-        : running ? `<button class="mc-pause" data-dact="pauseAllAutonomous">⏸ ${escH(T('Pause all autonomous'))}</button>` : ''}</div>
-    </header>
-    ${(()=>{ const n=_crewJobAllowance();
-      /* The number, before they hit it. A limit discovered by bumping into it
-         reads as a fault; the same limit stated up front reads as a plan. */
-      return n?`<div class="mc-allow">${running} of ${n} background job${n===1?'':'s'} in use <span>\u00b7 your plan runs ${n}</span></div>`:''; })()}
-    <div class="mc-cmd mc-cmd-lg">
-      <div class="mc-cmd-inner">
-        <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go" placeholder="${escH(T('e.g. every morning at 8, summarize my unread email'))}" autocomplete="off"></textarea>
-        <button class="mc-cmd-go" id="mc-cmd-go">${escH(T('Run'))}</button>
-      </div>
-      <div class="mc-cmd-chips">${[
-        'Email me a summary of my unread emails',
-        'Research the top AI news today and write me a brief',
-        'Draft a reply to my latest email',
-        'Plan my week from my calendar'
-      ].map(c=>`<button class="mc-cmd-chip" data-mccmd="${escH(c)}">${escH(c)}</button>`).join('')}</div>
-      <div id="mc-cmd-result" class="mc-cmd-result"></div>
-    </div>
+  const allow=_crewJobAllowance();
+  const tools=`<div class="cx-ask-tools">${allow?`<span class="cx-allow">${escH(T('{0} of {1} jobs on').replace('{0}', running).replace('{1}', allow))}</span>`:''}${paused
+        ? `<button class="cx-icon-btn" data-dact="resumeAllAutonomous">${escH(T('Resume all'))}</button>`
+        : running ? `<button class="cx-icon-btn" data-dact="pauseAllAutonomous">${escH(T('Pause all'))}</button>` : ''}<button class="cx-icon-btn" type="button" data-dact="openCrewSettings" aria-label="${escH(T('Crew settings'))}" title="${escH(T('Crew settings'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button></div>`;
+  vc.innerHTML = `<div class="sv fi"><div class="cx crew-page mc-page">
+    ${_cxAskHTML(tools)}
     <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
     ${/* AMV asking you something stays on the page - it is a question, not a
           setting, so it did not go into the settings dialog with the rest. */ ''}
@@ -1639,31 +1746,9 @@ function renderCrewView(){
           are a button in the header (openCrewSettings) - set once, rarely
           changed, and a section of their own pushed the jobs down the page.
           The catalogue stays the last thing on the page. */ ''}
-    <div class="crew-jobs-sec mc-start">
-      <div class="sec-head"><h3>${escH(_cwJobsForHead())}</h3><span class="sec-sub">${escH(T('Wrong country, or want something from another one? Change it above, or just type it in the box.'))}</span></div>
-      ${_cwForYouHTML()}
-      ${_cwMadeForHTML()}
-      <div class="cw-filters">
-        ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
-      </div>
-      ${_cwCatChips(_cwShowcase())}
-      <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
-      ${_cwMostStartedHTML()}
-      <!-- The country catalogue arrives after the page is drawn. It sits under
-           the most-started list and "See more countries" stays last, so that
-           button is held back until the catalogue has arrived (or failed):
-           appearing at the very bottom moves nothing, where a section growing
-           above it would move what somebody was reading (a layout shift a CI
-           runner caught, Nov 14). -->
-      <section class="cc-crew" id="cc-crew" hidden></section>
-      <section class="cw-morec" id="cw-morec" hidden>
-        <button class="cw-morec-btn" data-dact="cwMoreCountries">${escH(T('See more countries'))}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      </section>
-    </div>
+    ${_cxJobsHTML()}
   </div></div>`;
-  _cwWireCmd(vc);
-  _ccReady().then(ok => ok ? window.ccFillCrew() : null).catch(() => {}).finally(() => { const m = document.getElementById('cw-morec'); if(m) m.hidden = false; });
+  _cwWireCmd(vc); _cxWire(vc);
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
   try{ if(typeof renderGames==='function') renderGames(); }catch(e){}

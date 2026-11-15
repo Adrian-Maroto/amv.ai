@@ -802,8 +802,14 @@ function _schedEditSave(id){
       else{
         try{
           const r = await AMV_API._fetch('/auto/update',{method:'POST',
+            /* The calendar too. Sending the rhythm alone made the server drop
+               the time it had ("a new cadence with no new time drops the old
+               calendar"), so "every day at 6" ran a day from whenever it was
+               saved. */
             body:JSON.stringify({ id:t.autoId, action:'edit', detail:t.goal,
               repeat:(typeof _mcRepeatFor==='function'?_mcRepeatFor(t):'daily'),
+              sched:(t.sched ? Object.assign({ minute:0 }, t.sched) : null),
+              tz:(typeof _myTimeZone==='function'?_myTimeZone():''),
               approval:t.approval })});
           const d = await r.json().catch(()=>({}));
           res = (!r.ok || d.error) ? { ok:false, code:'failed', error:d.error||'' } : { ok:true };
@@ -887,9 +893,11 @@ function _schedHuman(){
 }
 function _schedNext(s, from){
   const now=new Date(from||Date.now());
-  if(s.cad==='daily'){ const d=new Date(now); d.setHours(s.hour,0,0,0); if(d<=now) d.setDate(d.getDate()+1); return d.getTime(); }
-  if(s.cad==='weekly'){ const days=(s.days&&s.days.length)?s.days:[1]; let best=null; for(let i=0;i<14;i++){ const d=new Date(now); d.setDate(d.getDate()+i); d.setHours(s.hour,0,0,0); if(days.includes(d.getDay()) && d>now){ best=d.getTime(); break; } } return best||(from+6048e5); }
-  if(s.cad==='monthly'){ const d=new Date(now); d.setDate(s.dom); d.setHours(s.hour,0,0,0); if(d<=now){ d.setMonth(d.getMonth()+1); d.setDate(s.dom); } return d.getTime(); }
+  /* The minute too: "every day at 6:30" ran at 6:00. */
+  const mi=+s.minute||0;
+  if(s.cad==='daily'){ const d=new Date(now); d.setHours(s.hour,mi,0,0); if(d<=now) d.setDate(d.getDate()+1); return d.getTime(); }
+  if(s.cad==='weekly'){ const days=(s.days&&s.days.length)?s.days:[1]; let best=null; for(let i=0;i<14;i++){ const d=new Date(now); d.setDate(d.getDate()+i); d.setHours(s.hour,mi,0,0); if(days.includes(d.getDay()) && d>now){ best=d.getTime(); break; } } return best||(from+6048e5); }
+  if(s.cad==='monthly'){ const d=new Date(now); d.setDate(s.dom); d.setHours(s.hour,mi,0,0); if(d<=now){ d.setMonth(d.getMonth()+1); d.setDate(s.dom); } return d.getTime(); }
   return from+864e5;
 }
 

@@ -1593,6 +1593,30 @@ function _cwReRank(){
     _cwLocFill();
   }catch(e){}
 }
+/* THE CATEGORIES CREW AND TASKS ARE ORGANIZED BY (Nov 15) - one set, so a
+   bank is under Money on both screens. */
+const CX_CATS = ['Money', 'Inbox & calendar', 'Work & career', 'Shopping', 'Travel', 'Government & paperwork',
+                 'Health', 'Learning', 'News', 'Going out', 'Home & life', 'Family & kids', 'Growing a business', 'Making things'];
+/* The country catalogue's kinds, in the categories a person looks under. */
+const CX_KIND_CAT = {
+  bank:'Money', insurer:'Money', utility:'Home & life', telecom:'Home & life', isp:'Home & life', carmaker:'Home & life',
+  university:'Learning', college:'Learning', school:'Learning', library:'Learning', research:'Learning', publisher:'Learning',
+  newspaper:'News', newssite:'News', tv:'News', radio:'News',
+  airline:'Travel', airport:'Travel', rail:'Travel', bus:'Travel', hotel:'Travel',
+  retail:'Shopping', supermarket:'Shopping', ecommerce:'Shopping', restaurant:'Shopping', mall:'Shopping',
+  agency:'Government & paperwork', ministry:'Government & paperwork', embassy:'Government & paperwork', union:'Government & paperwork',
+  hospital:'Health', pharma:'Health',
+  employer:'Work & career', company:'Work & career', software:'Work & career', nonprofit:'Work & career',
+  museum:'Going out', theatre:'Going out', stadium:'Going out', sportsclub:'Going out', park:'Going out', zoo:'Going out', festival:'Going out', brewery:'Going out',
+};
+/* The older category names, folded into the same set. */
+const CX_OLD_CAT = { 'Watching the world':'News' };
+function _cxCat(j){
+  if(j && j.ccKind && CX_KIND_CAT[j.ccKind]) return CX_KIND_CAT[j.ccKind];
+  const c = (j && j.cat) || '';
+  return CX_OLD_CAT[c] || (CX_CATS.indexOf(c) >= 0 ? c : 'Home & life');
+}
+try{ window._cxCat = _cxCat; }catch(e){}
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
   _cwRankedFor = _cwRankKey();
@@ -2206,9 +2230,10 @@ function cwBackMain(){ _cwGo(''); }
 function cwBrowse(cc){
   const code = String(cc || '').toUpperCase();
   if(!_cwCountryRow(code)) return;
-  _cwBrowse = code;
+  /* Chosen, and straight back to Crew's one list for it (Nov 15): a
+     separate page per country was a second Crew with its own headings. */
   _cwSetCountry(code);
-  _cwGo('country');
+  _cwGo('');
 }
 /* The top-right control on the main page. While the network has not yet said
    where somebody is, it holds its place empty rather than naming a guess that

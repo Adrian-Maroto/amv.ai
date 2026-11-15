@@ -1,0 +1,47 @@
+# Ranks every country's services by what people there actually load in Chrome
+# (Chrome UX Report, via zakird/crux-top-lists) and adds the most-visited sites
+# Wikidata can place by their official website (scripts/country-popular.mjs).
+# Commits the data to the branch it ran on, so it is reviewed like code.
+name: country-popular
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['data/countries/popular-request.txt']
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'Country codes separated by spaces (empty = every country file)'
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: country-popular-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rank and add
+        timeout-minutes: 240
+        env:
+          COUNTRIES: ${{ github.event.inputs.countries }}
+          BUDGET_MIN: '220'
+        run: |
+          if [ -z "$COUNTRIES" ] && [ -f data/countries/popular-request.txt ]; then COUNTRIES="$(grep -v '^#' data/countries/popular-request.txt | tr '\n' ' ')"; fi
+          node scripts/country-popular.mjs $COUNTRIES
+      - name: Commit the data
+        if: always()
+        run: |
+          git config user.name "amv-data-bot"
+          git config user.email "amv-data-bot@users.noreply.github.com"
+          git add data/countries
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -m "Country data ranked by Chrome UX Report visits: $(ls data/countries/*.json | wc -l) countries"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

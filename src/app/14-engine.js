@@ -2072,7 +2072,11 @@ async function _scheduleTask(t){
     const wantEmail = t.notify === 'email' || (t.notify !== 'app' && _AUTO_EMAIL_READY);
     const d = await _autoApi('/auto/create', {
       detail: t.detail,
-      repeat: t.repeat || 'daily',
+      /* The server's rhythms are hourly, daily and weekly; a month is kept by
+         the calendar (sched) and the weekly bucket. 'monthly' sent as it was
+         was refused as "invalid repeat interval", so every job switched on
+         for "every month" failed to start. */
+      repeat: (t.repeat === 'monthly' ? 'weekly' : (t.repeat || 'daily')),
       sched: t.sched || null,
       tz: t.tz || (typeof _myTimeZone==='function' ? _myTimeZone() : 'UTC'),
       kind: t.kind || 'task',
