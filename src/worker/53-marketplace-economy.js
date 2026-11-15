@@ -320,6 +320,9 @@ async function _withRecord(env, kind, id, load, save, mutate) {
     if (lk.claimed) {
       const started = Date.now();
       try {
+        /* A guarded kind's load is the COMMITTED copy (B15-09: acct, ent,
+           team, fam and apikeys joined the revision authority), so a stale
+           regional copy is never what this lock reads and writes back. */
         const rec = await load(env, key);
         const out = await mutate(rec);
         if (!_mutRefuses(out)) {
@@ -346,6 +349,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
 /* True only for "the lock could not be taken". Anything else thrown out of a
    mutate is a fault, and telling somebody to try again would hide it. */
 const _isBusy = (e) => !!(e && e.code === 'record_busy');
+
 
 async function _withWallet(env, email, mutate) {
   const em = String(email || '').toLowerCase();

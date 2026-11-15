@@ -25,6 +25,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withFrozenClock } from '../lib/clock.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -53,7 +54,7 @@ function mkEnv(extra) {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -67,7 +68,7 @@ function mkEnv(extra) {
         if (b.op === 'release') { n.delete('c:' + x); return new Response(JSON.stringify({ ok: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   }, extra || {});
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

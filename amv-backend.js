@@ -997,11 +997,22 @@ let _killCache = { val: false, ts: 0 };
    columns rather than finding the edge exactly. */
 const D1_ROW_MAX_BYTES = 1900000;
 /* Records whose writes go through putIfRev, and are read as committed. */
-const REV_KINDS = new Set(['data']);
+/* Records whose writes go through the revision authority and are read as
+   committed. `data` (chats) since Nov 3; the account, plan, team, family and
+   API-key records since Nov 15 (Build 15 audit B15-09, owner yes): a lock
+   around a KV read serialised two changes but did not make the value it read
+   current, so a change of name could put back a second sign-in step that had
+   just been turned on. Every write of these kinds commits an exact revision
+   (DB.put below, the lock in _withRecord) and every read takes the committed
+   copy (_revRead). */
+const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
+/* Of those, the ones written whole by DB.put rather than by a caller that
+   already merges against a revision (chats do, through putIfRev). */
+const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
-const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
+const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1052,6 +1063,25 @@ class RecordSettlingError extends Error {
     /* An answer, not a fault (the router's amvRefusal): a short wait, said as one. */
     this.amvRefusal = { status: 503, body: { error: 'Your latest changes are still arriving here. Try again in a few seconds.', code: 'record_settling' } };
   }
+}
+/* A whole record committed through the revision authority, going on from
+   whatever revision is current (writers that read-modify-write do it under
+   _withRecord's lock, and their read is the committed copy). Never a silent
+   no-op: an authority that cannot be asked, or a write that keeps losing the
+   race, throws - the caller's change was not made and it must not be told
+   otherwise. */
+async function _revPutCurrent(env, kind, id, obj){
+  for(let i = 0; i < 4; i++){
+    let st = null;
+    try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+    if(!st || st.unavailable) throw new RecordSettlingError(kind + ':' + id);
+    const base = +st.rev || 0;
+    obj._rev = base + 1;
+    const r = await DB.putIfRev(env, kind, id, obj, base);
+    if(r && r.ok) return;
+    if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
+  }
+  const busy = new Error(kind + ' is being written by somebody else'); busy.code = 'record_busy'; throw busy;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -1200,7 +1230,20 @@ const DB = {
     }
     const epoch = await _pgReadFence(env, kind, id);
     const ik = await _pgIntent(env, kind, id);
-    await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    if(REV_PUT_KINDS.has(kind) && env.AMV_COUNTER){
+      /* Committed through the revision authority, from whatever revision is
+         current - a whole-record write is last-writer-wins, as it always was,
+         but it is now the committed value every reader takes, rather than a
+         KV copy a reader elsewhere may not see for a minute. A writer that
+         reads, changes and writes does it under _withRecord's lock, and its
+         read is this committed value - so it never writes back a stale one
+         (B15-09). (Passing the revision read into this write was tried and
+         taken out: several callers write the record themselves inside the
+         lock, and a second write at the old revision refused all of them.) */
+      await _revPutCurrent(env, kind, id, obj);
+    } else {
+      await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    }
     /* The Postgres row too, once the store has it (04a-control-plane.js) -
        before going on, for a record Postgres answers (04d-pg-read.js). Its
        intent is cleared only when Postgres has it or a repair entry does;
@@ -18166,6 +18209,40 @@ async function _backupValue(env, key){
   return raw;
 }
 
+/* A RECORD THE LISTING CANNOT SEE (Nov 15, Build 15 audit B15-18).
+
+   Backups find records by listing their usual key. A record written through
+   the revision authority is committed the moment its snapshot is (revblob:),
+   and its usual key is only a copy - which can fail and be repaired by the
+   next read. A record committed that way and never copied was invisible to
+   both exports, and the export still said complete. This finds them from the
+   other side: every committed snapshot whose usual key is absent is the
+   record, read and checked against the committed digest, and backed up under
+   its usual key. A snapshot that is not the committed one (an older revision,
+   or a candidate kept because a commit's answer was lost) is skipped. */
+async function _backupCommittedKey(env, blobKey){
+  const m = /^revblob:([a-z]+):([^\s:]{1,320}):(\d{1,15})(?::([a-f0-9]{64}))?$/.exec(String(blobKey));
+  if (!m || !REV_KINDS.has(m[1]) || !BACKUP_PREFIXES.includes(m[1] + ':')) return null;
+  const kind = m[1], id = m[2], rev = +m[3], dg = m[4] || '';
+  const key = kind + ':' + id;
+  if ((await env.AMV_KV.get(key)) != null) return null;          // listed, and backed up, under its own key
+  if (!env.AMV_COUNTER) return null;
+  const st = await counter(env, _revName(kind, id), { op: 'revGet' });
+  if (!st || st.unavailable) throw new Error('backup incomplete: the revision of ' + key + ' could not be read');
+  if (!st.committed || st.absent || st.rev !== rev || (dg && dg !== st.digest)) return null;
+  const raw = await env.AMV_KV.get(blobKey);
+  if (raw == null || (await _revDigest(raw)) !== st.digest) return null;
+  return { key, raw };
+}
+async function* _backupCommittedOrphans(env){
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'revblob:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) { const got = await _backupCommittedKey(env, k.name); if (got) yield got; }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+}
+
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
 async function backupExport(request, env){
   /* The most expensive route in the product: it reads every record under every
@@ -18253,6 +18330,8 @@ async function backupExport(request, env){
             cursor = page.list_complete ? undefined : page.cursor;
           } while (cursor);
         }
+        /* And the records committed with no usual key (B15-18). */
+        if (!DB._hasD1(env)) for await (const o of _backupCommittedOrphans(env)) yield emit(o.key, o.raw);
 
         // When D1 is the source of truth, KV won't hold these records - pull
         // them from D1 too so the export is a COMPLETE recovery artifact.
@@ -18367,7 +18446,12 @@ async function _restoreEntries(env, entries, mode, t){
       await env.AMV_KV.put(key, merged.value);
       /* A record read as committed (STATE-007) is committed as restored, or
          readers would go on answering with the value from before. */
-      if (key.startsWith('data:')) await _revCommitRestored(env, 'data', key.slice(5), merged.value);
+      /* Every kind read through the revision authority, not only chats -
+         the account, plan, team, family and API-key records joined it on
+         Nov 15 (B15-09), and without this a restored one would be answered
+         from the snapshot that was committed before. */
+      { const c = key.indexOf(':'); const k = key.slice(0, c);
+        if (REV_KINDS.has(k)) await _revCommitRestored(env, k, key.slice(c + 1), merged.value); }
       /* A balance is read from its strong record (Nov 8 verified audit R03),
          so a restored one is written there too. */
       if (key.startsWith('wallet:')) await _walletAdopt(env, key.slice(7), merged.value);
@@ -18648,7 +18732,14 @@ function _nightlyOn(env){
 }
 const _nightlyDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 const _nightlyStateKey = (day) => 'bkrun:' + day;
-const _nightlyPart = (day, n) => 'backups/' + day + '/part-' + String(n).padStart(6, '0') + '.ndjson';
+/* Parts live under the run that wrote them (Nov 15, Build 15 audit B15-19).
+   A retry from a lost or stale checkpoint used to write part-000000 again for
+   the same night - over a part a finished, signed manifest already vouched
+   for, so the backup was damaged and only its checksum said so. Each run now
+   has a generation of its own: a later run can never touch an earlier run's
+   bytes, and a manifest names the generation its checksums are for. A
+   manifest from before this has no `gen` and reads the old layout. */
+const _nightlyPart = (day, n, gen) => 'backups/' + day + '/' + (gen ? gen + '/' : '') + 'part-' + String(n).padStart(6, '0') + '.ndjson';
 const _nightlyManifest = (day) => 'backups/' + day + '/manifest.json';
 
 /* One tick's share. Returns what it did, for the log. */
@@ -18681,7 +18772,21 @@ async function _nightlyBackupSlice(env, atMs){
 
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
-  if (!st) st = { day, prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+  if (!st) {
+    /* No checkpoint for tonight - lost, expired or never written. A finished
+       night is told by its signed manifest, not by the checkpoint, so it is
+       not started again over the top of itself. */
+    let man = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); man = o ? JSON.parse(await o.text()) : null; } catch (e) { man = null; }
+    if (man && man.complete && await _manifestSigned(env, man)) {
+      st = { day, done: true, gen: man.gen || '', part: man.parts, count: man.keyCount, startedAt: man.startedAt };
+      await env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
+    } else {
+      const g = crypto.getRandomValues(new Uint8Array(8));
+      st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
+             prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+    }
+  }
   /* Done: the night is drilled on its own, slice by slice (REL-017) - a
      backup nobody has read back is not one readiness may count. */
   if (st.done) return Object.assign({ on: true, day, done: true }, await _nightlyDrillSlice(env, day));
@@ -18689,12 +18794,17 @@ async function _nightlyBackupSlice(env, atMs){
 
   const save = () => env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
   let parts = 0;
-  while (st.prefix < BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
-    const prefix = BACKUP_PREFIXES[st.prefix];
+  /* One stage past the prefixes: the records committed with no usual key
+     (B15-18, 27-backup-restore.js). */
+  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
+    const orphans = st.prefix === BACKUP_PREFIXES.length;
+    const prefix = orphans ? 'revblob:' : BACKUP_PREFIXES[st.prefix];
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
     const lines = [];
-    for (const k of (page.keys || [])) {
-      const raw = await _backupValue(env, k.name);
+    for (const k0 of (page.keys || [])) {
+      let k = k0, raw;
+      if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
+      else raw = await _backupValue(env, k.name);
       if (raw == null) continue;
       if (raw.length > BACKUP_MAX_VALUE_BYTES) {
         st.failed = k.name + ' is ' + raw.length + ' bytes, larger than a restore accepts';
@@ -18713,7 +18823,7 @@ async function _nightlyBackupSlice(env, atMs){
       /* Each part's checksum, kept for the manifest (Nov 1 audit DR-004): a
          restore checks every part against it before anything is written. */
       const sha = await _sha256Hex(body);
-      await env.AMV_BACKUPS.put(_nightlyPart(day, st.part), body, { httpMetadata: { contentType: 'application/x-ndjson' }, customMetadata: { sha256: sha } });
+      await env.AMV_BACKUPS.put(_nightlyPart(day, st.part, st.gen), body, { httpMetadata: { contentType: 'application/x-ndjson' }, customMetadata: { sha256: sha } });
       st.partSha = Array.isArray(st.partSha) ? st.partSha : [];
       st.partSha[st.part] = sha;
       st.part++; st.count += lines.length; parts++;
@@ -18725,7 +18835,7 @@ async function _nightlyBackupSlice(env, atMs){
        replays the current slice; do not claim KV is a transactional cursor. */
   }
 
-  if (st.prefix < BACKUP_PREFIXES.length) {
+  if (st.prefix <= BACKUP_PREFIXES.length) {
     await save();
     return { on: true, day, parts, count: st.count, more: true };
   }
@@ -18734,7 +18844,7 @@ async function _nightlyBackupSlice(env, atMs){
      audit REL-017), so a manifest somebody edited in the bucket - or one
      written by anything but this Worker - is not taken for a backup. */
   const man = {
-    _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part,
+    _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part, gen: st.gen || undefined,
     partSha: Array.isArray(st.partSha) && st.partSha.length === st.part ? st.partSha : undefined,
     prefixes: BACKUP_PREFIXES, startedAt: st.startedAt, finishedAt: Date.now(),
     finishedISO: new Date().toISOString(),
@@ -18850,7 +18960,7 @@ async function _backupProven(env, now){
     if (!(await _manifestSigned(env, man))) { why = 'manifest not signed'; continue; }
     if (!Array.isArray(man.partSha) || man.partSha.length !== man.parts) { why = 'manifest without every checksum'; continue; }
     if (man.parts > 0) {
-      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1)).catch(() => null);
+      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1, man.gen)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1, man.gen)).catch(() => null);
       if (!last) { why = 'a part is missing'; continue; }
     }
     let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
@@ -18973,7 +19083,15 @@ async function _restoreRollback(env, day, run, fromPart){
     for (const line of (await o.text()).split('\n')) {
       if (!line) continue;
       const r = JSON.parse(line);
-      if (r.v == null) await env.AMV_KV.delete(r.k); else await env.AMV_KV.put(r.k, r.v);
+      /* A guarded kind is committed as well as copied, the way the restore
+         committed it - or the restore's revision stays committed over the
+         value put back, and every reader of the record is refused as
+         "still settling" for good (data since STATE-007; acct, ent, team,
+         fam and apikeys since B15-09). */
+      const c = String(r.k).indexOf(':'), kind = c > 0 ? r.k.slice(0, c) : '', rid = c > 0 ? r.k.slice(c + 1) : '';
+      const guarded = REV_KINDS.has(kind) && !!rid;
+      if (r.v == null) { if (guarded) await _revCommitAbsent(env, kind, rid); await env.AMV_KV.delete(r.k); }
+      else { await env.AMV_KV.put(r.k, r.v); if (guarded) await _revCommitRestored(env, kind, rid, r.v); }
       put++;
     }
   }
@@ -19023,7 +19141,7 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
   }
   for (; part < man.parts; part++) {
     if (Date.now() - started > NIGHTLY_SLICE_MS) break;
-    const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part));
+    const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part, man.gen));
     if (!o) {
       /* The night is no longer whole: whatever drill said otherwise is void. */
       try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
@@ -21968,6 +22086,10 @@ async function authGoogle(request, env) {
     return _tokenResponse(env, tokens, { email: em, name, picture: claims.picture || '' });
   }catch(e){
     audit(env,'google_verify_error',{msg:String(e).slice(0,120)});
+    /* A record that is still settling (the revision authority could not be
+       asked) is a short wait, said as one - not "verification failed", which
+       sends somebody to check a Google account that is fine. */
+    if (e && e.amvRefusal) return json(e.amvRefusal.body, e.amvRefusal.status, { 'Retry-After': '30' });
     return json({ error:'verification failed' }, 500);
   }
 }
@@ -23217,6 +23339,10 @@ async function _eraseAccount(env, email, opt) {
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
                         `revblob:data:${email}:`,
+                        /* The committed snapshots of the account, plan, family and
+                           API-key records since they joined the revision authority
+                           (Nov 15, B15-09) - each is a whole copy of the record. */
+                        `revblob:acct:${email}:`, `revblob:ent:${email}:`, `revblob:fam:${email}:`, `revblob:apikeys:${email}:`,
                         /* Each time support looked (83-support.js), one key a look. */
                         `accesslog:${email}:`,
                         /* Answers to writes kept under their Idempotency-Key (connAct). */
@@ -34081,6 +34207,9 @@ async function _withRecord(env, kind, id, load, save, mutate) {
     if (lk.claimed) {
       const started = Date.now();
       try {
+        /* A guarded kind's load is the COMMITTED copy (B15-09: acct, ent,
+           team, fam and apikeys joined the revision authority), so a stale
+           regional copy is never what this lock reads and writes back. */
         const rec = await load(env, key);
         const out = await mutate(rec);
         if (!_mutRefuses(out)) {
@@ -34107,6 +34236,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
 /* True only for "the lock could not be taken". Anything else thrown out of a
    mutate is a fault, and telling somebody to try again would hide it. */
 const _isBusy = (e) => !!(e && e.code === 'record_busy');
+
 
 async function _withWallet(env, email, mutate) {
   const em = String(email || '').toLowerCase();

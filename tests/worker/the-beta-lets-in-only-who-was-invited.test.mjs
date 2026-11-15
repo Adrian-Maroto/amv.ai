@@ -95,7 +95,7 @@ section('A use that was taken and made no account is handed back');
   const made = await call('/admin/invites', { count: 1, uses: 1 }, { Authorization: 'Bearer admin-secret-token-value' });
   const c = made.d.codes[0];
   const put = env.AMV_KV.put; let failed = 0;
-  env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:lost@')) { failed++; throw new Error('storage is down'); } return put(k, v); };
+  env.AMV_KV.put = async (k, v) => { if (/^(?:revblob:)?acct:lost@/.test(String(k))) { failed++; throw new Error('storage is down'); } return put(k, v); };
   let status = 0;
   try { status = (await signup('lost@example.com', c)).status; } catch (e) { status = 500; }
   env.AMV_KV.put = put;
@@ -153,7 +153,7 @@ section('Google sign-up, driven for real: gated, spent once, and handed back');
     const c = made.d.codes[0];
     /* The account write fails after the use is taken: the use comes back. */
     const put = env.AMV_KV.put; let failed = 0;
-    env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:g-lost@')) { failed++; throw new Error('storage is down'); } return put(k, v); };
+    env.AMV_KV.put = async (k, v) => { if (/^(?:revblob:)?acct:g-lost@/.test(String(k))) { failed++; throw new Error('storage is down'); } return put(k, v); };
     let st = 0; try { st = (await g('g-lost@example.com', c)).status; } catch (e) { st = 500; }
     env.AMV_KV.put = put;
     ok(failed > 0 && st >= 500 && (vals.get('betainvuse:' + c) || 0) === 0, 'a Google sign-up whose account could not be written hands its use back', { failed, st, used: vals.get('betainvuse:' + c) });

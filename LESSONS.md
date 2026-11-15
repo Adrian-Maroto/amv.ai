@@ -15926,3 +15926,25 @@ its successor. Rule: a credential narrower than a person is admitted by name
 to what it is for, at the door, and refused everywhere else; a new route is
 closed to it until somebody adds it on purpose. And the test drives every
 route the router has, not the ones somebody remembered.
+
+## 644. A record that is safe from lost writes is not safe from stale reads (Nov 15)
+
+The revision authority made `data:` records exact: a write commits only on the
+revision it read. Account, plan, team, family and key records still wrote
+plainly, so a request that read the account, waited, and saved it put back
+the copy it had read - over a security setting another request had just
+changed (Build 15 audit B15-09). Rule: every record that holds a permission
+or a security setting is written against the revision it was read at, and a
+write whose base has moved is refused as busy rather than applied.
+
+## 645. A backup that lists the usual copy misses the record that only has the real one (Nov 15)
+
+Under the revision authority the committed snapshot IS the record and the
+usual key is a copy written after it. Both exports found records by listing
+usual keys, so a record whose copy failed was missing from every backup that
+reported complete (B15-18). And the nightly run wrote its parts at fixed
+names, so a retry of a run that had already finished overwrote its parts
+under a signed manifest (B15-19). Rule: a backup enumerates from the source of
+truth, not from a cache of it; and an output that is signed as finished is
+never written again - each run writes under a generation of its own, and a
+signed manifest means done.

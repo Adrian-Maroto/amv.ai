@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { createHash } from 'crypto';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -65,7 +66,7 @@ const bucket = () => {
 const counterVals = new Map();
 const mkEnv = (extra = {}) => Object.assign({
   JWT_SECRET: 'x'.repeat(40), ADMIN_TOKEN: ADMIN, _m: new Map(),
-  AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init) {
+  AMV_COUNTER: withAuthOnly({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = counterVals.get(n) || 0;
     if (b.op === 'rateCheck') { counterVals.set(n, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
     /* A claim as the object makes one: held until released by its owner or expired. */
@@ -73,7 +74,7 @@ const mkEnv = (extra = {}) => Object.assign({
       const owner = 'o' + Math.floor(Math.random() * 1e9); counterVals.set('c:' + n, { owner, until: Date.now() + (b.ttlMs || 30000) }); return new Response(JSON.stringify({ claimed: true, owner })); }
     if (b.op === 'release') { const h = counterVals.get('c:' + n); if (h && b.owner && h.owner !== b.owner) return new Response(JSON.stringify({ released: false })); counterVals.delete('c:' + n); return new Response(JSON.stringify({ released: true })); }
     return new Response(JSON.stringify({ allowed: true, value: cur }));
-  } }) },
+  } }) }),
 }, extra);
 const withKV = (env) => { env.AMV_KV = kv(env._m); return env; };
 const admin = (path, body) => new Request('https://api.amv.test' + path, { method: body ? 'POST' : 'GET',
@@ -91,9 +92,15 @@ const seed = (env) => {
 };
 const nightRecords = (b, day) => {
   const out = new Map();
-  for (const [k, v] of b.o) if (k.startsWith('backups/' + day + '/part-'))
+  for (const [k, v] of b.o) if (k.startsWith('backups/' + day + '/') && /\/part-\d+\.ndjson$/.test(k))
     for (const line of v.split('\n').filter(Boolean)) { const r = JSON.parse(line); out.set(r.k, (out.get(r.k) || 0) + 1); }
   return out;
+};
+/* Where a night's part n is: under the generation its manifest names (each
+   run writes parts of its own since Nov 15, B15-19). */
+const partKey = (b, day, n) => {
+  let gen = ''; try { gen = JSON.parse(b.o.get('backups/' + day + '/manifest.json')).gen || ''; } catch (e) { gen = ''; }
+  return 'backups/' + day + '/' + (gen ? gen + '/' : '') + 'part-' + String(n).padStart(6, '0') + '.ndjson';
 };
 const T0 = Date.UTC(2026, 9, 31, 2, 0, 0);
 const DAY = '2026-10-31';
@@ -200,7 +207,7 @@ section('The restore drill reads a whole night through the restore path and writ
   ok(body.res.status === 200 && body.drill && body.ok && body.verified === man.keyCount && body.checksums === true, 'every record the manifest counts is read, every part matches its checksum', { status: body.res.status, verified: body.verified, expected: man.keyCount });
   ok(dataOnly() === before, 'and not one record was written');
   /* A part changed after the backup was taken: its checksum no longer matches. */
-  const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
+  const p0 = partKey(B, DAY, 0), orig = B.o.get(p0);
   B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
   const bad = await drillAll();
   ok(bad.ok === false && bad.badParts.includes(0) && env._m.get('GLOBAL_KILL') === '0', 'a part that does not match its checksum fails the drill, and nothing in it is written', bad);
@@ -230,7 +237,7 @@ section('A night is put back only after a drill found all of it sound, through t
   const body = await restoreAll();
   ok(body.res.status === 200 && body.ok && [...env._m.keys()].filter(k => k.startsWith('acct:')).length === 2600, 'after one, every account is back', { status: body.res.status, restored: body.restored });
   /* A part changed after a sound drill: the restore checks it again and stops. */
-  const p0 = 'backups/' + DAY + '/part-000000.ndjson', orig = B.o.get(p0);
+  const p0 = partKey(B, DAY, 0), orig = B.o.get(p0);
   B.o.set(p0, JSON.stringify({ k: 'GLOBAL_KILL', v: '1' }) + '\n' + orig);
   env._m.set('GLOBAL_KILL', '0');
   freeze(true);
@@ -239,7 +246,7 @@ section('A night is put back only after a drill found all of it sound, through t
   ok(t.status === 422 && tb.code === 'restore_checksum' && env._m.get('GLOBAL_KILL') === '0', 'a part changed since the drill stops the restore before it is applied', tb);
   B.o.set(p0, orig);
   /* A missing part: the drill finds it, and the restore is not even started. */
-  const p1 = 'backups/' + DAY + '/part-000001.ndjson', orig1 = B.o.get(p1);
+  const p1 = partKey(B, DAY, 1), orig1 = B.o.get(p1);
   B.o.delete(p1);
   const d = await drillAll();
   ok(d.res.status === 422 && d.code === 'restore_incomplete', 'a missing part fails the drill and says where', d);
@@ -305,7 +312,7 @@ section('A backup counts only when it is signed, whole and drilled - by the cron
   env._m.set(dk, JSON.stringify(Object.assign(JSON.parse(drillRec), { sig: 'another manifest' })));
   ok((await W._backupProven(env, at)).fresh === false, 'a drill of a different manifest does not count for this one');
   env._m.set(dk, drillRec);
-  const parts = JSON.parse(orig).parts, last = 'backups/' + DAY + '/part-' + String(parts - 1).padStart(6, '0') + '.ndjson', lastBody = B.o.get(last);
+  const parts = JSON.parse(orig).parts, last = partKey(B, DAY, parts - 1), lastBody = B.o.get(last);
   B.o.delete(last);
   ok((await W._backupProven(env, at)).fresh === false, 'nor a night whose last part has gone since');
   B.o.set(last, lastBody);

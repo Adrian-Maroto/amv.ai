@@ -2248,3 +2248,30 @@ Five of seven had no test, for one reason: every suite gave its accounts room
 to spare, so the refusal never ran. Each now has an account whose own counter
 says the limit is reached, and asserts that nothing paid was started - no
 browser, no model call, no index write.
+
+## 15 November: the Build 15 audit
+
+An external audit brought twenty-six fault-injection reproductions against
+the real Worker source (`tests/audit/build15-*.mjs`), with seventeen repairs
+and three failures it said blocked an unrestricted paid launch. The repairs
+were merged after checking each against the source (one named a route that
+does not exist, `/auth/sessions/end`; corrected to `/v1/sessions/end` and
+`/v1/keys/revoke`). The three were then fixed here:
+
+- **B15-09, a stale read overwrites a newer security setting.** `acct`,
+  `ent`, `team`, `fam` and `apikeys` joined the revision authority: every
+  write commits against the revision it read, and a moved base is refused.
+  Cost, stated: each read of those kinds now also asks the Durable Object,
+  and fails closed when it cannot answer.
+- **B15-18, a backup misses a committed record with no usual copy.** Both
+  exports add a pass over committed snapshots; a snapshot that is the
+  committed revision, matches its digest, and has no usual key is backed up
+  under that key.
+- **B15-19, a stale retry damages a finished nightly backup.** Parts are
+  written under a per-run generation, and a signed complete manifest ends the
+  run.
+
+All twenty-six now pass and run inside the gate
+(`the-build-15-audit-stays-fixed`). Still unmeasured: none of this has run on
+live Cloudflare KV / Durable Objects or against a live Postgres - the
+reproductions use the repository's in-memory doubles.

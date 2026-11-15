@@ -509,6 +509,10 @@ async function authGoogle(request, env) {
     return _tokenResponse(env, tokens, { email: em, name, picture: claims.picture || '' });
   }catch(e){
     audit(env,'google_verify_error',{msg:String(e).slice(0,120)});
+    /* A record that is still settling (the revision authority could not be
+       asked) is a short wait, said as one - not "verification failed", which
+       sends somebody to check a Google account that is fine. */
+    if (e && e.amvRefusal) return json(e.amvRefusal.body, e.amvRefusal.status, { 'Retry-After': '30' });
     return json({ error:'verification failed' }, 500);
   }
 }
@@ -1758,6 +1762,10 @@ async function _eraseAccount(env, email, opt) {
                            reported as data surviving - so the queue entry goes too. */
                         `agentjarpend:${email}:`,
                         `revblob:data:${email}:`,
+                        /* The committed snapshots of the account, plan, family and
+                           API-key records since they joined the revision authority
+                           (Nov 15, B15-09) - each is a whole copy of the record. */
+                        `revblob:acct:${email}:`, `revblob:ent:${email}:`, `revblob:fam:${email}:`, `revblob:apikeys:${email}:`,
                         /* Each time support looked (83-support.js), one key a look. */
                         `accesslog:${email}:`,
                         /* Answers to writes kept under their Idempotency-Key (connAct). */

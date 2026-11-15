@@ -26,6 +26,18 @@ export function authObjectOp(name, body, store = authObjectOp._store) {
 }
 authObjectOp._store = new Map();
 
+/* A record's commit (revCommit / revGet / revReset), as the object keeps it:
+   revision and digest together, refused when it holds a newer one. */
+export function revCommitOp(name, b, store) {
+  if (!b || (b.op !== 'revCommit' && b.op !== 'revGet' && b.op !== 'revReset')) return null;
+  const k = 'rc|' + name; const cur = store.get(k);
+  const out = (o) => new Response(JSON.stringify(o));
+  if (b.op === 'revGet') return out(cur ? { committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent } : { committed: false, rev: 0 });
+  if (b.op === 'revReset') { store.set(k, b.absent ? { rev: (cur && cur.rev) || 0, absent: true } : { rev: +b.rev || 0, digest: String(b.digest || '') }); return out({ ok: true }); }
+  if (cur && !cur.absent && cur.rev > (+b.expect || 0)) return out({ ok: false, cur: cur.rev });
+  store.set(k, { rev: +b.set || 0, digest: String(b.digest || '') }); return out({ ok: true });
+}
+
 /* Wrap a hand-made AMV_COUNTER stand-in so it answers the auth operations
    faithfully (one shared store per wrapped namespace) and passes every other
    operation to the stand-in unchanged. */
@@ -51,14 +63,7 @@ export function withAuthOps(ns) {
            sync sees real conflicts, not a stand-in that says no to all. */
         /* The commit (revCommit/revGet/revReset), as the object keeps it:
            revision and digest together, refused when it holds a newer one. */
-        if (b.op === 'revCommit' || b.op === 'revGet' || b.op === 'revReset') {
-          const k = 'rc|' + String(id); const cur = store.get(k);
-          const out = (o) => new Response(JSON.stringify(o));
-          if (b.op === 'revGet') return out(cur ? { committed: !!(cur.digest || cur.absent), rev: cur.rev || 0, digest: cur.digest || null, absent: !!cur.absent } : { committed: false, rev: 0 });
-          if (b.op === 'revReset') { store.set(k, b.absent ? { rev: (cur && cur.rev) || 0, absent: true } : { rev: +b.rev || 0, digest: String(b.digest || '') }); return out({ ok: true }); }
-          if (cur && !cur.absent && cur.rev > (+b.expect || 0)) return out({ ok: false, cur: cur.rev });
-          store.set(k, { rev: +b.set || 0, digest: String(b.digest || '') }); return out({ ok: true });
-        }
+        { const r = revCommitOp(String(id), b, store); if (r) return r; }
         if (b.op === 'revCas') {
           const k = 'rev|' + String(id);
           const cur = store.get(k);
@@ -132,7 +137,22 @@ export function withAuthOnly(ns) {
       return { async fetch(u, init) {
         let body = {}; try { body = JSON.parse(init?.body || '{}'); } catch(_) { /* Pass malformed requests to the existing double. */ }
         const response = authObjectOp(String(id), body, store);
-        return response || inner.fetch(u, init);
+        if (response) return response;
+        /* Account records are committed through the object (B15-09): a
+           stand-in that does not know the commit is asked first, and only
+           one that cannot answer it is answered here. */
+        /* A stand-in models the commit only if it answers revGet with a
+           commit state; one that says {ok:true} to everything does not, and
+           its "ok" to a commit would be a commit that was never kept. */
+        if (body.op === 'revGet' && !store.has('rc-own')) {
+          const res = await inner.fetch(u, init);
+          let o = null; try { o = await res.clone().json(); } catch (e) { o = null; }
+          if (res.ok && o && typeof o === 'object' && typeof o.committed === 'boolean') { store.set('rc-inner', true); return res; }
+          store.set('rc-own', true);
+        }
+        if ((body.op === 'revCommit' || body.op === 'revReset') && store.get('rc-inner') && !store.has('rc-own')) return inner.fetch(u, init);
+        if (body.op === 'revCommit' || body.op === 'revGet' || body.op === 'revReset') return revCommitOp(String(id), body, store);
+        return inner.fetch(u, init);
       } };
     },
   });

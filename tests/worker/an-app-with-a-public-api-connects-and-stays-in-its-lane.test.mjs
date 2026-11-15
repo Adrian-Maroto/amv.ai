@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { authObjectOp } from '../lib/auth-object.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -42,13 +43,13 @@ function mkEnv() {
   return Object.assign({
     AMV_KV: { _map: m, async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
       async list({ prefix } = {}) { return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
-    AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
       const b = JSON.parse((init && init.body) || '{}');
       const a = authObjectOp(n, b); if (a) return a;
       /* A claim is held once, as the real object holds it. */
       if (b.op === 'claim') { if (claims.has(n)) return new Response(JSON.stringify({ claimed: false })); claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: n })); }
       if (b.op === 'release') { claims.delete(n); return new Response(JSON.stringify({ ok: true })); }
-      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
+      return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'the-secret-this-deployment-seals-connections-with',
   }, SECRETS);

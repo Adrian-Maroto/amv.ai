@@ -34,7 +34,14 @@ function _nightlyOn(env){
 }
 const _nightlyDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 const _nightlyStateKey = (day) => 'bkrun:' + day;
-const _nightlyPart = (day, n) => 'backups/' + day + '/part-' + String(n).padStart(6, '0') + '.ndjson';
+/* Parts live under the run that wrote them (Nov 15, Build 15 audit B15-19).
+   A retry from a lost or stale checkpoint used to write part-000000 again for
+   the same night - over a part a finished, signed manifest already vouched
+   for, so the backup was damaged and only its checksum said so. Each run now
+   has a generation of its own: a later run can never touch an earlier run's
+   bytes, and a manifest names the generation its checksums are for. A
+   manifest from before this has no `gen` and reads the old layout. */
+const _nightlyPart = (day, n, gen) => 'backups/' + day + '/' + (gen ? gen + '/' : '') + 'part-' + String(n).padStart(6, '0') + '.ndjson';
 const _nightlyManifest = (day) => 'backups/' + day + '/manifest.json';
 
 /* One tick's share. Returns what it did, for the log. */
@@ -67,7 +74,21 @@ async function _nightlyBackupSlice(env, atMs){
 
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
-  if (!st) st = { day, prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+  if (!st) {
+    /* No checkpoint for tonight - lost, expired or never written. A finished
+       night is told by its signed manifest, not by the checkpoint, so it is
+       not started again over the top of itself. */
+    let man = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); man = o ? JSON.parse(await o.text()) : null; } catch (e) { man = null; }
+    if (man && man.complete && await _manifestSigned(env, man)) {
+      st = { day, done: true, gen: man.gen || '', part: man.parts, count: man.keyCount, startedAt: man.startedAt };
+      await env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
+    } else {
+      const g = crypto.getRandomValues(new Uint8Array(8));
+      st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
+             prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+    }
+  }
   /* Done: the night is drilled on its own, slice by slice (REL-017) - a
      backup nobody has read back is not one readiness may count. */
   if (st.done) return Object.assign({ on: true, day, done: true }, await _nightlyDrillSlice(env, day));
@@ -75,12 +96,17 @@ async function _nightlyBackupSlice(env, atMs){
 
   const save = () => env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
   let parts = 0;
-  while (st.prefix < BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
-    const prefix = BACKUP_PREFIXES[st.prefix];
+  /* One stage past the prefixes: the records committed with no usual key
+     (B15-18, 27-backup-restore.js). */
+  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
+    const orphans = st.prefix === BACKUP_PREFIXES.length;
+    const prefix = orphans ? 'revblob:' : BACKUP_PREFIXES[st.prefix];
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
     const lines = [];
-    for (const k of (page.keys || [])) {
-      const raw = await _backupValue(env, k.name);
+    for (const k0 of (page.keys || [])) {
+      let k = k0, raw;
+      if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
+      else raw = await _backupValue(env, k.name);
       if (raw == null) continue;
       if (raw.length > BACKUP_MAX_VALUE_BYTES) {
         st.failed = k.name + ' is ' + raw.length + ' bytes, larger than a restore accepts';
@@ -99,7 +125,7 @@ async function _nightlyBackupSlice(env, atMs){
       /* Each part's checksum, kept for the manifest (Nov 1 audit DR-004): a
          restore checks every part against it before anything is written. */
       const sha = await _sha256Hex(body);
-      await env.AMV_BACKUPS.put(_nightlyPart(day, st.part), body, { httpMetadata: { contentType: 'application/x-ndjson' }, customMetadata: { sha256: sha } });
+      await env.AMV_BACKUPS.put(_nightlyPart(day, st.part, st.gen), body, { httpMetadata: { contentType: 'application/x-ndjson' }, customMetadata: { sha256: sha } });
       st.partSha = Array.isArray(st.partSha) ? st.partSha : [];
       st.partSha[st.part] = sha;
       st.part++; st.count += lines.length; parts++;
@@ -111,7 +137,7 @@ async function _nightlyBackupSlice(env, atMs){
        replays the current slice; do not claim KV is a transactional cursor. */
   }
 
-  if (st.prefix < BACKUP_PREFIXES.length) {
+  if (st.prefix <= BACKUP_PREFIXES.length) {
     await save();
     return { on: true, day, parts, count: st.count, more: true };
   }
@@ -120,7 +146,7 @@ async function _nightlyBackupSlice(env, atMs){
      audit REL-017), so a manifest somebody edited in the bucket - or one
      written by anything but this Worker - is not taken for a backup. */
   const man = {
-    _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part,
+    _amv_backup: 1, day, complete: true, keyCount: st.count, approxBytes: st.bytes, parts: st.part, gen: st.gen || undefined,
     partSha: Array.isArray(st.partSha) && st.partSha.length === st.part ? st.partSha : undefined,
     prefixes: BACKUP_PREFIXES, startedAt: st.startedAt, finishedAt: Date.now(),
     finishedISO: new Date().toISOString(),
@@ -236,7 +262,7 @@ async function _backupProven(env, now){
     if (!(await _manifestSigned(env, man))) { why = 'manifest not signed'; continue; }
     if (!Array.isArray(man.partSha) || man.partSha.length !== man.parts) { why = 'manifest without every checksum'; continue; }
     if (man.parts > 0) {
-      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1)).catch(() => null);
+      const last = typeof env.AMV_BACKUPS.head === 'function' ? await env.AMV_BACKUPS.head(_nightlyPart(day, man.parts - 1, man.gen)).catch(() => null) : await env.AMV_BACKUPS.get(_nightlyPart(day, man.parts - 1, man.gen)).catch(() => null);
       if (!last) { why = 'a part is missing'; continue; }
     }
     let d = null; try { d = JSON.parse((await env.AMV_KV.get(_drillKey(day))) || 'null'); } catch (e) { d = null; }
@@ -359,7 +385,15 @@ async function _restoreRollback(env, day, run, fromPart){
     for (const line of (await o.text()).split('\n')) {
       if (!line) continue;
       const r = JSON.parse(line);
-      if (r.v == null) await env.AMV_KV.delete(r.k); else await env.AMV_KV.put(r.k, r.v);
+      /* A guarded kind is committed as well as copied, the way the restore
+         committed it - or the restore's revision stays committed over the
+         value put back, and every reader of the record is refused as
+         "still settling" for good (data since STATE-007; acct, ent, team,
+         fam and apikeys since B15-09). */
+      const c = String(r.k).indexOf(':'), kind = c > 0 ? r.k.slice(0, c) : '', rid = c > 0 ? r.k.slice(c + 1) : '';
+      const guarded = REV_KINDS.has(kind) && !!rid;
+      if (r.v == null) { if (guarded) await _revCommitAbsent(env, kind, rid); await env.AMV_KV.delete(r.k); }
+      else { await env.AMV_KV.put(r.k, r.v); if (guarded) await _revCommitRestored(env, kind, rid, r.v); }
       put++;
     }
   }
@@ -409,7 +443,7 @@ async function _restoreFromNight(env, day, fromPart, mode, runIn){
   }
   for (; part < man.parts; part++) {
     if (Date.now() - started > NIGHTLY_SLICE_MS) break;
-    const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part));
+    const o = await env.AMV_BACKUPS.get(_nightlyPart(day, part, man.gen));
     if (!o) {
       /* The night is no longer whole: whatever drill said otherwise is void. */
       try { await env.AMV_KV.delete(_drillKey(day)); await env.AMV_KV.delete(_drillKey(day) + ':run'); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }

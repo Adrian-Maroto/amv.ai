@@ -42,7 +42,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'payoutdecide.harness.mjs');
-writeFileSync(harness, src + '\nexport { PAYOUT_RESERVE_PCT, PAYOUT_RESERVE_MS, PAYOUT_HOLD_MS, PAYOUT_AUTO_MAX_USD, PAYOUT_KYC_THRESHOLD_USD, PAYOUT_MIN_AGE_DAYS, _payoutRisk, _availableOf, _creditSale };\n');
+writeFileSync(harness, src + '\nexport { DB, PAYOUT_RESERVE_PCT, PAYOUT_RESERVE_MS, PAYOUT_HOLD_MS, PAYOUT_AUTO_MAX_USD, PAYOUT_KYC_THRESHOLD_USD, PAYOUT_MIN_AGE_DAYS, _payoutRisk, _availableOf, _creditSale };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -98,9 +98,9 @@ const signup = async (env, email) =>
    case, which is the one that has to stop needing a human. */
 async function seller(env, email, { ageDays = 200, balance = 50, buyers = 6, disputes = 0, paidOut = 0 } = {}) {
   const tok = await signup(env, email);
-  const acct = JSON.parse(env.AMV_KV._map.get('acct:' + email));
+  const acct = await W.DB.get(env, 'acct', email);
   acct.createdAt = Date.now() - ageDays * 86400000;
-  env.AMV_KV._map.set('acct:' + email, JSON.stringify(acct));
+  await W.DB.put(env, 'acct', email, acct);
   /* Anything touching money is gated on a confirmed birth year, which is its
      own defence and not the one under test here. Set so these cases exercise
      the payout decision rather than stopping at the age wall. */

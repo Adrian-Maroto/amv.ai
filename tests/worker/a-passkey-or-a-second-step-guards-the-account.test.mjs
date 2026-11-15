@@ -282,7 +282,7 @@ section('One credential registered from two accounts at once: one wins; a failed
   const k2 = await makeAuthenticator();
   const oc = await call('/auth/passkey/options', { purpose: 'register' }, cTok);
   const realPut = env.AMV_KV.put;
-  env.AMV_KV.put = async (key, v, o) => { if (String(key) === 'acct:cal@example.com') throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
+  env.AMV_KV.put = async (key, v, o) => { if (/^(?:revblob:)?acct:cal@example\.com(?::|$)/.test(String(key))) throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
   const fail = await call('/auth/passkey/register', { cid: oc.d.cid, credential: await k2.create({ challenge: oc.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, cTok);
   env.AMV_KV.put = realPut;
   ok(fail.status !== 200 && !m.has('pkcred:' + k2.credId), 'a passkey whose account could not be saved leaves no index behind', [fail.status, m.get('pkcred:' + k2.credId)]);
@@ -389,7 +389,7 @@ section('Invite-only: a passkey sign-up needs the invite, spends it once, and ha
     /* The write fails after the use is taken: the use comes back. */
     const pk2 = await makeAuthenticator();
     const put = env.AMV_KV.put; let failed = 0;
-    env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('acct:inv-lost@')) { failed++; throw new Error('storage is down'); } return put.call(env.AMV_KV, k, v); };
+    env.AMV_KV.put = async (k, v) => { if (/^(?:revblob:)?acct:inv-lost@/.test(String(k))) { failed++; throw new Error('storage is down'); } return put.call(env.AMV_KV, k, v); };
     let st = 0; try { st = (await reg('inv-lost@example.com', CODE, pk2)).status; } catch (e) { st = 500; }
     env.AMV_KV.put = put;
     ok(failed > 0 && st >= 500 && (vals.get('betainvuse:' + CODE) || 0) === 0, 'an account that could not be written hands the use back', { failed, st, used: vals.get('betainvuse:' + CODE) });
@@ -448,7 +448,7 @@ section('A confirmation the account could not save leaves the setup usable (Nov 
   const st = await call('/auth/totp/start', { proof: { password: P } }, t);
   const c = await W._totpAt(st.d.secret, Math.floor(Date.now() / 30000));
   const realPut = env.AMV_KV.put;
-  env.AMV_KV.put = async (key, v, o) => { if (String(key) === 'acct:' + EM) throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
+  env.AMV_KV.put = async (key, v, o) => { if (String(key) === 'acct:' + EM || String(key).startsWith('revblob:acct:' + EM + ':')) throw new Error('store down'); return realPut.call(env.AMV_KV, key, v, o); };
   const fail = await call('/auth/totp/confirm', { code: c }, t);
   env.AMV_KV.put = realPut;
   ok(fail.status !== 200 && fail.d.code === 'totp_not_saved', 'the failure says nothing was changed', fail.d.code);

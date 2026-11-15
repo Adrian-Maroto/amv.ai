@@ -47,7 +47,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgbackfill.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest, _pgCutover, _auditPid };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _revCommitRestored, _revCommitAbsent, _pgSettle, runPgBackfill, pgBackfillRoute, pgShadowRoute, _pgLeaseRelease, _pgClient, _pgDigest, _pgCutover, _auditPid };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -243,12 +243,16 @@ section('A change that lands while an account is being read back is not a differ
   q("update migration_cursor set cursor=null, copied=0 where kind='verify'");
   await W.pgBackfillRoute(admin('POST', { action: 'start' }), env);
   const key = 'acct:p020@example.com', get = kv.get; let reads = 0;
-  const renamed = () => JSON.stringify(Object.assign(JSON.parse(store.get(key)), { name: 'Renamed' }));
+  /* The rename is committed in KV (as a write is, since B15-09); Postgres
+     catches up between the first look and the second. */
+  const renamed = JSON.stringify(Object.assign(JSON.parse(store.get(key)), { name: 'Renamed' }));
+  const kvCommitEarly = async () => { store.set(key, renamed); await W._revCommitRestored(env, 'acct', 'p020@example.com', renamed); };
+  await kvCommitEarly();
   kv.get = async (k) => {
     if (k !== key) return get(k);
     reads++;
     if (reads === 2) q("update accounts set name='Renamed' where email='p020@example.com'");
-    return renamed();
+    return get(k);
   };
   audits.length = 0;
   const { last } = await runToEnd();
@@ -259,6 +263,11 @@ section('A change that lands while an account is being read back is not a differ
 }
 
 /* ── Step 4: shadow reads ───────────────────────────────────────────────── */
+/* KV changed underneath, the way it does for these records since Nov 15
+   (B15-09): committed in the object, not just the copy - a copy that does not
+   match what is committed is not the record, and no read answers it. */
+const kvCommit = async (kind, id, value) => { store.set(kind + ':' + id, value); await W._revCommitRestored(env, kind, id, value); };
+const kvGone = async (kind, id) => { await W._revCommitAbsent(env, kind, id); store.delete(kind + ':' + id); };
 const shadowAudits = (id) => audits.filter(a => (a.event === 'pg_shadow_mismatch' || a.event === 'pg_shadow_failed') && a.id === W._auditPid(env, id));
 const compared = () => [...counters.entries()].filter(([k]) => /^pgshadow:.*:compared:s\d+$/.test(k)).reduce((t, [, v]) => t + v, 0);
 
@@ -305,7 +314,7 @@ section('Shadow reads: a difference is found, counted - and KV still answers');
 section('Shadow reads: a record KV no longer has is compared too');
 {
   env.PG_SHADOW = 'p039@example.com';
-  store.delete('ent:p039@example.com');
+  await kvGone('ent', 'p039@example.com');
   audits.length = 0;
   ok((await W.DB.get(env, 'ent', 'p039@example.com')) === null, 'KV answers: no plan');
   await W._pgSettle();
@@ -317,7 +326,7 @@ section('Shadow reads: a write on its way to Postgres is not a difference');
   /* KV already has the new plan; the Postgres write lands before the second
      look (which is the second read of the key). */
   env.PG_SHADOW = 'p036@example.com';
-  store.set('ent:p036@example.com', JSON.stringify({ plan: 'pro', source: 'stripe' }));
+  await kvCommit('ent', 'p036@example.com', JSON.stringify({ plan: 'pro', source: 'stripe' }));
   const get = kv.get; let reads = 0;
   kv.get = async (k) => {
     if (k === 'ent:p036@example.com' && ++reads === 2) q("update entitlements set plan='pro' where account_id=(select id from accounts where email='p036@example.com')");

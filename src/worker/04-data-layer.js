@@ -37,11 +37,22 @@
    columns rather than finding the edge exactly. */
 const D1_ROW_MAX_BYTES = 1900000;
 /* Records whose writes go through putIfRev, and are read as committed. */
-const REV_KINDS = new Set(['data']);
+/* Records whose writes go through the revision authority and are read as
+   committed. `data` (chats) since Nov 3; the account, plan, team, family and
+   API-key records since Nov 15 (Build 15 audit B15-09, owner yes): a lock
+   around a KV read serialised two changes but did not make the value it read
+   current, so a change of name could put back a second sign-in step that had
+   just been turned on. Every write of these kinds commits an exact revision
+   (DB.put below, the lock in _withRecord) and every read takes the committed
+   copy (_revRead). */
+const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
+/* Of those, the ones written whole by DB.put rather than by a caller that
+   already merges against a revision (chats do, through putIfRev). */
+const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
-const _revBlobKeyOK = (k) => /^revblob:data:[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
+const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -92,6 +103,25 @@ class RecordSettlingError extends Error {
     /* An answer, not a fault (the router's amvRefusal): a short wait, said as one. */
     this.amvRefusal = { status: 503, body: { error: 'Your latest changes are still arriving here. Try again in a few seconds.', code: 'record_settling' } };
   }
+}
+/* A whole record committed through the revision authority, going on from
+   whatever revision is current (writers that read-modify-write do it under
+   _withRecord's lock, and their read is the committed copy). Never a silent
+   no-op: an authority that cannot be asked, or a write that keeps losing the
+   race, throws - the caller's change was not made and it must not be told
+   otherwise. */
+async function _revPutCurrent(env, kind, id, obj){
+  for(let i = 0; i < 4; i++){
+    let st = null;
+    try { st = await counter(env, _revName(kind, id), { op: 'revGet' }); } catch(e) { st = null; }
+    if(!st || st.unavailable) throw new RecordSettlingError(kind + ':' + id);
+    const base = +st.rev || 0;
+    obj._rev = base + 1;
+    const r = await DB.putIfRev(env, kind, id, obj, base);
+    if(r && r.ok) return;
+    if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
+  }
+  const busy = new Error(kind + ' is being written by somebody else'); busy.code = 'record_busy'; throw busy;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -240,7 +270,20 @@ const DB = {
     }
     const epoch = await _pgReadFence(env, kind, id);
     const ik = await _pgIntent(env, kind, id);
-    await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    if(REV_PUT_KINDS.has(kind) && env.AMV_COUNTER){
+      /* Committed through the revision authority, from whatever revision is
+         current - a whole-record write is last-writer-wins, as it always was,
+         but it is now the committed value every reader takes, rather than a
+         KV copy a reader elsewhere may not see for a minute. A writer that
+         reads, changes and writes does it under _withRecord's lock, and its
+         read is this committed value - so it never writes back a stale one
+         (B15-09). (Passing the revision read into this write was tried and
+         taken out: several callers write the record themselves inside the
+         lock, and a second write at the old revision refused all of them.) */
+      await _revPutCurrent(env, kind, id, obj);
+    } else {
+      await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    }
     /* The Postgres row too, once the store has it (04a-control-plane.js) -
        before going on, for a record Postgres answers (04d-pg-read.js). Its
        intent is cleared only when Postgres has it or a repair entry does;

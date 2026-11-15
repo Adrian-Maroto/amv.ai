@@ -28,6 +28,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -59,7 +60,7 @@ function mkEnv(opts = {}) {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
@@ -68,7 +69,7 @@ function mkEnv(opts = {}) {
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil() {}, passThroughOnException() {} };
@@ -233,7 +234,7 @@ section('A counter that is down does not lock the operator out mid-incident');
      of storage being broken. The token check is untouched either way. */
   const env = mkEnv();
   const broken = Object.assign({}, env, {
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) },
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) }),
   });
   const r = await hitAdmin(broken, '/admin/readiness', ADMIN, '7.7.7.7');
   ok(r.status === 200, 'the operator still gets in', r.status);

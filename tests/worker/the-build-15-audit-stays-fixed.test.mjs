@@ -2,8 +2,11 @@
 
    The Build 15 audit came with its own fault-injection reproductions in
    tests/audit - twenty-six checks against the real Worker source. Seventeen
-   repairs pass; three architectural failures (B15-09, B15-18, B15-19) are
-   still open and were reported as blocking an unrestricted paid launch.
+   repairs passed; three architectural failures (B15-09, B15-18, B15-19)
+   were reported as blocking an unrestricted paid launch. All three were
+   closed Nov 15 (account records joined the revision authority; backups
+   find records committed with no usual copy; each nightly run writes its
+   parts under a generation of its own).
 
    An audit's reproduction is a suite, not a folder beside the suites
    (LESSONS 636): this runs both scripts inside the gate. Every check must
@@ -17,7 +20,7 @@ import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const OPEN = new Set(['B15-09', 'B15-18', 'B15-19']);
+const OPEN = new Set([]);   // none open; a check put here must still FAIL
 const out = mkdtempSync(join(tmpdir(), 'b15-'));
 
 for (const name of ['build15-regressions', 'build15-backup-regressions']) {

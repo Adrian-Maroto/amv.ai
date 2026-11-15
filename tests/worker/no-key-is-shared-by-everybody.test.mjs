@@ -40,7 +40,11 @@ section('One chat turn stays inside its storage budget');
   /* Nov 1 audit USAGE-001: was 20.4 with the month figures written one
      object at a time; they are one call now. Includes the once-ever marks of
      an account's first answer, so a returning person's turn is lower still. */
-  ok(c.doCallsPerReq <= 18.5, 'counter calls per turn', c.doCallsPerReq);
+  /* Nov 15, B15-09: 20 - the account and plan records are read as COMMITTED
+     now, which asks their object for its revision. That is the price of a
+     read that cannot be stale, paid on purpose; the ceiling moved by what it
+     costs and no further. */
+  ok(c.doCallsPerReq <= 20.5, 'counter calls per turn', c.doCallsPerReq);
   const objs = Object.keys(r.chatObjects || {});
   ok(objs.some(k => /^econ:.* tallyMany$/.test(k)) && (r.chatObjects[objs.find(k => /^econ:/.test(k))] / USERS) === 1,
     'the owner\u2019s month figures for a turn are written in one call', objs.filter(k => /^econ/.test(k)));

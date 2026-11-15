@@ -165,7 +165,10 @@ section('Everything that COULD go, still went');
 
   ok(!(await W.DB.get(env, lastKind, USER)),
      'a kind AFTER the failing one is still deleted - the loop does not give up', lastKind);
-  ok(!!(await W.DB.get(env, firstKind, USER)), 'and only the one that failed remains', firstKind);
+  /* Its stored copy is what failed to go. (A guarded kind's delete commits
+     the absence first since Nov 15, so a READ already answers "absent" - the
+     bytes are still there, and that is what erasure has to report.) */
+  ok((await env.AMV_KV.get(firstKind + ':' + USER)) != null, 'and only the one that failed remains', firstKind);
 
   const stillThere = [];
   for (const k of ['ent', 'data', 'auto']) {

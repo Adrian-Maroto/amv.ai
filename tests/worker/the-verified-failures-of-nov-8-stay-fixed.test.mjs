@@ -272,7 +272,7 @@ section('The second sign-in step is on only when the account says so (R18)');
   const e = environment(), email = 'audit@example.com', token = await seed(e, email), secret = W._totpNewSecret();
   e._kv.set('totpset:' + email, await W.connSeal(e, { t: 'totpset', s: secret }));
   const code = await W._totpAt(secret, Math.floor(Date.now() / 30000)); const entered = gate(), resume = gate(); let once = true;
-  e._put = async (k) => { if (k === 'acct:' + email && once) { once = false; entered.resolve(); await resume.promise; throw new Error('simulated account commit failure'); } };
+  e._put = async (k) => { if (String(k).startsWith('revblob:acct:' + email + ':') && once) { once = false; entered.resolve(); await resume.promise; throw new Error('simulated account commit failure'); } };
   const first = W.totpConfirm(request('/auth/totp/confirm', { code }, token), e); await entered.promise;
   const replay = await W.totpConfirm(request('/auth/totp/confirm', { code }, token), e); const body = await replay.json();
   resume.resolve(); const original = await first;

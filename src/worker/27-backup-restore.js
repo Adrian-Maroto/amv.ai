@@ -473,6 +473,40 @@ async function _backupValue(env, key){
   return raw;
 }
 
+/* A RECORD THE LISTING CANNOT SEE (Nov 15, Build 15 audit B15-18).
+
+   Backups find records by listing their usual key. A record written through
+   the revision authority is committed the moment its snapshot is (revblob:),
+   and its usual key is only a copy - which can fail and be repaired by the
+   next read. A record committed that way and never copied was invisible to
+   both exports, and the export still said complete. This finds them from the
+   other side: every committed snapshot whose usual key is absent is the
+   record, read and checked against the committed digest, and backed up under
+   its usual key. A snapshot that is not the committed one (an older revision,
+   or a candidate kept because a commit's answer was lost) is skipped. */
+async function _backupCommittedKey(env, blobKey){
+  const m = /^revblob:([a-z]+):([^\s:]{1,320}):(\d{1,15})(?::([a-f0-9]{64}))?$/.exec(String(blobKey));
+  if (!m || !REV_KINDS.has(m[1]) || !BACKUP_PREFIXES.includes(m[1] + ':')) return null;
+  const kind = m[1], id = m[2], rev = +m[3], dg = m[4] || '';
+  const key = kind + ':' + id;
+  if ((await env.AMV_KV.get(key)) != null) return null;          // listed, and backed up, under its own key
+  if (!env.AMV_COUNTER) return null;
+  const st = await counter(env, _revName(kind, id), { op: 'revGet' });
+  if (!st || st.unavailable) throw new Error('backup incomplete: the revision of ' + key + ' could not be read');
+  if (!st.committed || st.absent || st.rev !== rev || (dg && dg !== st.digest)) return null;
+  const raw = await env.AMV_KV.get(blobKey);
+  if (raw == null || (await _revDigest(raw)) !== st.digest) return null;
+  return { key, raw };
+}
+async function* _backupCommittedOrphans(env){
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'revblob:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) { const got = await _backupCommittedKey(env, k.name); if (got) yield got; }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+}
+
 /* POST /admin/backup/export → a JSON snapshot of all durable data. */
 async function backupExport(request, env){
   /* The most expensive route in the product: it reads every record under every
@@ -560,6 +594,8 @@ async function backupExport(request, env){
             cursor = page.list_complete ? undefined : page.cursor;
           } while (cursor);
         }
+        /* And the records committed with no usual key (B15-18). */
+        if (!DB._hasD1(env)) for await (const o of _backupCommittedOrphans(env)) yield emit(o.key, o.raw);
 
         // When D1 is the source of truth, KV won't hold these records - pull
         // them from D1 too so the export is a COMPLETE recovery artifact.
@@ -674,7 +710,12 @@ async function _restoreEntries(env, entries, mode, t){
       await env.AMV_KV.put(key, merged.value);
       /* A record read as committed (STATE-007) is committed as restored, or
          readers would go on answering with the value from before. */
-      if (key.startsWith('data:')) await _revCommitRestored(env, 'data', key.slice(5), merged.value);
+      /* Every kind read through the revision authority, not only chats -
+         the account, plan, team, family and API-key records joined it on
+         Nov 15 (B15-09), and without this a restored one would be answered
+         from the snapshot that was committed before. */
+      { const c = key.indexOf(':'); const k = key.slice(0, c);
+        if (REV_KINDS.has(k)) await _revCommitRestored(env, k, key.slice(c + 1), merged.value); }
       /* A balance is read from its strong record (Nov 8 verified audit R03),
          so a restored one is written there too. */
       if (key.startsWith('wallet:')) await _walletAdopt(env, key.slice(7), merged.value);

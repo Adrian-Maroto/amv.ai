@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -80,7 +81,7 @@ function mkEnv(readDelayMs = 12) {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = n.get(x) || 0;
@@ -90,7 +91,7 @@ function mkEnv(readDelayMs = 12) {
         if (b.op === 'rateCheck') { n.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },
@@ -315,7 +316,11 @@ section('And it holds in the order that actually breaks it');
   env.AMV_KV._onGet = null;
 
   ok(reset && reset.body.ok === true, 'the reset went through first', reset && (reset.body.error || 'ok'));
-  ok(login.status === 200, 'and the login with the old password was still valid at the time', login.status);
+  /* The login's read was in flight when the reset committed. Since account
+     records joined the revision authority (B15-09) a read answers the
+     COMMITTED record, so the login sees the reset and the old password is
+     refused - it used to be checked against the copy read before it. */
+  ok(login.status === 401, 'and the login, deciding after the reset, does not accept the old password', login.status);
 
   const withNew = await post(env, '/auth/login', { email: EMAIL, password: NEW });
   ok(!!withNew.body.token, 'the new password still opens the account afterwards', withNew.body.error || withNew.status);

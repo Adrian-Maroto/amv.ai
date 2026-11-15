@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -40,7 +41,7 @@ const env = { AMV_KV: makeKV(), JWT_SECRET: 'test-jwt-secret', APP_URL: 'https:/
   /* Every account here is under a run of wrong passwords (value 6 on its
      sign-in failure count), which is when a sign-in code is sent at all since
      Oct 31 - and the code's language is what this file is about. */
-  AMV_COUNTER: { idFromName: n => n, get: (n) => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: /^signinfail:/.test(n) ? 6 : 0, claimed: true })); } }) } };
+  AMV_COUNTER: withAuthOnly({ idFromName: n => n, get: (n) => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: /^signinfail:/.test(n) ? 6 : 0, claimed: true })); } }) }) };
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 let ip = 10;
 const call = (path, body, headers) => W.default.fetch(new Request('https://api.amv.test' + path, { method: 'POST',

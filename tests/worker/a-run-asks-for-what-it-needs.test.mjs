@@ -25,6 +25,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -177,7 +178,7 @@ function mkEnv() {
         return { keys: all.slice(0, limit || 1000), list_complete: true };
       },
     },
-    AMV_COUNTER: { idFromName: (x) => x, get: (x) => ({ async fetch(_u, init) {
+    AMV_COUNTER: withAuthOnly({ idFromName: (x) => x, get: (x) => ({ async fetch(_u, init) {
       const b = JSON.parse(init.body); const cur = vals.get(x) || 0;
       if (b.op === 'checkCap') return new Response(JSON.stringify({ allowed: cur < b.cap, value: cur }));
       if (b.op === 'incr') { vals.set(x, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(x) })); }
@@ -185,7 +186,7 @@ function mkEnv() {
       if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
       if (b.op === 'release') return new Response(JSON.stringify({ released: true }));
       return new Response(JSON.stringify({ allowed: true, value: cur }));
-    } }) },
+    } }) }),
   };
 }
 

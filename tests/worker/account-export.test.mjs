@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -45,7 +46,7 @@ const env = {
     async delete(k) { store.delete(k); },
     async list({ prefix }) { return { keys: [...store.keys()].filter(k => k.startsWith(prefix || '')).map(name => ({ name })), list_complete: true }; },
   },
-  AMV_COUNTER: {
+  AMV_COUNTER: withAuthOnly({
     idFromName: (n) => n,
     get: (id) => ({
       async fetch(_u, init) {
@@ -56,7 +57,7 @@ const env = {
         return new Response(JSON.stringify({ value: cur, allowed: true }));
       },
     }),
-  },
+  }),
 };
 globalThis.fetch = async () => new Response('{}', { status: 200 });
 W.__setRequireUser(async () => ({ email: 'me@x.com', plan: 'pro', customCfg: null }));

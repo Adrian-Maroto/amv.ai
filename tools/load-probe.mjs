@@ -45,7 +45,7 @@ export async function probe({ users = 200 } = {}) {
   /* Who is making the current request, so every operation can be attributed. */
   let who = '', route = '';
   const kvOps = [], doOps = [];
-  const store = new Map(), vals = new Map();
+  const store = new Map(), vals = new Map(), revs = new Map();
   const env = {
     AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example', JWT_SECRET: 'j'.repeat(48),
     APP_URL: 'https://amv.test', GLOBAL_DAILY_USD_CAP: '5000',
@@ -71,6 +71,17 @@ export async function probe({ users = 200 } = {}) {
         if (b.op === 'tallyMany') return out({ ok: true, many: true });
         if (b.op === 'tallyFields') return out({ fields: {} });
         if (b.op && b.op.startsWith('auth')) return out({ seeded: true, epoch: 0, ended: false });
+        /* A record's commit, by the object's own rules (07-atomic-counters.js):
+           exact base, a delete is a new generation. Account records are
+           committed through it since Nov 15 (B15-09). */
+        if (b.op === 'revGet' || b.op === 'revCommit' || b.op === 'revReset') {
+          const rc = revs.get(n);
+          if (b.op === 'revGet') return out(!rc ? { committed: false, rev: 0 } : rc.absent ? { committed: true, rev: rc.rev, digest: null, absent: true } : { committed: true, rev: rc.rev, digest: rc.digest, absent: false });
+          if (b.op === 'revReset') { const was = rc ? rc.rev : 0; revs.set(n, b.absent ? (rc && rc.absent ? rc : { rev: was + 1, absent: true }) : { rev: +b.rev || 0, digest: String(b.digest || '') }); return out({ ok: true }); }
+          if (rc && rc.rev !== b.expect) return out({ ok: false, cur: rc.rev });
+          if (!(b.set > b.expect) || !b.digest) return out({ ok: false, code: 'bad_revision' });
+          revs.set(n, { rev: b.set, digest: b.digest }); return out({ ok: true });
+        }
         return out({ allowed: true, value: cur });
       } }),
     },

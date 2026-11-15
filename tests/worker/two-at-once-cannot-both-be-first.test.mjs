@@ -32,6 +32,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -75,7 +76,7 @@ function mkEnv() {
     },
     /* The Durable Object serialises; the claim is what the record lock is built
        on, so it has to behave like the real one or the lock proves nothing. */
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ fetch(_u, init) {
         return serialise(async () => {
@@ -99,7 +100,7 @@ function mkEnv() {
           return new Response(JSON.stringify({ allowed: true, value: cur }));
         });
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },

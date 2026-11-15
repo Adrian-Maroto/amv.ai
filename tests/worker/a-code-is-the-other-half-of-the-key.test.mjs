@@ -250,8 +250,9 @@ section('A code sent before the account was deleted signs nobody in');
   const env = mkEnv();
   const s = await signedUp(env, { email: 'gone@example.com', name: 'G', password: PW });
   const code = codeFor('gone@example.com');
-  const { keys } = await env.AMV_KV.list({});
-  for (const k of keys) if (/^acct:.*gone@example\.com/.test(k.name)) await env.AMV_KV.delete(k.name);
+  /* Gone the way an account goes: deleted through the store, which commits
+     the absence (a raw KV delete of the copy leaves the committed record). */
+  await W.DB.del(env, 'acct', 'gone@example.com');
   const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code });
   ok(!v.d.token && v.d.code === 'code_expired', 'the account is gone, so the code is refused', v.d);
 }

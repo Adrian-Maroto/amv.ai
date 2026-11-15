@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withAuthOnly } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -65,7 +66,7 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
-    AMV_COUNTER: {
+    AMV_COUNTER: withAuthOnly({
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body);
@@ -75,7 +76,7 @@ function mkEnv() {
         if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));
       } }),
-    },
+    }),
   };
 }
 const ctx = { waitUntil(p) { this._p = this._p || []; if (p) this._p.push(Promise.resolve(p).catch(() => {})); },
@@ -170,15 +171,43 @@ section('Signing in again is not a second signup');
 section('The accounting never breaks a signup');
 {
   /* Whatever else is true, somebody creating an account does not care about the
-     funnel. Every counter fails here; the account must still be created. */
+     funnel. The funnel's counters fail here; the account must still be created.
+     (The account record itself is committed through the object since Nov 15,
+     B15-09, so it is only the accounting ops that fail here - the object being
+     down altogether is the next case.) */
+  const env = mkEnv();
+  const inner = env.AMV_COUNTER;
+  const accountingDown = Object.assign({}, env, {
+    AMV_COUNTER: { idFromName: (n) => inner.idFromName(n), get: (id) => {
+      const o = inner.get(id);
+      return { async fetch(u, init) {
+        let b = {}; try { b = JSON.parse((init && init.body) || '{}'); } catch (e) {}
+        if (/^(?:rev|auth)/.test(String(b.op || ''))) return o.fetch(u, init);
+        throw new Error('counter down');
+      } };
+    } },
+  });
+  const r0 = await g(accountingDown, 'counted@example.com');
+  await ctx.settle();
+  ok(r0.status === 200, 'with the counters down, the person still gets their account', r0.status);
+  ok(!!accountingDown.AMV_KV._map.get('acct:counted@example.com'), 'which really exists');
+}
+
+section('With the object down altogether, a sign-up waits rather than half-happens');
+{
+  /* Account records are committed through the object (B15-09). With it gone,
+     an account cannot be committed, so the answer is a retryable 503 that says
+     so - never a 500 "verification failed", and never an account made in a
+     way its next read cannot confirm. */
   const env = mkEnv();
   const broken = Object.assign({}, env, {
-    AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) },
+    AMV_COUNTER: withAuthOnly({ idFromName: (n) => n, get: () => ({ async fetch() { throw new Error('counter down'); } }) }),
   });
   const r = await g(broken, 'resilient@example.com');
   await ctx.settle();
-  ok(r.status === 200, 'the person still gets their account', r.status);
-  ok(!!broken.AMV_KV._map.get('acct:resilient@example.com'), 'which really exists',
+  const rd = await r.clone().json().catch(() => ({}));
+  ok(r.status === 503 && rd.code === 'record_settling', 'the person is told to try again in a moment', [r.status, rd]);
+  ok(!broken.AMV_KV._map.get('acct:resilient@example.com'), 'and no account copy is left behind for a read to trust',
      [...broken.AMV_KV._map.keys()].filter(k => k.startsWith('acct:')));
 }
 
