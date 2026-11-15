@@ -205,7 +205,8 @@ section('From the card, the way to what is missing is one press away');
      the job. The card itself is clean since Nov 15 (no requirement line, no
      button of its own - the owner's call); pressing it opens the panel, whose
      one filled button is Connect what it needs, and that must reach the
-     bank, not a grant flow that has nothing for one. */
+     bank, not a grant flow that has nothing for one. With one thing missing
+     it goes straight there; with several, to the list of them. */
   const r = await page.evaluate(async (jid) => {
     closeOvr(); await new Promise(res => setTimeout(res, 150));
     _cwSetCountry('US'); setTab('crew'); await new Promise(res => setTimeout(res, 900));
@@ -216,13 +217,15 @@ section('From the card, the way to what is missing is one press away');
     card.click(); await new Promise(res => setTimeout(res, 400));
     const go = document.getElementById('cwp-need-go2');
     if (!go) return { noButton: true };
+    const missing = _cwNeedsPlan(_cwFindJob(jid)).filter(p => !p.met).length;
     go.click(); await new Promise(res => setTimeout(res, 600));
-    return { onNeeds: !!document.getElementById('cwn-back'), rows: document.querySelectorAll('.cwn-row').length,
+    return { missing, onNeeds: !!document.getElementById('cwn-back'), rows: document.querySelectorAll('.cwn-row').length,
+             bank: !!document.querySelector('#ovr .bank-dlg'),
              kinds: [...document.querySelectorAll('.cwn-go')].map(b => b.dataset.cwnKind) };
   }, shapes.bank);
   ok(!r.noCard && !r.noButton, 'the card opens the panel, and the panel offers Connect what it needs', r);
-  ok(r.onNeeds && r.rows > 0, 'which opens what the job needs', r);
-  ok((r.kinds || []).indexOf('bank') >= 0, 'routed as a bank, rather than at a grant flow that has nothing for one', r.kinds);
+  ok(r.missing === 1 ? r.bank : (r.onNeeds && r.rows > 0 && r.kinds.indexOf('bank') >= 0),
+     r.missing === 1 ? 'one thing missing: it opens the bank link itself' : 'several missing: the list, with the bank routed as a bank', r);
 }
 
 ok(errors.length === 0, 'and none of it raised an error', errors);
