@@ -321,7 +321,7 @@ function cwPeek(id){
   let firstGo = true;
   const useRow = (u) => {
     const btn = u.met ? `<span class="cwp-u-ok">${escH(T('Connected'))}</span>`
-      : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="1">${escH(T('Connect'))}</button>`;
+      : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="${escH(u.name)}">${escH(T('Connect'))}</button>`;
     if(!u.met && !u.optional) firstGo = false;
     return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
       <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(T('Optional'))}</small>` : ''}</span>${btn}</li>`;
@@ -393,9 +393,12 @@ function cwPeek(id){
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
   const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
+  /* One thing missing: straight to where it is connected. More than one: the
+     list of them, each with its own way in. */
   const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
-  r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
-  on($('cwp-need-go2'),'click',toNeeds);
+  const req = uses.filter(u => !u.met && !u.optional);
+  r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', () => { pick(); try{ _cwConnectNeed(j, b.dataset.cwpConnect); }catch(e){ toNeeds(); } }));
+  on($('cwp-need-go2'),'click',() => req.length === 1 ? (pick(), (() => { try{ _cwConnectNeed(j, req[0].name); }catch(e){ toNeeds(); } })()) : toNeeds());
   on($('cwp-cad'),'change',function(){
     const v = this.value;
     const d = $('cwp-day'); if(d) d.hidden = v !== 'weekly';

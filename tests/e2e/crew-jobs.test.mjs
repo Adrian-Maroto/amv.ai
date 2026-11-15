@@ -65,51 +65,45 @@ section('There is a lot of it, and every one is reachable');
      (and anything switched on), each category ends in See all with its real
      count, and the category view holds every one. The shelf is still
      CW_SHOWCASE_N; All is the part of it drawn at once. */
-  const cap = await page.evaluate(() => CW_SHOWCASE_N);
-  shelf = await page.evaluate(() => {
-    const pool = _cwShowcase(), by = {};
-    pool.forEach(j => { (by[j.cat] = by[j.cat] || []).push(j); });
-    const expect = Object.values(by).reduce((s, l) => { let n = 0; return s + l.filter(j => j.on || n++ < CW_CAT_PREVIEW).length; }, 0);
-    const more = [...document.querySelectorAll('.cw-cat-more .int-seemore')].map(b => [b.dataset.darg, Number((b.textContent.match(/\d+/) || [0])[0])]);
-    return { pool: pool.length, expect,
-             seeAllRight: more.length > 0 && more.every(([c, k]) => (by[c] || []).length === k),
-             seeAllWhere: Object.entries(by).filter(([c, l]) => l.length > CW_CAT_PREVIEW).length === more.length };
+  /* AND THEN IT BECAME ONE LIST (Nov 15, owner: one box, one list). Every job
+     AMV can run for this country is in it - switched-on first, the country's
+     own, the ones that run anywhere, then the catalogue of its real services -
+     and only the first rows are drawn, more on Show more. The property is
+     unchanged: nothing AMV can run is unreachable, and the screen is not a
+     wall. */
+  const reach = await page.evaluate(async () => {
+    const list = new Set(_cjList().map(j => j.id));
+    const all = _cwAllJobs();
+    const missing = all.filter(j => !list.has(j.id)).map(j => j.id);
+    const drawn = document.querySelectorAll('#cj-grid .cj-card').length;
+    /* One that is genuinely not drawn, found by searching for it. */
+    const shown = new Set([...document.querySelectorAll('#cj-grid .cj-card-b')].map(b => b.dataset.darg));
+    const target = _cjList().find(j => !shown.has(j.id));
+    const q = document.getElementById('cx-q');
+    q.value = target.title; q.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    const found = [...document.querySelectorAll('#cj-grid .cj-card-b')].some(b => b.dataset.darg === target.id);
+    q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+    return { all: all.length, list: list.size, missing: missing.slice(0, 3), drawn, title: target.title, found,
+             cats: document.querySelectorAll('#cj-cats .cj-chip').length };
   });
-  ok(shelf.pool === cap, 'the ranked shelf is the hundred it decided on', { pool: shelf.pool, cap });
-  ok(n.rendered === shelf.expect, 'All draws the first few of each category of it', { rendered: n.rendered, expect: shelf.expect });
-  ok(shelf.seeAllRight && shelf.seeAllWhere, 'and every category with more ends in See all, with its real count', shelf);
-  ok(cap < n.defined, 'and it is a shelf, not the whole pool', { cap, defined: n.defined });
-  const reach = await page.evaluate(() => {
-    const shown = new Set(_cwShowcase().map(j => j.id));
-    const hidden = _cwAllJobs().filter(j => !shown.has(j.id));
-    if (!hidden.length) return { hidden: 0 };
-    /* Take one that is genuinely not on the screen and go and find it. */
-    const target = hidden[0];
-    cwFind(target.title);
-    const found = [...document.querySelectorAll('.cw-job-t')].some(e => e.textContent === target.title);
-    cwFind('');
-    return { hidden: hidden.length, title: target.title, found };
-  });
-  ok(reach.hidden > 0, 'the pool is genuinely bigger than what is shown', reach.hidden);
-  ok(reach.found === true,
-     'and a job NOT in the hundred is still reachable by searching for it', reach);
-  ok(n.cats >= 6, 'grouped under headings rather than one flat wall', n.cats);
-  /* These two used to be checked as text on the screen, which only held while
-     everything was rendered. The catalogue is a ranked sixty now, so a job can
-     be real, reachable and simply further down - the property worth holding is
-     that it EXISTS and can be found, not that it happens to be in the visible
-     band. */
-  const named = await page.evaluate(() => {
+  shelf = reach;
+  ok(reach.missing.length === 0, 'every job AMV can run is in the one list', reach);
+  ok(reach.drawn > 0 && reach.drawn <= 48 && reach.drawn < reach.list, 'only the first rows are drawn - a shelf, not a wall', reach);
+  ok(reach.found === true, 'and one that is not drawn is reachable by searching for it', reach);
+  ok(reach.cats >= 6, 'with categories to narrow it', reach.cats);
+  const named = await page.evaluate(async () => {
     const pool = _cwAllJobs();
-    /* Matched as a fragment, because these are the front of longer titles -
-       "Refund chaser & price protection", "Salary benchmark & timing" - and an
-       exact comparison finds neither. */
+    /* Matched as a fragment, because these are the front of longer titles. */
     const has = (t) => pool.some(j => (j.title || '').indexOf(t) >= 0);
-    const findable = (t) => { cwFind(t); const hit =
-      [...document.querySelectorAll('.cw-cat-grid .cw-job-t')].some(e => (e.textContent || '').indexOf(t) >= 0);
-      cwFind(''); return hit; };
+    const q = document.getElementById('cx-q');
+    const findable = async (t) => { q.value = t; q.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 300));
+      const hit = [...document.querySelectorAll('#cj-grid .cj-card-t')].some(e => (e.textContent || '').indexOf(t) >= 0);
+      q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 300)); return hit; };
     return { refund: has('Refund chaser'), salary: has('Salary benchmark'),
-             refundFound: findable('Refund chaser'), salaryFound: findable('Salary benchmark') };
+             refundFound: await findable('Refund chaser'), salaryFound: await findable('Salary benchmark') };
   });
   ok(named.refund && named.salary, 'the newly added ones are in the catalogue', named);
   ok(named.refundFound && named.salaryFound, 'and both can be found by name', named);
@@ -131,73 +125,64 @@ section('Every job is filed somewhere');
 
 section('Filtering by category shows that category and only that category');
 {
-  /* Compared against what is SHOWN, not against the whole catalogue. The
-     screen is a hundred-item sample of a larger pool now, so "every Money job
-     that exists" is the wrong number to expect on a filtered screen - and the
-     property being tested was never that anyway. It is that the filter shows
-     that category and nothing else. */
   const r = await page.evaluate(async () => {
-    document.querySelector('[data-darg="Money"]').click();
-    await new Promise(r => setTimeout(r, 300));
-    const titles = [...document.querySelectorAll('.cw-cat-grid .cw-job-t')].map(e => e.textContent);
-    const money = _cwShowcase().filter(j => j.cat === 'Money');
-    return { shown: titles.length, expected: money.length,
-             allMoney: titles.every(t => money.some(j => j.title === t)) };
+    document.querySelector('#cj-cats [data-darg="Money"]').click();
+    await new Promise(r => setTimeout(r, 200));
+    while (document.querySelector('#cj-grid .cj-more')) { document.querySelector('#cj-grid .cj-more').click(); await new Promise(r => setTimeout(r, 20)); }
+    const ids = [...document.querySelectorAll('#cj-grid .cj-card-b')].map(b => b.dataset.darg);
+    const money = _cjList().filter(j => _cjCat(j) === 'Money');
+    const set = new Set(money.map(j => j.id));
+    return { shown: ids.length, expected: money.length, allMoney: ids.every(id => set.has(id)) };
   });
-  ok(r.shown === r.expected, 'the count matches the category', r);
+  ok(r.shown === r.expected && r.shown > 0, 'the count matches the category', r);
   ok(r.allMoney, 'and nothing from another category leaks in', r);
-
   const back = await page.evaluate(async () => {
-    document.querySelector('[data-darg="all"]').click();
-    await new Promise(r => setTimeout(r, 300));
-    return document.querySelectorAll('.cw-cat-grid .cw-job').length;
+    document.querySelector('#cj-cats [data-darg="all"]').click();
+    await new Promise(r => setTimeout(r, 200));
+    return { drawn: document.querySelectorAll('#cj-grid .cj-card').length, more: !!document.querySelector('#cj-grid .cj-more'), on: (document.querySelector('#cj-cats .cj-chip.on') || {}).dataset?.darg };
   });
-  /* "All" means no category filter, which is the whole SHOWN catalogue - the
-     screen is a hundred-item sample now, so comparing it to every job that
-     exists would be asserting the sample does not exist. */
-  ok(back === shelf.expect, 'and All brings the whole shelf\u2019s preview back', { back, expect: shelf.expect });
+  ok(back.on === 'all' && back.drawn === shelf.drawn && back.more, 'and All brings the first rows of everything back', { back, was: shelf.drawn });
 }
 
 section('A job that cannot run says so rather than looking active');
 {
-  /* Nothing is connected in this session, so everything needing Gmail or a bank
-     is genuinely unable to run. That is the state the card has to admit to. */
-  const r = await page.evaluate(() => {
-    /* Derived from CW_NEEDS_CHECK, which is what the product actually consults,
-       rather than from a list of requirement names retyped here. The retyped
-       version went stale the moment a job needed something new - it counted 53
-       where the screen blocked 54 - and a check that has to be maintained in
-       step with the thing it watches is not watching it. */
-    /* ASKED OF THE CHECKER, NOT OF A LIST OF NAMES IT HAPPENS TO KNOW.
-       This counted jobs whose needs appear in CW_NEEDS_CHECK, which was the
-       same five-name table the checker itself used - so a requirement neither
-       of them recognised was absent from both sides and the two agreed about
-       a job that was silently broken. The checker fails closed now, so the
-       honest count is simply "jobs with something missing", and it stays
-       correct as the catalogue grows past the services one table knew. */
-    /* Of the cards on the screen - All previews each category now. */
-    const pool = new Map(_cwShowcase().map(j => [j.id, j]));
-    const drawn = [...document.querySelectorAll('.cw-cat-grid .cw-job-body')].map(b => pool.get(b.dataset.darg)).filter(Boolean);
-    const needsAcct = drawn.filter(j => _cwNeedsMissing(j).length > 0);
-    return { needsAcct: needsAcct.length,
-             blocked: document.querySelectorAll('.cw-cat-grid .cw-job.blocked').length,
-             text: document.body.textContent,
-             cardText: [...document.querySelectorAll('.cw-job')].map(c => c.textContent).join(' ') };
+  /* Nothing is connected in this session, so everything needing a mailbox or
+     a bank is genuinely unable to run. The card is plain now (owner: no
+     "needs a mailbox" clutter on every card), so this is held in two places:
+     a job switched on without its account does not say "On" on its card, and
+     its panel names what it needs and offers to connect it. */
+  const r = await page.evaluate(async () => {
+    const jobs = _cwJobs();
+    const mail = jobs.find(j => /Email/.test(j.needs || '') && _cwNeedsMissing(j).length);
+    const bank = jobs.find(j => /Bank connection/.test(j.needs || '') && _cwNeedsMissing(j).length);
+    const web = jobs.find(j => j.needs === 'Web research');
+    jobs.forEach(j => { j.on = (j.id === mail.id || j.id === web.id); }); _cwSaveJobs(jobs);
+    _cjRepaint();
+    await new Promise(r => setTimeout(r, 100));
+    const q = document.getElementById('cx-q');
+    const cardOf = async (j) => { q.value = j.title; q.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 250));
+      const b = document.querySelector('#cj-grid .cj-card-b[data-darg="' + j.id + '"]'); return b ? b.closest('.cj-card') : null; };
+    const m = await cardOf(mail), w = await cardOf(web);
+    const out = { mailCard: m ? m.textContent : '', mailBlocked: !!(m && m.classList.contains('blocked')), mailOn: !!(m && m.querySelector('.cj-on')),
+                  webCard: w ? w.textContent : '', webBlocked: !!(w && w.classList.contains('blocked')), webOn: !!(w && w.querySelector('.cj-on')) };
+    q.value = ''; q.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 250));
+    cwPeek(mail.id); await new Promise(r => setTimeout(r, 150));
+    out.mailPanel = document.getElementById('ovr').textContent;
+    out.mailConnect = !!document.querySelector('#ovr [data-cwp-connect]');
+    closeOvr();
+    cwPeek(bank.id); await new Promise(r => setTimeout(r, 150));
+    out.bankPanel = document.getElementById('ovr').textContent;
+    closeOvr();
+    out.cards = [...document.querySelectorAll('#cj-grid .cj-card')].map(c => c.textContent).join(' ');
+    jobs.forEach(j => { j.on = false; }); _cwSaveJobs(jobs); _cjRepaint();
+    return out;
   });
-  ok(r.blocked === r.needsAcct,
-     'every job needing an account nobody connected is marked', r.blocked + ' of ' + r.needsAcct);
-  ok(/not connected/.test(r.text), 'in words on the card itself');
-  /* The card names the thing itself. "Gmail" was what it used to say and was
-     wrong twice over: the capability is a mailbox, which Microsoft grants too,
-     and a person who does not use Gmail was being sent after an account they
-     do not have. */
-  ok(/a mailbox/.test(r.text), 'naming what it needs, not "an integration"');
-  /* Asked of the CARDS, not of the whole page. The body carries plan copy and
-     a menu as well, and a check that reads all of it fails on a sentence that
-     has nothing to do with what a job asks for - which is how a real
-     assertion gets deleted for being noisy. */
-  ok(!/Gmail/.test(r.cardText), 'and not one vendor for a capability two of them grant', r.cardText.slice(0, 80));
-  ok(/a bank connection/.test(r.text), 'including the bank ones');
+  ok(r.mailBlocked && /Waiting to be connected/.test(r.mailCard) && !r.mailOn,
+     'a mailbox job switched on with no mailbox says it is waiting, not "On"', r.mailCard.slice(0, 120));
+  ok(!r.webBlocked && r.webOn, 'while a job needing nothing says On', r.webCard.slice(0, 120));
+  ok(/Email|mailbox/i.test(r.mailPanel) && r.mailConnect, 'its panel names what it needs, with Connect', r.mailPanel.slice(0, 160));
+  ok(/Bank/i.test(r.bankPanel) && /Connect what it needs/.test(r.bankPanel), 'including the bank ones', r.bankPanel.slice(0, 160));
+  ok(!/Gmail/.test(r.cards), 'and no card names one vendor for a capability two of them grant', '');
 }
 
 section('A job needing nothing but the server is not marked at all');
@@ -394,7 +379,18 @@ section('Each card says where it can actually run');
      'a mailbox job also runs unattended - the grant is held by the server', r.mail);
   ok(/once .*connected/i.test(r.mail),
      'but names the connection it is waiting on, so it is not an overpromise', r.mail);
-  ok(/Runs with AMV closed/.test(r.text), 'and it is on the card, not just in a function', true);
+  /* Said in the job's panel, where somebody is deciding - not on every card
+     (owner, Nov 15: the "runs with AMV closed" line on each block was clutter).
+     The panel only adds a word when the job needs AMV open; a job that runs
+     unattended is the default and is not hedged. */
+  const panel = await page.evaluate(async () => {
+    const web = _cwDefaultJobs().find(j => j.needs === 'Web research');
+    cwPeek(web.id); await new Promise(r => setTimeout(r, 150));
+    const t = (document.getElementById('cwp-status') || {}).textContent || '';
+    closeOvr();
+    return t;
+  });
+  ok(panel && !/whenever AMV is open/.test(panel), 'and the panel of one that runs unattended does not hedge it', panel);
 }
 
 section('The plan\'s job number is enforced, not just displayed');
@@ -434,7 +430,7 @@ section('The plan\'s job number is enforced, not just displayed');
   ok(/upgrade/i.test(r.said), 'with the way to get more', r.said);
 }
 
-section('The fix is one tap from the card');
+section('The fix is one tap from the job');
 {
   /* This used to check that Connect landed on the Connectors tab. It lands
      somewhere better now - the connect screen for THAT job, naming the account
@@ -447,9 +443,11 @@ section('The fix is one tap from the card');
      be satisfied by a connector, and `a-job-that-needs-an-account-asks-for-it`
      is where that branch is pinned. */
   const went = await page.evaluate(async () => {
-    const fix = document.querySelector('.cw-job-fix');
-    const id = fix.dataset.darg;
-    fix.click();
+    /* The card opens the job; the job's panel holds the fix. */
+    const j = _cjList().find(x => _cwNeedsMissing(x).length && /Email/.test(x.needs || ''));
+    const id = j.id;
+    cwPeek(id); await new Promise(r => setTimeout(r, 150));
+    document.getElementById('cwp-need-go2').click();
     await new Promise(r => setTimeout(r, 350));
     const screen = document.querySelector('.cwc');
     const out = { id, tab: S.tab, shown: !!screen,

@@ -179,24 +179,26 @@ function cwNeeds(jobId){
   on($('cwn-back'), 'click', back);
   on($('cwn-on'), 'click', () => { try{ closeOvr(); cwToggle(j.id); }catch(e){} });
 
-  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => {
-    const kind = b.dataset.cwnKind, need = b.dataset.cwnNeed;
-    /* Remembered BEFORE leaving, for every route - a provider sign-in is a
-       full navigation and the tab changes are not much kinder. */
-    _cwResumeJob(j.id);
-    if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
-    if(kind === 'bank'){
-      /* Spending, because that is where the account card lives and where the
-         link actually starts. Not Connectors, which is where this used to go
-         and which has nothing to offer for a bank. */
-      try{ openBankLink(); }catch(e){}
-      return;
-    }
-    /* An app: the directory, searched for the one it wants, so the thing they
-       came for is the first thing on the screen. */
-    try{ closeOvr(); setTab('integrations'); }catch(e){}
-    try{ if(typeof cdirAll === 'function') cdirAll(_cwAppNameOf(need).toLowerCase()); }catch(e){}
-  }));
+  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind)));
+}
+/* Where connecting one thing a job needs starts - from this list, or straight
+   from the job's own panel, which lists the same needs. */
+function _cwConnectNeed(j, need, kind){
+  kind = kind || _cwNeedKind(need);
+  /* Remembered BEFORE leaving, for every route - a provider sign-in is a
+     full navigation and the tab changes are not much kinder. */
+  _cwResumeJob(j.id);
+  if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
+  if(kind === 'bank'){
+    /* The bank link dialog: where the link actually starts. Not Connectors,
+       which has nothing to offer for a bank. */
+    try{ openBankLink(); }catch(e){}
+    return;
+  }
+  /* An app: the directory, searched for the one it wants, so the thing they
+     came for is the first thing on the screen. */
+  try{ closeOvr(); setTab('integrations'); }catch(e){}
+  try{ if(typeof cdirAll === 'function') cdirAll(_cwAppNameOf(need).toLowerCase()); }catch(e){}
 }
 try{ window.cwNeeds = cwNeeds; }catch(e){}
 

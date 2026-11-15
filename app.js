@@ -20757,24 +20757,26 @@ function cwNeeds(jobId){
   on($('cwn-back'), 'click', back);
   on($('cwn-on'), 'click', () => { try{ closeOvr(); cwToggle(j.id); }catch(e){} });
 
-  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => {
-    const kind = b.dataset.cwnKind, need = b.dataset.cwnNeed;
-    /* Remembered BEFORE leaving, for every route - a provider sign-in is a
-       full navigation and the tab changes are not much kinder. */
-    _cwResumeJob(j.id);
-    if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
-    if(kind === 'bank'){
-      /* Spending, because that is where the account card lives and where the
-         link actually starts. Not Connectors, which is where this used to go
-         and which has nothing to offer for a bank. */
-      try{ openBankLink(); }catch(e){}
-      return;
-    }
-    /* An app: the directory, searched for the one it wants, so the thing they
-       came for is the first thing on the screen. */
-    try{ closeOvr(); setTab('integrations'); }catch(e){}
-    try{ if(typeof cdirAll === 'function') cdirAll(_cwAppNameOf(need).toLowerCase()); }catch(e){}
-  }));
+  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind)));
+}
+/* Where connecting one thing a job needs starts - from this list, or straight
+   from the job's own panel, which lists the same needs. */
+function _cwConnectNeed(j, need, kind){
+  kind = kind || _cwNeedKind(need);
+  /* Remembered BEFORE leaving, for every route - a provider sign-in is a
+     full navigation and the tab changes are not much kinder. */
+  _cwResumeJob(j.id);
+  if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
+  if(kind === 'bank'){
+    /* The bank link dialog: where the link actually starts. Not Connectors,
+       which has nothing to offer for a bank. */
+    try{ openBankLink(); }catch(e){}
+    return;
+  }
+  /* An app: the directory, searched for the one it wants, so the thing they
+     came for is the first thing on the screen. */
+  try{ closeOvr(); setTab('integrations'); }catch(e){}
+  try{ if(typeof cdirAll === 'function') cdirAll(_cwAppNameOf(need).toLowerCase()); }catch(e){}
 }
 try{ window.cwNeeds = cwNeeds; }catch(e){}
 
@@ -23610,7 +23612,7 @@ function cwPeek(id){
   let firstGo = true;
   const useRow = (u) => {
     const btn = u.met ? `<span class="cwp-u-ok">${escH(T('Connected'))}</span>`
-      : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="1">${escH(T('Connect'))}</button>`;
+      : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="${escH(u.name)}">${escH(T('Connect'))}</button>`;
     if(!u.met && !u.optional) firstGo = false;
     return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
       <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(T('Optional'))}</small>` : ''}</span>${btn}</li>`;
@@ -23682,9 +23684,12 @@ function cwPeek(id){
   on($('cwp-cancel'),'click',closeOvr);
   on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
   const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
+  /* One thing missing: straight to where it is connected. More than one: the
+     list of them, each with its own way in. */
   const toNeeds = () => { pick(); try{ cwNeeds(j.id); }catch(e){} };
-  r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', toNeeds));
-  on($('cwp-need-go2'),'click',toNeeds);
+  const req = uses.filter(u => !u.met && !u.optional);
+  r.querySelectorAll('[data-cwp-connect]').forEach(b => on(b, 'click', () => { pick(); try{ _cwConnectNeed(j, b.dataset.cwpConnect); }catch(e){ toNeeds(); } }));
+  on($('cwp-need-go2'),'click',() => req.length === 1 ? (pick(), (() => { try{ _cwConnectNeed(j, req[0].name); }catch(e){ toNeeds(); } })()) : toNeeds());
   on($('cwp-cad'),'change',function(){
     const v = this.value;
     const d = $('cwp-day'); if(d) d.hidden = v !== 'weekly';

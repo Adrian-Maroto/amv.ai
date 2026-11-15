@@ -1384,12 +1384,16 @@ function _cjEvery(j){
 function _cjCard(j){
   const allowed = _planAllowsCrew();
   const when = _cjEvery(j);
-  return `<div class="cj-card${j.on ? ' on' : ''}">
+  /* On, but missing the account it reads, is not running - and a card that
+     said "On" would be claiming work that is not happening. Its panel names
+     what to connect. */
+  const wait = j.on && (() => { try{ return _cwNeedsMissing(j).length > 0; }catch(e){ return false; } })();
+  return `<div class="cj-card${j.on ? ' on' : ''}${wait ? ' blocked' : ''}">
     <button class="cj-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
       <span class="cj-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.title)}</span>
       <span class="cj-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.desc || '')}</span>
-      <span class="cj-card-w">${j.on ? `<span class="cj-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
+      <span class="cj-card-w">${wait ? `<span class="cj-wait">${escH(T('Waiting to be connected'))}</span>` : j.on ? `<span class="cj-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
     </button>
     ${allowed ? `<button class="cw-toggle cj-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + j.title)}"><span class="cw-knob"></span></button>` : ''}
   </div>`;

@@ -1119,5 +1119,24 @@
   "it": "Le attività scritte per {country} sono sui server di AMV, che al momento non sono raggiungibili: tutto il resto è qui sotto.",
   "ko": "{country}용으로 작성된 작업은 AMV 서버에 있는데 지금은 연결할 수 없습니다. 나머지는 모두 아래에 있습니다.",
   "ta": "{country}க்காக எழுதப்பட்ட பணிகள் AMV சேவையகங்களில் உள்ளன, அவற்றை இப்போது அணுக முடியவில்லை - மற்ற அனைத்தும் கீழே உள்ளன."
+ },
+ "Waiting to be connected": {
+  "es": "Esperando conexión",
+  "zh": "等待连接",
+  "hi": "कनेक्ट होने की प्रतीक्षा में",
+  "ar": "بانتظار الربط",
+  "pt": "Aguardando conexão",
+  "fr": "En attente de connexion",
+  "de": "Wartet auf Verbindung",
+  "ja": "接続待ち",
+  "ru": "Ждёт подключения",
+  "id": "Menunggu dihubungkan",
+  "bn": "সংযোগের অপেক্ষায়",
+  "ur": "کنکشن کا انتظار",
+  "tr": "Bağlanmayı bekliyor",
+  "vi": "Đang chờ kết nối",
+  "it": "In attesa di collegamento",
+  "ko": "연결 대기 중",
+  "ta": "இணைக்கப்படக் காத்திருக்கிறது"
  }
 }

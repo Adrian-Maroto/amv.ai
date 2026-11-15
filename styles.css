@@ -17687,7 +17687,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cj-card-t{font-size:var(--t-md);font-weight:600;color:var(--tx);line-height:1.35;overflow-wrap:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cj-card-d{font-size:var(--t-sm);color:var(--mu);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cj-card-w{align-self:end;margin-top:6px;font-size:var(--t-xs);color:var(--dim);display:flex;align-items:center;gap:6px}
-.cj-on{color:var(--grn);font-weight:600}
+.cj-on{color:var(--grn-txt);font-weight:600}
 .cj-on::after{content:'\00b7';margin-left:6px;color:var(--dim);font-weight:400}
 .cj-card .cj-tg{position:absolute;top:var(--sp-4);right:var(--sp-4);margin:0}
 .cj-more-w{display:flex;justify-content:center;margin-top:var(--sp-2)}
@@ -17718,7 +17718,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cj-p .cwp-u{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-3);border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s1)}
 .cj-p .cwp-u-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .cj-p .cwp-u-t small{color:var(--dim);font-size:var(--t-xs)}
-.cj-p .cwp-u-ok{color:var(--grn);font-size:var(--t-sm);font-weight:600}
+.cj-p .cwp-u-ok{color:var(--grn-txt);font-size:var(--t-sm);font-weight:600}
 .cj-p-more summary{cursor:pointer;color:var(--mu);font-size:var(--t-sm)}
 .cj-p-more[open] summary{margin-bottom:var(--sp-3)}
 .cj-p-sub{font-size:var(--t-xs);font-weight:600;color:var(--dim);margin:var(--sp-3) 0 var(--sp-2)}
@@ -17823,7 +17823,7 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 #app .vi-conn .int-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 #app .vi-conn .int-top{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
 #app .vi-conn .int-name{font-size:var(--t-base);font-weight:600;color:var(--tx)}
-#app .vi-conn .int-ok{font-size:var(--t-xs);color:var(--grn);font-weight:600}
+#app .vi-conn .int-ok{font-size:var(--t-xs);color:var(--grn-txt);font-weight:600}
 #app .vi-conn .int-desc{font-size:var(--t-sm);color:var(--mu);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 #app .vi-conn .int-act{flex:0 0 auto;display:flex;gap:6px;margin:0}
 #app .vi-conn .int-act .btn{min-height:34px;padding:0 var(--sp-3);font-size:var(--t-sm)!important;border-radius:var(--r-pill)}
@@ -17861,3 +17861,7 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 /* Said when the country's own jobs could not be fetched - one quiet line. */
 .cj-note{margin:0;padding:var(--sp-2) var(--sp-3);font-size:var(--t-sm);color:var(--mu);border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s1)}
 .cj-note[hidden]{display:none}
+/* On but missing its account: says so, in the colour that means "not yet". */
+.cj-card.blocked{border-color:color-mix(in srgb,var(--gold) 45%,var(--bd))}
+.cj-wait{color:var(--gold-txt);font-weight:600}
+.cj-wait::after{content:'\00b7';margin-left:6px;color:var(--dim);font-weight:400}
