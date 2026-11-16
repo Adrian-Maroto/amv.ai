@@ -78,11 +78,13 @@ section('The server and the page agree about the same numbers');
 {
   /* The defect was not that either side was unreadable. It was that they
      disagreed, and only one of them was in front of somebody who could notice. */
-  const app = readFileSync(join(ROOT, 'src', 'app', '22-finance.js'), 'utf8');
-  ok(/_invMoney\s*\(\s*[^)]*\bcurrency\b/.test(app) || /_invMoney\([^)]*,\s*d\.currency\)/.test(app),
-     'the page formats with the currency the server sent', true);
-  ok(!/return\s*'\$'\s*\+\s*v\.toFixed\(2\);\s*\}\s*\n\s*function _invResultHTML/.test(app),
-     'and its only bare dollar is the fallback for a thrown formatter', true);
+  /* The page drew check-in figures until Nov 15, when the owner removed
+     investing; the check-in reaches people only as the server's own message
+     now. So the page must not have quietly kept a formatter of its own that
+     could disagree with the server's. */
+  const app = readFileSync(join(ROOT, 'app.js'), 'utf8') + readFileSync(join(ROOT, 'src', 'finance', 'invest.js'), 'utf8');
+  ok(!/function _invMoney|function _invResultHTML/.test(app),
+     'the page draws no check-in figures of its own, so there is nothing to disagree', true);
   const srv = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
   const body = srv.slice(srv.indexOf('function _investText'), srv.indexOf('function _investText') + 2000);
   ok(!body.includes("'$'"), 'and the server writes no dollar sign of its own', true);

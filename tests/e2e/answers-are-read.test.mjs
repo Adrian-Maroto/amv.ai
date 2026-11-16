@@ -94,22 +94,15 @@ section('The real handler is written the same way');
      'and the answer is bound rather than discarded', true);
 }
 
-section('Stopping a scheduled bank check-in checks that it stopped');
+section('Nothing on the page can schedule a check-in it has no way to stop');
 {
-  /* The Invest pane is fetched on demand (invest.js), so it is read from there
-     as well as from the page. */
-  const src = (readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8')) + '\n' + readFileSync(join(ROOT, 'invest.js'), 'utf8');
-  const at = src.indexOf('const dropPrev=async()=>{');
-  /* Wide enough to contain the whole helper. A window that stops mid-statement
-     makes an assertion fail for the wrong reason - or worse, pass. */
-  const body = src.slice(at, at + 1400);
-  ok(at > 0, 'the stop path was located', at > 0);
-  ok(/const\s+\w+\s*=\s*await AMV_API\._fetch\('\/auto\/update'/.test(body),
-     'the answer is bound', true);
-  ok(/throw new Error/.test(body),
-     'and a refusal throws, so "it is still scheduled" can be said', true);
-  ok(/stillRunning\s*=\s*false/.test(body.split('throw new Error')[1] || ''),
-     'nothing is marked stopped before the server agreed', true);
+  /* The investing pane scheduled check-ins and had its own careful stop path,
+     held here until Nov 15, when the owner removed investing. A check-in
+     somebody already had is an ordinary running job, listed and stopped in
+     Crew. What must not survive is a way to CREATE one with no stop beside it. */
+  const src = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'invest.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'settings-panes.js'), 'utf8');
+  ok(!/kind\s*:\s*'invest'/.test(src), 'no page code creates an investment check-in any more', (src.match(/.{0,60}kind\s*:\s*'invest'.{0,20}/) || [''])[0]);
+  ok(!/amv_inv_auto|amv_inv_when/.test(src), 'and no stored schedule of one is read or written', '');
 }
 
 section('Sign out everywhere goes to the one implementation that works');

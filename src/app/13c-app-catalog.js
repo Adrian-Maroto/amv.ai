@@ -329,4 +329,4 @@ function _appCats(){
 }
 /* How many apps are listed, counted rather than claimed. */
 function _appCount(){ return _appCats().reduce((n, c) => n + c.apps.length, 0); }
-try{ window.AMV_APP_CATS = AMV_APP_CATS; window._appCats = _appCats; window._appCount = _appCount; }catch(e){}
+try{ window.AMV_APP_CATS = AMV_APP_CATS; window._appCats = _appCats; }catch(e){}

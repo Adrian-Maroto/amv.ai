@@ -29,7 +29,9 @@ const count = (re) => (src.match(re) || []).length;
 const CEILING = {
   /* 408 (Nov 10): Spending's four cards are redrawn from _spvMoneyFacts, every
      value through escH. */
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 408],
+  /* 409 (Nov 15): openBankLink (22-finance.js) draws the bank dialog's frame
+     - fixed markup and T() strings through escH, nothing from a person. */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 409],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],
@@ -66,7 +68,10 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 198], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 2] };
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 198], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* outerHTML 3 (Nov 15): crew-view.js redraws the country button in place
+     (_cjRepaint) from _cjCountryBtnHTML - a flag from a fixed table and the
+     country's name through escH. */
   for (const [name, [re, max]] of Object.entries(LAZY)) {
     const c = n(re);
     ok(c <= max, `fetched files, ${name}: ${c}, ceiling ${max}`, c > max ? 'a new sink: escape what it draws, then raise the ceiling here in the same change' : c);

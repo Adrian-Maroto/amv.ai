@@ -459,26 +459,7 @@ async function _tkLoad(cc){
     const sub = $('tk2-sub'); if(sub) sub.textContent = T('The tasks could not load. Check your connection and try again.');
   }
 }
-function launchUnique(kind){
-  const map={crew:'crew',dev:'dev',studio:'studio',lab:'lab',handoff:'handoff'};
-  if(kind==='researchwatch'){ openResearchWatch(); return; }
-  if(kind==='autobrief'){ setTab('crew'); setTimeout(()=>toast('Turn on a daily brief job in Crew','info'),200); return; }
-  /* Connected accounts is a Settings pane rather than a tab, so the pane has
-     to be set before the tab or it lands on whichever one was open last. */
-  if(kind==='connect'){ try{ S.settingsPane='integrations'; }catch(e){} setTab('settings'); return; }
-  if(kind==='world'){ setTab('crew'); return; }
-  /* Straight into the box, with the cursor in it. The point of this card is
-     that saying it IS the interface, so making somebody hunt for the field
-     would be the card describing itself wrongly. */
-  if(kind==='say'){
-    setTab('crew');
-    setTimeout(()=>{ try{ const el=document.getElementById('mc-cmd-input');
-      if(el){ el.scrollIntoView({block:'center'}); el.focus(); } }catch(e){} }, 260);
-    return;
-  }
-  setTab(map[kind]||'chat');
-}
-window.launchUnique=launchUnique;
+/* launchUnique (the "Only on AMV" cards' doors) left with that section, Nov 15. */
 let _taskCat=null;
 
 function _connSectionHTML(){
