@@ -101,7 +101,9 @@ const ten = async (page) => {
 };
 const row = (r, sec) => { const i = r.sec.findIndex(s => s.toLowerCase() === sec); return i < 0 ? { t: '', d: '', i: -1 } : { t: r.t[i], d: r.d[i], i }; };
 /* Everything Crew offers the country, the ten and the hundred below it. */
-const anywhere = (page, cc) => page.evaluate(c => _cwTopTen(c).concat(_cwCountryHundred(c)).map(j => j.title).join(' | '), cc);
+const anywhere = (page, cc) => page.evaluate(c => { _cwSetCountry(c); _cjCache = null;
+  const ten = _cwTopTen(c), ids = new Set(ten.map(j => j.id));
+  return ten.concat(_cjList().filter(j => !ids.has(j.id)).slice(0, 100)).map(j => j.title).join(' | '); }, cc);
 
 section('In the United States: every part of life, the American way');
 {
@@ -113,7 +115,7 @@ section('In the United States: every part of life, the American way');
      where one can be linked, then three different parts of life with evidence
      for the US - at least one of them written for the US by hand. Calendar,
      school and work follow in the ten. */
-  const own = await page.evaluate(() => _cwTopFive('US').filter(j => /^ev_us_/.test(j.id)).length);
+  const own = await page.evaluate(() => _cwTopTen('US').slice(0, 5).filter(j => /^ev_us_/.test(j.id)).length);
   ok(r.sec[0] === 'Mail' && r.sec[1] === 'Bank' && new Set(r.sec.slice(0, 5)).size === 5 && own >= 1,
      'the mailbox, the bank, then three different parts of life - at least one written for the US', { sec: r.sec.slice(0, 5), own });
   ok(['calendar','school','work'].every(s => row(r, s)), 'with calendar, school and work in the rest of the ten', r.sec);

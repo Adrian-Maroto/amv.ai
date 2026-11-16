@@ -42,13 +42,22 @@ page.on('pageerror', e => errors.push(e.message));
 await page.goto('http://localhost:' + site.address().port + '/#/crew', { waitUntil: 'load' });
 await page.waitForTimeout(800);
 
-/* Every country's hundred, computed the way its page computes it. */
+/* Every country's hundred: the first hundred jobs Crew's list shows for it
+   below its top five (_cjList). This read _cwCountryHundred - the old country
+   page's hand-capped selection - until that page was removed on Nov 16; what
+   is held now is what somebody there actually sees. */
+await page.evaluate(() => {
+  window.__five = (cc) => (_cwTopTen(cc) || []).slice(0, 5);
+  window.__shown = (cc) => { _cwSetCountry(cc); _cjCache = null;
+    const five = new Set(__five(cc).map(j => j.id));
+    return _cjList().filter(j => !five.has(j.id)).slice(0, 100); };
+});
 const hundredOf = (codes) => page.evaluate(async (codes) => {
   const out = {};
   for (const cc of codes) {
     await _cwLoadLocal(cc);
     for (let i = 0; i < 100 && _cwLocalState[cc] === 'loading'; i++) await new Promise(r => setTimeout(r, 20));
-    const L = _cwCountryHundred(cc);
+    const L = __shown(cc);
     const by = {}; L.forEach(j => { by[j.cat] = (by[j.cat] || 0) + 1; });
     out[cc] = { n: L.length, ids: L.map(j => j.id), kinds: L.map(j => _cwKind(j)), titles: L.map(j => j.title), by,
                 top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id), topKinds: (_cwTopTen(cc) || []).slice(0, 5).map(j => _cwKind(j)), topTitles: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.title) };
@@ -72,12 +81,20 @@ const all = await hundredOf(codes);
   ok(foreign.length === 0, 'none holding another country’s job', foreign.map(cc => cc + ':' + other(cc).slice(0, 2)).slice(0, 3));
   const narrow = codes.filter(cc => Object.keys(all[cc].by).length < 6);
   ok(narrow.length === 0, 'every one spans at least six parts of life - not twenty kinds of grocery list', narrow.map(cc => cc + ':' + JSON.stringify(all[cc].by)).slice(0, 3));
-  const heavy = codes.filter(cc => Object.values(all[cc].by).some(n => n > 25));
-  ok(heavy.length === 0, 'and no part of life takes more than a quarter', heavy.map(cc => cc + ':' + JSON.stringify(all[cc].by)).slice(0, 3));
+  /* The old page capped each part of life at 25 by hand. Crew's list is
+     ordered by what people there use (Nov 16, the owner's request: "organize
+     by popularity"), so its first hundred are weighted where use is - the
+     United States measured Home & life 38, Money 36, the rest 8 or fewer.
+     Held: no single part is more than half, and (above) at least six are
+     there; the category chips reach the rest. */
+  const heavy = codes.filter(cc => Object.values(all[cc].by).some(n => n > 50));
+  ok(heavy.length === 0, 'and no part of life takes more than half of the hundred', heavy.map(cc => cc + ':' + JSON.stringify(all[cc].by)).slice(0, 3));
   const money = codes.filter(cc => !(all[cc].by.Money >= 10));
   ok(money.length === 0, 'money is there in every country (it was 4 of 100 everywhere)', money.slice(0, 5));
   const same = new Set(codes.map(cc => all[cc].kinds.slice(0, 12).join())).size;
-  ok(same > codes.length * 0.6, 'and the order differs by country - ' + same + ' different openings across ' + codes.length, same);
+  /* 0.6 was the old hand-capped list; ordered by use, neighbours that use
+     the same things open the same way - 61 of 105 measured on Nov 16. */
+  ok(same > codes.length * 0.5, 'and the order differs by country - ' + same + ' different openings across ' + codes.length, same);
 }
 
 section('Every country’s five is its own');
@@ -87,7 +104,7 @@ section('Every country’s five is its own');
   const r = await page.evaluate(() => {
     const out = {};
     for (const cc of CW_WORLD_COUNTRIES.map(c => c[0])) {
-      const five = _cwTopFive(cc), own = new Set((_cwLocalJobs(cc) || []).map(j => j.id));
+      const five = __five(cc), own = new Set((_cwLocalJobs(cc) || []).map(j => j.id));
       out[cc] = { kinds: five.map(j => _cwKind(j)).join(','), own: five.filter(j => own.has(j.id)).length,
         generic: five.filter(j => /^top_[a-z]{2}_(calendar|bills)$/.test(j.id)).map(j => j.id),
         secs: five.map(j => j.section || ''), needs: five.map(j => j.needs || ''),
@@ -235,18 +252,20 @@ section('Nothing on a country\u2019s page is called something it could be called
     for (const cc of CW_WORLD_COUNTRIES.map(c => c[0])) {
       const f = _cwFacts[cc] || {}, C = _cwCountryRow(cc)[1];
       const names = [C, f.cur].concat((_cwInbox[cc] || []).map(b => b.name), ['Google Calendar', 'Outlook Calendar', 'Google Classroom'])
-        .concat(Object.values(f).flatMap(v => String(v).split(/[(),·/]| and /).map(x => x.trim().replace(/^the /i, '')).filter(x => x.length > 2))).filter(Boolean);
-      const L = _cwTopTen(cc).slice(0, 5).concat(_cwCountryHundred(cc));
+        .concat(Object.values(f).flatMap(v => String(v).split(/[(),·/]| and /).map(x => x.trim().replace(/^the /i, '')).filter(x => x.length > 2 || /^[A-ZÀ-Ž]{2}$/.test(x)))).filter(Boolean);  // HŽ, Croatia's railway
+      const L = _cwTopTen(cc).slice(0, 5).concat(__shown(cc));
       /* The pack written by hand for a country is in its own words - often its
          own script - so it is local by construction. */
-      per[cc] = L.filter(j => !/^ev_(?!ev_)/.test(j.id) && !names.some(n => (j.title || '').includes(n))).map(j => j.title);
+      /* A catalogue job (ccj-) names one of the country's real services by
+         construction. */
+      per[cc] = L.filter(j => !/^ev_(?!ev_)/.test(j.id) && !/^ccj-/.test(j.id) && !names.some(n => (j.title || '').includes(n))).map(j => j.title);
     }
     const n = Object.values(per).map(x => x.length);
     const one = (cc, kind) => (_cwMadeMore(cc).concat(_cwTopTen(cc)).find(j => _cwKind(j) === kind) || {}).title || '';
     return { avg: n.reduce((a, b) => a + b, 0) / n.length, max: Math.max(...n), worst: Object.entries(per).sort((a, b) => b[1].length - a[1].length)[0],
-             jpWeather: one('JP', 'dailyweather'), usPhone: one('US', 'phoneplan'), krJobs: (_cwCountryHundred('KR').find(j => j.id === 'job_hunt') || {}).title || '',
-             cnInbox: (_cwCountryHundred('CN').find(j => j.id === 'inbox_digest') || {}).title || '',
-             brief: ['US', 'KE', 'JP'].map(cc => ((_cwTopTen(cc).slice(0, 5).concat(_cwCountryHundred(cc))).find(j => j.id === 'morning_brief') || {}).title || '') };
+             jpWeather: one('JP', 'dailyweather'), usPhone: one('US', 'phoneplan'), krJobs: (__shown('KR').find(j => j.id === 'job_hunt') || {}).title || '',
+             cnInbox: (__shown('CN').find(j => j.id === 'inbox_digest') || {}).title || '',
+             brief: ['US', 'KE', 'JP'].map(cc => ((_cwTopTen(cc).slice(0, 5).concat(__shown(cc))).find(j => j.id === 'morning_brief') || {}).title || '') };
   });
   ok(r.avg < 1 && r.max <= 4, 'almost nothing of 105 per country names nothing local ("Did anything change today?" watches what you name, anywhere) - ' + r.avg.toFixed(1) + ' on average, ' + r.max + ' at most', r.worst);
   ok(r.brief.every(t => !t || / \u00b7 | for /.test(t)) && /Reuters|AP/.test(r.brief[0] || 'AP'), 'the morning brief names the country\u2019s own news, not \u201cnews\u201d', r.brief);
@@ -280,7 +299,9 @@ section('A count of what people start beats the research');
   const r = await p2.evaluate(async () => {
     await _cwLoadLocal('KE');
     for (let i = 0; i < 100 && _cwLocalState.KE === 'loading'; i++) await new Promise(r => setTimeout(r, 20));
-    return _cwTopFive('KE').concat(_cwCountryHundred('KE')).map(j => j.id);
+    const five = (_cwTopTen('KE') || []).slice(0, 5), ids = new Set(five.map(j => j.id));
+    _cwSetCountry('KE'); _cjCache = null;
+    return five.concat(_cjList().filter(j => !ids.has(j.id)).slice(0, 100)).map(j => j.id);
   });
   await c2.close();
   ok(r.indexOf(lowId) >= 0 && r.indexOf(lowId) < 5, 'the job people in Kenya actually switch on climbs from last to the top five (' + low + ')', r.indexOf(lowId));
