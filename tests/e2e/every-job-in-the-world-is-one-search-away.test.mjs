@@ -27,12 +27,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* The independent count: the data files and the templates, read from source. */
 const src = readFileSync(join(ROOT, 'src/country/country-catalog.js'), 'utf8');
 const CREW = (0, eval)('(' + src.match(/const CC_CREW = (\{[\s\S]*?\n\});/)[1] + ')');
-const good = e => e && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
+/* And the page's nationwide blocks (CC_BLOCKED), read from the same source. */
+const BLOCKED = (0, eval)('(' + src.match(/const CC_BLOCKED = (\{[\s\S]*?\n\});/)[1] + ')');
+let CC = '';
+const good = e => e && !(BLOCKED[CC] && BLOCKED[CC].test(String(e.s || ''))) && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
   && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n);
 const seen = new Set();
 let expect = 0;
 for (const f of readdirSync(join(ROOT, 'data/countries')).filter(f => /^[A-Z]{2}\.json$/.test(f)).sort()) {
   const d = JSON.parse(readFileSync(join(ROOT, 'data/countries', f), 'utf8'));
+  CC = d.cc;
   for (const [kind, list] of Object.entries(d.kinds || {})) {
     const tpl = CREW[kind]; if (!tpl) continue;
     const sc = tpl.filter(t => t[3] === 'c').length, own = tpl.length - sc;

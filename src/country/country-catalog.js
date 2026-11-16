@@ -601,6 +601,13 @@ const CC_CREW = {
              ['{n} impact','Each month, the results {n} reports from its work, checked against others’ reporting where possible.','monthly']]
 };
 
+/* Sites blocked nationwide, by country - the long-standing, widely documented
+   blocks (China's on Google, Meta, X, Wikipedia and the main foreign news;
+   Russia's on Meta, X and LinkedIn). Matched on the service's own address. */
+const CC_BLOCKED = {
+  CN: /(^|\.)(google|youtube|gmail|blogspot|facebook|instagram|whatsapp|twitter|x|wikipedia|telegram|line|dropbox|nytimes|bbc|reuters|bloomberg|wsj)\.[a-z.]+$|(^|\.)[a-z]+\.google$/,
+  RU: /(^|\.)(facebook|instagram|twitter|x|linkedin)\.[a-z.]+$/,
+};
 /* One country's file, fetched once. */
 const _ccCache = {};
 async function ccLoad(cc){
@@ -617,7 +624,12 @@ async function ccLoad(cc){
          checked again here: a real ID, a plain one-line name, and a site that
          is a bare host name. One that is not is dropped, never repaired - its
          name goes into instructions and its address is where somebody signs in. */
-      const good = e => e && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
+      /* A site blocked nationwide in this country is no use to anybody there,
+         however popular it is elsewhere - China lists Google as an employer
+         and a Hong Kong club whose site is facebook.com. */
+      const blocked = CC_BLOCKED[cc];
+      const good = e => e && !(blocked && blocked.test(String(e.s || '')))
+        && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
         && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n)
         && typeof e.s === 'string' && e.s.length <= 80 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s);
       const kinds = {};

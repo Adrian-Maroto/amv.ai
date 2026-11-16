@@ -321,5 +321,24 @@
   "it": "Posso avere un rimborso?",
   "ko": "환불받을 수 있나요?",
   "ta": "பணத்தைத் திரும்பப் பெற முடியுமா?"
+ },
+ "Pick one and AMV starts on it in chat.": {
+  "es": "Elige uno y AMV lo empieza en el chat.",
+  "zh": "选一个，AMV 会在聊天中开始处理。",
+  "hi": "कोई एक चुनें और AMV चैट में उस पर काम शुरू कर देगा।",
+  "ar": "اختر واحدة وسيبدأ AMV العمل عليها في الدردشة.",
+  "pt": "Escolha uma e a AMV começa no chat.",
+  "fr": "Choisissez-en une et AMV s’y met dans le chat.",
+  "de": "Wählen Sie eine aus, und AMV fängt im Chat damit an.",
+  "ja": "1つ選ぶと、AMVがチャットで取りかかります。",
+  "ru": "Выберите одну — и AMV начнёт её в чате.",
+  "id": "Pilih satu dan AMV mulai mengerjakannya di chat.",
+  "bn": "একটি বেছে নিন, AMV চ্যাটে সেটি শুরু করবে।",
+  "ur": "ایک چنیں اور AMV چیٹ میں اس پر کام شروع کر دے گا۔",
+  "tr": "Birini seçin, AMV sohbette hemen başlasın.",
+  "vi": "Chọn một việc và AMV bắt đầu ngay trong cuộc trò chuyện.",
+  "it": "Scegline uno e AMV inizia in chat.",
+  "ko": "하나를 고르면 AMV가 채팅에서 바로 시작합니다.",
+  "ta": "ஒன்றைத் தேர்ந்தெடுங்கள்; AMV அரட்டையில் அதைத் தொடங்கும்."
  }
 }
