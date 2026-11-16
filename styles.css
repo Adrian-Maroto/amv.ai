@@ -17930,7 +17930,16 @@ body.light .cj-box:focus-within,body.light .cj-find:focus-within,body.light .cdi
   .cj-hero .cj-ask-top{flex-wrap:nowrap;align-items:flex-start;margin-bottom:var(--sp-3)}
   .cj-hero .cj-ask-hd{flex:1 1 auto}
   .cj-hero .cj-allow{display:none}
-  .cj-tools{margin-left:0;width:auto;flex-wrap:wrap}
+  /* Heading, then the count under it (as Tasks says "4,548 tasks" under
+     "For Spain"), then the pills with See all first. The country is guessed
+     first and corrected a moment later, and its name changes width; laid out
+     this way nothing whose text changes sits before anything else on its row,
+     so the correction moves nothing (the layout-shift budget in
+     a-visitor-in-spain-sees-spain). */
+  .cj-jobs-top h2{flex:1 0 100%;margin:0;line-height:1.2}
+  .cj-count{flex:1 0 100%;margin-top:-6px}
+  .cj-tools{margin-left:0;width:auto;flex-wrap:wrap;flex:1 0 100%}
+  .cj-tools .cj-all{order:-1}
   .cj-tools > *{flex:0 0 auto}
   .cj-jobs-top{flex-wrap:wrap;row-gap:var(--sp-2)}
 }
@@ -17938,3 +17947,58 @@ body.light .cj-box:focus-within,body.light .cj-find:focus-within,body.light .cdi
 .rsrc-watch{min-height:32px;padding:0 var(--sp-3);border:1px solid var(--bd);border-radius:var(--r-pill);background:transparent;color:var(--accent-txt);font:inherit;font-size:var(--t-sm);font-weight:600;cursor:pointer}
 .rsrc-watch:hover{background:var(--accent-soft)}
 .rsrc-watch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ==========================================================================
+   LAYER A370 - THE SAME BAR EVERYWHERE (Nov 16, the owner: "That applies to
+   everything.")
+
+   The chat box was the one box somebody types into that still had the older
+   look: a pale fill, a blue glow spreading forty pixels on focus. It now
+   wears the command bar from A369 - the hairline leaning to the accent at its
+   ends, and on focus the accent edge with a 4px ring, no glow. Its shape and
+   inner spacing are unchanged.
+
+   Integrations sat in an 860px column while Crew and Tasks beside it use
+   1120px, so moving between the three made the page jump narrower. On the
+   main screen it now uses the same column. Inside Settings it keeps the
+   modal's own width.
+   ========================================================================== */
+#cib{
+  background:
+    linear-gradient(var(--s1),var(--s1)) padding-box,
+    linear-gradient(100deg,color-mix(in srgb,var(--accent) 45%,var(--bd)) 0%,var(--bd) 22%,var(--bd) 78%,color-mix(in srgb,var(--accent) 30%,var(--bd)) 100%) border-box!important;
+  border:1px solid transparent!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset,var(--sh-sm)!important}
+#cib:focus-within{
+  background:
+    linear-gradient(var(--s1),var(--s1)) padding-box,
+    linear-gradient(100deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 55%,var(--bd)) 50%,var(--accent) 100%) border-box!important;
+  border:1px solid transparent!important;
+  box-shadow:0 0 0 4px var(--accent-soft),var(--sh-sm)!important}
+body.light #cib{box-shadow:0 1px 2px rgba(24,23,21,.06)!important}
+body.light #cib:focus-within{box-shadow:0 0 0 4px var(--accent-soft)!important}
+#vc .vi.vi-conn{max-width:1120px!important}
+/* The field inside a bar does not draw a second ring of its own: the global
+   rule for focused text fields (A-layer at line ~2975) ringed the textarea
+   inside the bar, so a focused chat box showed a box inside a box. */
+#cib textarea:focus,.cj-box textarea:focus{box-shadow:none!important}
+/* Integrations on a phone (A370): the search keeps its button on the same
+   line instead of a full-width slab under it, the gap under the search
+   closes, and "Your computer" is one compact row - name and status on the
+   left, the arrow beside them, not alone on a line of its own. */
+@media (max-width:560px){
+  #app .vi-conn .cdir-find-wrap{flex-wrap:nowrap;gap:var(--sp-2);margin:var(--sp-3) 0 0}
+  #app .vi-conn .cdir-find-wrap .cw-find{flex:1 1 auto;min-width:0;width:auto}
+  #app .vi-conn .cdir-find-go{flex:0 0 auto;width:auto;min-height:46px;padding:0 var(--sp-4)}
+  #app .vi-conn .conn-machine{margin-top:var(--sp-4)}
+  #app .vi-conn .conn-machine > summary{display:grid;grid-template-columns:1fr auto;column-gap:var(--sp-3);row-gap:2px;align-items:center;padding:var(--sp-3) var(--sp-4)}
+  #app .vi-conn .conn-machine > summary::after{grid-column:2;grid-row:1 / span 2;margin:0}
+  #app .vi-conn .conn-machine-t,#app .vi-conn .conn-machine-s{grid-column:1}
+  /* Each app's button sits under its words at its own width, lined up with
+     the name, instead of a slab across the whole card. */
+  #app .vi-conn .int-card{flex-wrap:wrap}
+  #app .vi-conn .int-card > .int-body{flex:1 1 calc(100% - 44px);min-width:0}
+  #app .vi-conn .int-act{width:auto;margin-left:44px}
+  #app .vi-conn .int-act .btn{width:auto;min-width:96px;min-height:44px}
+  #app .vi-conn .int2-sub{margin-bottom:0}
+}

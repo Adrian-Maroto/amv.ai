@@ -45,11 +45,20 @@ const describe = () => page.evaluate(() => {
      measured is what a person sees a moment later - not an in-between frame
      that read as a ring in one engine and as nothing in another. */
   try { document.getAnimations().forEach(a => { if (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) a.finish(); }); } catch (_) {}
-  const shown = (e.matches && e.matches('.sw input') && e.nextElementSibling) ? e.nextElementSibling : e;
+  /* The same for a field inside a command bar (the chat box, Crew's box): the
+     bar draws the ring around the whole thing on :focus-within, and the field
+     inside it draws none of its own, so a focused box is not a ring inside a
+     ring. Measured on the bar - which is what a person sees. */
+  const bar = /^(TEXTAREA|INPUT)$/.test(e.tagName) && e.closest ? e.closest('#cib, .cj-box') : null;
+  const shown = (e.matches && e.matches('.sw input') && e.nextElementSibling) ? e.nextElementSibling : (bar || e);
   const cs = getComputedStyle(shown);
   const b = e.getBoundingClientRect();
-  const ring = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
-    || (cs.boxShadow && cs.boxShadow !== 'none' && !/^rgba\(0, 0, 0, 0\) 0px 0px 0px 0px$/.test(cs.boxShadow));
+  /* A bar carries a soft shadow at rest, so for a bar only a real ring counts:
+     a shadow with no offset and no blur, spread at least 2px. */
+  const ring = bar
+    ? /(^|, )rgba?\([^)]*\) 0px 0px 0px ([2-9]|\d\d)/.test(cs.boxShadow || '')
+    : (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
+      || (cs.boxShadow && cs.boxShadow !== 'none' && !/^rgba\(0, 0, 0, 0\) 0px 0px 0px 0px$/.test(cs.boxShadow));
   return {
     tag: e.tagName, cls: (e.className || '').toString().slice(0, 26),
     txt: (e.textContent || '').trim().slice(0, 18), ring,
