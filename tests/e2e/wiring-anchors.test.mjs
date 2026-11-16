@@ -119,7 +119,9 @@ section('Nothing in the bundle waits on an element that was removed');
      But an id that is LOOKED UP and appears nowhere else in the entire bundle
      is referenced by nothing that could create it. That lookup can never
      succeed, and whatever was attached to it is gone. */
-  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  /* Every page AMV publishes declares markup, not only index.html: the file
+     picker's own page creates the #say its script fills. */
+  const html = ['index.html', 'picker.html', 'sandbox.html'].map(f => { try { return readFileSync(join(ROOT, f), 'utf8'); } catch (e) { return ''; } }).join('\n');
   const declaredStatic = new Set([...html.matchAll(/\sid=["']([a-zA-Z0-9_-]+)["']/g)].map(m => m[1]));
 
   /* ONE exception, and it is a real creation rather than a hole: the shared

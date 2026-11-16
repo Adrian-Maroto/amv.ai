@@ -17852,3 +17852,14 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
    ragged columns. */
 .cj-card-w{flex-wrap:wrap;row-gap:2px}
 .cj-on,.cj-wait{white-space:nowrap}
+/* The letter tiles keep their hue, at a lightness every hue clears 4.5:1 at -
+   yellow and green at the old 36% / 72% measured 3.3 to 3.9. */
+#app .vi-conn .int-mono{color:hsl(var(--mono-h,220) 60% 84%)}
+body.light #app .vi-conn .int-mono{color:hsl(var(--mono-h,220) 65% 24%)}
+/* The search field inside a .cj-find box shows where focus is, on the field
+   itself - the box's accent border alone is not a focus ring a keyboard user
+   can rely on (the-keyboard-alone-is-enough). */
+:is(#app,#ovr) .cj-find input:focus-visible{outline:2px solid var(--accent)!important;outline-offset:3px;border-radius:var(--r-xs)}
+/* The selected chip in the light theme: the accent's own soft tint, not a
+   near-black pill (nothing-paints-a-dark-panel-in-the-light-theme). */
+body.light .cj-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-txt)}

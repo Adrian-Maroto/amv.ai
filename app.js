@@ -33706,7 +33706,8 @@ function _integrationsCatalogHTML(opts){
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
-        '<div class="int-top"><span class="int-name">'+o.name+'</span>'+badge+(connected?'<span class="int-ok">\u2713 Connected</span>':'')+'</div>'+
+        /* An app's name is its name in every language. */
+        '<div class="int-top"><span class="int-name" data-no-i18n>'+o.name+'</span>'+badge+(connected?'<span class="int-ok">\u2713 Connected</span>':'')+'</div>'+
         '<div class="int-desc">'+o.desc+'</div>'+
       '</div>'+
       '<div class="int-act">'+action+'</div>'+
@@ -33822,7 +33823,7 @@ function _integrationsCatalogHTML(opts){
   const notified=_appNotifiedSet();
   const notifyRow=(a)=>'<div class="int-card int-notify">'+
       '<div class="int-ic">'+_appMarkHTML(a.name)+'</div>'+
-      '<div class="int-body"><div class="int-top"><span class="int-name">'+escH(a.name)+'</span></div>'+
+      '<div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>'+escH(a.name)+'</span></div>'+
         '<div class="int-desc">'+escH(a.desc)+'</div></div>'+
       '<div class="int-act">'+(notified.has(a.slug)
         ? '<span class="int-onlist">✓ '+escH(T('On the list'))+'</span>'

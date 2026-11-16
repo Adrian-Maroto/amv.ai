@@ -432,7 +432,7 @@ function renderTasksView(){
     ${_autoServerHTML()}
     <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="tk-find" type="search" autocomplete="off" value="${escH(_tkQ)}" placeholder="${escH(T('Search tasks'))}" aria-label="${escH(T('Search tasks'))}"></div>
-    <div class="cj-cats" id="tk2-cats" role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
+    <div class="cj-cats" id="tk2-cats" data-hscroll role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
     <div id="tk2-body">${_tkListHTML()}</div>
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}
