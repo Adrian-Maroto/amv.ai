@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="a21cdffa8a5a1d32">
+<meta name="amv-build" content="90a6fafb3ce2bf50">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10775,6 +10775,21 @@ body.light #cib:focus-within{box-shadow:0 0 0 4px var(--accent-soft)!important}
 #app .vi-conn .int-act .btn{width:auto;min-width:96px;min-height:44px}
 #app .vi-conn .int2-sub{margin-bottom:0}
 }
+.vi-help #faq-search{
+height:48px;padding:0 var(--sp-4);border-radius:var(--r-lg)!important;
+background:
+linear-gradient(var(--s1),var(--s1)) padding-box,
+linear-gradient(100deg,color-mix(in srgb,var(--accent) 45%,var(--bd)) 0%,var(--bd) 22%,var(--bd) 78%,color-mix(in srgb,var(--accent) 30%,var(--bd)) 100%) border-box!important;
+border:1px solid transparent!important;
+box-shadow:0 1px 0 rgba(255,255,255,.035) inset,var(--sh-sm)!important}
+.vi-help #faq-search:focus{
+background:
+linear-gradient(var(--s1),var(--s1)) padding-box,
+linear-gradient(100deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 55%,var(--bd)) 50%,var(--accent) 100%) border-box!important;
+border:1px solid transparent!important;outline:none!important;
+box-shadow:0 0 0 4px var(--accent-soft),var(--sh-sm)!important}
+body.light .vi-help #faq-search{box-shadow:0 1px 2px rgba(24,23,21,.06)!important}
+body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!important}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
