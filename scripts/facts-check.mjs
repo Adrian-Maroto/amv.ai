@@ -8,7 +8,11 @@
 
      1. Wikidata's search (wbsearchentities), then each candidate's claims
         (wbgetentities): country (P17) and official website (P856).
-     2. VERIFIED, IN THE COUNTRY: a candidate whose country is this country.
+     2. VERIFIED, IN THE COUNTRY: a candidate whose country, country of origin
+        or jurisdiction is this country - or the name is an entry of the
+        country's own catalogue (data/countries, Wikidata), or an address in
+        its Chrome UX Report list. Searched in English, in the country's
+        language, and with the country's name.
         VERIFIED, VISITED THERE: a candidate whose official website is in this
         country's Chrome UX Report list (LinkedIn for job hunting in Spain).
      3. GENERIC: a phrase, not a name ("your state DMV", "your health
@@ -76,8 +80,8 @@ function items(v) {
 }
 const clean = (s) => s.replace(/^the\s+/i, '').replace(/\s+/g, ' ').trim();
 
-async function search(name) {
-  const u = API + '?action=wbsearchentities&format=json&type=item&limit=6&language=en&uselang=en&strictlanguage=false&search=' + encodeURIComponent(name);
+async function search(name, lang = 'en') {
+  const u = API + '?action=wbsearchentities&format=json&type=item&limit=10&language=' + lang + '&uselang=' + lang + '&strictlanguage=false&search=' + encodeURIComponent(name);
   const r = await get(u); if (!r) return [];
   const j = await r.json().catch(() => null);
   return ((j && j.search) || []).map(x => x.id);
@@ -91,12 +95,25 @@ async function claims(ids) {
     for (const [id, e] of Object.entries((j && j.entities) || {})) {
       const c = e.claims || {};
       const val = (p) => (c[p] || []).map(s => s.mainsnak && s.mainsnak.datavalue && s.mainsnak.datavalue.value).filter(Boolean);
-      out[id] = { label: (e.labels && e.labels.en && e.labels.en.value) || '', country: val('P17').map(v => v.id), site: val('P856').map(String) };
+      /* Where it is: its country (P17), its country of origin (P495), or the
+         jurisdiction it applies to (P1001 - a tax authority, a national exam). */
+      out[id] = { label: (e.labels && e.labels.en && e.labels.en.value) || '',
+                  country: [...val('P17'), ...val('P495'), ...val('P1001')].map(v => v && v.id).filter(Boolean), site: val('P856').map(String) };
     }
   }
   return out;
 }
 
+/* The language a country's own names are written in, for the second search. */
+const LANG = { AR:'es', MX:'es', ES:'es', CO:'es', CL:'es', PE:'es', VE:'es', EC:'es', BO:'es', PY:'es', UY:'es', CR:'es', PA:'es', GT:'es', DO:'es', HN:'es', SV:'es', NI:'es', CU:'es',
+  BR:'pt', PT:'pt', AO:'pt', MZ:'pt', FR:'fr', BE:'fr', CI:'fr', SN:'fr', CM:'fr', MA:'fr', DZ:'fr', TN:'fr', DE:'de', AT:'de', CH:'de', IT:'it', NL:'nl',
+  PL:'pl', CZ:'cs', SK:'sk', HU:'hu', RO:'ro', BG:'bg', GR:'el', RS:'sr', HR:'hr', SI:'sl', LT:'lt', LV:'lv', EE:'et', FI:'fi', SE:'sv', NO:'nb', DK:'da',
+  RU:'ru', UA:'uk', BY:'ru', KZ:'ru', UZ:'uz', AZ:'az', GE:'ka', AM:'hy', TR:'tr', IL:'he', SA:'ar', AE:'ar', EG:'ar', JO:'ar', IQ:'ar', LB:'ar', KW:'ar', QA:'ar',
+  IR:'fa', PK:'ur', BD:'bn', IN:'hi', NP:'ne', LK:'si', TH:'th', VN:'vi', ID:'id', MY:'ms', PH:'tl', CN:'zh', TW:'zh', HK:'zh', JP:'ja', KR:'ko', MM:'my', KH:'km',
+  ET:'am', KE:'sw', TZ:'sw', UG:'en', RW:'rw', ZM:'en', ZW:'en', GH:'en', NG:'en', ZA:'en' };
+const nameOf = (cc) => { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) || ''; } catch (e) { return ''; } };
+const normN = (x) => String(x).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^the\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const catalogueOf = (cc) => { try { return Object.values(JSON.parse(readFileSync(join(ROOT, 'data/countries', cc + '.json'), 'utf8')).kinds || {}).flat(); } catch (e) { return []; } };
 const qidOf = (cc) => { try { return JSON.parse(readFileSync(join(ROOT, 'data/countries', cc + '.json'), 'utf8')).qid || ''; } catch (e) { return ''; } };
 const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch (e) { return ''; } };
 
@@ -105,7 +122,7 @@ const result = only.length ? prev : {};
 const tally = {};
 for (const [cc, f] of Object.entries(FACTS)) {
   if (only.length && !only.includes(cc)) continue;
-  const q = qidOf(cc), cr = await crux(cc);
+  const q = qidOf(cc), cr = await crux(cc), cat = catalogueOf(cc);
   result[cc] = {};
   const t = tally[cc] = { verified: 0, generic: 0, unresolved: [] };
   for (const [field, v] of Object.entries(f)) {
@@ -114,15 +131,29 @@ for (const [cc, f] of Object.entries(FACTS)) {
     for (const raw of items(v)) {
       const n = clean(raw);
       if (GENERIC.test(raw) || GENERIC.test(n)) { result[cc][field].push({ n, how: 'generic' }); t.generic++; continue; }
-      const ids = await search(n); await sleep(120);
-      const cl = ids.length ? await claims(ids) : {};
       let best = null;
-      for (const id of ids) {
-        const e = cl[id]; if (!e) continue;
-        const sites = e.site.map(hostOf).filter(Boolean);
-        const r = Math.min(...sites.map(h => cr.byReg.get(reg(h)) || Infinity));
-        if (q && e.country.includes(q)) { best = { n, q: id, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined }; break; }
-        if (isFinite(r) && !best) best = { n, q: id, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
+      /* A name that is an address (Amazon.com.br): the address itself. */
+      const dom = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(n) ? n.toLowerCase() : '';
+      if (dom && cr.byReg.get(reg(dom))) best = { n, how: 'visited', site: dom, r: cr.byReg.get(reg(dom)) };
+      /* In the country's own catalogue (Wikidata, already checked there). */
+      if (!best) {
+        const k = normN(n), e = cat.find(x => normN(x.n) === k || (k.length >= 4 && normN(x.n).startsWith(k + ' ')));
+        if (e) best = { n, q: e.q, how: 'catalogue', site: e.s, r: e.r };
+      }
+      /* Wikidata: in English, in the country's language, and with the
+         country's name, so "Chase" finds the bank and not the verb. */
+      const tries = [[n, 'en'], [n, LANG[cc] || 'en'], [n + ' ' + nameOf(cc), 'en']];
+      for (const [term, lang] of tries) {
+        if (best) break;
+        const ids = await search(term, lang); await sleep(100);
+        const cl = ids.length ? await claims(ids) : {};
+        for (const id of ids) {
+          const e = cl[id]; if (!e) continue;
+          const sites = e.site.map(hostOf).filter(Boolean);
+          const r = Math.min(...sites.map(h => cr.byReg.get(reg(h)) || Infinity));
+          if (q && e.country.includes(q)) { best = { n, q: id, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined }; break; }
+          if (isFinite(r) && !best) best = { n, q: id, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
+        }
       }
       if (best) { result[cc][field].push(best); t.verified++; }
       else { result[cc][field].push({ n, how: 'unresolved' }); t.unresolved.push(field + ': ' + n); }
@@ -135,7 +166,7 @@ writeFileSync(join(ROOT, 'data/facts-sources.json'), JSON.stringify(result, null
 const rows = Object.entries(result).map(([cc, fs]) => {
   const all = Object.values(fs).flat();
   const c = (h) => all.filter(x => x.how === h).length;
-  return { cc, v: c('in-country') + c('visited'), g: c('generic'), u: all.filter(x => x.how === 'unresolved').map(x => x.n), n: all.length };
+  return { cc, v: c('in-country') + c('visited') + c('catalogue'), g: c('generic'), u: all.filter(x => x.how === 'unresolved').map(x => x.n), n: all.length };
 });
 const sum = (k) => rows.reduce((a, r) => a + (Array.isArray(r[k]) ? r[k].length : r[k]), 0);
 const md = ['# Country facts, checked against Wikidata and the Chrome UX Report', '',
