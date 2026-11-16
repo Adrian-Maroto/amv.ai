@@ -170,7 +170,14 @@ section('Each country’s own work is its own - Spain names Spain’s, the US na
   const e = await catalogue(es.page, 'ES');
   const et = e.titles.slice(0, 200).join(' | ');
   ok(/Spain|Spanish|Hacienda|Mercadona|Renfe|Idealista|Selectividad|PAU|EvAU|InfoJobs|BBVA|Santander|CaixaBank/i.test(et), 'Spain’s list names Spain and its institutions', et.slice(0, 240));
-  ok(!/\bIRS\b|Walmart|Zillow/.test(e.titles.join(' | ')), 'and nothing American', e.titles.join(' | ').match(/\bIRS\b|Walmart|Zillow/));
+  /* Spain's OWN jobs - written for it. The catalogue (ccj- ids) is the
+     services people in Spain really visit, from the data, and walmart.com is
+     among them; whether it had arrived when this read the list was timing,
+     which made the line pass or fail by the millisecond. The catalogue is
+     held to its data by its own suites; China's blocks are checked below on
+     everything. */
+  const own = e.titles.filter((t, i) => !/^ccj-/.test(e.ids[i])).join(' | ');
+  ok(!/\bIRS\b|Walmart|Zillow/.test(own), 'and nothing American among its own jobs', own.match(/\bIRS\b|Walmart|Zillow/));
   await es.ctx.close();
   const cn = await open('CN');
   const c = await catalogue(cn.page, 'CN');

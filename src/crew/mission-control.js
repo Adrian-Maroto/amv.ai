@@ -1521,7 +1521,10 @@ function _cjWire(vc){
   /* The catalogue of the country's real services arrives after the page: its
      jobs join the list in place. */
   try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){}
-  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(() => { if(document.getElementById('cj-grid')) _cjRepaint(); }).catch(() => {});
+  /* Drawn again only when the list really changed - the second visit to Crew
+     already drew the kept list on arrival. */
+  const had = ((window._ccCrewJobs || {})[_cwCountryGuess()]);
+  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(l => { if(l && l !== had && document.getElementById('cj-grid')) _cjRepaint(); }).catch(() => {});
 }
 
 /* SEE ALL JOBS (Nov 15). The owner: "an option to see all jobs - a directory

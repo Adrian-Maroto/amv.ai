@@ -49,6 +49,12 @@ section('At 4x CPU, Crew paints without a long freeze');
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   const runs = [];
+  /* The catalogue's jobs (a few thousand - ~23,000 for the United States)
+     are made once per country and language and kept. Nov 16: they were made
+     again on every visit, twice over, and on CI's runner that was a 0.7-1.5s
+     freeze each time Crew opened. Held directly, not only by the timing. */
+  await page.evaluate(() => _ccReady().then(() => ccCrewLoad(_cwCountryGuess())));
+  await page.evaluate(() => { window.__kept = (window._ccCrewJobs || {})[_cwCountryGuess()]; });
   for (let i = 0; i < 3; i++) {
     await page.evaluate(() => setTab('help'));
     await page.waitForTimeout(400);
@@ -63,6 +69,8 @@ section('At 4x CPU, Crew paints without a long freeze');
     }));
   }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  const kept = await page.evaluate(() => ({ n: (window.__kept || []).length, same: window.__kept === (window._ccCrewJobs || {})[_cwCountryGuess()] }));
+  ok(kept.n > 1000 && kept.same, 'the catalogue’s jobs are made once and kept, not again on every visit', kept);
   const best = runs.reduce((a, b) => (b.paint < a.paint ? b : a));
   ok(best.paint < 900, 'first paint well inside a second (measured ~300ms)', runs);
   ok(best.longest < 600, 'and no single freeze over 600ms (measured ~170ms)', runs);

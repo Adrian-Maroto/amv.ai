@@ -719,9 +719,34 @@ async function ccCrewLoad(cc){
      nothing else, so a blank left unfilled would run every day against the
      words "[my route]". Crew's own switch does the asking (`asks`), refuses an
      empty answer, and adds what was said to what the runner reads. */
-  _ccCrewJobs[cc] = ccJobs(d).map(j => ccCrewJob(j.kind, j.e, j.i, d.cc));
-  return _ccCrewJobs[cc];
+  /* Built once per country, language and language pack, and kept: Crew
+     calls this every time it opens, and making a few thousand jobs (each a
+     title and an instruction filled from its template) on every visit was a
+     half-second freeze on a slow phone. Each job is made once, by the one
+     builder - this used to make every job through ccJobs and throw it away. */
+  const key = _ccCrewKey(), m = _ccCrewMade[cc];
+  if(_ccCrewJobs[cc] && m && m.d === d && m.key === key) return _ccCrewJobs[cc];
+  if(m && m.d === d && m.key === key && m.busy) return m.busy;
+  /* The first build is done in slices with a pause between them, so the page
+     answers a tap while a big country (the United States: ~23,000 jobs) is
+     being made. The order is worked out first - cheap - and kept. */
+  const made = { d, key };
+  _ccCrewMade[cc] = made;
+  made.busy = (async () => {
+    const order = _ccByPopPass(d, CC_CREW, (kind, e, i) => [kind, e, i]), out = [];
+    for(let k = 0; k < order.length; k++){
+      const [kind, e, i] = order[k]; out.push(ccCrewJob(kind, e, i, d.cc));
+      if(k % 1500 === 1499){ await new Promise(r => setTimeout(r, 0)); if(_ccCrewMade[cc] !== made) return _ccCrewJobs[cc] || out; }
+    }
+    _ccCrewJobs[cc] = out; made.busy = null;
+    return out;
+  })();
+  return made.busy;
 }
+const _ccCrewMade = {};
+/* The titles are in the reader's language, so a change of language - or its
+   pack arriving after the first draw - makes them again. */
+const _ccCrewKey = () => { try{ const l = _lang(); return l + (_i18nPackHave(l) ? '+' : '-'); }catch(e){ return ''; } };
 const _ccAsks = (p) => { const b = [...new Set((p.match(/\[[^\]]*\]/g) || []).map(x => x.slice(1, -1)))];
   return b.length ? { q: 'This job needs: ' + b.join(', ') + '.', ph: 'Type each one, in a sentence or a list.' } : null; };
 /* A job's id. A job about the entry alone is the same job in every country
