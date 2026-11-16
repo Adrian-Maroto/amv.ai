@@ -73,6 +73,21 @@ section('You can see where you are, on every tab');
   for (const tab of ['chat', 'plans', 'settings', 'market']) {
     await page.evaluate(t => setTab(t), tab);
     await page.waitForTimeout(400);
+    /* Tab once the screen has finished drawing, as a person does. Settings'
+       folds and Market's rows arrive from files fetched on demand, and in a
+       slower engine (WebKit, nightly) they were still arriving when Tab
+       started - a stop scrolled into view was then pushed below the fold by
+       what landed above it, which read as "scrolled off" on a different
+       control each night. Still = the same height and markup for 450ms. */
+    await page.evaluate(async () => {
+      const el = document.getElementById('vc') || document.body;
+      const sig = () => el.scrollHeight + ':' + el.innerHTML.length;
+      let last = sig(), same = 0;
+      for (let i = 0; i < 40 && same < 3; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        const now = sig(); same = now === last ? same + 1 : 0; last = now;
+      }
+    });
     await page.evaluate(() => {
       document.querySelectorAll('[data-__kbdseen]').forEach(e => { delete e.dataset.__kbdseen; });
       (document.getElementById('vc') || document.body).focus();
