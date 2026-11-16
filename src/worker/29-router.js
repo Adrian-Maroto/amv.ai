@@ -1114,7 +1114,7 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/checkout': return stripeCheckout(request, env);
     case '/v1/stripe/portal':   return stripePortal(request, env);
     case '/v1/stripe/auto-renew': return stripeAutoRenew(request, env);
-    case '/v1/billing/refund':  return billingRefund(request, env);
+    case '/v1/billing/refund':  return request.method === 'POST' ? billingRefund(request, env) : billingRefundState(request, env);
     case '/v1/stripe/invoices': return stripeInvoices(request, env);
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);

@@ -155,7 +155,9 @@ section('Safe means read-only, not "reads no request body"');
   /* A GET and a POST of the same thing. The GET lists and the POST changes, so
      the handler itself decides - which means the write-check below cannot read
      the whole body, and instead has to prove the branch exists. */
-  const BRANCHING = new Set(['/api/handoff', '/api/jobs']);
+  /* /v1/billing/refund: the GET says whether a refund is possible, the POST
+     makes one (68-refunds.js) - split at the route, like /api/handoff. */
+  const BRANCHING = new Set(['/api/handoff', '/api/jobs', '/v1/billing/refund']);
   for (const p of roster) {
     if (INLINE.has(p)) continue;
     if (BRANCHING.has(p)) {

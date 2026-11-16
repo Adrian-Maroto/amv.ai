@@ -24,7 +24,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'refunds.harness.mjs');
 writeFileSync(harness, src + `
-export { billingRefund, adminRefunds, adminRefundDecide, DB, counter, _periodKeyOf, _monthlyCeilingUSD };
+export { billingRefund, billingRefundState, adminRefunds, adminRefundDecide, DB, counter, _periodKeyOf, _monthlyCeilingUSD };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -73,7 +73,7 @@ async function seed(over = {}){
     await W.counter(env, `cost:${EMAIL}:${W._periodKeyOf(USER)}`, { op: 'incr', amount: ceil * over.usedShare, ttlMs: 70 * DAY });
   }
 }
-const get = async () => { const r = await W.billingRefund(new Request('https://x/v1/billing/refund', { method: 'GET' }), env); return r.json(); };
+const get = async () => { const r = await W.billingRefundState(new Request('https://x/v1/billing/refund', { method: 'GET' }), env); return r.json(); };
 const post = async (body) => { const r = await W.billingRefund(new Request('https://x/v1/billing/refund', { method: 'POST',
   headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.' + Math.floor(Math.random() * 200) }, body: JSON.stringify(body) }), env);
   return { status: r.status, d: await r.json() }; };
@@ -117,7 +117,7 @@ section('Each limit is the server’s, whatever the page shows');
   ok(s.ok === false && s.code === 'team_member', 'a team member cannot refund the team’s plan', s);
 
   await seed();
-  const r2 = await W.billingRefund(new Request('https://x/v1/billing/refund', { method: 'GET' }), Object.assign({}, env, { STRIPE_SECRET_KEY: '' }));
+  const r2 = await W.billingRefundState(new Request('https://x/v1/billing/refund', { method: 'GET' }), Object.assign({}, env, { STRIPE_SECRET_KEY: '' }));
   const d2 = await r2.json();
   ok(d2.code === 'needs_service', 'with no payments connected, it says so', d2);
 

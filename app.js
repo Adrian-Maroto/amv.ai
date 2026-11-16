@@ -43345,6 +43345,8 @@ const ACT_LABEL = {
      a subscription - and the person it belongs to finds out when their plan
      stops. The row says which way it went, below. */
   autorenew_changed:      ['Auto-renew changed', 'warn'],
+  refund_auto:            ['Refunded', 'warn'],
+  purchase:               ['AMV bought something for you', 'warn'],
   /* The rest of what the server actually records. These were absent, so they
      fell through to the raw-word fallback and rendered as ordinary, untoned
      rows - and they are precisely the events somebody checks this screen to

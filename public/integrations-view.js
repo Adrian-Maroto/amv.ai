@@ -432,7 +432,8 @@ function renderTasksView(){
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
-        <p class="tk2-sub" id="tk2-sub">${_tkList.length ? `<b>${_tkList.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))} \u00b7 ${escH(T('Pick one and AMV starts on it in chat.'))}` : escH(T('Loading…'))}</p></div>
+        <p class="tk2-sub" id="tk2-sub">${_tkList.length ? `<b>${_tkList.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}` : escH(T('Loading…'))}</p>
+        ${row ? `<p class="tk2-go">${escH(T('Pick one and AMV starts on it in chat.'))}</p>` : ''}</div>
       <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
     ${_autoServerHTML()}
@@ -458,7 +459,7 @@ async function _tkLoad(cc){
     if(cc !== _tkCc) return;
     _tkList = list;
     const sub = $('tk2-sub');
-    if(sub) sub.innerHTML = list.length ? `<b>${list.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))} \u00b7 ${escH(T('Pick one and AMV starts on it in chat.'))}`
+    if(sub) sub.innerHTML = list.length ? `<b>${list.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}`
       : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.'));
     _tkPaint();
   }catch(e){

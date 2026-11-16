@@ -18052,3 +18052,9 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 .chat-buy.bad{border-left-color:var(--gold)}
 .chat-buy-n{display:block;margin-top:2px;font-size:var(--t-xs);color:var(--mu)}
 .mf-over{color:var(--gold);font-size:var(--t-xs)}
+
+/* ========== LAYER A373 (Nov 16): Tasks' invitation on a line of its own ==========
+   It was appended to the count once the country's file arrived, which on a
+   phone wrapped the line and pushed everything below it down 21px. Drawn from
+   the first paint instead, so the count arriving changes one number. */
+.tk2-go{margin:2px 0 0;color:var(--tx);font-size:var(--t-base);font-weight:500}

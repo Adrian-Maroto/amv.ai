@@ -135,6 +135,10 @@ const CLASSIFIED = {
   marketReport:      'a report is about somebody else\'s listing by definition, so it is keyed to the listing and holds a hashed reporter; the second write hides that listing at the threshold, which is the moderation action itself',
   widgetConfigGet:   'the widget key comes from the caller\'s own widget_owner row',
   widgetConfigSave:  'the widget key comes from the caller\'s own widget_owner row',
+  /* Purchases (69-buying.js) are keyed by a hold id, not by an address. */
+  spendHold:         'creates a hold under a fresh id with the caller recorded as its owner',
+  spendSettle:       'owner-only: _buyOwnHold compares the hold\'s email with the caller, and not-theirs reads as not found',
+  spendRelease:      'owner-only, the same comparison',
 };
 
 const routes = [...src.matchAll(/case\s+'([^']+)'\s*:\s*return\s+([A-Za-z_$][\w$]*)\(/g)]

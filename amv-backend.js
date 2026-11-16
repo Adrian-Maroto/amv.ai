@@ -20734,7 +20734,7 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/checkout': return stripeCheckout(request, env);
     case '/v1/stripe/portal':   return stripePortal(request, env);
     case '/v1/stripe/auto-renew': return stripeAutoRenew(request, env);
-    case '/v1/billing/refund':  return billingRefund(request, env);
+    case '/v1/billing/refund':  return request.method === 'POST' ? billingRefund(request, env) : billingRefundState(request, env);
     case '/v1/stripe/invoices': return stripeInvoices(request, env);
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);
@@ -44551,17 +44551,20 @@ async function _refundEndPlan(env, email, subId, why){
   return endedAtStripe;
 }
 
-/* GET  /v1/billing/refund   what this account can do, and why
-   POST /v1/billing/refund   { mode:'auto' } or { mode:'request', reason } */
+/* GET /v1/billing/refund - what this account can do, and why. Reads only:
+   the router sends a GET here and nowhere else, so a link cannot act. */
+async function billingRefundState(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const s = await _refundState(env, user);
+  if (s.code) return json({ ok: false, code: s.code, error: s.error }, s.code === 'stripe_error' ? 502 : 200);
+  return json(s.state);
+}
+
+/* POST /v1/billing/refund - { mode:'auto' } or { mode:'request', reason } */
 async function billingRefund(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-
-  if (request.method === 'GET') {
-    const s = await _refundState(env, user);
-    if (s.code) return json({ ok: false, code: s.code, error: s.error }, s.code === 'stripe_error' ? 502 : 200);
-    return json(s.state);
-  }
 
   const sp = await guardAction(env, `refund:${user.email}`, 6, 20, 'refund requests');
   if (sp) return sp;
@@ -44614,13 +44617,14 @@ async function billingRefund(request, env){
 /* GET /v1/admin/refunds - every request, open ones first. */
 async function adminRefunds(request, env){
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
-  const all = await DB.list(env, 'refundreq', 500);
+  /* Through scan, so a list cut short says so here and pages the owner. */
+  const { rows: all, truncated, unreadable } = await scan(env, 'refundreq', 500, 'owner refund requests');
   const rows = all.map(x => x.value).filter(Boolean)
     .sort((a, b) => ((a.status === 'open') === (b.status === 'open') ? (b.at || 0) - (a.at || 0) : (a.status === 'open' ? -1 : 1)))
     .map(r => ({ id: r.id, email: r.email, at: r.at, status: r.status, reason: r.reason, usedPercent: r.usedPercent,
       amount: _fromMinor(r.amount, r.currency), currency: String(r.currency || 'usd').toUpperCase(), paidAt: r.paidAt,
       why: r.why || [], decidedAt: r.decidedAt || 0, refund: r.refund || null }));
-  return json({ ok: true, requests: rows, unreadable: all._unreadable || 0 });
+  return json({ ok: true, requests: rows, truncated: !!truncated, unreadable: unreadable || 0 });
 }
 
 /* POST /v1/admin/refunds/decide { id, approve } */

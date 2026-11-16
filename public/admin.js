@@ -816,9 +816,13 @@ async function _admRefundsLoad(){
     if(!r.ok){ box.innerHTML='<div class="adm-fin-note">Could not load the requests ('+r.status+').</div>'; return; }
   }catch(e){ _logErr('adminRefunds', e); box.innerHTML='<div class="adm-fin-note">Could not reach the backend.</div>'; return; }
   const rows=(d&&d.requests)||[];
-  if(!rows.length){ box.innerHTML='<div class="adm-fin-note">No refund requests yet.</div>'; return; }
+  /* A list cut short, or records that would not read, is said here: an
+     empty or short list must never look like every request there is. */
+  const warn=(d&&d.truncated?'<div class="adm-fin-note" role="alert">Showing the first '+escH(String(rows.length))+' requests - there are more than this screen reads.</div>':'')
+    +(d&&d.unreadable?'<div class="adm-fin-note" role="alert">'+escH(String(d.unreadable))+' request(s) could not be read and are not shown. Check the audit log for record_corrupt.</div>':'');
+  if(!rows.length){ box.innerHTML=warn+'<div class="adm-fin-note">No refund requests yet.</div>'; return; }
   const day=t=>{ try{ return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return ''; } };
-  box.innerHTML=rows.map(x=>'<div class="adm-rf-row" data-id="'+escH(x.id)+'">'
+  box.innerHTML=warn+rows.map(x=>'<div class="adm-rf-row" data-id="'+escH(x.id)+'">'
     +'<div class="adm-rf-h"><b>'+escH(x.email)+'</b> \u00b7 '+escH(_admMoney(x.amount,x.currency))+' charged '+escH(day(x.paidAt))
       +' \u00b7 '+escH(String(x.usedPercent))+'% used \u00b7 asked '+escH(day(x.at))
       +' <span class="adm-rf-s '+escH(x.status)+'">'+escH(x.status)+'</span></div>'
