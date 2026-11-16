@@ -476,6 +476,25 @@
    "ko": "8d4f3299dd01",
    "ta": "50aa673249ad"
   },
+  "Can I get a refund?": {
+   "es": "e437e84cbdd1",
+   "zh": "1e70de2197e2",
+   "hi": "084f423c33ac",
+   "ar": "952b77deb66a",
+   "pt": "23a2e53b7678",
+   "fr": "60d3b33cff7c",
+   "de": "9d04d1081887",
+   "ja": "15e0f78275b5",
+   "ru": "1b83a3177ecb",
+   "id": "66156d3d938b",
+   "bn": "5017cd5ea9a0",
+   "ur": "45f7e9b43b4a",
+   "tr": "1797238699cd",
+   "vi": "8ec0a754922e",
+   "it": "9e61f21dcbf0",
+   "ko": "4535dc58139c",
+   "ta": "54958adc7ee6"
+  },
   "Card details are held by our payment processor, never by AMV. We keep the last four digits so you can tell which card is on file.": {
    "es": "ac39d77fba44",
    "zh": "f40ba0873c19",
@@ -2090,6 +2109,25 @@
    "it": "72b7b7c3ab8c",
    "ko": "0ee1cdd8aeef",
    "ta": "5eee9a42da6b"
+  },
+  "The store charged more than you approved.": {
+   "es": "ed66651eee3e",
+   "zh": "0e8b13aae960",
+   "hi": "c2817af35848",
+   "ar": "20e15d22648d",
+   "pt": "a9956eb23287",
+   "fr": "681994047250",
+   "de": "bb4e35917b67",
+   "ja": "517651ae5415",
+   "ru": "0bd52bef014b",
+   "id": "be6f453a9a92",
+   "bn": "0ea9493aa132",
+   "ur": "e906bcc7d757",
+   "tr": "5e0099a97299",
+   "vi": "e4ec8b808e36",
+   "it": "c83f505d6cb8",
+   "ko": "0c0df6bf0147",
+   "ta": "965baded81e2"
   },
   "The whole charge goes back to your card, and your plan ends now and moves to Free. This cannot be undone.": {
    "es": "51c23b841940",

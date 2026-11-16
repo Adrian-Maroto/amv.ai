@@ -952,6 +952,20 @@
    "kept": "account lifetime",
    "backup": true,
    "authority": "kv"
+  },
+  "buyhold": {
+   "class": "financial",
+   "holds": "an amount held against a person's spending limits for one purchase, and how it was settled",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "buys": {
+   "class": "financial",
+   "holds": "a person's purchase receipts: store, item, total, order number",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
   }
  },
  "elsewhere": {

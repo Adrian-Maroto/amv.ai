@@ -9488,6 +9488,10 @@ async function _callAITurn(msgs, _opts) {
        call is asked for with its arguments shown before it runs. */
     try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
     try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeLocal(), remote: true })); }catch(e){}
+    /* Buying (shopping.js): offered while AMV's browser runs. */
+    try{ if(MCP.live[MCP_BROWSER.id] && !window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop);
+         if(window.amvShop && window.amvShop.live()) tools = tools.concat(window.amvShop.tools); }
+    catch(e){ try{ console.error('AMV: shopping could not load', e); }catch(_){} }
     /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
 
        The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came
@@ -28077,6 +28081,8 @@ function _crewOnceAt(input){
 }
 async function _confirmModelTool(name, input){
   input = input || {};
+  /* AMV's own browser asks once per shopping trip (shopping.js). */
+  if(window.amvShop && window.amvShop.mine(name)) return window.amvShop.consent(name, input);
   const what = ({
     deploy_site:'publish a public web page live on the internet',
     run_command:'run this on your computer, in your project folder:\n\n' + String(input.command||''),
@@ -28207,7 +28213,15 @@ async function _amvRunTool(name, input, onStatus){
        reported with the server it came from, because "AMV sent the email" and
        "the gmail connector on your machine sent the email" are different
        sentences and only the second is true. */
+    if(name === 'propose_purchase' || name === 'confirm_purchase'){
+      if(!window.amvShop) return { ok:false, text:'Buying needs AMV\u2019s browser running on the person\u2019s computer. Nothing was bought.' };
+      onStatus && onStatus(name === 'propose_purchase' ? 'Asking you to approve the purchase\u2026' : 'Checking the confirmation\u2026');
+      return await window.amvShop.run(name, input);
+    }
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
+      /* A pay or place-order button is never pressed without an approved
+         purchase - read from the live page, not the model (shopping.js). */
+      if(window.amvShop && window.amvShop.mine(name)){ const g = await window.amvShop.check(name, input); if(g) return g; }
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
       onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
@@ -42161,6 +42175,7 @@ const AMVSpend = {
       autoUnder:50,        // spend up to this without asking
       perPurchase:250,     // absolute max for a single purchase
       monthlyCap:500,      // absolute max per month
+      currency:'USD',      // what the limits are counted in (never converted)
       requireApprovalOver:0, // 0 = use autoUnder
       log:[], month:'', spent:0
     }, c||{});
@@ -42197,6 +42212,7 @@ const AMVSpend = {
     /* Including the master switch. If the account says spending is off, the
        toggle on this screen says off, because the account is what decides. */
     c.enabled = !!d.limits.enabled;
+    c.currency = /^[A-Z]{3}$/.test(d.limits.currency || '') ? d.limits.currency : 'USD';
     c.month = /^\d{4}-\d{2}$/.test(d.period || '') ? d.period : this._month();
     c.verifiedAt = Date.now();
     c.spent = d.spentThisMonth;      // counted where it cannot be edited
@@ -42212,10 +42228,11 @@ const AMVSpend = {
        let the server's copy of "spending is on" drift from the toggle. */
     const body = { autoUnder:limits.autoUnder, perPurchase:limits.perPurchase,
                    monthlyCap:limits.monthlyCap,
-                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled) };
+                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled),
+                   currency: /^[A-Z]{3}$/.test(limits.currency || '') ? limits.currency : (cur.currency || 'USD') };
     if(!this.serverBacked()){
       cur.autoUnder = this._n(body.autoUnder); cur.perPurchase = this._n(body.perPurchase);
-      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; this.save(cur);
+      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; cur.currency = body.currency; this.save(cur);
       return { ok:true, code:'local_only', limits:{ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
                                                     monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
     }
@@ -42226,6 +42243,7 @@ const AMVSpend = {
     c.perPurchase = this._n(d.limits.perPurchase);
     c.monthlyCap = this._n(d.limits.monthlyCap);
     c.enabled = !!d.limits.enabled;
+    c.currency = /^[A-Z]{3}$/.test(d.limits.currency || '') ? d.limits.currency : 'USD';
     this.save(c);
     return { ok:true, limits:d.limits };
   },
@@ -42785,7 +42803,12 @@ try{
    their input with aria-describedby rather than only turning something red.
    ============================================================ */
 
-function _mfMoney(n){ return '$' + (+n || 0).toFixed(2); }
+/* In the currency the limits are counted in (Spending; never converted). */
+function _mfMoney(n){
+  let cur = 'USD'; try{ cur = (AMVSpend.cfg().currency) || 'USD'; }catch(e){ cur = 'USD'; }
+  try{ return new Intl.NumberFormat(undefined, { style:'currency', currency:cur }).format(+n || 0); }
+  catch(e){ return cur + ' ' + (+n || 0).toFixed(2); }
+}
 function _mfWhen(ts){
   try{ return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
   catch(e){ return ''; }

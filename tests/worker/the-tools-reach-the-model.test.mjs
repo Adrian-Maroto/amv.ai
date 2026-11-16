@@ -53,7 +53,9 @@ section('Every tool the app ships is one the backend will forward');
 {
   /* Read from the built bundle rather than from a list retyped here - a list
      retyped here would agree with itself for ever. */
-  const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  /* And the files the page fetches that define tools of their own -
+     shopping.js offers the purchase tools while AMV's browser runs. */
+  const app = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'shopping.js'), 'utf8');
   /* EVERY group of tools the app builds, not one of them.
 
      This read a single slice - `const AMV_TOOLS` up to `function _toolsFor` -

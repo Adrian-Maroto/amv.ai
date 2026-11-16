@@ -25,6 +25,7 @@ const AMVSpend = {
       autoUnder:50,        // spend up to this without asking
       perPurchase:250,     // absolute max for a single purchase
       monthlyCap:500,      // absolute max per month
+      currency:'USD',      // what the limits are counted in (never converted)
       requireApprovalOver:0, // 0 = use autoUnder
       log:[], month:'', spent:0
     }, c||{});
@@ -61,6 +62,7 @@ const AMVSpend = {
     /* Including the master switch. If the account says spending is off, the
        toggle on this screen says off, because the account is what decides. */
     c.enabled = !!d.limits.enabled;
+    c.currency = /^[A-Z]{3}$/.test(d.limits.currency || '') ? d.limits.currency : 'USD';
     c.month = /^\d{4}-\d{2}$/.test(d.period || '') ? d.period : this._month();
     c.verifiedAt = Date.now();
     c.spent = d.spentThisMonth;      // counted where it cannot be edited
@@ -76,10 +78,11 @@ const AMVSpend = {
        let the server's copy of "spending is on" drift from the toggle. */
     const body = { autoUnder:limits.autoUnder, perPurchase:limits.perPurchase,
                    monthlyCap:limits.monthlyCap,
-                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled) };
+                   enabled: (limits.enabled === undefined ? !!cur.enabled : !!limits.enabled),
+                   currency: /^[A-Z]{3}$/.test(limits.currency || '') ? limits.currency : (cur.currency || 'USD') };
     if(!this.serverBacked()){
       cur.autoUnder = this._n(body.autoUnder); cur.perPurchase = this._n(body.perPurchase);
-      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; this.save(cur);
+      cur.monthlyCap = this._n(body.monthlyCap); cur.enabled = body.enabled; cur.currency = body.currency; this.save(cur);
       return { ok:true, code:'local_only', limits:{ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
                                                     monthlyCap:cur.monthlyCap, enabled:cur.enabled } };
     }
@@ -90,6 +93,7 @@ const AMVSpend = {
     c.perPurchase = this._n(d.limits.perPurchase);
     c.monthlyCap = this._n(d.limits.monthlyCap);
     c.enabled = !!d.limits.enabled;
+    c.currency = /^[A-Z]{3}$/.test(d.limits.currency || '') ? d.limits.currency : 'USD';
     this.save(c);
     return { ok:true, limits:d.limits };
   },

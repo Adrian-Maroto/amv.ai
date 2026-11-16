@@ -70,6 +70,11 @@ function _spendClean(raw){
      do not trust this, and it was the easiest of all of them to defeat.
      Absent means off: nobody is opted in to spending by silence. */
   out.enabled = !!(raw && raw.enabled);
+  /* The currency the limits are counted in (69-buying.js). Three letters or
+     US dollars - never converted, so a purchase in another currency is
+     refused rather than measured against a number in the wrong money. */
+  const cur = String((raw && raw.currency) || '').toUpperCase();
+  out.currency = /^[A-Z]{3}$/.test(cur) ? cur : 'USD';
   return out;
 }
 

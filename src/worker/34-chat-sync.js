@@ -370,6 +370,9 @@ const AMV_CLIENT_TOOLS = new Set([
   /* The open project's files searched again (project-search.js), when they
      are larger than one message holds. */
   'project_search',
+  /* Buying (docs/BUYING.md): the purchase card and the confirmation read
+     back, both handled in the browser (shopping.js) with a server hold. */
+  'propose_purchase', 'confirm_purchase',
   'tool_search',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 

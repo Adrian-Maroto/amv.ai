@@ -757,6 +757,8 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      and the refunded-invoice ledger are keyed by id and kept as the
      financial record, as payouts are. */
   'refundopen', 'refundlast', 'refundauto',
+  /* Their purchase receipts (69-buying.js) - what they bought and where. */
+  'buys',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Family invitations waiting for this person: who asked, and until when. */
   'faminv',

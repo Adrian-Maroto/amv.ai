@@ -18045,3 +18045,10 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 .adm-rf-r{margin:var(--sp-2) 0;font-size:var(--t-sm);color:var(--tx);white-space:pre-wrap;overflow-wrap:anywhere}
 .adm-rf-a{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
 .adm-rf-say{font-size:var(--t-sm);color:var(--mu)}
+/* Buying in chat (A372): the approval and the receipt, read from the store's page. */
+.chat-buy{margin:var(--sp-2) 0;padding:var(--sp-2) var(--sp-3);font-size:var(--t-sm);color:var(--mu);border:1px solid var(--bd);border-left:3px solid var(--accent);border-radius:var(--r-sm);background:var(--s1)}
+.chat-buy b{color:var(--tx);font-weight:650;margin-right:var(--sp-1)}
+.chat-buy.done{border-left-color:var(--grn)}
+.chat-buy.bad{border-left-color:var(--gold)}
+.chat-buy-n{display:block;margin-top:2px;font-size:var(--t-xs);color:var(--mu)}
+.mf-over{color:var(--gold);font-size:var(--t-xs)}

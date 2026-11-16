@@ -170,6 +170,8 @@ function emitSandbox() {
   writeFileSync('geo-countries.json', readFileSync('data/geo/countries.json'));
   /* What each Settings pane draws, fetched when Settings opens (code splitting). */
   writeFileSync('settings-panes.js', readFileSync('src/settings/settings-panes.js'));
+  /* Shopping in AMV's browser (docs/BUYING.md), fetched when the browser runs. */
+  writeFileSync('shopping.js', readFileSync('src/shopping/shopping.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
@@ -1164,6 +1166,7 @@ const PUBLISH = [
   'country-catalog.js',    // the country catalogue, fetched with Crew, Tasks and Integrations
   'geo-countries.json',    // country outlines, fetched only when somebody presses Use my location
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
+  'shopping.js',           // shopping in AMV's browser, fetched when the browser runs
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

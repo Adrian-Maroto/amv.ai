@@ -77,6 +77,10 @@ const BACKUP_PREFIXES = [
      year - the permissive direction - and lose the requests people are
      waiting on an answer to. */
   'refundreq:', 'refundopen:', 'refundlast:', 'refunddone:', 'refundauto:',
+  /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
+     and their receipts. A restore without the holds would free money still
+     booked against a purchase that may have happened. */
+  'buyhold:', 'buys:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing

@@ -1188,6 +1188,10 @@ async function _callAITurn(msgs, _opts) {
        call is asked for with its arguments shown before it runs. */
     try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
     try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeLocal(), remote: true })); }catch(e){}
+    /* Buying (shopping.js): offered while AMV's browser runs. */
+    try{ if(MCP.live[MCP_BROWSER.id] && !window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop);
+         if(window.amvShop && window.amvShop.live()) tools = tools.concat(window.amvShop.tools); }
+    catch(e){ try{ console.error('AMV: shopping could not load', e); }catch(_){} }
     /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
 
        The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came

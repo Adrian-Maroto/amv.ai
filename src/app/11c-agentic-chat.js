@@ -750,6 +750,8 @@ function _crewOnceAt(input){
 }
 async function _confirmModelTool(name, input){
   input = input || {};
+  /* AMV's own browser asks once per shopping trip (shopping.js). */
+  if(window.amvShop && window.amvShop.mine(name)) return window.amvShop.consent(name, input);
   const what = ({
     deploy_site:'publish a public web page live on the internet',
     run_command:'run this on your computer, in your project folder:\n\n' + String(input.command||''),
@@ -880,7 +882,15 @@ async function _amvRunTool(name, input, onStatus){
        reported with the server it came from, because "AMV sent the email" and
        "the gmail connector on your machine sent the email" are different
        sentences and only the second is true. */
+    if(name === 'propose_purchase' || name === 'confirm_purchase'){
+      if(!window.amvShop) return { ok:false, text:'Buying needs AMV\u2019s browser running on the person\u2019s computer. Nothing was bought.' };
+      onStatus && onStatus(name === 'propose_purchase' ? 'Asking you to approve the purchase\u2026' : 'Checking the confirmation\u2026');
+      return await window.amvShop.run(name, input);
+    }
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
+      /* A pay or place-order button is never pressed without an approved
+         purchase - read from the live page, not the model (shopping.js). */
+      if(window.amvShop && window.amvShop.mine(name)){ const g = await window.amvShop.check(name, input); if(g) return g; }
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
       onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);

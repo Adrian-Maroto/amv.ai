@@ -91,6 +91,13 @@ function _renderSpendingPaneNow(pane, redraw){
         '<div><label class="lbl" for="mf-cap">Monthly ceiling</label>'+
           '<input class="inp" id="mf-cap" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.monthlyCap))+'" '+
           'aria-describedby="mf-cap-h"><div class="mf-hint" id="mf-cap-h">Across everything. Resets on the first of the month.</div></div>'+
+        /* The currency these numbers are in. A store charging another one is
+           refused, never converted with a guessed rate (69-buying.js). */
+        '<div><label class="lbl" for="mf-cur">Currency</label>'+
+          '<select class="inp" id="mf-cur" aria-describedby="mf-cur-h">'+
+            [...new Set([c.currency||'USD','USD','EUR','GBP','INR','BRL','MXN','CAD','AUD','JPY','KRW','CNY','IDR','TRY','SAR','AED','PKR','BDT','VND','NGN','ZAR','CHF','SEK','PLN','RUB'])]
+              .map(k => '<option value="'+k+'"'+(k===(c.currency||'USD')?' selected':'')+'>'+k+'</option>').join('')+
+          '</select><div class="mf-hint" id="mf-cur-h">Stores that charge in another currency are not bought from.</div></div>'+
       '</div>'+
       '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
       '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
@@ -115,8 +122,22 @@ function _renderSpendingPaneNow(pane, redraw){
         '</tbody></table>'
         : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
     '</div>'+
+    /* What AMV bought in its browser, from the server's receipts
+       (69-buying.js): store, total, order number, and whether the order was
+       seen on the store's own confirmation page. */
+    (AMVSpend.serverBacked() ? '<div class="ss2" id="mf-buys" hidden><h3>Bought in AMV\u2019s browser</h3><div id="mf-buys-b"></div></div>' : '')+
     '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
 
+  if($('mf-buys')){
+    AMV_API._fetch('/v1/spend/buys',{method:'GET'}).then(r=>r.json()).then(d=>{
+      const list=(d&&d.buys)||[]; const box=$('mf-buys'), b=$('mf-buys-b'); if(!box||!b||!list.length) return;
+      const fmt=(n,c)=>{ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c}).format(+n||0); }catch(e){ return c+' '+n; } };
+      b.innerHTML='<table class="mf-tbl"><thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Store</th><th scope="col">Total</th><th scope="col">Order</th></tr></thead><tbody>'+
+        list.slice(0,25).map(x=>'<tr><td>'+escH(_mfWhen(x.at))+'</td><td>'+escH(x.item||'-')+'</td><td>'+escH(x.store||'-')+'</td><td>'+escH(fmt(x.total,x.currency))
+          +(x.over>0?' <span class="mf-over">'+escH('+'+fmt(x.over,x.currency)+' over approved')+'</span>':'')+'</td><td>'+escH(x.order||'-')+(x.verified?'':' <span class="mf-over">not seen on the page</span>')+'</td></tr>').join('')+'</tbody></table>';
+      box.hidden=false;
+    }).catch(e=>{ try{ console.error('AMV: could not load the purchase receipts', e); }catch(_){} });
+  }
   on($('mf-accept-terms'),'click',function(){
     try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
     catch(e){ toast(e.message||'Could not save that','error'); }
@@ -158,7 +179,7 @@ function _renderSpendingPaneNow(pane, redraw){
       /* What the server stored is what gets read back - it may have pulled a
          number down to its own ceiling, and the confirmation has to say the
          number that will really apply, not the one that was typed. */
-      const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv });
+      const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv, currency:(($('mf-cur')||{}).value||'USD') });
       const L = r.limits;
       if($('mf-auto')) $('mf-auto').value = String(L.autoUnder);
       if($('mf-per')) $('mf-per').value = String(L.perPurchase);

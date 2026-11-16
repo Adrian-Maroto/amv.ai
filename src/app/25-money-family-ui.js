@@ -14,7 +14,12 @@
    their input with aria-describedby rather than only turning something red.
    ============================================================ */
 
-function _mfMoney(n){ return '$' + (+n || 0).toFixed(2); }
+/* In the currency the limits are counted in (Spending; never converted). */
+function _mfMoney(n){
+  let cur = 'USD'; try{ cur = (AMVSpend.cfg().currency) || 'USD'; }catch(e){ cur = 'USD'; }
+  try{ return new Intl.NumberFormat(undefined, { style:'currency', currency:cur }).format(+n || 0); }
+  catch(e){ return cur + ' ' + (+n || 0).toFixed(2); }
+}
 function _mfWhen(ts){
   try{ return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
   catch(e){ return ''; }

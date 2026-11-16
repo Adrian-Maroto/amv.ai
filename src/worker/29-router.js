@@ -883,6 +883,7 @@ async function _route(request, env, ctx) {
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill', '/admin/pg/shadow',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
     '/v1/admin/refunds',        // the refund requests, read-only
+    '/v1/spend/buys',           // your purchase receipts, read-only
     '/v1/billing/refund',       // GET says what this account can do; POST acts (see billingRefund)
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
@@ -1022,6 +1023,10 @@ async function _route(request, env, ctx) {
     case '/v1/finance/unlink':       return financeUnlink(request, env);
     case '/v1/spend/limits':         return spendGet(request, env);
     case '/v1/spend/set':            return spendSet(request, env);
+    case '/v1/spend/hold':           return spendHold(request, env);
+    case '/v1/spend/settle':         return spendSettle(request, env);
+    case '/v1/spend/release':        return spendRelease(request, env);
+    case '/v1/spend/buys':           return spendBuys(request, env);
     case '/v1/family/get':           return familyGet(request, env);
     case '/v1/notify/done':          return notifyDone(request, env);
     case '/v1/school/connect':       return schoolConnect(request, env);
