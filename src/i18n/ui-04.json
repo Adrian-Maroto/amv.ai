@@ -853,5 +853,43 @@
   "it": "Sfoglia le bacheche",
   "ko": "보드 둘러보기",
   "ta": "பலகைகளை உலாவு"
+ },
+ "Cloud storage and sharing. Sign in at Dropbox; AMV asks you before each action.": {
+  "es": "Almacenamiento y uso compartido en la nube. Inicia sesión en Dropbox; AMV te pregunta antes de cada acción.",
+  "zh": "云存储与共享。在 Dropbox 登录;每次操作前 AMV 都会先问你。",
+  "hi": "क्लाउड स्टोरेज और शेयरिंग। Dropbox पर साइन इन करें; हर कार्रवाई से पहले AMV आपसे पूछता है।",
+  "ar": "تخزين ومشاركة سحابية. سجّل الدخول في Dropbox؛ ويسألك AMV قبل كل إجراء.",
+  "pt": "Armazenamento e compartilhamento na nuvem. Entre no Dropbox; a AMV pergunta antes de cada ação.",
+  "fr": "Stockage et partage dans le cloud. Connectez-vous sur Dropbox ; AMV vous demande avant chaque action.",
+  "de": "Cloud-Speicher und Teilen. Melden Sie sich bei Dropbox an; AMV fragt vor jeder Aktion.",
+  "ja": "クラウドストレージと共有。Dropboxでサインインします。AMVは毎回の操作前に確認します。",
+  "ru": "Облачное хранилище и обмен файлами. Войдите в Dropbox; AMV спросит вас перед каждым действием.",
+  "id": "Penyimpanan dan berbagi di cloud. Masuk di Dropbox; AMV bertanya sebelum setiap tindakan.",
+  "bn": "ক্লাউড স্টোরেজ ও শেয়ারিং। Dropbox-তে সাইন ইন করুন; প্রতিটি কাজের আগে AMV আপনাকে জিজ্ঞেস করে।",
+  "ur": "کلاؤڈ اسٹوریج اور شیئرنگ۔ Dropbox پر سائن ان کریں؛ ہر کارروائی سے پہلے AMV آپ سے پوچھتا ہے۔",
+  "tr": "Bulut depolama ve paylaşım. Dropbox’de oturum açın; AMV her işlemden önce size sorar.",
+  "vi": "Lưu trữ và chia sẻ đám mây. Đăng nhập tại Dropbox; AMV hỏi bạn trước mỗi thao tác.",
+  "it": "Archiviazione e condivisione nel cloud. Accedi su Dropbox; AMV ti chiede prima di ogni azione.",
+  "ko": "클라우드 저장과 공유. Dropbox에서 로그인하세요. AMV는 매 작업 전에 확인합니다.",
+  "ta": "மேகச் சேமிப்பும் பகிர்வும். Dropbox-இல் உள்நுழையுங்கள்; ஒவ்வொரு செயலுக்கும் முன் AMV உங்களிடம் கேட்கும்."
+ },
+ "Postgres, auth and storage. Sign in at Supabase; AMV asks you before each action.": {
+  "es": "Postgres, autenticación y almacenamiento. Inicia sesión en Supabase; AMV te pregunta antes de cada acción.",
+  "zh": "Postgres、身份验证和存储。在 Supabase 登录;每次操作前 AMV 都会先问你。",
+  "hi": "Postgres, ऑथ और स्टोरेज। Supabase पर साइन इन करें; हर कार्रवाई से पहले AMV आपसे पूछता है।",
+  "ar": "Postgres والمصادقة والتخزين. سجّل الدخول في Supabase؛ ويسألك AMV قبل كل إجراء.",
+  "pt": "Postgres, autenticação e armazenamento. Entre no Supabase; a AMV pergunta antes de cada ação.",
+  "fr": "Postgres, authentification et stockage. Connectez-vous sur Supabase ; AMV vous demande avant chaque action.",
+  "de": "Postgres, Auth und Speicher. Melden Sie sich bei Supabase an; AMV fragt vor jeder Aktion.",
+  "ja": "Postgres、認証、ストレージ。Supabaseでサインインします。AMVは毎回の操作前に確認します。",
+  "ru": "Postgres, авторизация и хранилище. Войдите в Supabase; AMV спросит вас перед каждым действием.",
+  "id": "Postgres, autentikasi, dan penyimpanan. Masuk di Supabase; AMV bertanya sebelum setiap tindakan.",
+  "bn": "Postgres, অথ ও স্টোরেজ। Supabase-তে সাইন ইন করুন; প্রতিটি কাজের আগে AMV আপনাকে জিজ্ঞেস করে।",
+  "ur": "Postgres، تصدیق اور اسٹوریج۔ Supabase پر سائن ان کریں؛ ہر کارروائی سے پہلے AMV آپ سے پوچھتا ہے۔",
+  "tr": "Postgres, kimlik doğrulama ve depolama. Supabase’de oturum açın; AMV her işlemden önce size sorar.",
+  "vi": "Postgres, xác thực và lưu trữ. Đăng nhập tại Supabase; AMV hỏi bạn trước mỗi thao tác.",
+  "it": "Postgres, autenticazione e storage. Accedi su Supabase; AMV ti chiede prima di ogni azione.",
+  "ko": "Postgres, 인증, 스토리지. Supabase에서 로그인하세요. AMV는 매 작업 전에 확인합니다.",
+  "ta": "Postgres, அங்கீகாரம், சேமிப்பு. Supabase-இல் உள்நுழையுங்கள்; ஒவ்வொரு செயலுக்கும் முன் AMV உங்களிடம் கேட்கும்."
  }
 }

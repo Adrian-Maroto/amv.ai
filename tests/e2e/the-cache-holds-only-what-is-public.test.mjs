@@ -80,6 +80,10 @@ try {
   const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs',
     ...pageScriptFiles().map(f => '/' + f.published)]);
   keys.filter(k => /^\/i18n\/[a-z]{2,3}\.json$/.test(k)).forEach(k => allowed.add(k));
+  /* How much each app is used, per country (app-reach.json, published by the
+     build) - public data, fetched with the Integrations screen, which the
+     idle prefetch above brings in. */
+  allowed.add('/app-reach.json');
   ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
   ok(keys.includes('/'), 'the page is stored, under the shell key', now);
   ok(keys.includes('/manifest.webmanifest'), 'a published file is stored', now);
