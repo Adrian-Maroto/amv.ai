@@ -752,6 +752,11 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      first and remembered second. */
   'ingest',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
+  /* Refunds keyed by the person (68-refunds.js): the open request pointer, the
+     owner's last answer and when their automatic refund was. The requests
+     and the refunded-invoice ledger are keyed by id and kept as the
+     financial record, as payouts are. */
+  'refundopen', 'refundlast', 'refundauto',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Family invitations waiting for this person: who asked, and until when. */
   'faminv',

@@ -81,7 +81,7 @@ function _adminAbuseSignals(){
    rendered HERE too, from the same functions - so there is one place to run the
    business, and Settings keeps working for anyone already using it. */
 const _ADMIN_TABS=[
-  ['overview','Overview'],['business','Business'],['users','Users'],['finance','Finance'],['revenue','Revenue'],
+  ['overview','Overview'],['business','Business'],['users','Users'],['finance','Finance'],['refunds','Refunds'],['revenue','Revenue'],
   ['ai','AI & Usage'],['infra','Infrastructure'],['security','Security'],['fraud','Fraud Monitor'],
   ['product','Product'],['growth','Growth']
 ];
@@ -258,6 +258,13 @@ function _admSparkline(values){
 
 function _admRenderTab(tab, backendLive, live){
   const el=$('adm-body'); if(!el) return;
+  if(tab==='refunds'){
+    el.innerHTML='<div class="ss2"><h3>Refund requests</h3>'
+      +'<p class="adm-fin-note">The policy: within 14 days of a charge, with under 20% of the plan used, people refund themselves once a year. Everything else lands here - approve refunds the charge at Stripe and ends the plan it paid for; decline refunds nothing. The person sees your answer on Billing.</p>'
+      +'<div id="adm-rf">'+(backendLive?'<div class="fd-loading">Loading requests\u2026</div>':_admPending('Refund requests'))+'</div></div>';
+    if(backendLive) _admRefundsLoad();
+    return;
+  }
   const m=_admMetrics(); const u=m.u;
   const sev={crit:'#ff4d4d',warn:'#e0b341',ok:'#4ade80'};
   const cap=(typeof AEGIS!=='undefined'&&AEGIS.cfg)?AEGIS.cfg.dailyTokenCap:2000000;
@@ -797,3 +804,56 @@ async function _adminLoadUsers(backendLive){
   const q=$('adm-user-q'); if(q) on(q,'input',()=>{ const term=q.value.toLowerCase(); const filtered=users.filter(u=>(u.email+' '+(u.name||'')).toLowerCase().includes(term)); const list=$('adm-user-list'); if(list) list.innerHTML=filtered.map(row).join('')||'<div class="adm-users-loading">No matches.</div>'; });
 }
 
+/* REFUNDS (68-refunds.js): every request, open first, with the usage beside
+   it - the number the policy turns on. */
+async function _admRefundsLoad(){
+  const box=$('adm-rf'); if(!box) return;
+  const base=apiBase()||''; const tok=_adminToken(); if(!base||!tok) return;
+  let d=null;
+  try{
+    const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/refunds',{headers:{'Authorization':'Bearer '+tok}},15000);
+    d=await r.json().catch(()=>null);
+    if(!r.ok){ box.innerHTML='<div class="adm-fin-note">Could not load the requests ('+r.status+').</div>'; return; }
+  }catch(e){ _logErr('adminRefunds', e); box.innerHTML='<div class="adm-fin-note">Could not reach the backend.</div>'; return; }
+  const rows=(d&&d.requests)||[];
+  if(!rows.length){ box.innerHTML='<div class="adm-fin-note">No refund requests yet.</div>'; return; }
+  const day=t=>{ try{ return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return ''; } };
+  box.innerHTML=rows.map(x=>'<div class="adm-rf-row" data-id="'+escH(x.id)+'">'
+    +'<div class="adm-rf-h"><b>'+escH(x.email)+'</b> \u00b7 '+escH(_admMoney(x.amount,x.currency))+' charged '+escH(day(x.paidAt))
+      +' \u00b7 '+escH(String(x.usedPercent))+'% used \u00b7 asked '+escH(day(x.at))
+      +' <span class="adm-rf-s '+escH(x.status)+'">'+escH(x.status)+'</span></div>'
+    +'<div class="adm-rf-r">'+escH(x.reason||'')+'</div>'
+    +(x.status==='open'
+      ? '<div class="adm-rf-a"><button class="btn bp" type="button" data-rf-approve="'+escH(x.id)+'">Approve and refund</button>'
+        +'<button class="btn bs" type="button" data-rf-decline="'+escH(x.id)+'">Decline</button><span class="adm-rf-say" role="status"></span></div>'
+      : '')
+  +'</div>').join('');
+  box.onclick=(e)=>{
+    const a=e.target.closest&&e.target.closest('[data-rf-approve],[data-rf-decline]'); if(!a) return;
+    const approve=a.hasAttribute('data-rf-approve');
+    const id=approve?a.dataset.rfApprove:a.dataset.rfDecline;
+    const go=()=>_admRefundDecide(id, approve, a);
+    if(!approve) return go();
+    const asked=(typeof confirmModal==='function') && confirmModal('Refund this charge?',
+      'The whole charge goes back to their card at Stripe, and the plan it paid for ends. This cannot be undone.', go,
+      { confirm:'Refund it', cancel:'Not yet' });
+    if(!asked) toast('Could not open the confirmation, so nothing was changed.','error',5000);
+  };
+}
+async function _admRefundDecide(id, approve, btn){
+  const row=btn.closest('.adm-rf-row'); const say=row&&row.querySelector('.adm-rf-say');
+  row.querySelectorAll('button').forEach(b=>{ b.disabled=true; });
+  if(say) say.textContent=approve?'Refunding\u2026':'Declining\u2026';
+  try{
+    const r=await fetchDeadline(apiBase().replace(/\/$/,'')+'/v1/admin/refunds/decide',{method:'POST',
+      headers:{'Authorization':'Bearer '+_adminToken(),'Content-Type':'application/json'},body:JSON.stringify({id,approve})},20000);
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok) throw new Error(d.error||('HTTP '+r.status));
+    toast(approve?('Refunded'+(d.refund?' '+_admMoney(d.refund.amount,d.refund.currency):'')+' - Stripe says '+((d.refund&&d.refund.status)||'done')+'.'):'Declined. Nothing was refunded.','success',6000);
+    _admRefundsLoad();
+  }catch(e){
+    row.querySelectorAll('button').forEach(b=>{ b.disabled=false; });
+    if(say) say.textContent='';
+    toast('Could not '+(approve?'refund':'decline')+': '+((e&&e.message)||'try again'),'error',7000);
+  }
+}

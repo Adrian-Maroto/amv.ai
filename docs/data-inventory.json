@@ -917,6 +917,41 @@
    "kept": "as payment and tax rules require",
    "backup": true,
    "authority": "kv"
+  },
+  "refundreq": {
+   "class": "financial",
+   "holds": "a refund request: the charge, the usage share and the reason the person wrote",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "refundopen": {
+   "class": "financial",
+   "holds": "which refund request of an account is still open",
+   "kept": "until the owner decides",
+   "backup": true,
+   "authority": "kv"
+  },
+  "refundlast": {
+   "class": "financial",
+   "holds": "the owner's answer to an account's last refund request",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "refunddone": {
+   "class": "financial",
+   "holds": "which invoices were refunded, so none is refunded twice",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "refundauto": {
+   "class": "financial",
+   "holds": "when an account had its automatic refund, for the once-a-year limit",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
   }
  },
  "elsewhere": {

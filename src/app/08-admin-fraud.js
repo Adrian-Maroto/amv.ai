@@ -651,6 +651,10 @@ function renderBillingView(targetEl){
               + escH(rn.autoRenew===false ? T('Turn auto-renew back on') : T('Turn off auto-renew')) + '</button>'
           + '</div>'
           : '')+
+        /* REFUNDS: filled from the server's answer (_billRefundFill), which
+           decides whether this charge can come back in one press. Hidden until
+           it answers, and stays hidden when there is nothing to refund. */
+        '<div class="bill-rf" id="bill-refund" hidden></div>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
            and had done nothing for as long as the button did not: a paying
@@ -807,6 +811,12 @@ function renderBillingView(targetEl){
     /* A button that can only fail is not offered. */
     const add=document.querySelector('.bill-credit-add'); if(add) add.remove();
   }
+  /* The Refund section lives in settings-panes.js (fetched with Settings,
+     prefetched when the page is idle) - only paying customers ever see it. */
+  try{ _lazyLoad('settings-panes.js', () => typeof window._billRefundFill === 'function')
+    .then(ok => { if(ok) window._billRefundFill(targetEl); })
+    .catch(e => { try{ console.error('AMV: the refund section could not load', e); }catch(_){} }); }
+  catch(e){ try{ console.error('AMV: the refund section could not load', e); }catch(_){} }
   on($('bill-ar-go'),'click',()=>{
     const b=$('bill-ar-go'); if(!b) return;
     const turningOn=b.dataset.on==='1';

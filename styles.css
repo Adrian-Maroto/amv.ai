@@ -18018,3 +18018,30 @@ body.light #cib:focus-within{box-shadow:0 0 0 4px var(--accent-soft)!important}
   box-shadow:0 0 0 4px var(--accent-soft),var(--sh-sm)!important}
 body.light .vi-help #faq-search{box-shadow:0 1px 2px rgba(24,23,21,.06)!important}
 body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!important}
+
+/* ==========================================================================
+   LAYER A371 - REFUND (Billing). The same card as Auto-renew beside it, so
+   the money controls read as one set; the request form opens under the
+   button that asked for it.
+   ========================================================================== */
+.bill-rf{margin-top:var(--sp-3);padding:var(--sp-4);background:var(--s2);border:1px solid var(--bd);border-left:3px solid var(--bd);border-radius:var(--r-md)}
+.bill-rf-t{display:flex;align-items:baseline;gap:var(--sp-2)}
+.bill-rf-w{margin:var(--sp-2) 0 var(--sp-3);font-size:var(--t-sm);line-height:1.55;color:var(--mu);max-width:60ch}
+.bill-rf-b{font-size:var(--t-sm)}
+.bill-rf-form{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-3);max-width:60ch}
+.bill-rf-form[hidden]{display:none}
+.bill-rf-l{font-size:var(--t-sm);color:var(--tx);font-weight:600}
+.bill-rf-form textarea{min-height:88px;resize:vertical}
+.bill-rf-form .btn{align-self:flex-start}
+@media(hover:none){.bill-rf-b,.bill-rf-form .btn{min-height:44px}}
+/* Owner console: refund requests (A371). */
+.adm-rf-row{padding:var(--sp-3) 0;border-top:1px solid var(--bd)}
+.adm-rf-row:first-child{border-top:0}
+.adm-rf-h{font-size:var(--t-sm);color:var(--mu)}
+.adm-rf-h b{color:var(--tx)}
+.adm-rf-s{margin-left:var(--sp-2);padding:1px 8px;border-radius:var(--r-pill);background:var(--s3);color:var(--mu);font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em}
+.adm-rf-s.open{background:var(--accent-soft);color:var(--accent-txt,var(--accent))}
+.adm-rf-s.approved{color:var(--grn)}
+.adm-rf-r{margin:var(--sp-2) 0;font-size:var(--t-sm);color:var(--tx);white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-rf-a{display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap}
+.adm-rf-say{font-size:var(--t-sm);color:var(--mu)}

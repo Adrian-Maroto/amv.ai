@@ -72,6 +72,11 @@ const BACKUP_PREFIXES = [
                   // the permissive direction and the wrong way to be wrong
   'fraud:',     // the abuse assessments an operator would need after an incident
   'support:',   // open tickets; losing them loses the customers waiting on a reply
+  /* Refunds (68-refunds.js). A restore without them would forget which
+     charges were already refunded and who had their one automatic refund this
+     year - the permissive direction - and lose the requests people are
+     waiting on an answer to. */
+  'refundreq:', 'refundopen:', 'refundlast:', 'refunddone:', 'refundauto:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing

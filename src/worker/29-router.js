@@ -882,6 +882,8 @@ async function _route(request, env, ctx) {
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export', '/admin/backup/nights', '/admin/pg/backfill', '/admin/pg/shadow',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support', '/v1/admin/switches',
+    '/v1/admin/refunds',        // the refund requests, read-only
+    '/v1/billing/refund',       // GET says what this account can do; POST acts (see billingRefund)
 
     /* Two routes are a GET and a POST of the same thing: the GET lists, the
        POST changes. Both must be reachable, and the handler decides which it
@@ -1107,6 +1109,7 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/checkout': return stripeCheckout(request, env);
     case '/v1/stripe/portal':   return stripePortal(request, env);
     case '/v1/stripe/auto-renew': return stripeAutoRenew(request, env);
+    case '/v1/billing/refund':  return billingRefund(request, env);
     case '/v1/stripe/invoices': return stripeInvoices(request, env);
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);
@@ -1146,6 +1149,8 @@ async function _route(request, env, ctx) {
     // --- FOUNDER ADMIN (token-gated) ---
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);
+    case '/v1/admin/refunds':   return adminRefunds(request, env);
+    case '/v1/admin/refunds/decide': return adminRefundDecide(request, env);
     case '/v1/admin/kill':      return adminKill(request, env);
     case '/v1/admin/switch':    return adminSwitch(request, env);
     case '/v1/admin/switches':  return adminSwitches(request, env);

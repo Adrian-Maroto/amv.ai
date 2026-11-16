@@ -1674,6 +1674,10 @@ const AMV_API = {
   /* Turn auto-renew off, or back on. One boolean, and the server answers with
      what the subscription IS afterwards - not with what was asked - so the
      screen can only ever show a state that was read back. */
+  /* Refunds (68-refunds.js). The state is the server's decision - whether
+     this charge can be refunded in one press, and why not - never the page's. */
+  async refundState(){ const r=await this._fetch('/v1/billing/refund',{method:'GET'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not check for a refund.')),{code:d.code}); return d; },
+  async refund(body){ const r=await this._fetch('/v1/billing/refund',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'The refund did not go through.')),{code:d.code,why:d.why}); return d; },
   async autoRenew(on){ const r=await this._fetch('/v1/stripe/auto-renew',{method:'POST',body:JSON.stringify({on:!!on})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(_refusalText(d, 'Could not change auto-renew.')),{code:d.code}); return d; },
   /* Calendars that are not Google or Outlook - a subscription, not a login.
      The link is never returned by the server after it is stored, so nothing
@@ -17880,6 +17884,10 @@ function renderBillingView(targetEl){
               + escH(rn.autoRenew===false ? T('Turn auto-renew back on') : T('Turn off auto-renew')) + '</button>'
           + '</div>'
           : '')+
+        /* REFUNDS: filled from the server's answer (_billRefundFill), which
+           decides whether this charge can come back in one press. Hidden until
+           it answers, and stays hidden when there is nothing to refund. */
+        '<div class="bill-rf" id="bill-refund" hidden></div>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
            and had done nothing for as long as the button did not: a paying
@@ -18036,6 +18044,12 @@ function renderBillingView(targetEl){
     /* A button that can only fail is not offered. */
     const add=document.querySelector('.bill-credit-add'); if(add) add.remove();
   }
+  /* The Refund section lives in settings-panes.js (fetched with Settings,
+     prefetched when the page is idle) - only paying customers ever see it. */
+  try{ _lazyLoad('settings-panes.js', () => typeof window._billRefundFill === 'function')
+    .then(ok => { if(ok) window._billRefundFill(targetEl); })
+    .catch(e => { try{ console.error('AMV: the refund section could not load', e); }catch(_){} }); }
+  catch(e){ try{ console.error('AMV: the refund section could not load', e); }catch(_){} }
   on($('bill-ar-go'),'click',()=>{
     const b=$('bill-ar-go'); if(!b) return;
     const turningOn=b.dataset.on==='1';

@@ -1143,3 +1143,87 @@ async function _fdSwitches(base, tok){
   if(add) on(add, 'click', () => { const n = String(($('fd-sw-name')||{}).value||'').trim().toLowerCase(); if(!n){ toast('Name the switch first.', 'info', 4000); return; } flip(n, true, add); });
 }
 
+/* THE REFUND SECTION (the owner's policy, Nov 16: within 14 days of a charge
+   with under 20% of the plan used, the whole charge back in one press, once a
+   year; anything else is a request the owner decides). Everything it says is
+   the server's answer - 68-refunds.js decides, this only reads it out. */
+async function _billRefundFill(targetEl){
+  const box = $('bill-refund'); if(!box) return;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
+  let s;
+  try{ s = await AMV_API.refundState(); }catch(e){ return; }
+  if(!box.isConnected || !s) return;
+  if(s.ok === false){
+    if(s.code === 'team_member'){ box.innerHTML = '<p class="bill-rf-w">' + escH(T('Your plan is paid for by your team. The team owner can ask for a refund.')) + '</p>'; box.hidden = false; }
+    return;
+  }
+  const money = (n, c) => { try{ return new Intl.NumberFormat(undefined, { style:'currency', currency:c || 'USD' }).format(+n || 0); }catch(e){ return '$' + (+n || 0).toFixed(2); } };
+  const day = (ms) => { try{ return new Date(ms).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }catch(e){ return ''; } };
+  const amt = money(s.charge && s.charge.amount, s.charge && s.charge.currency);
+  const head = '<div class="bill-rf-t"><span class="bill-ar-n">' + escH(T('Refund')) + '</span></div>';
+  const WHY = {
+    over_14_days: T('The last charge was more than 14 days ago.'),
+    used_20_percent: T('More than 20% of this period has been used.'),
+    refunded_this_year: T('You already had an automatic refund in the last 12 months.'),
+    nothing_paid: T('Nothing was paid for this period.'),
+  };
+  let body = '';
+  if(s.refunded){
+    body = '<p class="bill-rf-w">' + escH(T('Your last charge was refunded.')) + '</p>';
+  } else if(s.request){
+    body = '<p class="bill-rf-w">' + escH(T('Your refund request was sent on {0}. It will be answered here.').replace('{0}', day(s.request.at))) + '</p>';
+  } else if(s.auto){
+    body = '<p class="bill-rf-w">' + escH(T('You can get a full refund of {0} for your charge on {1}. Your plan ends as soon as it is refunded.')
+              .replace('{0}', amt).replace('{1}', day(s.charge.paidAt))) + ' '
+         + escH(T('{0} days left to ask.').replace('{0}', String(s.daysLeft))) + '</p>'
+         + '<button class="btn bs bill-rf-b" type="button" id="bill-rf-go">' + escH(T('Refund {0}').replace('{0}', amt)) + '</button>';
+  } else {
+    const why = (s.why || []).map(w => WHY[w]).filter(Boolean)[0] || '';
+    body = '<p class="bill-rf-w">' + escH((s.answered && s.answered.status === 'declined'
+              ? T('Your last refund request was declined.') + ' ' : '') + why + ' '
+              + T('You can still ask for a refund, and it will be looked at.')) + '</p>'
+         + '<button class="btn bs bill-rf-b" type="button" id="bill-rf-ask">' + escH(T('Ask for a refund')) + '</button>'
+         + '<div class="bill-rf-form" id="bill-rf-form" hidden>'
+           + '<label class="bill-rf-l" for="bill-rf-why">' + escH(T('Why are you asking?')) + '</label>'
+           + '<textarea class="inp" id="bill-rf-why" rows="3" maxlength="1000"></textarea>'
+           + '<button class="btn bp" type="button" id="bill-rf-send">' + escH(T('Send request')) + '</button>'
+         + '</div>';
+  }
+  box.innerHTML = head + body;
+  box.hidden = false;
+  on($('bill-rf-go'), 'click', () => {
+    const b = $('bill-rf-go'); if(!b) return;
+    const asked = (typeof confirmModal === 'function') && confirmModal(
+      T('Refund {0}?').replace('{0}', amt),
+      T('The whole charge goes back to your card, and your plan ends now and moves to Free. This cannot be undone.'),
+      async () => {
+        b.disabled = true; b.textContent = T('Refunding\u2026');
+        try{
+          const d = await AMV_API.refund({ mode:'auto' });
+          toast(T('Refunded {0}. It reaches your card in 5-10 days.').replace('{0}', money(d.refund && d.refund.amount, d.refund && d.refund.currency)), 'success', 7000);
+          try{ if(typeof syncEntitlement === 'function') await syncEntitlement(); }catch(e){ try{ console.error('AMV: could not refresh the plan after a refund', e); }catch(_){} }
+          renderBillingView(targetEl);
+        }catch(e){
+          b.disabled = false; b.textContent = T('Refund {0}').replace('{0}', amt);
+          toast(T('The refund did not go through: ') + ((e && e.message) || T('try again')), 'error', 7000);
+        }
+      }, { confirm: T('Refund and end my plan'), cancel: T('Keep my plan') });
+    if(!asked) toast(T('Could not open the confirmation, so nothing was changed.'), 'error', 5000);
+  });
+  on($('bill-rf-ask'), 'click', () => { const f = $('bill-rf-form'); if(f){ f.hidden = false; try{ $('bill-rf-why').focus(); }catch(e){} } });
+  on($('bill-rf-send'), 'click', async () => {
+    const t = $('bill-rf-why'), b = $('bill-rf-send'); if(!t || !b) return;
+    const reason = t.value.trim();
+    if(reason.length < 3){ toast(T('Say in a few words why you are asking.'), 'error', 4000); t.focus(); return; }
+    b.disabled = true;
+    try{
+      await AMV_API.refund({ mode:'request', reason });
+      toast(T('Your refund request was sent.'), 'success', 5000);
+      _billRefundFill(targetEl);
+    }catch(e){
+      b.disabled = false;
+      toast(T('Could not send the request: ') + ((e && e.message) || T('try again')), 'error', 6000);
+    }
+  });
+}
+try{ window._billRefundFill = _billRefundFill; }catch(e){}
