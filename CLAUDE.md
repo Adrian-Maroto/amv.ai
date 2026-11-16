@@ -240,6 +240,12 @@ Companion docs (do not duplicate them here - read them):
   first rows are drawn; `ccAllRows` builds the rest. `docs/COUNTRY-DATA.md`
   (`node scripts/country-report.mjs`) holds the real count per country - never
   claim 500 for a country it does not show. LESSONS 639-642.
+  Every list is MOST VISITED FIRST (`_ccByPop`): the Chrome UX Report bucket
+  for visits from that country, then the country's own before the world's
+  (`x`, how many countries list a service - run `node scripts/country-reach.mjs`
+  after ANY change to the country files, or
+  `the-most-visited-services-there-come-first` fails), then place. Crew puts
+  what people there actually switch on (server counts, `meta.ranked`) ahead.
 - **Every write on a connected account goes through the action protocol**
   (`src/worker/09a-action-protocol.js`): it reads its own result back
   (`verified`), and declares either an `undo` (a compensation that is itself

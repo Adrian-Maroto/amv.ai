@@ -1346,7 +1346,8 @@ function _cjList(){
   const cc = _cwCountryGuess();
   const cat = ((window._ccCrewJobs || {})[cc] || []);
   const len = (f) => { try{ return (f(cc) || []).length; }catch(e){ return 0; } };
-  const key = [cc, cat.length, len(_cwTopTen), len(_cwMadeForJobs), len(_cwLocalJobs), len(_cwMadeMore),
+  const rk = (() => { try{ const m = _cwMeta[cc]; return (m && m.ranked && m.ranked.enough) ? m.ranked : null; }catch(e){ return null; } })();
+  const key = [cc, cat.length, rk ? rk.total : 0, len(_cwTopTen), len(_cwMadeForJobs), len(_cwLocalJobs), len(_cwMadeMore),
                (_cwJobs() || []).filter(j => j.on).map(j => j.id).join(',')].join('|');
   if(_cjCache && _cjCacheKey === key) return _cjCache;
   const seen = new Set(), out = [];
@@ -1357,6 +1358,11 @@ function _cjList(){
   safe(() => _cwTopTen(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
+  /* The country's catalogue jobs people there have actually switched on, the
+     most started first - counted by the server per country (meta.ranked),
+     the same counts that order the top ten. Ahead of everything only
+     researched, because a count is what people chose. */
+  if(rk) cat.map(j => [j, +rk.counts[j.id] || 0]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).forEach(x => push(x[0]));
   /* The country's own, most used there first (_cwPopScore - counted where
      there are counts, researched where there are not). */
   safe(() => _cwMadeMore(cc)).map((j, i) => [j, (() => { try{ return _cwPopScore(j, cc); }catch(e){ return 0; } })(), i])
@@ -1411,8 +1417,15 @@ function _cjChipsHTML(){
   const all = _cjList();
   const n = {}; all.forEach(j => { const c = _cjCat(j); n[c] = (n[c] || 0) + 1; });
   const chip = (k, label, c) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), all.length) + CJ_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  return chip('all', T('All'), all.length) + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
+/* The categories in the order their first job appears in the list - the list
+   is most used first, so the categories are too. */
+function _cjCatsByFirst(list, catOf){
+  const at = {}; list.forEach((j, i) => { const c = catOf(j); if(!(c in at)) at[c] = i; });
+  return CJ_CATS.slice().sort((a, b) => ((a in at ? at[a] : 1e9) - (b in at ? at[b] : 1e9)) || (CJ_CATS.indexOf(a) - CJ_CATS.indexOf(b)));
+}
+try{ window._cjCatsByFirst = _cjCatsByFirst; }catch(e){}
 /* Only the grid, the chips and the count change - the page stays put. */
 function _cjPaint(){
   const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML();

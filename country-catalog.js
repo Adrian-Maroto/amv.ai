@@ -642,38 +642,56 @@ const _ccFill = (t, e, en, cc) => (en ? _ccAn(t, e) : String(t)).replace(/\{n\}/
   .replace(/\{c\}/g, () => _ccPlace(cc, en));
 const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t, cc); };
 /* Every task, job and service for a country, each tied to the entry it names. */
-function ccTasks(d){
-  const by = [];
-  for(const [kind, list] of Object.entries((d && d.kinds) || {})){
-    const tpl = CC_TASKS[kind]; if(!tpl) continue;
-    by.push(list.map(e => tpl.map((t, i) => ({ id:'cc-' + kind + '-' + e.q + '-' + i, kind, e,
-      tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccFill(t[1], e, true) }))));
-  }
-  /* Interleaved, so the first rows span many services rather than five tasks
-     for one bank: a first pass takes one task per service - rank by rank,
-     across every kind, rotating which task - and the rest follow in order. */
-  return _ccWeave(by);
+/* MOST USED FIRST, ACROSS EVERY KIND (Nov 16, the owner: "organize jobs,
+   tasks, crew by popularity for every country - I need these to get the most
+   users").
+
+   The lists used to take turns by kind: the first bank, the first zoo, the
+   first newspaper, then the second of each - so a zoo nobody in the country
+   visits stood level with the biggest bank there. Every entry carries `r`,
+   the Chrome UX Report bucket its site falls in for visits FROM this country
+   (1000 = among the thousand most visited there), and its place in its kind's
+   list, which is the data's own order (that report, then Wikipedia
+   sitelinks). So the country's services are ordered by that bucket; inside a
+   bucket - the report says only "among the top 1,000" - the country's own
+   before the world's (`x`, how many countries list the same service, written
+   by scripts/country-reach.mjs: Facebook and MIT are in dozens, Renfe and El
+   País in one, and it is the country's own that people there come for); then
+   by place, then by sitelinks. One the report never saw comes after every one
+   it did. Jobs and tasks follow their services: one each, most visited
+   service first, before a second for any - the job each service leads with
+   rotated by its place, so the first screen is not one kind of job twenty
+   times over. What people in the country actually switch on reorders Crew on
+   top of this (crew-view.js, _cjList). */
+function _ccByPop(d){
+  const out = [];
+  for(const [kind, list] of Object.entries((d && d.kinds) || {})) (list || []).forEach((e, i) => out.push({ kind, e, i }));
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), W = x => ((+x.e.x || 1) >= 3 ? 1 : 0);
+  return out.sort((a, b) => (R(a) - R(b)) || (W(a) - W(b)) || (a.i - b.i) || ((+b.e.w || 0) - (+a.e.w || 0)) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
-/* by: [kind][entry][template] -> one list, first pass across kinds. */
-function _ccWeave(by){
-  const out = [], first = new Set(), most = Math.max(0, ...by.map(k => k.length));
-  for(let r = 0; r < most; r++) for(const k of by){ const ts = k[r]; if(!ts || !ts.length) continue; const t = ts[r % ts.length]; out.push(t); first.add(t.id); }
-  for(const k of by) for(const ts of k) for(const t of ts) if(!first.has(t.id)) out.push(t);
+function _ccByPopPass(d, TPL, make){
+  const ents = _ccByPop(d).filter(x => TPL[x.kind] && TPL[x.kind].length);
+  const out = [], most = Math.max(0, ...ents.map(x => TPL[x.kind].length));
+  for(let p = 0; p < most; p++) for(const x of ents){
+    const n = TPL[x.kind].length; if(p >= n) continue;
+    out.push(make(x.kind, x.e, (x.i + p) % n));
+  }
   return out;
+}
+/* A task opens chat with the service's name and the site the row shows under
+   it - so AMV starts where the person was told it would. Half the task
+   templates never named the site; it is added to those, never twice. */
+const _ccWithSite = (p, e) => p.indexOf(e.s) >= 0 ? p : p + ' Start from ' + e.n + '’s official site, ' + e.s + '.';
+function ccTasks(d){
+  return _ccByPopPass(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
+    return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; });
 }
 function ccJobs(d){
-  const by = [];
-  for(const [kind, list] of Object.entries((d && d.kinds) || {})){
-    const tpl = CC_CREW[kind]; if(!tpl) continue;
-    by.push(list.map(e => tpl.map((t, i) => ({ id:_ccJobId(kind, e, i, d.cc), kind, e, i,
-      title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2] }))));
-  }
-  return _ccWeave(by);
+  return _ccByPopPass(d, CC_CREW, (kind, e, i) => { const t = CC_CREW[kind][i];
+    return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2] }; });
 }
 function ccServices(d){
-  const out = [];
-  for(const [kind, list] of Object.entries((d && d.kinds) || {})) for(const e of list) out.push({ kind, e });
-  return out;
+  return _ccByPop(d).map(x => ({ kind: x.kind, e: x.e }));
 }
 try{ window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
 

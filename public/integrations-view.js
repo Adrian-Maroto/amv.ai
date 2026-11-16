@@ -396,7 +396,7 @@ function _tkListHTML(){
   }
   /* Everything: under each category, the first few and See all. */
   const by = {}; _tkList.forEach(t => { const c = _tkCatOf(t); (by[c] = by[c] || []).push(t); });
-  return CJ_CATS.filter(c => by[c]).map(c => `<section class="tk2-cat">
+  return _tkCats().filter(c => by[c]).map(c => `<section class="tk2-cat">
       <div class="tk2-cat-h"><h2>${escH(T(c))}</h2><span>${by[c].length.toLocaleString()}</span></div>
       <div class="tk2-list">${by[c].slice(0, 6).map(_tkRow).join('')}</div>
       ${by[c].length > 6 ? `<button class="cj-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
@@ -405,7 +405,13 @@ function _tkListHTML(){
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
   const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), _tkList.length) + CJ_CATS.filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  return chip('all', T('All'), _tkList.length) + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+}
+/* The categories in the order their first task appears - the list is the
+   country's most visited services first, so the categories are too. */
+function _tkCats(){
+  const at = {}; _tkList.forEach((t, i) => { const c = _tkCatOf(t); if(!(c in at)) at[c] = i; });
+  return CJ_CATS.slice().sort((a, b) => ((a in at ? at[a] : 1e9) - (b in at ? at[b] : 1e9)) || (CJ_CATS.indexOf(a) - CJ_CATS.indexOf(b)));
 }
 function _tkPaint(){
   const l = $('tk2-body'); if(l) l.innerHTML = _tkListHTML();
