@@ -1520,24 +1520,35 @@ function _cjWire(vc){
    time, the count rising as they land) and searched in memory. Only the rows
    on screen are drawn. A job found here opens the same panel and switches on
    the same way as one on the main list. */
-let _cjdQ = '', _cjdCc = '', _cjdN = 60, _cjdAll = [], _cjdLoading = false;
+let _cjdQ = '', _cjdCc = '', _cjdN = 60, _cjdAll = [], _cjdLoading = false, _cjdCodes = [];
+/* The rows on screen, made when drawn and kept by id so the job's panel
+   (cwPeek -> _cwFindJob) and its switch find the same object. Only what has
+   been shown is here - the directory itself is never built (ccDirFind). */
+window._cjdMade = window._cjdMade || {};
 function _cjdRows(){
   const words = _cjdQ.toLowerCase().split(/\s+/).filter(Boolean);
-  return _cjdAll.filter(j => (!_cjdCc || j.country === _cjdCc) && _cjMatch(j, words));
+  /* The jobs that work everywhere belong to no country, so a country filter
+     leaves them out. */
+  const own = _cjdCc ? [] : _cjdAll.filter(j => _cjMatch(j, words));
+  const codes = _cjdCc ? [_cjdCc] : _cjdCodes;
+  const want = Math.max(0, _cjdN - own.length);
+  const r = (window.ccDirFind && codes.length) ? window.ccDirFind(codes, words, want) : { n: 0, rows: [] };
+  const rows = own.slice(0, _cjdN).concat(r.rows);
+  for(const j of r.rows) window._cjdMade[j.id] = j;
+  return { n: own.length + r.n, rows };
 }
 function _cjdPaint(){
   const box = document.getElementById('cxd-list'); if(!box) return;
-  const rows = _cjdRows();
+  const { n: total, rows: shown } = _cjdRows();
   const n = document.getElementById('cxd-n');
-  if(n) n.textContent = rows.length.toLocaleString() + ' ' + T('jobs') + (_cjdLoading ? ' · ' + T('loading more countries…') : '');
-  const shown = rows.slice(0, _cjdN);
+  if(n) n.textContent = total.toLocaleString() + ' ' + T('jobs') + (_cjdLoading ? ' · ' + T('loading more countries…') : '');
   box.innerHTML = shown.length
     ? shown.map(j => { const c = _cwCountryRow(j.country);
         return `<button class="cxd-row" data-dact="cwPeek" data-darg="${escH(j.id)}">
           <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
           <span class="cxd-b"><span class="cxd-t" data-no-i18n>${escH(j.title)}</span>
             <span class="cxd-s">${c ? `<span aria-hidden="true">${c[2]}</span> ${escH(T(c[1]))} · ` : ''}${escH(T(_cjCat(j)))} · ${escH(_cjEvery(j))}</span></span></button>`; }).join('')
-      + (rows.length > shown.length ? `<div class="cj-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cj-n">${(rows.length - shown.length).toLocaleString()}</span></button></div>` : '')
+      + (total > shown.length ? `<div class="cj-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cj-n">${(total - shown.length).toLocaleString()}</span></button></div>` : '')
     : `<div class="cj-empty">${_cjdLoading ? escH(T('Loading…')) : escH(T('No job matches that.'))}</div>`;
   on(document.getElementById('cxd-more'), 'click', () => { _cjdN += 120; _cjdPaint(); });
 }
@@ -1545,17 +1556,20 @@ async function _cjdLoad(){
   if(_cjdLoading) return;
   _cjdLoading = true;
   const here = _cwCountryGuess();
-  const codes = [here].concat((CW_WORLD_COUNTRIES || []).map(c => c[0]).filter(c => c !== here)).filter(Boolean);
-  const have = new Set(_cjdAll.map(j => j.id));
-  const add = (cc, list) => { for(const j of list || []){ if(!have.has(j.id)){ have.add(j.id); if(!j.country) j.country = cc; _cjdAll.push(j); } } };
-  /* The jobs that work everywhere first, so the directory is never empty. */
-  try{ add('', (_cwJobs() || []).concat(_cwUniversalJobs() || [])); }catch(e){}
+  /* The reader's own country first: a job listed in several countries is
+     counted once, in the first of them. */
+  _cjdCodes = [here].concat((CW_WORLD_COUNTRIES || []).map(c => c[0]).filter(c => c !== here)).filter(Boolean);
+  /* The jobs that work everywhere first, so the directory is never empty. A
+     country's job somebody has switched on is in their saved list too; it is
+     counted with its country, not twice. */
+  if(!_cjdAll.length){ try{ const have = new Set(); for(const j of (_cwJobs() || []).concat(_cwUniversalJobs() || [])){ if(j && !have.has(j.id) && !/^ccj-/.test(j.id)){ have.add(j.id); _cjdAll.push(j); } } }catch(e){} }
   let i = 0, last = 0;
+  const codes = _cjdCodes.slice();
   const next = async () => {
     while(i < codes.length){
       const cc = codes[i++];
-      try{ add(cc, await ccCrewLoad(cc)); }catch(e){}
-      if(Date.now() - last > 250){ last = Date.now(); _cjdPaint(); }
+      try{ await window.ccDirLoad(cc); }catch(e){}
+      if(Date.now() - last > 400){ last = Date.now(); _cjdPaint(); }
     }
   };
   await Promise.all([next(), next(), next(), next(), next(), next()]);
@@ -1586,7 +1600,7 @@ function cjDirectory(){
   try{ $('cxd-q').focus(); }catch(e){}
   _ccReady().then(ok => { if(ok) _cjdLoad(); }).catch(() => {});
 }
-try{ window.cjDirectory = cjDirectory; window._cjdAll = _cjdAll; }catch(e){}
+try{ window.cjDirectory = cjDirectory; }catch(e){}
 
 function renderCrewView(){
   const vc=$('vc'); if(!vc) return;

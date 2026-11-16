@@ -17977,7 +17977,7 @@ body.light .cj-box:focus-within,body.light .cj-find:focus-within,body.light .cdi
   box-shadow:0 0 0 4px var(--accent-soft),var(--sh-sm)!important}
 body.light #cib{box-shadow:0 1px 2px rgba(24,23,21,.06)!important}
 body.light #cib:focus-within{box-shadow:0 0 0 4px var(--accent-soft)!important}
-#vc .vi.vi-conn{max-width:1120px!important}
+#vc > .sv > .vi.vi-conn{max-width:1120px!important}
 /* The field inside a bar does not draw a second ring of its own: the global
    rule for focused text fields (A-layer at line ~2975) ringed the textarea
    inside the bar, so a focused chat box showed a box inside a box. */

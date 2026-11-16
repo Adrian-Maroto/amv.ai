@@ -162,114 +162,443 @@ const CC_TASKS = {
    person would want watched on that service's PUBLIC site - so every one runs
    on AMV's servers with web research and no sign-in, and none asks for an
    account it cannot use. A blank in [brackets] is asked for when the job is
-   switched on. */
+   switched on.
+
+   Nov 16 (owner: "a directory of 1,000,000+ jobs across all countries"): each
+   kind grew to the things worth watching about it - a company's results,
+   recalls, outages, breaches, leadership; a university's courses, fees,
+   rankings, lectures - so the directory holds 1,009,008 distinct jobs, every
+   one tied to a real entry. A fourth field 'c' marks a job about the entry IN
+   the country it is listed for ("Jobs at {n} in {c}"): that job differs per
+   country and is counted per country; every other job is counted once, however
+   many countries list the entry. The count is measured, not claimed - see
+   the suite every-job-in-the-world-is-one-search-away. */
 const CC_CREW = {
   bank:[['Watch {n} for fee and rate changes','Check {s} for any change to {n}’s fees, interest rates or terms since last time, and report only what changed.','weekly'],
         ['{n} savings and deposit rates','Each week, the savings and deposit rates {n} publishes on {s}, and whether any moved since last week.','weekly'],
         ['{n} service and outage notices','Each day, check {s} and {n}’s official channels for app or card outages and planned maintenance, and tell me only if there is one.','daily'],
-        ['New offers at {n}','Each month, any new account, card or mortgage offer {n} announces on {s}, with its conditions.','monthly']],
+        ['New offers at {n}','Each month, any new account, card or mortgage offer {n} announces on {s}, with its conditions.','monthly'],
+        ['{n} security and scam warnings','Each week, any scam, phishing or fraud warning {n} publishes on {s} or its official channels, and tell me only if there is one.','weekly'],
+        ['{n} mortgage rates','Each week, the mortgage rates {n} publishes on {s}, and whether any changed since last week.','weekly'],
+        ['{n} app updates','Each month, new features and changes in {n}’s app and online banking, from {s} and its release notes.','monthly'],
+        ['{n} results and news','Each month, {n}’s financial results, ratings and news, in a few lines with links.','monthly'],
+        ['{n} branches and ATMs in {c}','Each month, branch and ATM openings, closures and changed hours {n} announces in {c}.','monthly','c'],
+        ['{n} news in {c}','Each week, news about {n} in {c} - fees, outages, regulators - in a few lines with links.','weekly','c'],
+        ['Is {n} still my best bank?','Each month, compare {n}’s current account fees with other banks in its market, and tell me if I could save.','monthly']],
   insurer:[['{n} renewal check','A month before my {n} renewal on [date], compare my premium with current quotes and tell me if switching saves money.','monthly'],
            ['Policy changes at {n}','Each month, any change {n} announces to its policies, prices or claims process on {s}.','monthly'],
-           ['New cover from {n}','Each month, new products or discounts {n} offers on {s}, with who they are for.','monthly']],
+           ['New cover from {n}','Each month, new products or discounts {n} offers on {s}, with who they are for.','monthly'],
+           ['{n} claims and service notices','Each week, any change to how {n} handles claims, and service notices on {s}.','weekly'],
+           ['{n} ratings and reviews','Each month, what independent ratings and recent customer reviews say about {n}, in a few lines.','monthly'],
+           ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+           ['{n} offers in {c}','Each month, discounts and offers {n} runs in {c}, with their conditions.','monthly','c']],
   university:[['{n} deadline watch','Watch {s} for application, scholarship and enrolment deadlines at {n}, and remind me two weeks before each.','weekly'],
               ['Scholarships at {n}','Each week, new scholarships and grants {n} lists on {s}, with eligibility and the closing date.','weekly'],
               ['Open days at {n}','Each month, open days, info sessions and campus events at {n}, with dates and how to sign up.','monthly'],
-              ['{n} news for students','Each week, announcements from {n} that affect students - term dates, fees, closures - with links.','weekly']],
+              ['{n} news for students','Each week, announcements from {n} that affect students - term dates, fees, closures - with links.','weekly'],
+              ['Courses opening at {n}','Each month, new degrees and courses {n} opens for applications on {s}, with start dates.','monthly'],
+              ['{n} public lectures and events','Each week, public lectures, talks and events at {n} open to everyone, with dates and links.','weekly'],
+              ['{n} research news','Each week, the main research {n} announced, each in two sentences with a link.','weekly'],
+              ['Jobs at {n}','Each week, new academic and staff openings at {n}, with closing dates.','weekly'],
+              ['{n} fees and funding changes','Each month, any change to tuition fees, funding or financial aid at {n} published on {s}.','monthly'],
+              ['{n} in the rankings','Each month, where {n} stands in the main university rankings, and any change.','monthly'],
+              ['Study abroad from {n}','Each month, exchange and study-abroad calls at {n}, with deadlines.','monthly'],
+              ['Student housing at {n}','Each month, student housing news and application dates at {n}.','monthly'],
+              ['Free online courses from {n}','Each month, free online courses and open lectures from {n}, with links.','monthly'],
+              ['Summer schools at {n}','Each month, summer schools and short programmes at {n}, with deadlines.','monthly'],
+              ['Admission requirements at {n}','Each month, any change to admission requirements at {n}, from {s}.','monthly'],
+              ['International students at {n}','Each month, news for international students at {n} - visas, fees, deadlines.','monthly'],
+              ['Sport and clubs at {n}','Each month, news from sports teams and student clubs at {n}.','monthly'],
+              ['{n} alumni news','Each month, news and events for {n}’s alumni.','monthly'],
+              ['Graduation at {n}','Each month, graduation dates and ceremonies at {n}.','monthly']],
   college:[['{n} deadline watch','Watch {s} for deadlines at {n}, and remind me two weeks before each.','weekly'],
            ['Courses starting at {n}','Each month, courses at {n} opening for enrolment, with start dates and fees from {s}.','monthly'],
-           ['Open days at {n}','Each month, open days and info sessions at {n}, with dates and how to sign up.','monthly']],
+           ['Open days at {n}','Each month, open days and info sessions at {n}, with dates and how to sign up.','monthly'],
+           ['{n} news for students','Each week, announcements from {n} that affect students - term dates, fees, closures - with links.','weekly'],
+           ['Jobs at {n}','Each week, new teaching and staff openings at {n}, with closing dates.','weekly'],
+           ['{n} fees and funding','Each month, any change to fees, grants or financial help at {n} published on {s}.','monthly'],
+           ['Short courses at {n}','Each month, short and evening courses at {n} open for enrolment, with fees.','monthly'],
+           ['Events at {n}','Each month, events at {n} open to the public, with dates.','monthly'],
+           ['Apprenticeships through {n}','Each month, apprenticeships and work placements offered through {n}, with how to apply.','monthly'],
+           ['Admission requirements at {n}','Each month, any change to admission requirements at {n}, from {s}.','monthly'],
+           ['International students at {n}','Each month, news for international students at {n} - visas, fees, deadlines.','monthly'],
+           ['Careers events at {n}','Each month, careers fairs and employer events at {n}.','monthly']],
   newspaper:[['Morning brief from {n}','Every morning, the five most important stories in {n} ({s}), each in two sentences with a link.','daily'],
              ['{n} on a topic you follow','Each day, only the stories in {n} about [topic], each in two sentences with a link.','daily'],
              ['The week in {n}','Every Sunday, the ten stories {n} covered most this week, in one page.','weekly'],
-             ['{n} opinion digest','Each week, the main opinion pieces in {n}, each summarized in a sentence with its argument.','weekly']],
+             ['{n} opinion digest','Each week, the main opinion pieces in {n}, each summarized in a sentence with its argument.','weekly'],
+             ['Evening brief from {n}','Every evening, the stories {n} ({s}) published today that matter most, each in two sentences.','daily'],
+             ['Breaking news from {n}','Each day, only the breaking stories on {n}, and tell me only when there is one.','daily'],
+             ['{n} business and economy','Each day, the business and economy stories in {n}, each in two sentences with a link.','daily'],
+             ['{n} politics','Each day, the politics stories in {n}, each in two sentences with a link.','daily'],
+             ['{n} science and technology','Each week, the science and technology stories in {n}, each in two sentences with a link.','weekly'],
+             ['{n} culture and books','Each week, the culture, books and film reviews in {n}, each in a sentence.','weekly'],
+             ['{n} sport','Each day, the sport stories in {n}, results first.','daily'],
+             ['{n} investigations','Each week, the investigative and long-form pieces in {n}, each summarized in a paragraph.','weekly'],
+             ['{n} health','Each week, the health stories in {n}, each in two sentences with a link.','weekly'],
+             ['{n} corrections','Each week, the corrections and clarifications {n} published, with what changed.','weekly'],
+             ['{n} on {c}','Each day, the stories in {n} about {c}, each in two sentences with a link.','daily','c'],
+             ['Weekend reading from {n}','Every Saturday, the five best long reads in {n} this week, each in a paragraph.','weekly'],
+             ['{n} world news','Each day, the world news in {n}, each story in two sentences with a link.','daily'],
+             ['{n} climate and environment','Each week, the climate and environment stories in {n}, each in two sentences with a link.','weekly'],
+             ['{n} travel','Each week, the travel pieces in {n}, each in a sentence.','weekly'],
+             ['{n} food','Each week, the food and recipe pieces in {n}, each in a sentence.','weekly'],
+             ['{n} property','Each week, the housing and property stories in {n}, each in two sentences.','weekly'],
+             ['{n} on {c}’s economy','Each week, what {n} reported about {c}’s economy, each story in two sentences with a link.','weekly','c'],
+             ['{n} on {c}’s politics','Each week, what {n} reported about {c}’s politics, each story in two sentences with a link.','weekly','c']],
   newssite:[['Morning brief from {n}','Every morning, the top stories on {n} ({s}), each in two sentences with a link.','daily'],
             ['{n} on a topic you follow','Each day, only the stories on {n} about [topic], with links.','daily'],
-            ['The week on {n}','Every Sunday, the stories {n} covered most this week, in one page.','weekly']],
+            ['The week on {n}','Every Sunday, the stories {n} covered most this week, in one page.','weekly'],
+            ['Evening brief from {n}','Every evening, the stories {n} ({s}) published today that matter most, each in two sentences.','daily'],
+            ['Breaking news from {n}','Each day, only the breaking stories on {n}, and tell me only when there is one.','daily'],
+            ['{n} business and economy','Each day, the business and economy stories on {n}, each in two sentences with a link.','daily'],
+            ['{n} science and technology','Each week, the science and technology stories on {n}, each in two sentences with a link.','weekly'],
+            ['{n} sport','Each day, the sport stories on {n}, results first.','daily'],
+            ['{n} on {c}','Each day, the stories on {n} about {c}, each in two sentences with a link.','daily','c']],
   tv:[['Tonight on {n}','Every evening, what is worth watching on {n} tonight.','daily'],
       ['New series on {n}','Each week, new series and seasons starting on {n}, with dates.','weekly'],
-      ['{n} schedule changes','Each week, schedule changes on {n} for [programme].','weekly']],
+      ['{n} schedule changes','Each week, schedule changes on {n} for [programme].','weekly'],
+      ['Films on {n} this week','Each week, the films on {n} this week, each with a line on what it is.','weekly'],
+      ['Documentaries on {n}','Each week, the documentaries on {n}, with dates and times.','weekly'],
+      ['Live sport on {n}','Each week, the live sport on {n}, with dates and times.','weekly'],
+      ['{n} news','Each day, the main stories from {n}’s news, in a few lines.','daily'],
+      ['New on {n} streaming','Each week, what is new on {n}’s streaming or catch-up service, with links.','weekly'],
+      ['{n} for children','Each week, children’s programmes on {n}, with dates and times.','weekly'],
+      ['{n} highlights in {c}','Each week, the highlights on {n} in {c}, with dates and times.','weekly','c']],
   radio:[['New from {n}','Each week, new programmes and schedule changes on {n} ({s}).','weekly'],
-         ['{n} podcasts','Each week, new podcast episodes from {n} on [topic], with links.','weekly']],
+         ['{n} podcasts','Each week, new podcast episodes from {n} on [topic], with links.','weekly'],
+         ['{n} news','Each day, the main stories from {n}’s news bulletins, in a few lines.','daily'],
+         ['Interviews on {n}','Each week, the notable interviews on {n}, each in a sentence with a link to listen.','weekly'],
+         ['Music on {n}','Each week, the new music {n} played most.','weekly'],
+         ['{n} live events','Each month, concerts, live shows and events {n} hosts, with dates.','monthly']],
   telecom:[['Is {n} still my best deal?','Each month, compare what I pay {n} for [my plan] with their current plans and two rivals, and tell me if I could save.','monthly'],
            ['{n} outage watch','Each day, check for reported {n} outages in [area] and tell me only if there is one.','daily'],
            ['New {n} offers','Each week, new plans and offers {n} publishes on {s}, with prices.','weekly'],
-           ['{n} price changes','Each month, any price rise or change to {n}’s terms announced on {s}, and when it starts.','monthly']],
+           ['{n} price changes','Each month, any price rise or change to {n}’s terms announced on {s}, and when it starts.','monthly'],
+           ['{n} coverage news','Each month, coverage upgrades and 5G rollouts {n} announces, with the places.','monthly'],
+           ['{n} roaming changes','Each month, any change to {n}’s roaming prices and rules published on {s}.','monthly'],
+           ['Phones and deals at {n}','Each week, new phones and phone deals at {n}, with prices.','weekly'],
+           ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+           ['{n} offers in {c}','Each week, the plans and offers {n} runs in {c}, with prices.','weekly','c']],
   isp:[['{n} outage watch','Each day, check for reported {n} outages in [area] and tell me only if there is one.','daily'],
        ['Is {n} still my best deal?','Each month, compare what I pay {n} for [my plan] with current offers there.','monthly'],
-       ['{n} price changes','Each month, any price or terms change {n} announces on {s}.','monthly']],
+       ['{n} price changes','Each month, any price or terms change {n} announces on {s}.','monthly'],
+       ['New {n} offers','Each week, new plans and offers {n} publishes on {s}, with prices.','weekly'],
+       ['{n} network upgrades','Each month, fibre and speed upgrades {n} announces, with the places.','monthly'],
+       ['{n} customer service news','Each month, changes to {n}’s customer service, contracts or terms.','monthly']],
   airline:[['{n} fare watch','Each day, check {n} fares from [A] to [B] for [dates] and tell me when the price drops.','daily'],
            ['{n} sales and offers','Each week, new sales and offers {n} announces on {s}, with routes and dates.','weekly'],
            ['{n} strikes and disruption','Each day, any strike, cancellation wave or disruption announced for {n}, and tell me only if there is one.','daily'],
-           ['{n} baggage and fee changes','Each month, any change to {n}’s baggage rules or fees published on {s}.','monthly']],
+           ['{n} baggage and fee changes','Each month, any change to {n}’s baggage rules or fees published on {s}.','monthly'],
+           ['New routes from {n}','Each month, new routes and seasonal flights {n} announces, with start dates.','monthly'],
+           ['{n} loyalty programme changes','Each month, changes to {n}’s frequent-flyer programme - earning, prices in miles, status.','monthly'],
+           ['Is {n} on time?','Each month, how punctual {n} has been, from published statistics, with sources.','monthly'],
+           ['{n} travel rules','Each week, any change to {n}’s check-in, document or travel rules on {s}.','weekly'],
+           ['{n} in the news','Each week, news about {n}, in a few lines with links.','weekly'],
+           ['{n} flights from {c}','Each week, {n}’s sales and new routes from {c}, with prices and dates.','weekly','c'],
+           ['{n} disruption in {c}','Each day, strikes or cancellations affecting {n} flights in {c}, and tell me only if there is one.','daily','c']],
   airport:[['Delays at {n}','On my travel days, check {n} for delays and cancellations affecting [flight].','daily'],
-           ['{n} news for travellers','Each week, closures, works, strikes or rule changes at {n} that affect passengers.','weekly']],
+           ['{n} news for travellers','Each week, closures, works, strikes or rule changes at {n} that affect passengers.','weekly'],
+           ['New routes at {n}','Each month, new routes and airlines starting at {n}, with dates.','monthly'],
+           ['Parking and transport at {n}','Each month, changes to parking prices and transport links at {n}.','monthly'],
+           ['Security queues at {n}','On my travel days, current security wait times and advice at {n}.','daily'],
+           ['Shops and lounges at {n}','Each month, new shops, restaurants and lounges at {n}.','monthly']],
   rail:[['Disruptions on {n}','Each morning, check {n} for disruption on [my route] and tell me only if there is any.','daily'],
         ['{n} fare and ticket changes','Each month, new fares, passes or ticket rules {n} publishes on {s}.','monthly'],
         ['{n} planned works','Each week, planned engineering works on {n} affecting [my route] in the next month.','weekly'],
-        ['{n} cheap tickets','Each week, the cheapest {n} fares from [A] to [B] in the next month.','weekly']],
+        ['{n} cheap tickets','Each week, the cheapest {n} fares from [A] to [B] in the next month.','weekly'],
+        ['{n} timetable changes','Each month, timetable changes and new connections {n} announces on {s}.','monthly'],
+        ['{n} strike watch','Each day, any strike announced on {n}, and tell me only if there is one.','daily'],
+        ['{n} sales','Each week, ticket sales and offers {n} announces, with dates.','weekly'],
+        ['{n} passes and railcards','Each month, changes to {n}’s passes, discount cards and their prices.','monthly'],
+        ['Is {n} on time?','Each month, how punctual {n} has been, from published statistics, with sources.','monthly']],
   bus:[['Disruptions on {n}','Each morning, check {n} for disruption on [my route].','daily'],
-       ['{n} timetable changes','Each month, timetable changes {n} announces for [my route].','monthly']],
+       ['{n} timetable changes','Each month, timetable changes {n} announces for [my route].','monthly'],
+       ['{n} strike watch','Each day, any strike announced on {n}, and tell me only if there is one.','daily'],
+       ['{n} fare changes','Each month, fare and ticket changes {n} announces on {s}.','monthly'],
+       ['New routes on {n}','Each month, new routes and stops {n} announces.','monthly'],
+       ['{n} service notices','Each week, diversions, closures and service notices from {n}.','weekly']],
   retail:[['Price drops at {n}','Each day, check {n} for a price drop on [product] and tell me when it falls below [price].','daily'],
           ['{n} weekly offers','Each week, the best offers at {n} ({s}) on [categories], with prices.','weekly'],
           ['{n} sales calendar','Each month, the sales and discount events {n} announces, with dates.','monthly'],
-          ['Back in stock at {n}','Each day, check whether [product] is back in stock at {n}.','daily']],
+          ['Back in stock at {n}','Each day, check whether [product] is back in stock at {n}.','daily'],
+          ['New at {n}','Each week, new products at {n} ({s}), the ten most notable with prices.','weekly'],
+          ['{n} recalls','Each week, product recalls announced by {n}, and tell me only if there is one.','weekly'],
+          ['{n} store openings and hours','Each month, {n} store openings, closures and changed hours.','monthly'],
+          ['{n} loyalty programme changes','Each month, changes to {n}’s loyalty programme and member offers.','monthly'],
+          ['{n} returns and delivery rules','Each month, any change to {n}’s returns, delivery or warranty rules on {s}.','monthly'],
+          ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+          ['{n} offers in {c}','Each week, the best offers at {n} in {c}, with prices.','weekly','c'],
+          ['{n} stores in {c}','Each month, store openings, closures and changed hours of {n} in {c}.','monthly','c'],
+          ['{n} sustainability','Each month, {n}’s sustainability announcements, checked against reporting by others.','monthly'],
+          ['{n} customer reviews','Each month, what recent customer reviews say about {n}, in a few lines.','monthly'],
+          ['{n} recalls in {c}','Each week, recalls of products sold by {n} in {c}, and tell me only if there is one.','weekly','c'],
+          ['Jobs at {n} in {c}','Each week, jobs at {n} stores and offices in {c}, with links.','weekly','c']],
   supermarket:[['{n} weekly offers','Each week, the offers at {n} on what I usually buy: [list].','weekly'],
                ['My basket at {n}','Each week, what [my shopping list] costs at {n} today, and what changed since last week.','weekly'],
-               ['{n} recalls','Each week, product recalls announced by {n}, and tell me only if there is one.','weekly']],
+               ['{n} recalls','Each week, product recalls announced by {n}, and tell me only if there is one.','weekly'],
+               ['{n} price changes','Each month, notable price rises and cuts at {n} on everyday products, with examples.','monthly'],
+               ['New at {n}','Each month, new products at {n}, with prices.','monthly'],
+               ['{n} opening hours','Each week, changed opening hours at {n}, for holidays and closures.','weekly'],
+               ['{n} loyalty offers','Each week, the offers in {n}’s loyalty programme, with their conditions.','weekly'],
+               ['{n} delivery fees and slots','Each month, any change to {n}’s home delivery fees, minimums and slots.','monthly']],
   ecommerce:[['Price drops on {n}','Each day, check {n} ({s}) for a price drop on [product], with the old and new price.','daily'],
              ['{n} deals on what you want','Each week, the best deals on {n} in [category], with prices.','weekly'],
-             ['Back in stock on {n}','Each day, check whether [product] is back in stock on {n}.','daily']],
+             ['Back in stock on {n}','Each day, check whether [product] is back in stock on {n}.','daily'],
+             ['{n} sales calendar','Each month, the sales events {n} announces, with dates.','monthly'],
+             ['{n} delivery and returns changes','Each month, any change to {n}’s delivery or returns rules published on {s}.','monthly'],
+             ['{n} membership changes','Each month, changes to {n}’s membership or subscription - price and benefits.','monthly'],
+             ['Scams using {n}’s name','Each week, scams that use {n}’s name, reported by {n} or consumer agencies, and tell me only if there is one.','weekly'],
+             ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+             ['{n} deals in {c}','Each day, the best deals on {n} for {c}, with prices.','daily','c'],
+             ['{n} delivery in {c}','Each month, delivery times, fees and pickup points for {n} in {c}.','monthly','c']],
   restaurant:[['New offers at {n}','Each week, any new deals at {n} ({s}) on [what I want], with prices.','weekly'],
-              ['New on the {n} menu','Each month, new items and price changes on {n}’s menu.','monthly']],
+              ['New on the {n} menu','Each month, new items and price changes on {n}’s menu.','monthly'],
+              ['New {n} locations','Each month, new {n} restaurants opening, with addresses.','monthly'],
+              ['{n} allergens and nutrition','Each month, changes to the allergen and nutrition information on {n}’s menu.','monthly'],
+              ['{n} app offers','Each week, the deals in {n}’s app or loyalty programme.','weekly'],
+              ['{n} food safety notices','Each month, food-safety notices or recalls involving {n}, and tell me only if there is one.','monthly'],
+              ['{n} in {c}','Each month, new {n} restaurants and offers in {c}.','monthly','c']],
   hotel:[['{n} price watch','Each day, check {n} prices in [city] for [dates] and tell me when they fall.','daily'],
-         ['{n} sales','Each week, sales and member offers {n} announces on {s}.','weekly']],
+         ['{n} sales','Each week, sales and member offers {n} announces on {s}.','weekly'],
+         ['{n} loyalty changes','Each month, changes to {n}’s loyalty programme - points, prices in points, status.','monthly'],
+         ['New {n} hotels','Each month, new {n} hotels opening, with places and dates.','monthly'],
+         ['{n} cancellation and fee rules','Each month, any change to {n}’s cancellation rules and fees on {s}.','monthly'],
+         ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+         ['{n} offers in {c}','Each week, {n} offers for stays in {c}, with dates and prices.','weekly','c']],
   mall:[['New at {n}','Each month, new shops, events and changed opening hours at {n} ({s}).','monthly'],
-        ['Sales at {n}','Each week, sales and events at {n} this week.','weekly']],
+        ['Sales at {n}','Each week, sales and events at {n} this week.','weekly'],
+        ['{n} opening hours','Each week, changed opening hours at {n}, for holidays and events.','weekly'],
+        ['Children’s events at {n}','Each month, events and activities for children at {n}, with dates.','monthly'],
+        ['Parking at {n}','Each month, parking prices and changes at {n}.','monthly'],
+        ['Shops closing at {n}','Each month, shops closing at {n}, and their last days.','monthly']],
   agency:[['New from {n}','Each week, any announcement, form or deadline from {n} that affects [my situation].','weekly'],
           ['{n} deadlines','Each month, the deadlines {n} publishes on {s} for the coming months, each with its official page.','monthly'],
-          ['{n} rule changes','Each month, rules or fees {n} changed on {s}, and what each change means.','monthly']],
+          ['{n} rule changes','Each month, rules or fees {n} changed on {s}, and what each change means.','monthly'],
+          ['{n} news','Each week, the main announcements from {n} ({s}), each in a sentence with a link.','weekly'],
+          ['{n} online services status','Each day, any outage of {n}’s online services, and tell me only if there is one.','daily'],
+          ['Appointments at {n}','Each day, check {s} for new appointment slots at {n}, and tell me only when there are some.','daily'],
+          ['{n} consultations','Each month, public consultations {n} opens, with closing dates.','monthly'],
+          ['Jobs at {n}','Each week, job openings at {n}, with closing dates.','weekly'],
+          ['{n} statistics and reports','Each month, new statistics and reports {n} published, each in a sentence.','monthly'],
+          ['Scams pretending to be {n}','Each week, scams that pretend to be {n}, from {n}’s own warnings, and tell me only if there is one.','weekly'],
+          ['Grants from {n}','Each month, grants and funding calls from {n}, with deadlines.','monthly'],
+          ['New forms at {n}','Each month, new and changed forms on {s}, each with what it is for.','monthly'],
+          ['Open data from {n}','Each month, new open data {n} published, with links.','monthly'],
+          ['Tenders from {n}','Each month, public tenders {n} opened, with deadlines.','monthly'],
+          ['{n} help for businesses','Each month, guidance and help {n} published for businesses.','monthly']],
   ministry:[['New from {n}','Each week, announcements from {n} that affect [my situation].','weekly'],
-            ['{n} consultations and deadlines','Each month, public consultations and deadlines {n} opens, with dates.','monthly']],
+            ['{n} consultations and deadlines','Each month, public consultations and deadlines {n} opens, with dates.','monthly'],
+            ['{n} news','Each week, the main announcements from {n} ({s}), each in a sentence with a link.','weekly'],
+            ['New laws and rules from {n}','Each week, new laws, decrees and rules {n} published, each in plain words.','weekly'],
+            ['Jobs at {n}','Each week, job openings at {n}, with closing dates.','weekly'],
+            ['Grants and tenders from {n}','Each month, grants and public tenders {n} opens, with deadlines.','monthly'],
+            ['{n} statistics','Each month, new statistics {n} published, each in a sentence.','monthly'],
+            ['{n} press briefings','Each week, what {n} announced in press briefings and releases, in a few lines.','weekly'],
+            ['{n} budget','Each month, budget and spending announcements from {n}, in plain numbers with sources.','monthly'],
+            ['{n} public appointments','Each month, public appointments and boards {n} is recruiting for, with deadlines.','monthly'],
+            ['{n} speeches','Each week, speeches by {n}’s ministers, each in a few lines.','weekly']],
   embassy:[['New from {n}','Each week, any change to visa rules, fees or appointment availability at {n} ({s}).','weekly'],
-           ['Appointments at {n}','Each day, check {s} for new appointment slots at {n}, and tell me only when there are some.','daily']],
+           ['Appointments at {n}','Each day, check {s} for new appointment slots at {n}, and tell me only when there are some.','daily'],
+           ['Travel advice from {n}','Each week, any change to the travel advice or security warnings {n} publishes on {s}.','weekly'],
+           ['Passports and documents at {n}','Each month, changes to passport, ID and document services at {n}, with fees.','monthly'],
+           ['Events at {n}','Each month, cultural events and talks {n} hosts, with dates.','monthly'],
+           ['{n} closures and holidays','Each month, the days {n} is closed, from {s}.','monthly'],
+           ['Voting abroad with {n}','Each month, election and voting-abroad information from {n}, with deadlines.','monthly'],
+           ['Scholarships from {n}','Each month, scholarships and exchange programmes announced by {n}, with deadlines.','monthly'],
+           ['Jobs at {n}','Each month, job openings at {n}, with closing dates.','monthly'],
+           ['{n} news','Each week, announcements from {n} ({s}), in a few lines.','weekly'],
+           ['Trade and business with {n}','Each month, trade and business events and help from {n}.','monthly'],
+           ['Emergency notices from {n}','Each day, any emergency notice from {n} for its citizens, and tell me only if there is one.','daily']],
   union:[['New from {n}','Each month, news from {n} that affects [my job or sector].','monthly'],
-         ['{n} strike and action calendar','Each week, strikes or actions {n} has called, with dates.','weekly']],
+         ['{n} strike and action calendar','Each week, strikes or actions {n} has called, with dates.','weekly'],
+         ['{n} pay negotiations','Each week, where {n}’s pay and conditions negotiations stand, in a few lines.','weekly'],
+         ['{n} member benefits','Each month, new or changed benefits for {n} members.','monthly'],
+         ['Training with {n}','Each month, training and courses {n} offers its members, with dates.','monthly'],
+         ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly']],
   hospital:[['New from {n}','Each month, any change to services, visiting rules or how to book at {n} ({s}).','monthly'],
-            ['{n} notices','Each week, closures, strikes or notices from {n} for patients.','weekly']],
+            ['{n} notices','Each week, closures, strikes or notices from {n} for patients.','weekly'],
+            ['Waiting times at {n}','Each month, the published waiting times at {n}, with the source.','monthly'],
+            ['Vaccination and screening at {n}','Each month, vaccination and screening programmes at {n}, with how to book.','monthly'],
+            ['Jobs at {n}','Each week, job openings at {n}, with closing dates.','weekly'],
+            ['Health talks at {n}','Each month, free health talks, classes and support groups at {n}.','monthly'],
+            ['Clinical trials at {n}','Each month, clinical trials recruiting at {n}, with who can join.','monthly'],
+            ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+            ['New services at {n}','Each month, new services and specialists at {n}.','monthly'],
+            ['Getting to {n}','Each month, changes to parking, transport and entrances at {n}.','monthly']],
   pharma:[['New from {n}','Each month, announcements and recalls from {n} that concern [product or topic].','monthly'],
-          ['{n} recalls','Each week, product recalls announced by {n}, and tell me only if there is one.','weekly']],
+          ['{n} recalls','Each week, product recalls announced by {n}, and tell me only if there is one.','weekly'],
+          ['{n} approvals','Each month, approvals and new medicines from {n}, from regulators’ announcements.','monthly'],
+          ['{n} shortages','Each week, shortages of {n} medicines reported by regulators, and tell me only if there is one.','weekly'],
+          ['{n} results and news','Each month, {n}’s results and news, in a few lines with links.','monthly'],
+          ['{n} clinical trials','Each month, clinical trials {n} started or reported, with links.','monthly']],
   utility:[['Is {n} still my best price?','Each month, compare my {n} tariff with current offers and tell me if switching saves money.','monthly'],
            ['{n} price changes','Each month, any tariff or price change {n} announces on {s}, and when it starts.','monthly'],
-           ['{n} outage watch','Each day, planned or reported {n} outages in [area], and tell me only if there is one.','daily']],
+           ['{n} outage watch','Each day, planned or reported {n} outages in [area], and tell me only if there is one.','daily'],
+           ['{n} planned works','Each week, planned works and interruptions {n} announces on {s}.','weekly'],
+           ['Help with {n} bills','Each month, discounts, social tariffs and help schemes from {n}, with who qualifies.','monthly'],
+           ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly']],
   carmaker:[['{n} recall watch','Each month, check for new recalls affecting my {n} [model, year].','monthly'],
-            ['New from {n}','Each month, new models, prices and offers {n} announces.','monthly']],
+            ['New from {n}','Each month, new models, prices and offers {n} announces.','monthly'],
+            ['{n} prices','Each month, price changes for {n} models, with sources.','monthly'],
+            ['{n} electric models','Each month, news on {n}’s electric and hybrid models - range, prices, launches.','monthly'],
+            ['{n} software updates','Each month, software updates {n} releases for its cars, with what changes.','monthly'],
+            ['{n} reviews','Each month, reviews of new {n} models from the motoring press, each in a sentence.','monthly'],
+            ['{n} in the news','Each week, news about {n}, in a few lines with links.','weekly'],
+            ['{n} offers in {c}','Each month, {n} offers and financing deals in {c}.','monthly','c']],
   museum:[['New at {n}','Each month, new exhibitions and events at {n}, with dates and how to book ({s}).','monthly'],
-          ['Free days at {n}','Each month, free entry days and discounts at {n}.','monthly']],
-  library:[['New at {n}','Each month, new events, changed opening hours and new e-book services at {n} ({s}).','monthly']],
+          ['Free days at {n}','Each month, free entry days and discounts at {n}.','monthly'],
+          ['Tours and talks at {n}','Each month, guided tours, talks and workshops at {n}, with how to book.','monthly'],
+          ['{n} for families','Each month, family and children’s activities at {n}.','monthly'],
+          ['{n} opening hours','Each month, changes to {n}’s opening hours and closures.','monthly'],
+          ['New in {n}’s online collection','Each month, new additions to {n}’s online collection, with links.','monthly'],
+          ['Last chance at {n}','Each month, exhibitions at {n} closing in the next four weeks.','monthly'],
+          ['Late nights at {n}','Each month, evening openings and special nights at {n}.','monthly'],
+          ['New acquisitions at {n}','Each month, new works and objects {n} acquired, with links.','monthly'],
+          ['Courses at {n}','Each month, courses and classes at {n}, with how to book.','monthly'],
+          ['{n} membership','Each month, membership offers and member events at {n}.','monthly']],
+  library:[['New at {n}','Each month, new events, changed opening hours and new e-book services at {n} ({s}).','monthly'],
+           ['Events at {n}','Each week, talks, readings and workshops at {n}, with dates.','weekly'],
+           ['{n} opening hours','Each month, changes to {n}’s opening hours and closures.','monthly'],
+           ['{n} for children','Each month, story times and children’s activities at {n}.','monthly'],
+           ['New digital services at {n}','Each month, new e-books, databases and online services at {n}.','monthly'],
+           ['Free courses at {n}','Each month, free courses and classes at {n} - languages, computers, jobs.','monthly'],
+           ['Exhibitions at {n}','Each month, exhibitions and displays at {n}.','monthly']],
   research:[['New from {n}','Each month, new publications and announcements from {n} on [topic], with links.','monthly'],
-            ['Jobs and grants at {n}','Each month, positions and grants {n} opens, with closing dates.','monthly']],
-  publisher:[['New from {n}','Each month, new releases from {n} in [genre or subject], with dates.','monthly']],
+            ['Jobs and grants at {n}','Each month, positions and grants {n} opens, with closing dates.','monthly'],
+            ['{n} news','Each week, the main news from {n}, each in two sentences with a link.','weekly'],
+            ['Public events at {n}','Each month, public talks and open days at {n}, with dates.','monthly'],
+            ['Datasets and tools from {n}','Each month, new datasets, software and tools {n} released, with links.','monthly'],
+            ['{n} discoveries, explained','Each week, results from {n} that made the news, explained simply.','weekly'],
+            ['PhD and fellowship calls at {n}','Each month, PhD places and fellowships {n} opens, with deadlines.','monthly'],
+            ['Conferences at {n}','Each month, conferences and workshops {n} organises, with dates.','monthly'],
+            ['{n} collaborations','Each month, new partnerships and joint projects {n} announced.','monthly']],
+  publisher:[['New from {n}','Each month, new releases from {n} in [genre or subject], with dates.','monthly'],
+             ['{n} bestsellers','Each week, {n}’s bestselling titles, with a line on each.','weekly'],
+             ['New books from {n}','Each week, new books from {n}, with a line on each.','weekly'],
+             ['Prizes for {n} authors','Each month, prizes and nominations for {n}’s authors.','monthly'],
+             ['Author events from {n}','Each month, readings and author events from {n}, with dates.','monthly'],
+             ['Is {n} open for submissions?','Each month, whether {n} is open for submissions, and its rules.','monthly'],
+             ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+             ['{n} releases in {c}','Each month, new releases from {n} in {c}, with dates.','monthly','c'],
+             ['{n} bestsellers in {c}','Each week, {n}’s bestselling titles in {c}, with a line on each.','weekly','c']],
   school:[['{n} deadline watch','Watch {s} for enrolment dates, term dates and closures at {n}, and remind me a week before each.','weekly'],
-          ['News from {n}','Each week, announcements from {n} for parents and students.','weekly']],
+          ['News from {n}','Each week, announcements from {n} for parents and students.','weekly'],
+          ['Events at {n}','Each month, events at {n} for families, with dates.','monthly'],
+          ['Admissions at {n}','Each month, admissions news and open days at {n}, with dates.','monthly'],
+          ['{n} results and reports','Each month, published results and inspection reports about {n}.','monthly'],
+          ['Meals at {n}','Each week, the menu and meal changes at {n}.','weekly'],
+          ['Holidays at {n}','Each month, holidays and days off at {n} in the coming months.','monthly'],
+          ['After-school activities at {n}','Each month, clubs and after-school activities at {n}.','monthly'],
+          ['Exams at {n}','Each month, exam dates and results days at {n}.','monthly']],
   sportsclub:[['{n} match week','Each week, {n}’s next fixtures, results and team news.','weekly'],
               ['{n} tickets','Each week, when tickets go on sale for {n}’s next matches, and the prices.','weekly'],
-              ['{n} result','After each {n} match, the result and the key moments in a paragraph.','daily']],
-  stadium:[['New at {n}','Each month, newly announced events at {n}, with dates and when tickets go on sale.','monthly']],
+              ['{n} result','After each {n} match, the result and the key moments in a paragraph.','daily'],
+              ['{n} transfers','Each day, transfer news about {n}, and tell me only if there is some.','daily'],
+              ['{n} injuries','Each week, injuries and suspensions at {n}.','weekly'],
+              ['{n} in the table','Each week, where {n} stands in its league, with the next three fixtures.','weekly'],
+              ['{n} season tickets','Each month, season-ticket and membership news from {n}, with prices and dates.','monthly'],
+              ['{n} academy','Each month, news from {n}’s academy and youth teams.','monthly'],
+              ['{n} club news','Each week, official news from {n} ({s}), in a few lines.','weekly'],
+              ['{n} women’s team','Each week, results and fixtures of {n}’s women’s team, if it has one.','weekly'],
+              ['{n} match preview','Before each {n} match, a preview: form, likely line-ups and what is at stake.','weekly'],
+              ['{n} in numbers','Each month, {n}’s key statistics - top scorers, form and records.','monthly'],
+              ['{n} stadium news','Each month, news about {n}’s ground - works, capacity, transport.','monthly']],
+  stadium:[['New at {n}','Each month, newly announced events at {n}, with dates and when tickets go on sale.','monthly'],
+           ['Concerts at {n}','Each month, concerts announced at {n}, with dates and when tickets go on sale.','monthly'],
+           ['Tours of {n}','Each month, stadium tours and visitor events at {n}.','monthly'],
+           ['Getting to {n}','Each month, transport and parking changes for events at {n}.','monthly'],
+           ['Entry rules at {n}','Each month, changes to bag, ticket and entry rules at {n}.','monthly']],
   theatre:[['New at {n}','Each month, new shows announced at {n}, with dates and when booking opens ({s}).','monthly'],
-           ['Last-minute tickets at {n}','Each week, shows at {n} this week with seats still available.','weekly']],
-  festival:[['New from {n}','Each week, line-up announcements and ticket release dates from {n} ({s}).','weekly']],
-  park:[['{n} conditions','Before my visit on [dates], check {n} for closures, weather warnings and trail conditions ({s}).','weekly']],
-  zoo:[['New at {n}','Each month, new events, arrivals and ticket offers at {n} ({s}).','monthly']],
-  brewery:[['New from {n}','Each month, new releases, tours and events from {n} ({s}).','monthly']],
+           ['Last-minute tickets at {n}','Each week, shows at {n} this week with seats still available.','weekly'],
+           ['Reviews of {n} shows','Each week, reviews of the shows at {n}, each in a sentence.','weekly'],
+           ['{n} for families','Each month, family shows and activities at {n}, with dates.','monthly'],
+           ['Cheap tickets at {n}','Each month, discounts and cheap-ticket schemes at {n}.','monthly'],
+           ['Talks and workshops at {n}','Each month, talks and workshops at {n}, with how to book.','monthly'],
+           ['Last chance at {n}','Each month, shows at {n} closing in the next four weeks.','monthly'],
+           ['{n} membership','Each month, membership offers and member events at {n}.','monthly']],
+  festival:[['New from {n}','Each week, line-up announcements and ticket release dates from {n} ({s}).','weekly'],
+            ['{n} dates','Each month, the confirmed dates of {n}’s next edition, from {s}.','monthly'],
+            ['{n} tickets and prices','Each week, ticket prices and releases for {n}.','weekly'],
+            ['Getting to {n}','Each month, travel, camping and accommodation information from {n}.','monthly'],
+            ['{n} schedule','Each week before {n} starts, the schedule as it is published, day by day.','weekly'],
+            ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+            ['Volunteer at {n}','Each month, volunteer and work opportunities at {n}.','monthly']],
+  park:[['{n} conditions','Before my visit on [dates], check {n} for closures, weather warnings and trail conditions ({s}).','weekly'],
+        ['Events at {n}','Each month, guided walks and events at {n}, with dates.','monthly'],
+        ['{n} closures','Each week, closures and warnings at {n}, and tell me only if there is one.','weekly'],
+        ['{n} this month','Each month, what wildlife and nature are at their best at {n} this month.','monthly'],
+        ['{n} permits and fees','Each month, any change to permits, fees and booking rules at {n}.','monthly']],
+  zoo:[['New at {n}','Each month, new events, arrivals and ticket offers at {n} ({s}).','monthly'],
+       ['Events at {n}','Each month, talks, feeding times and events at {n}.','monthly'],
+       ['{n} opening hours','Each month, changes to {n}’s opening hours and closures.','monthly'],
+       ['{n} conservation news','Each month, the conservation work and news from {n}.','monthly'],
+       ['School visits to {n}','Each month, school visits and education programmes at {n}.','monthly']],
+  brewery:[['New from {n}','Each month, new releases, tours and events from {n} ({s}).','monthly'],
+           ['Tours at {n}','Each month, tours and tastings at {n}, with how to book.','monthly'],
+           ['{n} awards','Each month, awards won by {n}’s beers.','monthly'],
+           ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly']],
   employer:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily'],
-            ['{n} in the news','Each week, news about {n} - results, layoffs, hiring - in a few lines.','weekly']],
+            ['{n} in the news','Each week, news about {n} - results, layoffs, hiring - in a few lines.','weekly'],
+            ['{n} as an employer','Each month, what current and former employees say about working at {n}, from public reviews, in a few lines.','monthly'],
+            ['Internships at {n}','Each month, internship and graduate programmes at {n}, with deadlines.','monthly'],
+            ['{n} work policies','Each month, changes to {n}’s remote-work, benefits and leave policies reported publicly.','monthly'],
+            ['{n} results','Each month, {n}’s results and announcements, in a few lines.','monthly'],
+            ['{n} hiring events','Each month, career fairs and hiring events {n} takes part in.','monthly'],
+            ['Jobs at {n} in {c}','Each day, new openings at {n} in {c}, with links.','daily','c'],
+            ['{n} in {c}','Each week, news about {n} in {c} - offices, hiring, layoffs - in a few lines.','weekly','c'],
+            ['Internships at {n} in {c}','Each month, internships and graduate roles at {n} in {c}, with deadlines.','monthly','c'],
+            ['Layoffs at {n}','Each week, any layoffs or hiring freezes announced at {n}, and tell me only if there is one.','weekly'],
+            ['Salaries at {n} in {c}','Each month, what published sources say {n} pays in {c}, by role, with sources.','monthly','c'],
+            ['{n} hiring events in {c}','Each month, career fairs and hiring events in {c} where {n} recruits.','monthly','c']],
   company:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily'],
-           ['{n} in the news','Each week, news about {n}, in a few lines with links.','weekly']],
+           ['{n} in the news','Each week, news about {n}, in a few lines with links.','weekly'],
+           ['New from {n}','Each week, new products and services {n} announced, with links.','weekly'],
+           ['{n} results','Each month, {n}’s financial results and outlook, in plain numbers with sources.','monthly'],
+           ['{n} price changes','Each month, price changes {n} announced, and when they start.','monthly'],
+           ['{n} outages','Each day, any outage of {n}’s services, and tell me only if there is one.','daily'],
+           ['{n} recalls and safety notices','Each week, recalls or safety notices from {n}, and tell me only if there is one.','weekly'],
+           ['{n} leadership changes','Each month, changes to {n}’s leadership and board, with sources.','monthly'],
+           ['{n} deals and acquisitions','Each month, acquisitions, partnerships and investments by {n}, with sources.','monthly'],
+           ['{n} legal and regulatory news','Each month, lawsuits, fines and regulatory decisions involving {n}, with sources.','monthly'],
+           ['{n} sustainability','Each month, {n}’s climate and sustainability announcements, checked against reporting by others.','monthly'],
+           ['{n} customer reviews','Each month, what recent customer reviews say about {n}, in a few lines.','monthly'],
+           ['Jobs at {n} in {c}','Each day, new openings at {n} in {c}, with links.','daily','c'],
+           ['{n} in {c}','Each week, news about {n} in {c}, in a few lines with links.','weekly','c'],
+           ['{n} offers in {c}','Each week, offers and prices from {n} for customers in {c}.','weekly','c'],
+           ['{n} data breaches','Each week, any data breach or security incident at {n}, and tell me only if there is one.','weekly'],
+           ['{n} privacy and terms','Each month, changes to {n}’s privacy policy or terms, and what they mean.','monthly'],
+           ['{n} share price','Each day, {n}’s share price and the main reason it moved, if it is listed.','daily'],
+           ['{n} patents','Each month, new patents granted to {n}, each in a sentence.','monthly'],
+           ['{n} and its competitors','Each month, what {n}’s main competitors announced, in a few lines.','monthly'],
+           ['{n} strikes and labour news','Each month, strikes, union disputes and labour news at {n}, with sources.','monthly'],
+           ['{n} credit rating','Each month, any change to {n}’s credit rating, with sources.','monthly'],
+           ['Shareholder meetings at {n}','Each month, upcoming shareholder meetings and votes at {n}, with dates.','monthly'],
+           ['{n} supply news','Each month, supply problems, factory news and shortages at {n}, with sources.','monthly'],
+           ['{n} recalls in {c}','Each week, recalls of {n} products in {c}, and tell me only if there is one.','weekly','c'],
+           ['{n} customer service in {c}','Each month, how to reach {n}’s customer service in {c}, and any change to it.','monthly','c'],
+           ['{n} openings in {c}','Each week, new {n} stores, offices or sites opening in {c}.','weekly','c'],
+           ['{n} events in {c}','Each month, events, launches and pop-ups {n} holds in {c}, with dates.','monthly','c']],
   software:[['New from {n}','Each week, product updates, price changes and security notices from {n} ({s}).','weekly'],
             ['{n} outages','Each day, any {n} outage or incident, and tell me only if there is one.','daily'],
-            ['Jobs at {n}','Each week, new [role] openings at {n}, with links.','weekly']],
+            ['Jobs at {n}','Each week, new [role] openings at {n}, with links.','weekly'],
+            ['{n} security advisories','Each day, security advisories for {n}, and tell me only if there is one.','daily'],
+            ['{n} release notes','Each week, {n}’s release notes in plain words - what changed for people using it.','weekly'],
+            ['{n} pricing','Each month, changes to {n}’s plans and prices.','monthly'],
+            ['{n} privacy and terms','Each month, changes to {n}’s privacy policy or terms, and what they mean.','monthly'],
+            ['Learn {n}','Each month, new tutorials and webinars from {n}, with links.','monthly'],
+            ['Alternatives to {n}','Each month, notable new alternatives to {n}, with how they compare.','monthly'],
+            ['{n} in the news','Each week, news about {n}, in a few lines with links.','weekly']],
   nonprofit:[['New from {n}','Each month, news, appeals and volunteer openings from {n} ({s}).','monthly'],
-             ['Volunteer with {n}','Each month, volunteer openings at {n} in [area], with how to apply.','monthly']],
+             ['Volunteer with {n}','Each month, volunteer openings at {n} in [area], with how to apply.','monthly'],
+             ['{n} campaigns','Each month, campaigns and petitions {n} launches, with links.','monthly'],
+             ['{n} reports','Each month, reports and research {n} published, each in a sentence.','monthly'],
+             ['Events by {n}','Each month, events and fundraisers by {n}, with dates.','monthly'],
+             ['Jobs at {n}','Each month, paid openings at {n}, with closing dates.','monthly'],
+             ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly'],
+             ['{n} in {c}','Each month, what {n} is doing in {c} - projects, appeals and events.','monthly','c'],
+             ['{n} finances','Each month, any new annual report or accounts {n} published, with where the money goes.','monthly'],
+             ['{n} impact','Each month, the results {n} reports from its work, checked against others’ reporting where possible.','monthly']]
 };
 
 /* One country's file, fetched once. */
@@ -304,8 +633,14 @@ async function ccLoad(cc){
 /* English only: "a {n}" before a vowel is "an" - "Find an Iberia flight". The
    translated titles are left alone ("a {n}" is "the" in Portuguese). */
 const _ccAn = (t, e) => /^[aeiou]/i.test(e.n) ? String(t).replace(/\b([Aa]) \{n\}/g, '$1n {n}') : String(t);
-const _ccFill = (t, e, en) => (en ? _ccAn(t, e) : String(t)).replace(/\{n\}/g, e.n).replace(/\{s\}/g, e.s);
-const _ccTitle = (t, e) => { const tr = T(t); return _ccFill(tr, e, tr === t); };
+/* {c}: the country the entry was listed in - "the United States" in English
+   (as the rest of Crew says it), the browser's own name for it otherwise. */
+const _ccPlace = (cc, en) => {
+  try{ const row = _cwCountryRow(cc); if(!row) return cc || ''; return en ? _cwThe(row[1]) : _cwPlaceName(row[1]); }catch(e){ return cc || ''; }
+};
+const _ccFill = (t, e, en, cc) => (en ? _ccAn(t, e) : String(t)).replace(/\{n\}/g, e.n).replace(/\{s\}/g, e.s)
+  .replace(/\{c\}/g, () => _ccPlace(cc, en));
+const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t, cc); };
 /* Every task, job and service for a country, each tied to the entry it names. */
 function ccTasks(d){
   const by = [];
@@ -330,8 +665,8 @@ function ccJobs(d){
   const by = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})){
     const tpl = CC_CREW[kind]; if(!tpl) continue;
-    by.push(list.map(e => tpl.map((t, i) => ({ id:'ccj-' + kind + '-' + e.q + '-' + i, kind, e,
-      title:_ccTitle(t[0], e), prompt:_ccFill(t[1], e, true), every:t[2] }))));
+    by.push(list.map(e => tpl.map((t, i) => ({ id:_ccJobId(kind, e, i, d.cc), kind, e, i,
+      title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2] }))));
   }
   return _ccWeave(by);
 }
@@ -354,16 +689,123 @@ async function ccCrewLoad(cc){
      nothing else, so a blank left unfilled would run every day against the
      words "[my route]". Crew's own switch does the asking (`asks`), refuses an
      empty answer, and adds what was said to what the runner reads. */
-  const asks = (p) => { const b = [...new Set((p.match(/\[[^\]]*\]/g) || []).map(x => x.slice(1, -1)))];
-    return b.length ? { q: 'This job needs: ' + b.join(', ') + '.', ph: 'Type each one, in a sentence or a list.' } : null; };
-  _ccCrewJobs[cc] = ccJobs(d).map(j => ({
-    asks: asks(j.prompt),
-    id: j.id, icon: (CC_KINDS[j.kind] || ['\u2022'])[0], title: j.title,
-    desc: j.prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt: j.prompt, every: j.every,
-    needs: 'Web research', cat: (CC_KINDS[j.kind] || ['', ''])[1], kind: 'research', ccKind: j.kind, site: j.e.s, src: j.e.q,
-  }));
+  _ccCrewJobs[cc] = ccJobs(d).map(j => ccCrewJob(j.kind, j.e, j.i, d.cc));
   return _ccCrewJobs[cc];
 }
+const _ccAsks = (p) => { const b = [...new Set((p.match(/\[[^\]]*\]/g) || []).map(x => x.slice(1, -1)))];
+  return b.length ? { q: 'This job needs: ' + b.join(', ') + '.', ph: 'Type each one, in a sentence or a list.' } : null; };
+/* A job's id. A job about the entry alone is the same job in every country
+   that lists it ("Microsoft results"), so its id has no country - and it is
+   the id somebody's switched-on job was saved under, so it never changes. A
+   job about the entry IN a country (a template marked 'c': "Jobs at
+   Microsoft in Spain") is a different job per country, and says which. */
+const _ccJobId = (kind, e, i, cc) => 'ccj-' + kind + '-' + e.q + '-' + i + (CC_CREW[kind][i][3] === 'c' ? '-' + cc : '');
+/* One job: entry `e` of kind `kind`, template `i`, listed in country `cc`.
+   The one builder, so a job on the main list and the same job in the
+   directory are the same object. */
+function ccCrewJob(kind, e, i, cc){
+  const t = CC_CREW[kind][i], prompt = _ccFill(t[1], e, true, cc);
+  return {
+    asks: _ccAsks(prompt),
+    id: _ccJobId(kind, e, i, cc), icon: (CC_KINDS[kind] || ['\u2022'])[0], title: _ccTitle(t[0], e, cc),
+    desc: prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt, every: t[2],
+    needs: 'Web research', cat: (CC_KINDS[kind] || ['', ''])[1], kind: 'research', ccKind: kind, site: e.s, src: e.q,
+  };
+}
+
+/* THE DIRECTORY OF EVERY JOB, COUNTED AND SEARCHED WITHOUT BEING BUILT (Nov 16).
+
+   "See all jobs" used to make every job of every country as an object - a
+   title, an instruction and a description each - and keep them all: a
+   quarter of a million objects, hundreds of megabytes on a phone, before
+   anybody typed a letter. The jobs are a product: entries times templates.
+   So the directory keeps the factors and multiplies only what is on screen.
+
+   A search word matches a job when it is in the job's template (its title in
+   English and in the reader's language, its instruction, its category) or in
+   the entry (the name and the site). Each is reduced to a bit per word once
+   per search, and a job matches when the two together have every bit - so
+   counting a million jobs is a million integer ORs, and nothing is allocated.
+
+   The same company is often listed in several countries. A job about the
+   company alone is the same job wherever it is listed, has the same id, and
+   is counted once - in the first country of the reader's order (their own
+   first). A job about the company in a country (marked 'c') is counted in
+   each. */
+const _ccDir = {};   // cc -> [{ kind, list, tpl, hay:[template text], eh:[entry text] }]
+async function ccDirLoad(cc){
+  if(_ccDir[cc]) return _ccDir[cc];
+  const d = await ccLoad(cc); if(!d) return null;
+  const groups = [];
+  for(const [kind, list] of Object.entries(d.kinds || {})){
+    const tpl = CC_CREW[kind]; if(!tpl || !list.length) continue;
+    const cat = (CC_KINDS[kind] || ['', ''])[1];
+    const here = [_ccPlace(cc, true), _ccPlace(cc, false)].join(' ');
+    groups.push({ kind, list, tpl, sc: Uint8Array.from(tpl, t => t[3] === 'c' ? 1 : 0),
+      hay: tpl.map(t => [t[0], T(t[0]), t[1], cat, T(cat), t[3] === 'c' ? here : ''].join(' ').toLowerCase()),
+      eh: list.map(e => (e.n + ' ' + e.s).toLowerCase()) });
+  }
+  return (_ccDir[cc] = groups);
+}
+/* Which entries are a repeat of one listed in an earlier country, worked
+   out once for an order of countries and kept until a country arrives. */
+let _ccDirDupKey = '';
+function _ccDirDups(codes){
+  const key = codes.filter(cc => _ccDir[cc]).join(',');
+  if(key === _ccDirDupKey) return;
+  _ccDirDupKey = key;
+  const seen = new Set();
+  for(const cc of codes) for(const g of (_ccDir[cc] || [])){
+    g.dup = new Uint8Array(g.list.length);
+    g.live = 0;
+    g.list.forEach((e, r) => { const k = g.kind + '|' + e.q; if(seen.has(k)) g.dup[r] = 1; else { seen.add(k); g.live++; } });
+  }
+}
+/* How many jobs match, and the first `want` of them as jobs, in the
+   directory's order: country by country (the reader's own first); with no
+   search, one job per service before a second for any - template round, then
+   rank, then kind - so the first screen spans many services, as the main
+   list does; with a search, service by service. */
+function ccDirFind(codes, words, want){
+  _ccDirDups(codes);
+  const W = Math.min(words.length, 30), full = W ? (2 ** W) - 1 : 0;
+  const bits = (s) => { let m = 0; for(let w = 0; w < W; w++) if(s.indexOf(words[w]) >= 0) m |= (1 << w); return m; };
+  let n = 0; const rows = [];
+  const take = (g, r, t, cc) => { const j = ccCrewJob(g.kind, g.list[r], t, cc); j.country = cc; rows.push(j); };
+  for(const cc of codes){
+    const groups = _ccDir[cc]; if(!groups) continue;
+    if(!W){
+      for(const g of groups){ let sc = 0; for(const x of g.sc) sc += x; n += g.live * (g.tpl.length - sc) + g.list.length * sc; }
+      if(rows.length >= want) continue;
+      const rounds = Math.max(0, ...groups.map(g => g.tpl.length)), ranks = Math.max(0, ...groups.map(g => g.list.length));
+      out: for(let t = 0; t < rounds; t++) for(let r = 0; r < ranks; r++) for(const g of groups){
+        if(t >= g.tpl.length || r >= g.list.length || (g.dup[r] && !g.sc[t])) continue;
+        take(g, r, t, cc); if(rows.length >= want) break out;
+      }
+      continue;
+    }
+    for(const g of groups){
+      const tm = g.hay.map(bits);
+      /* Templates by the words they hold: an entry then counts every template
+         its own words complete, without visiting the templates one by one. */
+      /* Two counts: every template, and only the ones marked 'c' - an entry
+         already listed in an earlier country counts just the second. */
+      const all = new Map(), own = new Map();
+      tm.forEach((m, t) => { all.set(m, (all.get(m) || 0) + 1); if(g.sc[t]) own.set(m, (own.get(m) || 0) + 1); });
+      let any = 0; for(const m of all.keys()) any |= m;
+      for(let r = 0; r < g.list.length; r++){
+        const dup = g.dup[r];
+        if(dup && !own.size) continue;
+        const em = bits(g.eh[r]);
+        if(((em | any) & full) !== full) continue;
+        for(const [m, c] of (dup ? own : all)) if((m | em) === full) n += c;
+        if(rows.length < want) for(let t = 0; t < tm.length && rows.length < want; t++) if((!dup || g.sc[t]) && (tm[t] | em) === full) take(g, r, t, cc);
+      }
+    }
+  }
+  return { n, rows };
+}
+try{ window.ccCrewJob = ccCrewJob; window.ccDirLoad = ccDirLoad; window.ccDirFind = ccDirFind; }catch(e){}
 /* INTEGRATIONS: every service in the country, under its own topic (Nov 15).
 
    The owner: "remove 'popular in <country>'"; "if it says it on Crew or Tasks,

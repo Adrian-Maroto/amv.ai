@@ -16006,3 +16006,17 @@ gate found it. Rule: a search that decides whether something may be deleted
 runs to the end and excludes generated folders (`.build/`), never through
 `head`; and a feature that has lost its only door gets a new door, not a
 deletion - removing functionality is the owner's call.
+
+## 651. A total added up country by country counts the same thing many times (Nov 16)
+
+The country report said 259,378 Crew jobs, and that number was the basis for
+telling the owner how far the directory was from a million. But a third of
+the entries are the same organisation listed in several countries, and the
+directory - which removes repeats by id - held 170,201. The sum was true of
+each country's own list and false of the whole. The same directory also built
+every job of every country as an object before anybody typed, a quarter of a
+million of them; at a million that is hundreds of megabytes on a phone.
+Rule: a "total across X" is counted with the same identity the screen uses,
+and the report says which kind of total it is. A catalogue that is a product
+of two lists is stored as the two lists and multiplied on demand, and the
+suite that holds its count recomputes it independently from the data.
