@@ -1612,7 +1612,13 @@ step('Page weight is under control', () => {
      page for settings-panes.js, fetched when Settings opens and prefetched
      once the page is idle (~14KB gzipped). The page went from ~585KB to
      ~571KB, and the ceiling follows it, keeping the same ~15KB of room. */
-  const CEILING = 586 * 1024;   // gzipped, which is what actually crosses the network
+  /* 586 -> 588, 2026-11-16, UP on purpose: the owner's command-bar redesign
+     (LAYER A369), the bank link dialog, the browser rows' wiring, and the
+     Research Watch dialog restored after it was removed by mistake (LESSONS
+     650). Owed back: the old Crew page (_cwForYouHTML, _cwMadeForHTML, the
+     country pages and their styles) is still in the bundle with no screen
+     drawing it, and taking it out returns several times these 2KB. */
+  const CEILING = 588 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

@@ -10967,6 +10967,9 @@ function _buildResearchPanel(state, finished){
     (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
     (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+escH(T('{0} more').replace('{0}', sources.length-12))+'</span>':'')+'</div>':'')+
     (cards?'<div class="rsrc-cards">'+cards+'</div>':'')+
+    /* A finished answer can become a standing one: Research Watch runs the
+       same question on a schedule and reports what changed. */
+    (finished?'<div class="rsrc-foot"><button class="rsrc-watch" type="button" data-dact="openResearchWatch">'+escH(T('Keep watching this'))+'</button></div>':'')+
   '</div>';
 }
 const RS_PREVIEWS = 4;
@@ -38281,11 +38284,70 @@ async function _autoApi(path, body){
   return d;
 }
 
-/* The Research Watch dialog was reached only from the "Only on AMV" cards,
-   removed from Tasks on Nov 15. The same job - watch a subject on a schedule
-   and report - is said in Crew's box ("every morning, the news on X"), which
-   the owner asked to be the one way in. */
+/* ── Research Watch setup ──────────────────────────────────────────────────
+   Let the user set up an autonomous, recurring research job: watch a subject on
+   a schedule and report what's happening. It delivers in-app always, and by
+   email if they choose. Framed as monitoring/analysis - never trade advice. */
+function openResearchWatch(){
+  const ovr=$('ovr'); if(!ovr) return;
+  ovr.innerHTML=
+    '<div class="rw-modal">'+
+      '<div class="rw-head">'+
+        '<span class="rw-emoji">🔭</span>'+
+        '<div><div class="rw-title">Set up a research watch</div>'+
+        '<p class="rw-sub">AMV checks on your topic on a schedule and reports what\u2019s happening - the facts, the news, the sentiment. It never tells you to buy, sell, or short; that\u2019s your call.</p></div>'+
+      '</div>'+
+      '<label class="rw-lbl">What should AMV watch?</label>'+
+      '<textarea id="rw-subject" class="inp" rows="3" placeholder="e.g. Bitcoin price and major news, or NVIDIA stock and analyst sentiment, or new AI model releases"></textarea>'+
+      '<label class="rw-lbl">How often?</label>'+
+      '<div class="rw-opts" id="rw-repeat">'+
+        '<button class="rw-opt" data-repeat="10min">Every 10 min</button>'+
+        '<button class="rw-opt" data-repeat="30min">Every 30 min</button>'+
+        '<button class="rw-opt on" data-repeat="hourly">Hourly</button>'+
+        '<button class="rw-opt" data-repeat="daily">Daily</button>'+
+        '<button class="rw-opt" data-repeat="weekly">Weekly</button>'+
+      '</div>'+
+      '<label class="rw-lbl">Where should findings go?</label>'+
+      '<div class="rw-opts" id="rw-notify">'+
+        '<button class="rw-opt on" data-notify="app">In-app<span class="rw-opt-s">See it in Tasks</span></button>'+
+        '<button class="rw-opt" data-notify="email">Email me<span class="rw-opt-s">Sent each run</span></button>'+
+      '</div>'+
+      '<div class="rw-note">This is information, not financial advice. AMV reports what\u2019s happening; it won\u2019t place trades or tell you what to buy.</div>'+
+      '<div class="rw-actions"><button class="btn bs" id="rw-cancel">Cancel</button><button class="btn bp" id="rw-start">Start watching</button></div>'+
+    '</div>';
+  ovr.classList.add('on');
 
+  let repeat='hourly', notify='app';
+  ovr.querySelectorAll('#rw-repeat [data-repeat]').forEach(b=>on(b,'click',()=>{
+    repeat=b.dataset.repeat;
+    ovr.querySelectorAll('#rw-repeat .rw-opt').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  }));
+  ovr.querySelectorAll('#rw-notify [data-notify]').forEach(b=>on(b,'click',()=>{
+    notify=b.dataset.notify;
+    ovr.querySelectorAll('#rw-notify .rw-opt').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+  }));
+  on($('rw-cancel'),'click',closeOvr);
+  on($('rw-start'),'click',async()=>{
+    const subject=($('rw-subject')?$('rw-subject').value:'').trim();
+    if(!subject){ $('rw-subject')&&$('rw-subject').focus(); return; }
+    const btn=$('rw-start'); if(btn){ btn.disabled=true; btn.textContent='Setting up\u2026'; }
+    const item=await _scheduleTask({
+      detail: subject,
+      repeat,
+      kind: 'research',
+      notify
+    });
+    if(item){
+      closeOvr();
+      setTab('tasks');
+    } else if(btn){
+      btn.disabled=false; btn.textContent='Start watching';
+    }
+  });
+}
+try{ window.openResearchWatch=openResearchWatch; }catch(e){}
 // Create an automation that genuinely runs in the background.
 /* Whether background work can reach an inbox on this deployment, and whether
    this account's plan can run it at all. Both come from the server - the app

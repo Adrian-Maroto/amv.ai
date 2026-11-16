@@ -1474,13 +1474,26 @@ function _cjJobsHTML(){
   </section>`;
 }
 /* The box at the top, the same on both screens: a heading, the field, Run. */
+/* THE BOX (Nov 16, the owner: "too narrow and chunky - it needs to look
+   futuristic, easy to use, and promise results"). One wide, slim command bar
+   under a heading and one line that says what you get; Run carries an arrow,
+   and on a phone it is the arrow alone so the field keeps its width. The line
+   promises only what is true of every job: it runs on the schedule you give
+   and the result comes back to you. */
+/* A phone gets the short example, so the box stays one slim line. */
+function _cjNarrow(){ try{ return window.matchMedia('(max-width:560px)').matches; }catch(e){ return false; } }
 function _cjAskHTML(extra){
-  return `<section class="cj-ask mc-cmd" aria-labelledby="cx-ask-h">
-    <div class="cj-ask-top"><h1 id="cx-ask-h">${escH(T('Tell AMV what to do'))}</h1>${extra || ''}</div>
+  return `<section class="cj-ask mc-cmd cj-hero" aria-labelledby="cx-ask-h">
+    <div class="cj-ask-top">
+      <div class="cj-ask-hd"><h1 id="cx-ask-h">${escH(T('Tell AMV what to do'))}</h1>
+        <p class="cj-promise">${escH(T('AMV does it on your schedule and brings you the result.'))}</p></div>
+      ${extra || ''}
+    </div>
     <div class="cj-box">
+      <span class="cj-box-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="2.6"/></svg></span>
       <textarea id="mc-cmd-input" class="mc-cmd-input cj-input" rows="1" autocomplete="off" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go"
-        placeholder="${escH(T('e.g. every morning at 8, summarize my unread email'))}"></textarea>
-      <button class="mc-cmd-go cj-run" id="mc-cmd-go">${escH(T('Run'))}</button>
+        placeholder="${escH(_cjNarrow() ? T('e.g. summarize my email at 8') : T('e.g. every morning at 8, summarize my unread email'))}"></textarea>
+      <button class="mc-cmd-go cj-run" id="mc-cmd-go" aria-label="${escH(T('Run'))}"><span class="cj-run-t">${escH(T('Run'))}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
     </div>
     <div id="mc-cmd-result" class="mc-cmd-result"></div>
   </section>`;

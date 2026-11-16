@@ -55,7 +55,7 @@ section('On the page: Use for those, Notify me for the rest, Link for a bank');
     const web = rows.filter(x => x.use.indexOf('web:') === 0);
     return { web: web.length, want: Object.keys(AMV_APP_WEB).length,
              wrong: web.filter(x => x.use !== 'web:' + AMV_APP_WEB[x.n] + '|' + x.n).map(x => x.n).slice(0, 3),
-             revolut: rows.find(x => x.n === 'Revolut'), signal: rows.find(x => x.n === 'Signal'),
+             revolut: rows.find(x => x.n === 'Revolut' && !x.svc), signal: rows.find(x => x.n === 'Signal' && !x.svc),
              banks: rows.filter(x => x.svc && x.kind === 'bank').map(x => x.act) };
   });
   ok(r.web === r.want, 'every app with a website offers Use - ' + r.web, r);

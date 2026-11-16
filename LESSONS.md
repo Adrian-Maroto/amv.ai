@@ -15995,3 +15995,14 @@ showing the Investing pane, investment check-ins and all. Rule: before
 deleting a section, list what it SAID as well as what it showed - the
 warnings, the honest states, the doors into flows that live nowhere else -
 and give each one a new home or a reason it is no longer true.
+
+## 650. A search cut short by `head` is not a search that found nothing (Nov 16)
+
+Before deleting the Research Watch dialog as unreachable, the check for tests
+that use it was `grep -rln ... tests/ | head`, and the first ten hits were
+generated harness copies - so the five real suites that drive it were below
+the cut, and the dialog was removed with its tests still in the tree. The full
+gate found it. Rule: a search that decides whether something may be deleted
+runs to the end and excludes generated folders (`.build/`), never through
+`head`; and a feature that has lost its only door gets a new door, not a
+deletion - removing functionality is the owner's call.

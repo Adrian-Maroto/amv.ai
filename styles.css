@@ -17863,3 +17863,78 @@ body.light #app .vi-conn .int-mono{color:hsl(var(--mono-h,220) 65% 24%)}
 /* The selected chip in the light theme: the accent's own soft tint, not a
    near-black pill (nothing-paints-a-dark-panel-in-the-light-theme). */
 body.light .cj-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-txt)}
+
+/* ==========================================================================
+   LAYER A369 - THE COMMAND BAR (Nov 16, the owner: "too narrow and chunky -
+   it needs to look futuristic, easy to use, promise results. That applies to
+   everything.")
+
+   One look for every box somebody types into on these screens: Crew's box,
+   the job and task searches, the country picker and the connector search. A
+   slim bar the full width of its column, a hairline that leans toward the
+   accent at its ends, a quiet depth, and on focus the accent ring - no glow,
+   no gradient fill. Crew's box is the same bar, taller, with a mark at the
+   start and Run as a pill with an arrow.
+   ========================================================================== */
+.cj-hero{max-width:none}
+.cj-hero .cj-ask-top{align-items:flex-end;margin-bottom:var(--sp-4)}
+.cj-ask-hd{min-width:0}
+.cj-hero .cj-ask-top h1{font-family:var(--fdisplay);font-size:var(--t-2xl);font-weight:600;letter-spacing:-.025em;line-height:1.1}
+.cj-promise{margin:var(--sp-1) 0 0;color:var(--mu);font-size:var(--t-md);line-height:1.5}
+
+.cj-box,.cj-find,.cdir-find-wrap .cw-find{
+  background:
+    linear-gradient(var(--s1),var(--s1)) padding-box,
+    linear-gradient(100deg,color-mix(in srgb,var(--accent) 45%,var(--bd)) 0%,var(--bd) 22%,var(--bd) 78%,color-mix(in srgb,var(--accent) 30%,var(--bd)) 100%) border-box!important;
+  border:1px solid transparent!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset,var(--sh-sm);
+  transition:box-shadow .18s var(--ease),background .18s var(--ease)}
+.cj-box:focus-within,.cj-find:focus-within,.cdir-find-wrap .cw-find:focus{
+  background:
+    linear-gradient(var(--s1),var(--s1)) padding-box,
+    linear-gradient(100deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 55%,var(--bd)) 50%,var(--accent) 100%) border-box!important;
+  box-shadow:0 0 0 4px var(--accent-soft),var(--sh-sm)}
+body.light .cj-box,body.light .cj-find,body.light .cdir-find-wrap .cw-find{box-shadow:0 1px 2px rgba(24,23,21,.06)}
+body.light .cj-box:focus-within,body.light .cj-find:focus-within,body.light .cdir-find-wrap .cw-find:focus{box-shadow:0 0 0 4px var(--accent-soft)}
+
+/* Crew's box: one slim line, wide, the text at reading size. */
+.cj .cj-box{align-items:center;gap:var(--sp-3);min-height:60px;padding:8px 8px 8px var(--sp-4);border-radius:var(--r-xl)}
+.cj-box-ic{flex:0 0 auto;display:flex;color:var(--accent);opacity:.9}
+#app .cj .cj-box textarea.cj-input{font-size:var(--t-lg);line-height:1.45;padding:10px 0;min-height:44px}
+.cj .cj-run{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 var(--sp-4) 0 var(--sp-5);border-radius:var(--r-pill);font-weight:600;letter-spacing:.01em;transition:background .15s var(--ease),transform .15s var(--ease)}
+.cj .cj-run svg{transition:transform .15s var(--ease)}
+.cj .cj-run:hover svg{transform:translateX(2px)}
+.cj .cj-run:active{transform:scale(.98)}
+.cj .cj-run:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* The searches: the same bar, a step lower. */
+.cj-find{height:46px;border-radius:var(--r-lg);padding:0 var(--sp-4)}
+.cdir-find-wrap .cw-find{height:46px;border-radius:var(--r-lg)!important}
+
+/* On a phone the arrow alone: the field keeps the width, the bar stays one
+   slim line. The button keeps its name for screen readers (aria-label). */
+@media (max-width:560px){
+  .cj-hero .cj-ask-top h1{font-size:var(--t-xl)}
+  .cj-promise{font-size:var(--t-sm)}
+  .cj .cj-box{min-height:56px;padding:6px 6px 6px var(--sp-3);gap:var(--sp-2)}
+  .cj-box-ic{display:none}
+  .cj .cj-run{width:44px;min-width:44px;padding:0;justify-content:center}
+  .cj .cj-run .cj-run-t{display:none}
+  #app .cj .cj-box textarea.cj-input{font-size:var(--t-lg)}
+}
+@media (prefers-reduced-motion:reduce){.cj .cj-run,.cj .cj-run svg,.cj-box,.cj-find{transition:none}}
+/* A phone: the heading and the gear share a row (the count of jobs on lives
+   in Crew's settings and in the notice at the limit), and the country and
+   See all are compact pills beside the count, not two slabs. */
+@media (max-width:560px){
+  .cj-hero .cj-ask-top{flex-wrap:nowrap;align-items:flex-start;margin-bottom:var(--sp-3)}
+  .cj-hero .cj-ask-hd{flex:1 1 auto}
+  .cj-hero .cj-allow{display:none}
+  .cj-tools{margin-left:0;width:auto;flex-wrap:wrap}
+  .cj-tools > *{flex:0 0 auto}
+  .cj-jobs-top{flex-wrap:wrap;row-gap:var(--sp-2)}
+}
+.rsrc-foot{display:flex;justify-content:flex-end;margin-top:var(--sp-2)}
+.rsrc-watch{min-height:32px;padding:0 var(--sp-3);border:1px solid var(--bd);border-radius:var(--r-pill);background:transparent;color:var(--accent-txt);font:inherit;font-size:var(--t-sm);font-weight:600;cursor:pointer}
+.rsrc-watch:hover{background:var(--accent-soft)}
+.rsrc-watch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

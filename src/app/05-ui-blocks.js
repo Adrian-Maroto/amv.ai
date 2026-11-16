@@ -2671,6 +2671,9 @@ function _buildResearchPanel(state, finished){
     (trail?'<ol class="rsrc-trail">'+trail+'</ol>':'')+
     (chips?'<div class="rsrc-chips">'+chips+(sources.length>12?'<span class="rsrc-more">+'+escH(T('{0} more').replace('{0}', sources.length-12))+'</span>':'')+'</div>':'')+
     (cards?'<div class="rsrc-cards">'+cards+'</div>':'')+
+    /* A finished answer can become a standing one: Research Watch runs the
+       same question on a schedule and reports what changed. */
+    (finished?'<div class="rsrc-foot"><button class="rsrc-watch" type="button" data-dact="openResearchWatch">'+escH(T('Keep watching this'))+'</button></div>':'')+
   '</div>';
 }
 const RS_PREVIEWS = 4;
