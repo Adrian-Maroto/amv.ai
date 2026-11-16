@@ -1,0 +1,49 @@
+# Checks every name in the country facts (COUNTRY_FACTS) against Wikidata and
+# each country's Chrome UX Report list (scripts/facts-check.mjs), and commits
+# data/facts-sources.json and docs/FACTS-CHECK.md to the branch it ran on, so
+# the result is reviewed like code. Wikidata is reachable from here.
+name: facts-check
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['data/facts-request.txt']
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'Country codes separated by spaces (empty = every country)'
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: facts-check-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check every name
+        timeout-minutes: 220
+        env:
+          COUNTRIES: ${{ github.event.inputs.countries }}
+        run: |
+          if [ -z "$COUNTRIES" ] && [ -f data/facts-request.txt ]; then COUNTRIES="$(grep -v '^#' data/facts-request.txt | tr '\n' ' ')"; fi
+          node scripts/facts-check.mjs $COUNTRIES
+      - name: Commit the result
+        if: always()
+        run: |
+          git config user.name "amv-data-bot"
+          git config user.email "amv-data-bot@users.noreply.github.com"
+          git add data/facts-sources.json docs/FACTS-CHECK.md
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -m "Country facts checked against Wikidata and the Chrome UX Report"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 7))
+          done
+          exit 1

@@ -39,7 +39,7 @@ microsoft.com, adobe.com) is never credited to one of them.
 
 | What | Today | What would back it |
 |---|---|---|
-| Country facts (`COUNTRY_FACTS`, src/worker/65-country-capabilities.js): the tax office, banks, job sites, shops per country that job titles name | Written from well-known facts, with a field left out rather than guessed; the runner is told to check rules against the official source | A check that every named service is in that country's Chrome UX Report list or its Wikidata entries, and a cited source per field |
+| Country facts (`COUNTRY_FACTS`, src/worker/65-country-capabilities.js): the tax office, banks, job sites, shops per country that job titles name | Written from well-known facts, with a field left out rather than guessed; the runner is told to check rules against the official source | Being checked: `scripts/facts-check.mjs` (the `facts-check` workflow) looks every name up in Wikidata and the country's Chrome UX Report list, writing a source per name to `data/facts-sources.json` and what does not resolve to `docs/FACTS-CHECK.md` |
 | Which apps are on Integrations at all | Chosen by hand as "the apps people actually use" | The measure now orders them; 47 of 518 are not measured (31 have no website of their own - SMS, iMessage, a file format, device-only apps; 16 are not in the worldwide list) |
 | The order of the topics on Integrations (Email, Calendar, Messaging ...) | Written order | Order by the GWI reasons above, or by what people connect (server counts) once there are enough |
 | Crew's job templates and Task wording (what each one says it does) | Written | Not a ranking question; checked by the catalogue suites for what they claim |
