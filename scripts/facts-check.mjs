@@ -22,7 +22,7 @@
 
    Writes data/facts-sources.json ({CC: {field: [{n, q?, how, site?, r?}]}})
    and docs/FACTS-CHECK.md. Run by the facts-check workflow (Wikidata is
-   reachable from there); node scripts/facts-check.mjs [CC ...]. */
+   reachable from there); node scripts/facts-check.mjs [CC ...] [--wider | --report]. */
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { gunzipSync } from 'zlib';
 import { join, dirname } from 'path';
@@ -35,7 +35,7 @@ const CRUX = 'https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/
 
 const src = readFileSync(join(ROOT, 'src/worker/65-country-capabilities.js'), 'utf8');
 const FACTS = (0, eval)('(' + src.match(/const COUNTRY_FACTS = (\{[\s\S]*?\n\});/)[1] + ')');
-const only = process.argv.slice(2).map(s => s.toUpperCase());
+const only = process.argv.slice(2).filter(a => !a.startsWith('--')).map(s => s.toUpperCase());
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function get(url, tries = 5) {
@@ -105,7 +105,11 @@ async function claims(ids) {
       /* Where it is: its country (P17), its country of origin (P495), or the
          jurisdiction it applies to (P1001 - a tax authority, a national exam). */
       out[id] = { label: (e.labels && e.labels.en && e.labels.en.value) || '',
-                  country: [...val('P17'), ...val('P495'), ...val('P1001')].map(v => v && v.id).filter(Boolean), site: val('P856').map(String) };
+                  country: [...val('P17'), ...val('P495'), ...val('P1001')].map(v => v && v.id).filter(Boolean), site: val('P856').map(String),
+                  /* Linked entities whose own country says where this is:
+                     headquarters (P159), location (P131), parent (P749),
+                     operator (P137), owner (P127). Read by the wider pass. */
+                  linked: [...val('P159'), ...val('P131'), ...val('P749'), ...val('P137'), ...val('P127')].map(v => v && v.id).filter(Boolean) };
     }
   }
   return out;
@@ -124,15 +128,61 @@ const catalogueOf = (cc) => { try { return Object.values(JSON.parse(readFileSync
 const qidOf = (cc) => { try { return JSON.parse(readFileSync(join(ROOT, 'data/countries', cc + '.json'), 'utf8')).qid || ''; } catch (e) { return ''; } };
 const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch (e) { return ''; } };
 
+/* --wider: only the names still unresolved, with two more ways in - an
+   entity linked to the candidate (its headquarters, location, parent,
+   operator or owner) placed in the country, and the articles the country's
+   own-language Wikipedia finds for the name, as more candidates. */
+const WIDER = process.argv.includes('--wider');
+async function wikiCandidates(name, lang) {
+  const u = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&list=search&srlimit=5&srsearch=' + encodeURIComponent(name);
+  const r = await get(u); if (!r) return [];
+  const j = await r.json().catch(() => null);
+  const titles = ((j && j.query && j.query.search) || []).map(x => x.title);
+  if (!titles.length) return [];
+  const u2 = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&prop=pageprops&ppprop=wikibase_item&titles=' + encodeURIComponent(titles.join('|'));
+  const r2 = await get(u2); if (!r2) return [];
+  const j2 = await r2.json().catch(() => null);
+  return Object.values((j2 && j2.query && j2.query.pages) || {}).map(p => p.pageprops && p.pageprops.wikibase_item).filter(Boolean);
+}
+async function wider(n, cc, q, cr) {
+  const lang = LANG[cc] || 'en';
+  const ids = [...new Set([...(await search(n, 'en')), ...(await search(n, lang)), ...(await wikiCandidates(n, lang)), ...(lang !== 'en' ? await wikiCandidates(n, 'en') : [])])].slice(0, 25);
+  if (!ids.length) return null;
+  const cl = await claims(ids);
+  const links = [...new Set(Object.values(cl).flatMap(e => e.linked))];
+  const lc = links.length ? await claims(links) : {};
+  for (const id of ids) {
+    const e = cl[id]; if (!e) continue;
+    const sites = e.site.map(hostOf).filter(Boolean);
+    const r = Math.min(...sites.map(h => cr.byReg.get(reg(h)) || Infinity));
+    if (e.country.includes(q)) return { n, q: id, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined };
+    if (isFinite(r)) return { n, q: id, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
+    const via = e.linked.find(l => lc[l] && lc[l].country.includes(q));
+    if (via) return { n, q: id, how: 'linked', via, site: sites[0] || '' };
+  }
+  return null;
+}
+
 /* --report: no lookups - apply the generic rule to the stored result and write
    the report again (a rule changed; nothing needs looking up). */
 const REPORT_ONLY = process.argv.includes('--report');
 const prev = existsSync(join(ROOT, 'data/facts-sources.json')) ? JSON.parse(readFileSync(join(ROOT, 'data/facts-sources.json'), 'utf8')) : {};
-const result = (only.length || REPORT_ONLY) ? prev : {};
+const result = (only.length || REPORT_ONLY || WIDER) ? prev : {};
+if (WIDER) {
+  let found = 0, tried = 0;
+  for (const [cc, fs] of Object.entries(result)) {
+    if (only.length && !only.includes(cc)) continue;
+    const open = Object.values(fs).flat().filter(x => x.how === 'unresolved'); if (!open.length) continue;
+    const q = qidOf(cc), cr = await crux(cc);
+    for (const x of open) { tried++; const b = await wider(x.n, cc, q, cr); await sleep(100); if (b) { Object.assign(x, b); found++; } }
+    console.log(cc, 'wider:', open.filter(x => x.how !== 'unresolved').length, 'of', open.length);
+  }
+  console.log('wider pass:', found, 'of', tried, 'found');
+}
 if (REPORT_ONLY) for (const fs of Object.values(result)) for (const [field, l] of Object.entries(fs))
   for (const x of l) if (x.how === 'unresolved' && isGeneric(x.n, x.n, field)) x.how = 'generic';
 const tally = {};
-for (const [cc, f] of Object.entries(REPORT_ONLY ? {} : FACTS)) {
+for (const [cc, f] of Object.entries((REPORT_ONLY || WIDER) ? {} : FACTS)) {
   if (only.length && !only.includes(cc)) continue;
   const q = qidOf(cc), cr = await crux(cc), cat = catalogueOf(cc);
   result[cc] = {};
@@ -178,7 +228,7 @@ writeFileSync(join(ROOT, 'data/facts-sources.json'), JSON.stringify(result, null
 const rows = Object.entries(result).map(([cc, fs]) => {
   const all = Object.values(fs).flat();
   const c = (h) => all.filter(x => x.how === h).length;
-  return { cc, v: c('in-country') + c('visited') + c('catalogue'), g: c('generic'), u: all.filter(x => x.how === 'unresolved').map(x => x.n), n: all.length };
+  return { cc, v: c('in-country') + c('visited') + c('catalogue') + c('linked'), g: c('generic'), u: all.filter(x => x.how === 'unresolved').map(x => x.n), n: all.length };
 });
 const sum = (k) => rows.reduce((a, r) => a + (Array.isArray(r[k]) ? r[k].length : r[k]), 0);
 const md = ['# Country facts, checked against Wikidata and the Chrome UX Report', '',
