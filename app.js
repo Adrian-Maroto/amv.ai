@@ -21198,18 +21198,6 @@ const CW_LOC = {
   travel_guardian:['rail'], ev_trip:['rail'], book_table:['food'], exam_prep:['exams'],
   deadline_radar:['exams'], school_admin:['exams'], ev_school_week:['exams'], school_week:['exams']
 };
-/* The names a person reads for each fact, in the order a page lists them. */
-const CW_FACT_LABELS = [['jobs','Job sites'],['banks','Banks'],['pay','Everyday payments'],['tax','Tax'],
-  ['gov','Government sign-in'],['id','ID and passports'],['shop','Shopping online'],['groc','Supermarkets'],
-  ['food','Food delivery'],['rail','Trains'],['prop','Property'],['car','Vehicle admin'],['health','Health'],
-  ['exams','Exams'],['uni','University applications'],['telco','Mobile networks'],['post','Post and parcels'],
-  ['news','News'],['weather','Weather'],['cur','Currency']];
-function _ccFactsHTML(cc){
-  const f = _cwFacts[cc]; if(!f) return '';
-  const rows = CW_FACT_LABELS.filter(([k]) => f[k]).map(([k, label]) =>
-    `<div class="cw-facts-r"><dt>${escH(T(label))}</dt><dd>${escH(String(f[k]))}</dd></div>`).join('');
-  return rows ? `<dl class="cw-facts">${rows}</dl>` : '';
-}
 /* ── MADE FOR THE COUNTRY: JOBS BUILT ON WHAT PEOPLE THERE USE ──────────────
 
    Asked for: in every country, the jobs people there would actually start -
@@ -21820,77 +21808,6 @@ function _cwTopTen(cc){
   return rows;
 }
 function _cwRankedHere(cc){ const m = _cwMeta[cc]; return !!(m && m.ranked && m.ranked.enough); }
-/* The top five, for anything that still asks for five: the first five of ten. */
-function _cwTopFive(cc){ return _cwTopTen(cc).slice(0, 5); }
-function _cwTopRowHTML(j, i){
-  const allowed = (() => { try{ return _planAllowsCrew(); }catch(e){ return false; } })();
-  const saved = (() => { try{ return (_cwJobs() || []).find(x => x.id === j.id) || null; }catch(e){ return null; } })();
-  const on = !!(saved && saved.on);
-  const miss = (() => { try{ return _cwNeedsMissing(j); }catch(e){ return []; } })();
-  const act = !allowed
-    ? `<button class="cw-t10-see" data-dact="cwPeek" data-darg="${escH(j.id)}">${escH(T('See it'))} →</button>`
-    : (miss.length && !on)
-      ? `<button class="btn bp cw-t10-conn" data-dact="cwConnect" data-darg="${escH(j.id)}">${escH(T('Connect'))}</button>`
-      : `<button class="cw-toggle ${on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${on ? 'off' : 'on'}"><span class="cw-knob"></span></button>`;
-  return `<li class="cw-t10${on ? ' on' : ''}">
-    <span class="cw-t10-n" aria-hidden="true">${i + 1}</span>
-    <span class="cw-t10-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-    <button class="cw-t10-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
-      <span class="cw-t10-sec">${escH(T(j.section || ''))}</span>
-      <span class="cw-t10-t">${escH(j.title)}</span>
-      <span class="cw-t10-d">${escH(j.desc)}</span>
-    </button>
-    <span class="cw-t10-act">${act}</span>
-  </li>`;
-}
-/* A row of cards, not a grid: it arrives with the country and must not push
-   anything down when it does, so it is one fixed height whatever the count. */
-function _cwMadeForHTML(){
-  if(_cwHerePending()){
-    return `<section class="cw-made" id="cw-made" aria-busy="true"><div class="sec-head"><h3>${escH(T('Made for where you are'))}</h3>
-      <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
-      <div class="cw-made-row" data-hscroll>${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div></section>`;
-  }
-  const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
-  const st = row ? (_cwLocalState[cc] || 'loading') : 'none';
-  if(!row || st === 'offline') return '<section class="cw-made" id="cw-made" hidden></section>';
-  /* The ranked ten past the five shown above lead this row, so asking for five
-     at the top did not quietly delete numbers six to ten. */
-  const ten = st === 'ok' ? _cwTopTen(cc) : [];
-  const inTop = new Set(ten.map(j => j.id));
-  const jobs = st === 'ok'
-    ? ten.slice(5).concat(inTop.size ? _cwLocalJobs(cc).filter(j => !inTop.has(j.id)) : []).concat(_cwMadeForJobs(cc).filter(j => !inTop.has(j.id)))
-    : [];
-  if(st === 'ok' && !jobs.length) return '<section class="cw-made" id="cw-made" hidden></section>';
-  const card = _cwMadeCard;
-  return `<section class="cw-made" id="cw-made"${st === 'ok' ? '' : ' aria-busy="true"'}>
-    <div class="sec-head"><h3>${escH(T('Made for'))} <span class="cw-flag" aria-hidden="true">${row[2]}</span> <span class="cw-made-cn">${escH(_cwPlaceName(row[1]))}</span>${st === 'ok' ? ` <span class="cw-made-n">${jobs.length}</span>` : ''}</h3>
-      <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
-    <div class="cw-made-row" data-hscroll role="list">${st === 'ok' ? jobs.map(j => `<div role="listitem" class="cw-made-it">${card(j)}</div>`).join('')
-                                                     : '<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div>
-  </section>`;
-}
-function _cwMadeCard(j){
-  const saved = {}; try{ (_cwJobs() || []).forEach(j => { saved[j.id] = j; }); }catch(e){}
-  const allowed = (() => { try{ return _planAllowsCrew(); }catch(e){ return false; } })();
-  const card = j => {
-    const on = !!(saved[j.id] && saved[j.id].on);
-    return `<div class="cw-made-card${on ? ' on' : ''}">
-      <button class="cw-made-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
-        <span class="cw-made-top"><span class="cw-made-ic" aria-hidden="true">${_safeIcon(j.icon)}</span><span class="cw-made-t">${escH(j.title)}</span></span>
-        <span class="cw-made-d">${escH(j.desc)}</span>
-      </button>
-      <div class="cw-made-foot"><span class="cw-made-run">${escH(T('Runs with AMV closed'))}</span>
-        ${allowed
-          ? `<button class="cw-toggle ${on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${on ? 'off' : 'on'}"><span class="cw-knob"></span></button>`
-          : `<button class="cw-made-see" data-dact="cwPeek" data-darg="${escH(j.id)}">${escH(T('See it'))} \u2192</button>`}</div>
-    </div>`;
-  };
-  return card(j);
-}
-function _cwMadeForRepaint(){
-  try{ const el = document.getElementById('cw-made'); if(el) el.outerHTML = _cwMadeForHTML(); }catch(e){}
-}
 try{ window._cwMadeForJobs = _cwMadeForJobs; window._cwMadeForList = _cwMadeForList; window._loadCrewData = _loadCrewData; }catch(e){}
 /* What a catalogue job looks up where you are: its fixed facts (CW_LOC), plus
    the mailboxes people there use when it reads mail, plus the cards that can
@@ -21934,18 +21851,6 @@ function _cwLocLine(j){
      this page was fixed not to have. */
   const text = _cwHerePending() ? '' : _cwLocText(j.id, _cwCountryGuess());
   return `<span class="cw-job-loc" data-loc="${escH(j.id)}">${escH(text)}</span>`;
-}
-/* Fills the lines in place once the country or its facts arrive - the cards
-   are not rebuilt, so nothing on the page moves and nothing open closes. */
-function _cwLocFill(){
-  try{
-    if(_cwHerePending()) return;
-    const cc = _cwCountryGuess();
-    document.querySelectorAll('.cw-job-loc[data-loc]').forEach(el => {
-      const t = _cwLocText(el.getAttribute('data-loc'), cc);
-      if(el.textContent !== t) el.textContent = t;
-    });
-  }catch(e){}
 }
 /* WHAT WAS ALREADY ASKED, AND UNDER WHAT CONDITIONS.
 
@@ -22044,29 +21949,11 @@ function _cwApplyLocal(cc, d){
     _cwLocalState[cc] = 'ok';
 }
 function _cwLocalRepaint(cc){
-  /* THE COUNTRY BLOCK REPAINTS ITSELF. Replacing the whole Crew view because
-     one country's jobs arrived is what "crew still buffers" is describing: the
-     screen is thrown away and rebuilt, losing scroll and anything open, to
-     update one section that has its own id. Measured before this: three full
-     rebuilds per open. The fallback is still a full render, for the case where
-     the block is not on the page - a search, or a category other than all. */
+  /* A country's own jobs arrived: Crew's list takes them in place (the old
+     country block and country page this used to redraw are gone, Nov 16). */
   try{
-    if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ window._cjRepaint(); return; }
-    if(S.tab === 'crew'){
-      let done = false;
-      if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
-      /* The country's own page is waiting on exactly this answer, and every
-         part of it below the box is a placeholder until it lands - so it is
-         drawn again whole, with nothing on it that could have moved. */
-      if(_cwPageNow() === 'country' && cc === _cwCountryGuess()){
-        const el = document.getElementById('cw-cp-list');
-        if(el){ _cwShowcaseCache = null; el.innerHTML = _cwCpListHTML(cc); done = true;
-                const fx = document.getElementById('cw-cp-facts'); if(fx) fx.innerHTML = _cwCpFactsHTML(cc);
-                const fy = document.getElementById('cw-foryou'); if(fy) fy.outerHTML = _cwForYouHTML(); _cwLocFill(); return; }
-      }
-      if(!done) _cwRepaintSoon();
-      if(cc === _cwCountryGuess()){ _cwLocFill(); _cwMadeForRepaint(); _cwReRank(); }
-    }
+    if(S.tab !== 'crew') return;
+    if(document.getElementById('cj-grid') && window._cjRepaint) window._cjRepaint(); else _cwRepaintSoon();
   }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
 try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
@@ -22176,25 +22063,6 @@ function _cwRankKey(){
   const cc = _cwCountryGuess();
   return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?')
     + ':' + (_cwRankedHere(cc) ? 'n' : '-') + ':' + (_cwFacts[cc] ? 'f' : '-');
-}
-function _cwReRank(){
-  try{
-    if(!_cwShowcaseCache || _cwRankKey() === _cwRankedFor) return;
-    const body = document.getElementById('cw-jobs-body');
-    if(!body || S.tab !== 'crew' || _cwFind || _cwCat !== 'all') return;
-    /* The chips are counted from the same list, so they are redrawn with it -
-       left alone they kept the counts from before the country was known and
-       had no chip for a category only the country's own jobs fill. They sit
-       just above the list, so it is THEIR position that decides whether
-       anything somebody can see would move. */
-    const chips = body.parentNode && body.parentNode.querySelector('.cw-chips');
-    if((chips || body).getBoundingClientRect().top < window.innerHeight) return;
-    _cwShowcaseCache = null;
-    const list = _cwShowcase();
-    if(chips) chips.outerHTML = _cwCatChips(list);
-    body.innerHTML = _cwJobsBody(list, _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
-    _cwLocFill();
-  }catch(e){}
 }
 /* THE CATEGORIES CREW AND TASKS ARE ORGANIZED BY (Nov 15) - one set, so a
    bank is under Money on both screens. */
@@ -22335,14 +22203,6 @@ function _cwMatches(j, q){
   const hay = [j.title, j.desc, j.cat, j.needs, j.countryName].filter(Boolean).join(' ').toLowerCase();
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.indexOf(w) >= 0);
 }
-function _cwFindBoxHTML(n){
-  return `<div class="cw-find-wrap">
-    <label class="cw-find-l" for="cw-find">Search these examples</label>
-    <input id="cw-find" class="cw-find" type="search" autocomplete="off"
-           value="${escH(_cwFind)}" placeholder="e.g. google, discord, invoices, school, Japan">
-    ${_cwFind ? `<span class="cw-find-n">${n} match${n===1?'':'es'}</span>` : ''}
-  </div>`;
-}
 function _cwNoMatchHTML(){
   const q = _cwFind;
   return `<div class="cw-nomatch">
@@ -22478,50 +22338,6 @@ function _cwCountryGuess(){
   }catch(e){}
   return '';
 }
-function _cwCatChips(jobs){
-  const count=c=>jobs.filter(j=>j.cat===c).length;
-  const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;
-  return `<div class="cw-chips" role="group" aria-label="Filter jobs by category">`
-    + chip('all','All',jobs.length)
-    /* The count is a filter aid, not a capability claim. Said once, here,
-       because a lone number beside a catalogue reads as a ceiling - and the
-       owner's point was exactly that: it makes AMV look like it can do 93
-       things when the text box takes anything you can describe. */
-    + CW_CATS.filter(c=>count(c)).map(c=>chip(c,c,count(c))).join('')
-    + `</div>`;
-}
-
-/* ── WHAT PEOPLE ACTUALLY START ───────────────────────────────────────────────
-   The owner asked for a top ten "based on actual data", and the whole value of
-   that sentence is in the last two words. A hand-picked order dressed as a
-   ranking is the exact thing this product is not allowed to ship, so this reads
-   one number per job from the server and nothing else: how many times each job
-   in the catalogue has been turned into scheduled work. No account is named, no
-   instruction is stored, nothing about what any run produced.
-
-   Below the server's floor it says there is not enough yet and shows no order
-   at all. Six starts sorted into a "top ten" is three coincidences presented as
-   a trend, and the first person to read it would be misled by their own data. */
-let _cwPop = { state:'idle', data:null, err:'' };
-async function _cwLoadPopular(){
-  /* 'error' is terminal until somebody presses Try again. Without that a
-     failing endpoint would be re-requested on every repaint of a screen
-     that repaints on every toggle. */
-  if(_cwPop.state==='loading' || _cwPop.state==='done' || _cwPop.state==='error') return;
-  if(!(window.AMV_API && AMV_API.live && AMV_API.crewPopular)){
-    _cwPop = { state:'off', data:null, err:'' }; _cwPopPaint(); return;
-  }
-  _cwPop.state='loading';
-  try{
-    const d = await AMV_API.crewPopular();
-    _cwPop = { state:'done', data:(d&&typeof d==='object')?d:null, err:'' };
-  }catch(e){
-    /* Named, not swallowed. A ranking that quietly vanishes looks like a
-       feature that was never built, and the owner would be right to ask. */
-    _cwPop = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
-  }
-  _cwPopPaint();
-}
 /* A BACKGROUND REDRAW DOES NOT GET TO WIPE A RESULT SOMEBODY ASKED FOR.
 
    Coalescing the async redraws onto a trailing edge moved them LATER, and
@@ -22618,51 +22434,7 @@ function _cwRepaintSoon(){
   }, S.tab === 'extensions' ? 'extensions' : 'crew');
 }
 
-function _cwPopPaint(){
-  try{ const el=document.getElementById('cw-pop-body'); if(el) el.innerHTML=_cwPopBodyHTML(); }catch(e){}
-  try{ const el=document.getElementById('cw-popc-body'); if(el) el.innerHTML=_cwCountedTop() ? _cwPopBodyHTML() : ''; }catch(e){}
-}
-function cwPopReload(){ _cwPop={ state:'idle', data:null, err:'' }; _cwPopPaint(); _cwLoadPopular(); }
-try{ window.cwPopReload=cwPopReload; }catch(e){}
 
-/* ── THE FIVE AT THE TOP, AND WHERE THEIR ORDER COMES FROM ───────────────────
-
-   Asked for: introduce Crew, then the top five most popular in the world - the
-   ones that would make somebody pay - and everything else below that.
-
-   There are two possible answers to "most popular" and only one of them is
-   honest at any given moment. When enough jobs have been started across AMV
-   the server has a real count, and that count is the order. Below the server's
-   floor there is no ranking, and the old behaviour - an empty box with a
-   progress bar reading 6/25 - answered the question by refusing to, which is
-   truthful and useless to the person who opened this page to find out what
-   Crew is for.
-
-   So the fallback is five AMV chose, SAID to be five AMV chose. It is never
-   dressed as a count: the heading changes, the sub-line changes, and the
-   figures only appear when there are figures. The five are the ones that work
-   on something of yours and keep working while the window is shut - which is
-   the same thing `_cwStrength` ranks by, and the same thing somebody is
-   deciding about when they decide whether to pay.
-
-   Everything below still lists the whole catalogue, so nothing here is the
-   menu; it is the front of the shelf. */
-const CW_START_HERE = ['money_leaks','inbox_digest','price_protect','unusual_spend','job_hunt'];
-
-function _cwStartHereJobs(){
-  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
-  const picked = CW_START_HERE.map(id=>byId[id]).filter(Boolean);
-  /* A curated id that the catalogue no longer carries must not silently
-     shorten this block to four. Anything missing is topped up from the same
-     ranking the catalogue itself uses. */
-  if(picked.length < 5){
-    const seen=new Set(picked.map(j=>j.id));
-    (_cwJobs()||[]).slice()
-      .sort((a,b)=>_cwStrength(b)-_cwStrength(a))
-      .forEach(j=>{ if(picked.length<5 && j && !seen.has(j.id)){ seen.add(j.id); picked.push(j); } });
-  }
-  return picked.slice(0,5);
-}
 /* ── TOP FIVE FOR YOU, WHERE YOU ARE ─────────────────────────────────────────
 
    Asked for: the first thing under the box is the five things for YOU, and
@@ -22699,86 +22471,11 @@ function _cwSayPlace(tpl, name, english){
   return T(tpl).replace('{country}', () => en ? (english == null ? name : english) : _cwPlaceName(name));
 }
 try{ window._cwPlaceName=_cwPlaceName; window._cwSayPlace=_cwSayPlace; }catch(e){}
-function _cwForYouHTML(){
-  try{ setTimeout(_cwAskWhere, 0); }catch(e){}
-  if(_cwHerePending()){
-    return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
-      <div class="sec-head"><h3>${escH(T('Top 5 for you'))}</h3><span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}</span></div>
-      <ol class="cw-top10 cw-top5l" aria-hidden="true">${'<li class="cw-t10 cw-t10-ph"></li>'.repeat(5)}</ol>
-    </section>`;
-  }
-  const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
-  _cwGuessDrawn = cc;
-  if(!row) return _cwPopularHTML();
-  try{ _cwLoadLocal(cc); }catch(e){}
-  const [, name, flag] = row;
-  const st = _cwLocalState[cc] || 'loading';
-  /* FIVE, AS ASKED: "the top 5 in that country plus 100+ used options". The
-     ranked ten is still built - six to ten lead the hundred below instead of
-     disappearing (see _cwTopShown). */
-  const built = st === 'ok' ? _cwTopFive(cc) : [];
-  if(built.length >= 5){
-    return `<section class="cw-pop cw-foryou" id="cw-foryou">
-      ${_cwForYouHead(name, flag, built.length, true)}
-      <ol class="cw-top10 cw-top5l">${built.map(_cwTopRowHTML).join('')}</ol>
-    </section>`;
-  }
-  let jobs = _cwLocalJobs(cc).slice(0, 5), note = '';
-  if(st === 'loading' && !jobs.length){
-    return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
-      ${_cwForYouHead(name, flag, 5, true)}
-      <ol class="cw-top10 cw-top5l" aria-hidden="true">${'<li class="cw-t10 cw-t10-ph"></li>'.repeat(5)}</ol>
-    </section>`;
-  }
-  if(st === 'offline') note = `<p class="cw-foryou-note">${escH(_cwSayPlace('The jobs written for {country} are on AMV’s servers, which cannot be reached right now - so these are AMV’s own five for anywhere.', name))}</p>`;
-  if(jobs.length < 5){
-    const seen = new Set(jobs.map(j => j.id));
-    _cwStartHereJobs().forEach(j => { if(jobs.length < 5 && j && !seen.has(j.id)){ seen.add(j.id); jobs.push(j); } });
-  }
-  return `<section class="cw-pop cw-foryou" id="cw-foryou">
-    ${_cwForYouHead(name, flag)}${note}
-    <div class="cw-top5">${jobs.map(j => `<div class="cw-top5-item">${_cwAnyCard(j)}</div>`).join('')}</div>
-  </section>`;
-}
-function _cwForYouHead(name, flag, n, ranked){
-  /* Says how many it shows - five either way: the country's ranked list, or
-     AMV's own five on the fallback (no country data, or no server to ask). */
-  const k = n || 5;
-  const head = k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
-  /* Which order this is, said rather than implied: counted once enough people
-     in the country have started jobs, researched until then. */
-  const counted = !!ranked && _cwRankedHere(_cwCountryGuess());
-  const sub = counted ? _cwSayPlace('Ordered by what people in {country} switch on most.', name, _cwThe(name))
-                      : T('Picked for where you are, under the names things have there.');
-  return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(_cwPlaceName(name))}</h3>
-    <span class="sec-sub">${escH(sub)}
-      <button class="cw-link" data-dact="cwMoreCountries">${escH(_cwSayPlace('Not in {country}?', name, _cwThe(name)))}</button></span></div>`;
-}
-/* THE COUNTED FIVE, WHEN THERE IS A COUNT. "Top 5 for you" took the top of
-   the page, so the ranking of what people actually start across AMV sits
-   under the catalogue - and only once the server has counted enough to rank.
-   Before then it adds nothing: the five for you are already on screen. */
-function _cwMostStartedHTML(){
-  /* With no country the top of the page already is this block - not twice. */
-  if(!_cwCountryRow(_cwCountryGuess())) return '';
-  try{ setTimeout(_cwLoadPopular, 0); }catch(e){}
-  /* Its own ids: with no country, "Top 5 for you" falls back to the uncounted
-     block, which already owns cw-pop, and two elements must not share one. */
-  return `<section class="cw-pop cw-pop-counted" id="cw-popc">
-    <div id="cw-popc-body" class="cw-pop-body">${_cwCountedTop() ? _cwPopBodyHTML() : ''}</div>
-  </section>`;
-}
 function _cwForYouRepaint(){
   _cwGuessDrawn = _cwCountryGuess();
-  if(S.tab === 'crew' && document.getElementById('cj-grid') && window._cjRepaint){ try{ _cwLoadLocal(_cwGuessDrawn); }catch(e){} window._cjRepaint(); return; }
-  _cwWhereRepaint();
-  try{
-    const el = document.getElementById('cw-foryou') || document.getElementById('cw-pop');
-    if(el) el.outerHTML = _cwForYouHTML(); else _cwRepaintSoon();
-  }catch(e){ try{ _cwRepaintSoon(); }catch(_){} }
-  _cwLocFill();
-  _cwMadeForRepaint();
-  _cwReRank();
+  if(S.tab !== 'crew') return;
+  try{ _cwLoadLocal(_cwGuessDrawn); }catch(e){}
+  if(document.getElementById('cj-grid') && window._cjRepaint) window._cjRepaint(); else _cwRepaintSoon();
 }
 
 /* ── WHERE YOU ARE: TWO PAGES OF THEIR OWN ───────────────────────────────────
@@ -22805,22 +22502,6 @@ function _cwForYouRepaint(){
    returns it to its main page next time - the country stays, the page does
    not. */
 let _cwBrowse = '';
-function _cwPageNow(){ try{ return (S && S.crewPage) || ''; }catch(e){ return ''; } }
-function _cwToTop(){
-  try{ if(typeof _cdirToTop === 'function'){ _cdirToTop(); return; } }catch(e){}
-  try{ window.scrollTo(0, 0); }catch(e){}
-}
-function _cwGo(page){
-  const from = (() => { try{ return _navHere(); }catch(e){ return null; } })();
-  S.crewPage = page || '';
-  _cwCpCat = 'all';
-  if(S.tab !== 'crew'){ try{ setTab('crew'); }catch(e){} }
-  else {
-    try{ _navRecord(from, _navHere()); }catch(e){}
-    renderCrewView();
-  }
-  _cwToTop();
-}
 /* The pick, saved. Clearing the showcase is not optional: it is cached for
    the country it was ranked for, and without this the hundred under the new
    country's name would have been the old country's hundred. */
@@ -22830,297 +22511,8 @@ function _cwSetCountry(cc){
   _cwShowcaseCache = null;
   try{ _cwLoadLocal(_cwCountry); }catch(e){}
 }
-function cwMoreCountries(){ _cwGo('countries'); }
-function cwBackMain(){ _cwGo(''); }
-function cwBrowse(cc){
-  const code = String(cc || '').toUpperCase();
-  if(!_cwCountryRow(code)) return;
-  /* Chosen, and straight back to Crew's one list for it (Nov 15): a
-     separate page per country was a second Crew with its own headings. */
-  _cwSetCountry(code);
-  _cwGo('');
-}
-/* The top-right control on the main page. While the network has not yet said
-   where somebody is, it holds its place empty rather than naming a guess that
-   is about to change. */
-function _cwWhereBtnHTML(){
-  if(_cwHerePending()) return `<span class="cw-where cw-where-ph" id="cw-where" aria-hidden="true"> </span>`;
-  const row = _cwCountryRow(_cwCountryGuess());
-  return row
-    ? `<button class="cw-where" id="cw-where" data-dact="cwMoreCountries"><span class="cw-flag" aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}</button>`
-    : `<button class="cw-where" id="cw-where" data-dact="cwMoreCountries">${escH(T('Choose your country'))}</button>`;
-}
-function _cwWhereRepaint(){
-  try{ const el = document.getElementById('cw-where'); if(el) el.outerHTML = _cwWhereBtnHTML(); }catch(e){}
-}
-/* The line that says the list is not the limit - on the country page, where it
-   is exactly a hundred, it says so. */
-function _cwNotHereHTML(where, n){
-  return `<div class="cw-nothere" role="note">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
-    <div><b>${escH(T('Not on here? Type it in the text box'))} ${where === 'below' ? escH(T('below')) : escH(T('above'))}.</b>
-      ${n ? escH(T('Only')) + ' ' + n + ' ' + escH(T('jobs are shown here - the most used ones, not everything AMV can do.'))
-          : escH(T('These are examples, not everything AMV can do.'))}</div>
-  </div>`;
-}
-
-function _cwCountriesPageHTML(){
-  /* "Selected" only for a country somebody chose; a guess is labelled as
-     what it is - where the network says they are. */
-  const cur = _cwChosen() ? _cwCountryGuess() : '', here = _cwHere || (cur ? '' : _cwCountryGuess());
-  /* Listed, sorted and searched under the reader's own name for each place,
-     and still found by its English name - somebody may type either. */
-  const local = name => _cwPlaceName(name);
-  const btn = ([cc, name, flag]) => `<button class="cw-cpick${cc === cur ? ' on' : ''}" role="listitem" data-dact="cwBrowse" data-darg="${escH(cc)}" data-cname="${escH((local(name) + ' ' + name).toLowerCase())}"${cc === cur ? ' aria-current="true"' : ''}>
-      <span class="cw-cpick-f" aria-hidden="true">${flag}</span><span class="cw-cpick-n">${escH(local(name))}</span>
-      ${cc === cur ? `<span class="cw-cpick-b">${escH(T('Selected'))}</span>` : cc === here ? `<span class="cw-cpick-b cw-cpick-here">${escH(T('Where you are'))}</span>` : ''}</button>`;
-  const lc = _lang(), all = CW_WORLD_COUNTRIES.slice().sort((a, b) => local(a[1]).localeCompare(local(b[1]), lc === 'auto' ? 'en' : lc));
-  return `<div class="sv fi crew-view cw-cpage"><div class="vi cw-cp-vi">
-    <div class="cw-cp-top"><button class="cdir-back cw-back" data-dact="cwBackMain">← ${escH(T('Back to Crew'))}</button></div>
-    <span class="eyebrow">${escH(T('Crew · Your country'))}</span>
-    <h2>${escH(T('Where are you?'))}</h2>
-    <p class="vsub">${escH(T('Crew shows the jobs people there use most, under the names things have there - their banks, their tax office, their job sites. AMV remembers what you choose.'))}</p>
-    <div class="cw-cp-find"><input id="cw-cfind" class="cw-find" type="search" autocomplete="off" aria-label="${escH(T('Search countries'))}"
-      placeholder="${escH(T('Search'))} ${all.length} ${escH(T('countries'))}"></div>
-    <div class="cw-cp-grid" id="cw-cp-grid" role="list">${all.map(btn).join('')}</div>
-    <p class="cw-cp-none" id="cw-cp-none" hidden>${escH(T('No country by that name in this list. AMV still works there - go back and type what you want in the box.'))}</p>
-  </div></div>`;
-}
-function _cwWireCountries(vc){
-  try{
-    const f = vc.querySelector('#cw-cfind'), grid = vc.querySelector('#cw-cp-grid'), none = vc.querySelector('#cw-cp-none');
-    if(!f || !grid) return;
-    on(f, 'input', function(){
-      const q = this.value.trim().toLowerCase();
-      let n = 0;
-      grid.querySelectorAll('.cw-cpick').forEach(b => { const hit = !q || b.dataset.cname.indexOf(q) >= 0; b.hidden = !hit; if(hit) n++; });
-      if(none) none.hidden = n > 0;
-    });
-    on(f, 'keydown', function(e){
-      if(e.key !== 'Enter') return;
-      const first = grid.querySelector('.cw-cpick:not([hidden])');
-      if(first){ e.preventDefault(); cwBrowse(first.dataset.darg); }
-    });
-  }catch(e){}
-}
-
-/* THE COUNTRY'S PAGE: its five, then exactly a hundred more.
-
-   The hundred is the ranked ten past five, then the jobs written for the
-   country, then the catalogue as ranked for it (_cwShowcase - the country's
-   own jobs alternated with the ones that run on connected accounts). Never
-   one of the five again, never two of anything, and never more than a
-   hundred - the banner at the top says "only 100", so it has to be true. */
-const CW_COUNTRY_N = 100;
-let _cwCpCat = 'all';
-/* THE JOBS THAT RUN ON YOUR OWN ACCOUNTS, NAMED FOR WHAT PEOPLE THERE USE.
-   "Inbox digest" is the same job in every country; which inbox it reads is
-   not - QQ Mail in China, Naver in Korea, WEB.DE in Germany (COUNTRY_MAIL on
-   the server, with its sources). So on a country's page the title says so.
-   A copy, so the job itself - and what it runs - is untouched. */
-function _cwAccountTitle(j, cc){
-  if(!j || /^(cc|top|ev)_[a-z]{2}_/.test(String(j.id || '')) && !/^ev_ev_/.test(String(j.id || ''))) return j;
-  const needs = String(j.needs || ''), box = _cwInbox[cc] || [], f = _cwFacts[cc] || {};
-  let tag = '';
-  /* The jobs that run on the web rather than an account still run for this
-     country (the run is told where the person is), so the title says where:
-     its own news outlets where the facts name them, otherwise the country.
-     "Did anything change today?" watches what the person names, wherever it
-     is, so it stays as it is. */
-  const C = (_cwCountryRow(cc) || [])[1] || '';
-  const WHERE = { competitor_watch:1, content_calendar:1, opportunity_radar:1, job_hunt:1 };
-  if(j.id === 'morning_brief' && (f.news || C)){
-    return Object.assign({}, j, { title: j.title + (f.news ? ' \u00b7 ' + _cwNames(f.news, 2) : ' for ' + _cwThe(C)) });
-  }
-  if(WHERE[j.id] && C && !(j.id === 'job_hunt' && f.jobs) && String(j.title || '').indexOf(C) < 0){
-    return Object.assign({}, j, { title: j.title + (j.id === 'content_calendar' ? ' for ' : ' in ') + _cwThe(C) });
-  }
-  if(j.id === 'job_hunt' && f.jobs) tag = _cwNames(f.jobs, 2);
-  else if(/\bEmail\b/.test(needs) && box[0]) tag = box[0].name;
-  else if(/\bCalendar\b/.test(needs) && box[0]) tag = box[0].how === 'ms' ? 'Outlook Calendar' : 'Google Calendar';
-  else if(/Bank connection/.test(needs) && (f.cards || f.banks)) tag = _cwNames(f.cards || f.banks, 2);
-  if(!tag || String(j.title || '').indexOf(tag) >= 0) return j;
-  return Object.assign({}, j, { title: j.title + ' \u00b7 ' + tag });
-}
-function _cwCountryHundred(cc){
-  const ten = (() => { try{ return _cwTopTen(cc) || []; }catch(e){ return []; } })();
-  const seen = new Set(ten.slice(0, 5).map(j => j.id)), pool = [];
-  const add = j => { if(j && j.id && !seen.has(j.id)){ seen.add(j.id); pool.push(j); } };
-  ten.slice(5).forEach(add);
-  try{ (_cwLocalJobs(cc) || []).forEach(add); }catch(e){}
-  try{ (_cwMadeForJobs(cc) || []).forEach(add); }catch(e){}
-  try{ (_cwMadeMore(cc) || []).forEach(add); }catch(e){}
-  try{ (_cwJobs() || []).concat(_cwUniversalJobs() || []).forEach(add); }catch(e){}
-  /* Highest score first; a stable sort, so equal scores keep the order the
-     catalogue wrote them in. No category takes more than a quarter, so the
-     page is the country's life and not twenty kinds of grocery list. */
-  const ranked = pool.map((j, i) => [j, _cwPopScore(j, cc), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
-  const cap = Math.ceil(CW_COUNTRY_N / 4), per = {}, out = [], spill = [];
-  ranked.forEach(j => {
-    if(out.length >= CW_COUNTRY_N) return;
-    const c = j.cat || 'More';
-    if((per[c] || 0) >= cap){ spill.push(j); return; }
-    per[c] = (per[c] || 0) + 1; out.push(j);
-  });
-  for(let i = 0; out.length < CW_COUNTRY_N && i < spill.length; i++) out.push(spill[i]);
-  return out.map(j => _cwAccountTitle(j, cc));
-}
-function _cwCpListHTML(cc){
-  const row = _cwCountryRow(cc), name = row ? row[1] : '';
-  const st = _cwLocalState[cc] || 'loading';
-  if(st === 'loading'){
-    return `<div class="sec-head"><h3>${escH(T('The 100 most used in'))} ${escH(name)}</h3></div>
-      <div class="cw-jobs-grid cw-cat-grid" aria-busy="true">${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(6)}</div>`;
-  }
-  const list = _cwCountryHundred(cc);
-  const cats = CW_CATS.filter(c => list.some(j => j.cat === c));
-  const other = list.filter(j => CW_CATS.indexOf(j.cat) < 0);
-  const chip = (k, label, n) => `<button class="cw-chip${_cwCpCat === k ? ' on' : ''}" data-dact="cwCpCat" data-darg="${escH(k)}" aria-pressed="${_cwCpCat === k}">${escH(T(label))}<span class="cw-chip-n">${n}</span></button>`;
-  const group = (label, js) => js.length ? `<div class="cw-cat"><div class="cw-cat-h">${escH(T(label))}<span class="cw-cat-n">${js.length}</span></div>
-      <div class="cw-jobs-grid cw-cat-grid">${js.map(_cwAnyCard).join('')}</div></div>` : '';
-  const body = _cwCpCat === 'all'
-    ? cats.map(c => group(c, list.filter(j => j.cat === c))).join('') + group('More', other)
-    : group(_cwCpCat, list.filter(j => (CW_CATS.indexOf(_cwCpCat) >= 0 ? j.cat === _cwCpCat : CW_CATS.indexOf(j.cat) < 0)));
-  const note = st === 'offline'
-    ? `<p class="cw-foryou-note">${escH(_cwSayPlace('The jobs written for {country} are on AMV’s servers, which cannot be reached right now - so these are the ones that run anywhere.', name))}</p>`
-    /* Said, not padded: a country whose hand-written pack is empty gets the
-       everyday jobs, each told the country, under a sentence saying so -
-       never a generated stand-in dressed as written for it. */
-    : !(_cwLocalJobs(cc) || []).length
-      ? `<p class="cw-foryou-note">${escH(T('Nothing is written only for'))} ${escH(name)} ${escH(T('yet - the jobs below are the everyday ones, and each runs there and answers for'))} ${escH(name)}.</p>` : '';
-  return `<div class="sec-head"><h3>${escH(T('The'))} ${list.length} ${escH(T('most used in'))} ${escH(name)}</h3>
-      <span class="sec-sub">${escH(T('After the five above. Every one answers for'))} ${escH(name)} ${escH(T('- its sites, prices and rules - and runs with AMV closed where it says so.'))}</span></div>
-    ${note}
-    <div class="cw-chips" role="group" aria-label="${escH(T('Filter jobs by category'))}">${chip('all', 'All', list.length)}${cats.map(c => chip(c, c, list.filter(j => j.cat === c).length)).join('')}${other.length ? chip('More', 'More', other.length) : ''}</div>
-    <div id="cw-cp-body">${body}</div>`;
-}
-function cwCpCat(c){
-  _cwCpCat = c || 'all';
-  try{
-    const el = document.getElementById('cw-cp-list');
-    if(el){ el.innerHTML = _cwCpListHTML(_cwCountryGuess()); _cwLocFill(); }
-    else renderCrewView();
-    const h = document.querySelector('#cw-cp-list .cw-chips'); if(h && h.getBoundingClientRect().top < 0) h.scrollIntoView({ block:'start' });
-  }catch(e){}
-}
-function _cwCmdBoxHTML(name){
-  return `<div class="mc-cmd mc-cmd-lg cw-cmd-lead">
-      <div class="mc-cmd-label">${escH(T('Tell AMV what to do'))} <span>- ${escH(T('in your own words, for'))} ${escH(name)}</span></div>
-      <div class="mc-cmd-inner">
-        <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" autocomplete="off" aria-label="${escH(T('Tell AMV what to do'))}" enterkeyhint="go"
-               placeholder="${escH(T('e.g. renew my residence permit'))}"></textarea>
-        <button class="mc-cmd-go" id="mc-cmd-go">${escH(T('Run'))}</button>
-      </div>
-      <div id="mc-cmd-result" class="mc-cmd-result"></div>
-    </div>`;
-}
-/* Where AMV looks in the country - its tax office, banks, job sites - once
-   the country's facts are here; nothing until then. */
-function _cwCpFactsHTML(cc){
-  const row = _cwCountryRow(cc);
-  if(!row || _cwLocalState[cc] !== 'ok') return '';
-  const f = _ccFactsHTML(cc);
-  return f ? `<div class="sec-head"><h3>${escH(_cwSayPlace('Where AMV looks in {country}', row[1]))}</h3></div>${f}` : '';
-}
-function _cwCountryPageHTML(){
-  const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
-  if(!row) return _cwCountriesPageHTML();
-  const [, name, flag] = row;
-  try{ _cwLoadLocal(cc); }catch(e){}
-  const st = _cwLocalState[cc] || 'loading';
-  return `<div class="sv fi crew-view cw-cpage"><div class="vi cw-cp-vi">
-    <div class="cw-cp-top"><button class="cdir-back cw-back" data-dact="cwBackMain">← ${escH(T('Back to Crew'))}</button>
-      <button class="cw-where" data-dact="cwMoreCountries">${escH(T('Change country'))}</button></div>
-    <span class="eyebrow">${escH(T('Crew in'))} <span aria-hidden="true">${flag}</span> ${escH(name)}</span>
-    <h2>${escH(T('What people in'))} ${escH(name)} ${escH(T('have AMV do'))}</h2>
-    ${_cwNotHereHTML('below', CW_COUNTRY_N)}
-    ${_cwCmdBoxHTML(name)}
-    <div class="crew-jobs-sec">
-      ${_cwForYouHTML()}
-      <section class="cw-cp-list" id="cw-cp-list">${_cwCpListHTML(cc)}</section>
-      <section class="cw-cp-facts" id="cw-cp-facts">${_cwCpFactsHTML(cc)}</section>
-    </div>
-  </div></div>`;
-}
-try{ window.cwMoreCountries = cwMoreCountries; window.cwBrowse = cwBrowse; window.cwBackMain = cwBackMain; window.cwCpCat = cwCpCat;
-     window._cwCountryHundred = _cwCountryHundred; window.CW_COUNTRY_N = CW_COUNTRY_N; window._cwForYouHTML = _cwForYouHTML;
+try{
      window._cwAskWhere = _cwAskWhere; }catch(e){}
-
-function _cwCountedTop(){
-  const st=_cwPop;
-  if(st.state!=='done' || !st.data || !st.data.enough) return null;
-  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
-  const rows=(Array.isArray(st.data.top)?st.data.top:[])
-    .map(x=>({ n:Math.max(0,(x&&x.n)|0), job:byId[(x&&x.id)||''] }))
-    .filter(x=>x.job && x.n>0)
-    .slice(0,5);
-  /* However many RESOLVE, not five or nothing. The server has already said
-     the sample is big enough; if only three of the counted ids are still in
-     the catalogue then three is what was counted, and topping them up to five
-     from AMV's own picks would put chosen entries under a heading that says
-     counted. Five is the ceiling here, never the quota. */
-  return rows.length ? rows : null;
-}
-
-function _cwPopularHTML(){
-  /* Kicked off from the render that first puts the container on the page, so
-     the request is made once per load rather than once per repaint. */
-  try{ setTimeout(_cwLoadPopular, 0); }catch(e){}
-  return `<section class="cw-pop" id="cw-pop">
-    <div id="cw-pop-body" class="cw-pop-body">${_cwPopBodyHTML()}</div>
-  </section>`;
-}
-
-function _cwPopBodyHTML(){
-  const counted=_cwCountedTop();
-  if(counted){
-    const total=Math.max(0,(_cwPop.data&&_cwPop.data.total)|0);
-    return `<div class="sec-head"><h3>${escH(T('The five most started across AMV'))}</h3>
-        <span class="sec-sub">${escH(T('Counted on AMV\u2019s servers from'))} ${total} ${escH(T(total===1?'job started worldwide. Counts only - no names, and nothing about what any job did.':'jobs started worldwide. Counts only - no names, and nothing about what any job did.'))}</span></div>
-      <div class="cw-top5">${counted.map((x,i)=>`<div class="cw-top5-item">
-        <span class="cw-top5-rank" aria-hidden="true">${i+1}</span>
-        <span class="cw-top5-n">${x.n} ${escH(T(x.n===1?'start':'starts'))}</span>
-        ${_cwAnyCard(x.job)}
-      </div>`).join('')}</div>`;
-  }
-  /* Every remaining state shows the same five and says, in its own words, why
-     they are not a count. A note where the jobs should be is the version of
-     this screen the owner asked to be rid of. */
-  const st=_cwPop;
-  const why = st.state==='off'
-      ? T('This copy of AMV is not connected to a server, so there is no worldwide count to read. These five are AMV\u2019s own pick.')
-    : st.state==='error'
-      ? T('The worldwide count could not be read right now, so these five are AMV\u2019s own pick.')
-    : st.state==='done'
-      ? T('Not enough jobs have been started across AMV yet for a ranking to mean anything, so these five are AMV\u2019s own pick - the real order takes over here the moment there is one.')
-      : T('These five are AMV\u2019s own pick while the worldwide count is read.');
-  const retry = st.state==='error'
-    ? ` <button class="mc-sec-link" data-dact="cwPopReload">${escH(T('Try again'))}</button>` : '';
-  /* HOW FAR OFF THE REAL ORDER IS, WHEN THE SERVER SAYS.
-
-     This used to be the whole of this block - a progress bar reading 6 / 25
-     where the jobs should have been. As the only content it was useless to
-     somebody who came here to see what Crew does; as a footnote under five
-     real cards it is the honest part it always was, and it is the difference
-     between "AMV picked these" and "AMV picked these, for now". */
-  const d = st.state==='done' ? (st.data||{}) : null;
-  const prog = (d && !d.enough) ? (()=>{
-    const have=Math.max(0, d.total|0), need=Math.max(1,(d.need|0)||25);
-    const pct=Math.min(100, Math.round((have/need)*100));
-    return `<div class="cw-pop-prog-row">
-      <span class="cw-pop-prog" role="img" aria-label="${escH(have+' of '+need+' starts needed before a worldwide ranking is shown')}">
-        <span class="cw-pop-prog-bar"><span style="width:${pct}%"></span></span>
-        <span class="cw-pop-prog-n">${have} / ${need}</span>
-      </span>
-      <span class="cw-pop-prog-l">${escH(T('starts counted across AMV so far'))}</span>
-    </div>`;
-  })() : '';
-  return `<div class="sec-head"><h3>${escH(T('Start with these five'))}</h3>
-      <span class="sec-sub">${escH(why)}${retry}</span></div>
-    <div class="cw-top5">${_cwStartHereJobs().map(j=>`<div class="cw-top5-item">${_cwAnyCard(j)}</div>`).join('')}</div>
-    ${prog}`;
-}
 
 function _cwJobsBody(jobs, jobCard){
   /* The country's own work heads the list whenever a country is chosen and
@@ -23173,86 +22565,6 @@ function _cwJobsBody(jobs, jobCard){
     </div>`:'');
 }
 
-/* ── THE ONE-OFF ERRANDS, AND WHY THEY ARE NOT JOBS ──────────────────────────
-
-   Half the owner's list does not repeat. Nobody wants the fastest route to the
-   airport every Tuesday - they want it once, now, for a flight at six.
-
-   Those could have been cards on this screen that ran through crewRun, and
-   that would have been the wrong place to put them: crewRun's generic path
-   calls the model with no web tool at all. A "cheapest route" answered from
-   memory is a confident, plausible, out-of-date answer, which is worse than no
-   feature. Chat has the live web search. So these open a chat with the request
-   already written, one blank left for the detail only the person has, and they
-   press send when they have filled it in.
-
-   Nothing is auto-sent. The composer is filled and focused, the same as the
-   starter chips do, so the request they send is one they have actually read. */
-const CW_ERRANDS = [
-  ['route', '🗺️', 'Fastest route somewhere',
-   'Find me the fastest realistic route from [WHERE I AM] to [WHERE I AM GOING], leaving at [WHEN]. '+
-   'Check current conditions on the live web, not a typical journey time: traffic, engineering works, cancellations and anything closed. '+
-   'Give me the route, the door-to-door time, and the time I actually have to leave. '+
-   'If there is a genuinely better alternative - a different mode, a different departure time - say so and say why. '+
-   'Tell me how confident you are and what could still go wrong.'],
-  ['scamcheck', '🛡️', 'Is this a scam?',
-   'I am about to pay for this and I want to know if it is a scam. Here is everything I have:\n\n[PASTE THE LISTING, MESSAGE, LINK, SELLER NAME OR OFFER HERE]\n\n'+
-   'Check it against how this kind of fraud actually works right now. Look up the seller, the site, the payment method and the price against what this really costs. '+
-   'Tell me the specific things that are wrong with it, the things that are genuinely fine, and what an honest version of this would look like. '+
-   'If it is a known scam pattern, name the pattern. If you cannot tell, say you cannot tell rather than reassuring me. '+
-   'Then tell me the safest way to buy this thing, and what to do if I have already paid.'],
-  ['papers', '📄', 'Work out which papers I need',
-   'I need to work out exactly what paperwork this requires: [WHAT I AM APPLYING FOR - e.g. a visa, a residency renewal, a passport, a license] '+
-   'for [WHO, NATIONALITY, WHERE THEY ARE NOW, AND WHERE THEY ARE APPLYING].\n\n'+
-   'Go to the official government source and use that, not a summary on somebody else’s site. Give me: '+
-   'every document required and what it must show, the exact forms with their real names and numbers, the fees, the order things must be done in, '+
-   'how long each step takes, and what is most commonly refused or sent back. '+
-   'Link the official page for each. Say clearly where the rules are unclear or recently changed. '+
-   'You are not a lawyer and this is not legal advice - say so, and tell me when this is a case where I genuinely need one.'],
-  ['booking', '🍽️', 'Get a table or an appointment ready',
-   'I want to book [WHAT - a restaurant, a doctor, a garage, a haircut] in [WHERE], for [WHEN AND HOW MANY PEOPLE].\n\n'+
-   'Find the real options that actually fit, check whether they take bookings online or by phone, and check what is actually available for that time. '+
-   'Then prepare the booking so it takes me two minutes: the place, the number or the direct booking link, what to ask for, and anything I need to have ready. '+
-   'Do not book, call, email or confirm anything on my behalf - hand me a call I can make or a link I can press. '+
-   'If nothing is available at that time, say so and give me the nearest thing that is.'],
-  ['pricecheck', '🔎', 'Am I paying too much for this?',
-   'I am about to pay [AMOUNT] for [THE THING]. Tell me whether that is a fair price right now.\n\n'+
-   'Check what it actually sells for today across real sellers, whether this is a normal price or an inflated one with a discount stuck on it, '+
-   'and whether it is about to be cheaper - a known sale, a new model, a seasonal pattern. '+
-   'Tell me the cheapest legitimate place to get it and what the catch is with each. '+
-   'If it is a fair price, say so plainly instead of manufacturing a reason to wait.'],
-];
-function cwErrand(key){
-  const e = CW_ERRANDS.find(x => x[0] === key);
-  if(!e) return;
-  try{ if(typeof newChat === 'function') newChat(); else setTab('chat'); }catch(_){ setTab('chat'); }
-  setTimeout(()=>{
-    const ta = $('mta');
-    if(!ta){ toast('Open a chat and paste your question there.','info',4000); return; }
-    ta.value = e[3];
-    try{ ta.dispatchEvent(new Event('input')); }catch(_){}
-    ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px';
-    ta.focus();
-    /* The bracketed blank is the only part they have to write. Putting the
-       caret on it beats asking somebody to hunt for it in eight lines. */
-    try{
-      const at = e[3].indexOf('[');
-      if(at >= 0) ta.setSelectionRange(at, e[3].indexOf(']', at) + 1);
-    }catch(_){}
-    try{ if(typeof announce==='function') announce('Chat opened with your request ready. Fill in the highlighted part, then send.'); }catch(_){}
-  }, 220);
-}
-try{ window.cwErrand=cwErrand; }catch(e){}
-
-function _cwErrandsHTML(){
-  return `<section class="cw-errands">
-    <div class="sec-head"><h3>${escH(T('Things that do not repeat'))}</h3><span class="sec-sub">${escH(T('The jobs below run on a schedule. These are one-offs - AMV opens a chat with the request written out, you fill in the one blank, and it looks it up live.'))}</span></div>
-    <div class="cw-errand-grid">${CW_ERRANDS.map(e=>`<button class="cw-errand" data-dact="cwErrand" data-darg="${escH(e[0])}">
-      <span class="cw-errand-ic" aria-hidden="true">${e[1]}</span>
-      <span class="cw-errand-t">${escH(T(e[2]))}</span>
-    </button>`).join('')}</div>
-  </section>`;
-}
 
 function _cwApprovals(){ return load('amv_cw_approvals') || []; }
 function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }

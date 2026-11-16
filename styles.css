@@ -109,8 +109,6 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 h2.st{font-family:var(--fdisplay);font-size:calc(clamp(28px,4.2vw,44px) * var(--fs-s));font-weight:500;letter-spacing:-1px;line-height:1.08;margin-bottom:12px;color:var(--tx)}
 .step-g{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 
-
-
 .pg{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:1180px;margin:0 auto}
 @media(max-width:1080px){.pg{grid-template-columns:repeat(3,1fr);max-width:780px}}
 @media(max-width:680px){.pg{grid-template-columns:1fr;max-width:380px}}
@@ -195,18 +193,9 @@ footer.lfoot{border-top:1px solid var(--bd);padding:20px 24px;display:flex;align
 .nh{font-size:var(--t-sm);color:var(--dim);padding:8px 13px;font-style:italic}
 .sbfoot{padding:8px;border-top:1px solid var(--bd);flex-shrink:0;position:relative}
 
-
-
-
-
-
-
-
 #mc{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 #vc{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 #tabs{display:flex;align-items:center;gap:1px;padding:0 10px;border-bottom:1px solid var(--bd);height:34px;background:var(--bg);overflow-x:auto;flex-shrink:0}
-
-
 
 #mdl-bar{display:flex;align-items:center;gap:5px;padding:5px 13px;border-bottom:1px solid var(--bd);background:var(--bg);flex-shrink:0;overflow-x:auto}
 #cv{display:flex;flex-direction:column;height:100%;min-height:0;max-width:900px;width:100%;margin:0 auto}
@@ -313,7 +302,6 @@ kbd{background:var(--s3);border:1px solid var(--bdl);border-radius:var(--r-2xs);
   #tabs{display:none}
 }
 
-
 /* ========== RECOVERED DESIGN SYSTEM (Layers 1-9) ==========
    The surfaces, text colours and borders that used to be repeated here are
    gone: they are declared once at the top of this file. What is left is what
@@ -414,7 +402,6 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 .sbl{height:14px;margin-top:10px}
 .sbdiv{height:1px;background:var(--bd);width:60%;margin:12px auto}
 
-
 /* toolbar centered title */
 #anav{position:relative;gap:12px}
 #nav-title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:var(--t-md);font-weight:600;letter-spacing:-.2px;color:var(--tx);opacity:0;transition:opacity .25s var(--ease);pointer-events:none;white-space:nowrap;z-index:0}
@@ -470,17 +457,8 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 .cw-quick-card:hover{transform:translateY(-2px);border-color:rgba(63, 118, 245,.4)}
 .cw-quick-ic{font-size:var(--ic-md)}
 
-
-
-
-
-
-
 .int-ic{font-size:var(--ic-md);width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-md);background:rgba(255,255,255,.05);flex-shrink:0}
 .int-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px}.int-name{font-size:var(--t-base);font-weight:600;color:var(--tx)}
-
-
-
 
 .ho-card{border:1px solid var(--glass-bd);border-radius:var(--r-lg);background:var(--glass);padding:15px;margin-bottom:10px}
 .ho-h{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:var(--t-xs);color:var(--mu)}
@@ -539,8 +517,6 @@ html,body{height:100%;overflow:hidden}
 .sbdiv{height:0;background:none;margin:11px 0}
 .sbl{display:none!important}                    /* hide group word-labels, dividers do the spacing */
 /* user footer: show name again */
-
-
 
 /* PAST CHATS: show search + history list */
 #sb .sb-srch{display:block!important;padding:4px 6px 8px}
@@ -642,9 +618,6 @@ html,body{height:100%;overflow:hidden}
 /* HERO */
 .dsn-hero{text-align:center;padding:56px 0 8px;display:flex;flex-direction:column;align-items:center}
 
-
-
-
 /* hero focal input */
 .dsn-input-wrap{position:relative;width:100%;max-width:620px;display:flex;align-items:flex-end;gap:8px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--glass-bd);border-radius:var(--r-3xl);padding:8px 8px 8px 20px;box-shadow:0 18px 60px -20px rgba(63, 118, 245,.4),0 8px 30px -12px rgba(0,0,0,.5);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:border-color .25s,box-shadow .25s}
 .dsn-input-wrap:focus-within{border-color:rgba(63, 118, 245,.4);box-shadow:0 22px 70px -18px rgba(63, 118, 245,.45),0 8px 30px -12px rgba(0,0,0,.5)}
@@ -666,10 +639,6 @@ html,body{height:100%;overflow:hidden}
 .dsn-tile-d{font-size:var(--t-base);color:var(--mu);line-height:1.45}
 /* CALLOUT */
 
-
-
-
-
 @media(max-width:680px){.dsn-starts{grid-template-columns:1fr}}
 
 /* === LAYER 20 - site-wide editorial/premium upgrade (all views) === */
@@ -684,7 +653,6 @@ html,body{height:100%;overflow:hidden}
 .ss2 h3{font-size:var(--t-lg)!important;font-weight:640!important;letter-spacing:-.3px;margin-bottom:16px!important;color:var(--tx)}
 .ss2 + .ss2{margin-top:24px!important}
 /* list rows (integrations, tasks, etc.): lighter, airier, softer */
-
 
 .int-ic{width:48px!important;height:48px!important;font-size:var(--ic-md)!important;border-radius:var(--r-xl)!important;background:rgba(255,255,255,.05)!important}
 .int-name{font-size:var(--t-prose)!important;font-weight:600!important}
@@ -826,7 +794,6 @@ html,body{height:100%;overflow:hidden}
 .dsn-go:hover{background:var(--accent-d)!important;transform:none!important}
 .dsn-tile.feat{background:#15191f!important;border-color:#2a313b!important}
 
-
 #vc{background:none!important}
 
 /* --- 3. Tighten over-rounded corners to a calmer, intentional radius ---
@@ -865,17 +832,11 @@ html,body{height:100%;overflow:hidden}
 .ss2 h3{font-size:var(--t-base)!important;font-weight:600!important;letter-spacing:.02em;text-transform:none;color:var(--tx)!important;margin-bottom:14px!important}
 .int-name{font-size:var(--t-md)!important;font-weight:550!important;letter-spacing:-.1px}
 
-
-
-
-
 /* --- 5. Spacing: natural variation, tighter grouping --- */
 .sv{padding:32px 30px 80px!important}
 .vi{gap:20px!important;max-width:740px!important}
 .ss2{padding:22px 24px!important}
 .ss2 + .ss2{margin-top:20px!important}
-
-
 
 /* --- 6. Buttons: intentional, branded, not generic --- */
 .btn.bp,.dsn-go,#ncb,.ncb{background:var(--accent)!important;border:1px solid var(--accent-d)!important;color:#0a0a0a!important;font-weight:600!important}
@@ -905,23 +866,14 @@ html,body{height:100%;overflow:hidden}
 .crew-hero-l{flex:1}
 .eyebrow{font-size:var(--t-xs);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-txt);font-weight:600;margin-bottom:12px}
 
-
-
-
 /* the asymmetric split: 2/3 main + 1/3 aside */
-
 
 .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
 .sec-head h3{font-size:var(--t-prose);font-weight:640;letter-spacing:-.2px;color:var(--tx);margin:0}
 .sec-sub{font-size:var(--t-sm);color:var(--mu)}
 /* big calm empty state (not a tiny boxed message) */
 
-
 /* narrow side rail - lighter weight, no heavy card */
-
-
-
-
 
 /* even split for the two secondary sections */
 .crew-split-even{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
@@ -932,11 +884,6 @@ html,body{height:100%;overflow:hidden}
 .tasks-hero{display:grid;grid-template-columns:1.4fr 1fr;gap:32px;align-items:center;padding:8px 0 0}
 .tasks-hero h2{font-size:calc(clamp(26px,3.4vw,38px) * var(--fs-s));font-weight:700;letter-spacing:-1px;line-height:1.05;margin:0 0 12px;color:var(--tx)}
 /* spotlight: one big prominent task, visually dominant */
-
-
-
-
-
 
 /* masonry-ish: varied column spans so it's not a uniform grid */
 .tasks-masonry{display:grid;grid-template-columns:1fr 1fr;gap:28px 32px;align-items:start}
@@ -1053,13 +1000,9 @@ input,textarea,select{font-family:var(--fn);}
 
 /* === LAB view styling === */
 
-
-
-
 .lab-editor,.lab-out{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:var(--r-xl);background:var(--s1);overflow:hidden}
 .lab-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--bd)}
 .lab-sel{background:var(--s2);border:1px solid var(--bd);color:var(--tx);border-radius:var(--r-sm);padding:6px 10px;font-size:var(--t-base);font-family:var(--fn)}
-
 
 #lab-code{flex:1;min-height:300px;background:#16130f;border:none;outline:none;color:#ece8e1;font-family:var(--mn);font-size:var(--t-base);line-height:1.6;padding:16px;resize:vertical;white-space:pre;tab-size:2}
 
@@ -1077,8 +1020,6 @@ input,textarea,select{font-family:var(--fn);}
 .lab-sec pre{margin:0;padding:12px;font-family:var(--mn);font-size:var(--t-sm);line-height:1.55;color:var(--tx);white-space:pre-wrap;word-break:break-word}
 .lab-sec.err pre{color:#ff9b94}
 
-  
-
 .lab-md{padding:12px}.lab-md h2,.lab-md h3{font-size:var(--t-md);margin:8px 0 4px}.lab-md pre{background:#16130f;padding:10px;border-radius:var(--r-sm);overflow-x:auto}
 .agents{display:flex;flex-direction:column;gap:10px}
 .agent{border:1px solid var(--bd);border-radius:var(--r-md);overflow:hidden;opacity:.55;transition:opacity .2s}
@@ -1086,13 +1027,8 @@ input,textarea,select{font-family:var(--fn);}
 .agent-h{display:flex;align-items:center;gap:9px;padding:10px 12px;font-size:var(--t-base);background:var(--s2)}
 .agent.done .agent-h{border-left:2px solid var(--grn)}
 
-
-
-
-
 .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--bd);border-top-color:var(--accent-txt);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
 
 /* === Crew live results === */
 .crew-live{margin-top:16px;display:flex;flex-direction:column;gap:12px}
@@ -1130,20 +1066,7 @@ input,textarea,select{font-family:var(--fn);}
 .dev-shell{display:grid;grid-template-columns:1fr 1fr;height:calc(100vh - var(--nav-h) - 2px)}
 .dev-chat-pane{display:flex;flex-direction:column;border-right:1px solid var(--bd);min-width:0}
 
-
-
-
 .dev-term-body{height:100%;background:#0d0d0f;display:flex;flex-direction:column}
-
-
-
-
-
-
-
-
-
-
 
 .dev-log{flex:1;overflow-y:auto;padding:8px 22px;display:flex;flex-direction:column;gap:14px}
 .dev-msg-sys{font-size:var(--t-sm);color:var(--mu);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md);padding:11px 13px;line-height:1.5}
@@ -1205,13 +1128,7 @@ input,textarea,select{font-family:var(--fn);}
 /* === Crew feature (trip planner) card === */
 .crew-do{display:flex;flex-direction:column;gap:14px}
 
-
-
 .crew-feature-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
-
-
-
-
 
 /* === Dev input: wider & visible === */
 .dev-input{flex-direction:column;align-items:stretch;gap:10px;padding:14px 22px 18px}
@@ -1221,15 +1138,6 @@ input,textarea,select{font-family:var(--fn);}
 
 /* === Lab expansion === */
 #lab-code{min-height:420px;font-size:var(--t-base)}
-
-
-
-
-
-
-
-
-
 
 /* === Task detail panel === */
 .tp-ov{align-items:flex-start;padding:6vh 16px;overflow-y:auto}
@@ -1292,9 +1200,6 @@ input,textarea,select{font-family:var(--fn);}
 /* === schedule note + manager === */
 .cw-freq-note{font-size:var(--t-sm);color:var(--accent-txt);margin:-6px 0 14px;line-height:1.45}
 .sched-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
-
-
-
 
 /* === Clean scheduler UI === */
 .sched-panel{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-xl);padding:18px;margin-bottom:18px;display:flex;flex-direction:column;gap:16px}
@@ -1586,8 +1491,6 @@ input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textar
 
 /* ---- 13. Studio/Design hero: drop the orb/gradient, calm input ---- */
 
-
-
 .dsn-input-wrap{background:var(--surface)!important;border:1px solid var(--hair)!important;border-radius:var(--rad-md)!important;box-shadow:none}
 .dsn-input-wrap:focus-within{border-color:var(--hair-strong)!important;box-shadow:none}
 .dsn-go{border-radius:var(--rad-sm)!important}
@@ -1609,7 +1512,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .dsn-input-wrap{margin-left:0!important}
 .dsn-hint{text-align:left}
 /* keep chat empty-state centered (that one should stay centered) */
-
 
 /* ---- 17. Final polish: remove residual glow & soften empty states ---- */
 .logo-mark,
@@ -1709,27 +1611,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 /* ---- User footer: refined, tappable, premium ---- */
 
-
-
-
-
-
-
-
 @media(max-width:680px){}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /* ---- AI connection status ---- */
 .conn-status{display:inline-flex;align-items:center;gap:9px;padding:9px 15px;border-radius:var(--r-md);font-size:var(--t-base);font-weight:500;margin-bottom:20px}
@@ -1738,7 +1620,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .conn-status.ok .conn-dot{background:var(--grn);box-shadow:0 0 0 3px rgba(63,185,80,.15)}
 .conn-status.off{background:var(--surface);color:var(--mu)}
 .conn-status.off .conn-dot{background:var(--mu)}
-
 
 .conn-test{font-size:var(--t-sm);margin-top:4px;min-height:0}
 .conn-test.testing{color:var(--mu)}
@@ -1749,20 +1630,8 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 .bill-plan-l{display:flex;align-items:center;gap:13px}
 
-
 .bill-plan-d{font-size:var(--t-sm);color:var(--mu);margin-top:2px}
 .bill-up{border-top:1px solid var(--hair);padding-top:14px}
-
-
-
-
-
-
-
-
-
-
-
 
 .sec-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:620px){.sec-grid{grid-template-columns:1fr}}
@@ -1783,14 +1652,9 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .pay-tab{flex:1;padding:9px;border-radius:var(--r-md);border:1px solid var(--hair);background:var(--surface);color:var(--mu);font-size:var(--t-sm);font-weight:500;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s,opacity .15s,filter .15s}
 .pay-tab.on{border-color:var(--accent-txt);color:var(--tx);background:var(--surface-2)}
 
-
-
-
-
 .pay-stripe-el{background:var(--bg);border:1px solid var(--hair);border-radius:var(--r-md);padding:13px 12px;margin-bottom:12px}
 .pay-err{color:var(--red-txt);font-size:var(--t-sm);margin-bottom:10px;min-height:0}
 .pay-submit{width:100%;justify-content:center;padding:12px!important;font-size:var(--t-md)!important;margin-top:4px}
-
 
 .pay-wallet{display:flex;flex-direction:column;gap:10px;padding:6px 0}
 .pay-wallet-b{padding:13px;border-radius:var(--r-md);border:none;font-size:var(--t-md);font-weight:600;cursor:pointer;color:#fff}
@@ -1854,16 +1718,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 /* ---- Billing: subscription details + plan options ---- */
 
-
-
-
-
-
-
-
-
-
-
 .plnpop-elite{background:var(--grn)!important;color:#0b1f14!important}
 .feat-elite{border-color:var(--grn-txt)!important}
 
@@ -1890,13 +1744,8 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .upg-row-go{font-size:var(--t-sm);font-weight:600;color:var(--accent-txt)}
 @media(max-width:640px){.upg-modal{padding:22px}}
 
-
-
-
 .upg-price{font-size:var(--t-2xl);font-weight:750;letter-spacing:-1px;margin:4px 0 2px}
 .upg-price small{font-size:var(--t-sm);font-weight:500;color:var(--mu)}
-
-
 
 .upg-go{width:100%;justify-content:center}
 .upg-foot{text-align:center;font-size:var(--t-sm);color:var(--mu);margin-top:20px}
@@ -1924,11 +1773,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 @media(max-width:480px){.cp-grid{grid-template-columns:1fr 1fr}.cp-incl-list{grid-template-columns:1fr}}
 /* see-more details inside plan cards */
 
-
-
 .upg-more-h{font-size:var(--t-2xs);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mu);margin-bottom:7px}
-
-
 
 .upg-trust{margin-top:9px}
 .upg-compare{background:none;border:none;color:var(--accent-txt);font-size:var(--t-base);font-weight:600;cursor:pointer;font-family:var(--fn);padding:0;margin-bottom:6px}
@@ -1968,19 +1813,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 /* ---- Shortcuts modal ---- */
 
-
-
-
-
-
-
-
-
-
 /* ---- Dev Code/Preview toggle ---- */
-
-
-
 
 .dev-code-body{flex:1;overflow:auto;min-height:0}
 .dev-code-wrap .dev-code-h{display:flex;justify-content:space-between;align-items:center;font-size:var(--t-2xs);text-transform:uppercase;letter-spacing:.05em;color:var(--mu);padding:9px 14px;border-bottom:1px solid var(--hair);position:sticky;top:0;background:#0a0a0c}
@@ -1989,23 +1822,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .dev-copy:hover{color:var(--tx);border-color:var(--hair-strong)}
 
 /* ---- Lab: terminal-first layout ---- */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 .lab-out-stat.ok{color:var(--grn-txt)} .lab-out-stat.err{color:var(--red-txt)}
 
@@ -2030,7 +1846,6 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .uniq-t{font-size:var(--t-md);font-weight:600;color:var(--tx);letter-spacing:-.1px}
 .uniq-d{font-size:var(--t-sm);color:var(--mu);line-height:1.5;flex:1}
 .uniq-go{font-size:var(--t-sm);font-weight:600;color:var(--accent-txt);margin-top:2px}
-
 
 /* ════════════════════════════════════════════════════════════════
    LAYER 28b - TOP TOOLBAR: premium, deliberate, expensive
@@ -2178,9 +1993,6 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
    oversized uneven feature rows, misaligned prices/buttons.
    ============================================================ *//* Let the Plans page breathe wider than the standard reading column */
 
-
-
-
 /* Responsive, even grid (matches landing) - never cram 5 into a tiny width */
 .pg.pg-app{display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:14px!important;max-width:1140px!important;margin:0 auto!important;align-items:stretch}
 @media(max-width:1080px){.pg.pg-app{grid-template-columns:repeat(3,1fr)!important;max-width:760px!important}}
@@ -2208,10 +2020,6 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .pg-app .plnc .plnpop{top:-9px!important}
 .pg-app .plnc.feat,.pg-app .plnc.feat-elite{margin-top:0!important}
 
-
-
-
-
 /* ============================================================
    CHAT CENTERING (Task #6, refined)
    #vc starts after the 250px sidebar, so to truly centre the chat
@@ -2228,24 +2036,19 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 @media (max-width:1099px){ #cv{ transform:none!important; } }
 #abody:has(#sb.cl) #cv, #abody.sb-collapsed #cv{ transform:none!important; }
 
-
 /* Plans refinement (Task #4/7) - custom price size + tighter even rows */
 
 .pg-app .plnc .plnanchor{min-height:30px!important;font-size:var(--t-sm)!important;color:var(--ac,var(--accent))!important;font-weight:600!important;margin-bottom:12px!important}
 .pg-app .plnc .plnfl li{align-items:flex-start;line-height:1.45}
 .pg-app .plnc .plnreassure{min-height:15px!important;font-size:var(--t-xs)!important;color:var(--mu)!important;text-align:center;line-height:1.4}
 
-
-
 /* The text after the icon should flow as one wrapping block */
 .pg-app .plnc .plnfl li{gap:8px!important}
-
 
 /* Plan feature rows: icon pinned left, text flows & wraps cleanly (Task #7) */
 .pg-app .plnc .plnfl li{display:block!important;position:relative!important;padding-left:20px!important;gap:0!important;line-height:1.45}
 .pg-app .plnc .plnfl li > span.fck,.pg-app .plnc .plnfl li > span.fxx{position:absolute!important;left:0!important;top:1px!important;margin:0!important}
 .pg-app .plnc .plnfl li b{font-weight:700;color:var(--tx)}
-
 
 /* ============================================================
    USAGE PANEL - rolling window (Task #7)
@@ -2263,13 +2066,11 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .usage-warn{margin-top:12px;padding:10px 12px;border-radius:var(--r-md);background:rgba(229,83,75,.1);border:1px solid rgba(229,83,75,.25);font-size:var(--t-sm);color:var(--tx);line-height:1.5}
 .usage-note{font-size:var(--t-xs);color:var(--dim,var(--mu));line-height:1.5;margin:12px 0 0}
 
-
 /* Mobile sidebar overlay backdrop (proofread fix) */
 #sb-backdrop{position:fixed;inset:var(--nav-h) 0 0 0;background:rgba(0,0,0,.5);z-index:299;opacity:0;pointer-events:none;transition:opacity .2s}
 #sb-backdrop.on{opacity:1;pointer-events:auto}
 @media(min-width:721px){#sb-backdrop{display:none!important}}
 @media(max-width:720px){#sb:not(.cl){box-shadow:0 0 40px rgba(0,0,0,.5)}}
-
 
 /* Founder Dashboard (auditor #10) */
 .fd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px}
@@ -2291,7 +2092,6 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .fd-loading,.fd-empty{padding:24px;text-align:center;color:var(--mu);font-size:var(--t-base)}
 .fd-token-row{display:flex;gap:8px;margin-top:16px;align-items:center}
 .fd-note{font-size:var(--t-xs);color:var(--dim,var(--mu));margin-top:8px;line-height:1.5}
-
 
 /* Team activity log (auditor #11) */
 .team-log{display:flex;flex-direction:column;gap:1px}
@@ -2416,12 +2216,6 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .mkt-rate-stars,.mkt-rate-star{font-size:var(--t-xl);cursor:pointer}
 .mkt-rate-star{color:var(--hair,#3a342c);transition:color .1s}
 .mkt-rate-star.on,.mkt-rate-star:hover{color:var(--accent-txt)}
-
-
-
-
-
-
 
 @keyframes axpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .int-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
@@ -2570,12 +2364,6 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 
 /* Dev - clear "optional files" explainer */
 
-
-
-
-
-
-
 /* ================================================================
    AMV DESIGN SYSTEM 2.0 - "WARM NOIR"
    One signature, applied with conviction: warm charcoal canvas,
@@ -2690,15 +2478,12 @@ input,textarea,select{border-radius:var(--r-lg)!important;border-color:var(--ds-
 
 .dev-addwrap{position:relative}
 
-
-
 /* dev-add-menu positioning consolidated below (right-aligned so it never overflows) */
 body.light .dev-add-menu{background:#fff}
 .dev-add-menu button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;background:none;border:none;padding:9px 12px;border-radius:var(--r-md);cursor:pointer;color:var(--tx);transition:background .13s}
 .dev-add-menu button:hover{background:var(--accent-soft)}
 .dev-add-menu button b{font-size:var(--t-base);font-weight:600}
 .dev-add-menu button span{font-size:var(--t-xs);color:var(--mu)}
-
 
 /* ================================================================
    DS 2.0 - CONTENT LAYOUT (authoritative)
@@ -2725,14 +2510,7 @@ body.light .dev-add-menu{background:#fff}
 
 /* Team - clean feature rows */
 
-
-
-
-
-
-
 /* Line icons replace emoji - muted, refined */
-
 
 .es-icon svg{color:var(--mu)}
 
@@ -2793,10 +2571,7 @@ body.light #amv-working{background:#fff}
 .adm-badge.ok{background:rgba(63,185,80,.14);color:var(--grn-txt)}
 .adm-badge.off{background:rgba(210,153,34,.14);color:#d29922}
 
-
 /* Onboarding - first-run activation */
-
-
 
 /* Team presence + shared library */
 .team-presence{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
@@ -2984,12 +2759,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent-txt)!important
 
 /* Crew "try saying" chips */
 
-
-
-
-
 /* Crew standing jobs grid */
-.crew-jobs-sec{margin-top:28px}
+
 .cw-jobs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:14px}
 .cw-job{display:flex;gap:13px;align-items:flex-start;padding:16px;border:1px solid var(--hair);border-radius:var(--r-xl);background:var(--s1);transition:background-color .18s,border-color .18s,color .18s,box-shadow .18s,transform .18s,opacity .18s,filter .18s}
 .cw-job.on{border-color:var(--accent-txt);background:var(--accent-soft)}
@@ -3044,14 +2815,10 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .trend-col:hover .trend-bar{opacity:1}
 .trend-lbl{font-size:var(--t-2xs);color:var(--mu);font-variant-numeric:tabular-nums}
 
-
 /* Trust signals bar (plans page) */
 
 .trust-badges{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px}
 .trust-badge{text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px}
-
-
-
 
 /* Admin conversion funnel */
 .adm-funnel{display:flex;flex-direction:column;gap:14px;margin-top:4px}
@@ -3229,7 +2996,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 
 /* Signature gradient hairline - a thin accent rule under section labels */
 
-
 /* Hero headline emphasis wears the signature gradient */
 .hero-rd-em{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
 
@@ -3238,8 +3004,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    Spacious, editorial, capability-card layout. Replaces the flat
    pill row with richer, clearer "what AMV can do" cards.
    ============================================================ */
-
-
 
 /* ============================================================
    CHAT HOME (empty state) - clean & focused
@@ -3420,14 +3184,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 
   /* ── Staggered reveal for list items (recents, cards, results) ── */
 
-  
-  
-  
-  
-  
-  
-  
-  
   @keyframes staggerIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
   /* ── Nav items get a gentle slide on hover ── */
@@ -3454,8 +3210,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
   @keyframes onbIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 }
 /* Soft aura glow behind the welcome mark */
-
-
 
 /* ============================================================
    COMMAND PALETTE (#7)
@@ -3534,16 +3288,6 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    ============================================================ *//* When rich, don't vertically center - let it flow from the top with room */
 
 .chome-recent-h{font-size:var(--t-sm);font-weight:600;letter-spacing:.02em;color:var(--mu);margin-bottom:11px;padding-left:2px}
-
-
-
-
-
-
-
-
-
-
 
 /* ============================================================
    ACCENT THEMES (#12)
@@ -3656,7 +3400,6 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 .hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
-
 /* ============================================================
    MOBILE FIRST-CLASS + BOTTOM NAV (#14)
    ============================================================ */
@@ -3716,11 +3459,6 @@ body.sb-rail #sb #hist{display:none!important}
 
 }
 /* the collapse toggle button */
-
-
-
-
-
 
 /* ============================================================
    VOICE MODE SHOWCASE (#16)
@@ -3871,10 +3609,6 @@ svg[stroke]{stroke-linecap:round;stroke-linejoin:round}
 .quota-notice-up:hover{filter:brightness(1.07)}
 #mta:disabled{opacity:.55;cursor:not-allowed}
 
-
-
-
-
 /* File-type icons render as aligned SVG (not emoji) */
 .file-ic-svg{vertical-align:-2px;color:var(--mu)}
 .tsr-ic svg,.mkt-msg-btn svg{color:var(--mu)}
@@ -3898,7 +3632,6 @@ svg[stroke]{stroke-linecap:round;stroke-linejoin:round}
 .sess-name{font-size:var(--t-base);font-weight:600;color:var(--tx);display:flex;align-items:center;gap:8px}
 .sess-badge{font-size:var(--t-2xs);font-weight:600;padding:2px 7px;border-radius:var(--r-xs);background:var(--accent-soft);color:var(--accent-txt)}
 .sess-meta{font-size:var(--t-sm);color:var(--mu);margin-top:2px}
-
 
 /* ── Privacy pane ── */
 .prv-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -3948,9 +3681,6 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .mkt-rules-list{margin:0;padding-left:18px;display:grid;gap:4px}
 .mkt-rules-list li{font-size:var(--t-sm);color:var(--mu);line-height:1.5}
 .mkt-rules-foot{font-size:var(--t-sm);color:var(--dim);margin-top:10px;padding-top:9px;border-top:1px solid var(--bd)}
-
-
-
 
 /* ── Marketplace terms (expandable) ── */
 .mkt-rules-h{justify-content:space-between}
@@ -4157,8 +3887,6 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .chome-recent{display:flex;flex-direction:column;align-items:center}
 .chome-recent-h{font-size:var(--t-xs);letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:600;text-align:center;margin:0 0 10px}
 
-
-
 /* Top-left brand: clean letter mark */
 .logo-mark.logo-letter{
   width:30px;height:30px;display:flex;align-items:center;justify-content:center;
@@ -4244,9 +3972,6 @@ html.reduce-motion #cv.cv-home .chome-greet{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:9px 12px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }
-
-
-
 
 .dev-openext{
   width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center;
@@ -4343,7 +4068,6 @@ html.reduce-motion #cv.cv-home .chome-greet{
 #lab-code{border-radius:0!important;box-shadow:none!important;margin:0!important}
 .lab-out-body{border-radius:0!important;box-shadow:none!important}
 .lab-out-body > .lab-placeholder{background:none!important;border:none!important;padding:0!important;box-shadow:none!important}
-
 
 /* Model pill: don't truncate the label.
 
@@ -4451,18 +4175,10 @@ html.reduce-motion #cv.cv-home .chome-greet{
 
 /* ── Context window meter ── */
 
-
 .ctx-l{font-size:var(--t-sm);font-weight:600;color:var(--mu);font-variant-numeric:tabular-nums}
-
 
 .ctx-bar{height:4px;border-radius:var(--r-2xs);background:var(--s4);overflow:hidden}
 .ctx-fill{height:100%;border-radius:var(--r-2xs);background:var(--accent-grad);transition:width .4s ease}
-
-
-
-
-
-
 
 .dev-gen{font-size:var(--t-sm);color:var(--accent-txt);font-weight:600;font-variant-numeric:tabular-nums}
 
@@ -4532,7 +4248,6 @@ body.light .t-num{color:#b5451b}
    ═══════════════════════════════════════════════════════════ */
 /* Message bubbles: user right in accent, AMV left as clean prose */
 .dev-log{padding:20px 20px 8px;gap:18px}
-
 
 /* Code blocks inside Dev's replies */
 .dev-code{
@@ -4761,8 +4476,6 @@ body.light .mb.u{background:var(--s2)!important}
 }
 #cm:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--tx) 16%,transparent)}
 #cm::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--tx) 28%,transparent)}
-
-
 
 /* Same treatment app-wide: thin, quiet, out of the way */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -5329,7 +5042,6 @@ body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
 /* An indeterminate bar - because the provider gives us no percentage, and
    inventing one is exactly what this feature used to do. */
 
-
 /* ═══════════════════════════════════════════════════════════════════════
    MOBILE  (≤760px)
 
@@ -5444,7 +5156,6 @@ body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
 /* the toggle is display:none unless we're actually on mobile */
 .mv-toggle { display: none; }
 @media (max-width: 760px) { .mv-toggle { display: flex; } }
-
 
 /* ── Live research panel (shows real search activity) ── */
 .rsrc-panel{
@@ -5583,7 +5294,6 @@ body.sb-rail #sb .sb-status{
   margin:2px auto!important; padding:0!important;
   justify-content:center!important; gap:0!important; overflow:hidden;
 }
-
 
 /* ── Research Watch modal ── */
 .rw-modal{
@@ -6113,8 +5823,6 @@ body.light{--wait:#6b7690;--ok:#2f9e6e;--warn:#b7862f;--err:#c4544f;}
 .aa-permit{font-size:var(--t-sm);color:var(--tx);background:var(--accent-soft);border:1px solid rgba(63,118,245,.28);border-radius:var(--rk);padding:11px 13px;line-height:1.5}
 .aa-permit b{color:var(--tx)}
 
-
-
 .aa-scope{margin-top:var(--sp-3);display:flex;flex-direction:column;gap:var(--sp-3)}
 .aa-scope-row{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
 .aa-scope-k{font-size:var(--t-sm);color:var(--mu);min-width:132px;flex:none}
@@ -6224,8 +5932,6 @@ body.light .aa-date{color-scheme:light}
    Only engages >=1500px; normal desktops are untouched.
    ============================================================ */
 
-
-
 /* ============================================================
    LAYER A5 - MOBILE HARDENING (authoritative, last word)
    Fixes real phone breakage: nav items sticking off-screen, a
@@ -6307,9 +6013,6 @@ body.light .aa-date{color-scheme:light}
    LAYER A7 - PLANS page polish (professional, current, breathable)
    ============================================================ */
 
-
-
-
 /* Give the five tiers room to breathe and read as premium */
 .pg.pg-app{max-width:1240px!important;gap:16px!important}
 .pg-app .plnc{padding:28px 22px!important;border-radius:var(--r-2xl)!important;background:var(--s1)!important;border:1px solid var(--bd)!important}
@@ -6387,9 +6090,7 @@ html,body{height:100%;height:100dvh}
    LAYER A9 - MISSION CONTROL command bar (type anything → it does it)
    ============================================================ */
 .mc-cmd{margin:0 0 var(--sp-5)}
-.mc-cmd-inner{display:flex;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);padding:8px 8px 8px 16px;transition:border-color .18s,box-shadow .18s}
-.mc-cmd-inner:focus-within{border-color:var(--accent-txt);box-shadow:0 0 0 3px var(--accent-soft)}
-.mc-cmd-ic{color:var(--accent-txt);flex:none}
+
 .mc-cmd-input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--tx);font-family:var(--fn);font-size:var(--t-prose);padding:8px 0}
 .mc-cmd-input::placeholder{color:var(--dim)}
 .mc-cmd-go{flex:none;background:var(--accent-fill);color:#fff;border:none;border-radius:var(--rc);font-weight:600;font-size:var(--t-base);padding:10px 20px;cursor:pointer;transition:background .14s}
@@ -6398,7 +6099,7 @@ html,body{height:100%;height:100dvh}
 .mc-cmd-chip{font-size:var(--t-sm);color:var(--mu);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-pill);padding:6px 13px;cursor:pointer;transition:border-color .14s,color .14s}
 .mc-cmd-chip:hover{border-color:var(--accent-txt);color:var(--tx)}
 @media(max-width:560px){
-  .mc-cmd-inner{padding-left:12px}
+  
   .mc-cmd-input{font-size:var(--t-md)}
   .mc-cmd-go{padding:10px 15px}
   .mc-cmd-chip{font-size:var(--t-sm)}
@@ -6408,12 +6109,7 @@ html,body{height:100%;height:100dvh}
 /* ============================================================
    LAYER A10 - Crew: bigger command box, inline result, scroll fix
    ============================================================ */
-.mc-cmd-lg{background:var(--s1);border:1px solid var(--bd);border-radius:var(--rp);padding:var(--sp-4);margin-bottom:var(--sp-5)}
-.mc-cmd-label{font-size:var(--t-base);font-weight:600;color:var(--tx);margin-bottom:10px}
-.mc-cmd-label span{font-weight:400;color:var(--mu)}
-.mc-cmd-lg .mc-cmd-inner{padding:6px 6px 6px 16px;border-radius:var(--rk);background:var(--s2)}
-.mc-cmd-lg .mc-cmd-input{font-size:var(--t-lg);padding:14px 0}
-.mc-cmd-lg .mc-cmd-go{padding:12px 24px;font-size:var(--t-md)}
+
 .mc-cmd-result:empty{display:none}
 .mc-cmd-result{margin-top:var(--sp-3)}
 .mc-cmd-msg{font-size:var(--t-base);line-height:1.55;color:var(--tx);border-radius:var(--rk);padding:13px 15px;display:flex;flex-direction:column;gap:8px}
@@ -6424,7 +6120,6 @@ html,body{height:100%;height:100dvh}
 .mc-cmd-steps{margin:2px 0 0;padding-left:2px;list-style:none;display:flex;flex-direction:column;gap:5px}
 .mc-cmd-steps li{font-size:var(--t-base);color:var(--tx)}
 .mc-cmd-actions{display:flex;gap:8px}
-@media(max-width:560px){ .mc-cmd-lg .mc-cmd-input{font-size:var(--t-prose)} .mc-cmd-lg .mc-cmd-go{padding:12px 16px} }
 
 /* Preview workspace: make the "what happened" history genuinely scrollable,
    with iOS momentum scrolling. */
@@ -6524,9 +6219,6 @@ html,body{height:100%;height:100dvh}
 /* ---- Billing: current plan flush-left under "Subscription", no card chrome,
    no icon (specificity beats the id-scoped .ss2 padding rules) ---- */
 
-
-
-
 /* ---- Edit modal (approvals + scheduled work) ---- */
 .ape-ov{position:fixed;inset:0;z-index:1250;background:rgba(8,10,15,.62);backdrop-filter:blur(3px);display:flex;padding:var(--sp-5)}
 .ape{position:relative;margin:auto;width:min(640px,100%);max-height:calc(100vh - var(--sp-8));display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rp);overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.45)}
@@ -6559,18 +6251,6 @@ html,body{height:100%;height:100dvh}
 .mc-sched-acts{display:flex;gap:6px;flex:none}
 
 /* ---- Crew command box: bigger, warmer, more inviting ---- */
-.mc-cmd-lg{background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--bd);border-radius:var(--rp);padding:22px 22px 20px;margin-bottom:var(--sp-5);box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 30px -18px rgba(0,0,0,.5)}
-.mc-cmd-lg .mc-cmd-label{font-size:var(--t-prose);font-weight:660;margin-bottom:13px;letter-spacing:-.01em}
-.mc-cmd-lg .mc-cmd-inner{padding:8px 8px 8px 18px;border-radius:var(--r-2xl);background:var(--bg);border:1px solid var(--bd);transition:border-color .15s,box-shadow .15s}
-.mc-cmd-lg .mc-cmd-inner:focus-within{border-color:var(--accent-txt);box-shadow:0 0 0 3px var(--accent-soft)}
-.mc-cmd-lg .mc-cmd-ic{color:var(--accent-txt);flex:none}
-.mc-cmd-lg .mc-cmd-input{font-size:var(--t-lg);padding:16px 0}
-.mc-cmd-lg .mc-cmd-go{padding:14px 28px;font-size:var(--t-prose);font-weight:640;border-radius:var(--r-lg)}
-@media(max-width:560px){
-  .mc-cmd-lg{padding:18px 16px 16px}
-  .mc-cmd-lg .mc-cmd-input{font-size:var(--t-prose);padding:14px 0}
-  .mc-cmd-lg .mc-cmd-go{padding:13px 18px}
-}
 
 /* Action toast (Undo / Return) */
 .toast-act{display:flex;align-items:center;gap:10px}
@@ -6608,7 +6288,6 @@ html,body{height:100%;height:100dvh}
    LAYER A15 - Sidebar: collapsible "Build" group (Studio/Dev/Lab)
    ============================================================ *//* The Build group no longer collapses, so the toggle's own rules went with it.
    .sb-group stays: it is still the column those three buttons sit in. */
-
 
 /* Handoff: pick-a-chat modal */
 .hopick-modal{max-height:82vh;display:flex;flex-direction:column}
@@ -6842,20 +6521,12 @@ html,body{height:100%;height:100dvh}
 .mf-tbl th,.mf-tbl td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--bd)}
 .mf-tbl th{font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.04em;color:var(--dim);font-weight:600}
 
-
 /* min-height keeps the whole row a comfortable tap target - the box itself is
    16px, but the label is what a finger hits. */
 
 /* A global `input,textarea,select` rule styles every input as a text field,
    which stretched these checkboxes to the full row width and pushed their
    labels off the panel. Restore a real checkbox. */
-
-
-
-
-
-
-
 
 .mf-codeline{display:flex;gap:var(--sp-3);flex-wrap:wrap;align-items:center;margin-top:var(--sp-2)}
 .mf-codeline .inp{max-width:130px;letter-spacing:.18em;font-family:var(--mn)}
@@ -7310,7 +6981,6 @@ html,body{height:100%;height:100dvh}
 .fr-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .fr-t{display:block;font-size:var(--t-sm);font-weight:650;color:var(--tx)}
 
-
 @media (max-width:520px){ .fr-card{margin-top:var(--sp-4);padding:var(--sp-3)} }
 
 /* ============================================================
@@ -7581,7 +7251,7 @@ html,body{height:100%;height:100dvh}
   transition:color .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease)}
 .cw-chip:hover{color:var(--tx);border-color:var(--bdl)}
 .cw-chip.on{color:var(--on-accent,#fff);background:var(--accent);border-color:var(--accent-txt)}
-.cw-chip-n{font-size:var(--t-xs);opacity:.75;font-variant-numeric:tabular-nums}
+
 .cw-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .cw-cat{margin-bottom:var(--sp-6)}
@@ -8033,10 +7703,6 @@ html,body{height:100%;height:100dvh}
 }
 .cwp-t{ font-family:var(--fdisplay); font-size:var(--t-xl); line-height:1.25; margin:0 0 var(--sp-2); color:var(--tx); }
 
-
-
-
-
 .cwp-desc{ margin:var(--sp-4) 0 0; font-size:var(--t-md); line-height:1.65; color:var(--tx); }
 .cwp-sec{ margin-top:var(--sp-5); }
 .cwp-sec-h{
@@ -8071,7 +7737,6 @@ html,body{height:100%;height:100dvh}
 }
 .cwp-note{ margin-top:var(--sp-2); font-size:var(--t-xs); line-height:1.5; color:var(--dim); }
 
-
 .cwp-act{ margin-top:var(--sp-5); display:flex; gap:var(--sp-2); flex-wrap:wrap; }
 .cwp-buy{
   width:100%;
@@ -8086,12 +7751,6 @@ html,body{height:100%;height:100dvh}
 
 /* The band above the catalogue for somebody who has not paid. */
 
-
-
-
-
-
-
 .cw-locked{ margin-top:var(--sp-6); }
 .cw-job.locked{ cursor:pointer; }
 
@@ -8100,10 +7759,7 @@ html,body{height:100%;height:100dvh}
   .cwp-head{ padding-right:36px; }
   .cwp-ic{ width:44px; height:44px; flex-basis:44px; font-size:var(--t-xl); }
   .cwp-act .btn, .cwp-buy .btn{ width:100%; margin:0 0 var(--sp-2); }
-  
-  
-  
-  
+
 }
 
 /* ============================================================
@@ -8176,10 +7832,6 @@ html,body{height:100%;height:100dvh}
 @media (prefers-reduced-motion:reduce){ .mc-lv-opt{ transition:none; } }
 
 .mc-sched-held{display:block;margin-top:3px;font-size:var(--t-xs);color:var(--gold-txt);}
-
-
-
-
 
 /* ── LAYER A71 ─ ADMIN USER LIST: A PAGE AT A TIME ───────────────────────────
    The list arrives in pages now, so it needs a way to ask for the next one and
@@ -8521,7 +8173,6 @@ html.framed-out body.framed-stop{visibility:visible}
    padding those would break the line they sit in and fix nothing. This is not
    one of those: it is a Copy button in a row of its own. */
 
-
 /* ── LAYER A86: TEXT SOMEBODY CAN ACTUALLY READ ──────────────────────────
    Six colour pairs in the shipped page fail WCAG 2.1 AA for normal text,
    measured on the RENDERED page rather than read off the tokens - two of them
@@ -8577,7 +8228,6 @@ body.light{ --on-accent:#ffffff; }
 .sbl{ color:var(--mu); }
 
 /* 5. Feature descriptions on the raised light surface: 4.11:1. */
-
 
 /* 6. The logo letter is white on the accent at 4.1:1 and is LEFT THAT WAY.
       WCAG 1.4.3 exempts text that is part of a logo or brand name, and the mark
@@ -9098,7 +8748,6 @@ body.light{ --on-accent:#ffffff; }
   border-bottom:1px solid var(--bd);
 }
 
-
 /* ── LAYER A105: THE CATALOGUE IS A SAMPLE, AND HAS TO READ LIKE ONE ───────
    A number beside a list of jobs reads as a limit. This note sits directly
    under the Crew headline and is the one place the framing is stated, so it
@@ -9167,81 +8816,11 @@ body.light{ --on-accent:#ffffff; }
    there is not enough data, and a real ranked list once there is. The empty
    shape must not look like a broken ranking - it is a true statement about how
    much has happened, so it reads as a sentence, not as an error. */
-.cw-pop{ margin:var(--sp-5) 0 var(--sp-6); }
-.cw-pop .sec-head{ margin-bottom:var(--sp-3); }
-
-
-
-.cw-pop-prog{ display:inline-flex; align-items:center; gap:var(--sp-2); margin-left:auto; }
-.cw-pop-prog-bar{
-  display:block; width:120px; height:6px; border-radius:var(--r-pill);
-  background:var(--s3); overflow:hidden;
-}
-.cw-pop-prog-bar>span{
-  display:block; height:100%; border-radius:var(--r-pill); background:var(--accent);
-  min-width:2px; transition:width .4s var(--ease);
-}
-.cw-pop-prog-n{ font-size:var(--t-xs); color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-@media(max-width:720px){
-  /* A row that wraps to five lines must not centre its number against all of
-     them - the rank belongs beside the title it numbers. */
-
-  
-  
-  /* Ten rows of a five-line description is a wall, and a wall is not a
-     ranking anybody reads. Two lines, then the card itself has the rest. */
-
-  /* The meter is decoration once the row wraps; the number is the fact. */
-
-  
-  .cw-pop-prog{ margin-left:0; }
-}
 
 /* ── LAYER A109: THE ONE-OFF ERRANDS ───────────────────────────────────────
    Deliberately lighter than a job card. A job is a switch you leave on; these
    are a door into a chat, so they read as buttons rather than as things with
    state. Same row height on every screen so the grid does not go ragged. */
-.cw-errands{ margin:var(--sp-5) 0 var(--sp-4); }
-.cw-errands .sec-head{ margin-bottom:var(--sp-3); }
-.cw-errand-grid{
-  display:grid; gap:var(--sp-2);
-  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-}
-.cw-errand{
-  display:flex; align-items:center; gap:var(--sp-3);
-  padding:var(--sp-3) var(--sp-4); min-height:56px;
-  border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1);
-  color:var(--tx); font-size:var(--t-md); font-weight:600; text-align:left;
-  cursor:pointer; transition:border-color .16s var(--ease), background .16s var(--ease), transform .16s var(--ease);
-}
-.cw-errand:hover{ border-color:var(--accent); background:var(--s2); }
-.cw-errand:active{ transform:translateY(1px); }
-.cw-errand:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
-.cw-errand-ic{ font-size:var(--ic-sm); line-height:1; flex:0 0 auto; }
-.cw-errand-t{ flex:1 1 auto; min-width:0; }
-@media(prefers-reduced-motion:reduce){
-  .cw-errand{ transition:none; }
-  .cw-errand:active{ transform:none; }
-}
 
 /* ── LAYER A110: A SECTION HEADING IS NOT A 60px COLUMN ────────────────────
    `.sec-head` is a row: heading, then the explanatory line beside it. On a
@@ -9295,20 +8874,8 @@ body.light{ --on-accent:#ffffff; }
 .conn-broken{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--red-txt); }
 .conn-x{ flex:0 0 auto; }
 
-
-
-
-
-
-
 /* Not set up is not a disabled-looking button that still does something. It
    reads as unavailable and says why when pressed. */
-
-
-
-
-
-
 
 /* The consequence, at the same weight as the thing it is a consequence of. */
 
@@ -9715,16 +9282,7 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    nothing usually says "no results", which here would be a lie by omission:
    Crew is not limited to its examples, so not-in-the-list is not cannot-be-
    done. It says so, and hands the words straight to the box. */
-.cw-cmd-lead{ margin-top:var(--sp-5); }
 
-.cw-find-wrap{
-  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
-  margin:var(--sp-5) 0 var(--sp-3);
-}
-.cw-find-l{
-  font-size:var(--t-sm);font-weight:600;color:var(--mu);
-  letter-spacing:.02em;flex:0 0 auto;
-}
 .cw-find{
   flex:1 1 260px;min-width:0;max-width:420px;
   background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-pill);
@@ -9733,7 +9291,6 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 }
 .cw-find::placeholder{ color:var(--dim); }
 .cw-find:focus{ outline:none;border-color:var(--accent);background:var(--s2); }
-.cw-find-n{ font-size:var(--t-sm);color:var(--dim);flex:0 0 auto; }
 
 .cw-nomatch{
   border:1px solid var(--bd);border-radius:var(--r-lg);
@@ -9746,7 +9303,7 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 
 @media (max-width:720px){
   .cw-find{ max-width:none;flex:1 1 100%; }
-  .cw-find-wrap{ gap:var(--sp-2); }
+  
 }
 
 /* ── LAYER A122: WHO ELSE SEES IT, ANSWERED SIDE BY SIDE ───────────────────
@@ -9806,16 +9363,6 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    The picker sits above the catalogue rather than inside a filter row,
    because choosing a country is not filtering a list, it is asking a
    different question. */
-
-
-
-
-
-
-
-
-
-
 
 /* ── LAYER A126: THE PILL FITS THE CARD, AND CREW LEADS FROM THE MIDDLE ────
    THE PILL WAS TOLD IT COULD NOT WRAP. .cw-job-where carries
@@ -10960,7 +10507,6 @@ body.light{
 
 /* Hand-written hex that predates the status tokens. */
 .mk-kind-agent{ color:var(--gold-txt); }
-
 
 /* ── LAYER A153 · the browser's own text-size setting does something ─────────
    Measured: setting the root font to 24px or 32px - Chrome's Large and Very
@@ -12465,7 +12011,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .mc-quiet select{ min-height:44px; }
 }
 
-
 /* ── LAYER A190 · a job the window pushed back says so on its own row ────────
    The chip sits beside the mode label on a scheduled row. It is deliberately
    the same weight and shape as .mc-sched-waiting rather than an alarm colour:
@@ -12679,7 +12224,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 #vc > .vc-repaint .auto-ev,
 #vc > .vc-repaint .chome-recent{ animation:none!important; }
 
-
 /* Lab's entry: one document scroll, not a box inside a box. */
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
 .lab-shell.lab-blank > *{ flex:0 0 auto; }
@@ -12732,7 +12276,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    81, so Design still started 57px above the other two. That is the same
    defect as before, one third the size, which is the size that gets called
    fixed. See LAYER A206. */
-
 
 /* Lab's entry: one document scroll, not a box inside a box. */
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
@@ -12806,65 +12349,25 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap;
   margin:var(--sp-5) 0 var(--sp-3);
 }
-.cw-filters .cw-find-wrap{ margin:0; flex:1 1 320px; }
-
-
-
 
 @media (max-width:720px){
   .cw-filters{ gap:var(--sp-3); }
-  
-  
+
 }
-
-
 
 /* The five. A grid rather than a list, on the same measure as the catalogue
    below so the page has one rhythm - the old ranking was a full-width list of
    rows and read as a different component from everything under it. */
-.cw-top5{
-  display:grid;gap:var(--sp-3);
-  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-  margin-bottom:var(--sp-6);
-}
-.cw-top5-item{ position:relative;display:flex;flex-direction:column; }
-.cw-top5-item .cw-job{ flex:1; }
-.cw-top5-rank{
-  position:absolute;top:-7px;left:-7px;z-index:2;
-  width:24px;height:24px;border-radius:var(--r-pill);
-  display:flex;align-items:center;justify-content:center;
-  background:var(--accent);color:#fff;
-  font-size:var(--t-xs);font-weight:700;font-variant-numeric:tabular-nums;
-  box-shadow:var(--sh-sm);
-}
-.cw-top5-n{
-  position:absolute;top:-9px;right:8px;z-index:2;
-  padding:2px 8px;border-radius:var(--r-pill);
-  background:var(--s3);border:1px solid var(--bd);
-  font-size:var(--t-xs);color:var(--mu);font-variant-numeric:tabular-nums;
-}
-.cw-pop{ margin-top:var(--sp-5); }
-.cw-pop-body .sec-head{ margin-bottom:var(--sp-4); }
+
 /* Five cards side by side are a comparison, and a comparison needs the rows to
    be the same shape. Left alone, one 60-word description made its whole row
    320px tall and the four beside it were mostly empty space. Three lines each,
    with the full text one click away in the card - which is what the card is
    for. */
-.cw-top5 .cw-job-d{
-  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
-  overflow:hidden;
-}
-.cw-top5 .cw-job{ align-self:start; }
 
 /* The sample line, now a footnote under the five rather than the only thing in
    the block. `.cw-pop-prog` and its parts already have their look from A118;
    this is the row that holds it and the sentence beside it. */
-.cw-pop-prog-row{
-  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
-  margin:calc(-1 * var(--sp-3)) 0 var(--sp-6);
-  font-size:var(--t-sm);color:var(--dim);
-}
-.cw-pop-prog-l{ line-height:1.5; }
 
 /* ── LAYER A199 · the job page you read before you decide ────────────────────
 
@@ -12987,8 +12490,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   color:var(--mu); letter-spacing:0;
 }
 
-
-
 /* The facts, on one label column so they read down a single edge. */
 .bill-facts{
   margin:var(--sp-5) 0 0; display:grid; gap:0;
@@ -13013,7 +12514,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   flex:1 1 260px; margin:0; font-size:var(--t-sm);
   color:var(--mu); line-height:1.55;
 }
-
 
 @media (max-width:600px){
   .bill-fact{ grid-template-columns:1fr; gap:2px; }
@@ -13149,8 +12649,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .cdir{ margin-top:var(--sp-2); }
 .cdir-find-wrap{ display:flex; gap:var(--sp-3); align-items:center; flex-wrap:wrap; margin:var(--sp-4) 0 var(--sp-6); }
 .cdir-find-wrap .cw-find{ flex:1 1 320px; max-width:none; }
-
-
 
 .cdir-grid{ display:grid; gap:var(--sp-2); grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
 .cdir-skel{ display:block; height:62px; border-radius:var(--r-md); }
@@ -14003,8 +13501,6 @@ p.bill-leave-s{
   .mk-filter,.hc-chip,.cw-chip,.mkt-tab{ min-width:44px!important; }
 }
 
-
-
 @media(max-width:1040px){
   
 }
@@ -14025,9 +13521,7 @@ p.bill-leave-s{
    wanted - a pill that stays a pill - and this is not a reason to change it
    everywhere. */
 @media(max-width:680px){
-  
-  
-  
+
 }
 
 /* ── LAYER A220 · the same auto floor, one list over ─────────────────────────
@@ -14748,12 +14242,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 
 /* What you are on, and what it gives you. */
 
-
-
-
-
-
-
 /* The four numbers the server refuses on. Equal weight, because no one of
    them is the one somebody meets first. */
 .spv-facts{
@@ -14774,11 +14262,9 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .spv .set-title{ font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:640; margin:0 0 var(--sp-2); }
 .spv .set-sub{ font-size:var(--t-md); color:var(--mu); margin-bottom:var(--sp-4); max-width:64ch; }
 
-
 @media (max-width:860px){
   .spv-facts{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-3); }
-  
-  
+
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -14932,10 +14418,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    AMV spent is not here to be sold to, and a plan grid above their own
    numbers makes the page read as being about the sale.
    ══════════════════════════════════════════════════════════════════════════ */
-
-
-
-
 
 /* The money row is four facts like the plan row, so it uses the same grid and
    only says what is different: these are dollars, not allowances. */
@@ -15371,16 +14853,8 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    tag cloud rather than a list of places to go.
    ═══════════════════════════════════════════════════════════════════════ */
 
-
-
-
-
 /* The affordance, and it is muted on purpose. Twenty-six accent-coloured
    "See all" labels is a screen with twenty-six things shouting on it. */
-
-
-
-
 
 /* ══════════════════════════════════════════════════════════════════════
    LAYER A252 - a remote image waits to be asked for  (AMV-AUD-023)
@@ -15551,10 +15025,7 @@ iframe.amv-sbx{
    the filters and each job section. Measured on a first visit at 4x: layout
    239ms -> 166ms, the longest freeze 290ms -> 124ms. The first three blocks
    (heading, search, what is running) are always on screen and stay as they are. */
-.crew-page > :nth-child(n+4):not(.crew-jobs-sec), .crew-jobs-sec > :not(:has(.cw-cat)){
-  content-visibility:auto;
-  contain-intrinsic-size:auto 300px;
-}
+
 /* A category is taller the narrower the screen (measured averages: 1,711px at
    1280, 2,898px at 768, 3,858px at 390), so the estimate follows, and the
    scrollbar is about the right size before anything has been seen. */
@@ -15731,7 +15202,6 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
    so the whole sidebar footer grew by a line after the first paint. A blank
    line holds its place. */
 
-
 /* ══════════════════════════════════════════════════════════════════════
    LAYER A266 - Crew: the top five for where you are, and other countries
    Under the box: the five jobs written for the country somebody is in, with
@@ -15739,17 +15209,6 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
    country, opened in place. Placeholder cards hold the five's space while
    they arrive, so the section never grows after it is drawn.
    ══════════════════════════════════════════════════════════════════════ */
-.cw-foryou .sec-head h3{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
-.cw-flag{ font-size:1.1em; line-height:1; }
-.cw-link{
-  display:inline-flex; align-items:center; min-height:44px; padding:0 var(--sp-1); margin-left:var(--sp-1);
-  border:0; background:transparent; cursor:pointer; font:inherit; font-weight:600; color:var(--accent-txt);
-  border-radius:var(--r-sm);
-}
-.cw-link:hover{ text-decoration:underline; }
-.cw-link:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
-.cw-foryou-note{ margin:var(--sp-2) 0 var(--sp-3); font-size:var(--t-sm); line-height:1.5; color:var(--mu); }
-
 
 @keyframes cwPh{ from{ background-position:100% 0; } to{ background-position:-100% 0; } }
 
@@ -15761,26 +15220,17 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
 }
 .cw-morec-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
-
-
-
-
-
-
-
-
-
 /* One height for the five and for their placeholders, so the cards arriving
    moves nothing. Measured across all 105 countries at widths from 360 to 1600:
    the tallest card is 281px, so every card and placeholder holds 286. */
-#cw-foryou .cw-top5-item .cw-job{ min-height:286px; }
+
 /* The card carries a 10px margin under it (.cw-job); the placeholder does too. */
 
 /* Always drawn in full. The Crew speed layer skips sections until they are
    near the screen and assumes 300px for them meanwhile - right for the long
    list, wrong for the five at the fold, which were counted as 300px, drawn
    at their real height a frame later, and pushed everything under them down. */
-.crew-jobs-sec > #cw-foryou{ content-visibility:visible; contain-intrinsic-size:none; }
+
 /* The heading's link, held open while the country is still being asked for,
    so the heading is the same height before and after. */
 /* The phone's bottom bar is empty in the page and filled by the bundle, so it
@@ -15796,7 +15246,7 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
    lines, and "Not in Spain?" sits on a line of its own under the sentence. */
 @media(max-width:720px){
   #cw-foryou .sec-head h3{ min-height:calc(2 * 1.35em); line-height:1.35; align-content:flex-start; }
-  #cw-foryou .sec-sub .cw-link{ display:flex; margin-left:0; }
+  
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -15807,11 +15257,6 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
 .cw-job-loc{ display:block; min-height:1.5em; line-height:1.5; margin-top:var(--sp-2);
   font-size:var(--t-xs); font-weight:500; color:var(--accent);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-.cw-facts{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:var(--sp-2) var(--sp-4); margin:0 0 var(--sp-3); }
-.cw-facts-r{ padding:var(--sp-2) 0; border-top:1px solid var(--bd); min-width:0; }
-.cw-facts-r dt{ font-size:var(--t-xs); color:var(--mu); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-.cw-facts-r dd{ margin:2px 0 0; font-size:var(--t-sm); color:var(--tx); line-height:1.45; }
 
 /* The card near the top of Connectors. Always drawn, the same size whether or
    not the country is known yet - only its words change. */
@@ -15849,49 +15294,13 @@ h2,
 /* ═════════════════════════════════════════════════════════════════════════
    LAYER A268 - Made for your country: one row of cards, one fixed height
    ═════════════════════════════════════════════════════════════════════════ */
-.cw-made{ margin:var(--sp-5) 0 var(--sp-4); }
-.cw-made[hidden]{ display:none; }
-.cw-made .sec-head h3{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
-.cw-made-n{ font-size:var(--t-xs); font-weight:600; color:var(--mu); background:var(--s2);
-  border:1px solid var(--bd); border-radius:var(--r-pill); padding:1px 8px; line-height:1.5; }
-.cw-made-row{ display:flex; gap:var(--sp-3); overflow-x:auto; overscroll-behavior-x:contain;
-  scroll-snap-type:x mandatory; scroll-padding-left:2px; padding:2px 2px var(--sp-3);
-  scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
-.cw-made-it, .cw-made-ph{ flex:0 0 272px; height:204px; scroll-snap-align:start; }
-.cw-made-ph{ border-radius:var(--r-lg); background:var(--s1); border:1px solid var(--bd); }
-.cw-made-card{ height:100%; display:flex; flex-direction:column; background:var(--s1);
-  border:1px solid var(--bd); border-radius:var(--r-lg); transition:border-color .15s var(--ease), transform .15s var(--ease); }
-.cw-made-card:hover{ border-color:var(--bdl); }
-.cw-made-card.on{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-soft); }
-.cw-made-body{ flex:1; min-height:0; display:flex; flex-direction:column; gap:var(--sp-2); text-align:left;
-  padding:var(--sp-4) var(--sp-4) var(--sp-2); background:none; border:0; color:inherit; font:inherit; cursor:pointer; border-radius:var(--r-lg) var(--r-lg) 0 0; }
-.cw-made-body:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
-.cw-made-top{ display:flex; align-items:flex-start; gap:var(--sp-3); }
-.cw-made-ic{ flex:none; width:34px; height:34px; display:grid; place-items:center; border-radius:var(--r-md); background:var(--s2); font-size:var(--t-lg); }
-.cw-made-t{ font-size:var(--t-md); font-weight:600; color:var(--tx); line-height:1.35;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.cw-made-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.5;
-  display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
-.cw-made-foot{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2);
-  padding:var(--sp-2) var(--sp-4) var(--sp-3); border-top:1px solid var(--bd); }
-.cw-made-run{ font-size:var(--t-xs); font-weight:600; color:var(--grn-txt); }
-.cw-made-see{ background:none; border:0; color:var(--accent-txt); font:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer; min-height:44px; padding:0 var(--sp-1); }
-@media(max-width:720px){
-  .cw-made-it, .cw-made-ph{ flex-basis:80%; }
-}
+
 /* One line, whatever the country: a long name ends in an ellipsis rather than
    wrapping, so the heading is the same height before and after it is known. */
-.cw-made .sec-head h3{ flex-wrap:nowrap; white-space:nowrap; min-width:0; max-width:100%; }
-.cw-made .sec-head h3 .cw-made-cn{ overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.cw-made .sec-head h3 > *{ flex:none; }
-.cw-made .sec-head h3 > .cw-made-cn{ flex:0 1 auto; }
+
 /* The words are clamped, not cut: three lines, then an ellipsis, and the
    foot is only as tall as its 44px control. */
-.cw-made-d{ -webkit-line-clamp:3; }
-.cw-made-body{ overflow:hidden; }
-.cw-made-foot{ padding:0 var(--sp-3) 0 var(--sp-4); min-height:48px; }
-.cw-made-foot .cw-toggle{ margin:0; }
-@media(prefers-reduced-motion:reduce){ .cw-made-card{ transition:none; } .cw-made-row{ scroll-behavior:auto; } }
+
 /* The note under a job - "Needs 1 thing: a mailbox. Connect" or the green
    ready line - is a sibling of the card's text in a row, so it was squeezed
    into a narrow column between the description and the switch, three words a
@@ -15902,7 +15311,6 @@ h2,
 :is(#vc,#set-modal) .cw-job > .cw-job-miss, :is(#vc,#set-modal) .cw-job > .cw-job-ready{
   order:3; flex:1 0 100%; margin:0; padding-left:calc(42px + 13px); box-sizing:border-box; }
 /* The rail's cards are sized to what they hold. */
-.cw-made-it, .cw-made-ph{ height:184px; }
 
 /* ═════════════════════════════════════════════════════════════════════════
    LAYER A269 - Polish pass: Crew's rhythm, a real checkbox, one row of tools
@@ -15974,41 +15382,10 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
    one fixed height - rank, icon, the part of life it is, the job, one line of
    what it does, and the one thing to press - so the list arrives without
    moving anything under it. */
-.cw-top10{ list-style:none; margin:0 0 var(--sp-6); padding:0;
-  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-2) var(--sp-3); }
-.cw-t10{ display:grid; grid-template-columns:26px 40px minmax(0,1fr) auto; align-items:center; gap:var(--sp-3);
-  height:104px; padding:0 var(--sp-3); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
-  transition:border-color .15s var(--ease); min-width:0; }
-.cw-t10:hover{ border-color:var(--bdl); }
-.cw-t10.on{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-soft); }
-.cw-t10-ph{ display:block; }
-.cw-t10-n{ font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:700; color:var(--dim);
-  text-align:center; font-variant-numeric:tabular-nums; }
-.cw-t10-ic{ width:40px; height:40px; display:grid; place-items:center; border-radius:var(--r-md); background:var(--s2); font-size:var(--t-lg); }
-.cw-t10-body{ min-width:0; display:flex; flex-direction:column; gap:2px; align-self:stretch; justify-content:center;
-  background:none; border:0; padding:0; text-align:left; color:inherit; font:inherit; cursor:pointer; }
-.cw-t10-body:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm); }
-.cw-t10-sec{ font-size:var(--t-xs); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent-txt); line-height:1.4; }
-.cw-t10-t{ font-size:var(--t-md); font-weight:600; color:var(--tx); line-height:1.35;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cw-t10-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.45;
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-.cw-t10-act{ display:flex; align-items:center; }
-.cw-t10-act .btn{ min-height:44px; padding:0 var(--sp-4); font-size:var(--t-sm); }
-.cw-t10-act .cw-toggle{ margin:0; }
-.cw-t10-see{ background:none; border:0; color:var(--accent-txt); font:inherit; font-size:var(--t-sm); font-weight:600;
-  cursor:pointer; min-height:44px; padding:0 var(--sp-1); white-space:nowrap; }
-@media(max-width:900px){ .cw-top10{ grid-template-columns:1fr; } }
-@media(max-width:480px){
-  .cw-t10{ grid-template-columns:20px 36px minmax(0,1fr) auto; gap:var(--sp-2); padding:0 var(--sp-2); }
-  .cw-t10-ic{ width:36px; height:36px; }
-}
-@media(prefers-reduced-motion:reduce){ .cw-t10{ transition:none; } }
+
 /* The job's name is what somebody scans for, so it gets two lines and the
    description one - the other way round cut "Your WEB.DE inbox, sorte…" on a
    phone, which is the part that says whose inbox. */
-.cw-t10-t{ white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-.cw-t10-d{ -webkit-line-clamp:1; }
 
 /* ════════════════════════════════════════════════════════════════════════
    LAYER A271 - Connect, from chat: one card, the same buttons as the directory
@@ -16138,79 +15515,37 @@ textarea.mc-cmd-input{
 .cw-where:hover{ border-color:var(--accent); background:var(--accent-soft); }
 .cw-where:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 /* Held at its width while the country is still being asked for. */
-.cw-where-ph{ width:190px; visibility:hidden; }
+
 .mc-head-r{ display:flex; flex-direction:column; align-items:flex-end; gap:var(--sp-2); }
 @media(max-width:720px){ .mc-head-r{ align-items:stretch; } .mc-head-r .cw-where{ justify-content:center; } }
 
-.cw-nothere{
-  display:flex; align-items:flex-start; gap:var(--sp-3); margin:0 0 var(--sp-5); padding:var(--sp-3) var(--sp-4);
-  border:1px solid var(--bd); border-left:3px solid var(--accent); border-radius:var(--r-md);
-  background:var(--s1); color:var(--mu); font-size:var(--t-sm); line-height:1.55;
-}
-.cw-nothere svg{ flex:none; margin-top:1px; color:var(--accent-txt); }
-.cw-nothere b{ color:var(--tx); font-weight:600; }
-
 /* Centred like every other Crew header; the lists under it read left. */
-.cw-cpage .cw-cp-list, .cw-cpage .cw-cp-facts, .cw-cpage .cw-cp-grid, .cw-cpage .crew-jobs-sec{ text-align:left; }
-.cw-cpage .cw-nothere{ text-align:left; max-width:760px; margin:var(--sp-4) auto var(--sp-2); }
-.cw-cpage .crew-jobs-sec{ margin-top:var(--sp-5); }
-.cw-cp-top{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); min-height:44px; margin-bottom:var(--sp-3); }
-.cw-cp-top .cw-back{ margin:0; min-height:44px; }
-.cw-cp-find{ margin:var(--sp-4) 0 var(--sp-4); }
-.cw-cp-find{ display:flex; justify-content:center; }
-.cw-cp-find .cw-find{ width:100%; max-width:420px; }
-.cw-cp-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:var(--sp-2); margin-bottom:var(--sp-6); }
-.cw-cpick{
-  display:flex; align-items:center; gap:var(--sp-2); min-height:48px; padding:0 var(--sp-3); min-width:0;
-  border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s1); color:var(--tx);
-  font:inherit; font-size:var(--t-base); text-align:left; cursor:pointer;
-  transition:border-color .15s var(--ease), background .15s var(--ease);
-}
-.cw-cpick[hidden]{ display:none; }
-.cw-cpick:hover{ border-color:var(--accent); }
-.cw-cpick.on{ border-color:var(--accent); background:var(--accent-soft); }
-.cw-cpick:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
-.cw-cpick-f{ font-size:var(--t-lg); line-height:1; flex:none; }
-.cw-cpick-n{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cw-cpick-b{ flex:none; padding:1px var(--sp-2); border-radius:var(--r-pill); background:var(--accent); color:#fff;
-  font-size:var(--t-xs); font-weight:600; }
-.cw-cpick-here{ background:var(--s3); color:var(--mu); }
-.cw-cp-none{ color:var(--mu); font-size:var(--t-sm); margin:0 0 var(--sp-6); }
-.cw-cpage .mc-cmd{ margin:var(--sp-4) 0 var(--sp-6); }
-.cw-cp-list{ margin-top:var(--sp-6); }
-.cw-cp-list .cw-chips{ margin:var(--sp-3) 0 var(--sp-4); }
-.cw-cp-facts{ margin-top:var(--sp-6); }
+
 /* Five rows in one column: a ranked list is read down, and five in two
    columns leaves the fifth alone on its row. */
-.cw-top10.cw-top5l{ grid-template-columns:1fr; max-width:880px; }
-@media(max-width:480px){ .cw-cp-grid{ grid-template-columns:1fr 1fr; } .cw-cpick-b{ display:none; } }
-@media(prefers-reduced-motion:reduce){ .cw-where, .cw-cpick{ transition:none; } }
+
+@media(prefers-reduced-motion:reduce){ .cw-where{ transition:none; } }
 /* On a wide screen the control rides in the corner of the header instead of
    adding a row above it; on a phone it keeps its own row. */
 @media(min-width:721px){
   .crew-view > .vi{ position:relative; }
   .crew-view > .vi > .cw-where-bar{ position:absolute; top:0; right:0; margin:0; }
 }
-.cw-top10.cw-top5l{ max-width:none; }
+
 /* The list's heading on its own line, the sentence under it - side by side it
    wrapped "The 100 most used in / Japan" into a narrow column. */
-.cw-cp-list > .sec-head{ display:block; }
-.cw-cp-list > .sec-head h3{ margin:0 0 var(--sp-1); }
-.cw-cpage .crew-jobs-sec > .cw-pop{ margin-top:0; }
-.cw-cpage .mc-cmd{ margin-bottom:var(--sp-4); }
+
 /* The box drew a darker rectangle inside itself. Since it became a textarea
    (A274), `.vi textarea` - the rule for ordinary form fields - outranks
    `.mc-cmd-input`, so it painted a field's background, border and shadow
    inside a box that already has them. The box is the frame; the text area
    inside it is transparent, as it was when it was an input. */
-.mc-cmd-inner textarea.mc-cmd-input, .vi .mc-cmd-inner textarea.mc-cmd-input{
-  background:none!important; border:0!important; box-shadow:none!important; border-radius:0;
-}
+
 /* The "not on here" line is at the top of the section and always on screen.
    The speed layer above skips every block of .crew-jobs-sec until it is near
    the screen and holds 300px for it meanwhile - so this 45px line was drawn
    300px tall for a frame and everything under it jumped up 255px. */
-.crew-jobs-sec > .cw-nothere{ content-visibility:visible; contain-intrinsic-size:none; }
+
 /* The corner control is replaced, not resized, when the country arrives: the
    bar keeps one geometry and the button inside it is a new element, so a
    longer or shorter country name moves nothing. */
@@ -16223,7 +15558,7 @@ textarea.mc-cmd-input{
    gets the same row of its own the locked view gives it. */
 @media(max-width:720px){
   .mc-head{ position:relative; padding-top:56px; }
-  .mc-head-r > .cw-where, .mc-head-r > .cw-where-ph{ position:absolute; top:0; right:0; }
+  .mc-head-r > .cw-where{ position:absolute; top:0; right:0; }
   .mc-head-r .mc-browse{ justify-content:center; text-align:center; }
 }
 
@@ -17015,7 +16350,6 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
    other. Same 8px, reached from where this box actually starts. */
 .settings-content .set-merged .set-title + .set-sub{ margin-top:var(--sp-1)!important; }
 
-
 /* ═══ LAYER A318 - Plans, the upgrade window and Billing, laid out the way people expect ═══
    Equal cards with the button under the price; one filled button, for the next
    step up; a short list of what each plan includes. The upgrade window is the
@@ -17311,7 +16645,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .rsrc-read .rsrc-qt{ color:var(--grn); }
 .rsrc-read-failed .rsrc-qt{ color:var(--mu); }
 
-
 /* LAYER A341 - a taught task, replayed (78-teach-replay.js): each step with
    what happened to it, the reason under the one that stopped, and the page
    as the run left it. */
@@ -17339,7 +16672,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cw-simple-head h2{ margin:0; font-family:var(--fdisplay); }
 .cw-simple-head-r{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
 .cw-simple-sub{ margin:var(--sp-2) 0 var(--sp-4); max-width:60ch; }
-.cw-simple .crew-jobs-sec{ margin-top:var(--sp-6); }
+
 .cw-simple .cw-settings{ margin-top:var(--sp-6); }
 
 /* LAYER A345 - no always-on blur (Oct 26, "slow and laggy"). The sidebar and
@@ -17361,7 +16694,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .fd-sw-why{ display:block; font-size:var(--t-xs); color:var(--mu); }
 .fd-sw-add{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }
 .fd-sw-add .fp-in{ flex:1 1 220px; }
-
 
 /* LAYER A348 - after a wrong password, the way back is pointed at for a moment. */
 #auth-forgot.af-pulse{ color:var(--accent) !important; text-decoration:underline; transition:color .2s var(--ease); }
@@ -17442,7 +16774,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cw-hero .eyebrow{margin:0}
 .cw-hero-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2);position:static!important;width:auto!important}
 .cw-hero-row .cw-where{position:static!important}
-.crew-view .mc-cmd.cw-cmd-lead,.cw-simple > .mc-cmd.mc-cmd-lg{max-width:760px;margin-left:auto;margin-right:auto}
+
 .cw-simple > .mc-allow{text-align:center}
 .crew-view .mc-cmd-chips,.cw-simple > .mc-cmd .mc-cmd-chips{justify-content:center}
 @media (max-width:600px){.cw-hero h2{font-size:var(--t-2xl)}}
@@ -17459,7 +16791,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .cwp-when .inp[hidden]{display:none}
 .cwp-ex{margin-top:var(--sp-3)}
 @media (hover:none){.cwp-when .inp{min-height:44px}}
-
 
 /* LAYER A358 - Team's landing: the plan card and "How Teams works" side by
    side on a wide screen, so the right half of the page is the explanation
@@ -17524,7 +16855,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
    frame and then at 24, which pushed the five below it down the page and back.
    Like the five themselves and the not-here line before it, it is always laid
    out. Measured: a 0.046 layout shift on arrival, now none. */
-.crew-jobs-sec > .sec-head{ content-visibility:visible; contain-intrinsic-size:none; }
 
 /* LAYER A363 - Tasks: a search over every task, and the country's own
    (Nov 10). The search is one quiet field under the title; the country's
@@ -17535,7 +16865,7 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .tk-find-n{position:absolute;right:14px;font-size:var(--t-sm);color:var(--mu)}
 .tk-local{margin:0 0 var(--sp-6);padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
 .tk-local[hidden]{display:none}
-.tk-local .sec-head .cw-link{margin-left:6px}
+
 .tk-local-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 24px}
 .tk-cat[hidden],.tk-row[hidden]{display:none}
 @media (max-width:760px){.tk-local-list{grid-template-columns:minmax(0,1fr)}}

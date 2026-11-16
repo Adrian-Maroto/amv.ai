@@ -420,7 +420,8 @@ function _tkPaint(){
   on($('tk-none-go'), 'click', () => { const v = _tkQ; setTab('chat'); setTimeout(() => { const ta = $('mta'); if(ta){ ta.value = v; fitChatComposer(ta); ta.focus(); } }, 150); });
 }
 function tkCountry(){
-  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _tkQ = ''; _tkC = 'all'; _tkN = 60; renderTasksView(); }); }).catch(() => {});
+  const fail = () => { try{ toast(T('The country list could not be loaded. Check your connection and try again.'), 'error', 5000); }catch(e){} };
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _tkQ = ''; _tkC = 'all'; _tkN = 60; renderTasksView(); }); else fail(); }).catch(fail);
 }
 try{ window.tkCountry = tkCountry; }catch(e){}
 function renderTasksView(){

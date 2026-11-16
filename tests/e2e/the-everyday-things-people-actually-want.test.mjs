@@ -123,30 +123,14 @@ section('The family jobs are in a category people can find');
 }
 
 /* The one-off errands left the Crew screen on Nov 10 (owner: Crew is work that
-   repeats; things done once belong in chat). Their wording is still held below. */
+   repeats; things done once belong in chat). Their wording, held for a while
+   after, went with the old Crew page's code on Nov 16 - nothing drew it. */
 section('Crew shows work that repeats, not one-off errands');
 {
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
   await page.waitForTimeout(400);
   const n = await page.evaluate(() => document.querySelectorAll('.cw-errand').length);
   ok(n === 0, 'no errand cards on Crew', n);
-}
-
-section('Each errand leaves exactly one blank to fill, and says what it will not do');
-{
-  const e = await page.evaluate(() => CW_ERRANDS.map(x => ({ key: x[0], body: x[3] })));
-  e.forEach(x => {
-    ok(/\[[A-Z][^\]]*\]/.test(x.body), x.key + ' has a blank marked for the person', x.body.slice(0, 50));
-  });
-  const booking = e.find(x => x.key === 'booking').body.toLowerCase();
-  ok(/do not book, call, email or confirm/.test(booking),
-     'the booking errand tells AMV not to book or call anybody');
-  const papers = e.find(x => x.key === 'papers').body.toLowerCase();
-  ok(/not a lawyer|not legal advice/.test(papers), 'the paperwork errand is not legal advice');
-  ok(/official government source|official page/.test(papers), 'and works from the official source');
-  const scam = e.find(x => x.key === 'scamcheck').body.toLowerCase();
-  ok(/cannot tell, say you cannot tell/.test(scam),
-     'the scam check refuses to reassure when it does not know');
 }
 
 section('The band and the errands survive a server sync');

@@ -340,5 +340,24 @@
   "it": "Scegline uno e AMV inizia in chat.",
   "ko": "하나를 고르면 AMV가 채팅에서 바로 시작합니다.",
   "ta": "ஒன்றைத் தேர்ந்தெடுங்கள்; AMV அரட்டையில் அதைத் தொடங்கும்."
+ },
+ "The country list could not be loaded. Check your connection and try again.": {
+  "es": "No se pudo cargar la lista de países. Comprueba tu conexión e inténtalo de nuevo.",
+  "zh": "无法加载国家列表。请检查网络连接后重试。",
+  "hi": "देशों की सूची लोड नहीं हो सकी। अपना कनेक्शन जांचें और फिर से कोशिश करें।",
+  "ar": "تعذّر تحميل قائمة الدول. تحقّق من اتصالك وحاول مرة أخرى.",
+  "pt": "Não foi possível carregar a lista de países. Verifique sua conexão e tente novamente.",
+  "fr": "La liste des pays n’a pas pu être chargée. Vérifiez votre connexion et réessayez.",
+  "de": "Die Länderliste konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
+  "ja": "国の一覧を読み込めませんでした。接続を確認して、もう一度お試しください。",
+  "ru": "Не удалось загрузить список стран. Проверьте подключение и попробуйте ещё раз.",
+  "id": "Daftar negara tidak dapat dimuat. Periksa koneksi Anda dan coba lagi.",
+  "bn": "দেশের তালিকা লোড করা যায়নি। আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।",
+  "ur": "ممالک کی فہرست لوڈ نہیں ہو سکی۔ اپنا کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
+  "tr": "Ülke listesi yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.",
+  "vi": "Không thể tải danh sách quốc gia. Hãy kiểm tra kết nối rồi thử lại.",
+  "it": "Impossibile caricare l’elenco dei paesi. Controlla la connessione e riprova.",
+  "ko": "국가 목록을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+  "ta": "நாடுகளின் பட்டியலை ஏற்ற முடியவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து மீண்டும் முயலவும்."
  }
 }

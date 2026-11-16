@@ -57,14 +57,16 @@ section('In Spanish, the sentence and the country are Spanish');
   ok(r.name === 'Alemania', 'the name comes from the browser’s own list', r.name);
   ok(/un calendario y un buzón de correo/.test(r.where) && !/[a-z] is connected/.test(r.where), 'what a job waits for', r.where);
   ok(r.uses === 'Usa: Gmail, Búsqueda web', 'and what it uses - the app name stays a name', r.uses);
+  /* The shared picker (country-catalog.js) - the old country page it
+     replaced held these same three promises. */
   const pick = await page.evaluate(async () => {
     S.tab = 'crew'; setTab('crew'); await new Promise(s => setTimeout(s, 300));
-    cwMoreCountries(); await new Promise(s => setTimeout(s, 400));
-    const names = [...document.querySelectorAll('.cw-cpick-n')].map(e => e.textContent);
-    const f = document.getElementById('cw-cfind');
+    await _ccReady(); ccPickCountry(() => {}); await new Promise(s => setTimeout(s, 200));
+    const names = [...document.querySelectorAll('#ccp-list .ccp-n')].map(e => e.textContent);
+    const f = document.getElementById('ccp-q');
     f.value = 'united'; f.dispatchEvent(new Event('input'));
-    const found = [...document.querySelectorAll('.cw-cpick:not([hidden]) .cw-cpick-n')].map(e => e.textContent);
-    try { cwBackMain(); } catch (e) {}
+    const found = [...document.querySelectorAll('#ccp-list [data-ccp]:not([hidden]) .ccp-n')].map(e => e.textContent);
+    try { closeOvr(); } catch (e) {}
     return { names, found };
   });
   ok(pick.names.includes('Estados Unidos') && !pick.names.includes('United States'), 'the country list is in Spanish', pick.names.slice(0, 5));

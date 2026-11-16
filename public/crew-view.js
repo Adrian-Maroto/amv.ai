@@ -1452,8 +1452,12 @@ function cjAsk(){
   el.focus();
 }
 /* The country: the shared picker (country-catalog.js), with Use my location. */
+/* The old country pages were the fallback when the catalogue could not
+   load; they are gone (Nov 16), and a press that cannot open the picker says
+   why instead of doing nothing. */
 function cjCountry(){
-  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _cjQ = ''; _cjC = 'all'; _cjN = 24; renderCrewView(); }); else _cwGo('countries'); }).catch(() => _cwGo('countries'));
+  const fail = () => { try{ toast(T('The country list could not be loaded. Check your connection and try again.'), 'error', 5000); }catch(e){} };
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { _cjQ = ''; _cjC = 'all'; _cjN = 24; renderCrewView(); }); else fail(); }).catch(fail);
 }
 try{ window.cjCat = cjCat; window.cjMore = cjMore; window.cjAsk = cjAsk; window.cjCountry = cjCountry; }catch(e){}
 function _cjCountryBtnHTML(){
@@ -1635,11 +1639,6 @@ function renderCrewView(){
     });
     return;
   }
-  /* The two country pages (see cwMoreCountries). Same for every plan: what is
-     done where you live is the question before paying as much as after, and
-     the cards themselves say what a plan unlocks. */
-  if(_cwPageNow()==='countries'){ vc.innerHTML=_cwCountriesPageHTML(); _cwWireCountries(vc); return; }
-  if(_cwPageNow()==='country'){ vc.innerHTML=_cwCountryPageHTML(); _cwWireCmd(vc); try{ _cwLocFill(); }catch(e){} return; }
   /* Say the one thing that is true and nothing else. No risk warnings, no
      half-working tool - what this does, which plan runs it, and the button. */
   /* WHAT SOMEBODY WHO HAS NOT PAID SEES.

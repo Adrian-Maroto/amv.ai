@@ -1014,10 +1014,15 @@ function ccLocate(){
 /* The picker. `done(cc)` runs after the choice is saved. */
 function ccPickCountry(done){
   const r = document.getElementById('ovr'); if(!r) return;
+  /* Each country by the browser's own name for it in the reader's language
+     (Alemania, Deutschland), sorted that language's way - what the country
+     page this replaced did. The English name is still searched. */
+  const lc = (() => { try{ const l = _lang(); return (l === 'auto' || !l) ? 'en' : l; }catch(e){ return 'en'; } })();
+  const nm = (c) => { try{ return _cwPlaceName(c[1]); }catch(e){ return T(c[1]); } };
   const list = (typeof CW_WORLD_COUNTRIES !== 'undefined' ? CW_WORLD_COUNTRIES : []).slice()
-    .sort((a, b) => T(a[1]).localeCompare(T(b[1])));
+    .sort((a, b) => { try{ return nm(a).localeCompare(nm(b), lc); }catch(e){ return nm(a) < nm(b) ? -1 : 1; } });
   const cur = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
-  const item = (c) => `<button class="ccp-row${c[0] === cur ? ' on' : ''}" data-ccp="${c[0]}" data-n="${escH((T(c[1]) + ' ' + c[1]).toLowerCase())}"${c[0] === cur ? ' aria-current="true"' : ''}><span class="ccp-flag" aria-hidden="true">${c[2]}</span><span>${escH(T(c[1]))}</span>${c[0] === cur ? `<span class="ccp-cur">${escH(T('Selected'))}</span>` : ''}</button>`;
+  const item = (c) => `<button class="ccp-row${c[0] === cur ? ' on' : ''}" data-ccp="${c[0]}" data-n="${escH((nm(c) + ' ' + c[1]).toLowerCase())}"${c[0] === cur ? ' aria-current="true"' : ''}><span class="ccp-flag" aria-hidden="true">${c[2]}</span><span class="ccp-n">${escH(nm(c))}</span>${c[0] === cur ? `<span class="ccp-cur">${escH(T('Selected'))}</span>` : ''}</button>`;
   r.innerHTML = `<div class="ov" id="ccp-bg"><div class="ccp" role="dialog" aria-modal="true" aria-labelledby="ccp-h">
     <header class="ccp-h"><h2 id="ccp-h">${escH(T('Choose your country'))}</h2><button class="cwp-x" id="ccp-x" aria-label="${escH(T('Close'))}">✕</button></header>
     <div class="ccp-tools">
