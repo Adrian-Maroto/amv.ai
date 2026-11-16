@@ -74,6 +74,13 @@ async function crux(cc) {
 }
 
 const GENERIC = /^(your |the local |local |any |others?$|where |each |a |an )|where they apply|or .* where|\bof your\b/i;
+/* A description, not a name: Latin words with no capital anywhere ("bank
+   transfers", "state board exams", "automobile tax"). It names no entity to
+   look up, so it is generic, like "your state DMV". Never a single word, and never in a field of company names, where brands
+   are often written in lower case (foundit, telebirr, monobank, ueno). */
+const COMPANY = new Set(['banks', 'cards', 'pay', 'jobs', 'shop', 'groc', 'food', 'prop', 'telco', 'news', 'post', 'rail']);
+const DESCRIPTION = (n, field) => !COMPANY.has(field) && /\s/.test(n.trim()) && /^[\p{Script=Latin}\s.'’-]+$/u.test(n) && !/\p{Lu}/u.test(n);
+const isGeneric = (raw, n, field) => GENERIC.test(raw) || GENERIC.test(n) || DESCRIPTION(n, field);
 function items(v) {
   return String(v).replace(/\([^)]*\)?/g, ' ').split(/,|;|·| \/ |\s+and\s+/i)
     .map(s => s.replace(/^\s*(and|or)\s+/i, '').replace(/\s+/g, ' ').trim()).filter(s => s.length >= 2);
@@ -117,10 +124,15 @@ const catalogueOf = (cc) => { try { return Object.values(JSON.parse(readFileSync
 const qidOf = (cc) => { try { return JSON.parse(readFileSync(join(ROOT, 'data/countries', cc + '.json'), 'utf8')).qid || ''; } catch (e) { return ''; } };
 const hostOf = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch (e) { return ''; } };
 
+/* --report: no lookups - apply the generic rule to the stored result and write
+   the report again (a rule changed; nothing needs looking up). */
+const REPORT_ONLY = process.argv.includes('--report');
 const prev = existsSync(join(ROOT, 'data/facts-sources.json')) ? JSON.parse(readFileSync(join(ROOT, 'data/facts-sources.json'), 'utf8')) : {};
-const result = only.length ? prev : {};
+const result = (only.length || REPORT_ONLY) ? prev : {};
+if (REPORT_ONLY) for (const fs of Object.values(result)) for (const [field, l] of Object.entries(fs))
+  for (const x of l) if (x.how === 'unresolved' && isGeneric(x.n, x.n, field)) x.how = 'generic';
 const tally = {};
-for (const [cc, f] of Object.entries(FACTS)) {
+for (const [cc, f] of Object.entries(REPORT_ONLY ? {} : FACTS)) {
   if (only.length && !only.includes(cc)) continue;
   const q = qidOf(cc), cr = await crux(cc), cat = catalogueOf(cc);
   result[cc] = {};
@@ -130,7 +142,7 @@ for (const [cc, f] of Object.entries(FACTS)) {
     result[cc][field] = [];
     for (const raw of items(v)) {
       const n = clean(raw);
-      if (GENERIC.test(raw) || GENERIC.test(n)) { result[cc][field].push({ n, how: 'generic' }); t.generic++; continue; }
+      if (isGeneric(raw, n, field)) { result[cc][field].push({ n, how: 'generic' }); t.generic++; continue; }
       let best = null;
       /* A name that is an address (Amazon.com.br): the address itself. */
       const dom = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(n) ? n.toLowerCase() : '';

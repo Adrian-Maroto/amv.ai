@@ -2759,7 +2759,7 @@
   "car": [
    {
     "n": "bollo auto",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "revisione",
@@ -2804,7 +2804,7 @@
   "exams": [
    {
     "n": "esame di maturità",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "uni": [
@@ -3151,7 +3151,7 @@
   "id": [
    {
     "n": "exit-entry administration",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -3302,7 +3302,7 @@
   "car": [
    {
     "n": "traffic management bureau",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -3647,7 +3647,7 @@
    },
    {
     "n": "state board exams",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "JEE",
@@ -3937,11 +3937,11 @@
   "car": [
    {
     "n": "shaken inspection",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "automobile tax",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -4248,11 +4248,11 @@
   "car": [
    {
     "n": "vehicle inspection",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "automobile tax",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -4365,7 +4365,7 @@
   "id": [
    {
     "n": "immigration office",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "Dukcapil",
@@ -5096,7 +5096,7 @@
    },
    {
     "n": "roadworthiness renewals",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -5603,7 +5603,7 @@
   "car": [
    {
     "n": "traffic department",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "news": [
@@ -6430,7 +6430,7 @@
   "car": [
    {
     "n": "technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -6709,7 +6709,7 @@
    },
    {
     "n": "highway vignette",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -6984,7 +6984,7 @@
    },
    {
     "n": "syn inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -7264,7 +7264,7 @@
    },
    {
     "n": "katsastus inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -7844,7 +7844,7 @@
    },
    {
     "n": "motor vehicle tax",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -8250,7 +8250,7 @@
    },
    {
     "n": "voivodeship passport office",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -8425,7 +8425,7 @@
   "car": [
    {
     "n": "technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "CEPiK",
@@ -8478,7 +8478,7 @@
    },
    {
     "n": "egzamin ósmoklasisty",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -8735,7 +8735,7 @@
    },
    {
     "n": "inspeção periódica",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -9384,7 +9384,7 @@
   "exams": [
    {
     "n": "national tests",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "högskoleprovet",
@@ -10760,7 +10760,7 @@
    },
    {
     "n": "psychometric exam",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -12655,7 +12655,7 @@
    },
    {
     "n": "đăng kiểm inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -12689,7 +12689,7 @@
   "exams": [
    {
     "n": "national high school graduation exam",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -12994,7 +12994,7 @@
    },
    {
     "n": "passport office",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -13165,7 +13165,7 @@
    },
    {
     "n": "intermediate board exams",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "MDCAT",
@@ -13254,7 +13254,7 @@
    },
    {
     "n": "passport office",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -14041,7 +14041,7 @@
   "health": [
    {
     "n": "compulsory social health insurance",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "news": [
@@ -14521,7 +14521,7 @@
   "exams": [
    {
     "n": "matriculation exam",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -14649,7 +14649,7 @@
   "exams": [
    {
     "n": "ministerial exams",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -15546,7 +15546,7 @@
    },
    {
     "n": "baccalaureate exams",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -16085,7 +16085,7 @@
   "exams": [
    {
     "n": "unified exams",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -16193,7 +16193,7 @@
   "exams": [
    {
     "n": "general entrance exam",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -16555,7 +16555,7 @@
   "exams": [
    {
     "n": "national secondary school leaving exam",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -16858,7 +16858,7 @@
    },
    {
     "n": "passport office",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -18810,7 +18810,7 @@
    },
    {
     "n": "revisión técnico-mecánica",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -19074,7 +19074,7 @@
    },
    {
     "n": "technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -19355,11 +19355,11 @@
   "car": [
    {
     "n": "permiso de circulación",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "revisión técnica",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -21119,7 +21119,7 @@
    },
    {
     "n": "evaluare națională",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
@@ -21354,7 +21354,7 @@
    },
    {
     "n": "road tax",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -21463,7 +21463,7 @@
   "id": [
    {
     "n": "government windows",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -21605,11 +21605,11 @@
   "car": [
    {
     "n": "műszaki vizsga",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "vehicle tax",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -21837,7 +21837,7 @@
   "car": [
    {
     "n": "annual technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "vignette",
@@ -21948,7 +21948,7 @@
   "id": [
    {
     "n": "police administration",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -22075,7 +22075,7 @@
   "car": [
    {
     "n": "technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "registration",
@@ -22121,7 +22121,7 @@
   "exams": [
    {
     "n": "završni ispit",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "matura",
@@ -22180,7 +22180,7 @@
   "id": [
    {
     "n": "police administration",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "banks": [
@@ -22319,7 +22319,7 @@
   "car": [
    {
     "n": "tehnički pregled",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -22360,7 +22360,7 @@
   "exams": [
    {
     "n": "državna matura",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "uni": [
@@ -22805,7 +22805,7 @@
   "car": [
    {
     "n": "tehnični pregled",
-    "how": "unresolved"
+    "how": "generic"
    },
    {
     "n": "e-vinjeta",
@@ -23030,7 +23030,7 @@
    },
    {
     "n": "technical inspection",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "health": [
@@ -23071,7 +23071,7 @@
   "exams": [
    {
     "n": "brandos egzaminai",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "uni": [
@@ -23316,7 +23316,7 @@
   "exams": [
    {
     "n": "centralized exams",
-    "how": "unresolved"
+    "how": "generic"
    }
   ],
   "telco": [
