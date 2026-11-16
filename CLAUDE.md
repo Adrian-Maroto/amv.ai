@@ -24,6 +24,11 @@ Companion docs (do not duplicate them here - read them):
 - Verify every change on the surface the owner actually uses. "Done" means the
   deployed artifact, not just the local build. Render deploys `main`.
 - Go one at a time. Review before delivering. No mistakes then they see it.
+- **Everything is backed by research** (owner, Nov 16: "every section, every
+  country, every integration"). What a list holds and the order it is in come
+  from a named, dated source - `docs/RESEARCH.md` is the register, and a list
+  that is not backed yet is listed there as a gap, never presented as backed.
+  Add the row in the same change that adds or reorders a list.
 - Usable on EVERY device. Hard to lose money.
 - Auto-push to `main` after each prompt (Stop hook + `.claude/auto-push-main.sh`).
 - If a tool or change would make AMV worse, do not use it. Say so instead.

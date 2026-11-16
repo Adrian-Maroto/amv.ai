@@ -172,6 +172,10 @@ function emitSandbox() {
   writeFileSync('settings-panes.js', readFileSync('src/settings/settings-panes.js'));
   /* Shopping in AMV's browser (docs/BUYING.md), fetched when the browser runs. */
   writeFileSync('shopping.js', readFileSync('src/shopping/shopping.js'));
+  /* How much each app on Integrations is used, worldwide and per country
+     (scripts/app-reach.mjs, Chrome UX Report): fetched with the Integrations
+     screen, which orders each topic by it. */
+  writeFileSync('app-reach.json', readFileSync('data/app-reach.json'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
@@ -1167,6 +1171,7 @@ const PUBLISH = [
   'geo-countries.json',    // country outlines, fetched only when somebody presses Use my location
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
   'shopping.js',           // shopping in AMV's browser, fetched when the browser runs
+  'app-reach.json',        // how much each app is used, per country - fetched with Integrations
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

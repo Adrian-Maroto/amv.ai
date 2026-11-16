@@ -33186,8 +33186,15 @@ function _integrationsCatalogHTML(opts){
     const local=(a)=>{ const m=/^mail:(.+)$/.exec(a.how||''); return !!(here && m && AMV_MAIL_CC[m[1]]===here); };
     /* Connected, then what connects, then what is used in AMV's browser,
        then what AMV cannot reach yet. */
-    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):webRow(a); return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, i:local(a)?1.5:i }; })
-      .sort((x,y)=>x.rank-y.rank||x.i-y.i);
+    /* Inside each of those, the order people in the visitor's country use
+       the apps in (Chrome UX Report, app-reach.json - integrations-view.js),
+       then the written order. Until it has arrived, the written order, with
+       the visitor's own mailboxes first. */
+    const cc=(()=>{ try{ return _cwCountryGuess(); }catch(e){ return ''; } })();
+    const reach=(a)=>{ try{ return (typeof window._appReachKey==='function') ? window._appReachKey(a, cc) : null; }catch(e){ return null; } };
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):webRow(a); const k=reach(a);
+        return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, k:(k==null?0:k), i:(k==null&&local(a))?1.5:i }; })
+      .sort((x,y)=>x.rank-y.rank||x.k-y.k||x.i-y.i);
     let list=rows;
     if(only){
       /* One row per grant. A Google connection lights Gmail, Calendar, Drive,

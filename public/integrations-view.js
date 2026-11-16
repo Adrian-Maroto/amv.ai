@@ -478,8 +478,53 @@ function _connSectionHTML(){
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
   '</section>';
 }
+/* EACH TOPIC IN THE ORDER PEOPLE THERE USE ITS APPS (Nov 16, the owner: "all
+   backed up by research - every section, every country, every integration").
+
+   app-reach.json (scripts/app-reach.mjs) holds, for every app on this screen,
+   its Chrome UX Report bucket - how many people load its website in Chrome -
+   worldwide and in each of 104 countries. Inside a topic, after what is
+   connected and what can connect (13-integrations.js), apps go most-visited
+   in the visitor's country first, then most-visited worldwide, then the ones
+   the report does not reach. AMV's own doors (Bank account, Mail worldwide,
+   Any other calendar) have no website to measure and stand right after the
+   apps in the top thousand, since they reach every bank, mailbox and
+   calendar. Fetched as this file arrives; the screen waits for it briefly so
+   it is drawn once, in its order. */
+let _appReach = null, _appReachP = null, _appReachWaited = false;
+const _APP_DOORS = new Set(['mail', 'cal', 'tg', 'sms', 'canvas', 'bank', 'jobs', 'everyday', 'coverage', 'file', 'vscode']);
+function _appReachLoad(){
+  if(_appReachP) return _appReachP;
+  _appReachP = fetch('app-reach.json').then(r => r.ok ? r.json() : null).then(d => {
+    if(d && Array.isArray(d.apps) && typeof d.g === 'string' && d.g.length === d.apps.length && d.c && typeof d.c === 'object'){
+      const idx = Object.create(null); d.apps.forEach((a, i) => { idx[a] = i; });
+      _appReach = { idx, g: d.g, c: d.c, month: String(d.month || '') };
+    }
+    return _appReach;
+  }).catch(() => null);
+  return _appReachP;
+}
+function _appReachKey(a, cc){
+  if(!_appReach || !a) return null;
+  const i = _appReach.idx[a.name]; if(i == null) return null;
+  const row = cc && typeof _appReach.c[cc] === 'string' ? _appReach.c[cc] : '';
+  const here = +(row[i] || 0), world = +(_appReach.g[i] || 0);
+  if(here) return here;
+  if(world) return 7 + world;
+  return _APP_DOORS.has(String(a.how || '').split(':')[0]) ? 1.5 : 50;
+}
+try{ window._appReachKey = _appReachKey; window._appReachLoad = _appReachLoad; }catch(e){}
+try{ _appReachLoad(); }catch(e){}
+
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
+  if(!_appReach && !_appReachWaited){
+    _appReachWaited = true;
+    Promise.race([_appReachLoad(), new Promise(r => setTimeout(r, 1200))]).then(() => {
+      try{ if(S.tab === 'integrations' || S.tab === 'apps') renderIntegrationsView(); }catch(e){}
+    });
+    return;
+  }
   /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
 
      The first version rendered the full directory in place, under the
