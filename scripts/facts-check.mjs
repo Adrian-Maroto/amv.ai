@@ -150,8 +150,24 @@ async function wikiCandidates(name, lang) {
    language) shares a significant word with the name being checked - SPEI is
    not verified by finding Banco de Mexico. */
 const words = (x) => normN(x).split(' ').filter(w => w.length >= 3 || /[^\x00-\x7f]/.test(w));
-const sameName = (n, e) => { const a = new Set(words(n)); if (!a.size) return false;
-  return (e.names || [e.label]).some(x => words(x).some(w => a.has(w)) || normN(x) === normN(n)); };
+/* A shared word was not enough (run 4: Parivahan found Pune's bus company,
+   "Freedom" found Freedom House). Every significant word of the name must be
+   in one of the candidate's names, with at most two words more. */
+/* A one-word name is where a loose match goes wrong ("STK" found a football
+   club, "Health NZ" the ministry): it needs the same name, or the same name
+   and one ordinary company word. */
+const ORG = new Set(['bank', 'banco', 'group', 'grupo', 'ltd', 'limited', 'plc', 'inc', 'company', 'supermarket', 'supermarkets',
+  'supermercados', 'supermercado', 'stores', 'store', 'telecom', 'mobile', 'post', 'holding', 'holdings']);
+const sameName = (n, e) => { const a = words(n); if (!a.length) return false;
+  return (e.names || [e.label]).some(x => { const b = words(x); if (normN(x) === normN(n)) return true;
+    if (!a.every(w => b.includes(w))) return false;
+    const extra = b.filter(w => !a.includes(w));
+    return a.length === 1 ? extra.length === 1 && ORG.has(extra[0]) : extra.length <= 2; }); };
+/* And only what the wider pass can stand behind: an organization with a
+   website of its own, not the country itself, placed in the country (or
+   through its owner) - not merely visited from it, which is how Ireland's
+   "Passport Office" became the UK's. */
+const widerOk = (r, q) => r && r.q !== q && r.how !== 'visited' && !!r.site && sameName(r.n, { label: r.as || '' });
 async function wider(n, cc, q, cr) {
   const lang = LANG[cc] || 'en';
   claims.langs = lang === 'en' ? 'en' : 'en|' + lang;
@@ -166,8 +182,8 @@ async function wider(n, cc, q, cr) {
     const sites = e.site.map(hostOf).filter(Boolean);
     const r = Math.min(...sites.map(h => cr.byReg.get(reg(h)) || Infinity));
     const as = e.label || (e.names || [])[0] || '';
+    if (id === q || !sites.length) continue;
     if (e.country.includes(q)) return { n, q: id, as, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined };
-    if (isFinite(r)) return { n, q: id, as, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
     const via = e.linked.find(l => lc[l] && lc[l].country.includes(q));
     if (via) return { n, q: id, as, how: 'linked', via, site: sites[0] || '' };
   }
@@ -190,8 +206,12 @@ if (WIDER) {
   }
   console.log('wider pass:', found, 'of', tried, 'found');
 }
-if (REPORT_ONLY) for (const fs of Object.values(result)) for (const [field, l] of Object.entries(fs))
-  for (const x of l) if (x.how === 'unresolved' && isGeneric(x.n, x.n, field)) x.how = 'generic';
+if (REPORT_ONLY) for (const [cc, fs] of Object.entries(result)) for (const [field, l] of Object.entries(fs))
+  for (let i = 0; i < l.length; i++) { const x = l[i];
+    if (x.how === 'unresolved' && isGeneric(x.n, x.n, field)) x.how = 'generic';
+    /* A wider-pass result (it records the entity's name, `as`) that the
+       current rule would not accept goes back to unresolved. */
+    if (x.as !== undefined && !widerOk(x, qidOf(cc))) l[i] = { n: x.n, how: 'unresolved' }; }
 const tally = {};
 for (const [cc, f] of Object.entries((REPORT_ONLY || WIDER) ? {} : FACTS)) {
   if (only.length && !only.includes(cc)) continue;

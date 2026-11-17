@@ -6,112 +6,112 @@ found for it is in that country (country, origin or jurisdiction), it is an entr
 catalogue (data/countries), or its official website is in that country’s Chrome UX Report list;
 **generic** when it is a phrase, not a name; **unresolved** otherwise. Sources per name: `data/facts-sources.json`.
 
-**2697 verified, 120 generic, 445 unresolved, of 3262 names in 105 countries.**
+**2513 verified, 120 generic, 629 unresolved, of 3262 names in 105 countries.**
 
 | Country | Verified | Generic | Unresolved | Unresolved names |
 |---|---|---|---|---|
 | US | 46 | 4 | 1 | AP exams |
-| CA | 32 | 4 | 1 | CRA My Account |
-| MX | 31 | 2 | 6 | SPEI transfers; OCC Mundial; Computrabajo; Inmuebles24; Vivanuncios; EXANI |
-| BR | 34 | 1 | 2 | Gupy; SUS or your plano de saúde |
+| CA | 31 | 4 | 2 | CRA My Account; OUAC in Ontario |
+| MX | 27 | 2 | 10 | SAT portal; INE credential; SPEI transfers; OCC Mundial; Computrabajo; DiDi Food; Inmuebles24; Vivanuncios; IMSS or ISSSTE; EXANI |
+| BR | 32 | 1 | 4 | Gupy; Zap Imóveis; Viva Real; SUS or your plano de saúde |
 | AR | 27 | 1 | 8 | transfers by CBU or CVU; Bumeran; ZonaJobs; Computrabajo; Zonaprop; Argenprop; DNRPA; VTV inspection |
-| DE | 46 | 2 | 2 | eID function; Wero |
-| GB | 45 | 0 | 2 | Totaljobs; GCSEs |
+| DE | 45 | 2 | 3 | eID function; Wero; TÜV inspection |
+| GB | 44 | 0 | 3 | Totaljobs; GCSEs; A-levels |
 | FR | 44 | 1 | 2 | Wero; Lydia |
-| IT | 40 | 3 | 3 | SSN via your ASL; Universitaly; Aeronautica Militare weather service |
-| RU | 32 | 1 | 2 | GIBDD; EGE |
-| CN | 30 | 3 | 1 | Liepin |
-| IN | 41 | 2 | 3 | UMANG; foundit; BigBasket |
+| IT | 38 | 3 | 5 | SPID or CIE; SSN via your ASL; Fascicolo Sanitario; Universitaly; Aeronautica Militare weather service |
+| RU | 31 | 1 | 3 | SBP fast payments; GIBDD; EGE |
+| CN | 29 | 3 | 2 | Liepin; Anjuke |
+| IN | 37 | 2 | 7 | UMANG; Passport Seva; foundit; BigBasket; Parivahan; NEET; CUET |
 | JP | 38 | 4 | 2 | Mynaportal; SmartEX |
-| KR | 35 | 3 | 6 | Gov24; Wanted; Market Kurly; Baemin; Yogiyo; Zigbang |
-| ID | 34 | 1 | 5 | GrabFood; ShopeeFood; Samsat; UTBK-SNBT; SNPMB |
-| SA | 30 | 0 | 8 | ZATCA; Absher; Danube; HungerStation; Mrsool; Absher; MVPI inspection; Qiyas tests |
-| NG | 33 | 3 | 7 | NIMC; UBA; bank transfers; MyJobMag; PropertyPro; NHIA or your HMO; NECO |
+| KR | 32 | 3 | 9 | Gov24; Naver Pay; Wanted; Market Kurly; Baemin; Coupang Eats; Yogiyo; Naver Real Estate; Zigbang |
+| ID | 33 | 1 | 6 | Dukcapil; GrabFood; ShopeeFood; Samsat; UTBK-SNBT; SNPMB |
+| SA | 28 | 0 | 10 | ZATCA; Absher; Passports department; STC Pay; Danube; HungerStation; Mrsool; Absher; MVPI inspection; Qiyas tests |
+| NG | 28 | 3 | 12 | Nigeria Revenue Service; NIMC; UBA; bank transfers; MyJobMag; PropertyPro; Nigeria Property Centre; NHIA or your HMO; Guardian Nigeria; NECO; JAMB UTME; JAMB CAPS |
 | ZA | 27 | 2 | 6 | instant EFT; PayShap; PNet; Careers24; Private Property; NSC matric exams |
-| EG | 26 | 1 | 4 | Wuzzuf; Elmenus; Aqarmap; Thanaweya Amma |
-| AU | 32 | 3 | 5 | myID; PayID; Osko; Domain; HSC |
-| AT | 30 | 2 | 3 | FinanzOnline; StepStone; Matura |
-| BE | 34 | 3 | 2 | Wero; StepStone |
+| EG | 23 | 1 | 7 | Digital Egypt; Vodafone Cash; Wuzzuf; Elmenus; Aqarmap; Ahram Online; Thanaweya Amma |
+| AU | 30 | 3 | 7 | myID; Australian Passport Office; NAB; PayID; Osko; Domain; HSC |
+| AT | 29 | 2 | 4 | FinanzOnline; StepStone; Pickerl inspection; Matura |
+| BE | 33 | 3 | 3 | FPS Finance; Wero; StepStone |
 | CZ | 34 | 3 | 3 | QR payments; Bezrealitky; STK inspection |
 | DK | 33 | 2 | 1 | MinLæge |
-| FI | 33 | 2 | 1 | Studyinfo |
-| IE | 35 | 2 | 3 | IrishJobs; Junior Cycle; CAO |
+| FI | 31 | 2 | 3 | Job Market Finland; Etuovi; Studyinfo |
+| IE | 34 | 2 | 4 | Passport Office; IrishJobs; Junior Cycle; CAO |
 | NL | 33 | 3 | 3 | Tikkie; Nationale Vacaturebank; Studielink |
-| NO | 35 | 1 | 1 | ID-porten |
-| PL | 40 | 4 | 1 | Profil Zaufany |
-| PT | 32 | 1 | 4 | Chave Móvel Digital; Net-Empregos; Imovirtual; SNS 24 |
+| NO | 32 | 1 | 4 | ID-porten; FINN jobb; FINN torget; FINN eiendom |
+| PL | 38 | 4 | 3 | Profil Zaufany; OLX Praca; IKP |
+| PT | 31 | 1 | 5 | Chave Móvel Digital; Net-Empregos; Imovirtual; SNS 24; Concurso Nacional de Acesso |
 | ES | 39 | 2 | 3 | Cl@ve; SEPE; IVTM |
-| SE | 36 | 2 | 1 | Blocket Bostad |
+| SE | 35 | 2 | 2 | police; Blocket Bostad |
 | CH | 30 | 5 | 2 | AGOV; Matura |
-| TR | 36 | 0 | 4 | FAST transfers; Emlakjet; e-Nabız; MHRS |
-| UA | 31 | 1 | 2 | MVS service centres; NMT |
+| TR | 34 | 0 | 6 | FAST transfers; Emlakjet; TÜVTÜRK inspection; MTV tax; e-Nabız; MHRS |
+| UA | 28 | 1 | 5 | monobank transfers; ATB; DIM.RIA; MVS service centres; NMT |
 | HK | 29 | 0 | 7 | iAM Smart; JobsDB; CTgoodjobs; HKTVmall; ParknShop; Keeta; 28Hse |
-| IL | 30 | 3 | 2 | Drushim; 10bis |
+| IL | 27 | 3 | 5 | Immigration Authority; Discount; Drushim; 10bis; Licensing Office |
 | MY | 36 | 0 | 4 | MyDigital ID; DuitNow; Hiredly; GrabFood |
 | PH | 32 | 0 | 5 | eGovPH; Kalibrr; GrabFood; Dot Property; J&T |
-| SG | 31 | 1 | 5 | MyCareersFuture; LTA; HealthHub; O-Levels; A-Levels |
-| TW | 35 | 0 | 1 | 591 |
-| TH | 28 | 0 | 8 | TrueMoney; JobsDB; JobThai; GrabFood; DDproperty; Hipflat; TGAT; TCAS |
-| AE | 34 | 2 | 4 | Federal Tax Authority; Aani; Salik; DHA or DOH |
-| VN | 31 | 3 | 6 | VietQR; TopCV; VietnamWorks; ITviec; GrabFood; ShopeeFood |
-| KE | 25 | 0 | 8 | eCitizen; M-Pesa; BrighterMonday; MyJobMag; Kilimall; Quickmart; NTSA; KUCCPS |
-| PK | 29 | 2 | 6 | NADRA; Graana; Excise; Taxation department; matric; ECAT |
-| BD | 31 | 1 | 1 | Meena Bazar |
-| LK | 24 | 0 | 9 | Emigration; DRP; LankaPay JustPay; TopJobs; Kapruka; LankaPropertyWeb; O/L; A/L exams; SLT-Mobitel |
-| NP | 19 | 0 | 8 | Nagarik App; Department of Passports; Khalti; Fonepay; Merojob; Kumarijob; Foodmandu; Health Insurance Board |
-| KZ | 27 | 1 | 2 | Public Service Centres; UNT |
-| UZ | 24 | 0 | 4 | Tax Committee; Kapitalbank; Payme; Uybor |
-| KH | 14 | 0 | 7 | ABA; ABA Pay; BongThom; Lucky Supermarket; AEON; WOWNOW; grade 12 national exam |
-| MM | 14 | 1 | 2 | AYA; KBZPay |
+| SG | 28 | 1 | 8 | IRAS; DBS/POSB; MyCareersFuture; GrabFood; LTA; HealthHub; O-Levels; A-Levels |
+| TW | 33 | 0 | 3 | Ministry of Finance e-filing system; 591; Motor Vehicles Office |
+| TH | 27 | 0 | 9 | TrueMoney; JobsDB; JobThai; GrabFood; DDproperty; Hipflat; TGAT; TPAT; TCAS |
+| AE | 31 | 2 | 7 | Federal Tax Authority; UAE Pass; DIB; Aani; Salik; DHA or DOH; National Center of Meteorology |
+| VN | 30 | 3 | 7 | VietQR; TopCV; VietnamWorks; ITviec; GrabFood; ShopeeFood; Chợ Tốt |
+| KE | 20 | 0 | 13 | eCitizen; Directorate of Immigration; Absa Kenya; M-Pesa; BrighterMonday; MyJobMag; Kilimall; Quickmart; SGR Madaraka Express; NTSA; Citizen Digital; KUCCPS; Posta Kenya |
+| PK | 26 | 2 | 9 | NADRA; UBL; Raast; Naheed; Graana; Excise; Taxation department; matric; ECAT |
+| BD | 27 | 1 | 5 | Meena Bazar; Pathao Food; HSC; Pathao Courier; Sundarban |
+| LK | 20 | 0 | 13 | Department of Immigration; Emigration; DRP; LankaPay JustPay; TopJobs; Kapruka; PickMe Food; LankaPropertyWeb; Department of Motor Traffic; O/L; A/L exams; SLT-Mobitel; Department of Meteorology |
+| NP | 17 | 0 | 10 | Nagarik App; Department of Passports; Khalti; Fonepay; Merojob; Kumarijob; Foodmandu; Department of Transport Management; Health Insurance Board; NEB grade 12 exams |
+| KZ | 24 | 1 | 5 | State Revenue Committee; Public Service Centres; Freedom; Yandex Eda; UNT |
+| UZ | 19 | 0 | 9 | Tax Committee; Kapitalbank; Payme; Uzum Market; Yandex Eda; Uzum Tezkor; Uzbekistan Railways; Uybor; Uzhydromet |
+| KH | 13 | 0 | 8 | General Department of Taxation; ABA; ABA Pay; BongThom; Lucky Supermarket; AEON; WOWNOW; grade 12 national exam |
+| MM | 10 | 1 | 6 | AYA; CB Bank; KBZPay; Eleven Media; MPT; Department of Meteorology |
 | IQ | 10 | 1 | 5 | General Commission for Taxes; Ur portal; ZainCash; FastPay; Shafaq News |
-| JO | 22 | 0 | 8 | Sales Tax Department; Sanad; Civil Status; Passports Department; eFAWATEERcom; Cozmo; Driver; Vehicle Licensing Department |
-| QA | 21 | 0 | 9 | Hukoomi; Metrash; QIB; Snoonu; Al Meera; Snoonu; Metrash; Fahes inspection; HMC |
-| KW | 18 | 0 | 3 | Sahel; co-operative societies; Ministry of Interior traffic services |
-| OM | 14 | 0 | 2 | Carrefour; Higher Education Admission Centre |
-| BH | 11 | 0 | 6 | eGov.bh; NBB; BBK; BenefitPay; Carrefour; General Directorate of Traffic |
+| JO | 21 | 0 | 9 | Sales Tax Department; Sanad; Civil Status; Passports Department; eFAWATEERcom; Cozmo; Driver; Vehicle Licensing Department; Jordan Meteorological Department |
+| QA | 19 | 0 | 11 | General Tax Authority; Hukoomi; Metrash; QIB; Snoonu; Al Meera; Snoonu; Metrash; Fahes inspection; HMC; Qatar Post |
+| KW | 17 | 0 | 4 | Sahel; Sultan Center; co-operative societies; Ministry of Interior traffic services |
+| OM | 10 | 0 | 6 | Tax Authority; Bank Muscat; Sohar International; Carrefour; Oman Observer; Higher Education Admission Centre |
+| BH | 9 | 0 | 8 | National Bureau for Revenue; eGov.bh; NBB; BBK; KFH Bahrain; BenefitPay; Carrefour; General Directorate of Traffic |
 | LB | 7 | 1 | 5 | Whish; OMT; Spinneys; Toters; official Brevet |
-| AZ | 21 | 0 | 2 | Birbank; DİM entrance exams |
+| AZ | 19 | 0 | 4 | ASAN Xidmət; Birbank; Bravo; DİM entrance exams |
 | GE | 21 | 0 | 3 | MyMarket; InterPressNews; Unified National Exams |
-| AM | 24 | 1 | 1 | Azatutyun |
-| MN | 11 | 1 | 4 | TDB; QPay; SocialPay; Monpay |
-| NZ | 32 | 1 | 0 |  |
-| ET | 13 | 1 | 4 | Ministry of Revenues; telebirr; M-Pesa; Ethiojobs |
-| TZ | 18 | 0 | 2 | M-Pesa; NHIF |
-| UG | 14 | 0 | 1 | NIRA |
-| GH | 21 | 1 | 6 | GRA; NIA; Telecel Cash; AT Money; Meqasa; Graphic |
-| MA | 24 | 0 | 6 | DGI; Rekrute; Mubawab; vignette; Médias24; Amana |
-| DZ | 12 | 0 | 6 | BEA; BaridiMob; Emploitic; Ouedkniss; Ouedkniss; baccalauréat |
-| TN | 17 | 0 | 5 | DGI; BIAT; STB; Tanitjobs; Keejob |
-| SN | 13 | 0 | 2 | DGID; BFEM |
-| CI | 12 | 0 | 1 | BEPC |
-| CM | 14 | 0 | 0 |  |
-| ZM | 13 | 0 | 4 | ZRA; RTSA; NHIMA; ECZ exams |
-| ZW | 6 | 0 | 9 | ZIMRA; FBC; EcoCash; OneMoney; ZINARA; ZIMSEC exams; Econet; NetOne; Telecel |
-| RW | 12 | 0 | 5 | Irembo; Simba Supermarket; Irembo; Mutuelle de Santé; NESA national exams |
+| AM | 22 | 1 | 3 | Citizenship Service; Yandex Eda; Azatutyun |
+| MN | 9 | 1 | 6 | General Department of Taxation; E-Mongolia; TDB; QPay; SocialPay; Monpay |
+| NZ | 28 | 1 | 4 | Passport Office; Trade Me Jobs; Trade Me Property; Health NZ |
+| ET | 7 | 1 | 10 | Ministry of Revenues; Citizenship Service; Fayda national ID; Dashen; Bank of Abyssinia; telebirr; M-Pesa; Ethiojobs; Ethio-Djibouti Railway; Addis Standard |
+| TZ | 15 | 0 | 5 | M-Pesa; Mixx by Yas; Airtel Money; NHIF; NECTA exams |
+| UG | 10 | 0 | 5 | NIRA; MTN MoMo; Airtel Money; UNEB exams; UNMA |
+| GH | 18 | 1 | 9 | GRA; NIA; MTN MoMo; Telecel Cash; AT Money; Melcom; Meqasa; Graphic; BECE |
+| MA | 22 | 0 | 8 | DGI; Rekrute; Mubawab; vignette; Médias24; baccalauréat; Amana; DGM |
+| DZ | 11 | 0 | 7 | BEA; BaridiMob; Emploitic; Ouedkniss; Ouedkniss; baccalauréat; Mobilis |
+| TN | 14 | 0 | 8 | DGI; BIAT; STB; Tanitjobs; Keejob; baccalauréat; La Poste Tunisienne; INM |
+| SN | 11 | 0 | 4 | DGID; Société Générale Sénégal; BFEM; baccalauréat |
+| CI | 10 | 0 | 3 | MTN MoMo; BEPC; baccalauréat |
+| CM | 11 | 0 | 3 | MTN MoMo; GCE; baccalauréat |
+| ZM | 10 | 0 | 7 | ZRA; MTN MoMo; Airtel Money; RTSA; NHIMA; Lusaka Times; ECZ exams |
+| ZW | 5 | 0 | 10 | ZIMRA; FBC; EcoCash; OneMoney; OK Zimbabwe; ZINARA; ZIMSEC exams; Econet; NetOne; Telecel |
+| RW | 10 | 0 | 7 | Irembo; MTN MoMo; Airtel Money; Simba Supermarket; Irembo; Mutuelle de Santé; NESA national exams |
 | MZ | 11 | 0 | 4 | M-Pesa; e-Mola; mKesh; CFM |
-| AO | 8 | 0 | 8 | AGT; BAI; BFA; BIC; Multicaixa Express; Candando; Tupuca; Novo Jornal |
+| AO | 6 | 0 | 10 | AGT; BAI; BFA; BIC; Millennium Atlântico; Multicaixa Express; Kero; Candando; Tupuca; Novo Jornal |
 | BW | 10 | 0 | 6 | BURS; FNB Botswana; Orange Money; MyZaka; Sunday Standard; BGCSE |
-| NA | 13 | 0 | 4 | Checkers; Woermann Brock; NaTIS; NSSC exams |
-| CO | 31 | 2 | 7 | Daviplata; elempleo; Computrabajo; Finca Raíz; Metrocuadrado; RUNT; IDEAM |
-| PE | 31 | 1 | 6 | Plin; Bumeran; Computrabajo; Urbania; Adondevivir; Olva |
-| CL | 35 | 2 | 5 | ClaveÚnica; Laborum; Computrabajo; Yapo; Fonasa or your Isapre |
-| EC | 19 | 0 | 7 | SRI; DeUna; Multitrabajos; Computrabajo; Supermaxi; Plusvalía; CNT |
-| BO | 15 | 0 | 2 | SEGIP; QR interbank payments |
+| NA | 12 | 0 | 5 | FNB Namibia; Checkers; Woermann Brock; NaTIS; NSSC exams |
+| CO | 27 | 2 | 11 | DIAN; Carpeta Ciudadana; Daviplata; elempleo; Computrabajo; DiDi Food; Finca Raíz; Metrocuadrado; RUNT; ICFES Saber 11; IDEAM |
+| PE | 28 | 1 | 9 | Plin; Bumeran; Computrabajo; Ripley; Rappi; Urbania; Adondevivir; RPP; Olva |
+| CL | 34 | 2 | 6 | ClaveÚnica; MACH; Laborum; Computrabajo; Yapo; Fonasa or your Isapre |
+| EC | 17 | 0 | 9 | SRI; DeUna; Multitrabajos; Computrabajo; Supermaxi; Mi Comisariato; Plusvalía; ANT; CNT |
+| BO | 14 | 0 | 3 | SEGIP; QR interbank payments; Viva |
 | VE | 15 | 0 | 2 | Pago Móvil; Yummy |
-| GT | 15 | 0 | 4 | BAC; Tecoloco; Computrabajo; Paiz |
-| DO | 13 | 1 | 8 | DGII; Dirección General de Pasaportes; BHD; La Sirena; Bravo; DGII; INTRANT; INDOMET |
-| CR | 20 | 0 | 6 | BAC; SINPE Móvil; Más x Menos; INCOFER; Riteve; marchamo |
-| PA | 17 | 0 | 7 | BAC; Yappy; Konzerta; Computrabajo; Super 99; Riba Smith; ATTT |
-| UY | 23 | 1 | 6 | DNIC; BuscoJobs; Gallito; Gallito; InfoCasas; SUCIVE |
+| GT | 14 | 0 | 5 | BAC; Tecoloco; Computrabajo; Paiz; IGSS |
+| DO | 11 | 1 | 10 | DGII; Dirección General de Pasaportes; BHD; La Sirena; Bravo; DGII; INTRANT; Pruebas Nacionales; Viva; INDOMET |
+| CR | 17 | 0 | 9 | Hacienda; BAC; SINPE Móvil; Auto Mercado; Más x Menos; DiDi Food; INCOFER; Riteve; marchamo |
+| PA | 16 | 0 | 8 | BAC; Yappy; Konzerta; Computrabajo; Super 99; Riba Smith; ATTT; Panamá América |
+| UY | 21 | 1 | 8 | DNIC; BROU; BuscoJobs; Gallito; Rappi; Gallito; InfoCasas; SUCIVE |
 | PY | 12 | 0 | 5 | Superseis; Stock; Biggie; Monchis; IPS |
 | RO | 33 | 1 | 5 | ROeID; BestJobs; Tazz; ITP inspection; rovinietă |
-| GR | 28 | 1 | 9 | AADE; Skywalker; Spitogatos; KTEO inspection; EOPYY; myHealth; Panhellenic exams; Geniki Taxydromiki; EMY |
+| GR | 26 | 1 | 11 | AADE; Skywalker; AB Vassilopoulos; Spitogatos; KTEO inspection; EOPYY; myHealth; Panhellenic exams; ELTA; Geniki Taxydromiki; EMY |
 | HU | 32 | 3 | 1 | instant transfers |
-| BG | 25 | 1 | 4 | vignette; NHIF; Mediapool; matura |
-| RS | 20 | 3 | 12 | eUprava; AIK; IPS instant payments; Infostud; HelloWorld; 4zida; Halo oglasi; registration; RFZO; matura; A1; RHMZ |
+| BG | 23 | 1 | 6 | NRA; UBB; vignette; NHIF; Mediapool; matura |
+| RS | 18 | 3 | 14 | Tax Administration; eUprava; AIK; IPS instant payments; Infostud; HelloWorld; Srbija Voz; 4zida; Halo oglasi; registration; RFZO; matura; A1; RHMZ |
 | HR | 23 | 3 | 9 | Porezna uprava; e-Građani; MojPosao; Njuškalo; Njuškalo; Index oglasi; HZZO; Postani student; A1 |
-| SK | 31 | 1 | 1 | e-vignette |
+| SK | 30 | 1 | 2 | STK; e-vignette |
 | SI | 21 | 2 | 9 | SI-PASS; eUprava; Flik; Optius; Tuš; Nepremičnine.net; e-vinjeta; matura; A1 |
-| LT | 27 | 2 | 5 | VMI; CVBankas; Aruodas; LAMA BPO; LHMT |
-| LV | 29 | 1 | 0 |  |
-| EE | 32 | 0 | 5 | Kaup24; Hansapost; City24; digilugu; riigieksamid |
+| LT | 25 | 2 | 7 | VMI; CVBankas; LTG Link; Aruodas; e.sveikata; LAMA BPO; LHMT |
+| LV | 28 | 1 | 1 | e-veselība |
+| EE | 30 | 0 | 7 | Kaup24; Hansapost; City24; Transport Administration; digilugu; riigieksamid; Estonian Environment Agency |

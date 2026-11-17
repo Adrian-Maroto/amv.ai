@@ -16020,3 +16020,20 @@ Rule: a "total across X" is counted with the same identity the screen uses,
 and the report says which kind of total it is. A catalogue that is a product
 of two lists is stored as the two lists and multiplied on demand, and the
 suite that holds its count recomputes it independently from the data.
+
+## 652. A check that verifies more is not a better check until its matches are read (Nov 17)
+The country facts check (scripts/facts-check.mjs) went from 2,492 verified
+names to 2,972 when a wider pass took candidates from a fuzzy Wikipedia
+search and accepted any whose site people in the country visit, or that
+shared one word with the name. Reading a sample of what it matched: India's
+"Parivahan" had become Pune's bus company, Ireland's "Passport Office" the
+UK's, "UAE Pass" the country itself, Kazakhstan's "Freedom" bank Freedom
+House, and two one-word names became football clubs. About a third were
+wrong - and a wrong "verified" is worse than an honest "not yet", because it
+stops anybody looking.
+Rule: a check that marks things verified records WHAT it matched (the
+entity's name beside the item), so the match can be read; the matches are
+read before the number is reported; and a looser pass is held to a stricter
+rule than the strict one - every word of the name in the match, a one-word
+name only exactly or with one company word, placed in the country rather than
+merely visited from it. The honest result was 2,513, not 2,972.
