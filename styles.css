@@ -17402,3 +17402,35 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 #app .vi-conn .cdir-cc .int-sub{margin:0 0 var(--sp-3);color:var(--mu);font-size:var(--t-sm)}
 #app .vi-conn .cc-where{margin-left:var(--sp-1);letter-spacing:.06em;white-space:nowrap}
 #app .vi-conn .cdir-found{display:flex;flex-direction:column;gap:var(--sp-4);margin-bottom:var(--sp-4)}
+
+/* ========== LAYER A375 (Nov 17): Running now, under Crew's box ==========
+   What is running, starting, just finished or failed - one quiet panel, the
+   same surface and radius as the box above it, a dot per state. */
+.crew-now{margin:var(--sp-4) 0 var(--sp-6);padding:var(--sp-4) var(--sp-5);border:1px solid var(--bd);
+  border-radius:var(--r-lg);background:var(--s1)}
+.crew-now-head{display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap}
+.crew-now-head h2{margin:0;font-size:var(--t-md);font-weight:600;display:flex;align-items:center;gap:var(--sp-2)}
+.crew-now-sum{color:var(--mu);font-size:var(--t-sm)}
+.crew-now-all{margin-left:auto;font-size:var(--t-sm)}
+.crew-now-live{width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 0 0 color-mix(in srgb,var(--grn) 60%,transparent);animation:crew-now-pulse 1.6s var(--ease) infinite}
+@keyframes crew-now-pulse{70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.crew-now-list{list-style:none;margin:var(--sp-3) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.crew-now-row{display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-2) 0;border-top:1px solid var(--bd)}
+.crew-now-row:first-child{border-top:0}
+.crew-now-dot{flex:0 0 8px;height:8px;margin-top:6px;border-radius:50%;background:var(--mu)}
+.crew-now-row.run .crew-now-dot{background:var(--accent)}
+.crew-now-row.done .crew-now-dot{background:var(--grn)}
+.crew-now-row.wait .crew-now-dot{background:var(--gold)}
+.crew-now-row.fail .crew-now-dot{background:var(--red)}
+.crew-now-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.crew-now-t{font-size:var(--t-base);color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crew-now-s{font-size:var(--t-sm);color:var(--mu)}
+.crew-now-row.fail .crew-now-s{color:var(--red)}
+.crew-now-bar{display:block;height:3px;margin-top:var(--sp-1);border-radius:var(--r-pill);background:var(--s3);overflow:hidden}
+.crew-now-bar>span{display:block;height:100%;background:var(--accent);border-radius:inherit}
+.crew-now-bar.indet>span{width:30%!important;animation:crew-now-slide 1.4s var(--ease) infinite}
+@keyframes crew-now-slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+.crew-now-empty,.crew-now-note{margin:var(--sp-2) 0 0;color:var(--mu);font-size:var(--t-sm)}
+@media (prefers-reduced-motion:reduce){.crew-now-live,.crew-now-bar.indet>span{animation:none}}
+@media (max-width:560px){.crew-now{padding:var(--sp-3) var(--sp-4)}.crew-now-all{margin-left:0}}
+@media (max-width:560px){.crew-now-head h2{order:1}.crew-now-all{order:2;margin-left:auto}.crew-now-sum{order:3;flex-basis:100%}}

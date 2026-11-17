@@ -1499,6 +1499,87 @@ function _cjJobsHTML(){
    and the result comes back to you. */
 /* A phone gets the short example, so the box stays one slim line. */
 function _cjNarrow(){ try{ return window.matchMedia('(max-width:560px)').matches; }catch(e){ return false; } }
+/* RUNNING NOW, RIGHT UNDER THE BOX (Nov 17, the owner: "Crew has to have a
+   running jobs section below the textbox to see if anything is running and
+   it actually works").
+
+   Read from what is real, never drawn from a wish: work running in this tab
+   (the background queue, with its progress); jobs AMV's servers have due -
+   the scheduler runs every minute, so a due job is starting, and says so; the
+   last results the server wrote in the past day, with what happened (done,
+   sent to your email, waiting for your approval, failed, needs a
+   connection); and what is switched on, with when the next one runs. It
+   refreshes itself while something is due or running, so a job pressed Run
+   on is seen starting and then finishing. The detail - approving, pausing,
+   the whole list - stays in the sections below. */
+function _crewAgo(ts, future){
+  try{
+    const l = (typeof _lang === 'function' && _lang() !== 'auto') ? _lang() : undefined;
+    const f = new Intl.RelativeTimeFormat(l, { numeric: 'auto' });
+    const m = Math.round((Number(ts) - Date.now()) / 60000);
+    if(Math.abs(m) < 1) return future ? T('now') : T('just now');
+    if(Math.abs(m) < 60) return f.format(m, 'minute');
+    if(Math.abs(m) < 1440) return f.format(Math.round(m / 60), 'hour');
+    return f.format(Math.round(m / 1440), 'day');
+  }catch(e){ return ''; }
+}
+function _crewNowHTML(){
+  const st = _mcState(), now = Date.now();
+  const res = (typeof _AUTO_RESULTS !== 'undefined' && Array.isArray(_AUTO_RESULTS)) ? _AUTO_RESULTS : [];
+  const live = (x) => x.active !== false && !x.done;
+  const goal = (x) => String((x && (x.detail || x.title)) || T('Background job')).slice(0, 140);
+  const rows = [];
+  st.active.forEach(t => rows.push({ k: t.status === 'running' ? 'run' : 'wait', t: t.title || t.type || T('Task'),
+    s: t.status === 'running' ? T('Running') : T('Queued'), p: t.status === 'running' ? (+t.progress || 0) : null }));
+  st.server.filter(x => live(x) && !x.waiting && x.next && x.next <= now + 60e3)
+    .forEach(x => rows.push({ k: 'run', t: goal(x), s: T('Starting - AMV’s servers pick it up within a minute'), p: 0 }));
+  const OUT = { emailed: ['done', 'Done · sent to your email'], 'in-app': ['done', 'Done'], waiting: ['wait', 'Ready for your approval'],
+    failed: ['fail', 'Failed'], needs_access: ['fail', 'Needs a connection'], suggested: ['done', 'Suggestion ready'] };
+  res.filter(r => r && +r.at > now - 864e5).sort((a, b) => b.at - a.at).slice(0, 3).forEach(r => {
+    const o = OUT[r.outcome] || (r.kind === 'failed' ? OUT.failed : OUT['in-app']);
+    rows.push({ k: o[0], t: r.detail || goal(st.server.find(x => x.id === r.autoId)), s: T(o[1]) + ' · ' + _crewAgo(r.at) });
+  });
+  const on = st.server.filter(live).length + st.auton.length;
+  const nextJob = st.server.filter(x => live(x) && !x.waiting && x.next > now + 60e3).sort((a, b) => a.next - b.next)[0];
+  const serverOk = !!(window.AMV_API && AMV_API.live);
+  const note = !serverOk ? ''
+    : st.serverError ? T('AMV’s servers could not be reached just now. Your jobs have not stopped.')
+    : !st.serverLoaded ? T('Checking AMV’s servers…') : '';
+  const busy = rows.some(r => r.k === 'run');
+  const row = (r) => `<li class="crew-now-row ${r.k}">
+      <span class="crew-now-dot" aria-hidden="true"></span>
+      <span class="crew-now-b"><span class="crew-now-t">${escH(String(r.t))}</span><span class="crew-now-s">${escH(r.s)}</span>
+        ${r.p != null ? `<span class="crew-now-bar${r.p ? '' : ' indet'}" aria-hidden="true"><span style="width:${Math.max(6, Math.min(100, r.p || 30))}%"></span></span>` : ''}</span></li>`;
+  return `<div class="crew-now-head">
+      <h2 id="crew-now-h">${busy ? '<span class="crew-now-live" aria-hidden="true"></span>' : ''}${escH(T('Running now'))}</h2>
+      ${on ? `<span class="crew-now-sum">${escH(T('{0} switched on').replace('{0}', on.toLocaleString()))}${nextJob ? ' \u00b7 ' + escH(T('next {0}').replace('{0}', _crewAgo(nextJob.next, true))) : ''}</span>` : ''}
+      ${document.getElementById('mc-sched') || on ? `<button class="cj-link crew-now-all" type="button" data-dact="crewNowAll">${escH(T('See all'))}</button>` : ''}
+    </div>
+    ${rows.length ? `<ul class="crew-now-list">${rows.map(row).join('')}</ul>`
+      : `<p class="crew-now-empty">${escH(T('Nothing is running right now.'))} ${escH(on ? (nextJob ? T('The next job runs {0}.').replace('{0}', _crewAgo(nextJob.next, true)) : '') : T('Turn on a job below, or tell AMV what to do above.'))}</p>`}
+    ${note ? `<p class="crew-now-note">${escH(note)}</p>` : ''}`;
+}
+function crewNowAll(){
+  const el = document.getElementById('mc-sched');
+  if(el){ try{ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }catch(e){ el.scrollIntoView(); } }
+  else try{ openSchedManager(); }catch(e){}
+}
+/* Kept current while Crew is on screen: every 15 seconds while something is
+   due or running, every minute otherwise - one read of the server's list, and
+   only this panel redrawn, only when what it says changed. */
+let _crewNowT = 0, _crewNowN = 0;
+function _crewNowTick(){
+  clearTimeout(_crewNowT);
+  _crewNowT = setTimeout(async () => {
+    const el = document.getElementById('crew-now');
+    if(!el || S.tab !== 'crew'){ _crewNowT = 0; return; }
+    const busy = !!el.querySelector('.crew-now-row.run, .crew-now-row.wait');
+    if(busy || ++_crewNowN % 4 === 0){ try{ if(typeof _autoRefresh === 'function' && window.AMV_API && AMV_API.live) await _autoRefresh(); }catch(e){} }
+    const html = _crewNowHTML(); if(el.isConnected && el.innerHTML !== html) el.innerHTML = html;
+    _crewNowTick();
+  }, 15000);
+}
+try{ window.crewNowAll = crewNowAll; window._crewNowHTML = _crewNowHTML; window._crewNowTick = _crewNowTick; }catch(e){}
 function _cjAskHTML(extra){
   return `<section class="cj-ask mc-cmd cj-hero" aria-labelledby="cx-ask-h">
     <div class="cj-ask-top">
@@ -1771,6 +1852,7 @@ function renderCrewView(){
         : running ? `<button class="cj-icon-btn mc-pause" data-dact="pauseAllAutonomous">${escH(T('Pause all'))}</button>` : ''}<button class="cj-icon-btn" type="button" data-dact="openCrewSettings" aria-label="${escH(T('Crew settings'))}" title="${escH(T('Crew settings'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button></div>`;
   vc.innerHTML = `<div class="sv fi"><div class="cj crew-page mc-page">
     ${_cjAskHTML(tools)}
+    <section id="crew-now" class="crew-now" aria-labelledby="crew-now-h" aria-live="polite">${_crewNowHTML()}</section>
     <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
     ${/* AMV asking you something stays on the page - it is a question, not a
           setting, so it did not go into the settings dialog with the rest. */ ''}
@@ -1787,10 +1869,8 @@ function renderCrewView(){
       <div class="mc-grid">${st.failed.map(_mcFailCard).join('')}</div>
     </section>`:''}
 
-    ${st.active.length?`<section id="mc-active" class="mc-sec">
-      <div class="sec-head"><h3>Active work</h3><span class="sec-sub">AMV is on these right now.</span></div>
-      <div class="mc-grid">${st.active.map(_mcActiveCard).join('')}</div>
-    </section>`:''}
+    ${/* Active work is in Running now, under the box (Nov 17) - with its
+          progress - so it is not drawn a second time here. */ ''}
 
     ${(running || st.serverError)?`<section id="mc-sched" class="mc-sec">
       <div class="sec-head"><h3>Running jobs</h3><button class="mc-sec-link" data-dact="openSchedManager">Manage</button></div>
@@ -1823,6 +1903,7 @@ function renderCrewView(){
     ${_cjJobsHTML()}
   </div></div>`;
   _cwWireCmd(vc); _cjWire(vc);
+  _crewNowTick();
   /* Filled after the view exists, never before: the panel renders into an
      element this function has only just written. */
   try{ if(typeof renderGames==='function') renderGames(); }catch(e){}
