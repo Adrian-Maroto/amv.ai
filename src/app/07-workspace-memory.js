@@ -1229,7 +1229,14 @@ function renderMemoryView(){
   
   on($('mem-add'),'click',addMemory);
   on($('mem-inp'),'keydown',e=>{if(e.key==='Enter')addMemory();});
-  on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
+  /* Asked first: it cannot be undone, and it reaches every device. */
+  on($('mem-clr'),'click',()=>{
+    const asked = confirmModal(T('Forget everything AMV remembers?'),
+      T('Every memory is removed here and on every device you are signed in on. This cannot be undone.'),
+      ()=>{ _memForget((S.memory||[]).map(m=>m.id)); renderMemoryView(); toast(T('AMV has forgotten everything it remembered.'),'success'); },
+      { confirm:T('Forget all'), cancel:T('Keep them') });
+    if(!asked) toast(T('Could not open the confirmation, so nothing was changed.'),'error',5000);
+  });
   on($('mem-imp-open'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memImportOpen(); }));
   on($('mem-exp'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memExport(); }));
   renderMemList();
@@ -1306,7 +1313,7 @@ function renderMemList(){
   if(mb) mb.addEventListener('click',()=>{ _pageMore('memory',30); renderMemList(); });
 }
 function delMemory(id){
-  S.memory=S.memory.filter(m=>m.id!==id);
+  _memForget([id]);
   renderMemList();
 }
 

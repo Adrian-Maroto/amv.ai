@@ -3469,7 +3469,7 @@ const AMVSync = {
         if(data[k]===undefined) return;
         /* Chats merge WITH their shelf, so a delete made elsewhere (a newer
            marked copy) beats the live copy here, and is split back out. */
-        const local = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k];
+        const local = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k];
         let merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
           ? _mergeById(local, data[k]) : data[k];
         if(k === 'convs' && Array.isArray(merged)){
@@ -3479,6 +3479,7 @@ const AMVSync = {
           if(!merged.length && typeof newConvObj === 'function') merged = [newConvObj()];
           if(_raw.cur && !merged.some(c => c && c.id === _raw.cur)) _raw.cur = merged.length ? merged[0].id : null;
         }
+        if(k === 'memory' && Array.isArray(merged)) merged = _memSplit(merged);
         _raw[k]=merged; _persist(k,merged);
       });
 
@@ -3551,7 +3552,7 @@ const AMVSync = {
   },
   collect(){
     const out={};
-    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k]; });
+    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k]; });
     // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
@@ -4535,6 +4536,49 @@ function saveGoogleAccount(name, email) {
    list only on the way to storage and sync, and are split off again on the
    way back. */
 let _CONV_SHELF = [];
+/* ── MEMORY'S TOMBSTONES (Nov 17, the owner: "make sure memory 100 percent
+   works") ─────────────────────────────────────────────────────────────────
+
+   The same fault the shelf above fixed for chats, still open on memory: the
+   list is merged by id, so a memory deleted on the laptop was still on the
+   phone, and the phone's next pull merged it back - then pushed it, as the
+   device that had seen the latest version, and it was back everywhere.
+   Forgetting something is the one memory action that has to be certain.
+
+   So a deleted memory leaves a tombstone (its id, no text), newer than the
+   memory, kept 90 days. Tombstones never sit in S.memory - every reader of it
+   sees only what is remembered - and join the list only on the way to sync.
+   Written ONLY where a person deletes (the Memory tab, Clear all, asking chat
+   to forget), never by noticing the list got shorter: signing out empties it
+   too, and that must not forget anything. */
+const _MEM_GONE_MS = 90 * 864e5;
+function _memGoneList(){
+  const now = Date.now(), l = load('amv_memory_gone');
+  return (Array.isArray(l) ? l : []).filter(t => t && t.id && now - (t.updated || 0) < _MEM_GONE_MS);
+}
+function _memForget(ids){
+  const set = new Set((ids || []).filter(Boolean)); if(!set.size) return;
+  const now = Date.now();
+  const tombs = _memGoneList().filter(t => !set.has(t.id));
+  set.forEach(id => tombs.push({ id, gone: true, text: '', updated: now }));
+  try{ store('amv_memory_gone', tombs.slice(-2000)); }catch(e){ _logErr('memory.forget', e); }
+  S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
+}
+/* What is remembered plus what was forgotten, for the server. */
+function _memForStore(live){
+  const keep = (Array.isArray(live) ? live : []).filter(m => m && !m.gone);
+  const ids = new Set(keep.map(m => m.id));
+  return keep.concat(_memGoneList().filter(t => !ids.has(t.id)));
+}
+/* A merged list in, what is remembered out; tombstones go back to their store. */
+function _memSplit(list){
+  const live = [], gone = [];
+  for(const m of (list || [])){ if(!m) continue; (m.gone ? gone : live).push(m); }
+  const now = Date.now();
+  try{ store('amv_memory_gone', gone.filter(t => t.id && now - (t.updated || 0) < _MEM_GONE_MS).slice(-2000)); }catch(e){ _logErr('memory.split', e); }
+  return live;
+}
+try{ window._memForget = _memForget; }catch(e){}
 const _SHELF_TRASH_MS = 30 * 864e5, _SHELF_GONE_MS = 90 * 864e5;
 function _isShelved(c){ return !!(c && (c.archived || c.trashed || c.gone)); }
 function _convTomb(c){ return { id: c.id, gone: true, title: '', msgs: [], created: c.created || 0, updated: Date.now() }; }
@@ -16784,7 +16828,14 @@ function renderMemoryView(){
   
   on($('mem-add'),'click',addMemory);
   on($('mem-inp'),'keydown',e=>{if(e.key==='Enter')addMemory();});
-  on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
+  /* Asked first: it cannot be undone, and it reaches every device. */
+  on($('mem-clr'),'click',()=>{
+    const asked = confirmModal(T('Forget everything AMV remembers?'),
+      T('Every memory is removed here and on every device you are signed in on. This cannot be undone.'),
+      ()=>{ _memForget((S.memory||[]).map(m=>m.id)); renderMemoryView(); toast(T('AMV has forgotten everything it remembered.'),'success'); },
+      { confirm:T('Forget all'), cancel:T('Keep them') });
+    if(!asked) toast(T('Could not open the confirmation, so nothing was changed.'),'error',5000);
+  });
   on($('mem-imp-open'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memImportOpen(); }));
   on($('mem-exp'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memExport(); }));
   renderMemList();
@@ -16861,7 +16912,7 @@ function renderMemList(){
   if(mb) mb.addEventListener('click',()=>{ _pageMore('memory',30); renderMemList(); });
 }
 function delMemory(id){
-  S.memory=S.memory.filter(m=>m.id!==id);
+  _memForget([id]);
   renderMemList();
 }
 
@@ -28564,7 +28615,7 @@ async function _sectionTool(name, input){
     if(found.error) return { text: found.error, render:null };
     const what = String(found.item.text||'').slice(0,90);
     try{
-      S.memory = _memList().filter(m => m.id !== found.item.id);
+      _memForget([found.item.id]);
     }catch(e){ return { text:_sectionErr(e), render:null }; }
     _memRepaint();
     return { text:'Forgotten: "' + what + '". It will not be included in future conversations.', render:null };
@@ -41310,6 +41361,10 @@ try{
           return { count:m.length, memories:m.map(x=>({ id:x.id, text:x.text })) }; } },
       add:{ desc:'Save a new memory. Args: {text}', risk:'high', riskLabel:'save a memory about you',
         async run(a){ const t=String((a&&a.text)||'').trim(); if(!t) nothing('Nothing to remember - give me the text.');
+          /* The same refusal as the Memory tab and chat: every memory goes into
+             every future request, so a secret must not get in by this door. */
+          if(_memLooksSecret(t)) nothing('AMV will not remember that - it looks like a password, key or card number, and every memory is included in every future conversation.');
+          if(arr(S.memory).some(m=>String(m.text||'').trim().toLowerCase()===t.toLowerCase())) return { saved:false, already:true, text:t };
           S.memory=[{ id:'m'+Date.now(), text:t, added:Date.now() }, ...arr(S.memory)];
           try{ if(typeof renderMemList==='function' && S.tab==='memory') renderMemList(); }catch(e){}
           return { saved:true, text:t }; } }

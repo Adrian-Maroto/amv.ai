@@ -368,7 +368,7 @@ const AMVSync = {
         if(data[k]===undefined) return;
         /* Chats merge WITH their shelf, so a delete made elsewhere (a newer
            marked copy) beats the live copy here, and is split back out. */
-        const local = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k];
+        const local = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k];
         let merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
           ? _mergeById(local, data[k]) : data[k];
         if(k === 'convs' && Array.isArray(merged)){
@@ -378,6 +378,7 @@ const AMVSync = {
           if(!merged.length && typeof newConvObj === 'function') merged = [newConvObj()];
           if(_raw.cur && !merged.some(c => c && c.id === _raw.cur)) _raw.cur = merged.length ? merged[0].id : null;
         }
+        if(k === 'memory' && Array.isArray(merged)) merged = _memSplit(merged);
         _raw[k]=merged; _persist(k,merged);
       });
 
@@ -450,7 +451,7 @@ const AMVSync = {
   },
   collect(){
     const out={};
-    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k]; });
+    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k]; });
     // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
@@ -1434,6 +1435,49 @@ function saveGoogleAccount(name, email) {
    list only on the way to storage and sync, and are split off again on the
    way back. */
 let _CONV_SHELF = [];
+/* ── MEMORY'S TOMBSTONES (Nov 17, the owner: "make sure memory 100 percent
+   works") ─────────────────────────────────────────────────────────────────
+
+   The same fault the shelf above fixed for chats, still open on memory: the
+   list is merged by id, so a memory deleted on the laptop was still on the
+   phone, and the phone's next pull merged it back - then pushed it, as the
+   device that had seen the latest version, and it was back everywhere.
+   Forgetting something is the one memory action that has to be certain.
+
+   So a deleted memory leaves a tombstone (its id, no text), newer than the
+   memory, kept 90 days. Tombstones never sit in S.memory - every reader of it
+   sees only what is remembered - and join the list only on the way to sync.
+   Written ONLY where a person deletes (the Memory tab, Clear all, asking chat
+   to forget), never by noticing the list got shorter: signing out empties it
+   too, and that must not forget anything. */
+const _MEM_GONE_MS = 90 * 864e5;
+function _memGoneList(){
+  const now = Date.now(), l = load('amv_memory_gone');
+  return (Array.isArray(l) ? l : []).filter(t => t && t.id && now - (t.updated || 0) < _MEM_GONE_MS);
+}
+function _memForget(ids){
+  const set = new Set((ids || []).filter(Boolean)); if(!set.size) return;
+  const now = Date.now();
+  const tombs = _memGoneList().filter(t => !set.has(t.id));
+  set.forEach(id => tombs.push({ id, gone: true, text: '', updated: now }));
+  try{ store('amv_memory_gone', tombs.slice(-2000)); }catch(e){ _logErr('memory.forget', e); }
+  S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
+}
+/* What is remembered plus what was forgotten, for the server. */
+function _memForStore(live){
+  const keep = (Array.isArray(live) ? live : []).filter(m => m && !m.gone);
+  const ids = new Set(keep.map(m => m.id));
+  return keep.concat(_memGoneList().filter(t => !ids.has(t.id)));
+}
+/* A merged list in, what is remembered out; tombstones go back to their store. */
+function _memSplit(list){
+  const live = [], gone = [];
+  for(const m of (list || [])){ if(!m) continue; (m.gone ? gone : live).push(m); }
+  const now = Date.now();
+  try{ store('amv_memory_gone', gone.filter(t => t.id && now - (t.updated || 0) < _MEM_GONE_MS).slice(-2000)); }catch(e){ _logErr('memory.split', e); }
+  return live;
+}
+try{ window._memForget = _memForget; }catch(e){}
 const _SHELF_TRASH_MS = 30 * 864e5, _SHELF_GONE_MS = 90 * 864e5;
 function _isShelved(c){ return !!(c && (c.archived || c.trashed || c.gone)); }
 function _convTomb(c){ return { id: c.id, gone: true, title: '', msgs: [], created: c.created || 0, updated: Date.now() }; }

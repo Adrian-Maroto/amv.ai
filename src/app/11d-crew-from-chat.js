@@ -506,7 +506,7 @@ async function _sectionTool(name, input){
     if(found.error) return { text: found.error, render:null };
     const what = String(found.item.text||'').slice(0,90);
     try{
-      S.memory = _memList().filter(m => m.id !== found.item.id);
+      _memForget([found.item.id]);
     }catch(e){ return { text:_sectionErr(e), render:null }; }
     _memRepaint();
     return { text:'Forgotten: "' + what + '". It will not be included in future conversations.', render:null };

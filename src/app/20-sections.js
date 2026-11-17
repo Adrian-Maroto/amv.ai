@@ -111,6 +111,10 @@
           return { count:m.length, memories:m.map(x=>({ id:x.id, text:x.text })) }; } },
       add:{ desc:'Save a new memory. Args: {text}', risk:'high', riskLabel:'save a memory about you',
         async run(a){ const t=String((a&&a.text)||'').trim(); if(!t) nothing('Nothing to remember - give me the text.');
+          /* The same refusal as the Memory tab and chat: every memory goes into
+             every future request, so a secret must not get in by this door. */
+          if(_memLooksSecret(t)) nothing('AMV will not remember that - it looks like a password, key or card number, and every memory is included in every future conversation.');
+          if(arr(S.memory).some(m=>String(m.text||'').trim().toLowerCase()===t.toLowerCase())) return { saved:false, already:true, text:t };
           S.memory=[{ id:'m'+Date.now(), text:t, added:Date.now() }, ...arr(S.memory)];
           try{ if(typeof renderMemList==='function' && S.tab==='memory') renderMemList(); }catch(e){}
           return { saved:true, text:t }; } }
