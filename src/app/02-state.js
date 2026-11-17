@@ -336,11 +336,29 @@ function _retentionTrimLocal(r){
 const AMVSync = {
   _timer: null,
   enabled(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession); }catch(e){ return false; } },
+  /* WHAT THE SCREEN COULD SHOW FROM THE SYNCED DATA, IN A FEW HUNDRED BYTES.
+
+     A pull ended by repainting whatever screen was open, from scratch, every
+     time - and a pull follows most pushes ("there is always one, because the
+     pull repaints", below). So any change, anywhere, rebuilt Crew, Spending,
+     Integrations or Build under the person using it: a flash, a lost scroll
+     position, a prompt half typed into Build wiped (Nov 17, the owner: "it
+     auto opened Build an app for a second", "glitchy", "lags"). The
+     fingerprint says whether anything they could see actually changed. */
+  _fingerprint(){
+    const sum = (v) => Array.isArray(v) ? v.map(x => x && typeof x === 'object' ? [x.id, x.updated || x.ts || 0, (x.msgs || []).length, x.title || x.name || ''].join(':') : String(x)).join('|')
+      : (v && typeof v === 'object') ? Object.keys(v).length + ':' + JSON.stringify(v).length : String(v);
+    try{
+      return _SYNC_KEYS.map(k => k + '=' + sum(_raw[k])).join('#') + '#s=' + sum(Array.isArray(_SESSIONS) ? _SESSIONS : [])
+        + '#p=' + sum(load('amv_projects') || []);
+    }catch(e){ return String(Math.random()); }
+  },
   async pull(){
     if(!this.enabled()) return false;
     try{
       const data = await AMV_API.syncPull();
       if(!data) return false;
+      const _seenBefore = this._fingerprint();
       /* AMV-069: MERGE, do not overwrite. "Server wins" destroyed anything done
          on this device since its last push - work done offline, or on a device
          that had not synced yet, was simply gone the moment the user signed in.
@@ -414,8 +432,19 @@ const AMVSync = {
          stored under a name nothing consults. */
       if(data.profile){ try{ _profileApply(data.profile); }catch(e){ _logErr('sync.profile', e); } }
 
-      try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
-      try{ if(S.tab) renderView&&renderView(); }catch(e){}
+      /* Repaint only what changed, and never under somebody typing: in chat
+         the messages (the box keeps what is in it); anywhere else the screen,
+         unless a field on it has the cursor - the new data shows the next
+         time that screen is drawn. */
+      if(this._fingerprint() !== _seenBefore){
+        try{ renderHist && renderHist(); }catch(e){}
+        try{
+          const vc = document.getElementById('vc'), a = document.activeElement;
+          const typing = !!(vc && a && vc.contains(a) && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+          if(S.tab === 'chat'){ if(typeof renderChatMsgs === 'function') renderChatMsgs(); }
+          else if(S.tab && !typing && typeof renderView === 'function') renderView();
+        }catch(e){}
+      }
       return true;
     }catch(e){ _logErr('AMVSync.pull', e); return false; }
   },

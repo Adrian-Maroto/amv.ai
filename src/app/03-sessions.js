@@ -397,7 +397,9 @@ function _syncBootstrap(){
     if(typeof AMVSync === 'undefined' || !AMVSync.enabled()) return false;
     _syncBooted = true;
     AMVSync.pull().then(pulled=>{
-      if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} }
+      /* The pull repaints what changed itself; a second, unconditional
+         repaint here rebuilt the open screen again for nothing. */
+      if(pulled){ try{ updateSbUser&&updateSbUser(); }catch(e){} }
       try{ AMVSync.push(); }catch(e){}
     }).catch(e=>{ try{ _logErr('sync.bootstrap', e); }catch(_e){} });
     AMVSync.start();
