@@ -314,7 +314,11 @@
    },
    {
     "n": "AP exams",
-    "how": "unresolved"
+    "q": "Q4686251",
+    "how": "cited",
+    "label": "Advanced Placement exams",
+    "desc": "exams only for high school AP students",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
@@ -741,7 +745,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -1295,7 +1303,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -3304,7 +3316,11 @@
    },
    {
     "n": "Anjuke",
-    "how": "unresolved"
+    "q": "Q109342526",
+    "how": "cited",
+    "label": "Anjuke",
+    "desc": "Q783794",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -3545,7 +3561,11 @@
    },
    {
     "n": "BigBasket",
-    "how": "unresolved"
+    "q": "Q96373548",
+    "how": "cited",
+    "label": "BigBasket",
+    "desc": "Indian online grocery delivery company",
+    "checked": "2026-11-17"
    },
    {
     "n": "DMart",
@@ -4139,7 +4159,11 @@
    },
    {
     "n": "Naver Pay",
-    "how": "unresolved"
+    "q": "Q24861593",
+    "how": "cited",
+    "label": "Naver Pay",
+    "desc": "네이버에서 널리 이용되고 있는 가상 화폐",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -4514,7 +4538,11 @@
    },
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "ShopeeFood",
@@ -4808,7 +4836,11 @@
    },
    {
     "n": "Mrsool",
-    "how": "unresolved"
+    "q": "Q131560293",
+    "how": "cited",
+    "label": "Mrsool",
+    "desc": "Saudi on-demand delivery platform",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -4865,7 +4897,11 @@
   "exams": [
    {
     "n": "Qiyas tests",
-    "how": "unresolved"
+    "q": "Q12182832",
+    "how": "cited",
+    "label": "Qiyas Tests",
+    "desc": "Tests",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -5634,7 +5670,11 @@
   "exams": [
    {
     "n": "Thanaweya Amma",
-    "how": "unresolved"
+    "q": "Q17070878",
+    "how": "cited",
+    "label": "Thanaweya Amma",
+    "desc": "Egyptian standardized test regime",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -5717,7 +5757,11 @@
   "id": [
    {
     "n": "Australian Passport Office",
-    "how": "unresolved"
+    "q": "Q24189158",
+    "how": "cited",
+    "label": "Australian Passport Office",
+    "desc": "Australia independent operating agency",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -5980,7 +6024,11 @@
   "tax": [
    {
     "n": "FinanzOnline",
-    "how": "unresolved"
+    "q": "Q1416248",
+    "how": "cited",
+    "label": "FinanzOnline",
+    "desc": "",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -6051,7 +6099,11 @@
    },
    {
     "n": "StepStone",
-    "how": "unresolved"
+    "q": "Q498120",
+    "how": "cited",
+    "label": "The Stepstone Group",
+    "desc": "German worldwide employment company",
+    "checked": "2026-11-17"
    },
    {
     "n": "willhaben",
@@ -6191,7 +6243,11 @@
   "exams": [
    {
     "n": "Matura",
-    "how": "unresolved"
+    "q": "Q694222",
+    "how": "cited",
+    "label": "matura",
+    "desc": "name of final exam of high school in many countries",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -6331,7 +6387,11 @@
    },
    {
     "n": "StepStone",
-    "how": "unresolved"
+    "q": "Q498120",
+    "how": "cited",
+    "label": "The Stepstone Group",
+    "desc": "German worldwide employment company",
+    "checked": "2026-11-17"
    },
    {
     "n": "Indeed",
@@ -7263,7 +7323,11 @@
    },
    {
     "n": "Etuovi",
-    "how": "unresolved"
+    "q": "Q11858988",
+    "how": "cited",
+    "label": "Etuovi.com",
+    "desc": "",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -7612,7 +7676,11 @@
    },
    {
     "n": "Junior Cycle",
-    "how": "unresolved"
+    "q": "Q48988575",
+    "how": "cited",
+    "label": "Junior Cycle",
+    "desc": "educational programme for Irish second-level schools",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
@@ -7725,7 +7793,11 @@
    },
    {
     "n": "Tikkie",
-    "how": "unresolved"
+    "q": "Q96678040",
+    "how": "cited",
+    "label": "Tikkie",
+    "desc": "a popular Dutch mobile payment application",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -7964,7 +8036,11 @@
   "gov": [
    {
     "n": "ID-porten",
-    "how": "unresolved"
+    "q": "Q19375301",
+    "how": "cited",
+    "label": "ID-porten",
+    "desc": "",
+    "checked": "2026-11-17"
    },
    {
     "n": "BankID",
@@ -8252,7 +8328,11 @@
    },
    {
     "n": "Profil Zaufany",
-    "how": "unresolved"
+    "q": "Q16591433",
+    "how": "cited",
+    "label": "Profil zaufany",
+    "desc": "",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -8753,7 +8833,11 @@
   "health": [
    {
     "n": "SNS 24",
-    "how": "unresolved"
+    "q": "Q131599151",
+    "how": "cited",
+    "label": "SNS 24",
+    "desc": "",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -8847,7 +8931,11 @@
   "gov": [
    {
     "n": "Cl@ve",
-    "how": "unresolved"
+    "q": "Q109313183",
+    "how": "cited",
+    "label": "Cl@ve",
+    "desc": "",
+    "checked": "2026-11-17"
    },
    {
     "n": "your digital certificate",
@@ -9472,7 +9560,11 @@
   "gov": [
    {
     "n": "AGOV",
-    "how": "unresolved"
+    "q": "Q131723666",
+    "how": "cited",
+    "label": "AGOV",
+    "desc": "Behörden-Login der Schweiz und ein Vorhaben der Digitalen Verwaltung Schweiz",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -9692,7 +9784,11 @@
   "exams": [
    {
     "n": "Matura",
-    "how": "unresolved"
+    "q": "Q3299995",
+    "how": "cited",
+    "label": "Matura certificate in Switzerland",
+    "desc": "school graduation",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -9933,7 +10029,11 @@
   "health": [
    {
     "n": "e-Nabız",
-    "how": "unresolved"
+    "q": "Q97599023",
+    "how": "cited",
+    "label": "e-Nabız",
+    "desc": "Türkiye Sağlık Sistemi",
+    "checked": "2026-11-17"
    },
    {
     "n": "MHRS",
@@ -10389,7 +10489,11 @@
   "shop": [
    {
     "n": "HKTVmall",
-    "how": "unresolved"
+    "q": "Q29639803",
+    "how": "cited",
+    "label": "HKTV Mall",
+    "desc": "香港公司",
+    "checked": "2026-11-17"
    },
    {
     "n": "Taobao",
@@ -10409,7 +10513,12 @@
    },
    {
     "n": "ParknShop",
-    "how": "unresolved"
+    "q": "Q7138619",
+    "how": "cited",
+    "label": "ParknShop",
+    "desc": "Hong Kong-based supermarket chain",
+    "checked": "2026-11-17",
+    "site": "https://www.parknshop.com/"
    }
   ],
   "food": [
@@ -10701,7 +10810,11 @@
    },
    {
     "n": "10bis",
-    "how": "unresolved"
+    "q": "Q117090139",
+    "how": "cited",
+    "label": "10bis",
+    "desc": "food delivery, subsidiary company",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -10830,7 +10943,11 @@
   "gov": [
    {
     "n": "MyDigital ID",
-    "how": "unresolved"
+    "q": "Q136206531",
+    "how": "cited",
+    "label": "MyDigital ID",
+    "desc": "Malaysian government digital identity platform",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -10967,7 +11084,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "Foodpanda",
@@ -11221,7 +11342,11 @@
    },
    {
     "n": "Kalibrr",
-    "how": "unresolved"
+    "q": "Q108760495",
+    "how": "cited",
+    "label": "Kalibrr",
+    "desc": "employment website",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -11267,7 +11392,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "Foodpanda",
@@ -11527,7 +11656,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "Foodpanda",
@@ -12067,7 +12200,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "LINE MAN",
@@ -12403,7 +12540,11 @@
    },
    {
     "n": "Salik",
-    "how": "unresolved"
+    "q": "Q1358502",
+    "how": "cited",
+    "label": "Salik",
+    "desc": "Electronic system in Dubai, UAE",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -12641,7 +12782,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "unresolved"
+    "q": "Q111178051",
+    "how": "cited",
+    "label": "GrabFood",
+    "desc": "food delivery",
+    "checked": "2026-11-17"
    },
    {
     "n": "ShopeeFood",
@@ -12837,7 +12982,12 @@
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "unresolved"
+    "q": "Q252382",
+    "how": "cited",
+    "label": "M-Pesa",
+    "desc": "mobile banking se",
+    "checked": "2026-11-17",
+    "site": "https://www.mpesa.in"
    }
   ],
   "jobs": [
@@ -13200,7 +13350,11 @@
    },
    {
     "n": "ECAT",
-    "how": "unresolved"
+    "q": "Q16910774",
+    "how": "cited",
+    "label": "ECAT Pakistan",
+    "desc": "College examination in Pakistan",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -13591,7 +13745,11 @@
    },
    {
     "n": "Kapruka",
-    "how": "unresolved"
+    "q": "Q138993662",
+    "how": "cited",
+    "label": "Kapruka.com",
+    "desc": "Sri Lankan e-commerce company",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -13619,7 +13777,11 @@
   "food": [
    {
     "n": "PickMe Food",
-    "how": "unresolved"
+    "q": "Q123357983",
+    "how": "cited",
+    "label": "PickMe Food",
+    "desc": "Sri Lankan online food delivery platform",
+    "checked": "2026-11-17"
    },
    {
     "n": "Uber Eats",
@@ -13737,7 +13899,11 @@
   "gov": [
    {
     "n": "Nagarik App",
-    "how": "unresolved"
+    "q": "Q105162424",
+    "how": "cited",
+    "label": "Nagarik App",
+    "desc": "app by Nepal Government",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -13835,7 +14001,11 @@
   "car": [
    {
     "n": "Department of Transport Management",
-    "how": "unresolved"
+    "q": "Q141830951",
+    "how": "cited",
+    "label": "Department of Transport Management",
+    "desc": "department of Government of Nepal",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -14219,7 +14389,11 @@
   "shop": [
    {
     "n": "Uzum Market",
-    "how": "unresolved"
+    "q": "Q135947306",
+    "how": "cited",
+    "label": "Uzum Market",
+    "desc": "",
+    "checked": "2026-11-17"
    },
    {
     "n": "OLX",
@@ -14328,7 +14502,12 @@
   "weather": [
    {
     "n": "Uzhydromet",
-    "how": "unresolved"
+    "q": "Q50041052",
+    "how": "cited",
+    "label": "Centre of Hydrometeorological Service",
+    "desc": "government organization in Tashkent, Uzbekistan",
+    "checked": "2026-11-17",
+    "site": "http://www.meteo.uz/#/en"
    }
   ]
  },
@@ -14410,7 +14589,11 @@
   "groc": [
    {
     "n": "Lucky Supermarket",
-    "how": "unresolved"
+    "q": "Q139407395",
+    "how": "cited",
+    "label": "Lucky Supermarket",
+    "desc": "supermarket chain in Cambodia",
+    "checked": "2026-11-17"
    },
    {
     "n": "AEON",
@@ -14539,7 +14722,11 @@
    },
    {
     "n": "Eleven Media",
-    "how": "unresolved"
+    "q": "Q5359768",
+    "how": "cited",
+    "label": "Eleven Media Group",
+    "desc": "organization",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
@@ -14580,7 +14767,11 @@
   "weather": [
    {
     "n": "Department of Meteorology",
-    "how": "unresolved"
+    "q": "Q139500048",
+    "how": "cited",
+    "label": "Department of Meteorology and Hydrology",
+    "desc": "government agency",
+    "checked": "2026-11-17"
    },
    {
     "n": "Hydrology",
@@ -15322,7 +15513,11 @@
    },
    {
     "n": "Carrefour",
-    "how": "unresolved"
+    "q": "Q217599",
+    "how": "cited",
+    "label": "Carrefour",
+    "desc": "French hypermarket brand of the Carrefour Group",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -15447,7 +15642,11 @@
    },
    {
     "n": "Carrefour",
-    "how": "unresolved"
+    "q": "Q217599",
+    "how": "cited",
+    "label": "Carrefour",
+    "desc": "French hypermarket brand of the Carrefour Group",
+    "checked": "2026-11-17"
    },
    {
     "n": "Al Jazira",
@@ -15542,7 +15741,12 @@
   "groc": [
    {
     "n": "Spinneys",
-    "how": "unresolved"
+    "q": "Q2890701",
+    "how": "cited",
+    "label": "Spinneys",
+    "desc": "grocery chain in the Middle East",
+    "checked": "2026-11-17",
+    "site": "https://www.spinneys.com/"
    }
   ],
   "food": [
@@ -15626,7 +15830,12 @@
   "id": [
    {
     "n": "ASAN Xidmət",
-    "how": "unresolved"
+    "q": "Q14754881",
+    "how": "cited",
+    "label": "ASAN service",
+    "desc": "Azerbaijani state agency",
+    "checked": "2026-11-17",
+    "site": "http://asan.gov.az/"
    }
   ],
   "banks": [
@@ -15656,7 +15865,11 @@
   "pay": [
    {
     "n": "Birbank",
-    "how": "unresolved"
+    "q": "Q139967518",
+    "how": "cited",
+    "label": "Birbank",
+    "desc": "Mobile banking application",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -16108,7 +16321,11 @@
    },
    {
     "n": "Azatutyun",
-    "how": "unresolved"
+    "q": "Q61104403",
+    "how": "cited",
+    "label": "Azatutyun",
+    "desc": "newspaper",
+    "checked": "2026-11-17"
    },
    {
     "n": "CivilNet",
@@ -16167,7 +16384,11 @@
   "gov": [
    {
     "n": "E-Mongolia",
-    "how": "unresolved"
+    "q": "Q133878760",
+    "how": "cited",
+    "label": "E-Mongolia",
+    "desc": "Mongolian e-governance platform",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -16514,7 +16735,11 @@
   "tax": [
    {
     "n": "Ministry of Revenues",
-    "how": "unresolved"
+    "q": "Q124322839",
+    "how": "cited",
+    "label": "Ministry of Revenues and Customs Authority",
+    "desc": "Ethiopian government department",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -16554,17 +16779,30 @@
    },
    {
     "n": "Bank of Abyssinia",
-    "how": "unresolved"
+    "q": "Q124408740",
+    "how": "cited",
+    "label": "Bank of Abyssinia",
+    "desc": "private bank in Ethiopia",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
    {
     "n": "telebirr",
-    "how": "unresolved"
+    "q": "Q106993974",
+    "how": "cited",
+    "label": "Telebirr",
+    "desc": "A mobile money service which is owned and launched by Ethio telecom",
+    "checked": "2026-11-17"
    },
    {
     "n": "M-Pesa",
-    "how": "unresolved"
+    "q": "Q252382",
+    "how": "cited",
+    "label": "M-Pesa",
+    "desc": "mobile banking se",
+    "checked": "2026-11-17",
+    "site": "https://www.mpesa.in"
    }
   ],
   "jobs": [
@@ -16582,7 +16820,11 @@
   "news": [
    {
     "n": "Addis Standard",
-    "how": "unresolved"
+    "q": "Q19570752",
+    "how": "cited",
+    "label": "Addis Standard",
+    "desc": "Ethiopian social, economic and political news magazine",
+    "checked": "2026-11-17"
    },
    {
     "n": "Reporter",
@@ -16670,7 +16912,12 @@
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "unresolved"
+    "q": "Q252382",
+    "how": "cited",
+    "label": "M-Pesa",
+    "desc": "mobile banking se",
+    "checked": "2026-11-17",
+    "site": "https://www.mpesa.in"
    },
    {
     "n": "Mixx by Yas",
@@ -16678,7 +16925,12 @@
    },
    {
     "n": "Airtel Money",
-    "how": "unresolved"
+    "q": "Q141804294",
+    "how": "cited",
+    "label": "Airtel Money",
+    "desc": "mobile payments company",
+    "checked": "2026-11-17",
+    "site": "https://www.airtelmoney.com/"
    }
   ],
   "rail": [
@@ -16822,7 +17074,12 @@
    },
    {
     "n": "Airtel Money",
-    "how": "unresolved"
+    "q": "Q141804294",
+    "how": "cited",
+    "label": "Airtel Money",
+    "desc": "mobile payments company",
+    "checked": "2026-11-17",
+    "site": "https://www.airtelmoney.com/"
    }
   ],
   "shop": [
@@ -17353,7 +17610,11 @@
   "shop": [
    {
     "n": "Ouedkniss",
-    "how": "unresolved"
+    "q": "Q60573233",
+    "how": "cited",
+    "label": "Ouedkniss",
+    "desc": "company",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -17376,7 +17637,11 @@
   "prop": [
    {
     "n": "Ouedkniss",
-    "how": "unresolved"
+    "q": "Q60573233",
+    "how": "cited",
+    "label": "Ouedkniss",
+    "desc": "company",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -17954,7 +18219,12 @@
    },
    {
     "n": "Airtel Money",
-    "how": "unresolved"
+    "q": "Q141804294",
+    "how": "cited",
+    "label": "Airtel Money",
+    "desc": "mobile payments company",
+    "checked": "2026-11-17",
+    "site": "https://www.airtelmoney.com/"
    }
   ],
   "groc": [
@@ -17988,7 +18258,11 @@
   "news": [
    {
     "n": "Lusaka Times",
-    "how": "unresolved"
+    "q": "Q6705010",
+    "how": "cited",
+    "label": "Lusaka Times",
+    "desc": "periodical",
+    "checked": "2026-11-17"
    },
    {
     "n": "Zambia Daily Mail",
@@ -18057,7 +18331,11 @@
   "pay": [
    {
     "n": "EcoCash",
-    "how": "unresolved"
+    "q": "Q55610475",
+    "how": "cited",
+    "label": "EcoCash",
+    "desc": "",
+    "checked": "2026-11-17"
    },
    {
     "n": "OneMoney",
@@ -18109,7 +18387,11 @@
   "telco": [
    {
     "n": "Econet",
-    "how": "unresolved"
+    "q": "Q123964851",
+    "how": "cited",
+    "label": "Econet Zimbabwe",
+    "desc": "Zimbabwean telecommunications company",
+    "checked": "2026-11-17"
    },
    {
     "n": "NetOne",
@@ -18117,7 +18399,11 @@
    },
    {
     "n": "Telecel",
-    "how": "unresolved"
+    "q": "Q60752983",
+    "how": "cited",
+    "label": "Telecel Zimbabwe",
+    "desc": "business",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -18175,7 +18461,12 @@
    },
    {
     "n": "Airtel Money",
-    "how": "unresolved"
+    "q": "Q141804294",
+    "how": "cited",
+    "label": "Airtel Money",
+    "desc": "mobile payments company",
+    "checked": "2026-11-17",
+    "site": "https://www.airtelmoney.com/"
    }
   ],
   "groc": [
@@ -18279,7 +18570,12 @@
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "unresolved"
+    "q": "Q252382",
+    "how": "cited",
+    "label": "M-Pesa",
+    "desc": "mobile banking se",
+    "checked": "2026-11-17",
+    "site": "https://www.mpesa.in"
    },
    {
     "n": "e-Mola",
@@ -18398,7 +18694,11 @@
    },
    {
     "n": "Candando",
-    "how": "unresolved"
+    "q": "Q116763798",
+    "how": "cited",
+    "label": "Candando",
+    "desc": "Angolan hypermart chain",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -18483,7 +18783,12 @@
   "pay": [
    {
     "n": "Orange Money",
-    "how": "unresolved"
+    "q": "Q16668220",
+    "how": "cited",
+    "label": "Orange Money",
+    "desc": "Mobile money transfer",
+    "checked": "2026-11-17",
+    "site": "https://www.orangemoney.eu/"
    },
    {
     "n": "MyZaka",
@@ -18773,7 +19078,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -19048,7 +19357,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -19178,7 +19491,12 @@
    },
    {
     "n": "RPP",
-    "how": "unresolved"
+    "q": "Q3090686",
+    "how": "cited",
+    "label": "Radio Programas del Perú",
+    "desc": "Peruvian radio network",
+    "checked": "2026-11-17",
+    "site": "https://rpp.pe"
    }
   ],
   "telco": [
@@ -19308,7 +19626,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -19601,7 +19923,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -19620,7 +19946,11 @@
    },
    {
     "n": "Mi Comisariato",
-    "how": "unresolved"
+    "q": "Q16606759",
+    "how": "cited",
+    "label": "Mi Comisariato",
+    "desc": "cadena de supermercados de Ecuador",
+    "checked": "2026-11-17"
    },
    {
     "n": "Tía",
@@ -20043,7 +20373,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -20519,7 +20853,11 @@
    },
    {
     "n": "Computrabajo",
-    "how": "unresolved"
+    "q": "Q110924390",
+    "how": "cited",
+    "label": "Computrabajo",
+    "desc": "enterprise",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -21925,7 +22263,11 @@
    },
    {
     "n": "vignette",
-    "how": "unresolved"
+    "q": "Q260866",
+    "how": "cited",
+    "label": "vignette",
+    "desc": "form of road pricing imposed on vehicles",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -21957,7 +22299,11 @@
   "exams": [
    {
     "n": "matura",
-    "how": "unresolved"
+    "q": "Q694222",
+    "how": "cited",
+    "label": "matura",
+    "desc": "name of final exam of high school in many countries",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -22209,7 +22555,11 @@
    },
    {
     "n": "matura",
-    "how": "unresolved"
+    "q": "Q694222",
+    "how": "cited",
+    "label": "matura",
+    "desc": "name of final exam of high school in many countries",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -22312,7 +22662,11 @@
   "shop": [
    {
     "n": "Njuškalo",
-    "how": "unresolved"
+    "q": "Q48987699",
+    "how": "cited",
+    "label": "Njuškalo",
+    "desc": "top Croation website",
+    "checked": "2026-11-17"
    },
    {
     "n": "Links",
@@ -22393,7 +22747,11 @@
   "prop": [
    {
     "n": "Njuškalo",
-    "how": "unresolved"
+    "q": "Q48987699",
+    "how": "cited",
+    "label": "Njuškalo",
+    "desc": "top Croation website",
+    "checked": "2026-11-17"
    },
    {
     "n": "Index oglasi",
@@ -22931,7 +23289,11 @@
   "exams": [
    {
     "n": "matura",
-    "how": "unresolved"
+    "q": "Q694222",
+    "how": "cited",
+    "label": "matura",
+    "desc": "name of final exam of high school in many countries",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -23096,7 +23458,11 @@
   "rail": [
    {
     "n": "LTG Link",
-    "how": "unresolved"
+    "q": "Q110111309",
+    "how": "cited",
+    "label": "LTG Link",
+    "desc": "Lithuanian rail transport company",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
