@@ -1342,20 +1342,58 @@ let _cjCache = null, _cjCacheKey = '';
    then the country's own (written for it), then the jobs that work on a
    connected account anywhere, strongest first, then the catalogue of the
    country's real services in the order the data ranks them. */
-function _cjList(){
+/* INBOX & CALENDAR, FOR THE COUNTRY (Nov 17, the owner: "inbox and calendar
+   is not updated for countries"). It held the same eleven jobs everywhere,
+   because no kind in a country's catalogue is a mailbox or a date. Two are
+   real and known per country: the national mailboxes Integrations already
+   connects (AMV_MAIL_CC - Naver Mail in Korea, WEB.DE in Germany), ordered by
+   how much their sites are visited from there (app-reach, Chrome UX Report);
+   and the country's public holidays. */
+const _CJ_MAIL_JOBS = [
+  ['digest', '\uD83D\uDCEC', '{0} inbox digest', 'Each evening, the emails in my {0} inbox that actually need me - summarized, with what to do about each.', 'daily'],
+  ['alerts', '\uD83D\uDEA8', 'Important {0} email alerts', 'Tell me the moment something in my {0} inbox genuinely needs me - not a digest, an alert.', 'hourly'],
+];
+const _cjInboxCalMade = {}, _cjInboxCalById = {};
+try{ window._cjInboxCalById = _cjInboxCalById; }catch(e){}
+function _cjInboxCal(cc){
+  if(!cc) return [];
+  const mk = cc + '|' + (typeof _lang === 'function' ? _lang() : '') + '|' + (typeof window._appReachKey === 'function' && window._appReachKey({ name: 'Gmail' }, cc) != null ? 1 : 0);
+  if(_cjInboxCalMade[mk]) return _cjInboxCalMade[mk];
+  const out = [];
+  try{
+    const mail = [];
+    _appCats().forEach(c => (c.apps || []).forEach(a => { const m = /^mail:(.+)$/.exec(a.how || ''); if(m && AMV_MAIL_CC[m[1]] === cc) mail.push({ a, id: m[1], k: (typeof window._appReachKey === 'function' ? window._appReachKey(a, cc) : null) }); }));
+    mail.sort((x, y) => (x.k == null ? 99 : x.k) - (y.k == null ? 99 : y.k));
+    mail.forEach(({ a, id }) => _CJ_MAIL_JOBS.forEach(([k, icon, title, desc, every]) => {
+      const name = String(a.name).replace(/\s*\(.*\)\s*$/, '');
+      out.push({ id: 'cal_' + cc + '_' + id + '_' + k, cat: 'Inbox & calendar', icon, title: T(title).replace('{0}', name), desc: T(desc).replace('{0}', name), prompt: T(desc).replace('{0}', name), every, needs: 'Email', on: false, ccMail: id });
+    }));
+  }catch(e){}
+  const place = (() => { try{ const row = CW_WORLD_COUNTRIES.find(c => c[0] === cc); return row ? _cwPlaceName(row[1]) : cc; }catch(e){ return cc; } })();
+  out.push({ id: 'cal_' + cc + '_holidays', cat: 'Inbox & calendar', icon: '\uD83D\uDDD3\uFE0F', title: T('Public holidays in {0}').replace('{0}', place),
+    desc: T('Before each public holiday in {0}, tell me the date and what is closed, and put it on my calendar.').replace('{0}', place),
+    prompt: T('Before each public holiday in {0}, tell me the date and what is closed, and put it on my calendar.').replace('{0}', place), every: 'weekly', needs: 'Calendar, Web research', on: false });
+  out.forEach(j => { _cjInboxCalById[j.id] = j; });
+  return (_cjInboxCalMade[mk] = out);
+}
+function _cjList(noOnFirst){
+  if(noOnFirst) return _cjRanked();
   const cc = _cwCountryGuess();
   const cat = ((window._ccCrewJobs || {})[cc] || []);
   const len = (f) => { try{ return (f(cc) || []).length; }catch(e){ return 0; } };
   const rk = (() => { try{ const m = _cwMeta[cc]; return (m && m.ranked && m.ranked.enough) ? m.ranked : null; }catch(e){ return null; } })();
   const key = [cc, cat.length, rk ? rk.total : 0, len(_cwTopTen), len(_cwMadeForJobs), len(_cwLocalJobs), len(_cwMadeMore),
                (_cwJobs() || []).filter(j => j.on).map(j => j.id).join(',')].join('|');
-  if(_cjCache && _cjCacheKey === key) return _cjCache;
+  const ckey = key + (_cjRankOnly ? '|rank' : '');
+  if(!_cjRankOnly && _cjCache && _cjCacheKey === ckey) return _cjCache;
+  if(_cjRankOnly && _cjRankCache && _cjRankKey === ckey) return _cjRankCache;
   const seen = new Set(), out = [];
   const push = (j) => { if(j && j.id && !seen.has(j.id)){ seen.add(j.id); out.push(j); } };
   const safe = (f) => { try{ return f() || []; }catch(e){ return []; } };
   const home = safe(() => (_cwJobs() || []).concat(_cwUniversalJobs() || []));
-  home.filter(j => j.on).forEach(push);
+  if(!_cjRankOnly) home.filter(j => j.on).forEach(push);
   safe(() => _cwTopTen(cc)).forEach(push);
+  safe(() => _cjInboxCal(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
   /* The country's catalogue jobs people there have actually switched on, the
@@ -1369,9 +1407,18 @@ function _cjList(){
     .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   cat.forEach(push);
-  _cjCache = out; _cjCacheKey = key;
+  if(_cjRankOnly){ _cjRankCache = out; _cjRankKey = ckey; } else { _cjCache = out; _cjCacheKey = ckey; }
   return out;
 }
+/* POPULAR: THE COUNTRY'S FIFTY, BY THE SAME MEASURE THE LIST IS IN (Nov 17).
+   What people there switch on (server counts), then the research the list is
+   ordered by (GWI reasons, the country's own figures - docs/RESEARCH.md) - the
+   same ranking as All, without the jobs somebody has on lifted to the top,
+   because that is their list, not what is popular. */
+let _cjRankOnly = false, _cjRankCache = null, _cjRankKey = '';
+function _cjRanked(){ _cjRankOnly = true; try{ return _cjList(); } finally { _cjRankOnly = false; } }
+const CJ_POPULAR_N = 50;
+function _cjPopular(){ return _cjRanked().slice(0, CJ_POPULAR_N); }
 function _cjMatch(j, words){
   if(!words.length) return true;
   const hay = (j._cjHay || (j._cjHay = [j.title, j.desc, j.cat, _cjCat(j), j.needs, j.site].filter(Boolean).join(' ').toLowerCase()));
@@ -1379,6 +1426,7 @@ function _cjMatch(j, words){
 }
 function _cjFiltered(){
   const words = _cjQ.toLowerCase().split(/\s+/).filter(Boolean);
+  if(_cjC === 'popular') return _cjPopular().filter(j => _cjMatch(j, words));
   return _cjList().filter(j => (_cjC === 'all' || _cjCat(j) === _cjC) && _cjMatch(j, words));
 }
 /* A card: icon, title, one line of what it does, when it runs. */
@@ -1417,7 +1465,8 @@ function _cjChipsHTML(){
   const all = _cjList();
   const n = {}; all.forEach(j => { const c = _cjCat(j); n[c] = (n[c] || 0) + 1; });
   const chip = (k, label, c) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), all.length) + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  return chip('all', T('All'), all.length) + chip('popular', T('Popular'), Math.min(CJ_POPULAR_N, all.length))
+    + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
 /* The categories in the order their first job appears in the list - the list
    is most used first, so the categories are too. */
@@ -1430,13 +1479,13 @@ try{ window._cjCatsByFirst = _cjCatsByFirst; }catch(e){}
 function _cjPaint(){
   const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML();
   const c = document.getElementById('cj-cats'); if(c) c.innerHTML = _cjChipsHTML();
-  const k = document.getElementById('cj-count'); if(k) k.textContent = _cjList().length.toLocaleString() + ' ' + T('jobs');
+
 }
 /* What changes when the server answers, a country's own jobs arrive or the
    country becomes known: the heading, the country button and the jobs - drawn
    in place, so the page never rebuilds under somebody reading it. */
 function _cjRepaint(){
-  _cjCache = null;
+  _cjCache = null; _cjRankCache = null;
   try{ const h = document.getElementById('cx-jobs-h'); if(h) h.textContent = _cwJobsForHead(); }catch(e){}
   try{ const b = document.getElementById('cw-where'); if(b && b.classList.contains('cj-country')) b.outerHTML = _cjCountryBtnHTML(); }catch(e){}
   try{ const n = document.getElementById('cj-note'); if(n){ const t = _cjNoteText(); n.textContent = t; n.hidden = !t; } }catch(e){}
@@ -1480,7 +1529,7 @@ function _cjJobsHTML(){
   return `<section class="cj-jobs" id="cj-jobs" aria-labelledby="cx-jobs-h">
     <div class="cj-jobs-top">
       <h2 id="cx-jobs-h">${escH(_cwJobsForHead())}</h2>
-      <span class="cj-count" id="cj-count">${_cjList().length.toLocaleString()} ${escH(T('jobs'))}</span>
+
       <div class="cj-tools">${_cjCountryBtnHTML()}<button class="cj-all" data-dact="cjDirectory">${escH(T('See all jobs'))}</button></div>
     </div>
     <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>

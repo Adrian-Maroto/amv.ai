@@ -308,6 +308,8 @@ function _cwFindJob(id){
   const j = (()=>{ try{ return (_cwAllJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
   if(j) return j;
   try{ for(const l of Object.values(window._ccCrewJobs || {})){ const k = (l || []).find(x => x.id === id); if(k) return k; } }catch(e){}
+  /* A country's own inbox and calendar jobs (crew-view.js, _cjInboxCal). */
+  try{ const m = window._cjInboxCalById; if(m && m[id]) return m[id]; }catch(e){}
   /* A row the directory of every job has drawn (crew-view.js, _cjdRows). */
   try{ const m = window._cjdMade; if(m && m[id]) return m[id]; }catch(e){}
   return null;
