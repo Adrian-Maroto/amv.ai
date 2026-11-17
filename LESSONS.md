@@ -16038,9 +16038,8 @@ rule than the strict one - every word of the name in the match, a one-word
 name only exactly or with one company word, placed in the country rather than
 merely visited from it. The honest result was 2,513, not 2,972.
 
-## 653
-A list merged by id cannot learn of a delete from the list itself. The chat
-shelf fixed this for chats in the spring; memory, saved prompts and Recents
+## 653. A list merged by id cannot learn of a delete from the list itself (Nov 17)
+The chat shelf fixed this for chats in the spring; memory, saved prompts and Recents
 were merged the same way and kept the bug until the owner asked whether memory
 "100 percent works". A memory forgotten on the laptop came back from the
 phone's copy at its next pull, and the phone then pushed it as the device that
