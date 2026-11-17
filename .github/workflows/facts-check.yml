@@ -33,13 +33,16 @@ jobs:
           COUNTRIES: ${{ github.event.inputs.countries }}
         run: |
           if [ -z "$COUNTRIES" ] && [ -f data/facts-request.txt ]; then COUNTRIES="$(grep -v '^#' data/facts-request.txt | tr '\n' ' ')"; fi
+          # "# candidates" in the request: fetch what Wikidata offers for each
+          # unresolved name, for citing by hand - and verify nothing.
+          if grep -q '^# candidates' data/facts-request.txt 2>/dev/null; then node scripts/facts-candidates.mjs $COUNTRIES; exit 0; fi
           node scripts/facts-check.mjs $COUNTRIES
       - name: Commit the result
         if: always()
         run: |
           git config user.name "amv-data-bot"
           git config user.email "amv-data-bot@users.noreply.github.com"
-          git add data/facts-sources.json docs/FACTS-CHECK.md
+          git add data/facts-sources.json docs/FACTS-CHECK.md; [ -f data/facts-candidates.json ] && git add data/facts-candidates.json
           if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
           git commit -m "Country facts checked against Wikidata and the Chrome UX Report"
           for i in 1 2 3 4 5; do
