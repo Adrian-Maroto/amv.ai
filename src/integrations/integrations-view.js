@@ -523,6 +523,15 @@ function renderIntegrationsView(){
     Promise.race([_appReachLoad(), new Promise(r => setTimeout(r, 1200))]).then(() => {
       try{ if(S.tab === 'integrations' || S.tab === 'apps') renderIntegrationsView(); }catch(e){}
     });
+    /* The screen changes the moment it is pressed: its heading and a loading
+       shape where the apps go, while the order (at most 1.2s) arrives - not
+       the screen somebody just left, which in a slower engine (WebKit,
+       nightly) stood there long enough to read as a dead button. No search
+       box here: one typed into now would be replaced under the cursor. */
+    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn" aria-busy="true">'
+      + '<h2 class="int2-h">' + escH(T('Integrations')) + '</h2>'
+      + '<p class="vsub int2-sub">' + escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.')) + ' ' + escH(T('Check the address before you sign in.')) + '</p>'
+      + '<div class="int-wait" role="status" aria-label="' + escH(T('Loading…')) + '">' + '<div class="skel"></div>'.repeat(6) + '</div></div></div>';
     return;
   }
   /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.

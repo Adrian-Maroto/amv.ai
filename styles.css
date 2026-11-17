@@ -17540,3 +17540,7 @@ html[dir="rtl"] .chome-sug{text-align:right}
    of it is left lying beyond the greeting. Still transform alone (the sweep's
    own suite holds it to that), and only in the last instant. */
 @keyframes amvShineBand{ 0%{ transform:translateX(-100%) scaleX(1); } 99.5%{ transform:translateX(250%) scaleX(1); } 100%{ transform:translateX(250%) scaleX(0); } }
+/* Integrations while its order arrives (at most 1.2s): rows in the shape of
+   the list that replaces them. */
+.int-wait{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-5)}
+.int-wait .skel{height:64px}

@@ -94,5 +94,29 @@ section('Without the data, the screen still draws, in the written order');
   await app.close();
 }
 
+
+section('While the order is on its way, the button still answers at once');
+{
+  /* In a slower engine (WebKit, nightly) the visit data arrived after the
+     press, and the screen somebody had left stayed up while it waited - a
+     dead button to anybody looking. Held back here on purpose, 4s - longer than boot, and than the 1.2s the screen waits for it. */
+  /* No service worker: it answers app-reach.json itself, past the route. */
+  const app = await bootApp({ tab: 'chat', blockServiceWorkers: true, user: { name: 'O', email: 'o@x.com', ini: 'O' },
+    beforeLoad: async (page) => { await page.route('**/app-reach.json', async (r) => { await new Promise(x => setTimeout(x, 4000)); await r.continue(); }); } });
+  const { page, errors } = app;
+  const now = await page.evaluate(() => {
+    const vc = document.getElementById('vc'); vc.innerHTML = '<span id="__left"></span>';
+    setTab('integrations');
+    return { left: !!document.getElementById('__left'), h: (vc.querySelector('h2') || {}).textContent || '', wait: !!vc.querySelector('.int-wait'), busy: !!vc.querySelector('[aria-busy="true"]') };
+  });
+  ok(!now.left && /Integrations/.test(now.h), 'the press changes the screen at once, to Integrations', now);
+  ok(now.wait && now.busy, 'with the list shown as on its way, not as empty', now);
+  await page.waitForSelector('#vc .int-list', { timeout: 5000 });
+  const later = await page.evaluate(() => ({ wait: !!document.querySelector('#vc .int-wait'), rows: document.querySelectorAll('#vc .int-card').length }));
+  ok(!later.wait && later.rows > 10, 'and the list arrives, in its order, in place of it', later);
+  ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
+  await app.close();
+}
+
 report();
 done();
