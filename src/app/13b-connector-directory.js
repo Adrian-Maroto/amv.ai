@@ -290,6 +290,11 @@ function _cdirWireFind(){
   try{
     const f = $('cdir-find');
     if(!f) return;
+    /* The matching apps under the box as you type; picking one searches for
+       it, which puts its row - with Connect or Use - on the page. Registered
+       before Enter-to-search so a picked name is what gets searched. */
+    amvTypeahead(f, { items: () => { const out = []; try{ _appCats().forEach(c => c.apps.forEach(a => out.push({ label: a.name, sub: T(String(c.t).replace(/&amp;/g, '&')) }))); }catch(e){} return out; },
+      onPick: (it) => { f.value = it.label; cdirSearch(); } });
     on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
     /* WHAT WAS TYPED, NOT WHAT WAS LAST SUBMITTED.
 

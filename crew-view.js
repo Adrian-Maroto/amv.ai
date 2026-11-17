@@ -1731,6 +1731,9 @@ function _cjWire(vc){
   const q = document.getElementById('cx-q');
   if(q){
     let t = 0;
+    /* The matching jobs under the box as you type; picking one opens it. */
+    amvTypeahead(q, { items: () => _cjList().map(j => ({ label: j.title, sub: j.desc || '', id: j.id })),
+      onPick: (it) => { try{ q.blur(); }catch(e){} cwPeek(it.id); } });
     on(q, 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cjQ = v.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); }, 120); });
     on(q, 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(t); _cjQ = this.value.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); } });
   }

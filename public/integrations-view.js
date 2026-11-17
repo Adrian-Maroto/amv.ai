@@ -445,6 +445,9 @@ function renderTasksView(){
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}
   let t = 0;
+  /* The matching tasks under the box as you type; picking one starts it. */
+  amvTypeahead($('tk-find'), { items: () => _tkList.map(x => ({ label: x.title, sub: x.e.n || '', id: x.id })),
+    onPick: (it) => launchTask(it.id) });
   on($('tk-find'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _tkQ = v.trim(); _tkN = 60; _tkPaint(); }, 120); });
   on($('tk2-cats'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); } });
   on($('tk2-body'), 'click', (e) => { const b = e.target.closest && e.target.closest('.tk2-all[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); try{ $('tk2-cats').scrollIntoView({ block:'nearest' }); }catch(_){} } });

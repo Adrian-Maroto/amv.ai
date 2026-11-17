@@ -17601,3 +17601,13 @@ html[dir="rtl"] .chome-sug{text-align:right}
    thumb's size where there are thumbs. */
 .dev-shell:not(.dev-blank) .build-modes,.lab-shell:not(.lab-blank) > .build-modes{display:none!important}
 @media (pointer:coarse),(max-width:760px){.build-modes .build-mode{min-height:44px!important}}
+
+/* ========== LAYER A379 (Nov 17): matches under the box as you type ========== */
+.ta-list{position:fixed;z-index:9000;max-height:min(360px,50vh);overflow-y:auto;padding:var(--sp-1);
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg);box-shadow:var(--sh-lg);overscroll-behavior:contain}
+.ta-opt{display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:40px;padding:var(--sp-2) var(--sp-3);border-radius:var(--r-md);cursor:pointer}
+.ta-opt:hover,.ta-opt.on{background:var(--s2)}
+.ta-opt.on{box-shadow:inset 2px 0 0 var(--accent)}
+.ta-l{font-size:var(--t-base);color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ta-s{font-size:var(--t-xs);color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (pointer:coarse){.ta-opt{min-height:48px}}
