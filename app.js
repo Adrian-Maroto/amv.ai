@@ -10307,16 +10307,17 @@ function renderChatView() {
       '<div id="cia">'+
         '<div id="cib">'+
           '<div id="ab2"><div id="ac"></div></div>'+
-          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - advice, facts, writing, code…" rows="1"></textarea>'+
+          '<textarea id="mta" data-i18n-ph placeholder="Ask anything" aria-label="'+escH(T('Message AMV'))+'" rows="1"></textarea>'+
           '<div id="itb">'+
             '<div class="il">'+
-              '<button class="atb" id="att-btn" title="Attach file">'+
-                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'+
+              /* "+": files, and the modes that change how AMV answers (A377). */
+              '<button class="atb" id="att-btn" type="button" aria-haspopup="menu" title="'+escH(T('Add files and more'))+'" aria-label="'+escH(T('Add files and more'))+'">'+
+                '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'+
               '</button>'+
-              '<button class="atb" id="voice-btn" title="Voice input">'+
+              '<button class="atb" id="voice-btn" type="button" title="Voice input" aria-label="'+escH(T('Dictate'))+'">'+
                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>'+
               '</button>'+
-              '<button class="atb" id="voicemode-btn" title="Hands-free voice mode">'+
+              '<button class="atb" id="voicemode-btn" type="button" title="Hands-free voice mode" aria-label="'+escH(T('Hands-free voice mode'))+'">'+
                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg>'+
               '</button>'+
               '<button class="atb atb-research" id="research-btn" title="Research mode - search many sources and write a sourced report">'+
@@ -10776,6 +10777,74 @@ function _toggleReaction(idx, emoji){
 // A subtle starter chip for the clean chat home: label the user sees, full
 // prompt inserted into the composer on click.
 // Small pill chip with an icon - sits under the composer on the home screen.
+/* WHAT THE HOME SCREEN SAYS, AND WHAT IT OFFERS (Nov 17, the owner: "the good
+   to see you, welcome back etc. and on the bottom it randomises based on
+   recent chats").
+
+   The greeting is picked once per chat, so a redraw never swaps it under
+   somebody reading it. "Welcome back" only to somebody who has been here. */
+let _homePick = null;
+function _homePickFor(){
+  if(!_homePick || _homePick.conv !== S.cur){
+    const recents = _recentConvs();
+    const g = ['time', 'see'].concat(recents.length ? ['back', 'back'] : []);
+    _homePick = { conv: S.cur, greet: g[Math.floor(Math.random() * g.length)], seed: Math.random() };
+  }
+  return _homePick;
+}
+function _homeGreetHTML(name){
+  if(!name) return escH(T('What should we build?'));
+  const k = _homePickFor().greet;
+  if(k === 'time') return _greetHTML(name);
+  return escH(T(k === 'see' ? 'Good to see you, {name}.' : 'Welcome back, {name}.')).replace('{name}', escH(name));
+}
+/* Suggestions made from the person's own recent chats: two of them, chosen at
+   random each new chat, each with a next step that works for any subject -
+   carry on, what is new since, or a weekly briefing AMV can set up. Built from
+   titles kept on this device; nothing is sent anywhere to make them. With no
+   recent chats there is nothing to build from, and the starter chips show. */
+const _HOME_SUG = [
+  ['continue', 'Pick up where you left off: {0}'],
+  ['research', 'What is new on {0} since we last talked?'],
+  ['automate', 'Give me a weekly briefing on {0}'],
+];
+const _HOME_SUG_VERB = /^(how|what|why|when|where|who|which|can|could|should|would|is|are|do|does|did|will|please|help|fix|write|make|build|create|draft|plan|debug|find|compare|design|generate|convert|review|edit|explain|translate|summari[sz]e|rewrite|check|list|give|tell|show|turn|add|remove|update|set|get|send|book|buy|learn|teach|improve|analy[sz]e|calculate|solve|code|research|prepare|organi[sz]e|choose|pick|decide|start|stop|change|move|clean|test)\b/i;
+/* Words that say a title is not English, in the languages written in the same
+   letters: a Spanish title is plain ASCII too, and "What is new on Viaje a
+   Kioto" is the sentence this exists to prevent. */
+const _HOME_SUG_FOREIGN = /\b(el|la|los|las|del|para|con|que|una|por|en|y|le|les|des|du|pour|avec|une|et|der|die|das|und|mit|für|ein|eine|im|zum|do|da|os|com|um|uma|il|di|per|gli|della|che)\b/i;
+function _homeSugSubject(t){
+  const code = (typeof _lang === 'function') ? _lang() : 'en';
+  if(code !== 'en' && code !== 'auto') return false;
+  return /^[\x20-\x7e’]+$/.test(t) && !/[?]\s*$/.test(t) && !_HOME_SUG_VERB.test(t) && !_HOME_SUG_FOREIGN.test(t) && t.split(/\s+/).length <= 12;
+}
+function _homeSuggestHTML(){
+  const untitled = /^(new (conversation|chat)|untitled)?$/i;
+  const seen = new Set();
+  const pool = _recentConvs().filter(c => c.id !== S.cur).map(c => ({ id: c.id, t: String(c.title || '').replace(/\s+/g, ' ').trim() }))
+    .filter(c => c.t && !untitled.test(c.t) && c.t !== T('New Conversation') && !seen.has(c.t.toLowerCase()) && seen.add(c.t.toLowerCase()))
+    .slice(0, 8);
+  if(!pool.length) return '';
+  let r = _homePickFor().seed;
+  const rnd = () => { r = (r * 9301 + 0.49297) % 1; return r; };
+  for(let i = pool.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
+  const used = new Set();
+  return '<div class="chome-sugs">' + pool.slice(0, 2).map(c => {
+    /* "What is new on Fix the login bug" is nonsense: only a title that reads
+       as a subject - English, not a command, not a question - gets the two
+       that name it as one. Anything else is offered as itself, to carry on. */
+    const subject = _homeSugSubject(c.t);
+    let k = subject ? Math.floor(rnd() * _HOME_SUG.length) : 0;
+    if(subject && used.has(k)) k = (k + 1) % _HOME_SUG.length; used.add(k);
+    const [kind, tpl] = _HOME_SUG[k];
+    const topic = c.t.length > 80 ? c.t.slice(0, 79) + '…' : c.t;
+    const text = T(tpl).replace('{0}', topic);
+    const ic = { continue: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>', research: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>', automate: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' }[kind];
+    return '<button type="button" class="chome-sug" data-kind="' + kind + '" data-sug="' + escH(text) + '"' + (kind === 'continue' ? ' data-conv="' + escH(c.id) + '"' : '') + '>'
+      + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ic + '</svg>'
+      + '<span class="chome-sug-t">' + escH(text) + '</span></button>';
+  }).join('') + '</div>';
+}
 function _chip(kind, label, prompt){
   const ic={
     build:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>',
@@ -10816,7 +10885,10 @@ function _toggleResearch(){
 
 function _openResearchMenu(){
   document.querySelectorAll('.research-menu').forEach(m=>m.remove());
-  const btn=$('research-btn'); if(!btn) return;
+  const rb=$('research-btn'); if(!rb) return;
+  /* Research lives in the "+" menu now, and its own button shows only while
+     it is on - so the menu opens off whichever of the two is on screen. */
+  const btn=(rb.offsetParent ? rb : ($('att-btn')||rb));
   const menu=document.createElement('div');
   menu.className='research-menu';
   menu.innerHTML=
@@ -11061,7 +11133,7 @@ function renderChatMsgs() {
 
   if(!msgs.length) {
     const fname=S.user?.name?.split(' ')[0]||'';
-    const title = fname ? _greetHTML(fname) : escH(T('What should we build?'));
+    const title = _homeGreetHTML(fname);
     cm.classList.add('cm-empty');
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
     // Greeting sits above the composer; the starter chips render BELOW it.
@@ -11084,10 +11156,6 @@ function renderChatMsgs() {
         /* A new chat inside a project says so before anything is typed, and an
            assistant offers its starter questions here. */
         _projectBannerHTML()+
-        '<div class="chome-toggles">'+
-          (_isTempChat() ? '' : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
-          (_isStudyChat() ? '' : '<button type="button" class="temp-toggle" data-dact="toggleStudyMode" title="'+escH(T('AMV teaches step by step instead of handing over answers'))+'">'+escH(T('Study mode'))+'</button>')+
-        '</div>'+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 
@@ -11108,7 +11176,22 @@ function renderChatMsgs() {
       '';
     try{ if(typeof _wireAwayCard==='function') _wireAwayCard(cm); }catch(e){}
     const chips=$('chome-chips');
-    if(chips){
+    /* The two switches sit under the suggestions, out of the greeting's way. */
+    const toggles='<div class="chome-toggles">'+
+          (_isTempChat() ? '' : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
+          (_isStudyChat() ? '' : '<button type="button" class="temp-toggle" data-dact="toggleStudyMode" title="'+escH(T('AMV teaches step by step instead of handing over answers'))+'">'+escH(T('Study mode'))+'</button>')+
+        '</div>';
+    const sugs=_homeSuggestHTML();
+    if(chips && sugs){
+      chips.innerHTML=sugs+toggles;
+      chips.querySelectorAll('[data-sug]').forEach(b=>b.addEventListener('click',()=>{
+        if(b.dataset.conv){ if(typeof loadConv==='function') loadConv(b.dataset.conv); return; }
+        const ta=$('mta'); if(!ta) return;
+        ta.value=b.dataset.sug; fitChatComposer(ta); ta.focus();
+        try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(e){}
+      }));
+      document.querySelectorAll('.chome-recent').forEach(e=>e.remove());
+    } else if(chips){
       chips.innerHTML=
         /* In the order people actually use an assistant: practical guidance,
            looking things up and writing - mostly improving text the person
@@ -11120,7 +11203,7 @@ function renderChatMsgs() {
         _chip('research','Look up','Find out the current facts on something I need to know, with the sources and the date of each. Ask me what it is first.')+
         _chip('write','Edit','Improve something I have written - clearer and tighter, without changing what I mean or how I sound. I will paste it next.')+
         _chip('build','Build','Build me a small working app I can actually use, run it, and show me the result. Ask me what it should do first.')+
-        _chip('automate','Automate','Every morning at 7, find what changed overnight in the things I follow and have a short brief ready. Ask me what to follow first.');
+        _chip('automate','Automate','Every morning at 7, find what changed overnight in the things I follow and have a short brief ready. Ask me what to follow first.')+toggles;
       chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
         /* The first chip this person ever clicks, by its name only, so the
            owner learns which starting point turns into people who stay
@@ -11495,6 +11578,17 @@ function fitChatComposer(el){
   el.style.maxHeight = max + 'px';
   el.style.height = Math.min(need, max) + 'px';
   el.style.overflowY = need > max ? 'auto' : 'hidden';
+  /* The pill holds one line beside its buttons. Once the text needs a second
+     line it gets the whole width above them - and keeps it until the box is
+     empty again, so it does not flip back and forth at the edge of a line. */
+  try{
+    const cib = el.id === 'mta' && el.closest('#cib');
+    if(cib){
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || 22;
+      const tall = !!el.value && (need > lh * 1.6 || /\n/.test(el.value) || cib.classList.contains('cib-tall'));
+      if(tall !== cib.classList.contains('cib-tall')){ cib.classList.toggle('cib-tall', tall); el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight || need, max) + 'px'; }
+    }
+  }catch(e){}
 }
 try{ window.addEventListener('resize', () => fitChatComposer($('mta')), { passive:true }); }catch(e){}
 
@@ -13466,7 +13560,9 @@ function _attachMenu(anchor){
   const menu = document.createElement('div');
   menu.className = 'ctxm'; menu.setAttribute('role', 'menu');
   menu.innerHTML = '<button type="button" class="ctxi" role="menuitem" data-att="upload">' + escH(T('Upload from this device')) + '</button>'
-    + '<button type="button" class="ctxi" role="menuitem" data-att="library">' + escH(T('Your files')) + '</button>';
+    + '<button type="button" class="ctxi" role="menuitem" data-att="library">' + escH(T('Your files')) + '</button>'
+    /* The "+" in the chat box is also where Research is switched on (A377). */
+    + (anchor && anchor.id === 'att-btn' && $('research-btn') ? '<button type="button" class="ctxi" role="menuitem" data-att="research">' + escH(T('Research')) + '</button>' : '');
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
   menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 240)) + 'px';
@@ -13477,6 +13573,8 @@ function _attachMenu(anchor){
   const esc = e => { if(e.key === 'Escape'){ close(); try{ anchor.focus(); }catch(_){} } };
   menu.querySelector('[data-att="upload"]').addEventListener('click', () => { close(); const fi = $('fi'); if(fi) fi.click(); });
   menu.querySelector('[data-att="library"]').addEventListener('click', () => { close(); openFileLibrary(); });
+  const rs = menu.querySelector('[data-att="research"]');
+  if(rs) rs.addEventListener('click', (e) => { e.stopPropagation(); close(); if(typeof _toggleResearch === 'function') _toggleResearch(); });
   document.addEventListener('keydown', esc, true);
   setTimeout(() => document.addEventListener('click', away), 30);
   try{ menu.querySelector('.ctxi').focus(); }catch(e){}

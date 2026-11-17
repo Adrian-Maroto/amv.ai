@@ -183,7 +183,9 @@ function _attachMenu(anchor){
   const menu = document.createElement('div');
   menu.className = 'ctxm'; menu.setAttribute('role', 'menu');
   menu.innerHTML = '<button type="button" class="ctxi" role="menuitem" data-att="upload">' + escH(T('Upload from this device')) + '</button>'
-    + '<button type="button" class="ctxi" role="menuitem" data-att="library">' + escH(T('Your files')) + '</button>';
+    + '<button type="button" class="ctxi" role="menuitem" data-att="library">' + escH(T('Your files')) + '</button>'
+    /* The "+" in the chat box is also where Research is switched on (A377). */
+    + (anchor && anchor.id === 'att-btn' && $('research-btn') ? '<button type="button" class="ctxi" role="menuitem" data-att="research">' + escH(T('Research')) + '</button>' : '');
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
   menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 240)) + 'px';
@@ -194,6 +196,8 @@ function _attachMenu(anchor){
   const esc = e => { if(e.key === 'Escape'){ close(); try{ anchor.focus(); }catch(_){} } };
   menu.querySelector('[data-att="upload"]').addEventListener('click', () => { close(); const fi = $('fi'); if(fi) fi.click(); });
   menu.querySelector('[data-att="library"]').addEventListener('click', () => { close(); openFileLibrary(); });
+  const rs = menu.querySelector('[data-att="research"]');
+  if(rs) rs.addEventListener('click', (e) => { e.stopPropagation(); close(); if(typeof _toggleResearch === 'function') _toggleResearch(); });
   document.addEventListener('keydown', esc, true);
   setTimeout(() => document.addEventListener('click', away), 30);
   try{ menu.querySelector('.ctxi').focus(); }catch(e){}

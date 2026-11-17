@@ -17464,3 +17464,71 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 .cv-x{flex:0 0 auto;width:36px;height:36px;border-radius:50%;border:1px solid var(--bd);background:var(--s2);color:var(--mu);font-size:var(--t-md);line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .cv-x:hover{color:var(--tx)}
 .cv-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ========== LAYER A377 (Nov 17): the chat box is one pill ==========
+   The owner's reference: "+" on the left, the text, the engine, the mic, and
+   a round button on the right - voice while the box is empty, send once there
+   is something to send. Every button keeps its id and its handler; this only
+   places them. Text that needs a second line gets the full width above the
+   buttons (.cib-tall, set by fitChatComposer). */
+#cib{display:grid!important;grid-template-columns:auto auto minmax(0,1fr) auto auto auto;align-items:center;column-gap:2px;
+  padding:6px 8px!important;min-height:0!important;border-radius:28px!important}
+#cv.cv-home #cib{padding:8px 10px!important;min-height:0!important;border-radius:30px!important}
+#cib #itb,#cib #itb > div{display:contents!important}
+#cib #ab2{grid-column:1/-1;grid-row:1}
+#cib #mta{grid-column:3;grid-row:2;min-height:40px!important;padding:9px 8px!important;align-self:center;font-size:var(--t-md)}
+#cv.cv-home #cib #mta{font-size:var(--t-lg);min-height:44px!important;padding:10px 8px!important}
+#cib #att-btn{grid-column:1;grid-row:2}
+#cib #research-btn{grid-column:2;grid-row:2}
+#cib #research-btn:not(.on){display:none!important}
+#cib #inp-mdl-btn{grid-column:4;grid-row:2}
+#cib #voice-btn{grid-column:5;grid-row:2}
+#cib #voicemode-btn,#cib #snd{grid-column:6;grid-row:2}
+#cib .atb{width:40px;height:40px;padding:0!important;border-radius:50%!important;display:inline-flex;align-items:center;justify-content:center;color:var(--mu)}
+#cib .atb:hover{color:var(--tx);background:var(--s2)}
+#cib .atb svg{width:20px;height:20px}
+#cib #research-btn.on{width:auto;padding:0 12px!important;border-radius:var(--r-pill)!important;gap:6px;color:var(--accent);background:var(--accent-soft)}
+#cib #research-btn.on svg{width:16px;height:16px}
+#cib #snd,#cib #voicemode-btn{width:40px!important;height:40px!important;border-radius:50%!important;margin-left:4px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--accent)!important;color:var(--on-accent,#fff)!important;border:0!important}
+#cib #snd svg{width:16px;height:16px}
+#cib #voicemode-btn svg{width:20px;height:20px}
+#cib #voicemode-btn.on{box-shadow:0 0 0 3px var(--accent-soft)}
+/* Empty, nothing attached, not answering: the round button is voice. */
+#cib:has(#mta:placeholder-shown) #voicemode-btn{display:inline-flex!important}
+#cib:has(#mta:placeholder-shown):not(:has(#ab2[style*="flex"])):not(:has(#snd.stop)) #snd{display:none!important}
+#cib:not(:has(#mta:placeholder-shown)) #voicemode-btn,#cib:has(#ab2[style*="flex"]) #voicemode-btn,#cib:has(#snd.stop) #voicemode-btn{display:none!important}
+/* Two lines or more: the text gets the width, the buttons a row under it. */
+#cib.cib-tall{border-radius:var(--r-2xl)!important;row-gap:2px}
+#cib.cib-tall #mta{grid-column:1/-1}
+#cib.cib-tall #att-btn,#cib.cib-tall #research-btn,#cib.cib-tall #inp-mdl-btn,#cib.cib-tall #voice-btn,#cib.cib-tall #voicemode-btn,#cib.cib-tall #snd{grid-row:3}
+#cib.cib-tall #inp-mdl-btn{justify-self:end}
+#cib #inp-mdl-btn{justify-self:end}
+@media (pointer:coarse),(max-width:560px){
+  #cib .atb,#cib #snd,#cib #voicemode-btn{width:44px!important;height:44px!important}
+}
+/* A narrow phone: the engine shows as its dot and arrow, its name kept for
+   screen readers, so "Ask anything" is not cut in half. */
+@media (max-width:420px){#cib #inp-mdl-btn > span:not(.inp-model-dot){position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  #cib #inp-mdl-btn{min-width:44px;justify-content:center}}
+#cv.cv-home .amv-disclaimer{margin-top:var(--sp-2)}
+
+/* The greeting: plain, lighter type, the way the reference sets it. The sweep
+   stays (the owner asked for it); its copy inherits the same type. */
+#cv.cv-home .chome-title{font-family:var(--fn)!important;font-weight:400!important;letter-spacing:-.01em!important;
+  font-size:calc(clamp(24px,2.4vw,30px) * var(--fs-s,1))!important;line-height:1.25!important}
+
+/* Suggestions from recent chats: full-width rows under the box, an icon and
+   one line each, like the reference. */
+.chome-sugs{display:flex;flex-direction:column;width:100%;max-width:760px;margin:var(--sp-2) auto 0}
+.chome-sug{display:flex;align-items:center;gap:var(--sp-3);width:100%;min-height:48px;padding:var(--sp-2) var(--sp-4);border:0;border-radius:var(--r-lg);
+  background:none;color:var(--tx);font:inherit;font-size:var(--t-md);text-align:left;cursor:pointer}
+.chome-sug + .chome-sug{border-top:1px solid var(--bd)}
+.chome-sug:hover{background:var(--s2)}
+.chome-sug:hover + .chome-sug{border-top-color:transparent}
+.chome-sug:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.chome-sug svg{flex:0 0 auto;color:var(--mu)}
+.chome-sug-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html[dir="rtl"] .chome-sug{text-align:right}
+#chome-chips .chome-toggles{display:flex;justify-content:center;gap:var(--sp-2);width:100%;margin-top:var(--sp-3)}
+#cv.cv-home .input-hint{display:none!important}

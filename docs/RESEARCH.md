@@ -35,6 +35,13 @@ public can reach, so an app's signed-in address often is not in it and its own
 site is measured; a domain shared by a company's many products (google.com,
 microsoft.com, adobe.com) is never credited to one of them.
 
+## Chat home
+
+| List | What is in it | Order | Source | Refresh |
+|---|---|---|---|---|
+| Suggestions under the box (`_homeSuggestHTML`, 05-ui-blocks.js) | Two of the person's own eight most recent chat titles, each with a next step: carry on, what is new since, or a weekly briefing (the last two only for an English title that reads as a subject) | Random, a new pick for each new chat - the owner's instruction (Nov 17), not a ranking | The person's own chats, on their device | Live |
+| Starter chips (no recent chats) | Advice, Look up, Edit, Build, Automate | How people use an assistant, most first | NBER w34255 (2025), 1.5 million conversations | By hand |
+
 ## Gaps - not backed yet
 
 | What | Today | What would back it |

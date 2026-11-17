@@ -67,7 +67,11 @@ async function shape(page) {
       };
     };
     return { cib: box('#cib'), mta: box('#mta'), itb: box('#itb'),
-             chip: box('.chome-chip'), snd: box('#snd') };
+             chip: box('.chome-chip'),
+             /* The round button at the end of the box is voice while it is
+                empty and send once there is something to send (A377): it is
+                the same spot under the same thumb, so it is measured as one. */
+             snd: box(document.getElementById('snd').getBoundingClientRect().width ? '#snd' : '#voicemode-btn') };
   });
 }
 
@@ -122,7 +126,7 @@ function leftover(m) {
      'the text field keeps the floor every other control has',
      m.mta && Math.round(m.mta.h));
   ok(m.snd && m.snd.h >= MIN_TOUCH - 0.5 && m.snd.w >= MIN_TOUCH - 0.5,
-     'so does send, which is the most pressed control here',
+     'so does the round button at the end - send, or voice while the box is empty',
      m.snd && { w: Math.round(m.snd.w), h: Math.round(m.snd.h) });
   ok(m.chip && m.chip.h >= MIN_TOUCH - 0.5,
      'and the chips, which this shrink does not get to reach',
