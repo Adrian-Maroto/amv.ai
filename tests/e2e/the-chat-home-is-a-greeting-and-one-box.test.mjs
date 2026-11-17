@@ -53,6 +53,30 @@ for (const [vw, vh, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
     ok(seen.size >= 2 && [...seen].some(t => /Welcome back/.test(t)), 'new chats are greeted in different ways, welcome back among them', [...seen]);
   }
 
+  section(label + ': a long name, after the sweep, reaches past nothing');
+  {
+    /* CI's fallback font is wider than this machine's, and the sweep's band
+       rests past the end of the greeting: at 390px it reached 17px off the
+       screen there and nowhere here. Measured on a long name, which reaches
+       it in any font, and on the band's own box - what the layout helper
+       sees - not on whether the page scrolls. */
+    const r = await page.evaluate(async () => {
+      S.user.name = 'Maximiliana Konstantinopoulou';
+      const out = [];
+      for (const g of ['time', 'see', 'back']) {
+        _homePick = { conv: S.cur, greet: g, seed: 0.3 }; renderChatMsgs();
+        document.getAnimations().filter(a => /amvShine/.test(a.animationName || '')).forEach(a => a.finish());
+        await new Promise(r => requestAnimationFrame(r));
+        const w = window.innerWidth;
+        const far = [...document.querySelectorAll('.chome-title, .chome-title *')].map(e => e.getBoundingClientRect()).filter(b => b.width > 0).map(b => Math.round(b.right - w));
+        out.push(Math.max(...far));
+      }
+      S.user.name = 'Olga Petrova';
+      return out;
+    });
+    ok(r.every(x => x <= 2), 'no part of the greeting reaches past the screen', r);
+  }
+
   section(label + ': one pill - plus, the text, the engine, the mic, a round button');
   {
     await seed(['Kyoto trip in April']);

@@ -17531,3 +17531,12 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 .chome-sug-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html[dir="rtl"] .chome-sug{text-align:right}
 #chome-chips .chome-toggles{display:flex;justify-content:center;gap:var(--sp-2);width:100%;margin-top:var(--sp-3)}
+/* The sweep's band rests just past the end of the greeting. With the longer
+   greetings (A377) and a wider fallback font that pushed a 390px page 17px
+   sideways (CI, linking-a-bank). Clipped across only, so nothing outside the
+   greeting can ever be scrolled to and no letter loses its top or tail. */
+#cv.cv-home .chome-greet-w{max-width:100%;overflow-x:clip;overflow-y:visible}
+/* And once it has crossed, the band folds to nothing where it stops, so no box
+   of it is left lying beyond the greeting. Still transform alone (the sweep's
+   own suite holds it to that), and only in the last instant. */
+@keyframes amvShineBand{ 0%{ transform:translateX(-100%) scaleX(1); } 99.5%{ transform:translateX(250%) scaleX(1); } 100%{ transform:translateX(250%) scaleX(0); } }
