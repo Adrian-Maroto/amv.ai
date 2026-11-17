@@ -66,6 +66,26 @@ section('Germany has its own');
   ok(r.some(t => /WEB\.DE|T-Online/.test(t)) && !r.some(t => /Naver/.test(t)), 'WEB.DE, and not Korea\'s', r.filter(t => /WEB|Online|Naver/.test(t)).slice(0, 3));
 }
 
+section('Tasks: Popular after All, the country\'s first fifty, and no total sentence');
+{
+  await page.evaluate(() => { _cwSetCountry('ES'); setTab('tasks'); });
+  await page.waitForFunction(() => document.querySelectorAll('#tk2-body .tk-row').length > 5, null, { timeout: 20000 });
+  const r = await page.evaluate(async () => {
+    const chips = [...document.querySelectorAll('#tk2-cats [data-tkcat]')].map(c => c.dataset.tkcat);
+    document.querySelector('#tk2-cats [data-tkcat="popular"]').click(); await new Promise(r => setTimeout(r, 80));
+    const rows = [...document.querySelectorAll('#tk2-body .tk-row')].map(b => b.dataset.darg);
+    for (let i = 0; i < 5 && document.getElementById('tk-more'); i++){ document.getElementById('tk-more').click(); await new Promise(r => setTimeout(r, 40)); }
+    const all = [...document.querySelectorAll('#tk2-body .tk-row')].map(b => b.dataset.darg);
+    const sub = document.getElementById('tk2-sub');
+    return { chips: chips.slice(0, 3), first: rows.slice(0, 5), n: all.length, want: _tkList.slice(0, 50).map(t => t.id), line: sub.hidden ? '' : sub.textContent };
+  });
+  ok(r.chips[0] === 'all' && r.chips[1] === 'popular', 'All, then Popular', r.chips);
+  ok(r.n === 50 && r.first.every((id, i) => id === r.want[i]), 'fifty, in the list\'s most-visited order', { n: r.n, first: r.first.slice(0, 2) });
+  ok(!/\d{1,3}(,\d{3})+|\d{4,}/.test(r.line), 'and no "5,000 tasks naming real services there"', r.line);
+  await page.evaluate(() => setTab('crew'));
+  await page.waitForTimeout(800);
+}
+
 section('No grand total on the page');
 {
   const t = await page.evaluate(() => ({ text: document.getElementById('vc').textContent, count: !!document.getElementById('cj-count') }));

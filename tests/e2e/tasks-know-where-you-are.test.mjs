@@ -20,19 +20,21 @@ const sent = [];
 page.on('request', r => sent.push(r.url() + ' ' + (r.postData() || '')));
 const openTasks = async (cc) => {
   await page.evaluate((c) => { _cwSetCountry(c); setTab('tasks'); }, cc);
-  await page.waitForFunction(() => /\d/.test((document.getElementById('tk2-sub') || {}).textContent || ''), null, { timeout: 15000 });
+  /* The count is on the All chip now - no sentence of totals (the owner,
+     Nov 17: "don't write 5000"). */
+  await page.waitForFunction(() => /\d/.test((document.querySelector('#tk2-cats [data-tkcat="all"] span') || {}).textContent || ''), null, { timeout: 15000 });
   await page.waitForTimeout(200);
 };
 
 section('Only the country’s own tasks');
 {
   await openTasks('ES');
-  const r = await page.evaluate(() => ({ h: document.querySelector('.tk2-h h1').textContent, sub: document.getElementById('tk2-sub').textContent,
+  const r = await page.evaluate(() => ({ h: document.querySelector('.tk2-h h1').textContent, sub: (document.querySelector('#tk2-cats [data-tkcat="all"] span') || {}).textContent || '', line: document.getElementById('tk2-sub'),
     text: document.querySelector('.tk2').textContent, cats: [...document.querySelectorAll('.tk2-cat-h h2')].map(h => h.textContent),
     uniq: document.querySelectorAll('.uniq-card').length, general: document.querySelectorAll('[data-darg^="x-"], .tasks-masonry').length }));
   ok(/Spain/.test(r.h), 'headed for Spain', r.h);
   const n = +r.sub.replace(/[^\d]/g, '');
-  ok(n >= 1000, 'with the count of what is really there - ' + n, r.sub);
+  ok(n >= 1000, 'with the count of what is really there, on the All chip - ' + n, r.sub);
   ok(r.uniq === 0 && !/Only on AMV/.test(r.text), 'no "Only on AMV"', r.uniq);
   ok(r.general === 0 && !/Advice & how-to|Find out/.test(r.text), 'no general advice, find-out or writing groups', r.general);
   ok(!/Wikidata/.test(r.text), 'and no "Source: Wikidata"', '');

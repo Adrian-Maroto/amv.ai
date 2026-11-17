@@ -47,14 +47,14 @@ section('Not in the page: its own file, fetched when needed');
 section('Tasks: a row per task per named entry');
 {
   await page.evaluate(() => setTab('tasks'));
-  await page.waitForFunction(() => /\d/.test((document.getElementById('tk2-sub') || {}).textContent || '') && document.querySelector('#tk2-body .tk-row'), null, { timeout: 15000 });
+  await page.waitForFunction(() => /\d/.test((document.querySelector('#tk2-cats [data-tkcat="all"] span') || {}).textContent || '') && document.querySelector('#tk2-body .tk-row'), null, { timeout: 15000 });
   const exp = await page.evaluate(f => window.ccTasks(f).length, { ...file, kinds: { ...file.kinds, bank: file.kinds.bank.filter(e => !BAD.includes(e)) } });
-  const head = await page.evaluate(() => +((document.querySelector('#tk2-sub b') || {}).textContent || '').replace(/[^\d]/g, ''));
+  const head = await page.evaluate(() => +((document.querySelector('#tk2-cats [data-tkcat="all"] span') || {}).textContent || '').replace(/[^\d]/g, ''));
   ok(head === exp && exp >= file.total * 3, 'the count is of every task - three or more per entry', { head, exp });
   /* Every one reachable: each category opened whole, Show more until there is no more. */
   const all = await page.evaluate(async () => {
     const seen = new Map();
-    const cats = [...document.querySelectorAll('#tk2-cats [data-tkcat]')].map(c => c.dataset.tkcat).filter(c => c !== 'all');
+    const cats = [...document.querySelectorAll('#tk2-cats [data-tkcat]')].map(c => c.dataset.tkcat).filter(c => c !== 'all' && c !== 'popular');
     for (const c of cats) {
       document.querySelector('#tk2-cats [data-tkcat="' + c + '"]').click(); await new Promise(r => setTimeout(r, 60));
       for (let i = 0; i < 100 && document.getElementById('tk-more'); i++) { document.getElementById('tk-more').click(); await new Promise(r => setTimeout(r, 30)); }

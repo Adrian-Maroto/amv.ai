@@ -389,7 +389,7 @@ function _tkListHTML(){
   const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + t.e.n + ' ' + t.e.s + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
   /* A search or a category: one list, the first rows and Show more. */
   if(words.length || _tkC !== 'all'){
-    const rows = _tkList.filter(t => (_tkC === 'all' || _tkCatOf(t) === _tkC) && hit(t));
+    const rows = (_tkC === 'popular' ? _tkList.slice(0, TK_POPULAR_N) : _tkList).filter(t => (_tkC === 'all' || _tkC === 'popular' || _tkCatOf(t) === _tkC) && hit(t));
     if(!rows.length) return `<div class="cj-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cj-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
     return `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
       + (rows.length > _tkN ? `<div class="cj-more-w"><button class="btn bs" id="tk-more">${escH(T('Show more'))} <span class="cj-n">${(rows.length - _tkN).toLocaleString()}</span></button></div>` : '');
@@ -402,10 +402,16 @@ function _tkListHTML(){
       ${by[c].length > 6 ? `<button class="cj-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
     </section>`).join('');
 }
+/* POPULAR: THE COUNTRY'S FIFTY (Nov 17, the owner). The list is already most
+   visited from that country first (Chrome UX Report, then the country's own
+   before the world's - ccTasks / _ccByPop, docs/RESEARCH.md), so Popular is its
+   head: the same measure, not a second opinion. */
+const TK_POPULAR_N = 50;
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
   const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), _tkList.length) + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  return chip('all', T('All'), _tkList.length) + chip('popular', T('Popular'), Math.min(TK_POPULAR_N, _tkList.length))
+    + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
 /* The categories in the order their first task appears - the list is the
    country's most visited services first, so the categories are too. */
@@ -433,7 +439,7 @@ function renderTasksView(){
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
-        <p class="tk2-sub" id="tk2-sub">${_tkList.length ? `<b>${_tkList.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}` : escH(T('Loading…'))}</p>
+        <p class="tk2-sub" id="tk2-sub"${_tkList.length ? ' hidden' : ''}>${_tkList.length ? '' : escH(T('Loading…'))}</p>
         ${row ? `<p class="tk2-go">${escH(T('Pick one and AMV starts on it in chat.'))}</p>` : ''}</div>
       <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
@@ -463,8 +469,9 @@ async function _tkLoad(cc){
     if(cc !== _tkCc) return;
     _tkList = list;
     const sub = $('tk2-sub');
-    if(sub) sub.innerHTML = list.length ? `<b>${list.length.toLocaleString()}</b> ${escH(T('tasks naming real services there'))}`
-      : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.'));
+    /* No grand total (the owner: "don't write 5000"): the line is only for
+       the two things worth saying - still loading, or nothing here. */
+    if(sub){ sub.hidden = !!list.length; sub.innerHTML = list.length ? '' : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.')); }
     _tkPaint();
   }catch(e){
     const sub = $('tk2-sub'); if(sub) sub.textContent = T('The tasks could not load. Check your connection and try again.');
