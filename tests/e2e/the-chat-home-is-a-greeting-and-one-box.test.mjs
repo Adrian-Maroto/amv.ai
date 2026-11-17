@@ -44,13 +44,39 @@ for (const [vw, vh, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
     const g = await page.evaluate(() => { const el = document.querySelector('.chome-greet'); const c = getComputedStyle(el.closest('.chome-title')); return { t: el.textContent.trim(), w: +c.fontWeight, f: c.fontFamily, size: parseFloat(c.fontSize) }; });
     ok(/^(Good (morning|afternoon|evening), Olga|Good to see you, Olga\.|Welcome back, Olga\.)$/.test(g.t), 'it is one of the plain sentences, with their first name', g.t);
     ok(g.w <= 450 && /Inter/i.test(g.f), 'in the body face at a regular weight, like the reference', g);
-    ok(g.size >= 22 && g.size <= 32, 'at a heading size, not a banner', g.size);
+    ok(g.size >= 18 && g.size <= 22, 'at a quiet heading size, not a banner (the owner: "a bit less big")', g.size);
     await page.evaluate(() => renderChatMsgs());
     const again = await page.evaluate(() => document.querySelector('.chome-greet').textContent.trim());
     ok(again === g.t, 'and a redraw does not swap it under somebody reading it', [g.t, again]);
     const seen = new Set();
     for (let i = 0; i < 24; i++) { seen.add(await page.evaluate(() => { const c = newConvObj(); S.convs.unshift(c); S.cur = c.id; renderChatMsgs(); return document.querySelector('.chome-greet').textContent.trim(); })); }
     ok(seen.size >= 2 && [...seen].some(t => /Welcome back/.test(t)), 'new chats are greeted in different ways, welcome back among them', [...seen]);
+  }
+
+  if (label === 'desktop') {
+    section('Centered in the space beside the sidebar, open or folded to icons');
+    /* The owner, Nov 17: "make sure this is centered both when I click the
+       three lines and when I don't". Measured, both ways. */
+    const at = () => page.evaluate(() => {
+      const mid = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return r.left + r.width / 2; };
+      const sb = document.getElementById('sb').getBoundingClientRect();
+      const area = (Math.max(0, sb.right) + innerWidth) / 2;
+      return { rail: document.body.classList.contains('sb-rail'), off: ['.chome-greet', '#cib', '.chome-sugs'].map(s => Math.round(Math.abs(mid(s) - area))) };
+    });
+    await seed(['Kyoto trip in April', 'Biochemistry digestion test practice']);
+    const open = await at();
+    await page.evaluate(() => toggleSb()); await page.waitForTimeout(600);
+    const folded = await at();
+    await page.evaluate(() => toggleSb()); await page.waitForTimeout(600);
+    ok(!open.rail && open.off.every(x => x <= 2), 'with the sidebar open, greeting, box and suggestions are centered', open);
+    ok(folded.rail && folded.off.every(x => x <= 2), 'and folded to icons, still centered', folded);
+
+    section('A name typed in small letters is greeted with its capital');
+    const nm = await page.evaluate(() => { const was = S.user.name; S.user.name = 'adrian maroto'; const c = newConvObj(); S.convs.unshift(c); S.cur = c.id; renderChatMsgs();
+      const t = document.querySelector('.chome-greet').textContent; S.user.name = 'McKenzie Lee'; const c2 = newConvObj(); S.convs.unshift(c2); S.cur = c2.id; renderChatMsgs();
+      const t2 = document.querySelector('.chome-greet').textContent; S.user.name = was; return [t, t2]; });
+    ok(/Adrian/.test(nm[0]) && !/adrian/.test(nm[0]), '"adrian" is greeted as Adrian', nm[0]);
+    ok(/McKenzie/.test(nm[1]), 'and a name written with its own capitals is left as written', nm[1]);
   }
 
   section(label + ': a long name, after the sweep, reaches past nothing');
@@ -128,26 +154,28 @@ for (const [vw, vh, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
     ok(!(await visible('#research-btn')) && await page.evaluate(() => !S._researchDepth), 'pressing it again switches it off and it leaves the box');
   }
 
-  section(label + ': suggestions from recent chats');
+  section(label + ': two suggestions from different places, new each time');
   {
-    const titles = ['Biochemistry digestion test practice', 'Kyoto trip in April', 'Fix the login bug in my app', 'How do I renew my passport?', 'Viaje a Kioto en abril', 'AI startup funding conditions'];
+    /* The owner, Nov 17: "one could be about Crew, one about recent chats,
+       and every refresh it's something new". Junk titles from their history
+       ("f", "j", "ffnf" - real titles in the owner's own account) are never
+       offered back. */
+    const titles = ['Biochemistry digestion test practice', 'Kyoto trip in April', 'Fix the login bug in my app', 'How do I renew my passport?', 'Viaje a Kioto en abril', 'AI startup funding conditions', 'f', 'j', 'ffnf'];
     await seed(titles);
-    const picks = new Set(); let bad = [];
-    for (let i = 0; i < 16; i++) {
+    const picks = new Set(), kinds = new Set(); let bad = [], junk = [], same = 0, pairs = 0;
+    for (let i = 0; i < 30; i++) {
       const s = await page.evaluate(() => { const c = newConvObj(); S.convs.unshift(c); S.cur = c.id; renderChatMsgs();
         return [...document.querySelectorAll('.chome-sug')].map(b => ({ kind: b.dataset.kind, t: b.textContent.trim(), conv: b.dataset.conv || '' })); });
       if (i === 0) ok(s.length === 2, 'two suggestions under the box', s);
-      s.forEach(x => picks.add(x.t));
+      pairs++; if (s.length === 2 && (s[0].kind === s[1].kind || (['continue','research','automate'].includes(s[0].kind) && ['continue','research','automate'].includes(s[1].kind)))) same++;
+      s.forEach(x => { picks.add(x.t); kinds.add(['continue','research','automate'].includes(x.kind) ? 'recent' : x.kind); });
       bad = bad.concat(s.filter(x => x.kind !== 'continue' && /Fix the login|renew my passport|Viaje a/.test(x.t)));
-      ok(s.every(x => titles.some(t => x.t.indexOf(t) >= 0)), 'every one is made from one of their chats', s.map(x => x.t));
-      if (i > 0) break;
+      junk = junk.concat(s.filter(x => /(^|: |on )(f|j|ffnf)( |$|\?)/.test(x.t)));
     }
-    for (let i = 0; i < 14; i++) {
-      const s = await page.evaluate(() => { const c = newConvObj(); S.convs.unshift(c); S.cur = c.id; renderChatMsgs();
-        return [...document.querySelectorAll('.chome-sug')].map(b => ({ kind: b.dataset.kind, t: b.textContent.trim() })); });
-      s.forEach(x => picks.add(x.t)); bad = bad.concat(s.filter(x => x.kind !== 'continue' && /Fix the login|renew my passport|Viaje a/.test(x.t)));
-    }
-    ok(picks.size >= 4, 'a new chat gets a different pick', [...picks].slice(0, 6));
+    ok(same === 0, 'the two always come from different places', same + ' of ' + pairs);
+    ok(['recent', 'crew', 'build'].every(k => kinds.has(k)), 'a recent chat, a Crew job and something to build all turn up', [...kinds]);
+    ok(picks.size >= 8, 'a new chat gets a different pick', picks.size);
+    ok(junk.length === 0, 'a title that is not words is never offered back', junk.slice(0, 3));
     ok(bad.length === 0, 'a command, a question or another language is only ever offered to carry on', bad.slice(0, 3));
 
     const r = await page.evaluate(() => {

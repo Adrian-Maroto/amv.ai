@@ -10816,8 +10816,17 @@ function _homePickFor(){
   }
   return _homePick;
 }
+/* A first name somebody typed all in small letters ("adrian") is greeted with
+   its capital. One written any other way ("de", "McKenzie", 小林) is left as
+   they wrote it - it is theirs. */
+function _greetName(name){
+  name = String(name || '');
+  if(!name || name !== name.toLocaleLowerCase()) return name;
+  return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+}
 function _homeGreetHTML(name){
   if(!name) return escH(T('What should we build?'));
+  name = _greetName(name);
   const k = _homePickFor().greet;
   if(k === 'time') return _greetHTML(name);
   return escH(T(k === 'see' ? 'Good to see you, {name}.' : 'Welcome back, {name}.')).replace('{name}', escH(name));
@@ -10842,32 +10851,66 @@ function _homeSugSubject(t){
   if(code !== 'en' && code !== 'auto') return false;
   return /^[\x20-\x7e’]+$/.test(t) && !/[?]\s*$/.test(t) && !_HOME_SUG_VERB.test(t) && !_HOME_SUG_FOREIGN.test(t) && t.split(/\s+/).length <= 12;
 }
+/* Two suggestions from DIFFERENT places, like the assistants people already
+   use (Nov 17, the owner: "one could be about Crew, one about recent chats,
+   and every refresh it's something new"):
+     · a recent chat of theirs - carried on, or (for a title that is a subject)
+       what is new on it or a weekly briefing;
+     · a Crew job - the kind picked in proportion to how many people go online
+       for that reason (CW_GWI, GWI Q4 2025 - the same figures Crew ranks by);
+     · something to build.
+   A new pick on every page load and every new chat. A title that is not
+   words ("f", "j", "ffnf") is never offered back to its writer. */
+const _HOME_CREW = {
+  info:'Every Monday, tell me about new deadlines or rules that affect me',
+  news:'Send me a short news brief every morning at 8',
+  products:'Tell me when something I want to buy drops in price',
+  travel:'Tell me when flights for a trip I am planning get cheaper',
+  education:'Remind me of my study deadlines a week before each one',
+  finance:'Every month, summarize where my money went',
+  health:'Remind me when it is time to book my next checkup',
+};
+const _HOME_BUILD = ['Build a budget tracker I can use on my phone', 'Build a one-page site for my small business',
+  'Build a habit tracker with a streak for each day', 'Build a quiz to practise for my next exam'];
+function _homeTitleIsWords(t){
+  const w = String(t).split(/\s+/).filter(Boolean);
+  if(/[^\x00-\x7f]/.test(t)) return String(t).trim().length >= 2;     /* another script: trust it */
+  if(w.length >= 2) return w.some(x => x.length >= 3 && /[aeiouy]/i.test(x));
+  return w.length === 1 && w[0].length >= 4 && /[aeiouy]/i.test(w[0]) && !/(.)\1\1/.test(w[0]);
+}
 function _homeSuggestHTML(){
   const untitled = /^(new (conversation|chat)|untitled)?$/i;
   const seen = new Set();
   const pool = _recentConvs().filter(c => c.id !== S.cur).map(c => ({ id: c.id, t: String(c.title || '').replace(/\s+/g, ' ').trim() }))
-    .filter(c => c.t && !untitled.test(c.t) && c.t !== T('New Conversation') && !seen.has(c.t.toLowerCase()) && seen.add(c.t.toLowerCase()))
+    .filter(c => c.t && !untitled.test(c.t) && c.t !== T('New Conversation') && _homeTitleIsWords(c.t) && !seen.has(c.t.toLowerCase()) && seen.add(c.t.toLowerCase()))
     .slice(0, 8);
   if(!pool.length) return '';
   let r = _homePickFor().seed;
   const rnd = () => { r = (r * 9301 + 0.49297) % 1; return r; };
-  for(let i = pool.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
-  const used = new Set();
-  return '<div class="chome-sugs">' + pool.slice(0, 2).map(c => {
-    /* "What is new on Fix the login bug" is nonsense: only a title that reads
-       as a subject - English, not a command, not a question - gets the two
-       that name it as one. Anything else is offered as itself, to carry on. */
+  const ICON = { continue: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>', research: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    automate: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', crew: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 4a3 3 0 0 1 0 6M18 20a6 6 0 0 0-3-5.2"/>',
+    build: '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>' };
+  const recent = () => {
+    const c = pool[Math.floor(rnd() * pool.length)];
     const subject = _homeSugSubject(c.t);
-    let k = subject ? Math.floor(rnd() * _HOME_SUG.length) : 0;
-    if(subject && used.has(k)) k = (k + 1) % _HOME_SUG.length; used.add(k);
-    const [kind, tpl] = _HOME_SUG[k];
+    const [kind, tpl] = _HOME_SUG[subject ? Math.floor(rnd() * _HOME_SUG.length) : 0];
     const topic = c.t.length > 80 ? c.t.slice(0, 79) + '…' : c.t;
-    const text = T(tpl).replace('{0}', topic);
-    const ic = { continue: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>', research: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>', automate: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' }[kind];
-    return '<button type="button" class="chome-sug" data-kind="' + kind + '" data-sug="' + escH(text) + '"' + (kind === 'continue' ? ' data-conv="' + escH(c.id) + '"' : '') + '>'
-      + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ic + '</svg>'
-      + '<span class="chome-sug-t">' + escH(text) + '</span></button>';
-  }).join('') + '</div>';
+    return { kind, text: T(tpl).replace('{0}', topic), conv: kind === 'continue' ? c.id : '' };
+  };
+  const crew = () => {
+    const w = (typeof CW_GWI !== 'undefined' && CW_GWI) || { info: 1 };
+    const keys = Object.keys(_HOME_CREW).filter(k => w[k]);
+    let x = rnd() * keys.reduce((a, k) => a + w[k], 0), k = keys[0];
+    for(const key of keys){ x -= w[key]; if(x <= 0){ k = key; break; } }
+    return { kind: 'crew', text: T(_HOME_CREW[k]) };
+  };
+  const build = () => ({ kind: 'build', text: T(_HOME_BUILD[Math.floor(rnd() * _HOME_BUILD.length)]) });
+  const kinds = [recent, crew, build];
+  for(let i = kinds.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); const t = kinds[i]; kinds[i] = kinds[j]; kinds[j] = t; }
+  return '<div class="chome-sugs">' + kinds.slice(0, 2).map(f => f()).map(x =>
+    '<button type="button" class="chome-sug" data-kind="' + x.kind + '" data-sug="' + escH(x.text) + '"' + (x.conv ? ' data-conv="' + escH(x.conv) + '"' : '') + '>'
+      + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[x.kind] + '</svg>'
+      + '<span class="chome-sug-t">' + escH(x.text) + '</span></button>').join('') + '</div>';
 }
 function _chip(kind, label, prompt){
   const ic={
