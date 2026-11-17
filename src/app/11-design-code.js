@@ -479,15 +479,7 @@ function _buildRecentsHTML(kind){
 }
 /* Relative rather than a date: "3 minutes ago" is what somebody needs to tell
    two of their own projects apart, and a timestamp is not. */
-function _agoLabel(ts){
-  const t = +ts || 0; if(!t) return '';
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if(s < 60) return 'just now';
-  const m = Math.round(s / 60); if(m < 60) return m + (m === 1 ? ' minute ago' : ' minutes ago');
-  const h = Math.round(m / 60); if(h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
-  const d = Math.round(h / 24); if(d < 7) return d + (d === 1 ? ' day ago' : ' days ago');
-  try{ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }catch(e){ return ''; }
-}
+function _agoLabel(ts){ return amvAgo(ts, 'long'); }
 function _wireBuildRecents(root){
   (root || document).querySelectorAll('[data-bsess]').forEach(b =>
     on(b, 'click', () => { try{ _sessResume(b.dataset.bsess); }catch(e){} }));

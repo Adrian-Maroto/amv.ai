@@ -673,11 +673,7 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
 window._mktChat=_mktChat;
 
 // short relative time
-function _timeAgo(ts){
-  const s=Math.floor((Date.now()-ts)/1000);
-  if(s<60) return 'now'; if(s<3600) return Math.floor(s/60)+'m'; if(s<86400) return Math.floor(s/3600)+'h';
-  if(s<604800) return Math.floor(s/86400)+'d'; return new Date(ts).toLocaleDateString();
-}
+function _timeAgo(ts){ return amvAgo(ts, 'narrow'); }
 window._timeAgo=_timeAgo;
 
 /* Write/edit a 1-5 star review of a seller. */

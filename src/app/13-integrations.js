@@ -1158,24 +1158,8 @@ function connReload(){ _connTried=''; _connState={state:'idle',data:null,err:''}
 function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
-/* In the language the screen is in: the browser already knows how every one
-   of them says "2 hours ago" and "yesterday", so AMV does not keep its own. */
-function _connAgo(ts){
-  const t = Number(ts)||0; if(!t) return '';
-  const m = Math.round((Date.now()-t)/60000);
-  let lang = 'en'; try{ lang = document.documentElement.lang || 'en'; }catch(e){}
-  try{
-    const f = new Intl.RelativeTimeFormat(lang, { numeric:'auto', style:'short' });
-    if(m < 1) return f.format(0, 'second');
-    if(m < 60) return f.format(-m, 'minute');
-    if(m < 1440) return f.format(-Math.round(m/60), 'hour');
-    return f.format(-Math.round(m/1440), 'day');
-  }catch(e){
-    if(m < 60) return m+' min ago';
-    if(m < 1440) return Math.round(m/60)+'h ago';
-    return Math.round(m/1440)+' days ago';
-  }
-}
+/* In the language the screen is in (amvAgo, 01-core.js). */
+function _connAgo(ts){ return amvAgo(ts, 'short'); }
 /* Capability keys are for the wire. These are for people. */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',

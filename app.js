@@ -212,6 +212,32 @@ function _scopeKey(k){
   if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
   return 'u:'+who+'|'+k;
 }
+/* WHEN SOMETHING HAPPENED, IN THE LANGUAGE THE SCREEN IS IN.
+
+   Four screens each wrote their own "2h ago" / "5 minutes ago" / "yesterday",
+   in English, whatever language the person chose. The browser already knows
+   how every language says it, so there is one helper and it asks the browser.
+   style: 'long' (5 minutes ago), 'short' (5 min. ago), 'narrow' (5m ago).
+   Past a week it is a date, which reads better than "23 days ago". A time in
+   the future reads "in 5 minutes". */
+function amvAgo(ts, style){
+  const t = +ts || 0; if(!t) return '';
+  const d = (Date.now() - t) / 1000, a = Math.abs(d), sign = d >= 0 ? -1 : 1;
+  let lang = 'en'; try{ lang = (document.documentElement.lang && document.documentElement.lang !== 'auto') ? document.documentElement.lang : 'en'; }catch(e){}
+  if(a >= 7 * 86400){ try{ return new Date(t).toLocaleDateString(lang, { month:'short', day:'numeric' }); }catch(e){ return new Date(t).toLocaleDateString(); } }
+  try{
+    const f = new Intl.RelativeTimeFormat(lang, { numeric:'auto', style: style || 'long' });
+    if(a < 60) return f.format(0, 'second');
+    if(a < 3600) return f.format(sign * Math.round(a / 60), 'minute');
+    if(a < 86400) return f.format(sign * Math.round(a / 3600), 'hour');
+    return f.format(sign * Math.round(a / 86400), 'day');
+  }catch(e){
+    const m = Math.round(a / 60), w = m < 1 ? 'just now' : m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d';
+    return m < 1 ? w : (sign < 0 ? w + ' ago' : 'in ' + w);
+  }
+}
+try{ window.amvAgo = amvAgo; }catch(e){}
+
 /* ONE WAY TO HAND SOMEBODY A FILE.
 
    There were fourteen copies of this four-line dance across the app, and they
@@ -16284,11 +16310,7 @@ function _mktChat(otherEmail, otherName, prefill, aboutItem){
 window._mktChat=_mktChat;
 
 // short relative time
-function _timeAgo(ts){
-  const s=Math.floor((Date.now()-ts)/1000);
-  if(s<60) return 'now'; if(s<3600) return Math.floor(s/60)+'m'; if(s<86400) return Math.floor(s/3600)+'h';
-  if(s<604800) return Math.floor(s/86400)+'d'; return new Date(ts).toLocaleDateString();
-}
+function _timeAgo(ts){ return amvAgo(ts, 'narrow'); }
 window._timeAgo=_timeAgo;
 
 /* Write/edit a 1-5 star review of a seller. */
@@ -21110,7 +21132,7 @@ function cwResumeIfAny(){
 try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
 
 function cwNeeds(jobId){
-  const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+  const j = _cwFindJob(jobId);
   const r = $('ovr'); if(!j || !r) return;
   try{ if(typeof _connLoad === 'function') _connLoad(false); }catch(e){}
   const plan = _cwNeedsPlan(j);
@@ -21177,7 +21199,7 @@ function _cwConnectNeed(j, need, kind){
 try{ window.cwNeeds = cwNeeds; }catch(e){}
 
 function openCrewConnect(jobId){
-  const j=(_cwAllJobs()||[]).find(x=>x.id===jobId);
+  const j=_cwFindJob(jobId);
   const r=$('ovr'); if(!j||!r) return;
   try{ if(typeof _connLoad==='function') _connLoad(false); }catch(e){}
   const missing=_cwMissingNeeds(j);
@@ -21255,7 +21277,7 @@ async function cwConnectResume(){
   /* Stale intent is no intent. An hour-old note about a job somebody may have
      forgotten they touched is not permission to start it. */
   if(!want.at || Date.now()-want.at > 30*60000) return;
-  const j=(_cwJobs()||[]).find(x=>x.id===want.job)||(_cwAllJobs()||[]).find(x=>x.id===want.job);
+  const j=(_cwJobs()||[]).find(x=>x.id===want.job)||_cwFindJob(want.job);
   if(!j || j.on) return;
   if(_cwMissingNeeds(j).length) return;      // still not connected: nothing to resume
   try{ setTab('crew'); }catch(e){}
@@ -21292,7 +21314,7 @@ function cwConnect(jobId){
          thing missing, or a single thing that is not an OAuth grant at all. A
          bank is the second, and it is what sent people to a page with nothing
          on it for them. */
-      const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+      const j = _cwFindJob(jobId);
       const missing = j ? _cwNeedsPlan(j).filter(p => !p.met) : [];
       /* A job named for a country's own mailbox (QQ Mail, Naver, WEB.DE)
          connects THAT mailbox, by app password - not Google's sign-in, which
@@ -24412,11 +24434,7 @@ function _apvAction(a){
 /* Human "x ago" / "in x" for timestamps (accepts ms epoch or a string). */
 function _apvAgo(ts){
   if(typeof ts!=='number') return String(ts||'');
-  const d=Date.now()-ts, abs=Math.abs(d), fut=d<0;
-  const m=Math.round(abs/6e4), h=Math.round(abs/36e5), day=Math.round(abs/864e5);
-  let s = m<1?'just now' : m<60?(m+' min') : h<24?(h+' hr') : (day+' day'+(day===1?'':'s'));
-  if(s==='just now') return s;
-  return fut ? ('in '+s) : (s+' ago');
+  return amvAgo(ts, 'long');
 }
 
 /* ---- the finished result, rendered as close to reality as the data allows ---- */
@@ -25332,15 +25350,7 @@ function _buildRecentsHTML(kind){
 }
 /* Relative rather than a date: "3 minutes ago" is what somebody needs to tell
    two of their own projects apart, and a timestamp is not. */
-function _agoLabel(ts){
-  const t = +ts || 0; if(!t) return '';
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if(s < 60) return 'just now';
-  const m = Math.round(s / 60); if(m < 60) return m + (m === 1 ? ' minute ago' : ' minutes ago');
-  const h = Math.round(m / 60); if(h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
-  const d = Math.round(h / 24); if(d < 7) return d + (d === 1 ? ' day ago' : ' days ago');
-  try{ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }catch(e){ return ''; }
-}
+function _agoLabel(ts){ return amvAgo(ts, 'long'); }
 function _wireBuildRecents(root){
   (root || document).querySelectorAll('[data-bsess]').forEach(b =>
     on(b, 'click', () => { try{ _sessResume(b.dataset.bsess); }catch(e){} }));
@@ -34001,24 +34011,8 @@ function connReload(){ _connTried=''; _connState={state:'idle',data:null,err:''}
 function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
-/* In the language the screen is in: the browser already knows how every one
-   of them says "2 hours ago" and "yesterday", so AMV does not keep its own. */
-function _connAgo(ts){
-  const t = Number(ts)||0; if(!t) return '';
-  const m = Math.round((Date.now()-t)/60000);
-  let lang = 'en'; try{ lang = document.documentElement.lang || 'en'; }catch(e){}
-  try{
-    const f = new Intl.RelativeTimeFormat(lang, { numeric:'auto', style:'short' });
-    if(m < 1) return f.format(0, 'second');
-    if(m < 60) return f.format(-m, 'minute');
-    if(m < 1440) return f.format(-Math.round(m/60), 'hour');
-    return f.format(-Math.round(m/1440), 'day');
-  }catch(e){
-    if(m < 60) return m+' min ago';
-    if(m < 1440) return Math.round(m/60)+'h ago';
-    return Math.round(m/1440)+' days ago';
-  }
-}
+/* In the language the screen is in (amvAgo, 01-core.js). */
+function _connAgo(ts){ return amvAgo(ts, 'short'); }
 /* Capability keys are for the wire. These are for people. */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',

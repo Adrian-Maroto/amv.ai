@@ -212,6 +212,32 @@ function _scopeKey(k){
   if(who==='guest'){ try{ const u=JSON.parse(localStorage.getItem('amv_user')||'null'); if(u&&u.email) who=u.email.toLowerCase(); }catch(e){} }
   return 'u:'+who+'|'+k;
 }
+/* WHEN SOMETHING HAPPENED, IN THE LANGUAGE THE SCREEN IS IN.
+
+   Four screens each wrote their own "2h ago" / "5 minutes ago" / "yesterday",
+   in English, whatever language the person chose. The browser already knows
+   how every language says it, so there is one helper and it asks the browser.
+   style: 'long' (5 minutes ago), 'short' (5 min. ago), 'narrow' (5m ago).
+   Past a week it is a date, which reads better than "23 days ago". A time in
+   the future reads "in 5 minutes". */
+function amvAgo(ts, style){
+  const t = +ts || 0; if(!t) return '';
+  const d = (Date.now() - t) / 1000, a = Math.abs(d), sign = d >= 0 ? -1 : 1;
+  let lang = 'en'; try{ lang = (document.documentElement.lang && document.documentElement.lang !== 'auto') ? document.documentElement.lang : 'en'; }catch(e){}
+  if(a >= 7 * 86400){ try{ return new Date(t).toLocaleDateString(lang, { month:'short', day:'numeric' }); }catch(e){ return new Date(t).toLocaleDateString(); } }
+  try{
+    const f = new Intl.RelativeTimeFormat(lang, { numeric:'auto', style: style || 'long' });
+    if(a < 60) return f.format(0, 'second');
+    if(a < 3600) return f.format(sign * Math.round(a / 60), 'minute');
+    if(a < 86400) return f.format(sign * Math.round(a / 3600), 'hour');
+    return f.format(sign * Math.round(a / 86400), 'day');
+  }catch(e){
+    const m = Math.round(a / 60), w = m < 1 ? 'just now' : m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d';
+    return m < 1 ? w : (sign < 0 ? w + ' ago' : 'in ' + w);
+  }
+}
+try{ window.amvAgo = amvAgo; }catch(e){}
+
 /* ONE WAY TO HAND SOMEBODY A FILE.
 
    There were fourteen copies of this four-line dance across the app, and they

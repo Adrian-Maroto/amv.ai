@@ -136,7 +136,7 @@ function cwResumeIfAny(){
 try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
 
 function cwNeeds(jobId){
-  const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+  const j = _cwFindJob(jobId);
   const r = $('ovr'); if(!j || !r) return;
   try{ if(typeof _connLoad === 'function') _connLoad(false); }catch(e){}
   const plan = _cwNeedsPlan(j);
@@ -203,7 +203,7 @@ function _cwConnectNeed(j, need, kind){
 try{ window.cwNeeds = cwNeeds; }catch(e){}
 
 function openCrewConnect(jobId){
-  const j=(_cwAllJobs()||[]).find(x=>x.id===jobId);
+  const j=_cwFindJob(jobId);
   const r=$('ovr'); if(!j||!r) return;
   try{ if(typeof _connLoad==='function') _connLoad(false); }catch(e){}
   const missing=_cwMissingNeeds(j);
@@ -281,7 +281,7 @@ async function cwConnectResume(){
   /* Stale intent is no intent. An hour-old note about a job somebody may have
      forgotten they touched is not permission to start it. */
   if(!want.at || Date.now()-want.at > 30*60000) return;
-  const j=(_cwJobs()||[]).find(x=>x.id===want.job)||(_cwAllJobs()||[]).find(x=>x.id===want.job);
+  const j=(_cwJobs()||[]).find(x=>x.id===want.job)||_cwFindJob(want.job);
   if(!j || j.on) return;
   if(_cwMissingNeeds(j).length) return;      // still not connected: nothing to resume
   try{ setTab('crew'); }catch(e){}
@@ -318,7 +318,7 @@ function cwConnect(jobId){
          thing missing, or a single thing that is not an OAuth grant at all. A
          bank is the second, and it is what sent people to a page with nothing
          on it for them. */
-      const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+      const j = _cwFindJob(jobId);
       const missing = j ? _cwNeedsPlan(j).filter(p => !p.met) : [];
       /* A job named for a country's own mailbox (QQ Mail, Naver, WEB.DE)
          connects THAT mailbox, by app password - not Google's sign-in, which

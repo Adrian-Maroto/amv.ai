@@ -32,11 +32,7 @@ function _apvAction(a){
 /* Human "x ago" / "in x" for timestamps (accepts ms epoch or a string). */
 function _apvAgo(ts){
   if(typeof ts!=='number') return String(ts||'');
-  const d=Date.now()-ts, abs=Math.abs(d), fut=d<0;
-  const m=Math.round(abs/6e4), h=Math.round(abs/36e5), day=Math.round(abs/864e5);
-  let s = m<1?'just now' : m<60?(m+' min') : h<24?(h+' hr') : (day+' day'+(day===1?'':'s'));
-  if(s==='just now') return s;
-  return fut ? ('in '+s) : (s+' ago');
+  return amvAgo(ts, 'long');
 }
 
 /* ---- the finished result, rendered as close to reality as the data allows ---- */

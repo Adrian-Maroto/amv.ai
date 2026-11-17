@@ -1393,7 +1393,6 @@ function _cjList(noOnFirst){
   const home = safe(() => (_cwJobs() || []).concat(_cwUniversalJobs() || []));
   if(!_cjRankOnly) home.filter(j => j.on).forEach(push);
   safe(() => _cwTopTen(cc)).forEach(push);
-  safe(() => _cjInboxCal(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
   /* The country's catalogue jobs people there have actually switched on, the
@@ -1405,6 +1404,11 @@ function _cjList(noOnFirst){
      there are counts, researched where there are not). */
   safe(() => _cwMadeMore(cc)).map((j, i) => [j, (() => { try{ return _cwPopScore(j, cc); }catch(e){ return 0; } })(), i])
     .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
+  /* After everything written for the country: they have a chip of their own,
+     and leading with them pushed the country's own jobs down the list. A
+     country whose own jobs already watch its holidays keeps that one. */
+  const ownHol = out.some(j => /^cc_[a-z]{2}_holidays$/.test(j.id || ''));
+  safe(() => _cjInboxCal(cc)).filter(j => !(ownHol && /_holidays$/.test(j.id))).forEach(push);
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
   cat.forEach(push);
   if(_cjRankOnly){ _cjRankCache = out; _cjRankKey = ckey; } else { _cjCache = out; _cjCacheKey = ckey; }
