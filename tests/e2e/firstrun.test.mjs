@@ -42,8 +42,10 @@ section('A new chat greets you by name and offers small starting points');
 {
   await fresh();
   const h = await home();
-  ok(/^good (morning|afternoon|evening), Adrian$/i.test(h.greet || ''),
-     'it says good morning and uses their first name', h.greet);
+  /* One of the plain greetings (A377) - never "welcome back" to somebody who
+     has no chats to come back to. */
+  ok(/^(good (morning|afternoon|evening), Adrian|good to see you, Adrian\.)$/i.test(h.greet || ''),
+     'it greets them by their first name, and does not welcome a newcomer back', h.greet);
   ok(h.chips.length >= 4, 'with a handful of small chips under the box', h.chips.length);
 }
 

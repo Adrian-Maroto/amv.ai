@@ -40,7 +40,10 @@ await page.evaluate(() => {
 const look = () => page.evaluate(() => {
   const de = document.documentElement;
   const sb = document.getElementById('sb');
-  const snd = document.getElementById('snd');
+  /* The round button at the end of the box: send, or voice in the same spot
+     while the box is empty (A377). Whichever is showing is the one measured. */
+  const _s = document.getElementById('snd');
+  const snd = (_s && _s.getBoundingClientRect().width > 1) ? _s : document.getElementById('voicemode-btn');
   const sbr = sb ? sb.getBoundingClientRect() : null;
   const sr = snd ? snd.getBoundingClientRect() : null;
   /* How much of the sidebar is actually ON the screen - a closed sidebar is

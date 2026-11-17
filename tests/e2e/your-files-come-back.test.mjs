@@ -63,7 +63,8 @@ section('In a new chat, the paperclip attaches it again - the same text is sent'
   await page.evaluate(() => newChat());
   await page.click('#att-btn');
   const items = await page.evaluate(() => [...document.querySelectorAll('.ctxm [data-att]')].map(b => b.textContent));
-  ok(items.length === 2 && /Upload/.test(items[0]) && /Your files/.test(items[1]), 'the paperclip offers upload and your files', items);
+  /* The "+" also holds Research now (A377); the files come first. */
+  ok(/Upload/.test(items[0]) && /Your files/.test(items[1]) && items.length <= 3, 'the + offers upload and your files first', items);
   await page.keyboard.press('Escape');
   ok(await page.evaluate(() => !document.querySelector('.ctxm')), 'and Escape closes that menu');
   await openLibrary();
