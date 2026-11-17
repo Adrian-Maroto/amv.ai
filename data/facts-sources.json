@@ -399,7 +399,11 @@
   "gov": [
    {
     "n": "CRA My Account",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "canada.ca",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -613,7 +617,11 @@
   "uni": [
    {
     "n": "OUAC in Ontario",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ouac.on.ca",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "your province’s application service",
@@ -679,7 +687,11 @@
    },
    {
     "n": "SAT portal",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sat.gob.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -692,7 +704,11 @@
    },
    {
     "n": "INE credential",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ine.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -728,7 +744,11 @@
   "pay": [
    {
     "n": "SPEI transfers",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "banxico.org.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Mercado Pago",
@@ -741,7 +761,11 @@
   "jobs": [
    {
     "n": "OCC Mundial",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "occ.com.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -828,17 +852,29 @@
    },
    {
     "n": "DiDi Food",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "didi-food.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
    {
     "n": "Inmuebles24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "inmuebles24.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Vivanuncios",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "vivanuncios.com.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -850,7 +886,11 @@
   "health": [
    {
     "n": "IMSS or ISSSTE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "imss.gob.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -878,7 +918,11 @@
   "exams": [
    {
     "n": "EXANI",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ceneval.edu.mx",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -1033,7 +1077,11 @@
    },
    {
     "n": "Gupy",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gupy.io",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -1099,11 +1147,19 @@
   "prop": [
    {
     "n": "Zap Imóveis",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zapimoveis.com.br",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Viva Real",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "vivareal.com.br",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "QuintoAndar",
@@ -1295,11 +1351,19 @@
   "jobs": [
    {
     "n": "Bumeran",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bumeran.com.ar",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ZonaJobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zonajobs.com.ar",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -1384,17 +1448,29 @@
   "prop": [
    {
     "n": "Zonaprop",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zonaprop.com.ar",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Argenprop",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "argenprop.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "DNRPA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dnrpa.gov.ar",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "VTV inspection",
@@ -1552,7 +1628,11 @@
    },
    {
     "n": "Wero",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "wero-wallet.eu",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -1956,7 +2036,11 @@
    },
    {
     "n": "Totaljobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "totaljobs.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -2275,11 +2359,19 @@
   "pay": [
    {
     "n": "Wero",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "wero-wallet.eu",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Lydia",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "lydia-app.com",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -2791,7 +2883,11 @@
    },
    {
     "n": "Fascicolo Sanitario",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fascicolosanitario.gov.it",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -2826,7 +2922,11 @@
   "uni": [
    {
     "n": "Universitaly",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "universitaly.it",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -2885,7 +2985,11 @@
   "weather": [
    {
     "n": "Aeronautica Militare weather service",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meteoam.it",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -2950,7 +3054,11 @@
   "pay": [
    {
     "n": "SBP fast payments",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nspk.ru",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -3064,7 +3172,11 @@
   "car": [
    {
     "n": "GIBDD",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gibdd.ru",
+    "r": 100000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -3099,7 +3211,11 @@
   "exams": [
    {
     "n": "EGE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fipi.ru",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -3242,7 +3358,11 @@
    },
    {
     "n": "Liepin",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "liepin.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -3434,13 +3554,21 @@
    },
    {
     "n": "UMANG",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "umang.gov.in",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
    {
     "n": "Passport Seva",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "passportindia.gov.in",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "UIDAI",
@@ -3519,7 +3647,11 @@
    },
    {
     "n": "foundit",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "foundit.in",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -3626,7 +3758,11 @@
   "car": [
    {
     "n": "Parivahan",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "parivahan.gov.in",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -3685,13 +3821,21 @@
    },
    {
     "n": "NEET",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nta.ac.in",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
    {
     "n": "CUET",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nta.ac.in",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -3763,7 +3907,11 @@
   "gov": [
    {
     "n": "Mynaportal",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "myna.go.jp",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -3947,7 +4095,11 @@
    },
    {
     "n": "SmartEX",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "smart-ex.jp",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
@@ -4090,7 +4242,11 @@
   "gov": [
    {
     "n": "Gov24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gov.kr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -4182,7 +4338,11 @@
    },
    {
     "n": "Wanted",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "wanted.co.kr",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -4238,21 +4398,37 @@
    },
    {
     "n": "Market Kurly",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kurly.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
    {
     "n": "Baemin",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "baemin.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Coupang Eats",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "coupangeats.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Yogiyo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "yogiyo.co.kr",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -4278,7 +4454,11 @@
    },
    {
     "n": "Zigbang",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zigbang.com",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -4610,13 +4790,21 @@
   "exams": [
    {
     "n": "UTBK-SNBT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "snpmb.id",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
    {
     "n": "SNPMB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "snpmb.id",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -4686,13 +4874,21 @@
   "tax": [
    {
     "n": "ZATCA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zatca.gov.sa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
    {
     "n": "Absher",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "absher.sa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Nafath",
@@ -4741,7 +4937,11 @@
   "pay": [
    {
     "n": "STC Pay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "stcpay.com.sa",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "mada",
@@ -4813,7 +5013,11 @@
    },
    {
     "n": "Danube",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "danube.sa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Othaim",
@@ -4825,7 +5029,11 @@
   "food": [
    {
     "n": "HungerStation",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hungerstation.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Jahez",
@@ -4863,7 +5071,11 @@
   "car": [
    {
     "n": "Absher",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "absher.sa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "MVPI inspection",
@@ -4974,7 +5186,11 @@
   "id": [
    {
     "n": "NIMC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nimc.gov.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Immigration Service",
@@ -5015,7 +5231,11 @@
    },
    {
     "n": "UBA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ubagroup.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "OPay",
@@ -5069,7 +5289,11 @@
    },
    {
     "n": "MyJobMag",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "myjobmag.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -5130,11 +5354,19 @@
   "prop": [
    {
     "n": "PropertyPro",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "propertypro.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Nigeria Property Centre",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nigeriapropertycentre.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -5150,7 +5382,11 @@
   "health": [
    {
     "n": "NHIA or your HMO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nhia.gov.ng",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -5170,7 +5406,11 @@
    },
    {
     "n": "Guardian Nigeria",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "guardian.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
@@ -5183,17 +5423,29 @@
    },
    {
     "n": "NECO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "neco.gov.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "JAMB UTME",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jamb.gov.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
    {
     "n": "JAMB CAPS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jamb.gov.ng",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -5313,13 +5565,21 @@
    },
    {
     "n": "PayShap",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "payshap.co.za",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "PNet",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "pnet.co.za",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -5330,7 +5590,11 @@
    },
    {
     "n": "Careers24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "careers24.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -5404,7 +5668,11 @@
    },
    {
     "n": "Private Property",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "privateproperty.co.za",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -5444,7 +5712,11 @@
   "exams": [
    {
     "n": "NSC matric exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "education.gov.za",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -5516,7 +5788,11 @@
   "gov": [
    {
     "n": "Digital Egypt",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "digital.gov.eg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -5558,7 +5834,11 @@
   "jobs": [
    {
     "n": "Wuzzuf",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "wuzzuf.net",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -5623,7 +5903,11 @@
    },
    {
     "n": "Elmenus",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "elmenus.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -5645,7 +5929,11 @@
    },
    {
     "n": "Aqarmap",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "aqarmap.com.eg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -5657,7 +5945,11 @@
   "news": [
    {
     "n": "Ahram Online",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ahram.org.eg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Al-Masry Al-Youm",
@@ -5751,7 +6043,11 @@
    },
    {
     "n": "myID",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "myid.gov.au",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -5781,7 +6077,11 @@
    },
    {
     "n": "NAB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nab.com.au",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ANZ",
@@ -5894,7 +6194,11 @@
    },
    {
     "n": "Domain",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "domain.com.au",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -6360,7 +6664,11 @@
    },
    {
     "n": "Wero",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "wero-wallet.eu",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -6771,7 +7079,11 @@
    },
    {
     "n": "Bezrealitky",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bezrealitky.cz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -7233,7 +7545,11 @@
    },
    {
     "n": "Job Market Finland",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tyomarkkinatori.fi",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -7383,7 +7699,11 @@
   "uni": [
    {
     "n": "Studyinfo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "opintopolku.fi",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -7495,7 +7815,11 @@
   "jobs": [
    {
     "n": "IrishJobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "irishjobs.ie",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Jobs.ie",
@@ -7686,7 +8010,11 @@
   "uni": [
    {
     "n": "CAO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cao.ie",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -7817,7 +8145,11 @@
    },
    {
     "n": "Nationale Vacaturebank",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nationalevacaturebank.nl",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -7971,7 +8303,11 @@
   "uni": [
    {
     "n": "Studielink",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "studielink.nl",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -8101,7 +8437,11 @@
   "jobs": [
    {
     "n": "FINN jobb",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "finn.no",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "NAV",
@@ -8135,7 +8475,11 @@
    },
    {
     "n": "FINN torget",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "finn.no",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -8203,7 +8547,11 @@
   "prop": [
    {
     "n": "FINN eiendom",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "finn.no",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -8399,7 +8747,11 @@
    },
    {
     "n": "OLX Praca",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "olx.pl",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -8535,7 +8887,11 @@
    },
    {
     "n": "IKP",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "pacjent.gov.pl",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -8648,7 +9004,11 @@
   "gov": [
    {
     "n": "Chave Móvel Digital",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "autenticacao.gov.pt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -8709,7 +9069,11 @@
   "jobs": [
    {
     "n": "Net-Empregos",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "net-empregos.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "IEFP",
@@ -8814,7 +9178,11 @@
    },
    {
     "n": "Imovirtual",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "imovirtual.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -8874,7 +9242,11 @@
   "uni": [
    {
     "n": "Concurso Nacional de Acesso",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dges.gov.pt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -9020,7 +9392,11 @@
    },
    {
     "n": "SEPE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sepe.es",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -9273,7 +9649,11 @@
   "id": [
    {
     "n": "police",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "polisen.se",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -9426,7 +9806,11 @@
    },
    {
     "n": "Blocket Bostad",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "blocket.se",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -10013,13 +10397,21 @@
    },
    {
     "n": "Emlakjet",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "emlakjet.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "TÜVTÜRK inspection",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tuvturk.com.tr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "MTV tax",
@@ -10037,7 +10429,11 @@
    },
    {
     "n": "MHRS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mhrs.gov.tr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -10197,7 +10593,11 @@
   "pay": [
    {
     "n": "monobank transfers",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "monobank.ua",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -10253,7 +10653,11 @@
    },
    {
     "n": "ATB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "atbmarket.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Novus",
@@ -10291,7 +10695,11 @@
   "prop": [
    {
     "n": "DIM.RIA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ria.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "OLX",
@@ -10304,7 +10712,11 @@
   "car": [
    {
     "n": "MVS service centres",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hsc.gov.ua",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -10339,7 +10751,11 @@
   "exams": [
    {
     "n": "NMT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "testportal.gov.ua",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -10404,7 +10820,11 @@
   "gov": [
    {
     "n": "iAM Smart",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "iamsmart.gov.hk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -10472,7 +10892,11 @@
   "jobs": [
    {
     "n": "JobsDB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jobsdb.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -10483,7 +10907,11 @@
    },
    {
     "n": "CTgoodjobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ctgoodjobs.hk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -10546,7 +10974,11 @@
   "prop": [
    {
     "n": "28Hse",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "28hse.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Centaline",
@@ -10715,7 +11147,11 @@
    },
    {
     "n": "Discount",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "discountbank.co.il",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Mizrahi-Tefahot",
@@ -10751,7 +11187,11 @@
    },
    {
     "n": "Drushim",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "drushim.co.il",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -11032,7 +11472,11 @@
    },
    {
     "n": "Hiredly",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hiredly.com",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -11254,7 +11698,11 @@
   "gov": [
    {
     "n": "eGovPH",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "e.gov.ph",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -11432,7 +11880,11 @@
    },
    {
     "n": "Dot Property",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dotproperty.com.ph",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -11515,7 +11967,11 @@
    },
    {
     "n": "J&T",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jtexpress.ph",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
@@ -11532,7 +11988,11 @@
   "tax": [
    {
     "n": "IRAS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "iras.gov.sg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -11556,7 +12016,11 @@
   "banks": [
    {
     "n": "DBS/POSB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dbs.com.sg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "OCBC",
@@ -11591,7 +12055,11 @@
   "jobs": [
    {
     "n": "MyCareersFuture",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mycareersfuture.gov.sg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "JobStreet",
@@ -11704,13 +12172,21 @@
   "car": [
    {
     "n": "LTA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "lta.gov.sg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
    {
     "n": "HealthHub",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "healthhub.sg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "your polyclinic",
@@ -11742,11 +12218,19 @@
    },
    {
     "n": "O-Levels",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "seab.gov.sg",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "A-Levels",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "seab.gov.sg",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -11969,7 +12453,11 @@
   "prop": [
    {
     "n": "591",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "591.com.tw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Sinyi",
@@ -11982,7 +12470,11 @@
   "car": [
    {
     "n": "Motor Vehicles Office",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mvdis.gov.tw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -12131,17 +12623,29 @@
    },
    {
     "n": "TrueMoney",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "truemoney.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "JobsDB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jobsdb.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "JobThai",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jobthai.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -12240,11 +12744,19 @@
   "prop": [
    {
     "n": "DDproperty",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ddproperty.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Hipflat",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hipflat.co.th",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -12273,17 +12785,29 @@
   "exams": [
    {
     "n": "TGAT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mytcas.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "TPAT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mytcas.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
    {
     "n": "TCAS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mytcas.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -12339,13 +12863,21 @@
   "tax": [
    {
     "n": "Federal Tax Authority",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tax.gov.ae",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
    {
     "n": "UAE Pass",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "uaepass.ae",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -12387,7 +12919,11 @@
    },
    {
     "n": "DIB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dib.ae",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -12554,7 +13090,11 @@
    },
    {
     "n": "DHA or DOH",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dha.gov.ae",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -12624,7 +13164,11 @@
   "weather": [
    {
     "n": "National Center of Meteorology",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ncm.gov.ae",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -12716,15 +13260,27 @@
   "jobs": [
    {
     "n": "TopCV",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "topcv.vn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "VietnamWorks",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "vietnamworks.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ITviec",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "itviec.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -12790,7 +13346,11 @@
    },
    {
     "n": "ShopeeFood",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "shopeefood.vn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -12811,7 +13371,11 @@
    },
    {
     "n": "Chợ Tốt",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "chotot.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -12930,13 +13494,21 @@
   "gov": [
    {
     "n": "eCitizen",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ecitizen.go.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
    {
     "n": "Directorate of Immigration",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "immigration.go.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "NRB",
@@ -12976,7 +13548,11 @@
    },
    {
     "n": "Absa Kenya",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "absabank.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -12993,7 +13569,11 @@
   "jobs": [
    {
     "n": "BrighterMonday",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "brightermonday.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -13004,7 +13584,11 @@
    },
    {
     "n": "MyJobMag",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "myjobmag.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -13017,7 +13601,11 @@
    },
    {
     "n": "Kilimall",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kilimall.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -13029,7 +13617,11 @@
    },
    {
     "n": "Quickmart",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "quickmart.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Carrefour",
@@ -13051,7 +13643,11 @@
   "rail": [
    {
     "n": "SGR Madaraka Express",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "krc.co.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
@@ -13066,7 +13662,11 @@
   "car": [
    {
     "n": "NTSA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ntsa.go.ke",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -13095,7 +13695,11 @@
    },
    {
     "n": "Citizen Digital",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "citizen.digital",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
@@ -13109,7 +13713,11 @@
   "uni": [
    {
     "n": "KUCCPS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kuccps.ac.ke",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -13138,7 +13746,11 @@
   "post": [
    {
     "n": "Posta Kenya",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "posta.co.ke",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
@@ -13164,7 +13776,11 @@
   "id": [
    {
     "n": "NADRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nadra.gov.pk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "passport office",
@@ -13181,7 +13797,11 @@
    },
    {
     "n": "UBL",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ubldigital.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "MCB",
@@ -13265,7 +13885,11 @@
    },
    {
     "n": "Naheed",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "naheed.pk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -13296,7 +13920,11 @@
    },
    {
     "n": "Graana",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "graana.com",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -13536,7 +14164,11 @@
    },
    {
     "n": "Meena Bazar",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meenabazaronline.com",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -13549,7 +14181,11 @@
    },
    {
     "n": "Pathao Food",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "pathao.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -13596,7 +14232,11 @@
    },
    {
     "n": "HSC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "educationboard.gov.bd",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -13632,7 +14272,11 @@
   "post": [
    {
     "n": "Pathao Courier",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "pathao.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Sundarban",
@@ -13669,7 +14313,11 @@
   "id": [
    {
     "n": "Department of Immigration",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "immigration.gov.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Emigration",
@@ -13677,7 +14325,11 @@
    },
    {
     "n": "DRP",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "drp.gov.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -13719,13 +14371,21 @@
   "pay": [
    {
     "n": "LankaPay JustPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "lankapay.net",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "TopJobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "topjobs.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -13809,13 +14469,21 @@
    },
    {
     "n": "LankaPropertyWeb",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "lankapropertyweb.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "Department of Motor Traffic",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dmt.gov.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -13836,11 +14504,19 @@
   "exams": [
    {
     "n": "O/L",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "doenets.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "A/L exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "doenets.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -13853,7 +14529,11 @@
    },
    {
     "n": "SLT-Mobitel",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "slt.lk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Hutch",
@@ -13882,7 +14562,11 @@
   "weather": [
    {
     "n": "Department of Meteorology",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meteo.gov.lk",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -13909,7 +14593,11 @@
   "id": [
    {
     "n": "Department of Passports",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nepalpassport.gov.np",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -13951,21 +14639,37 @@
    },
    {
     "n": "Khalti",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "khalti.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Fonepay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fonepay.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "Merojob",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "merojob.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Kumarijob",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kumarijob.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -13988,7 +14692,11 @@
   "food": [
    {
     "n": "Foodmandu",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "foodmandu.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Pathao",
@@ -14011,7 +14719,11 @@
   "health": [
    {
     "n": "Health Insurance Board",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hib.gov.np",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -14040,7 +14752,11 @@
    },
    {
     "n": "NEB grade 12 exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "neb.gov.np",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -14089,7 +14805,11 @@
   "tax": [
    {
     "n": "State Revenue Committee",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kgd.gov.kz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -14103,7 +14823,11 @@
   "id": [
    {
     "n": "Public Service Centres",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "egov.kz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -14123,7 +14847,11 @@
    },
    {
     "n": "Freedom",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bankffin.kz",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ForteBank",
@@ -14257,7 +14985,11 @@
   "exams": [
    {
     "n": "UNT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "testcenter.kz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -14313,7 +15045,11 @@
   "tax": [
    {
     "n": "Tax Committee",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "soliq.uz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -14327,7 +15063,11 @@
   "banks": [
    {
     "n": "Kapitalbank",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kapitalbank.uz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "NBU",
@@ -14361,7 +15101,11 @@
    },
    {
     "n": "Payme",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "payme.uz",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Uzum",
@@ -14432,7 +15176,11 @@
   "rail": [
    {
     "n": "Uzbekistan Railways",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "railway.uz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
@@ -14445,7 +15193,11 @@
    },
    {
     "n": "Uybor",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "uybor.uz",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -14515,13 +15267,21 @@
   "tax": [
    {
     "n": "General Department of Taxation",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tax.gov.kh",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
    {
     "n": "ABA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ababank.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ACLEDA",
@@ -14554,7 +15314,11 @@
    },
    {
     "n": "ABA Pay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ababank.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Wing",
@@ -14567,7 +15331,11 @@
   "jobs": [
    {
     "n": "BongThom",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bongthom.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Khmer24",
@@ -14670,17 +15438,29 @@
    },
    {
     "n": "AYA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ayabank.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "CB Bank",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cbbank.com.mm",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
    {
     "n": "KBZPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kbzpay.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Wave Money",
@@ -14738,7 +15518,11 @@
   "telco": [
    {
     "n": "MPT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mpt.com.mm",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ATOM",
@@ -14792,7 +15576,11 @@
   "gov": [
    {
     "n": "Ur portal",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ur.gov.iq",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -14821,11 +15609,19 @@
   "pay": [
    {
     "n": "ZainCash",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zaincash.iq",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "FastPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fast-pay.iq",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Qi Card",
@@ -14855,7 +15651,11 @@
    },
    {
     "n": "Shafaq News",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "shafaq.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Al Sumaria",
@@ -14905,23 +15705,39 @@
    },
    {
     "n": "Sales Tax Department",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "istd.gov.jo",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
    {
     "n": "Sanad",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sanad.gov.jo",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
    {
     "n": "Civil Status",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cspd.gov.jo",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Passports Department",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cspd.gov.jo",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -14956,7 +15772,11 @@
    },
    {
     "n": "eFAWATEERcom",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "efawateercom.jo",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -15103,7 +15923,11 @@
   "weather": [
    {
     "n": "Jordan Meteorological Department",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "jmd.gov.jo",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -15111,13 +15935,21 @@
   "tax": [
    {
     "n": "General Tax Authority",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gta.gov.qa",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
    {
     "n": "Hukoomi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hukoomi.gov.qa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Metrash",
@@ -15157,7 +15989,11 @@
    },
    {
     "n": "QIB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "qib.com.qa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -15179,7 +16015,11 @@
   "shop": [
    {
     "n": "Snoonu",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "snoonu.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -15199,7 +16039,11 @@
    },
    {
     "n": "Al Meera",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "almeera.com.qa",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -15212,7 +16056,11 @@
    },
    {
     "n": "Snoonu",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "snoonu.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -15246,7 +16094,11 @@
   "health": [
    {
     "n": "HMC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hamad.qa",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "PHCC",
@@ -15297,7 +16149,11 @@
   "post": [
    {
     "n": "Qatar Post",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "qatarpost.qa",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Aramex",
@@ -15380,7 +16236,11 @@
   "groc": [
    {
     "n": "Sultan Center",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sultan-center.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Lulu",
@@ -15474,7 +16334,11 @@
   "tax": [
    {
     "n": "Tax Authority",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "taxoman.gov.om",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -15489,7 +16353,11 @@
   "banks": [
    {
     "n": "Bank Muscat",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bankmuscat.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "NBO",
@@ -15500,7 +16368,11 @@
    },
    {
     "n": "Sohar International",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "soharinternational.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -15548,13 +16420,21 @@
    },
    {
     "n": "Oman Observer",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "omanobserver.om",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
    {
     "n": "Higher Education Admission Centre",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "heac.gov.om",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -15594,13 +16474,21 @@
   "tax": [
    {
     "n": "National Bureau for Revenue",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nbr.gov.bh",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
    {
     "n": "eGov.bh",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bahrain.bh",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -15615,11 +16503,19 @@
   "banks": [
    {
     "n": "NBB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nbbonline.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "BBK",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bbkonline.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "KFH Bahrain",
@@ -15629,7 +16525,11 @@
   "pay": [
    {
     "n": "BenefitPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "benefit.bh",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -15731,11 +16631,19 @@
   "pay": [
    {
     "n": "Whish",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "whish.money",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "OMT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "omt.com.lb",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -15752,7 +16660,11 @@
   "food": [
    {
     "n": "Toters",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "totersapp.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -15958,7 +16870,11 @@
   "exams": [
    {
     "n": "DİM entrance exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dim.gov.az",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -16061,7 +16977,11 @@
   "shop": [
    {
     "n": "MyMarket",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mymarket.ge",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -16136,13 +17056,21 @@
    },
    {
     "n": "InterPressNews",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "interpressnews.ge",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
    {
     "n": "Unified National Exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "naec.ge",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -16378,7 +17306,11 @@
   "tax": [
    {
     "n": "General Department of Taxation",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mta.mn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -16408,7 +17340,11 @@
    },
    {
     "n": "TDB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tdbm.mn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "XacBank",
@@ -16421,15 +17357,27 @@
   "pay": [
    {
     "n": "QPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "qpay.mn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "SocialPay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "socialpay.mn",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Monpay",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "monpay.mn",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -16555,7 +17503,11 @@
    },
    {
     "n": "Trade Me Jobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "trademe.co.nz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -16630,7 +17582,11 @@
   "prop": [
    {
     "n": "Trade Me Property",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "trademe.co.nz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "realestate.co.nz",
@@ -16756,7 +17712,11 @@
    },
    {
     "n": "Fayda national ID",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "id.gov.et",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -16775,7 +17735,11 @@
    },
    {
     "n": "Dashen",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dashenbanksc.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Bank of Abyssinia",
@@ -16808,7 +17772,11 @@
   "jobs": [
    {
     "n": "Ethiojobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ethiojobs.net",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "rail": [
@@ -16954,7 +17922,11 @@
   "health": [
    {
     "n": "NHIF",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nhif.or.tz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -16976,7 +17948,11 @@
   "exams": [
    {
     "n": "NECTA exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "necta.go.tz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "uni": [
@@ -17041,7 +18017,11 @@
   "id": [
    {
     "n": "NIRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nira.go.ug",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -17119,7 +18099,11 @@
   "exams": [
    {
     "n": "UNEB exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "uneb.ac.ug",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -17149,13 +18133,21 @@
   "tax": [
    {
     "n": "GRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gra.gov.gh",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
    {
     "n": "NIA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nia.gov.gh",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "passport office",
@@ -17234,7 +18226,11 @@
   "groc": [
    {
     "n": "Melcom",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "melcom.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -17249,7 +18245,11 @@
   "prop": [
    {
     "n": "Meqasa",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meqasa.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -17273,7 +18273,11 @@
   "news": [
    {
     "n": "Graphic",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "graphic.com.gh",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "GhanaWeb",
@@ -17293,7 +18297,11 @@
   "exams": [
    {
     "n": "BECE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "waecgh.org",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "WASSCE",
@@ -17348,7 +18356,11 @@
   "tax": [
    {
     "n": "DGI",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tax.gov.ma",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -17394,7 +18406,11 @@
   "jobs": [
    {
     "n": "Rekrute",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "rekrute.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "LinkedIn",
@@ -17471,7 +18487,11 @@
    },
    {
     "n": "Mubawab",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mubawab.ma",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -17513,7 +18533,11 @@
    },
    {
     "n": "Médias24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "medias24.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
@@ -17561,7 +18585,11 @@
   "weather": [
    {
     "n": "DGM",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "marocmeteo.ma",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -17592,7 +18620,11 @@
    },
    {
     "n": "BEA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bea.dz",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -17604,7 +18636,11 @@
   "jobs": [
    {
     "n": "Emploitic",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "emploitic.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -17678,7 +18714,11 @@
   "telco": [
    {
     "n": "Mobilis",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mobilis.dz",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Djezzy",
@@ -17715,11 +18755,19 @@
   "banks": [
    {
     "n": "BIAT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "biat.com.tn",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "STB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "stb.com.tn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "BH Bank",
@@ -17739,11 +18787,19 @@
   "jobs": [
    {
     "n": "Tanitjobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tanitjobs.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Keejob",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "keejob.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -17852,13 +18908,21 @@
   "post": [
    {
     "n": "La Poste Tunisienne",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "poste.tn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
    {
     "n": "INM",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meteo.tn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -17866,7 +18930,11 @@
   "tax": [
    {
     "n": "DGID",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dgid.sn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -17878,7 +18946,11 @@
    },
    {
     "n": "Société Générale Sénégal",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "societegenerale.sn",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Ecobank",
@@ -18180,7 +19252,11 @@
   "tax": [
    {
     "n": "ZRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zra.org.zm",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -18246,13 +19322,21 @@
   "car": [
    {
     "n": "RTSA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "rtsa.org.zm",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
    {
     "n": "NHIMA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nhima.co.zm",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -18274,7 +19358,11 @@
   "exams": [
    {
     "n": "ECZ exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "exams-council.org.zm",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -18305,7 +19393,11 @@
   "tax": [
    {
     "n": "ZIMRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zimra.co.zw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -18325,7 +19417,11 @@
    },
    {
     "n": "FBC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fbc.co.zw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -18359,7 +19455,11 @@
   "car": [
    {
     "n": "ZINARA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zinara.co.zw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -18381,7 +19481,11 @@
   "exams": [
    {
     "n": "ZIMSEC exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "zimsec.co.zw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -18395,7 +19499,11 @@
    },
    {
     "n": "NetOne",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "netone.co.zw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Telecel",
@@ -18420,7 +19528,11 @@
   "gov": [
    {
     "n": "Irembo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "irembo.gov.rw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -18478,7 +19590,11 @@
   "car": [
    {
     "n": "Irembo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "irembo.gov.rw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -18506,7 +19622,11 @@
   "exams": [
    {
     "n": "NESA national exams",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nesa.gov.rw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -18598,7 +19718,11 @@
   "rail": [
    {
     "n": "CFM",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cfm.co.mz",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -18659,19 +19783,35 @@
   "banks": [
    {
     "n": "BAI",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bancobai.ao",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "BFA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bfa.ao",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "BIC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bancobic.ao",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Millennium Atlântico",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "atlantico.ao",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -18704,7 +19844,11 @@
   "food": [
    {
     "n": "Tupuca",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tupuca.com",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -18717,7 +19861,11 @@
    },
    {
     "n": "Novo Jornal",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "novojornal.co.ao",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -18757,13 +19905,21 @@
   "tax": [
    {
     "n": "BURS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "burs.org.bw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
    {
     "n": "FNB Botswana",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fnbbotswana.co.bw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Absa",
@@ -18828,13 +19984,21 @@
    },
    {
     "n": "Sunday Standard",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sundaystandard.info",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
    {
     "n": "BGCSE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bec.co.bw",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -18889,7 +20053,11 @@
    },
    {
     "n": "FNB Namibia",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fnbnamibia.com.na",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Standard Bank",
@@ -18997,7 +20165,11 @@
   "tax": [
    {
     "n": "DIAN",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dian.gov.co",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -19062,7 +20234,11 @@
    },
    {
     "n": "Daviplata",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "daviplata.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Bre-B",
@@ -19074,7 +20250,11 @@
   "jobs": [
    {
     "n": "elempleo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "elempleo.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -19162,17 +20342,29 @@
   "prop": [
    {
     "n": "Finca Raíz",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fincaraiz.com.co",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Metrocuadrado",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "metrocuadrado.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "RUNT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "runt.gov.co",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "SOAT",
@@ -19218,7 +20410,11 @@
   "exams": [
    {
     "n": "ICFES Saber 11",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "icfes.gov.co",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -19269,7 +20465,11 @@
   "weather": [
    {
     "n": "IDEAM",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ideam.gov.co",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -19347,13 +20547,21 @@
    },
    {
     "n": "Plin",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "plin.pe",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "Bumeran",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bumeran.com.pe",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -19388,7 +20596,11 @@
    },
    {
     "n": "Ripley",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ripley.com.pe",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
@@ -19432,17 +20644,29 @@
    },
    {
     "n": "Rappi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "rappi.com.pe",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
    {
     "n": "Urbania",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "urbania.pe",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Adondevivir",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "adondevivir.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -19538,7 +20762,11 @@
    },
    {
     "n": "Olva",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "olvacourier.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
@@ -19564,7 +20792,11 @@
   "gov": [
    {
     "n": "ClaveÚnica",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "claveunica.gob.cl",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -19616,13 +20848,21 @@
    },
    {
     "n": "MACH",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "somosmach.com",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
    {
     "n": "Laborum",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "laborum.cl",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -19743,7 +20983,11 @@
    },
    {
     "n": "Yapo",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "yapo.cl",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -19759,7 +21003,11 @@
   "health": [
    {
     "n": "Fonasa or your Isapre",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "fonasa.cl",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -19869,7 +21117,11 @@
   "tax": [
    {
     "n": "SRI",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sri.gob.ec",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -19919,7 +21171,11 @@
   "jobs": [
    {
     "n": "Multitrabajos",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "multitrabajos.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -19942,7 +21198,11 @@
   "groc": [
    {
     "n": "Supermaxi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "supermaxi.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Mi Comisariato",
@@ -19980,13 +21240,21 @@
   "prop": [
    {
     "n": "Plusvalía",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "plusvalia.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "ANT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ant.gob.ec",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -20038,7 +21306,11 @@
    },
    {
     "n": "CNT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cnt.com.ec",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "post": [
@@ -20072,7 +21344,11 @@
   "id": [
    {
     "n": "SEGIP",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "segip.gob.bo",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -20174,7 +21450,11 @@
    },
    {
     "n": "Viva",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "viva.com.bo",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
@@ -20356,7 +21636,11 @@
    },
    {
     "n": "BAC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "baccredomatic.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "G&T Continental",
@@ -20369,7 +21653,11 @@
   "jobs": [
    {
     "n": "Tecoloco",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tecoloco.com.gt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -20428,7 +21716,11 @@
   "health": [
    {
     "n": "IGSS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "igssgt.org",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -20470,7 +21762,11 @@
   "tax": [
    {
     "n": "DGII",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dgii.gov.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -20483,7 +21779,11 @@
    },
    {
     "n": "Dirección General de Pasaportes",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "pasaportes.gob.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -20503,13 +21803,21 @@
    },
    {
     "n": "BHD",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bhd.com.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "groc": [
    {
     "n": "La Sirena",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sirena.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Nacional",
@@ -20549,11 +21857,19 @@
   "car": [
    {
     "n": "DGII",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dgii.gov.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "INTRANT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "intrant.gob.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -20607,7 +21923,11 @@
   "weather": [
    {
     "n": "INDOMET",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "indomet.gob.do",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -20615,7 +21935,11 @@
   "tax": [
    {
     "n": "Hacienda",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hacienda.go.cr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -20637,7 +21961,11 @@
   "banks": [
    {
     "n": "BAC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "baccredomatic.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Banco Nacional",
@@ -20677,7 +22005,11 @@
    },
    {
     "n": "Auto Mercado",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "automercado.cr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Más x Menos",
@@ -20707,7 +22039,11 @@
   "rail": [
    {
     "n": "INCOFER",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "incofer.go.cr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -20830,7 +22166,11 @@
    },
    {
     "n": "BAC",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "baccredomatic.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Banco Nacional",
@@ -20849,7 +22189,11 @@
   "jobs": [
    {
     "n": "Konzerta",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "konzerta.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Computrabajo",
@@ -20863,11 +22207,19 @@
   "groc": [
    {
     "n": "Super 99",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "super99.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Riba Smith",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ribasmith.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "El Rey",
@@ -20921,7 +22273,11 @@
   "car": [
    {
     "n": "ATTT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "transito.gob.pa",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -20997,7 +22353,11 @@
   "banks": [
    {
     "n": "BROU",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "brou.com.uy",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Santander",
@@ -21040,11 +22400,19 @@
   "jobs": [
    {
     "n": "BuscoJobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "buscojobs.com.uy",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Gallito",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gallito.com.uy",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -21095,17 +22463,29 @@
    },
    {
     "n": "Rappi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "rappi.com.uy",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
    {
     "n": "Gallito",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "gallito.com.uy",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "InfoCasas",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "infocasas.com.uy",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -21240,15 +22620,27 @@
   "groc": [
    {
     "n": "Superseis",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "superseis.com.py",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Stock",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "stock.com.py",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Biggie",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "biggie.com.py",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -21261,13 +22653,21 @@
    },
    {
     "n": "Monchis",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "monchis.com.py",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
    {
     "n": "IPS",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ips.gov.py",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -21381,7 +22781,11 @@
    },
    {
     "n": "BestJobs",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "bestjobs.eu",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "OLX",
@@ -21452,7 +22856,11 @@
    },
    {
     "n": "Tazz",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tazz.ro",
+    "r": 500000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Bolt Food",
@@ -21600,7 +23008,11 @@
   "tax": [
    {
     "n": "AADE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "aade.gr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -21668,7 +23080,11 @@
    },
    {
     "n": "Skywalker",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "skywalker.gr",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -21704,7 +23120,11 @@
    },
    {
     "n": "AB Vassilopoulos",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ab.gr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Lidl",
@@ -21756,7 +23176,11 @@
   "prop": [
    {
     "n": "Spitogatos",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "spitogatos.gr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Xe.gr",
@@ -21778,7 +23202,11 @@
   "health": [
    {
     "n": "EOPYY",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "eopyy.gov.gr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "myHealth",
@@ -21838,7 +23266,11 @@
   "post": [
    {
     "n": "ELTA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "elta.gr",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "ACS",
@@ -21849,13 +23281,21 @@
    },
    {
     "n": "Geniki Taxydromiki",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "taxydromiki.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "weather": [
    {
     "n": "EMY",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "emy.gr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -22136,7 +23576,11 @@
   "tax": [
    {
     "n": "NRA",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nra.bg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -22166,7 +23610,11 @@
    },
    {
     "n": "UBB",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ubb.bg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Postbank",
@@ -22273,7 +23721,11 @@
   "health": [
    {
     "n": "NHIF",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nhif.bg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -22293,7 +23745,11 @@
    },
    {
     "n": "Mediapool",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "mediapool.bg",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "exams": [
@@ -22372,7 +23828,11 @@
   "gov": [
    {
     "n": "eUprava",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "euprava.gov.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -22412,7 +23872,11 @@
    },
    {
     "n": "AIK",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "aikbanka.rs",
+    "r": 100000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "pay": [
@@ -22424,11 +23888,19 @@
   "jobs": [
    {
     "n": "Infostud",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "infostud.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "HelloWorld",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "helloworld.rs",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -22489,17 +23961,29 @@
   "rail": [
    {
     "n": "Srbija Voz",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "srbvoz.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "prop": [
    {
     "n": "4zida",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "4zida.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Halo oglasi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "halooglasi.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -22515,7 +23999,11 @@
   "health": [
    {
     "n": "RFZO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "rfzo.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -22579,7 +24067,11 @@
    },
    {
     "n": "A1",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "a1.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "post": [
@@ -22594,7 +24086,11 @@
   "weather": [
    {
     "n": "RHMZ",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hidmet.gov.rs",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -22602,7 +24098,11 @@
   "tax": [
    {
     "n": "Porezna uprava",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "porezna-uprava.gov.hr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -22755,7 +24255,11 @@
    },
    {
     "n": "Index oglasi",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "index.hr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -22767,7 +24271,11 @@
   "health": [
    {
     "n": "HZZO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "hzzo.hr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -22808,7 +24316,11 @@
   "uni": [
    {
     "n": "Postani student",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "postani-student.hr",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -22821,7 +24333,11 @@
    },
    {
     "n": "A1",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "a1.hr",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Telemach",
@@ -23006,7 +24522,11 @@
    },
    {
     "n": "e-vignette",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "eznamka.sk",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -23119,7 +24639,11 @@
    },
    {
     "n": "eUprava",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "e-uprava.gov.si",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -23154,7 +24678,11 @@
   "pay": [
    {
     "n": "Flik",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "flik.si",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -23167,7 +24695,11 @@
    },
    {
     "n": "Optius",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "optius.com",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "shop": [
@@ -23217,7 +24749,11 @@
    },
    {
     "n": "Tuš",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "tus.si",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "food": [
@@ -23241,7 +24777,11 @@
   "prop": [
    {
     "n": "Nepremičnine.net",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "nepremicnine.net",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -23251,7 +24791,11 @@
    },
    {
     "n": "e-vinjeta",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dars.si",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -23306,7 +24850,11 @@
    },
    {
     "n": "A1",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "a1.si",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Telemach",
@@ -23339,7 +24887,11 @@
   "tax": [
    {
     "n": "VMI",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "vmi.lt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "gov": [
@@ -23392,7 +24944,11 @@
   "jobs": [
    {
     "n": "CVBankas",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "cvbankas.lt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "CV.lt",
@@ -23468,7 +25024,11 @@
   "prop": [
    {
     "n": "Aruodas",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "aruodas.lt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
@@ -23492,7 +25052,11 @@
    },
    {
     "n": "e.sveikata",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "esveikata.lt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -23527,7 +25091,11 @@
   "uni": [
    {
     "n": "LAMA BPO",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "lamabpo.lt",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "telco": [
@@ -23579,7 +25147,11 @@
   "weather": [
    {
     "n": "LHMT",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "meteo.lt",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  },
@@ -23737,7 +25309,11 @@
    },
    {
     "n": "e-veselība",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "eveseliba.gov.lv",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -23898,7 +25474,11 @@
   "shop": [
    {
     "n": "Kaup24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kaup24.ee",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    },
    {
     "n": "Hansapost",
@@ -23982,13 +25562,21 @@
    },
    {
     "n": "City24",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "city24.ee",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "car": [
    {
     "n": "Transport Administration",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "transpordiamet.ee",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [
@@ -24000,7 +25588,11 @@
    },
    {
     "n": "digilugu",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "digilugu.ee",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "news": [
@@ -24082,7 +25674,11 @@
   "weather": [
    {
     "n": "Estonian Environment Agency",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "ilmateenistus.ee",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ]
  }
