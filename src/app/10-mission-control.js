@@ -81,7 +81,11 @@ function _crewPrefetch(){
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
     _lazyLoad('integrations-view.js', () => window._intViewHere === true);
     _ccReady();
-    _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function'); }catch(e){} };
+    _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
+    /* Spending's pane too: it was fetched on the first open, so the screen
+       opened on "Loading…" and filled in a moment later (the owner: "spending
+       has lag"). */
+    try{ _spendingLoad(); }catch(e){} }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }

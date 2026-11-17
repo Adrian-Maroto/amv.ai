@@ -110,7 +110,12 @@ function renderSpendView() {
       + '<section class="spv-sec" id="spv-limits"></section>'
     + '</div></div>';
 
-  try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
+  /* When the pane needs drawing again (the server's numbers arrived, a limit
+     was saved) only the pane is drawn again, and the facts above refreshed in
+     place - redrawing this whole screen made it jump under the person reading
+     it. */
+  const redrawPane = () => { const p = $('spv-limits'); if (p && typeof window._renderSpendingPaneNow === 'function') window._renderSpendingPaneNow(p, redrawPane); try { _spvRefreshFacts(); } catch (e) {} };
+  try { _renderSpendingPane($('spv-limits'), redrawPane); } catch (e) {}
   on(vc.querySelector('.spv'), 'click', _spvFactClick);
   /* The editor below changes the facts above: when it says something (saved,
      switched on, refused) the cards are read again from the same store. */

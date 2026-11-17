@@ -26,8 +26,9 @@ const arm = (extra) => page.evaluate((extra) => {
 }, extra);
 
 section('Nothing new: the screen is left exactly as it was');
-for (const tab of ['build', 'crew', 'spending']) {
+for (const tab of ['build', 'crew', 'spend']) {
   await page.evaluate((t) => setTab(t), tab);
+  ok(await page.evaluate((t) => S.tab === t, tab), tab + ' is the screen open', tab);
   await page.waitForTimeout(1200);
   await arm('');
   const r = await page.evaluate(async () => { const vc = document.getElementById('vc'); const first = vc.firstElementChild; first.dataset.__mark = '1';
@@ -56,6 +57,34 @@ section('In chat, a new message appears and the box keeps its text');
   const r = await page.evaluate(async () => { await AMVSync.pull(); return { box: document.getElementById('mta').value, shown: /arrived by sync/.test(document.getElementById('cm').textContent) }; });
   ok(r.shown, 'the message from the other device is on screen', r);
   ok(r.box === 'half a thought', 'and the box still holds what was typed', r.box);
+}
+
+section('Spending: the account\'s numbers arriving, the same as here, rebuild nothing');
+{
+  /* Opening Spending asked the account for the limits and, when they came,
+     rebuilt the whole screen - a jump a moment after it appeared (the owner:
+     "spending has lag"). Same numbers: nothing redrawn. */
+  const r = await page.evaluate(async () => {
+    /* An adult who has accepted the terms - the pane asks the account only
+       for somebody who may use money features. */
+    try { store('amv_consent', {}); AMVCompliance.accept(); AMVCompliance.setBirthYear(new Date().getFullYear() - 30); } catch (e) {}
+    try{ _SPEND_PULLED = false; _SPEND_BUSY = false; }catch(e){}
+    const realSB = AMVSpend.serverBacked, realPull = AMVSpend.pull;
+    let pulls = 0;
+    AMVSpend.serverBacked = () => true;
+    /* The account answers a moment after the screen is drawn, as a real
+       server does - the screen is marked before the answer lands. */
+    AMVSpend.pull = () => { pulls++; return new Promise(r => setTimeout(r, 900)); };
+    setTab('spend');
+    await new Promise(r => setTimeout(r, 400));
+    const vc = document.getElementById('vc'), first = vc.firstElementChild; first.dataset.__m = '1';
+    const pane = document.getElementById('spv-limits'), inner = pane && pane.firstElementChild; if(inner) inner.dataset.__m = '1';
+    await new Promise(r => setTimeout(r, 1400));
+    AMVSpend.serverBacked = realSB; AMVSpend.pull = realPull;
+    return { pulls, same: vc.firstElementChild === first && first.dataset.__m === '1', paneSame: !inner || (pane.firstElementChild === inner) };
+  });
+  ok(r.pulls >= 1, 'the account was asked', r.pulls);
+  ok(r.same && r.paneSame, 'and the screen, limits included, stayed as it was', r);
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

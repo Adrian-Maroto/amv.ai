@@ -199,9 +199,14 @@ function _renderSpendingPaneNow(pane, redraw){
   /* Adopt the server's numbers, then redraw once. */
   if(canConfigure && AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
     _SPEND_BUSY = true;
+    const _before = JSON.stringify(AMVSpend.cfg()) + '|' + AMVSpend.spentThisMonth();
     AMVSpend.pull().then(function(){
       _SPEND_PULLED = true; _SPEND_BUSY = false;
-      try{ if(document.getElementById('mf-save-limits')) _again(); }catch(e){}
+      /* Drawn again only if the account's numbers differ from this device's -
+         most of the time they are the same, and a redraw for nothing is a
+         jump somebody sees. */
+      const _after = JSON.stringify(AMVSpend.cfg()) + '|' + AMVSpend.spentThisMonth();
+      try{ if(_after !== _before && document.getElementById('mf-save-limits')) _again(); }catch(e){}
     }).catch(function(){
       /* Not fatal - the local mirror still renders. Marked pulled so a failed
          read does not retry on every redraw. */

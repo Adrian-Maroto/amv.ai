@@ -20551,7 +20551,11 @@ function _crewPrefetch(){
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
     _lazyLoad('integrations-view.js', () => window._intViewHere === true);
     _ccReady();
-    _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function'); }catch(e){} };
+    _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
+    /* Spending's pane too: it was fetched on the first open, so the screen
+       opened on "Loading…" and filled in a moment later (the owner: "spending
+       has lag"). */
+    try{ _spendingLoad(); }catch(e){} }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }
@@ -42131,7 +42135,12 @@ function renderSpendView() {
       + '<section class="spv-sec" id="spv-limits"></section>'
     + '</div></div>';
 
-  try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
+  /* When the pane needs drawing again (the server's numbers arrived, a limit
+     was saved) only the pane is drawn again, and the facts above refreshed in
+     place - redrawing this whole screen made it jump under the person reading
+     it. */
+  const redrawPane = () => { const p = $('spv-limits'); if (p && typeof window._renderSpendingPaneNow === 'function') window._renderSpendingPaneNow(p, redrawPane); try { _spvRefreshFacts(); } catch (e) {} };
+  try { _renderSpendingPane($('spv-limits'), redrawPane); } catch (e) {}
   on(vc.querySelector('.spv'), 'click', _spvFactClick);
   /* The editor below changes the facts above: when it says something (saved,
      switched on, refused) the cards are read again from the same store. */
