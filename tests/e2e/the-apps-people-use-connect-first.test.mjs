@@ -39,17 +39,18 @@ section('Every topic is the same shape, and there is no "everything else"');
     return {
       n: secs.length, cats: AMV_APP_CATS.length, count: _appCount(),
       shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card, .int-list .int-none')).length,
-      /* What connects, up to six, then one small See all wherever the topic
-         lists more than that - and a topic where nothing connects yet says so
-         in one line instead of a column of Notify me. */
+      /* What connects, up to nine (Nov 17, the owner: "9 then see the
+         remaining"), then one See the remaining wherever the topic lists more
+         - and a topic where nothing connects yet says so in one line instead
+         of a column of Notify me, unless the country's services fill it. */
       sixThenMore: secs.filter(s => {
         const cat = _appCats().find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
         if (!cat) return false;
         /* What connects, then what opens in AMV's browser (AMV_APP_WEB, Nov 15). */
-        const live = cat.apps.filter(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name)).length, want = Math.min(6, live);
+        const live = cat.apps.filter(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name)).length, want = Math.min(9, live);
         const rows = s.querySelectorAll('.int-card:not(.cc-svc)').length, more = s.querySelector('.int-seemore[data-app-more]');
-        const none = !!s.querySelector('.int-none');
-        return rows === want && (cat.apps.length > want ? !!more : !more) && (want === 0) === none;
+        const none = !!s.querySelector('.int-none'), svc = s.querySelectorAll('.cc-svc').length;
+        return rows === want && (cat.apps.length + svc > want ? !!more : !more) && (want === 0 && !svc) === none;
       }).length,
       firstScreenNotify: document.querySelectorAll('#int-catalog .int-notify').length,
       emptyTopics: secs.filter(s => s.querySelector('.int-none')).map(s => s.querySelector('h3').textContent),
@@ -61,7 +62,7 @@ section('Every topic is the same shape, and there is no "everything else"');
   });
   ok(r.n === r.cats && r.n >= 30, 'one section per topic', r.n + ' of ' + r.cats);
   ok(r.shaped === r.n, 'each with a heading and rows', r.shaped + ' of ' + r.n);
-  ok(r.sixThenMore === r.n, 'each shows what connects (up to six), then one small See all where there are more', r.sixThenMore + ' of ' + r.n);
+  ok(r.sixThenMore === r.n, 'each shows what connects (up to nine), then one See the remaining where there are more', r.sixThenMore + ' of ' + r.n);
   ok(r.firstScreenNotify === 0, 'and no Notify me row on the first screen - it was 119 of 191', r.firstScreenNotify);
   const reachable = await page.evaluate(() => Object.fromEntries(_appCats().map(c => [c.t.replace(/&amp;/g, '&'), c.apps.some(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name))])));
   ok(r.emptyTopics.length > 0 && r.emptyTopics.length < r.n / 2 && r.emptyTopics.every(t => reachable[t] === false), 'a topic where nothing connects or opens yet says so in one line', r.emptyTopics);

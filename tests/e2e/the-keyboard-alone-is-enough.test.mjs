@@ -45,11 +45,12 @@ const describe = () => page.evaluate(() => {
      measured is what a person sees a moment later - not an in-between frame
      that read as a ring in one engine and as nothing in another. */
   try { document.getAnimations().forEach(a => { if (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) a.finish(); }); } catch (_) {}
-  /* The same for a field inside a command bar (the chat box, Crew's box): the
+  /* The same for a field inside a command bar (the chat box, Crew's box, a
+     search bar - Nov 17, its own outline drew a second ring inside): the
      bar draws the ring around the whole thing on :focus-within, and the field
      inside it draws none of its own, so a focused box is not a ring inside a
      ring. Measured on the bar - which is what a person sees. */
-  const bar = /^(TEXTAREA|INPUT)$/.test(e.tagName) && e.closest ? e.closest('#cib, .cj-box') : null;
+  const bar = /^(TEXTAREA|INPUT)$/.test(e.tagName) && e.closest ? e.closest('#cib, .cj-box, .cj-find') : null;
   const shown = (e.matches && e.matches('.sw input') && e.nextElementSibling) ? e.nextElementSibling : (bar || e);
   const cs = getComputedStyle(shown);
   const b = e.getBoundingClientRect();

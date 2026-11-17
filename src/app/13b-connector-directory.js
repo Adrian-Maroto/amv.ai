@@ -269,7 +269,16 @@ function _cdirPaint(){
            `_cdirWireFind` from here would attach a SECOND Enter handler to the
            surviving input on every repaint, so one press would run the search
            twice, then three times, then four. */
-        if(next){ cur.replaceWith(next); return; }
+        /* A search's own results - the apps, wired, and every country's
+           services, filled in by the country catalogue - are not the
+           registry's, so its arrival keeps them as they are. */
+        if(next){
+          for(const sel of ['.cdir-found', '#cdir-cc']){
+            const was = cur.querySelector(sel), now = next.querySelector(sel);
+            if(was && now && (sel !== '#cdir-cc' || was.dataset.q === now.dataset.q)) now.replaceWith(was);
+          }
+          cur.replaceWith(next); return;
+        }
       }
       if(typeof renderIntegrationsView === 'function') renderIntegrationsView();
     }catch(e){}
@@ -470,8 +479,19 @@ function _cdirFullHTML(){
             + '</button></div>'
           : '<p class="cdir-end">' + escH(T('That is everything the registry has for this.')) + '</p>');
 
+  /* A SEARCH FINDS EVERYTHING, NOT ONLY THE REGISTRY (Nov 17, the owner:
+     "integrations search has all integrations for all countries no matter
+     what country you are selecting"). First every app on the page that
+     matches, with its own Connect or Use; then every country's services that
+     match, each with the countries it is in (country-catalog.js,
+     ccSearchServices, filled into #cdir-cc); then the registry. */
+  const found = _cdirOpen.search
+    ? '<div class="cdir-found">' + _integrationsCatalogHTML({ query: q }) + '</div>'
+      + '<div id="cdir-cc" class="cdir-cc" data-q="' + escH(q) + '"></div>'
+    : '';
   return '<section class="cdir cdir-full">'
     + '<button class="cdir-back" data-dact="cdirBack">← ' + escH(T('All categories')) + '</button>'
+    + found
     + '<div class="sec-head"><h3>' + escH(_cdirOpen.title) + '</h3>'
       + '<span class="sec-sub">' + escH(T('Every one of these runs on your own computer through the bridge, and AMV drives it.')) + '</span></div>'
     + body
@@ -553,12 +573,12 @@ function cdirOpen(id){
     }
   });
 }
-function cdirAll(q){
+function cdirAll(q, search){
   /* Named after the topic whose door was pressed - the app topics first,
      because those are the doors on the page, then the registry's own words. */
   const app = (typeof AMV_APP_CATS !== 'undefined') ? AMV_APP_CATS.find(c => c.q === q) : null;
   const row = CDIR_CATS.find(c => c[2] === q);
-  _cdirOpen = { q, title: app ? String(app.t).replace(/&amp;/g, '&')
+  _cdirOpen = { q, search: !!search, title: app ? String(app.t).replace(/&amp;/g, '&')
                         : row ? row[1] : ('Connectors matching “' + q + '”') };
   renderIntegrationsView();
   _cdirToTop();
@@ -605,9 +625,10 @@ function cdirSearch(){
   const q = el ? String(el.value || '').trim() : '';
   _cdirFind = q;
   if(!q){ _cdirOpen = null; renderIntegrationsView(); return; }
-  cdirAll(q);
+  cdirAll(q, true);
 }
-try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
+try{ window._cdirSearchQ = () => (_cdirOpen && _cdirOpen.search) ? _cdirOpen.q : '';
+     window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
      window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
      window.connectorDirectoryHTML=connectorDirectoryHTML; window.cdirSearchBarHTML=cdirSearchBarHTML;
      window.CDIR_CATS=CDIR_CATS; }catch(e){}

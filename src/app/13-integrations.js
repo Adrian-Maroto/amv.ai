@@ -618,8 +618,7 @@ function _integrationsCatalogHTML(opts){
      in place. The registry is still there for somebody who searches for a
      name, and for a Crew job that needs an app this list does not have. */
   /* data-topic: the country's own services join their topic here (country-catalog.js). */
-  const cat=(title,rows,q,more,id)=>'<div class="ss2"'+(id?' data-topic="'+escH(id)+'"':'')+'><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
-    '<div class="int-cc" hidden></div>'+(more||'')+'</div>';
+  const cat=(title,rows,q,more,id)=>'<div class="ss2"'+(id?' data-topic="'+escH(id)+'"':'')+'><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+(more||'')+'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
      The click gate above is the correctness fix; on its own it still means a
@@ -718,6 +717,10 @@ function _integrationsCatalogHTML(opts){
         : '<button class="btn bs" data-app-notify="'+escH(a.slug)+'" data-app-name="'+escH(a.name)+'" style="font-size:var(--t-sm)">'+escH(T('Notify me'))+'</button>')+
       '</div></div>';
   const only=!!(opts && opts.connectedOnly), seen={};
+  /* A search (opts.query): every app in every topic whose name or line holds
+     every word, each with its own Connect or Use - shown whole, no See more. */
+  const qWords=(opts && opts.query) ? String(opts.query).toLowerCase().split(/\s+/).filter(Boolean) : null;
+  const hit=(a)=>{ const h=(a.name+' '+a.desc+' '+T(a.desc)).toLowerCase(); return qWords.every(w=>h.indexOf(w)>=0); };
   const sections=_appCats().map(c=>{
     /* Connected, then connectable, then the rest - so a connection somebody
        has is never hidden behind Show all, and Settings (which keeps only the
@@ -739,6 +742,7 @@ function _integrationsCatalogHTML(opts){
         return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, k:(k==null?0:k), i:(k==null&&local(a))?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.k-y.k||x.i-y.i);
     let list=rows;
+    if(qWords){ list=rows.filter(r=>hit(r.a)); if(!list.length) return ''; }
     if(only){
       /* One row per grant. A Google connection lights Gmail, Calendar, Drive,
          Docs, Sheets, Slides and Classroom, and Settings listing seven rows
@@ -748,7 +752,7 @@ function _integrationsCatalogHTML(opts){
       list.forEach(r=>{ const g=APP_GRANT_NAMES[r.o.id]; if(g) r.o.name=escH(g); });
       if(!list.length) return '';
     }
-    const open=only || _appOpen.has(c.id);
+    const open=only || !!qWords || _appOpen.has(c.id);
     /* WHAT CONNECTS, FIRST AND ONLY, UNTIL SOMEBODY ASKS FOR THE REST.
 
        The first screen of a topic used to be its first six apps whatever they
@@ -773,10 +777,16 @@ function _integrationsCatalogHTML(opts){
       : '';
     const html=shown.length ? shown.map(r=>intRow(r.o)).join('')
       : (req ? '' : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>');
-    const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
-      ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
-          +' aria-label="'+escH(_seeAllLabel(open, list.length, String(c.t).replace(/&amp;/g,'&')))+'">'
-          +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
+    /* ONE BUTTON, FOR WHAT IS NOT ON SCREEN (Nov 17, the owner: "it should
+       appear 9 then see the remaining"). A topic shows nine cards - its apps,
+       then the country's own services filling the rows (country-catalog.js,
+       ccFillIntegrations, which adds its count to this button rather than a
+       second button of its own) - and one button for the rest of both. */
+    const rest=list.length-shown.length;
+    const more=(!only && !qWords && (open || rest>0))
+      ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" data-rest="'+(open?0:rest)+'" aria-expanded="'+(open?'true':'false')+'"'
+          +' aria-label="'+escH(open ? T('Show fewer in {0}').replace('{0}', T(String(c.t).replace(/&amp;/g,'&'))) : T('See the remaining {0} in {1}').replace('{1}', T(String(c.t).replace(/&amp;/g,'&'))).replace('{0}', rest))+'">'
+          +escH(open ? T('Show fewer') : T('See the remaining {0}').replace('{0}', rest))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
     return cat(c.t, html, only?'':c.q, req+more, only?'':c.id);
@@ -796,8 +806,9 @@ function _integrationsCatalogHTML(opts){
 }
 /* The name a connection is known by when one grant covers several rows. */
 const APP_GRANT_NAMES = { google:'Google - Gmail, Calendar, Drive and Classroom', outlook:'Microsoft - Outlook mail and calendar' };
-/* Six is a screenful on a phone and enough to see what a topic holds. */
-const APP_ROWS_SHOWN = 6;
+/* Nine: three full rows on a laptop, and what a topic shows before its one
+   See the remaining button (Nov 17, the owner). */
+const APP_ROWS_SHOWN = 9;
 /* Which topics somebody opened with Show all. Kept across repaints, because a
    list that snaps shut when a mailbox finishes connecting is a list you lose
    your place in. */

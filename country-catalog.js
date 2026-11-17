@@ -907,17 +907,103 @@ async function ccFillIntegrations(){
     if(!sec){
       if(!CC_EXTRA_TOPICS[topic]) continue;
       sec = document.createElement('div'); sec.className = 'ss2'; sec.dataset.topic = topic;
-      sec.innerHTML = '<h3>' + escH(T(CC_EXTRA_TOPICS[topic])) + '</h3><div class="int-cc" hidden></div>';
+      sec.innerHTML = '<h3>' + escH(T(CC_EXTRA_TOPICS[topic])) + '</h3><div class="int-list"></div>';
       root.appendChild(sec);
     }
-    const box = sec.querySelector('.int-cc'); if(!box) continue;
-    const first = 6;
-    box.innerHTML = `<div class="int-list">${rows.slice(0, first).map(svcRow).join('')}</div>`
-      + (rows.length > first ? `<div class="int-more"><button class="int-seemore cc-int-more" type="button">${escH(T('See all {0}').replace('{0}', rows.length.toLocaleString()))}</button></div>` : '');
-    box.hidden = false;
-    const more = box.querySelector('.cc-int-more');
-    if(more) on(more, 'click', function(){ box.querySelector('.int-list').insertAdjacentHTML('beforeend', rows.slice(first).map(svcRow).join('')); this.parentNode.remove(); });
+    /* IN THE TOPIC'S OWN GRID, NOT A SECOND BLOCK (Nov 17). The country's
+       services used to sit under the apps with a "See all 75" of their own,
+       below the apps' "See all 31" - two buttons, two grids, uneven rows.
+       They fill the topic's nine now, and the one button below counts both. */
+    let list = sec.querySelector('.int-list');
+    if(!list){ list = document.createElement('div'); list.className = 'int-list';
+      const h = sec.querySelector('h3'); if(h) h.after(list); else sec.prepend(list); }
+    const none = sec.querySelector('.int-none'); if(none) none.remove();
+    const btn = sec.querySelector('[data-app-more]');
+    /* Open is the page's own record (_appOpen, 13-integrations.js), so a
+       topic of only the country's services opens and closes like the rest. */
+    const open = btn ? btn.getAttribute('aria-expanded') === 'true'
+      : (() => { try{ return _appOpen.has(topic); }catch(e){ return false; } })();
+    const shown = list.querySelectorAll('.int-card').length;
+    const fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
+    list.querySelectorAll('.cc-svc').forEach(n => n.remove());
+    list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
+    const topicName = ((sec.querySelector('h3') || {}).textContent || '').trim();
+    if(open){
+      if(!btn && rows.length > CC_INT_SHOWN){
+        const wrap = document.createElement('div'); wrap.className = 'int-more';
+        wrap.innerHTML = `<button class="int-seemore" type="button" data-app-more="${escH(topic)}" aria-expanded="true"
+          aria-label="${escH(T('Show fewer in {0}').replace('{0}', topicName))}">${escH(T('Show fewer'))}</button>`;
+        sec.appendChild(wrap);
+        on(wrap.querySelector('button'), 'click', () => { try{ _appToggle(topic); }catch(e){} });
+      }
+      continue;
+    }
+    const rest = (btn ? (+btn.dataset.rest || 0) : 0) + Math.max(0, rows.length - fill);
+    if(btn){
+      if(rest > 0){
+        const svg = btn.querySelector('svg');
+        btn.textContent = T('See the remaining {0}').replace('{0}', rest.toLocaleString());
+        if(svg) btn.appendChild(svg);
+        btn.setAttribute('aria-label', T('See the remaining {0} in {1}').replace('{1}', topicName).replace('{0}', rest.toLocaleString()));
+      }
+    } else if(rest > 0){
+      const wrap = document.createElement('div'); wrap.className = 'int-more';
+      wrap.innerHTML = `<button class="int-seemore" type="button" data-app-more="${escH(topic)}" aria-expanded="false"
+        aria-label="${escH(T('See the remaining {0} in {1}').replace('{1}', topicName).replace('{0}', rest.toLocaleString()))}">${escH(T('See the remaining {0}').replace('{0}', rest.toLocaleString()))}</button>`;
+      sec.appendChild(wrap);
+      on(wrap.querySelector('button'), 'click', () => { try{ _appToggle(topic); }catch(e){} });
+    }
   }
+}
+/* A topic's first screen: its apps, then the country's services, nine cards. */
+const CC_INT_SHOWN = 9;
+/* EVERY COUNTRY'S SERVICES, SEARCHED (Nov 17). The Integrations search box
+   finds a service whatever country is chosen: every country's file is read
+   (each is cached after the first time), every entry whose name or address
+   holds every word is kept once, with the countries that list it, most
+   visited first - the best Chrome UX Report bucket in any of them, then how
+   many countries list it. Sixty are drawn; Show more draws sixty more. */
+let _ccSearchTok = 0;
+async function ccSearchServices(q){
+  const box = document.getElementById('cdir-cc'); if(!box) return;
+  const tok = ++_ccSearchTok;
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean); if(!words.length){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="ss2"><h3>' + escH(T('Services in every country')) + '</h3><p class="int-none" role="status">' + escH(T('Searching every country…')) + '</p></div>';
+  const codes = (typeof CW_WORLD_COUNTRIES !== 'undefined' ? CW_WORLD_COUNTRIES : []).map(c => c[0]);
+  const by = new Map();
+  let i = 0;
+  const one = async () => { while(i < codes.length){ const cc = codes[i++]; const d = await ccLoad(cc).catch(() => null); if(!d) continue;
+    for(const [kind, list] of Object.entries(d.kinds || {})) for(const e of (list || [])){
+      const h = (e.n + ' ' + e.s).toLowerCase(); if(!words.every(w => h.indexOf(w) >= 0)) continue;
+      const k = kind + '|' + e.q; let x = by.get(k);
+      if(!x){ x = { kind, e, cc: [], r: 1e9 }; by.set(k, x); }
+      x.cc.push(cc); if(+e.r > 0) x.r = Math.min(x.r, +e.r);
+    } } };
+  await Promise.all(Array.from({ length: 8 }, one));
+  if(tok !== _ccSearchTok || !box.isConnected) return;
+  const all = [...by.values()].sort((a, b) => (a.r - b.r) || (b.cc.length - a.cc.length) || (a.e.n < b.e.n ? -1 : 1));
+  all.forEach(x => { _ccSvc[x.e.q] = { kind: x.kind, e: x.e }; });
+  const flag = (cc) => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[2] : cc; };
+  const where = (x) => x.cc.slice(0, 4).map(flag).join(' ') + (x.cc.length > 4 ? ' +' + (x.cc.length - 4) : '');
+  const row = (x) => `<div class="int-card cc-svc" data-cc="${x.kind}">
+      <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
+      <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div>
+        <div class="int-desc" data-no-i18n>${escH(x.e.s)} <span class="cc-where" aria-label="${escH(x.cc.join(', '))}">${where(x)}</span></div></div>
+      <div class="int-act">${x.kind === 'bank'
+        ? `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`
+        : `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`}</div></div>`;
+  let n = 60;
+  const paint = () => {
+    if(!all.length){ box.innerHTML = '<div class="ss2"><h3>' + escH(T('Services in every country')) + '</h3><p class="int-none">' + escH(T('No country’s services match that.')) + '</p></div>'; return; }
+    const countries = new Set(all.flatMap(x => x.cc)).size;
+    box.innerHTML = '<div class="ss2"><h3>' + escH(T('Services in every country')) + '</h3>'
+      + '<p class="int-sub" role="status">' + escH(T('{0} services in {1} countries').replace('{0}', all.length.toLocaleString()).replace('{1}', countries.toLocaleString())) + '</p>'
+      + '<div class="int-list">' + all.slice(0, n).map(row).join('') + '</div>'
+      + (all.length > n ? '<div class="int-more"><button class="int-seemore" type="button" id="cdir-cc-more">' + escH(T('See the remaining {0}').replace('{0}', (all.length - n).toLocaleString())) + '</button></div>' : '')
+      + '</div>';
+    const m = document.getElementById('cdir-cc-more'); if(m) on(m, 'click', () => { n += 60; paint(); });
+  };
+  paint();
 }
 function ccUseService(q){
   const x = _ccSvc[q]; if(!x) return;
@@ -926,7 +1012,7 @@ function ccUseService(q){
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }
-try{ window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
+try{ window.ccSearchServices = ccSearchServices; window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════════
    WHERE YOU ARE (Nov 15). The owner: "at the top of Tasks you can click 'not

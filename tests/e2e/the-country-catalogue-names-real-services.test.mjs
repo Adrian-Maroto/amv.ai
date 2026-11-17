@@ -88,7 +88,12 @@ section('Integrations: every entry, in its topic, through AMV’s browser');
   await page.evaluate(() => setTab('integrations'));
   await page.waitForFunction(() => document.querySelector('#int-catalog .cc-svc'), null, { timeout: 15000 });
   const r = await page.evaluate(async () => {
-    for (let i = 0; i < 40 && document.querySelector('#int-catalog .cc-int-more'); i++) { document.querySelector('#int-catalog .cc-int-more').click(); await new Promise(r => setTimeout(r, 30)); }
+    /* Every topic opened whole - its one See the remaining button (Nov 17:
+       the country's services share the topic's grid and its button). */
+    for (let i = 0; i < 60; i++) {
+      const b = document.querySelector('#int-catalog [data-app-more][aria-expanded="false"]'); if (!b) break;
+      b.click(); await new Promise(r => setTimeout(r, 450));
+    }
     const rows = [...document.querySelectorAll('#int-catalog .cc-svc')];
     const topicOf = (k) => [...new Set(rows.filter(x => x.dataset.cc === k).map(x => (x.closest('[data-topic]') || {}).dataset?.topic))];
     return { n: rows.length, airline: topicOf('airline'), bank: topicOf('bank'),

@@ -17388,3 +17388,16 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
    phone wrapped the line and pushed everything below it down 21px. Drawn from
    the first paint instead, so the count arriving changes one number. */
 .tk2-go{margin:2px 0 0;color:var(--tx);font-size:var(--t-base);font-weight:500}
+
+/* ========== LAYER A374 (Nov 17): one ring, one grid, one search ==========
+   The owner: "when you search like in crew or type your country the blue
+   font overlaps with it - it looks like there are two fonts". A field in a
+   search bar (Crew's, the country picker's) drew its own focus outline 3px
+   inside the bar's ring, so the typed text sat between two blue lines. The
+   bar's ring (:focus-within, above) is the one indicator now. */
+:is(#app,#ovr) .cj-find input:focus,
+:is(#app,#ovr) .cj-find input:focus-visible{outline:none!important;box-shadow:none!important}
+/* A search across every country: the count under its heading, and the flags
+   of the countries a service is in, beside its address. */
+#app .vi-conn .cdir-cc .int-sub{margin:0 0 var(--sp-3);color:var(--mu);font-size:var(--t-sm)}
+#app .vi-conn .cc-where{margin-left:var(--sp-1);letter-spacing:.06em;white-space:nowrap}

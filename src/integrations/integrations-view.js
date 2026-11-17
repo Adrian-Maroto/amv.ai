@@ -541,6 +541,10 @@ function renderIntegrationsView(){
       + ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')
       + connectorDirectoryHTML() + '</div></div>';
     try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
+    try{ _wireIntegrationCatalog(vc); }catch(e){}
+    /* A search: the services of every country that match, below the apps. */
+    const sq = (typeof window._cdirSearchQ === 'function') ? window._cdirSearchQ() : '';
+    if(sq) _ccReady().then(ok => { if(ok && window.ccSearchServices) window.ccSearchServices(sq); });
     return;
   }
   vc.innerHTML=

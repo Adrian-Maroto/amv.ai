@@ -132,7 +132,7 @@ section('See all opens the rest of its own topic');
              label: (sec().querySelector('[data-app-more]') || {}).textContent || '' };
   });
   ok(!r.none, 'the email topic has a See all', r);
-  ok(r.before === 6 && r.after === r.total, 'pressing it shows every email app, not six', r);
+  ok(r.before === 9 && r.after === r.total, 'pressing it shows every email app, not the nine on its first screen', r);
   ok(r.names.includes('Gmail') && r.names.includes('Proton Mail'), 'and they are email apps', r.names.slice(0, 8));
   ok(/fewer/i.test(r.label), 'and it can be closed again', r.label);
 }
