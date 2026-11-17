@@ -3308,6 +3308,8 @@ try{ window._profileSnapshot=_profileSnapshot; window._profileApply=_profileAppl
    instead of replacing the list. `model` is a scalar and deliberately absent -
    last write genuinely should win on a preference. */
 const _SYNC_MERGEABLE = new Set(['convs','memory','workspaces','prompts']);
+/* The synced lists whose deletes travel as tombstones (see _tombAdd). */
+const _TOMB_KINDS = new Set(['memory','prompts']);
 const _syncStamp = it => (it && (it.updated || it.updatedAt || it.ts || it.added || it.created || it.createdAt)) || 0;
 /* How much substance an item carries - only breaks a tie, and it is what stops
    an upload that was trimmed to fit the size cap from erasing the full copy. */
@@ -3469,7 +3471,7 @@ const AMVSync = {
         if(data[k]===undefined) return;
         /* Chats merge WITH their shelf, so a delete made elsewhere (a newer
            marked copy) beats the live copy here, and is split back out. */
-        const local = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k];
+        const local = k === 'convs' ? _convsForStore(_raw.convs) : _TOMB_KINDS.has(k) ? _withTombs(k, _raw[k]) : _raw[k];
         let merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
           ? _mergeById(local, data[k]) : data[k];
         if(k === 'convs' && Array.isArray(merged)){
@@ -3479,7 +3481,7 @@ const AMVSync = {
           if(!merged.length && typeof newConvObj === 'function') merged = [newConvObj()];
           if(_raw.cur && !merged.some(c => c && c.id === _raw.cur)) _raw.cur = merged.length ? merged[0].id : null;
         }
-        if(k === 'memory' && Array.isArray(merged)) merged = _memSplit(merged);
+        if(_TOMB_KINDS.has(k) && Array.isArray(merged)) merged = _splitTombs(k, merged);
         _raw[k]=merged; _persist(k,merged);
       });
 
@@ -3489,7 +3491,7 @@ const AMVSync = {
         try{
           // Same rule for Recents: a Dev project that only exists on this
           // device must survive a pull, not be replaced out of existence.
-          const merged=_mergeById(Array.isArray(_SESSIONS)?_SESSIONS.slice():[], data.sessions);
+          const merged=_splitTombs('sessions', _mergeById(_withTombs('sessions', Array.isArray(_SESSIONS)?_SESSIONS.slice():[]), data.sessions));
           _SESSIONS.length = 0;
           /* Repair on the way in. Anything uploaded before the kind was sent
              has none, and a Recent with no kind is the bug somebody actually
@@ -3552,9 +3554,9 @@ const AMVSync = {
   },
   collect(){
     const out={};
-    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : k === 'memory' ? _memForStore(_raw.memory) : _raw[k]; });
+    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : _TOMB_KINDS.has(k) ? _withTombs(k, _raw[k]) : _raw[k]; });
     // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
-    try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
+    try{ out.sessions = _withTombs('sessions', _syncSessionList()); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
     try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
     try{ out.plugins  = load('amv_plugins')  || []; }catch(e){}
@@ -4551,32 +4553,40 @@ let _CONV_SHELF = [];
    Written ONLY where a person deletes (the Memory tab, Clear all, asking chat
    to forget), never by noticing the list got shorter: signing out empties it
    too, and that must not forget anything. */
-const _MEM_GONE_MS = 90 * 864e5;
-function _memGoneList(){
-  const now = Date.now(), l = load('amv_memory_gone');
-  return (Array.isArray(l) ? l : []).filter(t => t && t.id && now - (t.updated || 0) < _MEM_GONE_MS);
+/* The same is true of every list synced this way, so it is one mechanism:
+   Recents (a deleted Build or Dev project) and saved prompts came back exactly
+   like memory did. `kind` names the list; its tombstones are kept per account
+   under amv_<kind>_gone. */
+const _TOMB_MS = 90 * 864e5;
+function _tombList(kind){
+  const now = Date.now(), l = load('amv_' + kind + '_gone');
+  return (Array.isArray(l) ? l : []).filter(t => t && t.id && now - (t.updated || 0) < _TOMB_MS);
 }
-function _memForget(ids){
-  const set = new Set((ids || []).filter(Boolean)); if(!set.size) return;
+function _tombAdd(kind, ids){
+  const set = new Set((ids || []).filter(Boolean)); if(!set.size) return set;
   const now = Date.now();
-  const tombs = _memGoneList().filter(t => !set.has(t.id));
+  const tombs = _tombList(kind).filter(t => !set.has(t.id));
   set.forEach(id => tombs.push({ id, gone: true, text: '', updated: now }));
-  try{ store('amv_memory_gone', tombs.slice(-2000)); }catch(e){ _logErr('memory.forget', e); }
-  S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
+  try{ store('amv_' + kind + '_gone', tombs.slice(-2000)); }catch(e){ _logErr('sync.forget.' + kind, e); }
+  return set;
 }
-/* What is remembered plus what was forgotten, for the server. */
-function _memForStore(live){
+/* The live list plus its tombstones, for the server and for the merge. */
+function _withTombs(kind, live){
   const keep = (Array.isArray(live) ? live : []).filter(m => m && !m.gone);
   const ids = new Set(keep.map(m => m.id));
-  return keep.concat(_memGoneList().filter(t => !ids.has(t.id)));
+  return keep.concat(_tombList(kind).filter(t => !ids.has(t.id)));
 }
-/* A merged list in, what is remembered out; tombstones go back to their store. */
-function _memSplit(list){
+/* A merged list in, the live items out; tombstones go back to their store. */
+function _splitTombs(kind, list){
   const live = [], gone = [];
   for(const m of (list || [])){ if(!m) continue; (m.gone ? gone : live).push(m); }
   const now = Date.now();
-  try{ store('amv_memory_gone', gone.filter(t => t.id && now - (t.updated || 0) < _MEM_GONE_MS).slice(-2000)); }catch(e){ _logErr('memory.split', e); }
+  try{ store('amv_' + kind + '_gone', gone.filter(t => t.id && now - (t.updated || 0) < _TOMB_MS).slice(-2000)); }catch(e){ _logErr('sync.split.' + kind, e); }
   return live;
+}
+function _memForget(ids){
+  const set = _tombAdd('memory', ids); if(!set.size) return;
+  S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
 }
 try{ window._memForget = _memForget; }catch(e){}
 const _SHELF_TRASH_MS = 30 * 864e5, _SHELF_GONE_MS = 90 * 864e5;
@@ -4927,6 +4937,8 @@ function _sessResume(id){
   _resumingSession=false;
 }
 function _sessDelete(id){
+  /* Remembered as deleted, so another device's copy cannot bring it back. */
+  try{ _tombAdd('sessions', [id]); }catch(e){ _logErr('sessions.forget', e); }
   _SESSIONS = _SESSIONS.filter(s=>s.id!==id);
   Object.keys(_activeSession).forEach(k=>{ if(_activeSession[k]===id) _activeSession[k]=''; });
   _persistSessions();
@@ -17045,6 +17057,7 @@ function copyPrompt(id){
   navigator.clipboard?.writeText(_promptText(p)).then(()=>toast('Prompt copied','success'));
 }
 function deletePrompt(id){
+  try{ _tombAdd('prompts', [id]); }catch(e){ _logErr('prompts.forget', e); }
   S.prompts=S.prompts.filter(p=>p.id!==id);
   store('amv_pl',S.prompts);
   renderPLList('All');

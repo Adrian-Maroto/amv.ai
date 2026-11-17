@@ -148,6 +148,27 @@ section('No door lets a secret in');
   ok(again.n === 1 && again.second.already, 'the same fact twice is remembered once', again);
 }
 
+section('A deleted Build project and a deleted prompt stay deleted too');
+{
+  const r = await page.evaluate(async (now) => {
+    const sess = { id: 's-site', kind: 'dev', title: 'Bakery website', updated: now - 9000 };
+    _SESSIONS.length = 0; _SESSIONS.push(sess, { id: 's-keep', kind: 'dev', title: 'Keep me', updated: now - 8000 });
+    S.prompts = [{ id: 'p-old', title: 'Old prompt', text: 'Say hi', cat: 'Writing' }, { id: 'p-keep', title: 'Keep', text: 'Keep', cat: 'Writing' }];
+    _sessDelete('s-site');
+    deletePrompt('p-old');
+    /* The other device pushed first, still holding both. */
+    AMV_API.syncPull = async () => ({ sessions: [sess, { id: 's-keep', kind: 'dev', title: 'Keep me', updated: now - 8000 }],
+      prompts: [{ id: 'p-old', title: 'Old prompt', text: 'Say hi', cat: 'Writing' }, { id: 'p-keep', title: 'Keep', text: 'Keep', cat: 'Writing' }] });
+    await AMVSync.pull();
+    const out = AMVSync.collect();
+    return { sessions: _SESSIONS.map(x => x.id), prompts: S.prompts.map(x => x.id),
+      sentS: (out.sessions || []).map(x => x.id + (x.gone ? ':gone' : '')), sentP: (out.prompts || []).map(x => x.id + (x.gone ? ':gone' : '')) };
+  }, NOW);
+  ok(!r.sessions.includes('s-site') && r.sessions.includes('s-keep'), 'the deleted project does not come back to Recents', r.sessions);
+  ok(!r.prompts.includes('p-old') && r.prompts.includes('p-keep'), 'the deleted prompt does not come back', r.prompts);
+  ok(r.sentS.includes('s-site:gone') && r.sentP.includes('p-old:gone'), 'and both deletes travel to the other devices', r);
+}
+
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
 await app.close();
 report();

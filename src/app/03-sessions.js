@@ -301,6 +301,8 @@ function _sessResume(id){
   _resumingSession=false;
 }
 function _sessDelete(id){
+  /* Remembered as deleted, so another device's copy cannot bring it back. */
+  try{ _tombAdd('sessions', [id]); }catch(e){ _logErr('sessions.forget', e); }
   _SESSIONS = _SESSIONS.filter(s=>s.id!==id);
   Object.keys(_activeSession).forEach(k=>{ if(_activeSession[k]===id) _activeSession[k]=''; });
   _persistSessions();

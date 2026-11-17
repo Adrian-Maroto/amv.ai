@@ -1446,6 +1446,7 @@ function copyPrompt(id){
   navigator.clipboard?.writeText(_promptText(p)).then(()=>toast('Prompt copied','success'));
 }
 function deletePrompt(id){
+  try{ _tombAdd('prompts', [id]); }catch(e){ _logErr('prompts.forget', e); }
   S.prompts=S.prompts.filter(p=>p.id!==id);
   store('amv_pl',S.prompts);
   renderPLList('All');

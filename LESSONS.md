@@ -16037,3 +16037,16 @@ read before the number is reported; and a looser pass is held to a stricter
 rule than the strict one - every word of the name in the match, a one-word
 name only exactly or with one company word, placed in the country rather than
 merely visited from it. The honest result was 2,513, not 2,972.
+
+## 653
+A list merged by id cannot learn of a delete from the list itself. The chat
+shelf fixed this for chats in the spring; memory, saved prompts and Recents
+were merged the same way and kept the bug until the owner asked whether memory
+"100 percent works". A memory forgotten on the laptop came back from the
+phone's copy at its next pull, and the phone then pushed it as the device that
+had seen the latest version, so it was remembered everywhere again.
+Rule: every synced list whose items can be deleted sends its deletes as
+tombstones (`_tombAdd` in 02-state.js - the id, none of the content, newer than
+the item), and a tombstone is written where a PERSON deletes, never by noticing
+a list got shorter: signing out empties these lists too, and that must not
+delete anything anywhere.
