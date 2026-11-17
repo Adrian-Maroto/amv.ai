@@ -61,11 +61,14 @@ const reach = () => page.evaluate(() => {
   pane.scrollTop = 0;
   const first = byText('Design it') || byText('Build an app');
   const firstVisible = inside(first);
+  /* The box now comes straight after the switch (A378, the owner asked for
+     the chat home's shape), so it is on screen before any scrolling - the
+     strongest form of "reachable". What scrolls is what is under it. */
+  const composer = [...pane.querySelectorAll('textarea')].pop();
+  const composerVisible = inside(composer);
 
   pane.scrollTop = pane.scrollHeight;
   const movedTo = pane.scrollTop;
-  const composer = [...pane.querySelectorAll('textarea')].pop();
-  const composerVisible = inside(composer);
 
   return {
     overflowY: getComputedStyle(pane).overflowY,
@@ -108,7 +111,7 @@ section('On a phone-sized screen the whole Build home can be reached');
   ok(r.firstVisible, 'scrolled to the top, the FIRST mode is fully on screen', r);
   ok(r.reallyMoved, 'and dragging it actually moves it, rather than only appearing to', r);
   ok(r.composerFound && r.composerVisible,
-     'scrolled to the bottom, the composer is fully on screen', r);
+     'the composer is fully on screen without scrolling', r);
 }
 
 section('And on a very short screen, which is where centring did the damage');

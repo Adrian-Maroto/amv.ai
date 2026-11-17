@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="f221227707cf6b86">
+<meta name="amv-build" content="ca80b46f74e35e90">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10680,6 +10680,40 @@ html[dir="rtl"] .chome-sug{text-align:right}
 #cv.cv-home #cm{padding-bottom:var(--sp-2)!important}
 #cv.cv-home .chome{padding-bottom:0!important}
 #cv.cv-home .chome-title{margin-bottom:var(--sp-3)!important}
+.pghd.build-head{justify-content:center;text-align:center;border-bottom:0!important;padding-bottom:0!important;margin-bottom:var(--sp-3)!important}
+.pghd.build-head .pghd-l{align-items:center;width:100%}
+.pghd.build-head .eyebrow{display:none!important}
+.pghd.build-head h2{font-family:var(--fn)!important;font-weight:400!important;font-size:calc(var(--t-xl) * var(--fs-s,1))!important;letter-spacing:-.01em!important;margin:0!important}
+.build-modes{display:flex!important;width:max-content!important;max-width:100%;margin:0 auto!important;gap:2px!important;padding:3px!important;
+border:1px solid var(--bd)!important;border-radius:var(--r-pill)!important;background:var(--s1)!important;grid-template-columns:none!important}
+.build-modes .build-mode{flex:0 0 auto!important;min-height:34px!important;height:auto!important;padding:0 var(--sp-4)!important;border:0!important;border-radius:var(--r-pill)!important;
+background:none!important;box-shadow:none!important;color:var(--mu)!important;font-size:var(--t-sm)!important;font-weight:500!important}
+.build-modes .build-mode:hover{color:var(--tx)!important}
+.build-modes .build-mode.on{background:var(--s3)!important;color:var(--tx)!important}
+.build-modes .build-mode:focus-visible{outline:2px solid var(--accent)!important;outline-offset:1px}
+.build-mode-note{text-align:center!important;color:var(--mu)!important;font-size:var(--t-sm)!important;margin:var(--sp-2) 0 var(--sp-4)!important}
+.dev-shell.dev-blank .dev-chat-pane{display:flex!important;flex-direction:column!important}
+.dev-shell.dev-blank .dev-chat-pane > *{order:8}
+.dev-shell.dev-blank .dev-chat-pane > .build-head{order:1}
+.dev-shell.dev-blank .dev-chat-pane > .build-modes{order:2}
+.dev-shell.dev-blank .dev-chat-pane > .build-mode-note{order:3}
+.dev-shell.dev-blank .dev-chat-pane > .dev-bar{order:4}
+.dev-shell.dev-blank .dev-chat-pane > .dev-input{order:5}
+.dev-shell.dev-blank .dev-chat-pane > #dev-hero{order:6;margin-top:var(--sp-4)!important}
+.dev-shell.dev-blank .dev-chat-pane > .bld-recents,.dev-shell.dev-blank .dev-chat-pane > .bld-recent-list,.dev-shell.dev-blank .dev-chat-pane > section{order:7}
+.dev-shell.dev-blank #dev-hero{display:flex;flex-direction:column;align-items:center;gap:var(--sp-3)}
+.dev-shell.dev-blank .dev-hero-chips{justify-content:center!important}
+.dev-shell.dev-blank .dev-chip{border-radius:var(--r-pill)!important;background:var(--s2)!important;border:1px solid transparent!important;font-size:var(--t-sm)!important}
+.dev-shell.dev-blank .dev-chip:hover{border-color:var(--bd)!important;color:var(--tx)!important}
+.dev-shell.dev-blank .dev-hero-upload{justify-content:center}
+.dev-shell.dev-blank .dev-upload-btn{border:0!important;background:none!important;color:var(--accent)!important;padding:var(--sp-1) var(--sp-2)!important}
+.dev-shell.dev-blank .dev-input{border-radius:var(--r-2xl)!important}
+.dev-shell.dev-blank .dev-chat-pane > .build-mode-note,.lab-shell > .build-mode-note,.dsn-wrap > .build-mode-note,.build-mode-note{
+width:100%!important;max-width:none!important;margin-left:auto!important;margin-right:auto!important;text-align:center!important;align-self:center!important}
+.dsn-hint{font-size:var(--t-sm)!important;color:var(--dim)!important;text-align:center}
+@media (max-width:560px){.dev-shell.dev-blank .dev-hero-or{display:none}}
+.dev-shell:not(.dev-blank) .build-modes,.lab-shell:not(.lab-blank) > .build-modes{display:none!important}
+@media (pointer:coarse),(max-width:760px){.build-modes .build-mode{min-height:44px!important}}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
