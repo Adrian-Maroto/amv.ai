@@ -853,5 +853,43 @@
   "it": "Lavoro in background",
   "ko": "백그라운드 작업",
   "ta": "பின்னணிப் பணி"
+ },
+ "Task": {
+  "es": "Tarea",
+  "zh": "任务",
+  "hi": "काम",
+  "ar": "مهمة",
+  "pt": "Tarefa",
+  "fr": "Tâche",
+  "de": "Aufgabe",
+  "ja": "タスク",
+  "ru": "Задача",
+  "id": "Tugas",
+  "bn": "কাজ",
+  "ur": "کام",
+  "tr": "Görev",
+  "vi": "Tác vụ",
+  "it": "Attività",
+  "ko": "작업",
+  "ta": "பணி"
+ },
+ "See all": {
+  "es": "Ver todo",
+  "zh": "查看全部",
+  "hi": "सभी देखें",
+  "ar": "عرض الكل",
+  "pt": "Ver tudo",
+  "fr": "Tout voir",
+  "de": "Alle ansehen",
+  "ja": "すべて表示",
+  "ru": "Показать все",
+  "id": "Lihat semua",
+  "bn": "সব দেখুন",
+  "ur": "سب دیکھیں",
+  "tr": "Tümünü gör",
+  "vi": "Xem tất cả",
+  "it": "Vedi tutto",
+  "ko": "모두 보기",
+  "ta": "அனைத்தையும் காண்க"
  }
 }
