@@ -10437,6 +10437,30 @@ function showModelPicker(){
     }).join('')+
     '<div class="mp-foot">Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.</div>';
   document.body.appendChild(menu);
+  /* THE SIDE THAT FITS IT, NOT THE SIDE THAT IS BIGGER (A377). The chat home
+     puts the box in the middle of the screen, where neither side is much
+     bigger than the other and neither may hold the whole list - and a menu
+     that fits below should not scroll above. So the real height is measured
+     once the items are in, and the menu goes where all of it fits: above when
+     both do (the box usually sits at the foot), else below, else the side with
+     more room, scrolling. */
+  try{
+    menu.style.maxHeight='none';
+    const need=menu.scrollHeight;
+    const whole=window.innerHeight-EDGE*2;
+    if(need>above && need>below && need<=whole){
+      /* Neither side holds it but the screen does: it sits on screen over its
+         own button, the way a native list does, rather than scroll. */
+      const top=Math.max(EDGE, Math.min(window.innerHeight-EDGE-need, rect.top+rect.height/2-need/2));
+      menu.style.bottom=''; menu.style.top=top+'px'; menu.style.maxHeight=whole+'px';
+    } else {
+      const goUp = need<=above ? true : need<=below ? false : up;
+      const fit=Math.max(140, goUp?above:below);
+      menu.style.top=goUp?'':(rect.bottom+GAP)+'px';
+      menu.style.bottom=goUp?(window.innerHeight-rect.top+GAP)+'px':'';
+      menu.style.maxHeight=fit+'px';
+    }
+  }catch(e){}
   menu.querySelectorAll('[data-mk]').forEach(item=>{
     item.addEventListener('click',()=>{
       /* The team's rule comes before the plan's: an upgrade cannot turn on an

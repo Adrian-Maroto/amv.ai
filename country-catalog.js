@@ -985,7 +985,7 @@ async function ccSearchServices(q){
   all.forEach(x => { _ccSvc[x.e.q] = { kind: x.kind, e: x.e }; });
   const flag = (cc) => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[2] : cc; };
   const where = (x) => x.cc.slice(0, 4).map(flag).join(' ') + (x.cc.length > 4 ? ' +' + (x.cc.length - 4) : '');
-  const row = (x) => `<div class="int-card cc-svc" data-cc="${x.kind}">
+  const row = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
       <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div>
         <div class="int-desc" data-no-i18n>${escH(x.e.s)} <span class="cc-where" aria-label="${escH(x.cc.join(', '))}">${where(x)}</span></div></div>

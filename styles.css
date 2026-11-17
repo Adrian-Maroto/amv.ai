@@ -17516,7 +17516,7 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 /* The greeting: plain, lighter type, the way the reference sets it. The sweep
    stays (the owner asked for it); its copy inherits the same type. */
 #cv.cv-home .chome-title{font-family:var(--fn)!important;font-weight:400!important;letter-spacing:-.01em!important;
-  font-size:calc(clamp(24px,2.4vw,30px) * var(--fs-s,1))!important;line-height:1.25!important}
+  font-size:calc(clamp(var(--t-2xl), 2.4vw, var(--t-2xl) * 1.15) * var(--fs-s,1))!important;line-height:1.25!important}
 
 /* Suggestions from recent chats: full-width rows under the box, an icon and
    one line each, like the reference. */
@@ -17531,4 +17531,3 @@ body.light .vi-help #faq-search:focus{box-shadow:0 0 0 4px var(--accent-soft)!im
 .chome-sug-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html[dir="rtl"] .chome-sug{text-align:right}
 #chome-chips .chome-toggles{display:flex;justify-content:center;gap:var(--sp-2);width:100%;margin-top:var(--sp-3)}
-#cv.cv-home .input-hint{display:none!important}
