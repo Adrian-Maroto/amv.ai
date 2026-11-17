@@ -96,7 +96,7 @@ async function search(name, lang = 'en') {
 async function claims(ids) {
   const out = {};
   for (let i = 0; i < ids.length; i += 50) {
-    const u = API + '?action=wbgetentities&format=json&props=claims|labels&languages=en&ids=' + ids.slice(i, i + 50).join('|');
+    const u = API + '?action=wbgetentities&format=json&props=claims|labels|aliases&languages=' + (claims.langs || 'en') + '&ids=' + ids.slice(i, i + 50).join('|');
     const r = await get(u); if (!r) continue;
     const j = await r.json().catch(() => null);
     for (const [id, e] of Object.entries((j && j.entities) || {})) {
@@ -104,7 +104,8 @@ async function claims(ids) {
       const val = (p) => (c[p] || []).map(s => s.mainsnak && s.mainsnak.datavalue && s.mainsnak.datavalue.value).filter(Boolean);
       /* Where it is: its country (P17), its country of origin (P495), or the
          jurisdiction it applies to (P1001 - a tax authority, a national exam). */
-      out[id] = { label: (e.labels && e.labels.en && e.labels.en.value) || '',
+      const names = [...Object.values(e.labels || {}).map(l => l.value), ...Object.values(e.aliases || {}).flat().map(a => a.value)];
+      out[id] = { label: (e.labels && e.labels.en && e.labels.en.value) || names[0] || '', names,
                   country: [...val('P17'), ...val('P495'), ...val('P1001')].map(v => v && v.id).filter(Boolean), site: val('P856').map(String),
                   /* Linked entities whose own country says where this is:
                      headquarters (P159), location (P131), parent (P749),
@@ -144,21 +145,31 @@ async function wikiCandidates(name, lang) {
   const j2 = await r2.json().catch(() => null);
   return Object.values((j2 && j2.query && j2.query.pages) || {}).map(p => p.pageprops && p.pageprops.wikibase_item).filter(Boolean);
 }
+/* The wider pass takes candidates from a fuzzy search, so a candidate counts
+   only when one of its own names (label or alias, in English or the country's
+   language) shares a significant word with the name being checked - SPEI is
+   not verified by finding Banco de Mexico. */
+const words = (x) => normN(x).split(' ').filter(w => w.length >= 3 || /[^\x00-\x7f]/.test(w));
+const sameName = (n, e) => { const a = new Set(words(n)); if (!a.size) return false;
+  return (e.names || [e.label]).some(x => words(x).some(w => a.has(w)) || normN(x) === normN(n)); };
 async function wider(n, cc, q, cr) {
   const lang = LANG[cc] || 'en';
+  claims.langs = lang === 'en' ? 'en' : 'en|' + lang;
   const ids = [...new Set([...(await search(n, 'en')), ...(await search(n, lang)), ...(await wikiCandidates(n, lang)), ...(lang !== 'en' ? await wikiCandidates(n, 'en') : [])])].slice(0, 25);
   if (!ids.length) return null;
   const cl = await claims(ids);
   const links = [...new Set(Object.values(cl).flatMap(e => e.linked))];
+  claims.langs = 'en';
   const lc = links.length ? await claims(links) : {};
   for (const id of ids) {
-    const e = cl[id]; if (!e) continue;
+    const e = cl[id]; if (!e || !sameName(n, e)) continue;
     const sites = e.site.map(hostOf).filter(Boolean);
     const r = Math.min(...sites.map(h => cr.byReg.get(reg(h)) || Infinity));
-    if (e.country.includes(q)) return { n, q: id, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined };
-    if (isFinite(r)) return { n, q: id, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
+    const as = e.label || (e.names || [])[0] || '';
+    if (e.country.includes(q)) return { n, q: id, as, how: 'in-country', site: sites[0] || '', r: isFinite(r) ? r : undefined };
+    if (isFinite(r)) return { n, q: id, as, how: 'visited', site: sites.find(h => cr.byReg.get(reg(h)) === r), r };
     const via = e.linked.find(l => lc[l] && lc[l].country.includes(q));
-    if (via) return { n, q: id, how: 'linked', via, site: sites[0] || '' };
+    if (via) return { n, q: id, as, how: 'linked', via, site: sites[0] || '' };
   }
   return null;
 }

@@ -100,10 +100,7 @@
   "pay": [
    {
     "n": "Zelle",
-    "how": "in-country",
-    "q": "Q22907300",
-    "site": "www.zellepay.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Venmo",
@@ -313,10 +310,7 @@
    },
    {
     "n": "AP exams",
-    "how": "visited",
-    "q": "Q4686249",
-    "site": "apcentral.collegeboard.org",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -397,9 +391,7 @@
   "gov": [
    {
     "n": "CRA My Account",
-    "how": "in-country",
-    "q": "Q6953601",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -613,10 +605,7 @@
   "uni": [
    {
     "n": "OUAC in Ontario",
-    "how": "in-country",
-    "q": "Q2495899",
-    "site": "www.uoit.ca",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "your province’s application service",
@@ -682,10 +671,7 @@
    },
    {
     "n": "SAT portal",
-    "how": "visited",
-    "q": "Q3046215",
-    "site": "www.eitb.eus",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -698,10 +684,7 @@
    },
    {
     "n": "INE credential",
-    "how": "in-country",
-    "q": "Q17634857",
-    "site": "www.ine.mx",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -737,10 +720,7 @@
   "pay": [
    {
     "n": "SPEI transfers",
-    "how": "visited",
-    "q": "Q136180360",
-    "site": "rampnetwork.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Mercado Pago",
@@ -753,17 +733,11 @@
   "jobs": [
    {
     "n": "OCC Mundial",
-    "how": "visited",
-    "q": "Q25422888",
-    "site": "nu.com.mx",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Computrabajo",
-    "how": "in-country",
-    "q": "Q56605392",
-    "site": "www.icep.edu.mx",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -842,10 +816,7 @@
    },
    {
     "n": "DiDi Food",
-    "how": "visited",
-    "q": "Q2523033",
-    "site": "www.unisg.it",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -855,9 +826,7 @@
    },
    {
     "n": "Vivanuncios",
-    "how": "in-country",
-    "q": "Q5777810",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -869,10 +838,7 @@
   "health": [
    {
     "n": "IMSS or ISSSTE",
-    "how": "in-country",
-    "q": "Q211760",
-    "site": "www.culiacan.gob.mx",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -900,10 +866,7 @@
   "exams": [
    {
     "n": "EXANI",
-    "how": "in-country",
-    "q": "Q7894242",
-    "site": "www.uaslp.mx",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -1058,10 +1021,7 @@
    },
    {
     "n": "Gupy",
-    "how": "in-country",
-    "q": "Q10379238",
-    "site": "teleton.org.br",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -1127,15 +1087,11 @@
   "prop": [
    {
     "n": "Zap Imóveis",
-    "how": "in-country",
-    "q": "Q25447363",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Viva Real",
-    "how": "in-country",
-    "q": "Q173117",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "QuintoAndar",
@@ -1154,10 +1110,7 @@
   "health": [
    {
     "n": "SUS or your plano de saúde",
-    "how": "visited",
-    "q": "Q115564437",
-    "site": "chatgpt.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -1415,23 +1368,17 @@
   "prop": [
    {
     "n": "Zonaprop",
-    "how": "in-country",
-    "q": "Q1686228",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Argenprop",
-    "how": "in-country",
-    "q": "Q18707071",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "DNRPA",
-    "how": "in-country",
-    "q": "Q1477027",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "VTV inspection",
@@ -1534,10 +1481,7 @@
    },
    {
     "n": "eID function",
-    "how": "visited",
-    "q": "Q86668068",
-    "site": "www.vw.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -1592,10 +1536,7 @@
    },
    {
     "n": "Wero",
-    "how": "in-country",
-    "q": "Q133823758",
-    "site": "www.ing.de",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -1764,10 +1705,7 @@
    },
    {
     "n": "TÜV inspection",
-    "how": "in-country",
-    "q": "Q383711",
-    "site": "www.dekra.de",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -2002,10 +1940,7 @@
    },
    {
     "n": "Totaljobs",
-    "how": "visited",
-    "q": "Q163560",
-    "site": "www.axelspringer.com",
-    "r": 1000000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -2171,15 +2106,11 @@
   "exams": [
    {
     "n": "GCSEs",
-    "how": "in-country",
-    "q": "Q1501560",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "A-levels",
-    "how": "in-country",
-    "q": "Q6376320",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -2328,15 +2259,11 @@
   "pay": [
    {
     "n": "Wero",
-    "how": "in-country",
-    "q": "Q56303167",
-    "site": "www.paylib.fr"
+    "how": "unresolved"
    },
    {
     "n": "Lydia",
-    "how": "in-country",
-    "q": "Q138026812",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -2625,9 +2552,7 @@
   "gov": [
    {
     "n": "SPID or CIE",
-    "how": "in-country",
-    "q": "Q3660826",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -2850,10 +2775,7 @@
    },
    {
     "n": "Fascicolo Sanitario",
-    "how": "in-country",
-    "q": "Q3985005",
-    "site": "sistemats1.sanita.finanze.it",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -2888,10 +2810,7 @@
   "uni": [
    {
     "n": "Universitaly",
-    "how": "in-country",
-    "q": "Q266537",
-    "site": "web.unicz.it",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -2950,9 +2869,7 @@
   "weather": [
    {
     "n": "Aeronautica Militare weather service",
-    "how": "in-country",
-    "q": "Q200097",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -3017,9 +2934,7 @@
   "pay": [
    {
     "n": "SBP fast payments",
-    "how": "in-country",
-    "q": "Q65175111",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -3091,10 +3006,7 @@
   "food": [
    {
     "n": "Yandex Eda",
-    "how": "in-country",
-    "q": "Q65158665",
-    "site": "eda.yandex",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Samokat",
@@ -3132,10 +3044,7 @@
   "car": [
    {
     "n": "GIBDD",
-    "how": "in-country",
-    "q": "Q4146353",
-    "site": "xn--90adear.xn--p1ai",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -3387,10 +3296,7 @@
    },
    {
     "n": "Anjuke",
-    "how": "linked",
-    "q": "Q109342526",
-    "via": "Q8686",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -3504,18 +3410,13 @@
    },
    {
     "n": "UMANG",
-    "how": "linked",
-    "q": "Q7494074",
-    "via": "Q1156",
-    "site": "shemarooent.com"
+    "how": "unresolved"
    }
   ],
   "id": [
    {
     "n": "Passport Seva",
-    "how": "in-country",
-    "q": "Q15401700",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "UIDAI",
@@ -3594,10 +3495,7 @@
    },
    {
     "n": "foundit",
-    "how": "visited",
-    "q": "Q692041",
-    "site": "www.monster.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -3639,10 +3537,7 @@
    },
    {
     "n": "BigBasket",
-    "how": "in-country",
-    "q": "Q19891628",
-    "site": "grofers.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "DMart",
@@ -3703,9 +3598,7 @@
   "car": [
    {
     "n": "Parivahan",
-    "how": "in-country",
-    "q": "Q2317343",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -3764,19 +3657,13 @@
    },
    {
     "n": "NEET",
-    "how": "in-country",
-    "q": "Q6480379",
-    "site": "lnmu.in",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "uni": [
    {
     "n": "CUET",
-    "how": "in-country",
-    "q": "Q665105",
-    "site": "www.du.ac.in",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -3848,10 +3735,7 @@
   "gov": [
    {
     "n": "Mynaportal",
-    "how": "in-country",
-    "q": "Q131276099",
-    "site": "myna.go.jp",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -3950,10 +3834,7 @@
    },
    {
     "n": "BizReach",
-    "how": "in-country",
-    "q": "Q17224554",
-    "site": "www.bizreach.co.jp",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -4034,10 +3915,7 @@
    },
    {
     "n": "SmartEX",
-    "how": "in-country",
-    "q": "Q5324668",
-    "site": "expy.jp",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -4180,10 +4058,7 @@
   "gov": [
    {
     "n": "Gov24",
-    "how": "visited",
-    "q": "Q1439",
-    "site": "texas.gov",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -4252,10 +4127,7 @@
    },
    {
     "n": "Naver Pay",
-    "how": "linked",
-    "q": "Q24861593",
-    "via": "Q489247",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -4274,10 +4146,7 @@
    },
    {
     "n": "Wanted",
-    "how": "visited",
-    "q": "Q244247",
-    "site": "www.dreamworks.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -4333,31 +4202,21 @@
    },
    {
     "n": "Market Kurly",
-    "how": "visited",
-    "q": "Q155718",
-    "site": "deutsche-boerse.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "food": [
    {
     "n": "Baemin",
-    "how": "in-country",
-    "q": "Q133889980",
-    "site": "www.saehan.vc"
+    "how": "unresolved"
    },
    {
     "n": "Coupang Eats",
-    "how": "in-country",
-    "q": "Q12620655",
-    "site": "www.coupang.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Yogiyo",
-    "how": "in-country",
-    "q": "Q141070354",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -4379,10 +4238,7 @@
   "prop": [
    {
     "n": "Naver Real Estate",
-    "how": "visited",
-    "q": "Q2831",
-    "site": "www.michaeljackson.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Zigbang",
@@ -4513,10 +4369,7 @@
    },
    {
     "n": "Dukcapil",
-    "how": "in-country",
-    "q": "Q6055",
-    "site": "infopublik.sijunjung.go.id",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -4649,16 +4502,11 @@
    },
    {
     "n": "GrabFood",
-    "how": "visited",
-    "q": "Q20873932",
-    "site": "www.grab.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "ShopeeFood",
-    "how": "in-country",
-    "q": "Q19730498",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -4686,9 +4534,7 @@
   "car": [
    {
     "n": "Samsat",
-    "how": "in-country",
-    "q": "Q1421674",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -4724,18 +4570,13 @@
   "exams": [
    {
     "n": "UTBK-SNBT",
-    "how": "in-country",
-    "q": "Q11129",
-    "site": "sidoarjokab.go.id",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "uni": [
    {
     "n": "SNPMB",
-    "how": "in-country",
-    "q": "Q12513261",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -4805,18 +4646,13 @@
   "tax": [
    {
     "n": "ZATCA",
-    "how": "in-country",
-    "q": "Q106704595",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "Absher",
-    "how": "in-country",
-    "q": "Q61742594",
-    "site": "www.absher.sa",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Nafath",
@@ -4829,10 +4665,7 @@
   "id": [
    {
     "n": "Passports department",
-    "how": "visited",
-    "q": "Q48725842",
-    "site": "dip.gov.bd",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -4868,10 +4701,7 @@
   "pay": [
    {
     "n": "STC Pay",
-    "how": "in-country",
-    "q": "Q1535171",
-    "site": "www.stc.com.sa",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "mada",
@@ -4955,10 +4785,7 @@
   "food": [
    {
     "n": "HungerStation",
-    "how": "in-country",
-    "q": "Q97930662",
-    "site": "hungerstation.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Jahez",
@@ -4969,9 +4796,7 @@
    },
    {
     "n": "Mrsool",
-    "how": "in-country",
-    "q": "Q20421103",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -4994,10 +4819,7 @@
   "car": [
    {
     "n": "Absher",
-    "how": "in-country",
-    "q": "Q61742594",
-    "site": "www.absher.sa",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "MVPI inspection",
@@ -5031,9 +4853,7 @@
   "exams": [
    {
     "n": "Qiyas tests",
-    "how": "in-country",
-    "q": "Q85876207",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -5096,10 +4916,7 @@
   "tax": [
    {
     "n": "Nigeria Revenue Service",
-    "how": "in-country",
-    "q": "Q85760710",
-    "site": "www.nrs.gov.ng",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "your state internal revenue service",
@@ -5109,10 +4926,7 @@
   "id": [
    {
     "n": "NIMC",
-    "how": "visited",
-    "q": "Q489921",
-    "site": "www.mastercard.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Immigration Service",
@@ -5153,9 +4967,7 @@
    },
    {
     "n": "UBA",
-    "how": "in-country",
-    "q": "Q3509469",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "OPay",
@@ -5209,10 +5021,7 @@
    },
    {
     "n": "MyJobMag",
-    "how": "visited",
-    "q": "Q19837",
-    "site": "www.apple.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -5273,15 +5082,11 @@
   "prop": [
    {
     "n": "PropertyPro",
-    "how": "in-country",
-    "q": "Q13140504",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Nigeria Property Centre",
-    "how": "in-country",
-    "q": "Q1033",
-    "site": "nigeria.gov.ng"
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -5297,9 +5102,7 @@
   "health": [
    {
     "n": "NHIA or your HMO",
-    "how": "in-country",
-    "q": "Q5690864",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -5319,10 +5122,7 @@
    },
    {
     "n": "Guardian Nigeria",
-    "how": "visited",
-    "q": "Q230141",
-    "site": "chimamanda.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -5339,19 +5139,13 @@
    },
    {
     "n": "JAMB UTME",
-    "how": "in-country",
-    "q": "Q6269074",
-    "site": "www.jamb.gov.ng",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "uni": [
    {
     "n": "JAMB CAPS",
-    "how": "in-country",
-    "q": "Q6269074",
-    "site": "www.jamb.gov.ng",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -5467,26 +5261,17 @@
   "pay": [
    {
     "n": "instant EFT",
-    "how": "visited",
-    "q": "Q3552193",
-    "site": "www.urbanoutfitters.com",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "PayShap",
-    "how": "in-country",
-    "q": "Q4856507",
-    "site": "www.bankservafrica.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "PNet",
-    "how": "visited",
-    "q": "Q1361922",
-    "site": "www.unidata.ucar.edu",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -5611,10 +5396,7 @@
   "exams": [
    {
     "n": "NSC matric exams",
-    "how": "in-country",
-    "q": "Q5108862",
-    "site": "www.bishops.org.za",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -5686,9 +5468,7 @@
   "gov": [
    {
     "n": "Digital Egypt",
-    "how": "in-country",
-    "q": "Q11768",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -5724,10 +5504,7 @@
    },
    {
     "n": "Vodafone Cash",
-    "how": "visited",
-    "q": "Q467752",
-    "site": "www.verizon.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -5820,9 +5597,7 @@
    },
    {
     "n": "Aqarmap",
-    "how": "in-country",
-    "q": "Q12191144",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -5834,10 +5609,7 @@
   "news": [
    {
     "n": "Ahram Online",
-    "how": "in-country",
-    "q": "Q286468",
-    "site": "ahram.org.eg",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Al-Masry Al-Youm",
@@ -5850,9 +5622,7 @@
   "exams": [
    {
     "n": "Thanaweya Amma",
-    "how": "in-country",
-    "q": "Q79",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -5929,17 +5699,13 @@
    },
    {
     "n": "myID",
-    "how": "in-country",
-    "q": "Q29324833",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
    {
     "n": "Australian Passport Office",
-    "how": "in-country",
-    "q": "Q1274223",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -5959,10 +5725,7 @@
    },
    {
     "n": "NAB",
-    "how": "in-country",
-    "q": "Q1430985",
-    "site": "www.nab.com.au",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "ANZ",
@@ -5975,17 +5738,11 @@
   "pay": [
    {
     "n": "PayID",
-    "how": "visited",
-    "q": "Q5629634",
-    "site": "www.hidglobal.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Osko",
-    "how": "linked",
-    "q": "Q4836243",
-    "via": "Q408",
-    "site": "www.bpay.com.au"
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -6211,10 +5968,7 @@
   "tax": [
    {
     "n": "FinanzOnline",
-    "how": "in-country",
-    "q": "Q306566",
-    "site": "www.brz.gv.at",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -6285,10 +6039,7 @@
    },
    {
     "n": "StepStone",
-    "how": "visited",
-    "q": "Q308993",
-    "site": "web.archive.org",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "willhaben",
@@ -6387,9 +6138,7 @@
   "car": [
    {
     "n": "Pickerl inspection",
-    "how": "in-country",
-    "q": "Q814403",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -6478,10 +6227,7 @@
   "tax": [
    {
     "n": "FPS Finance",
-    "how": "visited",
-    "q": "Q3884",
-    "site": "www.amazon.co.uk",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -6546,10 +6292,7 @@
    },
    {
     "n": "Wero",
-    "how": "in-country",
-    "q": "Q96743053",
-    "site": "epicompany.eu",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -6576,10 +6319,7 @@
    },
    {
     "n": "StepStone",
-    "how": "visited",
-    "q": "Q692041",
-    "site": "www.monster.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Indeed",
@@ -6959,10 +6699,7 @@
    },
    {
     "n": "Bezrealitky",
-    "how": "in-country",
-    "q": "Q12032287",
-    "site": "kristalova.lupa.cz",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -7259,10 +6996,7 @@
    },
    {
     "n": "MinLæge",
-    "how": "in-country",
-    "q": "Q7877732",
-    "site": "www.ugeskriftet.dk",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -7427,10 +7161,7 @@
    },
    {
     "n": "Job Market Finland",
-    "how": "visited",
-    "q": "Q338825",
-    "site": "www.accenture.com",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -7520,9 +7251,7 @@
    },
    {
     "n": "Etuovi",
-    "how": "in-country",
-    "q": "Q11858989",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -7578,9 +7307,7 @@
   "uni": [
    {
     "n": "Studyinfo",
-    "how": "in-country",
-    "q": "Q1544881",
-    "site": "www.uta.fi"
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -7647,10 +7374,7 @@
   "id": [
    {
     "n": "Passport Office",
-    "how": "visited",
-    "q": "Q5988335",
-    "site": "www.gov.uk",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -7876,9 +7600,7 @@
    },
    {
     "n": "Junior Cycle",
-    "how": "in-country",
-    "q": "Q2631387",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -7991,10 +7713,7 @@
    },
    {
     "n": "Tikkie",
-    "how": "visited",
-    "q": "Q1832580",
-    "site": "www.ideal.nl",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -8014,10 +7733,7 @@
    },
    {
     "n": "Nationale Vacaturebank",
-    "how": "in-country",
-    "q": "Q686817",
-    "site": "www.rtl.nl",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -8236,10 +7952,7 @@
   "gov": [
    {
     "n": "ID-porten",
-    "how": "in-country",
-    "q": "Q77700695",
-    "site": "bankid.no",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "BankID",
@@ -8300,10 +8013,7 @@
   "jobs": [
    {
     "n": "FINN jobb",
-    "how": "in-country",
-    "q": "Q620275",
-    "site": "finn.no",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "NAV",
@@ -8337,9 +8047,7 @@
    },
    {
     "n": "FINN torget",
-    "how": "in-country",
-    "q": "Q1476265",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -8407,10 +8115,7 @@
   "prop": [
    {
     "n": "FINN eiendom",
-    "how": "in-country",
-    "q": "Q620275",
-    "site": "finn.no",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -8535,9 +8240,7 @@
    },
    {
     "n": "Profil Zaufany",
-    "how": "in-country",
-    "q": "Q9185984",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -8604,9 +8307,7 @@
    },
    {
     "n": "OLX Praca",
-    "how": "in-country",
-    "q": "Q6647313",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -8742,9 +8443,7 @@
    },
    {
     "n": "IKP",
-    "how": "in-country",
-    "q": "Q9296252",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -8857,10 +8556,7 @@
   "gov": [
    {
     "n": "Chave Móvel Digital",
-    "how": "in-country",
-    "q": "Q504580",
-    "site": "www.chaves.pt",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -8921,10 +8617,7 @@
   "jobs": [
    {
     "n": "Net-Empregos",
-    "how": "visited",
-    "q": "Q907311",
-    "site": "www.netflix.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "IEFP",
@@ -9029,10 +8722,7 @@
    },
    {
     "n": "Imovirtual",
-    "how": "visited",
-    "q": "Q1948478",
-    "site": "www.olx.com.br",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -9051,9 +8741,7 @@
   "health": [
    {
     "n": "SNS 24",
-    "how": "in-country",
-    "q": "Q5691051",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -9090,10 +8778,7 @@
   "uni": [
    {
     "n": "Concurso Nacional de Acesso",
-    "how": "in-country",
-    "q": "Q1422903",
-    "site": "www.up.pt",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -9150,10 +8835,7 @@
   "gov": [
    {
     "n": "Cl@ve",
-    "how": "visited",
-    "q": "Q2878539",
-    "site": "www.lanacion.cl",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "your digital certificate",
@@ -9238,10 +8920,7 @@
    },
    {
     "n": "SEPE",
-    "how": "in-country",
-    "q": "Q21481685",
-    "site": "www.sistemanacionalempleo.es",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -9368,9 +9047,7 @@
    },
    {
     "n": "IVTM",
-    "how": "in-country",
-    "q": "Q3509407",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "ITV",
@@ -9496,10 +9173,7 @@
   "id": [
    {
     "n": "police",
-    "how": "visited",
-    "q": "Q2632560",
-    "site": "web.archive.org",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -9652,9 +9326,7 @@
    },
    {
     "n": "Blocket Bostad",
-    "how": "in-country",
-    "q": "Q4411573",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -9788,9 +9460,7 @@
   "gov": [
    {
     "n": "AGOV",
-    "how": "in-country",
-    "q": "Q104822549",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -10010,9 +9680,7 @@
   "exams": [
    {
     "n": "Matura",
-    "how": "in-country",
-    "q": "Q3299995",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -10125,10 +9793,7 @@
   "pay": [
    {
     "n": "FAST transfers",
-    "how": "visited",
-    "q": "Q30",
-    "site": "www.usa.gov",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -10240,23 +9905,17 @@
    },
    {
     "n": "Emlakjet",
-    "how": "in-country",
-    "q": "Q4835770",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "TÜVTÜRK inspection",
-    "how": "in-country",
-    "q": "Q16824541",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "MTV tax",
-    "how": "in-country",
-    "q": "Q55634835",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -10266,10 +9925,7 @@
    },
    {
     "n": "MHRS",
-    "how": "in-country",
-    "q": "Q19077",
-    "site": "www.akparti.org.tr",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -10429,9 +10085,7 @@
   "pay": [
    {
     "n": "monobank transfers",
-    "how": "in-country",
-    "q": "Q116820785",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -10487,10 +10141,7 @@
    },
    {
     "n": "ATB",
-    "how": "visited",
-    "q": "Q298762",
-    "site": "www.atb.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Novus",
@@ -10528,10 +10179,7 @@
   "prop": [
    {
     "n": "DIM.RIA",
-    "how": "in-country",
-    "q": "Q25442479",
-    "site": "dom.ria.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "OLX",
@@ -10644,10 +10292,7 @@
   "gov": [
    {
     "n": "iAM Smart",
-    "how": "visited",
-    "q": "Q3045566",
-    "site": "www.nick.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -10715,10 +10360,7 @@
   "jobs": [
    {
     "n": "JobsDB",
-    "how": "visited",
-    "q": "Q1110428",
-    "site": "www.openrice.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -10729,19 +10371,13 @@
    },
    {
     "n": "CTgoodjobs",
-    "how": "visited",
-    "q": "Q727054",
-    "site": "www.districtcouncils.gov.hk",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "shop": [
    {
     "n": "HKTVmall",
-    "how": "linked",
-    "q": "Q8423616",
-    "via": "Q838436",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Taobao",
@@ -10761,10 +10397,7 @@
    },
    {
     "n": "ParknShop",
-    "how": "visited",
-    "q": "Q4647401",
-    "site": "www.aswatson.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -10777,10 +10410,7 @@
    },
    {
     "n": "Keeta",
-    "how": "visited",
-    "q": "Q15907772",
-    "site": "www.meituan.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -10945,9 +10575,7 @@
    },
    {
     "n": "Immigration Authority",
-    "how": "in-country",
-    "q": "Q1268267",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -10966,10 +10594,7 @@
    },
    {
     "n": "Discount",
-    "how": "in-country",
-    "q": "Q250362",
-    "site": "www.discountbank.co.il",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Mizrahi-Tefahot",
@@ -11005,10 +10630,7 @@
    },
    {
     "n": "Drushim",
-    "how": "visited",
-    "q": "Q170418",
-    "site": "www.weforum.org",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -11067,10 +10689,7 @@
    },
    {
     "n": "10bis",
-    "how": "visited",
-    "q": "Q6315697",
-    "site": "www.10bis.co.il",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -11100,10 +10719,7 @@
   "car": [
    {
     "n": "Licensing Office",
-    "how": "visited",
-    "q": "Q1431",
-    "site": "kde.org",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -11181,10 +10797,7 @@
   "weather": [
    {
     "n": "Israel Meteorological Service",
-    "how": "in-country",
-    "q": "Q4619485",
-    "site": "www.ims.gov.il",
-    "r": 1000
+    "how": "unresolved"
    }
   ]
  },
@@ -11201,10 +10814,7 @@
   "gov": [
    {
     "n": "MyDigital ID",
-    "how": "in-country",
-    "q": "Q4263019",
-    "site": "www.mcmc.gov.my",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -11263,9 +10873,7 @@
   "pay": [
    {
     "n": "DuitNow",
-    "how": "in-country",
-    "q": "Q12682048",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Touch ’n Go eWallet",
@@ -11291,10 +10899,7 @@
    },
    {
     "n": "Hiredly",
-    "how": "visited",
-    "q": "Q904284",
-    "site": "www.shinetsu.co.jp",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -11346,9 +10951,7 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "in-country",
-    "q": "Q4868588",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Foodpanda",
@@ -11514,10 +11117,7 @@
   "gov": [
    {
     "n": "eGovPH",
-    "how": "in-country",
-    "q": "Q3410551",
-    "site": "www.senate.gov.ph",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -11627,10 +11227,7 @@
   "groc": [
    {
     "n": "SM Supermarket",
-    "how": "linked",
-    "q": "Q7391511",
-    "via": "Q17189",
-    "site": "www.smsupermarket.com"
+    "how": "unresolved"
    },
    {
     "n": "Puregold",
@@ -11650,9 +11247,7 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "in-country",
-    "q": "Q84055544",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Foodpanda",
@@ -11771,10 +11366,7 @@
    },
    {
     "n": "J&T",
-    "how": "visited",
-    "q": "Q95690344",
-    "site": "www.jtexpress.ph",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "weather": [
@@ -11791,10 +11383,7 @@
   "tax": [
    {
     "n": "IRAS",
-    "how": "visited",
-    "q": "Q724913",
-    "site": "irsa.ipac.caltech.edu",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -11818,10 +11407,7 @@
   "banks": [
    {
     "n": "DBS/POSB",
-    "how": "in-country",
-    "q": "Q705417",
-    "site": "www.dbs.com.sg",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "OCBC",
@@ -11856,10 +11442,7 @@
   "jobs": [
    {
     "n": "MyCareersFuture",
-    "how": "visited",
-    "q": "Q862066",
-    "site": "movies.disney.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "JobStreet",
@@ -11924,10 +11507,7 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "linked",
-    "q": "Q111178051",
-    "via": "Q20873932",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Foodpanda",
@@ -11977,10 +11557,7 @@
   "health": [
    {
     "n": "HealthHub",
-    "how": "in-country",
-    "q": "Q5690625",
-    "site": "www.hpb.gov.sg",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "your polyclinic",
@@ -12012,10 +11589,7 @@
    },
    {
     "n": "O-Levels",
-    "how": "visited",
-    "q": "Q4540505",
-    "site": "www.myspace.com",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "A-Levels",
@@ -12074,10 +11648,7 @@
   "tax": [
    {
     "n": "Ministry of Finance e-filing system",
-    "how": "visited",
-    "q": "Q3251818",
-    "site": "www.fin.gc.ca",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -12245,10 +11816,7 @@
   "prop": [
    {
     "n": "591",
-    "how": "in-country",
-    "q": "Q865",
-    "site": "www.gov.tw",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Sinyi",
@@ -12261,10 +11829,7 @@
   "car": [
    {
     "n": "Motor Vehicles Office",
-    "how": "visited",
-    "q": "Q10907121",
-    "site": "www.stbus.com.tw",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -12413,25 +11978,17 @@
    },
    {
     "n": "TrueMoney",
-    "how": "visited",
-    "q": "Q20984369",
-    "site": "www.truemoney.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "JobsDB",
-    "how": "visited",
-    "q": "Q9593",
-    "site": "itunes.apple.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "JobThai",
-    "how": "in-country",
-    "q": "Q675546",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -12490,10 +12047,7 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "visited",
-    "q": "Q20873932",
-    "site": "www.grab.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "LINE MAN",
@@ -12529,15 +12083,11 @@
   "prop": [
    {
     "n": "DDproperty",
-    "how": "in-country",
-    "q": "Q6665883",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Hipflat",
-    "how": "in-country",
-    "q": "Q2297614",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -12566,17 +12116,11 @@
   "exams": [
    {
     "n": "TGAT",
-    "how": "in-country",
-    "q": "Q626804",
-    "site": "mahidol.ac.th",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "TPAT",
-    "how": "in-country",
-    "q": "Q626804",
-    "site": "mahidol.ac.th",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -12644,9 +12188,7 @@
   "gov": [
    {
     "n": "UAE Pass",
-    "how": "in-country",
-    "q": "Q100257955",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -12688,10 +12230,7 @@
    },
    {
     "n": "DIB",
-    "how": "in-country",
-    "q": "Q5310570",
-    "site": "www.dib.ae",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "pay": [
@@ -12704,9 +12243,7 @@
    },
    {
     "n": "Aani",
-    "how": "in-country",
-    "q": "Q134366008",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -12809,10 +12346,7 @@
   "rail": [
    {
     "n": "Dubai Metro",
-    "how": "in-country",
-    "q": "Q83787",
-    "site": "www.rta.ae",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -12925,10 +12459,7 @@
   "weather": [
    {
     "n": "National Center of Meteorology",
-    "how": "in-country",
-    "q": "Q4091",
-    "site": "www.fujairah.ae",
-    "r": 5000
+    "how": "unresolved"
    }
   ]
  },
@@ -13014,26 +12545,17 @@
    },
    {
     "n": "VietQR",
-    "how": "in-country",
-    "q": "Q478595",
-    "site": "www.vietnamairport.vn",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "TopCV",
-    "how": "visited",
-    "q": "Q30",
-    "site": "www.usa.gov",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "VietnamWorks",
-    "how": "visited",
-    "q": "Q30",
-    "site": "www.usa.gov",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "ITviec",
@@ -13095,17 +12617,11 @@
   "food": [
    {
     "n": "GrabFood",
-    "how": "visited",
-    "q": "Q20873932",
-    "site": "www.grab.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "ShopeeFood",
-    "how": "in-country",
-    "q": "Q116196832",
-    "site": "cahnfc.com",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -13126,10 +12642,7 @@
    },
    {
     "n": "Chợ Tốt",
-    "how": "in-country",
-    "q": "Q25282",
-    "site": "www.danang.gov.vn",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -13248,18 +12761,13 @@
   "gov": [
    {
     "n": "eCitizen",
-    "how": "in-country",
-    "q": "Q6392681",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
    {
     "n": "Directorate of Immigration",
-    "how": "visited",
-    "q": "Q1037",
-    "site": "www.gov.rw",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "NRB",
@@ -13299,28 +12807,19 @@
    },
    {
     "n": "Absa Kenya",
-    "how": "visited",
-    "q": "Q58641733",
-    "site": "www.absa.africa",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "in-country",
-    "q": "Q7398410",
-    "site": "www.safaricom.co.ke",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "BrighterMonday",
-    "how": "in-country",
-    "q": "Q7398410",
-    "site": "www.safaricom.co.ke",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -13331,10 +12830,7 @@
    },
    {
     "n": "MyJobMag",
-    "how": "visited",
-    "q": "Q19837",
-    "site": "www.apple.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -13359,10 +12855,7 @@
    },
    {
     "n": "Quickmart",
-    "how": "linked",
-    "q": "Q23461742",
-    "via": "Q589616",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Carrefour",
@@ -13384,9 +12877,7 @@
   "rail": [
    {
     "n": "SGR Madaraka Express",
-    "how": "in-country",
-    "q": "Q850755",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -13430,9 +12921,7 @@
    },
    {
     "n": "Citizen Digital",
-    "how": "in-country",
-    "q": "Q16958562",
-    "site": "www.citizentv.co.ke"
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -13446,10 +12935,7 @@
   "uni": [
    {
     "n": "KUCCPS",
-    "how": "in-country",
-    "q": "Q114",
-    "site": "www.president.go.ke",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -13478,9 +12964,7 @@
   "post": [
    {
     "n": "Posta Kenya",
-    "how": "in-country",
-    "q": "Q322149",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "weather": [
@@ -13506,10 +12990,7 @@
   "id": [
    {
     "n": "NADRA",
-    "how": "linked",
-    "q": "Q5453761",
-    "via": "Q1362",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "passport office",
@@ -13526,10 +13007,7 @@
    },
    {
     "n": "UBL",
-    "how": "linked",
-    "q": "Q7887504",
-    "via": "Q8660",
-    "site": "www.ubldirect.com"
+    "how": "unresolved"
    },
    {
     "n": "MCB",
@@ -13569,9 +13047,7 @@
    },
    {
     "n": "Raast",
-    "how": "in-country",
-    "q": "Q31356",
-    "site": "tourswat.com"
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -13615,10 +13091,7 @@
    },
    {
     "n": "Naheed",
-    "how": "in-country",
-    "q": "Q4832890",
-    "site": "anmc.superior.edu.pk",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -13649,9 +13122,7 @@
    },
    {
     "n": "Graana",
-    "how": "in-country",
-    "q": "Q93230",
-    "site": "www.rawalpindi.gov.pk"
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -13661,10 +13132,7 @@
    },
    {
     "n": "Taxation department",
-    "how": "visited",
-    "q": "Q7014085",
-    "site": "www.tax.ny.gov",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -13693,10 +13161,7 @@
   "exams": [
    {
     "n": "matric",
-    "how": "in-country",
-    "q": "Q4900664",
-    "site": "sites.google.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "intermediate board exams",
@@ -13711,10 +13176,7 @@
    },
    {
     "n": "ECAT",
-    "how": "in-country",
-    "q": "Q1961570",
-    "site": "www.uet.edu.pk",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -13896,10 +13358,7 @@
    },
    {
     "n": "Meena Bazar",
-    "how": "in-country",
-    "q": "Q30608719",
-    "site": "agorasuperstores.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -13912,10 +13371,7 @@
    },
    {
     "n": "Pathao Food",
-    "how": "visited",
-    "q": "Q36016326",
-    "site": "chownow.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -13962,10 +13418,7 @@
    },
    {
     "n": "HSC",
-    "how": "in-country",
-    "q": "Q7660565",
-    "site": "www.swmc.edu.bd",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -14001,16 +13454,11 @@
   "post": [
    {
     "n": "Pathao Courier",
-    "how": "in-country",
-    "q": "Q48731087",
-    "site": "www.pathao.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Sundarban",
-    "how": "in-country",
-    "q": "Q4526",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Bangladesh Post",
@@ -14043,17 +13491,11 @@
   "id": [
    {
     "n": "Department of Immigration",
-    "how": "visited",
-    "q": "Q408",
-    "site": "www.australia.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Emigration",
-    "how": "visited",
-    "q": "Q16",
-    "site": "www.canada.ca",
-    "r": 10000
+    "how": "unresolved"
    },
    {
     "n": "DRP",
@@ -14099,19 +13541,13 @@
   "pay": [
    {
     "n": "LankaPay JustPay",
-    "how": "in-country",
-    "q": "Q854",
-    "site": "www.gov.lk",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "TopJobs",
-    "how": "visited",
-    "q": "Q19837",
-    "site": "www.apple.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -14131,9 +13567,7 @@
    },
    {
     "n": "Kapruka",
-    "how": "in-country",
-    "q": "Q1584837",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -14161,10 +13595,7 @@
   "food": [
    {
     "n": "PickMe Food",
-    "how": "in-country",
-    "q": "Q24907895",
-    "site": "www.pickme.lk",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Uber Eats",
@@ -14192,18 +13623,13 @@
    },
    {
     "n": "LankaPropertyWeb",
-    "how": "in-country",
-    "q": "Q113317674",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "Department of Motor Traffic",
-    "how": "visited",
-    "q": "Q30",
-    "site": "www.usa.gov",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -14224,9 +13650,7 @@
   "exams": [
    {
     "n": "O/L",
-    "how": "in-country",
-    "q": "Q19717689",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "A/L exams",
@@ -14243,9 +13667,7 @@
    },
    {
     "n": "SLT-Mobitel",
-    "how": "in-country",
-    "q": "Q7353021",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Hutch",
@@ -14274,9 +13696,7 @@
   "weather": [
    {
     "n": "Department of Meteorology",
-    "how": "in-country",
-    "q": "Q3088741",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -14299,10 +13719,7 @@
   "id": [
    {
     "n": "Department of Passports",
-    "how": "in-country",
-    "q": "Q16887462",
-    "site": "www.nepalpassport.gov.np",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -14394,10 +13811,7 @@
   "car": [
    {
     "n": "Department of Transport Management",
-    "how": "visited",
-    "q": "Q2982287",
-    "site": "www.gov.uk",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -14432,9 +13846,7 @@
    },
    {
     "n": "NEB grade 12 exams",
-    "how": "in-country",
-    "q": "Q134293546",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -14483,10 +13895,7 @@
   "tax": [
    {
     "n": "State Revenue Committee",
-    "how": "visited",
-    "q": "Q973587",
-    "site": "www.irs.gov",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -14520,10 +13929,7 @@
    },
    {
     "n": "Freedom",
-    "how": "visited",
-    "q": "Q242424",
-    "site": "freedomhouse.org",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "ForteBank",
@@ -14612,10 +14018,7 @@
    },
    {
     "n": "Yandex Eda",
-    "how": "visited",
-    "q": "Q65158665",
-    "site": "eda.yandex",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -14730,10 +14133,7 @@
   "banks": [
    {
     "n": "Kapitalbank",
-    "how": "in-country",
-    "q": "Q130569566",
-    "site": "uzum.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "NBU",
@@ -14767,10 +14167,7 @@
    },
    {
     "n": "Payme",
-    "how": "in-country",
-    "q": "Q113882590",
-    "site": "tbcbank.uz",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Uzum",
@@ -14798,10 +14195,7 @@
   "shop": [
    {
     "n": "Uzum Market",
-    "how": "in-country",
-    "q": "Q130569566",
-    "site": "uzum.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "OLX",
@@ -14830,26 +14224,17 @@
   "food": [
    {
     "n": "Yandex Eda",
-    "how": "visited",
-    "q": "Q65158665",
-    "site": "eda.yandex",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Uzum Tezkor",
-    "how": "in-country",
-    "q": "Q130569566",
-    "site": "uzum.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "rail": [
    {
     "n": "Uzbekistan Railways",
-    "how": "in-country",
-    "q": "Q2093569",
-    "site": "www.uzrailway.uz",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -14919,10 +14304,7 @@
   "weather": [
    {
     "n": "Uzhydromet",
-    "how": "in-country",
-    "q": "Q50041052",
-    "site": "www.meteo.uz",
-    "r": 10000
+    "how": "unresolved"
    }
   ]
  },
@@ -14930,10 +14312,7 @@
   "tax": [
    {
     "n": "General Department of Taxation",
-    "how": "visited",
-    "q": "Q4056112",
-    "site": "www.ato.gov.au",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -14985,10 +14364,7 @@
   "jobs": [
    {
     "n": "BongThom",
-    "how": "visited",
-    "q": "Q1190093",
-    "site": "www.nfl.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Khmer24",
@@ -15014,9 +14390,7 @@
    },
    {
     "n": "AEON",
-    "how": "in-country",
-    "q": "Q7449896",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -15089,25 +14463,17 @@
    },
    {
     "n": "AYA",
-    "how": "in-country",
-    "q": "Q4831218",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "CB Bank",
-    "how": "linked",
-    "q": "Q5137454",
-    "via": "Q37995",
-    "site": "www.cbbankmm.com"
+    "how": "unresolved"
    }
   ],
   "pay": [
    {
     "n": "KBZPay",
-    "how": "visited",
-    "q": "Q6360949",
-    "site": "www.kbzbank.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Wave Money",
@@ -15149,10 +14515,7 @@
    },
    {
     "n": "Eleven Media",
-    "how": "in-country",
-    "q": "Q133865823",
-    "site": "www.peoplemediamyanmar.com",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -15164,10 +14527,7 @@
   "telco": [
    {
     "n": "MPT",
-    "how": "in-country",
-    "q": "Q13072988",
-    "site": "www.myanmaposts.net.mm",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "ATOM",
@@ -15196,10 +14556,7 @@
   "weather": [
    {
     "n": "Department of Meteorology",
-    "how": "visited",
-    "q": "Q923628",
-    "site": "www.imd.gov.in",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Hydrology",
@@ -15220,10 +14577,7 @@
   "gov": [
    {
     "n": "Ur portal",
-    "how": "visited",
-    "q": "Q133207",
-    "site": "www.ikhwanonline.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -15252,24 +14606,15 @@
   "pay": [
    {
     "n": "ZainCash",
-    "how": "visited",
-    "q": "Q854867",
-    "site": "www.airtel.in",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "FastPay",
-    "how": "visited",
-    "q": "Q483959",
-    "site": "www.paypal.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Qi Card",
-    "how": "in-country",
-    "q": "Q7267576",
-    "site": "qi.iq",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -15291,9 +14636,7 @@
    },
    {
     "n": "Shafaq News",
-    "how": "in-country",
-    "q": "Q110160763",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Al Sumaria",
@@ -15343,10 +14686,7 @@
    },
    {
     "n": "Sales Tax Department",
-    "how": "visited",
-    "q": "Q181642",
-    "site": "www.globalsuzuki.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -15362,9 +14702,7 @@
    },
    {
     "n": "Passports Department",
-    "how": "in-country",
-    "q": "Q1285412",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -15470,10 +14808,7 @@
    },
    {
     "n": "Vehicle Licensing Department",
-    "how": "visited",
-    "q": "Q181642",
-    "site": "www.globalsuzuki.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -15549,9 +14884,7 @@
   "weather": [
    {
     "n": "Jordan Meteorological Department",
-    "how": "in-country",
-    "q": "Q27125366",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -15559,18 +14892,13 @@
   "tax": [
    {
     "n": "General Tax Authority",
-    "how": "visited",
-    "q": "Q28034971",
-    "site": "www.nyc.gov",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "Hukoomi",
-    "how": "in-country",
-    "q": "Q125495597",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Metrash",
@@ -15610,10 +14938,7 @@
    },
    {
     "n": "QIB",
-    "how": "in-country",
-    "q": "Q18346281",
-    "site": "www.qib.com.qa",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -15635,10 +14960,7 @@
   "shop": [
    {
     "n": "Snoonu",
-    "how": "in-country",
-    "q": "Q283760",
-    "site": "alarabi.qa",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -15658,9 +14980,7 @@
    },
    {
     "n": "Al Meera",
-    "how": "in-country",
-    "q": "Q22948570",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -15673,10 +14993,7 @@
    },
    {
     "n": "Snoonu",
-    "how": "in-country",
-    "q": "Q283760",
-    "site": "alarabi.qa",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -15704,18 +15021,13 @@
    },
    {
     "n": "Fahes inspection",
-    "how": "in-country",
-    "q": "Q56275016",
-    "site": "www.woqod.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "health": [
    {
     "n": "HMC",
-    "how": "in-country",
-    "q": "Q117323049",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "PHCC",
@@ -15766,10 +15078,7 @@
   "post": [
    {
     "n": "Qatar Post",
-    "how": "in-country",
-    "q": "Q846",
-    "site": "www.diwan.gov.qa",
-    "r": 10000
+    "how": "unresolved"
    },
    {
     "n": "Aramex",
@@ -15852,10 +15161,7 @@
   "groc": [
    {
     "n": "Sultan Center",
-    "how": "visited",
-    "q": "Q7767236",
-    "site": "www.sultan-center.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Lulu",
@@ -15949,10 +15255,7 @@
   "tax": [
    {
     "n": "Tax Authority",
-    "how": "visited",
-    "q": "Q12411470",
-    "site": "www.gov.il",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -15967,10 +15270,7 @@
   "banks": [
    {
     "n": "Bank Muscat",
-    "how": "visited",
-    "q": "Q7257253",
-    "site": "www.pubalibangla.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "NBO",
@@ -15981,9 +15281,7 @@
    },
    {
     "n": "Sohar International",
-    "how": "in-country",
-    "q": "Q943270",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -16027,10 +15325,7 @@
    },
    {
     "n": "Oman Observer",
-    "how": "in-country",
-    "q": "Q842",
-    "site": "www.oman.om",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -16076,19 +15371,13 @@
   "tax": [
    {
     "n": "National Bureau for Revenue",
-    "how": "visited",
-    "q": "Q4998386",
-    "site": "www.bir.gov.ph",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "eGov.bh",
-    "how": "in-country",
-    "q": "Q12193677",
-    "site": "www.icc.gov.bh",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -16111,10 +15400,7 @@
    },
    {
     "n": "KFH Bahrain",
-    "how": "visited",
-    "q": "Q2336459",
-    "site": "www.kfh.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "pay": [
@@ -16162,10 +15448,7 @@
   "car": [
    {
     "n": "General Directorate of Traffic",
-    "how": "in-country",
-    "q": "Q4294294",
-    "site": "www.interior.gov.bh",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -16259,10 +15542,7 @@
   "exams": [
    {
     "n": "official Brevet",
-    "how": "visited",
-    "q": "Q163872",
-    "site": "www.warnerbros.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "baccalaureate exams",
@@ -16288,10 +15568,7 @@
   "post": [
    {
     "n": "LibanPost",
-    "how": "linked",
-    "q": "Q12061157",
-    "via": "Q822",
-    "site": "www.libanpost.com.lb"
+    "how": "unresolved"
    }
   ]
  },
@@ -16317,10 +15594,7 @@
   "id": [
    {
     "n": "ASAN Xidmət",
-    "how": "in-country",
-    "q": "Q14754881",
-    "site": "asan.gov.az",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -16340,19 +15614,13 @@
    },
    {
     "n": "ABB",
-    "how": "in-country",
-    "q": "Q4288376",
-    "site": "abb-bank.az",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "pay": [
    {
     "n": "Birbank",
-    "how": "in-country",
-    "q": "Q6366720",
-    "site": "www.kapitalbank.az",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -16380,10 +15648,7 @@
   "groc": [
    {
     "n": "Bravo",
-    "how": "in-country",
-    "q": "Q65277022",
-    "site": "www.bravosupermarket.az",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Araz",
@@ -16444,10 +15709,7 @@
   "exams": [
    {
     "n": "DİM entrance exams",
-    "how": "visited",
-    "q": "Q47090557",
-    "site": "www.channel4.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -16550,10 +15812,7 @@
   "shop": [
    {
     "n": "MyMarket",
-    "how": "visited",
-    "q": "Q49108",
-    "site": "mit.edu",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -16628,9 +15887,7 @@
    },
    {
     "n": "InterPressNews",
-    "how": "in-country",
-    "q": "Q135256612",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -16699,10 +15956,7 @@
    },
    {
     "n": "Citizenship Service",
-    "how": "visited",
-    "q": "Q2097315",
-    "site": "www.uscis.gov",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -16784,10 +16038,7 @@
   "food": [
    {
     "n": "Yandex Eda",
-    "how": "visited",
-    "q": "Q16723302",
-    "site": "taxi.yandex.ru",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Glovo",
@@ -16821,9 +16072,7 @@
    },
    {
     "n": "Azatutyun",
-    "how": "in-country",
-    "q": "Q60649248",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "CivilNet",
@@ -16876,19 +16125,13 @@
   "tax": [
    {
     "n": "General Department of Taxation",
-    "how": "visited",
-    "q": "Q1501749",
-    "site": "ec.europa.eu",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "E-Mongolia",
-    "how": "in-country",
-    "q": "Q711",
-    "site": "www.gov.mn",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -16925,10 +16168,7 @@
    },
    {
     "n": "SocialPay",
-    "how": "visited",
-    "q": "Q483959",
-    "site": "www.paypal.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Monpay",
@@ -17008,10 +16248,7 @@
   "id": [
    {
     "n": "Passport Office",
-    "how": "visited",
-    "q": "Q5988335",
-    "site": "www.gov.uk",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -17024,10 +16261,7 @@
    },
    {
     "n": "ASB",
-    "how": "in-country",
-    "q": "Q297214",
-    "site": "www.asb.co.nz",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "BNZ",
@@ -17060,10 +16294,7 @@
    },
    {
     "n": "Trade Me Jobs",
-    "how": "in-country",
-    "q": "Q7831908",
-    "site": "www.trademe.co.nz",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -17138,10 +16369,7 @@
   "prop": [
    {
     "n": "Trade Me Property",
-    "how": "in-country",
-    "q": "Q5430190",
-    "site": "www.fairfaxmedia.co.nz",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "realestate.co.nz",
@@ -17162,10 +16390,7 @@
   "health": [
    {
     "n": "Health NZ",
-    "how": "in-country",
-    "q": "Q42019",
-    "site": "dnc.org.nz",
-    "r": 10000
+    "how": "unresolved"
    },
    {
     "n": "your GP",
@@ -17249,9 +16474,7 @@
   "tax": [
    {
     "n": "Ministry of Revenues",
-    "how": "in-country",
-    "q": "Q133860819",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -17264,17 +16487,11 @@
    },
    {
     "n": "Citizenship Service",
-    "how": "visited",
-    "q": "Q2097315",
-    "site": "www.uscis.gov",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Fayda national ID",
-    "how": "in-country",
-    "q": "Q122828808",
-    "site": "www.id.et",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -17293,56 +16510,39 @@
    },
    {
     "n": "Dashen",
-    "how": "in-country",
-    "q": "Q275435",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Bank of Abyssinia",
-    "how": "in-country",
-    "q": "Q1967889",
-    "site": "nbe.gov.et",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "pay": [
    {
     "n": "telebirr",
-    "how": "in-country",
-    "q": "Q5403583",
-    "site": "www.ethiotelecom.et",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "M-Pesa",
-    "how": "visited",
-    "q": "Q7398410",
-    "site": "www.safaricom.co.ke",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "Ethiojobs",
-    "how": "in-country",
-    "q": "Q105085935",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "rail": [
    {
     "n": "Ethio-Djibouti Railway",
-    "how": "in-country",
-    "q": "Q1716757",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
    {
     "n": "Addis Standard",
-    "how": "in-country",
-    "q": "Q3624",
-    "site": "cityaddisababa.gov.et"
+    "how": "unresolved"
    },
    {
     "n": "Reporter",
@@ -17377,10 +16577,7 @@
   "post": [
    {
     "n": "Ethiopian Postal Service",
-    "how": "linked",
-    "q": "Q16878216",
-    "via": "Q3624",
-    "site": "www.ethiopostal.com"
+    "how": "unresolved"
    }
   ]
  },
@@ -17429,24 +16626,15 @@
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "visited",
-    "q": "Q7398410",
-    "site": "www.safaricom.co.ke",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Mixx by Yas",
-    "how": "in-country",
-    "q": "Q6715977",
-    "site": "www.tigo.co.tz",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Airtel Money",
-    "how": "in-country",
-    "q": "Q17097901",
-    "site": "www.ttcl.co.tz",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -17470,10 +16658,7 @@
   "health": [
    {
     "n": "NHIF",
-    "how": "visited",
-    "q": "Q5384670",
-    "site": "equitygroupholdings.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -17495,9 +16680,7 @@
   "exams": [
    {
     "n": "NECTA exams",
-    "how": "in-country",
-    "q": "Q105063307",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "uni": [
@@ -17591,17 +16774,11 @@
   "pay": [
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Airtel Money",
-    "how": "visited",
-    "q": "Q12417027",
-    "site": "www.airtel.in",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -17641,9 +16818,7 @@
   "exams": [
    {
     "n": "UNEB exams",
-    "how": "in-country",
-    "q": "Q28403699",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -17665,10 +16840,7 @@
   "weather": [
    {
     "n": "UNMA",
-    "how": "visited",
-    "q": "Q7813",
-    "site": "www.un.org",
-    "r": 5000
+    "how": "unresolved"
    }
   ]
  },
@@ -17729,17 +16901,11 @@
   "pay": [
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Telecel Cash",
-    "how": "visited",
-    "q": "Q122141",
-    "site": "www.vodafone.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "AT Money",
@@ -17767,9 +16933,7 @@
   "groc": [
    {
     "n": "Melcom",
-    "how": "in-country",
-    "q": "Q6812065",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -17784,9 +16948,7 @@
   "prop": [
    {
     "n": "Meqasa",
-    "how": "in-country",
-    "q": "Q4673778",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -17830,10 +16992,7 @@
   "exams": [
    {
     "n": "BECE",
-    "how": "in-country",
-    "q": "Q117",
-    "site": "www.ghana.gov.gh",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "WASSCE",
@@ -17888,9 +17047,7 @@
   "tax": [
    {
     "n": "DGI",
-    "how": "in-country",
-    "q": "Q3029564",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -17926,18 +17083,13 @@
    },
    {
     "n": "CIH",
-    "how": "in-country",
-    "q": "Q3006220",
-    "site": "www.cihbank.ma",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "Rekrute",
-    "how": "in-country",
-    "q": "Q3551",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "LinkedIn",
@@ -18056,18 +17208,13 @@
    },
    {
     "n": "Médias24",
-    "how": "in-country",
-    "q": "Q7257815",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "exams": [
    {
     "n": "baccalauréat",
-    "how": "visited",
-    "q": "Q56404208",
-    "site": "www.ibo.org",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18109,10 +17256,7 @@
   "weather": [
    {
     "n": "DGM",
-    "how": "in-country",
-    "q": "Q30261778",
-    "site": "www.marocmeteo.ma",
-    "r": 5000
+    "how": "unresolved"
    }
   ]
  },
@@ -18149,27 +17293,19 @@
   "pay": [
    {
     "n": "BaridiMob",
-    "how": "visited",
-    "q": "Q2836029",
-    "site": "www.poste.dz",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "Emploitic",
-    "how": "in-country",
-    "q": "Q131705207",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "shop": [
    {
     "n": "Ouedkniss",
-    "how": "in-country",
-    "q": "Q2883410",
-    "site": "www.bna.dz",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -18192,10 +17328,7 @@
   "prop": [
    {
     "n": "Ouedkniss",
-    "how": "in-country",
-    "q": "Q2883410",
-    "site": "www.bna.dz",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -18232,10 +17365,7 @@
   "telco": [
    {
     "n": "Mobilis",
-    "how": "in-country",
-    "q": "Q647746",
-    "site": "www.lfp.dz",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Djezzy",
@@ -18266,26 +17396,17 @@
   "tax": [
    {
     "n": "DGI",
-    "how": "visited",
-    "q": "Q3029562",
-    "site": "www.impots.gouv.fr",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "banks": [
    {
     "n": "BIAT",
-    "how": "in-country",
-    "q": "Q690739",
-    "site": "www.biat.com.tn",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "STB",
-    "how": "in-country",
-    "q": "Q4119242",
-    "site": "www.stb.com.tn",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "BH Bank",
@@ -18389,10 +17510,7 @@
   "exams": [
    {
     "n": "baccalauréat",
-    "how": "visited",
-    "q": "Q56404208",
-    "site": "www.ibo.org",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18421,18 +17539,13 @@
   "post": [
    {
     "n": "La Poste Tunisienne",
-    "how": "in-country",
-    "q": "Q948",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "weather": [
    {
     "n": "INM",
-    "how": "visited",
-    "q": "Q3152415",
-    "site": "inm.cnam.fr",
-    "r": 50000
+    "how": "unresolved"
    }
   ]
  },
@@ -18440,10 +17553,7 @@
   "tax": [
    {
     "n": "DGID",
-    "how": "in-country",
-    "q": "Q139379921",
-    "site": "www.finances.gouv.sn",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -18455,10 +17565,7 @@
    },
    {
     "n": "Société Générale Sénégal",
-    "how": "visited",
-    "q": "Q270363",
-    "site": "www.societegenerale.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Ecobank",
@@ -18521,16 +17628,11 @@
   "exams": [
    {
     "n": "BFEM",
-    "how": "in-country",
-    "q": "Q598103",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "baccalauréat",
-    "how": "visited",
-    "q": "Q56404208",
-    "site": "www.ibo.org",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18584,10 +17686,7 @@
    },
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "shop": [
@@ -18626,17 +17725,11 @@
   "exams": [
    {
     "n": "BEPC",
-    "how": "visited",
-    "q": "Q1009",
-    "site": "www.prc.cm",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "baccalauréat",
-    "how": "visited",
-    "q": "Q56404208",
-    "site": "www.ibo.org",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18699,10 +17792,7 @@
   "pay": [
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Orange Money",
@@ -18715,10 +17805,7 @@
   "post": [
    {
     "n": "Campost",
-    "how": "linked",
-    "q": "Q2935563",
-    "via": "Q1009",
-    "site": "www.campost.cm"
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -18742,16 +17829,11 @@
   "exams": [
    {
     "n": "GCE",
-    "how": "in-country",
-    "q": "Q5158372",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "baccalauréat",
-    "how": "visited",
-    "q": "Q56404208",
-    "site": "www.ibo.org",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18781,10 +17863,7 @@
   "tax": [
    {
     "n": "ZRA",
-    "how": "linked",
-    "q": "Q8065660",
-    "via": "Q3881",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -18819,17 +17898,11 @@
   "pay": [
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Airtel Money",
-    "how": "visited",
-    "q": "Q12417027",
-    "site": "www.airtel.in",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -18863,9 +17936,7 @@
   "news": [
    {
     "n": "Lusaka Times",
-    "how": "in-country",
-    "q": "Q2058159",
-    "site": "www.patriotic-front.com"
+    "how": "unresolved"
    },
    {
     "n": "Zambia Daily Mail",
@@ -18877,10 +17948,7 @@
   "exams": [
    {
     "n": "ECZ exams",
-    "how": "in-country",
-    "q": "Q48815184",
-    "site": "www.exams-council.org.zm",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18947,24 +18015,17 @@
   "groc": [
    {
     "n": "OK Zimbabwe",
-    "how": "in-country",
-    "q": "Q408167",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "TM Pick n Pay",
-    "how": "in-country",
-    "q": "Q7190735",
-    "site": "www.picknpay.co.za",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "ZINARA",
-    "how": "in-country",
-    "q": "Q24235955",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -18986,9 +18047,7 @@
   "exams": [
    {
     "n": "ZIMSEC exams",
-    "how": "in-country",
-    "q": "Q4893445",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -18998,10 +18057,7 @@
    },
    {
     "n": "NetOne",
-    "how": "in-country",
-    "q": "Q16968949",
-    "site": "www.netone.co.zw",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Telecel",
@@ -19022,9 +18078,7 @@
   "gov": [
    {
     "n": "Irembo",
-    "how": "in-country",
-    "q": "Q1273864",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -19061,17 +18115,11 @@
   "pay": [
    {
     "n": "MTN MoMo",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Airtel Money",
-    "how": "visited",
-    "q": "Q1813361",
-    "site": "www.mtn.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -19083,17 +18131,13 @@
   "car": [
    {
     "n": "Irembo",
-    "how": "in-country",
-    "q": "Q1273864",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
    {
     "n": "Mutuelle de Santé",
-    "how": "in-country",
-    "q": "Q20311061",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -19179,10 +18223,7 @@
   "pay": [
    {
     "n": "M-Pesa",
-    "how": "visited",
-    "q": "Q122141",
-    "site": "www.vodafone.com",
-    "r": 10000
+    "how": "unresolved"
    },
    {
     "n": "e-Mola",
@@ -19190,9 +18231,7 @@
    },
    {
     "n": "mKesh",
-    "how": "in-country",
-    "q": "Q20060339",
-    "site": "www.mcel.co.mz"
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -19207,10 +18246,7 @@
   "rail": [
    {
     "n": "CFM",
-    "how": "visited",
-    "q": "Q2524362",
-    "site": "www.adobe.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -19275,10 +18311,7 @@
    },
    {
     "n": "BFA",
-    "how": "visited",
-    "q": "Q174",
-    "site": "www.prefeitura.sp.gov.br",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "BIC",
@@ -19286,10 +18319,7 @@
    },
    {
     "n": "Millennium Atlântico",
-    "how": "visited",
-    "q": "Q118581",
-    "site": "www.millenniumbcp.pt",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "pay": [
@@ -19301,10 +18331,7 @@
   "groc": [
    {
     "n": "Kero",
-    "how": "linked",
-    "q": "Q20056008",
-    "via": "Q3897",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Shoprite",
@@ -19315,9 +18342,7 @@
    },
    {
     "n": "Candando",
-    "how": "in-country",
-    "q": "Q5173061",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -19336,10 +18361,7 @@
    },
    {
     "n": "Novo Jornal",
-    "how": "in-country",
-    "q": "Q130323373",
-    "site": "www.teleservice.co.ao",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -19385,9 +18407,7 @@
   "banks": [
    {
     "n": "FNB Botswana",
-    "how": "in-country",
-    "q": "Q86891",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Absa",
@@ -19411,10 +18431,7 @@
    },
    {
     "n": "MyZaka",
-    "how": "visited",
-    "q": "Q9366",
-    "site": "google.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -19456,9 +18473,7 @@
   "exams": [
    {
     "n": "BGCSE",
-    "how": "in-country",
-    "q": "Q170725",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -19513,9 +18528,7 @@
    },
    {
     "n": "FNB Namibia",
-    "how": "in-country",
-    "q": "Q16845496",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Standard Bank",
@@ -19553,9 +18566,7 @@
    },
    {
     "n": "Woermann Brock",
-    "how": "in-country",
-    "q": "Q24233963",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "rail": [
@@ -19570,9 +18581,7 @@
   "car": [
    {
     "n": "NaTIS",
-    "how": "in-country",
-    "q": "Q1005584",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -19585,10 +18594,7 @@
    },
    {
     "n": "New Era",
-    "how": "linked",
-    "q": "Q1164552",
-    "via": "Q3935",
-    "site": "www.newera.com.na"
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -19626,19 +18632,13 @@
   "tax": [
    {
     "n": "DIAN",
-    "how": "visited",
-    "q": "Q9685",
-    "site": "www.royal.uk",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "Carpeta Ciudadana",
-    "how": "visited",
-    "q": "Q60776080",
-    "site": "www.gob.mx",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -19697,10 +18697,7 @@
    },
    {
     "n": "Daviplata",
-    "how": "in-country",
-    "q": "Q5242054",
-    "site": "www.davivienda.com",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Bre-B",
@@ -19712,9 +18709,7 @@
   "jobs": [
    {
     "n": "elempleo",
-    "how": "in-country",
-    "q": "Q1046350",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Computrabajo",
@@ -19784,17 +18779,11 @@
   "food": [
    {
     "n": "Rappi",
-    "how": "visited",
-    "q": "Q806914",
-    "site": "investors.banorte.com",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "DiDi Food",
-    "how": "visited",
-    "q": "Q2523033",
-    "site": "www.unisg.it",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -19804,9 +18793,7 @@
    },
    {
     "n": "Metrocuadrado",
-    "how": "in-country",
-    "q": "Q1046350",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -19858,9 +18845,7 @@
   "exams": [
    {
     "n": "ICFES Saber 11",
-    "how": "in-country",
-    "q": "Q973315",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -19911,9 +18896,7 @@
   "weather": [
    {
     "n": "IDEAM",
-    "how": "in-country",
-    "q": "Q26728",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -19991,10 +18974,7 @@
    },
    {
     "n": "Plin",
-    "how": "visited",
-    "q": "Q1492",
-    "site": "barcelona.cat",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -20031,10 +19011,7 @@
    },
    {
     "n": "Ripley",
-    "how": "visited",
-    "q": "Q3433040",
-    "site": "www.ripley.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "groc": [
@@ -20054,10 +19031,7 @@
    },
    {
     "n": "Wong",
-    "how": "in-country",
-    "q": "Q28604866",
-    "site": "www.wong.pe",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Metro",
@@ -20077,10 +19051,7 @@
    },
    {
     "n": "Rappi",
-    "how": "visited",
-    "q": "Q806914",
-    "site": "investors.banorte.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -20090,10 +19061,7 @@
    },
    {
     "n": "Adondevivir",
-    "how": "in-country",
-    "q": "Q3322699",
-    "site": "www.munisantarosa-lima.gob.pe",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -20142,10 +19110,7 @@
    },
    {
     "n": "RPP",
-    "how": "in-country",
-    "q": "Q3090686",
-    "site": "rpp.pe",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -20213,10 +19178,7 @@
   "gov": [
    {
     "n": "ClaveÚnica",
-    "how": "visited",
-    "q": "Q9067649",
-    "site": "portalsat.plataforma.sat.gob.mx",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -20268,10 +19230,7 @@
    },
    {
     "n": "MACH",
-    "how": "visited",
-    "q": "Q14643",
-    "site": "www.cs.cmu.edu",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -20361,10 +19320,7 @@
    },
    {
     "n": "Rappi",
-    "how": "visited",
-    "q": "Q806914",
-    "site": "investors.banorte.com",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Uber Eats",
@@ -20393,10 +19349,7 @@
    },
    {
     "n": "Yapo",
-    "how": "visited",
-    "q": "Q506644",
-    "site": "www.sonypictures.com",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -20412,9 +19365,7 @@
   "health": [
    {
     "n": "Fonasa or your Isapre",
-    "how": "in-country",
-    "q": "Q1133641",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -20593,17 +19544,11 @@
   "groc": [
    {
     "n": "Supermaxi",
-    "how": "visited",
-    "q": "Q7419620",
-    "site": "www.santaisabel.cl",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Mi Comisariato",
-    "how": "linked",
-    "q": "Q16606759",
-    "via": "Q43509",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Tía",
@@ -20623,28 +19568,19 @@
    },
    {
     "n": "Rappi",
-    "how": "visited",
-    "q": "Q5242054",
-    "site": "www.davivienda.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "prop": [
    {
     "n": "Plusvalía",
-    "how": "visited",
-    "q": "Q806808",
-    "site": "www.bankinter.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "ANT",
-    "how": "visited",
-    "q": "Q385970",
-    "site": "ant.apache.org",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -20730,9 +19666,7 @@
   "id": [
    {
     "n": "SEGIP",
-    "how": "in-country",
-    "q": "Q123002720",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -20834,10 +19768,7 @@
    },
    {
     "n": "Viva",
-    "how": "visited",
-    "q": "Q795990",
-    "site": "www.vivaaerobus.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "weather": [
@@ -20911,10 +19842,7 @@
   "pay": [
    {
     "n": "Pago Móvil",
-    "how": "visited",
-    "q": "Q2630989",
-    "site": "www.yoigo.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -21035,10 +19963,7 @@
   "jobs": [
    {
     "n": "Tecoloco",
-    "how": "in-country",
-    "q": "Q334577",
-    "site": "www.inforpressca.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Computrabajo",
@@ -21093,10 +20018,7 @@
   "health": [
    {
     "n": "IGSS",
-    "how": "in-country",
-    "q": "Q5917349",
-    "site": "www.igssgt.org",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -21138,10 +20060,7 @@
   "tax": [
    {
     "n": "DGII",
-    "how": "visited",
-    "q": "Q5797089",
-    "site": "www.gub.uy",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -21154,9 +20073,7 @@
    },
    {
     "n": "Dirección General de Pasaportes",
-    "how": "in-country",
-    "q": "Q5290808",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "banks": [
@@ -21200,10 +20117,7 @@
    },
    {
     "n": "Bravo",
-    "how": "visited",
-    "q": "Q461595",
-    "site": "atlanta.braves.mlb.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -21225,17 +20139,11 @@
   "car": [
    {
     "n": "DGII",
-    "how": "visited",
-    "q": "Q5797089",
-    "site": "www.gub.uy",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "INTRANT",
-    "how": "in-country",
-    "q": "Q116142023",
-    "site": "www.mopc.gob.do",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -21263,10 +20171,7 @@
   "exams": [
    {
     "n": "Pruebas Nacionales",
-    "how": "visited",
-    "q": "Q308911",
-    "site": "www.avianca.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -21286,18 +20191,13 @@
    },
    {
     "n": "Viva",
-    "how": "visited",
-    "q": "Q795990",
-    "site": "www.vivaaerobus.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "weather": [
    {
     "n": "INDOMET",
-    "how": "in-country",
-    "q": "Q3112605",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -21305,10 +20205,7 @@
   "tax": [
    {
     "n": "Hacienda",
-    "how": "visited",
-    "q": "Q2788637",
-    "site": "haciendanapoles.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -21370,17 +20267,11 @@
    },
    {
     "n": "Auto Mercado",
-    "how": "visited",
-    "q": "Q132730",
-    "site": "www.redbubble.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Más x Menos",
-    "how": "visited",
-    "q": "Q128452",
-    "site": "www.marvel.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "PriceSmart",
@@ -21400,19 +20291,13 @@
    },
    {
     "n": "DiDi Food",
-    "how": "visited",
-    "q": "Q21190510",
-    "site": "www.didiglobal.com",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "rail": [
    {
     "n": "INCOFER",
-    "how": "in-country",
-    "q": "Q20983492",
-    "site": "www.incofer.go.cr",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -21422,10 +20307,7 @@
    },
    {
     "n": "marchamo",
-    "how": "visited",
-    "q": "Q3009634",
-    "site": "www.catedra.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -21551,9 +20433,7 @@
   "pay": [
    {
     "n": "Yappy",
-    "how": "in-country",
-    "q": "Q117479535",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -21649,9 +20529,7 @@
    },
    {
     "n": "Panamá América",
-    "how": "in-country",
-    "q": "Q804",
-    "site": "visitpanama.com"
+    "how": "unresolved"
    },
    {
     "n": "TVN",
@@ -21699,19 +20577,13 @@
   "id": [
    {
     "n": "DNIC",
-    "how": "in-country",
-    "q": "Q20024872",
-    "site": "www.gub.uy",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "banks": [
    {
     "n": "BROU",
-    "how": "in-country",
-    "q": "Q4077337",
-    "site": "www.brou.com.uy",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Santander",
@@ -21754,10 +20626,7 @@
   "jobs": [
    {
     "n": "BuscoJobs",
-    "how": "visited",
-    "q": "Q312",
-    "site": "apple.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "Gallito",
@@ -21812,10 +20681,7 @@
    },
    {
     "n": "Rappi",
-    "how": "visited",
-    "q": "Q5242054",
-    "site": "www.davivienda.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "prop": [
@@ -21825,17 +20691,13 @@
    },
    {
     "n": "InfoCasas",
-    "how": "in-country",
-    "q": "Q109511166",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "SUCIVE",
-    "how": "in-country",
-    "q": "Q5476844",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -21945,10 +20807,7 @@
    },
    {
     "n": "ueno",
-    "how": "in-country",
-    "q": "Q137783961",
-    "site": "www.ueno.com.py",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "pay": [
@@ -21963,9 +20822,7 @@
   "groc": [
    {
     "n": "Superseis",
-    "how": "in-country",
-    "q": "Q5795711",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Stock",
@@ -22048,10 +20905,7 @@
   "gov": [
    {
     "n": "ROeID",
-    "how": "in-country",
-    "q": "Q104535869",
-    "site": "www.adr.gov.ro",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "ghiseul.ro",
@@ -22109,10 +20963,7 @@
    },
    {
     "n": "BestJobs",
-    "how": "visited",
-    "q": "Q312",
-    "site": "apple.com",
-    "r": 5000
+    "how": "unresolved"
    },
    {
     "n": "OLX",
@@ -22183,10 +21034,7 @@
    },
    {
     "n": "Tazz",
-    "how": "visited",
-    "q": "Q50881",
-    "site": "www.wwe.com",
-    "r": 50000
+    "how": "unresolved"
    },
    {
     "n": "Bolt Food",
@@ -22227,9 +21075,7 @@
    },
    {
     "n": "rovinietă",
-    "how": "in-country",
-    "q": "Q10858152",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -22336,9 +21182,7 @@
   "tax": [
    {
     "n": "AADE",
-    "how": "in-country",
-    "q": "Q16330968",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -22442,10 +21286,7 @@
    },
    {
     "n": "AB Vassilopoulos",
-    "how": "visited",
-    "q": "Q14903417",
-    "site": "www.delhaize.be",
-    "r": 500000
+    "how": "unresolved"
    },
    {
     "n": "Lidl",
@@ -22509,9 +21350,7 @@
   "car": [
    {
     "n": "KTEO inspection",
-    "how": "in-country",
-    "q": "Q87068864",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "road tax",
@@ -22521,16 +21360,11 @@
   "health": [
    {
     "n": "EOPYY",
-    "how": "in-country",
-    "q": "Q112041437",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "myHealth",
-    "how": "visited",
-    "q": "Q65273184",
-    "site": "kyriakospierrakakis.gr",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -22558,10 +21392,7 @@
   "exams": [
    {
     "n": "Panhellenic exams",
-    "how": "in-country",
-    "q": "Q1637117",
-    "site": "www.uom.gr",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -22589,9 +21420,7 @@
   "post": [
    {
     "n": "ELTA",
-    "how": "in-country",
-    "q": "Q12878795",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "ACS",
@@ -22608,9 +21437,7 @@
   "weather": [
    {
     "n": "EMY",
-    "how": "in-country",
-    "q": "Q141122112",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -22671,10 +21498,7 @@
   "pay": [
    {
     "n": "instant transfers",
-    "how": "visited",
-    "q": "Q786194",
-    "site": "opensocietyfoundations.org",
-    "r": 500000
+    "how": "unresolved"
    }
   ],
   "jobs": [
@@ -22894,10 +21718,7 @@
   "tax": [
    {
     "n": "NRA",
-    "how": "in-country",
-    "q": "Q12287903",
-    "site": "www.nap.bg",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -22919,17 +21740,11 @@
    },
    {
     "n": "DSK",
-    "how": "in-country",
-    "q": "Q5206146",
-    "site": "www.dskbank.bg",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "UBB",
-    "how": "in-country",
-    "q": "Q7887555",
-    "site": "www.ubb.bg",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Postbank",
@@ -23032,10 +21847,7 @@
   "health": [
    {
     "n": "NHIF",
-    "how": "in-country",
-    "q": "Q12287913",
-    "site": "www.nhif.bg",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -23055,9 +21867,7 @@
    },
    {
     "n": "Mediapool",
-    "how": "in-country",
-    "q": "Q20498159",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "exams": [
@@ -23126,19 +21936,13 @@
   "tax": [
    {
     "n": "Tax Administration",
-    "how": "visited",
-    "q": "Q6515524",
-    "site": "www.skatteetaten.no",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "eUprava",
-    "how": "linked",
-    "q": "Q1259484",
-    "via": "Q3711",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -23178,28 +21982,19 @@
    },
    {
     "n": "AIK",
-    "how": "in-country",
-    "q": "Q293650",
-    "site": "www.aikbank.rs.",
-    "r": 100000
+    "how": "unresolved"
    }
   ],
   "pay": [
    {
     "n": "IPS instant payments",
-    "how": "visited",
-    "q": "Q1359568",
-    "site": "www.alibaba.com",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "jobs": [
    {
     "n": "Infostud",
-    "how": "linked",
-    "q": "Q12752343",
-    "via": "Q170287",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "HelloWorld",
@@ -23264,25 +22059,17 @@
   "rail": [
    {
     "n": "Srbija Voz",
-    "how": "in-country",
-    "q": "Q83878",
-    "site": "www.zeleznicesrbije.com",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "prop": [
    {
     "n": "4zida",
-    "how": "in-country",
-    "q": "Q89385963",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Halo oglasi",
-    "how": "in-country",
-    "q": "Q595248",
-    "site": "www.bojnik.rs",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -23298,10 +22085,7 @@
   "health": [
    {
     "n": "RFZO",
-    "how": "linked",
-    "q": "Q6916987",
-    "via": "Q3711",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -23341,9 +22125,7 @@
    },
    {
     "n": "matura",
-    "how": "in-country",
-    "q": "Q16083106",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -23363,10 +22145,7 @@
    },
    {
     "n": "A1",
-    "how": "visited",
-    "q": "Q758735",
-    "site": "www.audi.de",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "post": [
@@ -23381,10 +22160,7 @@
   "weather": [
    {
     "n": "RHMZ",
-    "how": "in-country",
-    "q": "Q7314402",
-    "site": "www.hidmet.gov.rs",
-    "r": 1000
+    "how": "unresolved"
    }
   ]
  },
@@ -23392,17 +22168,13 @@
   "tax": [
    {
     "n": "Porezna uprava",
-    "how": "in-country",
-    "q": "Q16113570",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "gov": [
    {
     "n": "e-Građani",
-    "how": "in-country",
-    "q": "Q116973880",
-    "site": "popis2021.hr"
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -23456,10 +22228,7 @@
   "shop": [
    {
     "n": "Njuškalo",
-    "how": "in-country",
-    "q": "Q217315",
-    "site": "www.24sata.hr",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Links",
@@ -23540,16 +22309,11 @@
   "prop": [
    {
     "n": "Njuškalo",
-    "how": "in-country",
-    "q": "Q217315",
-    "site": "www.24sata.hr",
-    "r": 1000
+    "how": "unresolved"
    },
    {
     "n": "Index oglasi",
-    "how": "in-country",
-    "q": "Q125379204",
-    "site": "pravoipravda.hr"
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -23561,9 +22325,7 @@
   "health": [
    {
     "n": "HZZO",
-    "how": "in-country",
-    "q": "Q16113744",
-    "site": "www.hzzo-net.hr"
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -23604,10 +22366,7 @@
   "uni": [
    {
     "n": "Postani student",
-    "how": "visited",
-    "q": "Q8429",
-    "site": "olympics.com",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -23620,10 +22379,7 @@
    },
    {
     "n": "A1",
-    "how": "visited",
-    "q": "Q802144",
-    "site": "www.argentina.gob.ar",
-    "r": 100000
+    "how": "unresolved"
    },
    {
     "n": "Telemach",
@@ -23804,9 +22560,7 @@
   "car": [
    {
     "n": "STK",
-    "how": "in-country",
-    "q": "Q12767312",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "e-vignette",
@@ -23919,15 +22673,11 @@
   "gov": [
    {
     "n": "SI-PASS",
-    "how": "in-country",
-    "q": "Q25388607",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "eUprava",
-    "how": "in-country",
-    "q": "Q1289422",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "id": [
@@ -24025,10 +22775,7 @@
    },
    {
     "n": "Tuš",
-    "how": "in-country",
-    "q": "Q107183357",
-    "site": "www.tus.si",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "food": [
@@ -24052,9 +22799,7 @@
   "prop": [
    {
     "n": "Nepremičnine.net",
-    "how": "in-country",
-    "q": "Q3991627",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -24064,9 +22809,7 @@
    },
    {
     "n": "e-vinjeta",
-    "how": "in-country",
-    "q": "Q86754501",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -24117,9 +22860,7 @@
    },
    {
     "n": "A1",
-    "how": "in-country",
-    "q": "Q429189",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Telemach",
@@ -24152,10 +22893,7 @@
   "tax": [
    {
     "n": "VMI",
-    "how": "in-country",
-    "q": "Q13473517",
-    "site": "www.vmi.lt",
-    "r": 1000
+    "how": "unresolved"
    }
   ],
   "gov": [
@@ -24208,9 +22946,7 @@
   "jobs": [
    {
     "n": "CVBankas",
-    "how": "in-country",
-    "q": "Q31199122",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "CV.lt",
@@ -24276,18 +23012,13 @@
   "rail": [
    {
     "n": "LTG Link",
-    "how": "in-country",
-    "q": "Q164914",
-    "site": "www.litrail.lt",
-    "r": 5000
+    "how": "unresolved"
    }
   ],
   "prop": [
    {
     "n": "Aruodas",
-    "how": "in-country",
-    "q": "Q16444501",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
@@ -24311,9 +23042,7 @@
    },
    {
     "n": "e.sveikata",
-    "how": "in-country",
-    "q": "Q16473680",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -24348,9 +23077,7 @@
   "uni": [
    {
     "n": "LAMA BPO",
-    "how": "in-country",
-    "q": "Q1667287",
-    "site": "www.ttvam.lt"
+    "how": "unresolved"
    }
   ],
   "telco": [
@@ -24402,9 +23129,7 @@
   "weather": [
    {
     "n": "LHMT",
-    "how": "in-country",
-    "q": "Q12663364",
-    "site": ""
+    "how": "unresolved"
    }
   ]
  },
@@ -24562,10 +23287,7 @@
    },
    {
     "n": "e-veselība",
-    "how": "visited",
-    "q": "Q7817",
-    "site": "www.who.int",
-    "r": 10000
+    "how": "unresolved"
    }
   ],
   "news": [
@@ -24730,9 +23452,7 @@
    },
    {
     "n": "Hansapost",
-    "how": "in-country",
-    "q": "Q20530681",
-    "site": ""
+    "how": "unresolved"
    },
    {
     "n": "Osta.ee",
@@ -24812,18 +23532,13 @@
    },
    {
     "n": "City24",
-    "how": "in-country",
-    "q": "Q1479719",
-    "site": ""
+    "how": "unresolved"
    }
   ],
   "car": [
    {
     "n": "Transport Administration",
-    "how": "visited",
-    "q": "Q1677108",
-    "site": "www.trafikverket.se",
-    "r": 50000
+    "how": "unresolved"
    }
   ],
   "health": [
@@ -24917,10 +23632,7 @@
   "weather": [
    {
     "n": "Estonian Environment Agency",
-    "how": "visited",
-    "q": "Q632988",
-    "site": "www.eea.europa.eu",
-    "r": 5000
+    "how": "unresolved"
    }
   ]
  }
