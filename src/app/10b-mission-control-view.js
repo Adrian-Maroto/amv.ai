@@ -546,7 +546,9 @@ async function _mcScheduleServer(payload){
       notify: payload.notify || 'app' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error) return { ok:false, code:d.code||'failed', error:d.error||'' };
-    return { ok:true, id:(d.item&&d.item.id)||'' };
+    /* How the server will actually tell them: it stores "app" when email
+       cannot be sent from this deployment, whatever was asked for. */
+    return { ok:true, id:(d.item&&d.item.id)||'', notify:(d.item&&d.item.notify)||'' };
   }catch(e){ return { ok:false, code:'failed', error:(e&&e.message)||'' }; }
 }
 /* One sentence for where a just-created job will actually run. */

@@ -354,6 +354,13 @@ function _parseWhen(raw){
   };
   const DOW={sunday:0,sun:0,monday:1,mon:1,tuesday:2,tue:2,tues:2,wednesday:3,wed:3,thursday:4,thu:4,thurs:4,friday:5,fri:5,saturday:6,sat:6};
   const recurring=/\b(every|each|daily|weekly|hourly|monthly|weekdays|weekends|nightly|overnight)\b/.test(s);
+  /* "EVERY TIME" IS A WATCH, NOT A DAY (Nov 17). "Tell me every time Trump
+     posts about finance" read as "every day at 9:00", so it looked once a
+     day and missed most of what it was asked to catch. Every time, each
+     time, whenever and as soon as mean: keep looking - every hour, unless a
+     shorter interval was named. */
+  if(/\b(every\s+time|each\s+time|whenever|as\s+soon\s+as|any\s*time)\b/.test(s) && !/\bevery\s+(10|30)\s*min|every half(?:\s|-)hour/.test(s))
+    return {kind:'recurring', freq:'hourly', watch:true, label:'Every hour'};
   if(recurring){
     if(/\bevery\s+10\s*min/.test(s)) return {kind:'recurring', freq:'10min', label:'Every 10 minutes'};
     if(/\bevery\s+30\s*min|every half(?:\s|-)hour/.test(s)) return {kind:'recurring', freq:'30min', label:'Every 30 minutes'};

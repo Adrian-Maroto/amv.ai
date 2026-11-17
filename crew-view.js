@@ -1580,6 +1580,137 @@ function _crewNowTick(){
   }, 15000);
 }
 try{ window.crewNowAll = crewNowAll; window._crewNowHTML = _crewNowHTML; window._crewNowTick = _crewNowTick; }catch(e){}
+/* THE BOX IS A CONVERSATION (Nov 17, the owner: "make it like a chatbot - I
+   search twitter, it opens and says 'say more'. I say 'tell me every time
+   Trump tweets about something finance'. AMV asks 'by email or in AMV?', I
+   answer, and AMV does it").
+
+   What is typed opens a conversation, and AMV asks only what it needs: more,
+   when the request is too short to act on; how to tell you, every time; when,
+   only if the request did not say ("every time" is a watch that looks every
+   hour - _parseWhen). Then it sets the job up on AMV's servers - the same
+   scheduler, plan gating and budget as everything else (_mcScheduleServer) -
+   and says so, and the job appears under Running now. A job that only tells
+   you something runs on its own; one that would send or change anything asks
+   you first, each time. Somebody signed out, a "connect my ..." and a request
+   AMV cannot do at all keep their answers under the box (mcRunCommand). */
+let _cv = null;
+const _CV_READONLY = /^(please\s+)?(tell|notify|alert|let me know|remind|watch|track|check|find|look|summari[sz]e|monitor|keep (an )?eye|show|send me|email me|message me|ping me|list|research|compare|follow)\b/i;
+function crewConverse(text){
+  text = String(text || '').trim(); if(!text) return;
+  const signedIn = typeof S !== 'undefined' && S.user && S.user.email;
+  const cx = (typeof _mcConnectIntent === 'function') ? _mcConnectIntent(text) : null;
+  const edge = (typeof _feasFloor === 'function') ? _feasFloor(text) : null;
+  if(!signedIn || cx || edge || !(typeof _planAllowsCrew === 'function' && _planAllowsCrew())){ mcRunCommand(text); return; }
+  const inp = document.getElementById('mc-cmd-input'); if(inp){ inp.value = ''; try{ _mcCmdFit(inp); }catch(e){} }
+  _cv = { msgs: [], step: '', first: text, goal: '', notify: '', when: null };
+  _cvOpen();
+  _cvSay('you', text);
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if(words < 4){
+    _cv.step = 'more';
+    _cvSay('amv', T('Say more - what should AMV do with “{0}”? For example: “tell me every time somebody posts about something”.').replace('{0}', text));
+    return;
+  }
+  _cv.goal = text; _cvAskHow();
+}
+function _cvAskHow(){
+  const edge = (typeof _feasFloor === 'function') ? _feasFloor(_cv.goal) : null;
+  if(edge){ _cv.step = 'more'; _cvSay('amv', T('AMV cannot do that one: {0} Say it another way?').replace('{0}', String(edge.why || ''))); return; }
+  _cv.step = 'how';
+  _cvSay('amv', T('How should AMV tell you - by email or in AMV?'), [['email', T('By email')], ['app', T('In AMV')]]);
+}
+function _cvAskWhen(){
+  const w = (typeof _parseWhen === 'function') ? _parseWhen(_cv.goal) : null;
+  if(w && w.kind === 'recurring'){ _cv.when = w; _cvGo(); return; }
+  _cv.step = 'when';
+  _cvSay('amv', T('When should AMV do it?'), [['now', T('Now, once')], ['morning', T('Every morning')], ['hour', T('Every hour')]]);
+}
+function _cvAnswer(v){
+  v = String(v || '').trim(); if(!v || !_cv) return;
+  if(_cv.step === 'more'){
+    _cvSay('you', v);
+    const low = v.toLowerCase(), first = _cv.first.toLowerCase();
+    _cv.goal = (low.indexOf(first) >= 0 || _cv.first.split(/\s+/).length >= 4) ? v : v + ' (' + _cv.first + ')';
+    _cvAskHow(); return;
+  }
+  if(_cv.step === 'how'){
+    const k = /^email$|mail|correo|e-?mail/i.test(v) ? 'email' : /^app$|amv|app|here|aqu[ií]/i.test(v) ? 'app' : '';
+    _cvSay('you', k === 'email' ? T('By email') : k === 'app' ? T('In AMV') : v);
+    if(!k){ _cvSay('amv', T('By email, or in AMV?'), [['email', T('By email')], ['app', T('In AMV')]]); return; }
+    _cv.notify = k; _cvAskWhen(); return;
+  }
+  if(_cv.step === 'when'){
+    const pick = { now: 'now', morning: 'every morning at 8', hour: 'every hour' }[v];
+    _cvSay('you', pick === 'now' ? T('Now, once') : pick === 'every morning at 8' ? T('Every morning') : pick === 'every hour' ? T('Every hour') : v);
+    const w = (typeof _parseWhen === 'function') ? _parseWhen(pick || v) : null;
+    if(pick === 'now' || (w && (w.kind === 'now' || w.kind === 'once'))){ _cv.when = { kind: 'once', freq: 'once', label: T('Now, once'), now: true }; _cvGo(); return; }
+    if(w && w.kind === 'recurring'){ _cv.when = w; _cvGo(); return; }
+    _cvSay('amv', T('Pick one, or say it your way - “every Monday at 8”.'), [['now', T('Now, once')], ['morning', T('Every morning')], ['hour', T('Every hour')]]);
+    return;
+  }
+}
+async function _cvGo(){
+  _cv.step = 'going';
+  const auto = _CV_READONLY.test(_cv.goal);
+  _cvSay('amv', T('Setting it up…'), null, true);
+  const w = _cv.when || {};
+  const res = await _mcScheduleServer({ goal: _cv.goal, sched: w.sched, freq: w.freq, approval: auto ? 'auto' : 'require',
+    notify: _cv.notify === 'email' ? 'email' : 'app', firstRunAt: w.now ? Date.now() : undefined });
+  if(!_cv) return;
+  _cvUnsay();
+  if(!res.ok){
+    _cv.step = 'more';
+    _cvSay('amv', (typeof _mcWhereItRuns === 'function' && _mcWhereItRuns(res)) || res.error || T('That could not be set up just now. Try again in a moment.'));
+    return;
+  }
+  _cv.step = 'done';
+  /* What the server stored, not what was asked: with no way to send email it
+     keeps the job and tells them in AMV, and saying "by email" would be a lie. */
+  const told = res.notify || (_cv.notify === 'email' ? 'email' : 'app');
+  const how = told === 'email' ? T('by email') : T('here in AMV');
+  const fell = _cv.notify === 'email' && told !== 'email';
+  const when = w.now ? T('It starts within a minute') : (w.label || '');
+  _cvSay('amv', T('Done - it is running. {0}, and AMV tells you {1}. You can see it under Running now.').replace('{0}', when).replace('{1}', how)
+    + (fell ? ' ' + T('Email cannot be sent from AMV right now, so it tells you here instead.') : '')
+    + (auto ? '' : ' ' + T('It asks you before it sends or changes anything.')), [['close', T('See it running')]]);
+  try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(() => { const el = document.getElementById('crew-now'); if(el) el.innerHTML = _crewNowHTML(); }); }catch(e){}
+}
+function _cvOpen(){
+  const r = document.getElementById('ovr'); if(!r) return;
+  r.innerHTML = `<div class="ov cv-bg" id="cv-bg"><div class="cv" role="dialog" aria-modal="true" aria-labelledby="cv-h">
+    <header class="cv-head"><h2 id="cv-h">${escH(T('Tell AMV what to do'))}</h2><button class="cv-x" id="cv-x" type="button" aria-label="${escH(T('Close'))}">✕</button></header>
+    <div class="cv-log" id="cv-log" role="log" aria-live="polite"></div>
+    <form class="cv-form" id="cv-form"><textarea id="cv-in" class="cv-in" rows="1" autocomplete="off" enterkeyhint="send" aria-label="${escH(T('Your answer'))}" placeholder="${escH(T('Type your answer…'))}"></textarea>
+      <button class="cj-run cv-send" type="submit" aria-label="${escH(T('Send'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>
+  </div></div>`;
+  r.classList.add('on');
+  const close = () => { _cv = null; try{ closeOvr(); }catch(e){} };
+  onBackdrop(document.getElementById('cv-bg'), close);
+  on(document.getElementById('cv-x'), 'click', close);
+  const inp = document.getElementById('cv-in');
+  on(document.getElementById('cv-form'), 'submit', (e) => { e.preventDefault(); const v = inp.value; inp.value = ''; _cvAnswer(v); inp.focus(); });
+  on(inp, 'keydown', (e) => { if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); document.getElementById('cv-form').requestSubmit(); } });
+  on(document.getElementById('cv-log'), 'click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-cv]'); if(!b) return;
+    if(b.dataset.cv === 'close'){ close(); const el = document.getElementById('crew-now'); if(el) try{ el.scrollIntoView({ block: 'center' }); }catch(_){} return; }
+    _cvAnswer(b.dataset.cv);
+  });
+  setTimeout(() => { try{ inp.focus(); }catch(e){} }, 30);
+}
+function _cvSay(who, text, chips, busy){
+  if(!_cv) return;
+  const log = document.getElementById('cv-log'); if(!log) return;
+  log.querySelectorAll('.cv-chips').forEach(c => c.remove());
+  const m = document.createElement('div');
+  m.className = 'cv-msg ' + (who === 'you' ? 'you' : 'amv') + (busy ? ' busy' : '');
+  m.innerHTML = '<p class="cv-bubble">' + (busy ? '<span class="rr-dot"></span> ' : '') + escH(text) + '</p>'
+    + (chips && chips.length ? '<div class="cv-chips">' + chips.map(c => '<button class="cv-chip" type="button" data-cv="' + escH(c[0]) + '">' + escH(c[1]) + '</button>').join('') + '</div>' : '');
+  log.appendChild(m);
+  log.scrollTop = log.scrollHeight;
+}
+function _cvUnsay(){ const b = document.querySelector('#cv-log .cv-msg.busy'); if(b) b.remove(); }
+try{ window.crewConverse = crewConverse; window._cvAnswer = _cvAnswer; }catch(e){}
 function _cjAskHTML(extra){
   return `<section class="cj-ask mc-cmd cj-hero" aria-labelledby="cx-ask-h">
     <div class="cj-ask-top">
@@ -1919,7 +2050,7 @@ function _cwWireCmd(vc){
   if(!vc) return;
   // Command bar: type any goal - the real agent recognizes intent and does it.
   try{
-    var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } mcRunCommand(v); };
+    var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } crewConverse(v); };
     on($('mc-cmd-go'),'click',_mcRun);
     /* Enter runs it, as it always did; Shift+Enter is a new line, the way
        the chat box works, because the box now takes a paragraph. An Enter
