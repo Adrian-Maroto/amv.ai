@@ -1116,6 +1116,8 @@ async function _connLoadRun(gen, before){
     const d = await AMV_API.connectList();
     if(gen !== _connGen) return _connLatest;
     _connState = { state:'done', data:d || null, err:'' };
+    try{ saveStr('amv_conn_n', String(((d && d.configured && d.items) || []).length)); }catch(e){}
+    setTimeout(_connRememberH, 60);
     /* THE ROWS, NOT ONLY THE LIST. _connPaint redraws the Connected accounts
        block; the app rows below it ("✓ Connected", Disconnect) and the whole
        Settings → Connectors pane are drawn from this same answer, and were
@@ -1156,14 +1158,23 @@ function connReload(){ _connTried=''; _connState={state:'idle',data:null,err:''}
 function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
+/* In the language the screen is in: the browser already knows how every one
+   of them says "2 hours ago" and "yesterday", so AMV does not keep its own. */
 function _connAgo(ts){
-  const t = Number(ts)||0; if(!t) return 'never';
+  const t = Number(ts)||0; if(!t) return '';
   const m = Math.round((Date.now()-t)/60000);
-  if(m < 1) return 'just now';
-  if(m < 60) return m+' min ago';
-  if(m < 1440) return Math.round(m/60)+'h ago';
-  const d = Math.round(m/1440);
-  return d === 1 ? 'yesterday' : d+' days ago';
+  let lang = 'en'; try{ lang = document.documentElement.lang || 'en'; }catch(e){}
+  try{
+    const f = new Intl.RelativeTimeFormat(lang, { numeric:'auto', style:'short' });
+    if(m < 1) return f.format(0, 'second');
+    if(m < 60) return f.format(-m, 'minute');
+    if(m < 1440) return f.format(-Math.round(m/60), 'hour');
+    return f.format(-Math.round(m/1440), 'day');
+  }catch(e){
+    if(m < 60) return m+' min ago';
+    if(m < 1440) return Math.round(m/60)+'h ago';
+    return Math.round(m/1440)+' days ago';
+  }
 }
 /* Capability keys are for the wire. These are for people. */
 const _CONN_SCOPE_WORDS = {
@@ -1382,8 +1393,15 @@ function _connBodyHTML(){
   if(st.state==='off')
     return '<div class="conn-note">'+escH(T('This copy of AMV is not connected to a backend, so there is nowhere safe to keep an account token. Connected accounts are off rather than pretending to work.'))+'</div>';
   const had=!!(st.data && (st.data.items||[]).length);
-  if((st.state==='idle'||st.state==='loading') && !had)
+  if((st.state==='idle'||st.state==='loading') && !had){
+    /* As many cards as there were last time, held while the list loads - so
+       the accounts arriving take their place instead of pushing the page down
+       (the owner: "integrations glitches"). */
+    const n=_connLastN();
+    const h=_connLastH();
+    if(n) return '<div class="conn-grid" aria-busy="true" role="status"'+(h?' style="min-height:'+h+'px"':'')+' aria-label="'+escH(T('Checking what is connected...'))+'">'+'<div class="conn-row conn-skel"><span class="conn-tile"></span><div class="conn-main"><span class="skel"></span><span class="skel"></span></div></div>'.repeat(n)+'</div>';
     return '<div class="conn-note" aria-busy="true">'+escH(T('Checking what is connected...'))+'</div>';
+  }
   if(st.state==='error')
     return '<div class="conn-note">'+escH(T('Your connected accounts could not be loaded'))+(st.err?' ('+escH(st.err)+')':'')+
       '. '+escH(T('They have not been disconnected.'))+' <button class="mc-sec-link" data-dact="connReload">'+escH(T('Try again'))+'</button></div>';
@@ -1393,25 +1411,37 @@ function _connBodyHTML(){
     return '<div class="conn-note"><b>'+escH(T('Not switched on yet.'))+'</b> '+
       escH(T('AMV will not hold an account token until the server has an encryption key for it, because storing one unencrypted is not a trade worth making. Nothing here works until that is set.'))+'</div>';
 
+  /* A CARD PER ACCOUNT, IN THE SHAPE OF THE APP CARDS BELOW IT (Nov 17, the
+     owner: "make the page look better for the connected accounts"). Who, a
+     dot for whether it runs with AMV closed, what it may do in words, when it
+     was last used and by which job - and Disconnect as the quiet way out. A
+     broken one says so in a sentence and offers Reconnect, rather than a red
+     paragraph and nothing to press. */
   const items=(d.items||[]).map(it => {
     const words=_connScopeWords(it.scopes);
+    const nm=String(it.name||it.provider||'');
+    const used=it.lastUsed
+      ? T('Last used')+' '+_connAgo(it.lastUsed)+(it.lastJob?' '+T('by')+' '+it.lastJob:'')
+      : T('Connected')+' '+_connAgo(it.at)+' · '+T('not used yet');
     return '<div class="conn-row'+(it.broken?' broken':'')+'">'+
+      '<span class="conn-tile" aria-hidden="true">'+escH(nm.charAt(0).toUpperCase())+'</span>'+
       '<div class="conn-main">'+
-        '<div class="conn-name">'+escH(it.name||it.provider)+
+        '<div class="conn-name">'+escH(nm)+
           (it.unattended
-            ? '<span class="conn-tag bg">'+escH(T('works with AMV closed'))+'</span>'
-            : '<span class="conn-tag open">'+escH(T('only while AMV is open'))+'</span>')+
+            ? '<span class="conn-tag bg"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('works with AMV closed'))+'</span>'
+            : '<span class="conn-tag open"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('only while AMV is open'))+'</span>')+
         '</div>'+
-        '<div class="conn-can">'+escH(T('Can'))+' '+escH(words.join(', '))+'</div>'+
-        '<div class="conn-used">'+escH(T('Connected'))+' '+escH(_connAgo(it.at))+
-          ' · '+escH(T('last used'))+' '+escH(_connAgo(it.lastUsed))+
-          (it.lastJob?' '+escH(T('by'))+' '+escH(it.lastJob):'')+'</div>'+
+        (words.length?'<div class="conn-can">'+escH(T('Can'))+' '+escH(words.join(', '))+'</div>':'')+
+        '<div class="conn-used">'+escH(used)+'</div>'+
         (it.broken
           ? '<div class="conn-broken">'+escH(T('This stopped working - it was probably revoked at the provider. Reconnect it, or the jobs using it will keep doing nothing.'))+'</div>'
           : '')+
         (it.revokeNote?'<div class="conn-note-sm">'+escH(it.revokeNote)+'</div>':'')+
       '</div>'+
-      '<button class="btn conn-x" data-dact="connRemove" data-darg="'+escH(it.id)+'">'+escH(T('Disconnect'))+'</button>'+
+      '<div class="conn-acts">'+
+        (it.broken?'<button class="btn bp conn-re" data-dact="connAdd" data-darg="'+escH(it.provider||'')+'">'+escH(T('Reconnect'))+'</button>':'')+
+        '<button class="conn-x" data-dact="connRemove" data-darg="'+escH(it.id)+'">'+escH(T('Disconnect'))+'</button>'+
+      '</div>'+
     '</div>';
   }).join('');
 
@@ -1420,16 +1450,27 @@ function _connBodyHTML(){
      which is the directory below said a second time, above the thing it is
      for. Asked for: only what is connected, only once something is. Every one
      of those apps keeps its Connect on its own row in the directory. */
-  return items;
+  return '<div class="conn-grid">'+items+'</div>';
 }
 /* The block is shown when it has something to say: a connection, or a reason
    the list could not be read. Empty, loading, or switched off, it is not there
    at all - so nothing appears and then disappears as the page settles. */
+/* How many accounts were connected when this device last looked - a count,
+   nothing about which. Only for holding their place while the list loads. */
+/* And the height the cards took, at this window's width - so the place held
+   while they load is the place they will fill. */
+function _connRememberH(){
+  try{ const g = document.querySelector('#conn-body .conn-grid:not([aria-busy])'); if(g && g.offsetHeight) saveStr('amv_conn_h', String(g.offsetHeight) + '@' + Math.round(window.innerWidth / 40)); }catch(e){}
+}
+function _connLastH(){
+  try{ const v = String(loadStr('amv_conn_h') || '').split('@'); return v[1] === String(Math.round(window.innerWidth / 40)) ? Math.min(1200, +v[0] || 0) : 0; }catch(e){ return 0; }
+}
+function _connLastN(){ try{ return Math.min(12, Math.max(0, parseInt(loadStr('amv_conn_n')||'0',10)||0)); }catch(e){ return 0; } }
 function _connSecShown(){
   const st=_connState;
   if(st.state==='error') return true;
   const d=st.data||{};
-  if(st.state!=='done') return !!(d.configured && (d.items||[]).length);
+  if(st.state!=='done') return !!(d.configured && (d.items||[]).length) || ((st.state==='loading'||st.state==='idle') && _connLastN() > 0);
   if(!d.configured) return false;
   return !!((d.items||[]).length);
 }
