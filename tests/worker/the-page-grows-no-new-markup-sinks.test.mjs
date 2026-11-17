@@ -68,8 +68,11 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 211], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 211 (Nov 17): seven, every value through escH - Crew's Running
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 212], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 212 (Nov 17): Integrations' loading state while its order
+     arrives (integrations-view.js) - a heading and two fixed sentences, each
+     through escH(T()), and empty loading blocks; nothing from outside.
+     innerHTML 211 (Nov 17): seven, every value through escH - Crew's Running
      now panel (two repaints of _crewNowHTML), the Crew conversation (its
      dialog shell, each message, the repaint after a job is made), and the
      cross-country service search (three states of one box) and the topic
