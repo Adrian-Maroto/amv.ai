@@ -1573,7 +1573,11 @@
    },
    {
     "n": "eID function",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "personalausweisportal.de",
+    "r": 10000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -2660,7 +2664,11 @@
   "gov": [
    {
     "n": "SPID or CIE",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "spid.gov.it",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "id": [
@@ -4585,7 +4593,11 @@
    },
    {
     "n": "Dukcapil",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "kemendagri.go.id",
+    "r": 1000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -7770,7 +7782,11 @@
   "id": [
    {
     "n": "Passport Office",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "dfa.ie",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "banks": [
@@ -13841,7 +13857,11 @@
    },
    {
     "n": "Raast",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "sbp.org.pk",
+    "r": 5000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "jobs": [
@@ -22901,7 +22921,11 @@
    },
    {
     "n": "rovinietă",
-    "how": "unresolved"
+    "how": "cited",
+    "site": "erovinieta.ro",
+    "r": 50000,
+    "src": "crux 202610",
+    "checked": "2026-11-17"
    }
   ],
   "health": [

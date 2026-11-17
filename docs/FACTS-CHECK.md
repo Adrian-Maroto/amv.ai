@@ -8,7 +8,7 @@ or it was cited by hand (`how: cited`): the Wikidata entry that is plainly that 
 website (data/facts-sites.json) found in that country’s Chrome UX Report list;
 **generic** when it is a phrase, not a name; **unresolved** otherwise. Sources per name: `data/facts-sources.json`.
 
-**3000 verified, 120 generic, 142 unresolved, of 3262 names in 105 countries.**
+**3006 verified, 120 generic, 136 unresolved, of 3262 names in 105 countries.**
 
 | Country | Verified | Generic | Unresolved | Unresolved names |
 |---|---|---|---|---|
@@ -17,16 +17,16 @@ website (data/facts-sites.json) found in that country’s Chrome UX Report list;
 | MX | 37 | 2 | 0 |  |
 | BR | 35 | 1 | 1 | SUS or your plano de saúde |
 | AR | 33 | 1 | 2 | transfers by CBU or CVU; VTV inspection |
-| DE | 46 | 2 | 2 | eID function; TÜV inspection |
+| DE | 47 | 2 | 1 | TÜV inspection |
 | GB | 45 | 0 | 2 | GCSEs; A-levels |
 | FR | 46 | 1 | 0 |  |
-| IT | 41 | 3 | 2 | SPID or CIE; SSN via your ASL |
+| IT | 42 | 3 | 1 | SSN via your ASL |
 | RU | 34 | 1 | 0 |  |
 | CN | 31 | 3 | 0 |  |
 | IN | 44 | 2 | 0 |  |
 | JP | 40 | 4 | 0 |  |
 | KR | 40 | 3 | 1 | Naver Real Estate |
-| ID | 36 | 1 | 3 | Dukcapil; ShopeeFood; Samsat |
+| ID | 37 | 1 | 2 | ShopeeFood; Samsat |
 | SA | 36 | 0 | 2 | Passports department; MVPI inspection |
 | NG | 38 | 3 | 2 | Nigeria Revenue Service; bank transfers |
 | ZA | 32 | 2 | 1 | instant EFT |
@@ -37,7 +37,7 @@ website (data/facts-sites.json) found in that country’s Chrome UX Report list;
 | CZ | 35 | 3 | 2 | QR payments; STK inspection |
 | DK | 33 | 2 | 1 | MinLæge |
 | FI | 34 | 2 | 0 |  |
-| IE | 37 | 2 | 1 | Passport Office |
+| IE | 38 | 2 | 0 |  |
 | NL | 36 | 3 | 0 |  |
 | NO | 36 | 1 | 0 |  |
 | PL | 41 | 4 | 0 |  |
@@ -57,7 +57,7 @@ website (data/facts-sites.json) found in that country’s Chrome UX Report list;
 | AE | 37 | 2 | 1 | Aani |
 | VN | 36 | 3 | 1 | VietQR |
 | KE | 33 | 0 | 0 |  |
-| PK | 31 | 2 | 4 | Raast; Excise; Taxation department; matric |
+| PK | 32 | 2 | 3 | Excise; Taxation department; matric |
 | BD | 31 | 1 | 1 | Sundarban |
 | LK | 32 | 0 | 1 | Emigration |
 | NP | 27 | 0 | 0 |  |
@@ -106,7 +106,7 @@ website (data/facts-sites.json) found in that country’s Chrome UX Report list;
 | PA | 22 | 0 | 2 | Yappy; Panamá América |
 | UY | 27 | 1 | 2 | DNIC; SUCIVE |
 | PY | 17 | 0 | 0 |  |
-| RO | 35 | 1 | 3 | ROeID; ITP inspection; rovinietă |
+| RO | 36 | 1 | 2 | ROeID; ITP inspection |
 | GR | 34 | 1 | 3 | KTEO inspection; myHealth; Panhellenic exams |
 | HU | 32 | 3 | 1 | instant transfers |
 | BG | 29 | 1 | 0 |  |
