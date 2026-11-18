@@ -187,7 +187,7 @@ section('Each name this check accepts as "authenticates" actually does');
   ok(/_adminTokenOK\(/.test(gate), '_adminGate verifies the admin token', true);
   ok(/return json\([^)]*\},\s*40[13]\s*\)/.test(gate.replace(/\s+/g, ' ')),
      'and returns a refusal when it does not match', gate.replace(/\s+/g, ' ').slice(-260));
-  ok(/_adminTokenOK\(/.test(codeOnly(bodyOf('_adminOk'))), '_adminOk does too', true);
+  /* _adminOk, a wrapper with no caller, was removed (Nov 18, coverage). */
   /* _requireAdmin used to be on this list. It is deleted (AMV-052): it was a
      bare "is this an admin" predicate with no ceiling and no audit, and three
      routes reached for it instead of the gate. A name that is easier to call

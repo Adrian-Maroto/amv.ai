@@ -88,10 +88,6 @@ async function _connKeys(env){
   if(prev && prev !== primary) out.push(await _connKeyFor(prev));
   return out;
 }
-async function _connKey(env){
-  const ks = await _connKeys(env);
-  return ks.length ? ks[0].key : null;
-}
 function _b64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
 function _unb64(str){ const s=atob(String(str)); const b=new Uint8Array(s.length); for(let i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
 

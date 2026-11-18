@@ -74,5 +74,27 @@ section('Stopping one: nothing more runs, what it made is kept');
   ok(bad.status === 404, 'an id that is no task is refused', bad.status);
 }
 
+section('Batches of API requests are in the same list, and Stop works on them');
+{
+  /* A running batch (two waiting, one done), a finished one, and somebody
+     else's - which this account must neither see nor stop. */
+  const now = Date.now();
+  const mk = (id, owner, status, items) => ({ id, owner, status, created: now - 60000, expiresAt: now + 864e5, items, ...(status === 'ended' ? { endedAt: now - 1000 } : {}) });
+  const run = 'batch_' + 'a'.repeat(24), fin = 'batch_' + 'b'.repeat(24), other = 'batch_' + 'c'.repeat(24);
+  await W.DB.put(env, 'batch', run, mk(run, ME, 'in_progress', [{ state: 'pending' }, { state: 'running' }, { state: 'done', result: 'succeeded' }]));
+  await W.DB.put(env, 'batch', fin, mk(fin, ME, 'ended', [{ state: 'done', result: 'succeeded' }, { state: 'done', result: 'errored' }]));
+  await W.DB.put(env, 'batch', other, mk(other, OTHER, 'in_progress', [{ state: 'pending' }]));
+  await W.DB.put(env, 'batchidx', ME, [{ id: run }, { id: fin }, { id: other }]);
+  const list = (await call('/v1/tasks')).d.tasks.filter(t => t.kind === 'batch');
+  const r = list.find(t => t.id === 'batch:' + run), f = list.find(t => t.id === 'batch:' + fin);
+  ok(list.length === 2 && !list.some(t => t.id === 'batch:' + other), 'both of mine are listed, and nobody else’s - even one named in my index', list.map(t => t.id));
+  ok(r && r.status === 'running' && r.cancellable && r.title === '3 requests' && r.evidence.counts.processing === 2, 'a running batch says so, with what is still waiting', r);
+  ok(f && f.status === 'done' && !f.cancellable && f.evidence.counts.errored === 1, 'a finished one is done, cannot be stopped, and says what failed', f);
+  const stop = await call('/v1/tasks/cancel', { id: 'batch:' + run });
+  ok(stop.status === 200 && stop.d.task.status === 'canceling' && !stop.d.task.cancellable, 'Stop turns a running batch to canceling', stop.d.task);
+  const theirs = await call('/v1/tasks/cancel', { id: 'batch:' + other });
+  ok(theirs.status === 404 && (await W.DB.get(env, 'batch', other)).status === 'in_progress', 'somebody else’s batch is not found, and keeps running', theirs.status);
+}
+
 if (report('all-background-work-is-one-list') > 0) process.exitCode = 1;
 done();

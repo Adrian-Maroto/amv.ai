@@ -296,13 +296,6 @@ function _mktWithheld(it){
   const { plugin, ...rest } = it;
   return { ...rest, pluginWithheld: ps.refuse };
 }
-/* The words of a stored plugin, for screening it again. */
-function _mktPluginText(p){
-  if(!p || typeof p !== 'object') return '';
-  const a = x => Array.isArray(x) ? x : [];
-  return a(p.skills).map(s => [s && s.name, s && s.when, s && s.instr].join(' '))
-    .concat(a(p.prompts).map(x => [x && x.title, x && x.text].join(' ')), a(p.jobs).map(j => [j && j.title, j && j.detail].join(' ')), a(p.apps)).join(' ');
-}
 
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);

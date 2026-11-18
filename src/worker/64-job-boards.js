@@ -254,11 +254,6 @@ const JOB_BOARDS = {
    person sends in a day and far below anything a provider treats as bulk. */
 const JOB_APPLY_DAILY_CAP = 25;
 
-/* What AMV can honestly do on this board. */
-function _jobBoardChannel(id) {
-  const b = JOB_BOARDS[id];
-  return b ? b.apply : 'unknown';
-}
 
 /* The catalogue, so the interface can show somebody the boards their country
    actually uses instead of four American ones. */

@@ -149,7 +149,11 @@ for (const [title, re] of TRUST) {
   md += '\n';
 }
 md += '## Every file\n\n| File | Functions called | Code |\n|---|---|---|\n'
-  + perFile.map(x => '| `' + x.file + '` | ' + x.called + '/' + x.fns + ' | ' + pct(x.cov, x.tot) + ' |').join('\n') + '\n';
+  + perFile.map(x => '| `' + x.file + '` | ' + x.called + '/' + x.fns + ' | ' + pct(x.cov, x.tot) + ' |').join('\n') + '\n'
+  /* Outside the trust areas too: a function no suite calls is either dead or
+     untested, and either is worth knowing by name. */
+  + '\n## Never called, outside the trust areas\n\n'
+  + (perFile.filter(x => x.never.length && !TRUST.some(([, re]) => re.test(x.file))).map(x => '- `' + x.file + '`: ' + x.never.map(n => '`' + n + '`').join(', ')).join('\n') || 'None.') + '\n';
 mkdirSync(join(ROOT, 'docs'), { recursive: true });
 writeFileSync(join(ROOT, 'docs', 'COVERAGE.md'), md);
 rmSync(COV, { recursive: true, force: true });

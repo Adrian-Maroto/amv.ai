@@ -466,9 +466,6 @@ async function _adminGate(request, env, what, perMin, perDay) {
   }
   return null;
 }
-async function _adminOk(request, env){
-  return _adminTokenOK(request, env);
-}
 
 /* A known key must be backed up from its committed value, not a stale
    display/export cache. This does NOT make a KV listing a point-in-time

@@ -218,6 +218,25 @@ section('The plan floor holds');
   ok(r.status === 402 && d.code === 'plan_required' && partnerCalls.length === 0, 'a free account is refused before the partner is called', { status: r.status, d });
 }
 
+section('Instructions and tool results that arrive as blocks are passed on as their words');
+{
+  /* A caller may send the system text and a tool's result as lists of text
+     blocks rather than one string; the partner protocol takes strings, so the
+     words are joined - never dropped, never sent as an object. */
+  const req = W._partnerRequest({ model: 'vendor-large-2', tokenParam: 'max_completion_tokens', maxOut: 16000, tools: true }, {
+    max_tokens: 1000,
+    system: [{ type: 'text', text: 'Answer briefly.' }, { type: 'text', text: 'Use metric units.' }],
+    messages: [
+      { role: 'user', content: 'Weather?' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'crew_list', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: '22C' }, { type: 'image', source: {} }, { type: 'text', text: 'sunny' }] }] },
+    ],
+  });
+  const sys = req.messages.find(m => m.role === 'system'), tool = req.messages.find(m => m.role === 'tool');
+  ok(sys && sys.content === 'Answer briefly.\nUse metric units.', 'the system text blocks become one instruction, in order', sys);
+  ok(tool && tool.content === '22C\nsunny' && tool.tool_call_id === 't1', 'a tool result in blocks becomes its words - a picture in it is not sent as text', tool);
+}
+
 section('Several companies, each contracted directly, each by its own name (Nov 18)');
 {
   /* Supplier 2 is a second company with its own endpoint, key and model list.

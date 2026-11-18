@@ -5421,10 +5421,6 @@ async function _connKeys(env){
   if(prev && prev !== primary) out.push(await _connKeyFor(prev));
   return out;
 }
-async function _connKey(env){
-  const ks = await _connKeys(env);
-  return ks.length ? ks[0].key : null;
-}
 function _b64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
 function _unb64(str){ const s=atob(String(str)); const b=new Uint8Array(s.length); for(let i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
 
@@ -18246,9 +18242,6 @@ async function _adminGate(request, env, what, perMin, perDay) {
     return json({ error: 'forbidden' }, 403);
   }
   return null;
-}
-async function _adminOk(request, env){
-  return _adminTokenOK(request, env);
 }
 
 /* A known key must be backed up from its committed value, not a stale
@@ -33690,13 +33683,6 @@ function _mktWithheld(it){
   const { plugin, ...rest } = it;
   return { ...rest, pluginWithheld: ps.refuse };
 }
-/* The words of a stored plugin, for screening it again. */
-function _mktPluginText(p){
-  if(!p || typeof p !== 'object') return '';
-  const a = x => Array.isArray(x) ? x : [];
-  return a(p.skills).map(s => [s && s.name, s && s.when, s && s.instr].join(' '))
-    .concat(a(p.prompts).map(x => [x && x.title, x && x.text].join(' ')), a(p.jobs).map(j => [j && j.title, j && j.detail].join(' ')), a(p.apps)).join(' ');
-}
 
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
@@ -41259,11 +41245,6 @@ const JOB_BOARDS = {
    person sends in a day and far below anything a provider treats as bulk. */
 const JOB_APPLY_DAILY_CAP = 25;
 
-/* What AMV can honestly do on this board. */
-function _jobBoardChannel(id) {
-  const b = JOB_BOARDS[id];
-  return b ? b.apply : 'unknown';
-}
 
 /* The catalogue, so the interface can show somebody the boards their country
    actually uses instead of four American ones. */
@@ -49795,14 +49776,6 @@ async function _inviteHold(env, raw, where){
     try { await counter(env, 'betainvuse:' + code, { op: 'incr', amount: -1, once: 'back:' + hold, ttlMs: 400 * 86400000 }); }
     catch (e) { audit(env, 'invite_not_returned', { where }); }
   } };
-}
-/* Null when the sign-up may go ahead; otherwise the refusal. Kept for a door
-   that makes the account in the same step it checks. */
-async function _inviteGate(env, raw, where){
-  const h = await _inviteHold(env, raw, where);
-  if(h.refusal) return h.refusal;
-  await h.done(true);
-  return null;
 }
 
 /* POST /admin/invites { count, uses } -> { codes, links } */

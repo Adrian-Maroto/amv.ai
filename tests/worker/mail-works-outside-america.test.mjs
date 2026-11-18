@@ -151,6 +151,25 @@ section('A real IMAP conversation, literals and all');
      'and logged out - a session left open is a connection these providers count', true);
 }
 
+section('Opening one message reads its text, and does not mark it read');
+{
+  /* The body arrives as a literal counted in bytes, with non-English text in
+     it - the same trap as the headers above. */
+  const text = 'Faktura nr 7 - zapłać do piątku.\r\nDziękujemy.\r\n';
+  const s = useScript([
+    '* OK IMAP4rev1 ready\r\n',
+    'a1 OK LOGIN completed\r\n',
+    '* 2 EXISTS\r\nb1 OK [READ-WRITE] SELECT completed\r\n',
+    '* 2 FETCH (UID 102 BODY[TEXT] ' + literal(text) + ')\r\nb2 OK FETCH completed\r\n',
+    'zz OK LOGOUT completed\r\n',
+  ]);
+  const m = await W._imapMessage({ address: 'me@wp.pl', password: 'authcode', imap: 'imap.wp.pl', smtp: 'smtp.wp.pl' }, 102);
+  ok(m.uid === 102 && /zapłać do piątku/.test(m.body) && /Dziękujemy/.test(m.body), 'the message’s own words come back, accents intact', m);
+  const sent = s.wrote.join('');
+  ok(/UID FETCH 102 \(BODY\.PEEK\[TEXT\]\)/.test(sent), 'by its id, PEEKed - opening it in AMV does not mark it read in the mailbox', sent.slice(0, 200));
+  ok(/zz LOGOUT/.test(sent), 'and the session is closed after', true);
+}
+
 section('The four ways it fails are four different answers');
 {
   useScript(['* OK ready\r\n', 'a1 NO [AUTHENTICATIONFAILED] Invalid credentials\r\n', 'zz OK\r\n']);

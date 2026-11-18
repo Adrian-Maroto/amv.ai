@@ -59,14 +59,6 @@ async function _inviteHold(env, raw, where){
     catch (e) { audit(env, 'invite_not_returned', { where }); }
   } };
 }
-/* Null when the sign-up may go ahead; otherwise the refusal. Kept for a door
-   that makes the account in the same step it checks. */
-async function _inviteGate(env, raw, where){
-  const h = await _inviteHold(env, raw, where);
-  if(h.refusal) return h.refusal;
-  await h.done(true);
-  return null;
-}
 
 /* POST /admin/invites { count, uses } -> { codes, links } */
 async function adminInvitesCreate(request, env){
