@@ -498,7 +498,10 @@ through one middleman (docs/PLAN-MODEL-PICKER.md says why):
 ```
 wrangler secret put AMV_PARTNER_URL_2     # the second company's endpoint
 wrangler secret put AMV_PARTNER_KEY_2     # and its key
-# ... _3 and _4 the same way
+wrangler secret put AMV_PARTNER_URL_3     # a third company, the same way
+wrangler secret put AMV_PARTNER_KEY_3
+wrangler secret put AMV_PARTNER_URL_4     # and a fourth
+wrangler secret put AMV_PARTNER_KEY_4
 ```
 
 In the engine list, `supplier` says which company sells it (1 when left out),
