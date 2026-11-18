@@ -491,6 +491,31 @@ broken one. Every turn is metered, reserved and refunded exactly like the
 built-in engines, at the prices in this list. Check the readiness screen
 (Partner models) after setting them.
 
+**Several companies, each by its own name (Nov 18).** Up to four suppliers,
+each its own contract - contract each model company directly rather than
+through one middleman (docs/PLAN-MODEL-PICKER.md says why):
+
+```
+wrangler secret put AMV_PARTNER_URL_2     # the second company's endpoint
+wrangler secret put AMV_PARTNER_KEY_2     # and its key
+# ... _3 and _4 the same way
+```
+
+In the engine list, `supplier` says which company sells it (1 when left out),
+and `maker` with `name` shows it in the picker by the maker's own model name,
+under the maker's heading. `reasoning: true` gives it the Think longer switch:
+
+```
+{"key":"amv-sol","model":"<the id the second company's API takes>","supplier":2,
+ "maker":"<the company>","name":"<the company's name for the model>",
+ "minPlan":"pro","inCost":2.5,"outCost":10,"maxOut":16000,"reasoning":true,"vision":true}
+```
+
+The picker lists AMV's own engines first, then each maker in the order the
+list names them. `minPlan` decides who may use it, on the server. The id in
+`model` never reaches a screen. `PARTNER_DAILY_USD_CAP` caps what all the
+partner engines together may spend in a day.
+
 ## 2b2. Editing the Google Docs and Sheets people choose (optional)
 
 With Connect Google set up, AMV can already read and edit the Docs and Sheets
