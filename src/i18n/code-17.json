@@ -1974,5 +1974,43 @@
   "it": "Tienili",
   "ko": "유지",
   "ta": "வைத்திரு"
+ },
+ "AMV remembers facts about you to personalize its answers. Every conversation is given the ones that matter to what you are asking.": {
+  "es": "AMV recuerda datos sobre ti para personalizar sus respuestas. Cada conversación recibe los que importan para lo que preguntas.",
+  "zh": "AMV 会记住关于你的信息，让回答更贴合你。每次对话都会用上与你所问内容相关的那些。",
+  "hi": "AMV आपके बारे में बातें याद रखता है ताकि उसके जवाब आपके हिसाब से हों। हर बातचीत को वे बातें दी जाती हैं जो आपके सवाल से जुड़ी हैं।",
+  "ar": "يتذكر AMV معلومات عنك ليجعل إجاباته مناسبة لك. تحصل كل محادثة على ما يهم ما تسأل عنه.",
+  "pt": "O AMV lembra fatos sobre você para personalizar as respostas. Cada conversa recebe os que importam para o que você está perguntando.",
+  "fr": "AMV retient des informations sur vous pour personnaliser ses réponses. Chaque conversation reçoit celles qui comptent pour ce que vous demandez.",
+  "de": "AMV merkt sich Fakten über dich, um seine Antworten anzupassen. Jedes Gespräch erhält die, die für deine Frage wichtig sind.",
+  "ja": "AMV はあなたについての情報を覚え、回答をあなたに合わせます。各会話には、質問に関係するものが渡されます。",
+  "ru": "AMV запоминает факты о вас, чтобы ответы были точнее. Каждый разговор получает те, что важны для вашего вопроса.",
+  "id": "AMV mengingat fakta tentang Anda untuk menyesuaikan jawabannya. Setiap percakapan diberi yang penting bagi pertanyaan Anda.",
+  "bn": "AMV আপনার সম্পর্কে তথ্য মনে রাখে যাতে উত্তরগুলো আপনার মতো হয়। প্রতিটি কথোপকথনে আপনার প্রশ্নের সাথে প্রাসঙ্গিকগুলো দেওয়া হয়।",
+  "ur": "AMV آپ کے بارے میں باتیں یاد رکھتا ہے تاکہ اس کے جواب آپ کے مطابق ہوں۔ ہر گفتگو کو وہ باتیں دی جاتی ہیں جو آپ کے سوال سے متعلق ہوں۔",
+  "tr": "AMV, yanıtlarını size göre ayarlamak için sizinle ilgili bilgileri hatırlar. Her sohbete sorduğunuz şeyle ilgili olanlar verilir.",
+  "vi": "AMV ghi nhớ thông tin về bạn để cá nhân hóa câu trả lời. Mỗi cuộc trò chuyện được cung cấp những điều liên quan đến câu bạn hỏi.",
+  "it": "AMV ricorda informazioni su di te per personalizzare le risposte. Ogni conversazione riceve quelle che contano per ciò che chiedi.",
+  "ko": "AMV는 답변을 맞춤화하기 위해 당신에 대한 사실을 기억합니다. 각 대화에는 질문과 관련된 것이 전달됩니다.",
+  "ta": "உங்கள் பதில்களைத் தனிப்பயனாக்க AMV உங்களைப் பற்றிய தகவல்களை நினைவில் வைக்கிறது. ஒவ்வொரு உரையாடலுக்கும் நீங்கள் கேட்பதற்குத் தொடர்புடையவை வழங்கப்படும்."
+ },
+ "Memories you add here are given to AMV in your conversations - every one of them while there are only a few, and the ones that matter to the question once there are many. Add facts about yourself, your preferences, your work, or anything you want AMV to know.": {
+  "es": "Los recuerdos que añades aquí se dan a AMV en tus conversaciones: todos mientras sean pocos, y los que importan para la pregunta cuando son muchos. Añade datos sobre ti, tus preferencias, tu trabajo o cualquier cosa que quieras que AMV sepa.",
+  "zh": "你在这里添加的记忆会在对话中提供给 AMV：数量少时全部提供，数量多时提供与问题相关的那些。添加关于你自己、你的偏好、你的工作或任何你想让 AMV 知道的事。",
+  "hi": "यहाँ जोड़ी गई यादें आपकी बातचीत में AMV को दी जाती हैं - जब तक कम हैं तब तक सभी, और ज़्यादा होने पर वे जो सवाल से जुड़ी हैं। अपने बारे में, अपनी पसंद, अपने काम या कुछ भी जो आप चाहते हैं कि AMV जाने, जोड़ें।",
+  "ar": "تُعطى الذكريات التي تضيفها هنا إلى AMV في محادثاتك - كلها ما دامت قليلة، وما يهم السؤال منها عندما تكثر. أضف معلومات عن نفسك وتفضيلاتك وعملك أو أي شيء تريد أن يعرفه AMV.",
+  "pt": "As memórias que você adiciona aqui são dadas ao AMV nas suas conversas - todas enquanto forem poucas, e as que importam para a pergunta quando forem muitas. Adicione fatos sobre você, suas preferências, seu trabalho ou qualquer coisa que queira que o AMV saiba.",
+  "fr": "Les souvenirs ajoutés ici sont donnés à AMV dans vos conversations - tous tant qu'ils sont peu nombreux, et ceux qui comptent pour la question quand ils sont nombreux. Ajoutez des informations sur vous, vos préférences, votre travail ou tout ce que vous voulez qu'AMV sache.",
+  "de": "Erinnerungen, die du hier hinzufügst, erhält AMV in deinen Gesprächen - alle, solange es wenige sind, und die für die Frage wichtigen, wenn es viele sind. Füge Fakten über dich, deine Vorlieben, deine Arbeit oder alles hinzu, was AMV wissen soll.",
+  "ja": "ここで追加した記憶は会話の中で AMV に渡されます。少ないうちはすべて、多くなったら質問に関係するものが渡されます。あなた自身、好み、仕事、AMV に知っておいてほしいことを追加してください。",
+  "ru": "Воспоминания, добавленные здесь, передаются AMV в ваших разговорах: все, пока их немного, и важные для вопроса, когда их много. Добавьте факты о себе, своих предпочтениях, работе или о чём угодно, что AMV должен знать.",
+  "id": "Ingatan yang Anda tambahkan di sini diberikan ke AMV dalam percakapan Anda - semuanya selama jumlahnya sedikit, dan yang penting bagi pertanyaan saat jumlahnya banyak. Tambahkan fakta tentang diri Anda, preferensi, pekerjaan, atau apa pun yang ingin diketahui AMV.",
+  "bn": "এখানে যোগ করা স্মৃতিগুলো আপনার কথোপকথনে AMV-কে দেওয়া হয় - কম থাকলে সবগুলো, বেশি হলে প্রশ্নের সাথে প্রাসঙ্গিকগুলো। নিজের সম্পর্কে, পছন্দ, কাজ বা AMV-কে যা জানাতে চান তা যোগ করুন।",
+  "ur": "یہاں شامل کی گئی یادیں آپ کی گفتگو میں AMV کو دی جاتی ہیں - جب تک کم ہوں سب، اور زیادہ ہونے پر وہ جو سوال سے متعلق ہوں۔ اپنے بارے میں، اپنی پسند، اپنے کام یا کچھ بھی جو آپ چاہتے ہیں کہ AMV جانے، شامل کریں۔",
+  "tr": "Buraya eklediğiniz anılar sohbetlerinizde AMV'ye verilir - az olduklarında hepsi, çok olduklarında soruyla ilgili olanlar. Kendiniz, tercihleriniz, işiniz veya AMV'nin bilmesini istediğiniz her şey hakkında bilgi ekleyin.",
+  "vi": "Những ký ức bạn thêm ở đây được đưa cho AMV trong các cuộc trò chuyện - tất cả khi còn ít, và những điều liên quan đến câu hỏi khi đã nhiều. Hãy thêm thông tin về bạn, sở thích, công việc hoặc bất cứ điều gì bạn muốn AMV biết.",
+  "it": "I ricordi che aggiungi qui vengono dati ad AMV nelle tue conversazioni - tutti finché sono pochi, e quelli che contano per la domanda quando sono tanti. Aggiungi informazioni su di te, le tue preferenze, il tuo lavoro o qualsiasi cosa tu voglia che AMV sappia.",
+  "ko": "여기에 추가한 기억은 대화에서 AMV에게 전달됩니다. 적을 때는 모두, 많아지면 질문과 관련된 것이 전달됩니다. 자신, 선호, 일 또는 AMV가 알았으면 하는 무엇이든 추가하세요.",
+  "ta": "இங்கே நீங்கள் சேர்க்கும் நினைவுகள் உங்கள் உரையாடல்களில் AMV-க்கு வழங்கப்படும் - குறைவாக இருக்கும்போது அனைத்தும், அதிகமானால் கேள்விக்குத் தொடர்புடையவை. உங்களைப் பற்றி, உங்கள் விருப்பங்கள், வேலை அல்லது AMV அறிய வேண்டியவற்றைச் சேர்க்கவும்."
  }
 }

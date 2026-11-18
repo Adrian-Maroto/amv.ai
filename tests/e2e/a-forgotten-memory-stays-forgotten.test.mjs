@@ -85,6 +85,21 @@ section('Remembered on the other device, it arrives here');
   ok(r.prompt.includes('I am allergic to peanuts'), 'and reaches the next conversation', r.prompt);
 }
 
+section('Every memory reaches the conversation while they are few, the relevant ones past that');
+{
+  const r = await page.evaluate(() => {
+    const was = S.memory;
+    S.memory = Array.from({ length: 15 }, (_, i) => ({ id: 'q' + i, text: 'Fact number ' + i + ' about me', added: Date.now() - i }));
+    const few = _relevantMemories([{ r: 'u', c: 'hello' }]).length;
+    S.memory = Array.from({ length: 120 }, (_, i) => ({ id: 'w' + i, text: (i === 77 ? 'I keep bees in the garden ' : 'An unrelated long fact ' + i + ' ') + 'x'.repeat(60), added: Date.now() - i }));
+    const many = _relevantMemories([{ r: 'u', c: 'Tell me about my bees' }]);
+    S.memory = was;
+    return { few, many: many.length, bees: many.some(t => /bees/.test(t)) };
+  });
+  ok(r.few === 15, 'fifteen short memories: all fifteen go, as the Memory tab says', r);
+  ok(r.many === 12 && r.bees, 'a hundred and twenty: the twelve that matter, the one about bees among them', r);
+}
+
 section('Asking chat to forget is the same forgetting');
 {
   const r = await page.evaluate(async () => {

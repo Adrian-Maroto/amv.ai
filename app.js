@@ -16834,7 +16834,7 @@ function renderMemoryView(){
   vc.innerHTML=
     '<div class="sv fi"><div class="vi">'+
       '<h2>AI Memory</h2>'+
-      '<p class="vsub">AMV remembers facts about you to personalize every response. These memories are included with every AI request.</p>'+
+      '<p class="vsub">AMV remembers facts about you to personalize its answers. Every conversation is given the ones that matter to what you are asking.</p>'+
       '<div style="display:flex;gap:8px">'+
         '<input type="text" id="mem-inp" placeholder="e.g. I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
         '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
@@ -16848,7 +16848,7 @@ function renderMemoryView(){
       (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
         '<h3>How Memory Works</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65">Memories you add here are automatically included in every conversation with AMV, allowing for more personalized and contextual responses. Add facts about yourself, your preferences, your work, or anything you want AMV to always know.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65">Memories you add here are given to AMV in your conversations - every one of them while there are only a few, and the ones that matter to the question once there are many. Add facts about yourself, your preferences, your work, or anything you want AMV to know.</p>'+
         '<div style="margin-top:9px;font-size:var(--t-sm);color:var(--mu)">Examples:'+
           '<div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">'+
             '<span style="color:var(--tx)">• "I am a software engineer who works with Python and React"</span>'+
@@ -17006,9 +17006,13 @@ function _memDuplicate(fact, knownSet){
 }
 /* Pick the memories most relevant to the current conversation to inject
    (keeps the prompt focused instead of dumping everything). */
+/* Every memory while they fit in a small budget - which is most people, and
+   what the Memory tab says - and past it, the ones that matter to the question. */
+const _MEM_ALL_CHARS = 3000;
 function _relevantMemories(msgs, limit){
   limit=limit||12;
-  if(S.memory.length<=limit) return S.memory.map(m=>m.text);
+  const total=S.memory.reduce((n,m)=>n+String(m.text||'').length+2,0);
+  if(S.memory.length<=limit || total<=_MEM_ALL_CHARS) return S.memory.map(m=>m.text);
   const ctx=msgs.slice(-4).map(m=>typeof m.c==='string'?m.c:'').join(' ').toLowerCase();
   const ctxWords=new Set(ctx.split(/\W+/).filter(w=>w.length>3));
   const scored=S.memory.map(m=>{
