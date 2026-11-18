@@ -166,7 +166,9 @@ section('A country with nothing written for it says so rather than inventing');
     const uni = new Set(_cwUniversalJobs().map(j => j.id));
     const list = _cjList();
     const out = { local: _cwLocalJobs('MN').length, n: list.length,
-      odd: list.filter(j => !uni.has(j.id) && !j.ccKind && !(_cwJobs() || []).some(x => x.id === j.id)).map(j => j.id).slice(0, 3),
+      /* The country's own Inbox & calendar jobs (its mailboxes, its public
+         holidays - crew-view.js _cjInboxCal, docs/RESEARCH.md) are real too. */
+      odd: list.filter(j => !uni.has(j.id) && !j.ccKind && !(window._cjInboxCalById || {})[j.id] && !(_cwJobs() || []).some(x => x.id === j.id)).map(j => j.id).slice(0, 3),
       head: document.getElementById('cx-jobs-h').textContent,
       note: (document.getElementById('cj-note') || {}).hidden };
     _cwSetCountry(was); _cjRepaint();

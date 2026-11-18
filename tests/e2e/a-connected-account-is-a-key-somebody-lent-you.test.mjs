@@ -266,7 +266,7 @@ section('The screen says what it may do and when it was last used');
   ok(/read your mail/.test(t), 'permissions are in words, not scope strings', t.slice(0, 90));
   ok(/works with AMV closed/.test(t), 'it says this one runs unattended');
   ok(/Daily inbox digest/.test(t), 'and which job used it last');
-  ok(/last used\s+(just now|\d+\s*(min|h)\s*ago|yesterday|\d+ days ago)/i.test(t),
+  ok(/last used\s+(now|just now|\d+\s*(minutes?|hours?|min|h)\s*ago|yesterday|\d+ days ago)/i.test(t),
      'and when', (t.match(/last used[^·]*/) || [''])[0].slice(0, 40));
   /* WHAT IS CONNECTED AND NOTHING ELSE. This block used to list every app
      that could be connected as well; each has its own Connect in the

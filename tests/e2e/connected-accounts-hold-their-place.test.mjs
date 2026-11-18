@@ -60,7 +60,7 @@ section('On a phone, and in another language');
   /* "2h ago" written by hand was English in all seventeen languages. */
   const es = await page.evaluate(() => { const was = document.documentElement.lang; document.documentElement.lang = 'es';
     try{ return _connAgo(Date.now() - 72e5) + ' | ' + _connAgo(Date.now() - 864e5); } finally { document.documentElement.lang = was; } });
-  ok(/hace 2 h/.test(es) && /ayer/.test(es) && !/ago/.test(es), 'when it was used is said in the screen\'s own language', es);
+  ok(/hace 2 horas/.test(es) && /ayer/.test(es) && !/ago/.test(es), 'when it was used is said in the screen\'s own language', es);
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

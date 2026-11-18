@@ -90,13 +90,17 @@ section('Build on a phone: each mode starts clear of the nav, and reads as one s
     await page.click('[data-bmode="' + m + '"]');
     await page.waitForTimeout(500);
     seen[m] = await page.evaluate(() => {
+      /* The first line of the screen, whichever it is: the "BUILD" eyebrow
+         was taken off the start screen in the Nov 17 redesign (A378), so the
+         title is the first line now - the room above it is what matters. */
       const eb = [...document.querySelectorAll('.build-head .eyebrow')].find(e => e.offsetParent);
       const h2 = [...document.querySelectorAll('.build-head h2')].find(e => e.offsetParent);
-      return { eyebrowTop: eb ? eb.getBoundingClientRect().top : -1,
+      const first = eb || h2;
+      return { eyebrowTop: first ? first.getBoundingClientRect().top : -1,
                weight: h2 ? getComputedStyle(h2).fontWeight : '' };
     });
     ok(seen[m].eyebrowTop - navBottom >= 12,
-       m + ': the "BUILD" label has room above it rather than touching the nav', { navBottom, ...seen[m] });
+       m + ': the first line has room above it rather than touching the nav', { navBottom, ...seen[m] });
   }
   const weights = new Set(Object.values(seen).map(s => s.weight));
   ok(weights.size === 1, 'the three headings are one weight, so switching mode does not change the font', seen);

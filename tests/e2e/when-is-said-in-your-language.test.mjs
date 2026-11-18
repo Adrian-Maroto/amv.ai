@@ -21,7 +21,7 @@ section('Every one of them, in Spanish');
   });
   const all = [r.conn, r.build, r.apv, r.msg, r.soon, r.yday];
   ok(all.every(s => s && !/\b(ago|in|yesterday|hours?|min)\b/.test(s)), 'no English left in any of them', r);
-  ok(/hace 2 h/.test(r.build) && /hace 2 h/.test(r.conn), 'two hours ago is "hace 2 horas"', r);
+  ok(/hace 2 horas/.test(r.build) && /hace 2 horas/.test(r.conn), 'two hours ago is "hace 2 horas"', r);
   ok(/dentro de 5 min/.test(r.soon), 'a time still to come is said as one', r.soon);
   ok(r.yday === 'ayer', 'a day ago is "ayer"', r.yday);
   ok(!/hace/.test(r.old) && /\d/.test(r.old), 'and three weeks ago is a date, not a count of days', r.old);

@@ -1159,7 +1159,7 @@ function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
 /* In the language the screen is in (amvAgo, 01-core.js). */
-function _connAgo(ts){ return amvAgo(ts, 'short'); }
+function _connAgo(ts){ return amvAgo(ts, 'long'); }
 /* Capability keys are for the wire. These are for people. */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',

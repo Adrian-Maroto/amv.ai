@@ -141,7 +141,7 @@ section('The client merges on pull instead of overwriting');
   const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
   ok(!/server wins on login/.test(client), 'the overwrite-on-login comment and behaviour are gone');
   ok(/_mergeById\(local, data\[k\]\)/.test(client), 'a pull merges list keys into what is already here');
-  ok(/_mergeById\(Array\.isArray\(_SESSIONS\)/.test(client), 'including Recents, where Dev projects live');
+  ok(/_mergeById\((?:_withTombs\('sessions', )?Array\.isArray\(_SESSIONS\)/.test(client), 'including Recents, where Dev projects live (with what was deleted, LESSONS 653)');
   ok(/baseRev:this\.syncRev/.test(client), 'and every push declares the revision it was working from');
   ok(/c\.updated=Date\.now\(\)/.test(client), 'conversations are stamped on write so the merge has a real clock');
 }

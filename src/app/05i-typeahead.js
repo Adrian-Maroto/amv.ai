@@ -1,7 +1,7 @@
 /* ═════════════════════════════════════════════════
    MATCHES UNDER THE BOX AS YOU TYPE (Nov 17, the owner: "as you type, things
-   start showing up like a little tab below - the way ChatGPT and Claude do
-   it. Don't make it so you have to type the full thing").
+   start showing up like a little tab below ... Don't make it so you have to
+   type the full thing").
 
    One component for every search box that has a list behind it - Crew's
    jobs, Tasks, Integrations' apps. The box keeps doing what it did (filtering
