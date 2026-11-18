@@ -17652,3 +17652,18 @@ html[dir="rtl"] .chome-sug{text-align:right}
 /* A380b - an older phone layer made Disconnect a full-width row; on a card
    it is a quiet link beside Reconnect, never wider than the card. */
 .conn-grid .conn-x{width:auto!important;margin-top:0!important}
+/* A381 - the model picker with other companies' models (Nov 18): a quiet
+   heading per maker, and the Think longer switch for a model that can. */
+.model-picker .mp-maker{margin-top:var(--sp-2);border-top:1px solid var(--bd);padding-top:var(--sp-3)}
+.model-picker .mp-think{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:var(--sp-3);align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--bd);margin-top:var(--sp-2);padding:var(--sp-3) 12px;cursor:pointer;font-family:var(--fn);color:var(--tx);min-height:44px}
+.model-picker .mp-think:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:var(--r-md)}
+.model-picker .mp-think-t{font-size:var(--t-base);font-weight:600}
+.model-picker .mp-think-s{grid-row:2;font-size:var(--t-xs);color:var(--mu)}
+.model-picker .mp-sw{grid-row:1/3;grid-column:2;width:34px;height:20px;border-radius:var(--r-pill);background:var(--s3);border:1px solid var(--bd);position:relative;transition:background .15s var(--ease)}
+.model-picker .mp-sw::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--tx);transition:transform .15s var(--ease)}
+.model-picker .mp-think[aria-checked="true"] .mp-sw{background:var(--accent);border-color:var(--accent)}
+.model-picker .mp-think[aria-checked="true"] .mp-sw::after{transform:translateX(14px);background:#fff}
+@media (prefers-reduced-motion:reduce){.model-picker .mp-sw,.model-picker .mp-sw::after{transition:none}}
+/* A381b - Tasks says Loading in the list's own place (no header line that
+   vanishes and moves the page up). */
+.tk2-wait{margin:var(--sp-4) 0;color:var(--mu);font-size:var(--t-base)}

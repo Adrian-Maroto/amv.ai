@@ -4038,8 +4038,14 @@ async function _loadPartnerEngines(){
       if(known && e.caps && typeof e.caps === 'object') MODELS[known].caps = e.caps;
       if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
       const label = String(e.label || e.key).slice(0, 40);
-      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key,
-                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost:2,
+      /* By its maker's own name when the owner set one (02-partner-engines.js):
+         the picker groups it under the maker, and its line says what it can do. */
+      const maker = String(e.maker || '').slice(0, 40);
+      const caps = (e.caps && typeof e.caps === 'object') ? e.caps : {};
+      const can = [caps.vision ? 'Reads pictures' : '', e.thinks ? 'Can think longer' : '', caps.tools ? 'Uses AMV\u2019s tools' : ''].filter(Boolean);
+      MODELS[e.key] = { label, maker, thinks: !!e.thinks, descParts: maker && can.length ? can : null,
+                        desc: maker ? 'Another model AMV offers' : 'Another engine AMV offers', color:'#a78bfa', model:e.key,
+                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost: [1,2,3,4].includes(+e.cost) ? +e.cost : 2,
                         rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true,
                         caps: (e.caps && typeof e.caps === 'object') ? e.caps : { vision:false, pdf:false, tools:true, webSearch:false } };
       MODEL_ORDER.push(e.key);
@@ -9640,6 +9646,8 @@ async function _callAITurn(msgs, _opts) {
     let _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
+        /* The picker's Think longer switch, for a model that can (partner engines). */
+        ...(mdl.thinks && loadStr('amv_think')==='1' ? { effort:'high' } : {}),
         system:sysPrompt + (_ctx.brief || ''),
         stream:true,
         amv:Object.assign(_usageTag('chat', _conv), _creditConsentNow() ? { useCredit:true } : {}),
@@ -10537,18 +10545,29 @@ function showModelPicker(){
     ';right:'+right+'px'+
     ';max-height:'+room+'px;overflow-y:auto';
   const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
+  const item=k=>{ const v=MODELS[k]; const sel=k===S.model; const teamOff=!_teamAllowsModel(k);
+      return '<button class="mp-item'+(sel?' sel':'')+(teamOff?' mp-teamoff':'')+'" data-mk="'+escH(k)+'">'+
+        '<span class="mp-dot" style="background:'+escH(v.color)+'"></span>'+
+        '<span class="mp-body"><span class="mp-name">'+escH(v.label)+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
+        '<span class="mp-desc">'+escH(teamOff?T('Turned off by your team'):(v.descParts?v.descParts.map(x=>T(x)).join(' \u00b7 '):T(v.desc)))+'</span></span>'+
+        '<span class="mp-meta"><span class="mp-bars" title="'+escH(T(COST_LABEL[v.cost]))+'">'+bars(v.cost)+'</span>'+
+        '<span class="mp-cost">'+escH(T(COST_LABEL[v.cost]))+'</span></span>'+
+      '</button>'; };
+  /* AMV's own first, then every other company's models under its name, in
+     the order the owner listed them (Nov 18, docs/PLAN-MODEL-PICKER.md). */
+  const own=MODEL_ORDER.filter(k=>MODELS[k] && !MODELS[k].maker);
+  const makers=[]; MODEL_ORDER.forEach(k=>{ const m=MODELS[k] && MODELS[k].maker; if(m && !makers.includes(m)) makers.push(m); });
+  const cur=MODELS[S.model]||{};
+  const thinkOn=loadStr('amv_think')==='1';
   menu.innerHTML=
-    '<div class="mp-head">Choose a model</div>'+
-    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model; const teamOff=!_teamAllowsModel(k);
-      return '<button class="mp-item'+(sel?' sel':'')+(teamOff?' mp-teamoff':'')+'" data-mk="'+k+'">'+
-        '<span class="mp-dot" style="background:'+v.color+'"></span>'+
-        '<span class="mp-body"><span class="mp-name">'+v.label+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
-        '<span class="mp-desc">'+(teamOff?'Turned off by your team':v.desc)+'</span></span>'+
-        '<span class="mp-meta"><span class="mp-bars" title="'+COST_LABEL[v.cost]+'">'+bars(v.cost)+'</span>'+
-        '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
-      '</button>';
-    }).join('')+
-    '<div class="mp-foot">Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.</div>';
+    '<div class="mp-head">'+escH(T('Choose a model'))+'</div>'+
+    own.map(item).join('')+
+    makers.map(m=>'<div class="mp-head mp-maker" role="presentation">'+escH(m)+'</div>'+MODEL_ORDER.filter(k=>MODELS[k] && MODELS[k].maker===m).map(item).join('')).join('')+
+    /* Thinking is a switch on the model, not another model - shown only for
+       one that can do it. */
+    (cur.thinks?'<button type="button" class="mp-think" role="switch" aria-checked="'+(thinkOn?'true':'false')+'"><span class="mp-think-t">'+escH(T('Think longer before answering'))+'</span><span class="mp-think-s">'+escH(T('Slower, more careful, uses more of your usage'))+'</span><span class="mp-sw" aria-hidden="true"></span></button>':'')+
+    '<div class="mp-foot">'+escH(T(makers.length?'Faster models use less of your usage; the most capable use more - upgrade for more room to run them.':'Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.'))+'</div>';
+  try{ const th=menu.querySelector('.mp-think'); if(th) th.addEventListener('click',e=>{ e.stopPropagation(); const now=th.getAttribute('aria-checked')!=='true'; saveStr('amv_think',now?'1':'0'); th.setAttribute('aria-checked',now?'true':'false'); }); }catch(e){}
   document.body.appendChild(menu);
   /* THE SIDE THAT FITS IT, NOT THE SIDE THAT IS BIGGER (A377). The chat home
      puts the box in the middle of the screen, where neither side is much
@@ -14334,8 +14353,8 @@ document.addEventListener('keydown', e => {
 });
 /* ═════════════════════════════════════════════════
    MATCHES UNDER THE BOX AS YOU TYPE (Nov 17, the owner: "as you type, things
-   start showing up like a little tab below - the way ChatGPT and Claude do
-   it. Don't make it so you have to type the full thing").
+   start showing up like a little tab below ... Don't make it so you have to
+   type the full thing").
 
    One component for every search box that has a list behind it - Crew's
    jobs, Tasks, Integrations' apps. The box keeps doing what it did (filtering
@@ -34016,7 +34035,7 @@ function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
 /* In the language the screen is in (amvAgo, 01-core.js). */
-function _connAgo(ts){ return amvAgo(ts, 'short'); }
+function _connAgo(ts){ return amvAgo(ts, 'long'); }
 /* Capability keys are for the wire. These are for people. */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',

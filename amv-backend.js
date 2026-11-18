@@ -253,6 +253,20 @@ const FAST_MODE_BETA = 'fast-mode-2026-02-01';
 
    NAMED AS AMV. The engines are AMV's (key and label are AMV names); the
    partner's model id never reaches a screen.
+
+   ...OR BY THE MAKER'S OWN NAME, WHEN THE OWNER SAYS SO (Nov 18, the owner
+   approved a picker of several companies' models, docs/PLAN-MODEL-PICKER.md). An engine
+   entry may carry `maker` (the company) and `name` (what the maker calls the
+   model); the picker then shows that name under the maker's heading, and the
+   reply says which model answered. Both come from the owner's settings, so
+   AMV's own code names no other company. The model id the supplier's API
+   takes is still never sent to the page.
+
+   SEVERAL SUPPLIERS. Contracts are per company (the plan's decision 2: no
+   single middleman sees every prompt, and no single outage takes every model
+   down). Supplier 1 is AMV_PARTNER_URL / AMV_PARTNER_KEY; 2 to 4 are the same
+   names ending _2, _3, _4. An engine says which with `supplier` (1 when it
+   does not), and each supplier's own model list decides its engines.
    ══════════════════════════════════════════════════════════════════════ */
 const PARTNER_KEY_RE = /^amv-[a-z0-9-]{2,24}$/;
 
@@ -281,13 +295,29 @@ function _engineTitle(key, eng){
 }
 const PARTNER_MODELS_TTL_S = 6 * 3600;
 
-function _partnerConfigured(env){
-  return !!(env && env.AMV_PARTNER_URL && env.AMV_PARTNER_KEY && env.AMV_PARTNER_ENGINES);
+const PARTNER_SUPPLIERS = [1, 2, 3, 4];
+/* Written out, not built from a number, so every secret the Worker reads is a
+   name the readiness screen can find. */
+function _partnerSup(env, n){
+  if(!env) return { url: '', key: '' };
+  if(n === 2) return { url: env.AMV_PARTNER_URL_2, key: env.AMV_PARTNER_KEY_2 };
+  if(n === 3) return { url: env.AMV_PARTNER_URL_3, key: env.AMV_PARTNER_KEY_3 };
+  if(n === 4) return { url: env.AMV_PARTNER_URL_4, key: env.AMV_PARTNER_KEY_4 };
+  return { url: env.AMV_PARTNER_URL, key: env.AMV_PARTNER_KEY };
 }
-function _partnerBase(env){
-  const u = String((env && env.AMV_PARTNER_URL) || '').trim().replace(/\/+$/, '');
+function _partnerConfigured(env){
+  return !!(env && env.AMV_PARTNER_ENGINES && PARTNER_SUPPLIERS.some(n => { const s = _partnerSup(env, n); return s.url && s.key; }));
+}
+function _partnerBase(env, n){
+  const u = String(_partnerSup(env, n || 1).url || '').trim().replace(/\/+$/, '');
   return /^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(u) ? u : '';
 }
+function _partnerKeyOf(env, n){ return String(_partnerSup(env, n || 1).key || ''); }
+/* A maker's name or a model's, as it may appear on a screen: letters, digits
+   and the punctuation real model names use, one line, short. Anything else is
+   left out rather than drawn. */
+const PARTNER_DISPLAY_RE = /^[\p{L}\p{N}][\p{L}\p{N} .&'+()\-]{0,39}$/u;
+function _partnerDisplay(v){ const t = String(v == null ? '' : v).trim(); return PARTNER_DISPLAY_RE.test(t) ? t : ''; }
 /* The engine entries, validated. A malformed entry is dropped, never guessed
    at: an engine with a missing price would be one AMV gives away. */
 function _partnerEngineDefs(env){
@@ -303,7 +333,10 @@ function _partnerEngineDefs(env){
     if(!PLAN_RANK.hasOwnProperty(d.minPlan || 'pro')) continue;
     const ctx = Math.floor(+d.context);
     const context = (ctx >= 8000 && ctx <= 2000000) ? ctx : 200000;
-    out.push({ key: d.key, provider: 'partner', model: String(d.model), label: String(d.label || d.key).slice(0, 40),
+    const supplier = PARTNER_SUPPLIERS.includes(+d.supplier) ? +d.supplier : 1;
+    const maker = _partnerDisplay(d.maker), name = _partnerDisplay(d.name);
+    out.push({ key: d.key, provider: 'partner', model: String(d.model), label: (maker && name) ? name : String(d.label || d.key).slice(0, 40),
+               supplier, maker: (maker && name) ? maker : '',
                minPlan: d.minPlan || 'pro', inCost, outCost, maxOut, context,
                tokenParam: d.tokenParam === 'max_tokens' ? 'max_tokens' : 'max_completion_tokens',
                reasoning: !!d.reasoning, vision: !!d.vision, tools: d.tools !== false,
@@ -314,16 +347,16 @@ function _partnerEngineDefs(env){
 /* The partner's model ids, from the partner. Cached so a model list call is
    not paid on every message; a failure to read it is not cached, so a
    partner that was down an hour ago is asked again. */
-async function _partnerModelIds(env){
-  const base = _partnerBase(env);
-  if(!base || !env.AMV_PARTNER_KEY) return null;
+async function _partnerModelIds(env, n){
+  const base = _partnerBase(env, n), key = _partnerKeyOf(env, n);
+  if(!base || !key) return null;
   const ck = 'partner:models:' + base;
   try{
     const hit = env.AMV_KV ? await env.AMV_KV.get(ck) : null;
     if(hit){ const arr = JSON.parse(hit); if(Array.isArray(arr)) return new Set(arr); }
   }catch(e){}
   try{
-    const r = await fetchDeadline(base + '/models', { headers: { 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY } }, 8000);
+    const r = await fetchDeadline(base + '/models', { headers: { 'Authorization': 'Bearer ' + key } }, 8000);
     if(!r.ok) return null;
     const d = await r.json();
     const ids = (Array.isArray(d && d.data) ? d.data : []).map(m => m && m.id).filter(x => typeof x === 'string').slice(0, 5000);
@@ -336,9 +369,16 @@ async function _partnerEngines(env){
   if(!_partnerConfigured(env)) return [];
   const defs = _partnerEngineDefs(env);
   if(!defs.length) return [];
-  const ids = await _partnerModelIds(env);
-  if(!ids) return [];
-  return defs.filter(d => ids.has(d.model));
+  /* Each supplier is asked about its own engines only, and one that cannot
+     answer takes only its own engines out. */
+  const out = [];
+  for(const n of PARTNER_SUPPLIERS){
+    const mine = defs.filter(d => d.supplier === n);
+    if(!mine.length) continue;
+    const ids = await _partnerModelIds(env, n);
+    if(ids) mine.filter(d => ids.has(d.model)).forEach(d => out.push(d));
+  }
+  return out;
 }
 
 /* ── REQUEST: AMV's message shape -> the chat-completions shape ─────────── */
@@ -458,11 +498,11 @@ function _partnerStream(upstream, eng){
 function _partnerSpendName(){ return 'pspend:' + todayKey(); }
 
 async function _partnerCall(env, eng, body, signal){
-  const base = _partnerBase(env);
-  if(!base || !env.AMV_PARTNER_KEY) return new Response(JSON.stringify({ error: { message: 'This engine is not connected.' } }), { status: 503 });
+  const base = _partnerBase(env, eng.supplier), pkey = _partnerKeyOf(env, eng.supplier);
+  if(!base || !pkey) return new Response(JSON.stringify({ error: { message: 'This engine is not connected.' } }), { status: 503 });
   const r = await fetch(base + '/chat/completions', {
     method: 'POST', signal: signal || AbortSignal.timeout(MODEL_DEADLINE_MS),
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + pkey },
     body: JSON.stringify(_partnerRequest(eng, body)),
   });
   if(!r.ok || !r.body) return new Response(await r.text().catch(() => ''), { status: r.status || 502 });
@@ -25512,7 +25552,12 @@ async function enginesList(request, env) {
      router would drop. */
   const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000,
     caps: _engineCaps(e, false) }));
+  /* A partner engine's price as a step on AMV's own ladder (1 cheapest to 4
+     dearest), so the picker's cost bars mean the same thing on every row. */
+  const ladder = Object.values(ENGINES).map(e => +e.inCost || 0).filter(x => x > 0).sort((a, b) => a - b);
+  const step = (c) => { const below = ladder.filter(x => x <= c).length; return Math.max(1, Math.min(4, Math.ceil(below / Math.max(1, ladder.length) * 4) || 1)); };
   const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true,
+    maker: d.maker || '', cost: step(d.inCost), thinks: !!d.reasoning,
     context: d.context || 200000, maxOut: d.maxOut || 16000, caps: _engineCaps(d, true) }));
   return json({ ok: true, engines: primary.concat(partners) });
 }
@@ -38306,6 +38351,7 @@ function _readinessReport(env, seen) {
   const GROUPS = {
     ai: 'Core', auth: 'Core', appUrl: 'Core', admin: 'Core', ownerEmail: 'Core',
     partnerUrl: 'Core', partnerKey: 'Core', partnerEngines: 'Core',
+    partnerUrl2: 'Core', partnerKey2: 'Core', partnerUrl3: 'Core', partnerKey3: 'Core', partnerUrl4: 'Core', partnerKey4: 'Core',
     speech: 'Core', speechUrl: 'Core', speechKey: 'Core', speechListenModel: 'Core', speechListenPrice: 'Core',
     speechVoiceModel: 'Core', speechVoice: 'Core', speechVoicePrice: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
@@ -38362,7 +38408,19 @@ function _readinessReport(env, seen) {
     { id: 'partnerKey', name: 'Partner models: key', env: 'AMV_PARTNER_KEY', set: _has(env, 'AMV_PARTNER_KEY'),
       effect: 'The partner supplier\u2019s key. Read only by the server.' },
     { id: 'partnerEngines', name: 'Partner models: engines', env: 'AMV_PARTNER_ENGINES', set: _has(env, 'AMV_PARTNER_ENGINES'),
-      effect: 'Which partner models AMV sells, under which AMV names and at which prices. An engine appears only once the partner\u2019s own model list confirms it.' },
+      effect: 'Which partner models AMV sells, at which prices, from which supplier (1 to 4), and - with maker and name - under the maker\u2019s own model name in the picker. An engine appears only once its supplier\u2019s own model list confirms it.' },
+    { id: 'partnerUrl2', name: 'Partner models: supplier 2 endpoint', env: 'AMV_PARTNER_URL_2', set: _has(env, 'AMV_PARTNER_URL_2'),
+      effect: 'A second model company, contracted directly. Engines with supplier 2 are offered only when its own model list confirms them.' },
+    { id: 'partnerKey2', name: 'Partner models: supplier 2 key', env: 'AMV_PARTNER_KEY_2', set: _has(env, 'AMV_PARTNER_KEY_2'),
+      effect: 'Supplier 2\u2019s key. Read only by the server.' },
+    { id: 'partnerUrl3', name: 'Partner models: supplier 3 endpoint', env: 'AMV_PARTNER_URL_3', set: _has(env, 'AMV_PARTNER_URL_3'),
+      effect: 'A third model company, contracted directly.' },
+    { id: 'partnerKey3', name: 'Partner models: supplier 3 key', env: 'AMV_PARTNER_KEY_3', set: _has(env, 'AMV_PARTNER_KEY_3'),
+      effect: 'Supplier 3\u2019s key. Read only by the server.' },
+    { id: 'partnerUrl4', name: 'Partner models: supplier 4 endpoint', env: 'AMV_PARTNER_URL_4', set: _has(env, 'AMV_PARTNER_URL_4'),
+      effect: 'A fourth model company, contracted directly.' },
+    { id: 'partnerKey4', name: 'Partner models: supplier 4 key', env: 'AMV_PARTNER_KEY_4', set: _has(env, 'AMV_PARTNER_KEY_4'),
+      effect: 'Supplier 4\u2019s key. Read only by the server.' },
     { id: 'speechUrl', name: 'Voice: endpoint', env: 'AMV_SPEECH_URL', set: _has(env, 'AMV_SPEECH_URL'),
       effect: 'The speech supplier\u2019s https base, speaking the shared /audio/transcriptions and /audio/speech protocol.' },
     { id: 'speechKey', name: 'Voice: key', env: 'AMV_SPEECH_KEY', set: _has(env, 'AMV_SPEECH_KEY'),

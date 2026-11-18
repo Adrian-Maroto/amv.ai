@@ -383,8 +383,12 @@ function _tkCatOf(t){ try{ return _cjCat({ ccKind: t.kind }); }catch(e){ return 
 function _tkRow(t){
   return `<button class="tk-row tk2-row" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${(CC_KINDS[t.kind]||['•'])[0]}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
 }
+/* Which country's list has been answered (even with nothing), so the body
+   says Loading only while it is - in the list's own place, where the rows
+   will land, not as a header line that vanishes and moves the page up. */
+let _tkAnswered = '';
 function _tkListHTML(){
-  if(!_tkList.length) return '';
+  if(!_tkList.length) return (_tkCc && _tkAnswered !== _tkCc) ? `<p class="tk2-wait" role="status" aria-busy="true">${escH(T('Loading…'))}</p>` : '';
   const words = _tkQ.toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + t.e.n + ' ' + t.e.s + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
   /* A search or a category: one list, the first rows and Show more. */
@@ -409,7 +413,9 @@ function _tkListHTML(){
 const TK_POPULAR_N = 50;
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
-  const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
+  /* All and Popular are there from the first paint, without a count until
+     there is one, so the row never grows under the list and moves it. */
+  const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}${_tkList.length ? `<span>${c.toLocaleString()}</span>` : ''}</button>`;
   return chip('all', T('All'), _tkList.length) + chip('popular', T('Popular'), Math.min(TK_POPULAR_N, _tkList.length))
     + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
@@ -439,14 +445,14 @@ function renderTasksView(){
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
-        <p class="tk2-sub" id="tk2-sub"${_tkList.length ? ' hidden' : ''}>${_tkList.length ? '' : escH(T('Loading…'))}</p>
+        <p class="tk2-sub" id="tk2-sub" hidden></p>
         ${row ? `<p class="tk2-go">${escH(T('Pick one and AMV starts on it in chat.'))}</p>` : ''}</div>
       <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
     ${_autoServerHTML()}
     <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="tk-find" type="search" autocomplete="off" value="${escH(_tkQ)}" placeholder="${escH(T('Search tasks'))}" aria-label="${escH(T('Search tasks'))}"></div>
-    <div class="cj-cats" id="tk2-cats" data-hscroll role="group" aria-label="${escH(T('Categories'))}">${_tkList.length ? _tkChipsHTML() : ''}</div>
+    <div class="cj-cats" id="tk2-cats" data-hscroll role="group" aria-label="${escH(T('Categories'))}">${_tkChipsHTML()}</div>
     <div id="tk2-body">${_tkListHTML()}</div>
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}
@@ -467,14 +473,15 @@ async function _tkLoad(cc){
     const list = d ? window.ccTasks(d) : [];
     list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
     if(cc !== _tkCc) return;
-    _tkList = list;
+    _tkList = list; _tkAnswered = cc;
     const sub = $('tk2-sub');
     /* No grand total (the owner: "don't write 5000"): the line is only for
        the two things worth saying - still loading, or nothing here. */
     if(sub){ sub.hidden = !!list.length; sub.innerHTML = list.length ? '' : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.')); }
     _tkPaint();
   }catch(e){
-    const sub = $('tk2-sub'); if(sub) sub.textContent = T('The tasks could not load. Check your connection and try again.');
+    _tkAnswered = cc; try{ _tkPaint(); }catch(_){}
+    const sub = $('tk2-sub'); if(sub){ sub.hidden = false; sub.textContent = T('The tasks could not load. Check your connection and try again.'); }
   }
 }
 /* launchUnique (the "Only on AMV" cards' doors) left with that section, Nov 15. */

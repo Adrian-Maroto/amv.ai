@@ -714,7 +714,12 @@ async function enginesList(request, env) {
      router would drop. */
   const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan, context: e.context || 200000, maxOut: e.maxOut || 16000,
     caps: _engineCaps(e, false) }));
+  /* A partner engine's price as a step on AMV's own ladder (1 cheapest to 4
+     dearest), so the picker's cost bars mean the same thing on every row. */
+  const ladder = Object.values(ENGINES).map(e => +e.inCost || 0).filter(x => x > 0).sort((a, b) => a - b);
+  const step = (c) => { const below = ladder.filter(x => x <= c).length; return Math.max(1, Math.min(4, Math.ceil(below / Math.max(1, ladder.length) * 4) || 1)); };
   const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true,
+    maker: d.maker || '', cost: step(d.inCost), thinks: !!d.reasoning,
     context: d.context || 200000, maxOut: d.maxOut || 16000, caps: _engineCaps(d, true) }));
   return json({ ok: true, engines: primary.concat(partners) });
 }

@@ -218,5 +218,47 @@ section('The plan floor holds');
   ok(r.status === 402 && d.code === 'plan_required' && partnerCalls.length === 0, 'a free account is refused before the partner is called', { status: r.status, d });
 }
 
+section('Several companies, each contracted directly, each by its own name (Nov 18)');
+{
+  /* Supplier 2 is a second company with its own endpoint, key and model list.
+     Its engine is checked against ITS list, called at ITS address with ITS
+     key, and shown by the maker's own model name; a name carrying markup is
+     not a name. */
+  const SUP2 = 'https://second.example/v1';
+  const realFetch = globalThis.fetch;
+  const calls2 = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u === SUP2 + '/models') return new Response(JSON.stringify({ data: [{ id: 'second-model-9' }] }), { status: 200 });
+    if (u === SUP2 + '/chat/completions') {
+      calls2.push({ auth: (init.headers || {}).Authorization, body: JSON.parse(init.body) });
+      return new Response('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hola.' }, finish_reason: 'stop' }] }) + '\n\n'
+        + 'data: ' + JSON.stringify({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 2 } }) + '\n\ndata: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    return realFetch(url, init);
+  };
+  const env = mkEnv(true);
+  Object.assign(env, { AMV_PARTNER_URL_2: SUP2, AMV_PARTNER_KEY_2: 'key-two', AMV_PARTNER_ENGINES: JSON.stringify(JSON.parse(ENGINES_CFG).concat([
+    { key: 'amv-nova', model: 'second-model-9', supplier: 2, maker: 'Second Co', name: 'Nova 9', minPlan: 'pro', inCost: 5, outCost: 20, maxOut: 16000, reasoning: true },
+    { key: 'amv-wren', model: 'second-model-9', supplier: 2, maker: 'Bad <b>Co</b>', name: 'Wren', label: 'AMV Wren', minPlan: 'pro', inCost: 1, outCost: 2, maxOut: 8000 },
+    { key: 'amv-ghost', model: 'not-on-second', supplier: 2, maker: 'Second Co', name: 'Ghost', minPlan: 'pro', inCost: 1, outCost: 2, maxOut: 8000 },
+  ])) });
+  const a = await account(env, 'pro');
+  const list = await (await req(env, '/v1/engines', null, a.tok, 'GET')).json();
+  const by = Object.fromEntries(list.engines.map(e => [e.key, e]));
+  ok(by['amv-vega'] && by['amv-nova'] && !by['amv-ghost'], 'each supplier’s own list decides its engines: Vega from the first, Nova from the second, Ghost from neither', Object.keys(by));
+  ok(by['amv-nova'].label === 'Nova 9' && by['amv-nova'].maker === 'Second Co' && by['amv-nova'].thinks === true, 'shown by the maker’s own name, under the maker, able to think longer', by['amv-nova']);
+  ok(by['amv-wren'] && by['amv-wren'].maker === '' && by['amv-wren'].label === 'AMV Wren', 'a maker name carrying markup is dropped, and the engine keeps its AMV name', by['amv-wren']);
+  ok(by['amv-nova'].cost >= 1 && by['amv-nova'].cost <= 4, 'its price is a step on AMV’s ladder', by['amv-nova'].cost);
+  ok(!JSON.stringify(list).includes('second-model-9'), 'the model id the supplier’s API takes still never leaves the server');
+  partnerCalls = [];
+  const r = await req(env, '/v1/messages', Object.assign({}, TURN, { model: 'amv-nova', tools: undefined, effort: 'high' }), a.tok);
+  const text = await r.text(); await settle();
+  ok(r.status === 200 && /Hola/.test(text), 'a turn on Nova is answered', { status: r.status });
+  ok(calls2.length === 1 && calls2[0].auth === 'Bearer key-two' && partnerCalls.length === 0, 'by the second supplier, with its own key - the first is not called', { n2: calls2.length, auth: calls2[0] && calls2[0].auth, n1: partnerCalls.length });
+  ok(calls2[0].body.model === 'second-model-9' && calls2[0].body.reasoning_effort === 'high', 'asked for its own model id, and to think longer when the person switched it on', calls2[0].body);
+  globalThis.fetch = realFetch;
+}
+
 if (report('partner-engines') > 0) process.exitCode = 1;
 done();

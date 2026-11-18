@@ -911,8 +911,14 @@ async function _loadPartnerEngines(){
       if(known && e.caps && typeof e.caps === 'object') MODELS[known].caps = e.caps;
       if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
       const label = String(e.label || e.key).slice(0, 40);
-      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key,
-                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost:2,
+      /* By its maker's own name when the owner set one (02-partner-engines.js):
+         the picker groups it under the maker, and its line says what it can do. */
+      const maker = String(e.maker || '').slice(0, 40);
+      const caps = (e.caps && typeof e.caps === 'object') ? e.caps : {};
+      const can = [caps.vision ? 'Reads pictures' : '', e.thinks ? 'Can think longer' : '', caps.tools ? 'Uses AMV\u2019s tools' : ''].filter(Boolean);
+      MODELS[e.key] = { label, maker, thinks: !!e.thinks, descParts: maker && can.length ? can : null,
+                        desc: maker ? 'Another model AMV offers' : 'Another engine AMV offers', color:'#a78bfa', model:e.key,
+                        ctx: +e.context >= 8000 ? +e.context : 200000, tokens: Math.min(+e.maxOut || 16000, 16000), cost: [1,2,3,4].includes(+e.cost) ? +e.cost : 2,
                         rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true,
                         caps: (e.caps && typeof e.caps === 'object') ? e.caps : { vision:false, pdf:false, tools:true, webSearch:false } };
       MODEL_ORDER.push(e.key);

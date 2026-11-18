@@ -1227,6 +1227,8 @@ async function _callAITurn(msgs, _opts) {
     let _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
+        /* The picker's Think longer switch, for a model that can (partner engines). */
+        ...(mdl.thinks && loadStr('amv_think')==='1' ? { effort:'high' } : {}),
         system:sysPrompt + (_ctx.brief || ''),
         stream:true,
         amv:Object.assign(_usageTag('chat', _conv), _creditConsentNow() ? { useCredit:true } : {}),
@@ -2124,18 +2126,29 @@ function showModelPicker(){
     ';right:'+right+'px'+
     ';max-height:'+room+'px;overflow-y:auto';
   const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
+  const item=k=>{ const v=MODELS[k]; const sel=k===S.model; const teamOff=!_teamAllowsModel(k);
+      return '<button class="mp-item'+(sel?' sel':'')+(teamOff?' mp-teamoff':'')+'" data-mk="'+escH(k)+'">'+
+        '<span class="mp-dot" style="background:'+escH(v.color)+'"></span>'+
+        '<span class="mp-body"><span class="mp-name">'+escH(v.label)+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
+        '<span class="mp-desc">'+escH(teamOff?T('Turned off by your team'):(v.descParts?v.descParts.map(x=>T(x)).join(' \u00b7 '):T(v.desc)))+'</span></span>'+
+        '<span class="mp-meta"><span class="mp-bars" title="'+escH(T(COST_LABEL[v.cost]))+'">'+bars(v.cost)+'</span>'+
+        '<span class="mp-cost">'+escH(T(COST_LABEL[v.cost]))+'</span></span>'+
+      '</button>'; };
+  /* AMV's own first, then every other company's models under its name, in
+     the order the owner listed them (Nov 18, docs/PLAN-MODEL-PICKER.md). */
+  const own=MODEL_ORDER.filter(k=>MODELS[k] && !MODELS[k].maker);
+  const makers=[]; MODEL_ORDER.forEach(k=>{ const m=MODELS[k] && MODELS[k].maker; if(m && !makers.includes(m)) makers.push(m); });
+  const cur=MODELS[S.model]||{};
+  const thinkOn=loadStr('amv_think')==='1';
   menu.innerHTML=
-    '<div class="mp-head">Choose a model</div>'+
-    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model; const teamOff=!_teamAllowsModel(k);
-      return '<button class="mp-item'+(sel?' sel':'')+(teamOff?' mp-teamoff':'')+'" data-mk="'+k+'">'+
-        '<span class="mp-dot" style="background:'+v.color+'"></span>'+
-        '<span class="mp-body"><span class="mp-name">'+v.label+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
-        '<span class="mp-desc">'+(teamOff?'Turned off by your team':v.desc)+'</span></span>'+
-        '<span class="mp-meta"><span class="mp-bars" title="'+COST_LABEL[v.cost]+'">'+bars(v.cost)+'</span>'+
-        '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
-      '</button>';
-    }).join('')+
-    '<div class="mp-foot">Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.</div>';
+    '<div class="mp-head">'+escH(T('Choose a model'))+'</div>'+
+    own.map(item).join('')+
+    makers.map(m=>'<div class="mp-head mp-maker" role="presentation">'+escH(m)+'</div>'+MODEL_ORDER.filter(k=>MODELS[k] && MODELS[k].maker===m).map(item).join('')).join('')+
+    /* Thinking is a switch on the model, not another model - shown only for
+       one that can do it. */
+    (cur.thinks?'<button type="button" class="mp-think" role="switch" aria-checked="'+(thinkOn?'true':'false')+'"><span class="mp-think-t">'+escH(T('Think longer before answering'))+'</span><span class="mp-think-s">'+escH(T('Slower, more careful, uses more of your usage'))+'</span><span class="mp-sw" aria-hidden="true"></span></button>':'')+
+    '<div class="mp-foot">'+escH(T(makers.length?'Faster models use less of your usage; the most capable use more - upgrade for more room to run them.':'Every AMV model is high quality. Faster models use less of your usage; the most capable use more - upgrade for more room to run them.'))+'</div>';
+  try{ const th=menu.querySelector('.mp-think'); if(th) th.addEventListener('click',e=>{ e.stopPropagation(); const now=th.getAttribute('aria-checked')!=='true'; saveStr('amv_think',now?'1':'0'); th.setAttribute('aria-checked',now?'true':'false'); }); }catch(e){}
   document.body.appendChild(menu);
   /* THE SIDE THAT FITS IT, NOT THE SIDE THAT IS BIGGER (A377). The chat home
      puts the box in the middle of the screen, where neither side is much

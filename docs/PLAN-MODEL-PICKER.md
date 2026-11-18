@@ -3,9 +3,13 @@
 The owner, Nov 17: "we are gonna be like Perplexity where we include models
 like GPT Sol, Gemini, Claude, Opus, Fable etc, so research how they do it."
 
-Nothing below is built yet. Two of the decisions change a standing owner
-directive and money, so they are the owner's (CLAUDE.md: "name what the owner
-alone can decide ... and stop there").
+**Status, Nov 18: approved by the owner and built** (see "What was built").
+What is left is the owner's: the contracts, which models on which plan, the
+keys - and the one line in CLAUDE.md that still says no other AI company is
+ever named on screen, which the owner edits (AMV does not edit its own
+standing instructions). AMV's code still names no company: the names come
+only from the owner's settings. Until a supplier is set up, the picker shows
+AMV's own engines only - nothing is offered that cannot answer.
 
 ## How Perplexity does it
 
@@ -85,9 +89,15 @@ are answered.
 **5. Not now: several models at once.** It triples the cost of a question and
 there is no evidence yet that people here want it. Revisit with usage data.
 
-## What gets built after a yes
+## What was built (Nov 18)
 
-1. Suppliers as a list (`AMV_PARTNERS`), each engine naming its supplier.
+1. Up to four suppliers, each its own contract: `AMV_PARTNER_URL` /
+   `AMV_PARTNER_KEY` and the same names ending `_2`, `_3`, `_4`; an engine in
+   `AMV_PARTNER_ENGINES` names its `supplier`, and each supplier's own model
+   list decides its engines. Example entry:
+   `{"key":"amv-sol","model":"<the id the supplier's API takes>","supplier":2,
+   "maker":"<company>","name":"<the maker's model name>","minPlan":"pro",
+   "inCost":2.5,"outCost":10,"maxOut":16000,"reasoning":true,"vision":true}`.
 2. `maker` and the maker's own model name on each engine, shown in the picker
    grouped by maker under AMV Auto; "answered by <model>" on each reply.
 3. The Thinking switch where supported.
