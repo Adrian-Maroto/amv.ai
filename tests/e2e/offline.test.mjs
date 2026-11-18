@@ -51,11 +51,15 @@ ok(off.ms < 1000, 'so the user is told immediately', off.ms + 'ms');
 section('The deadline covers reading the body too, but never a stream');
 const sig = await page.evaluate(async () => {
   const seen = [];
-  window.fetch = async (u, o) => { seen.push(o && o.signal); return { ok: true, status: 200, headers: new Headers(), json: async () => ({}) }; };
+  /* Only the two calls made here: the page fetches other things in the
+     background on its own timers (a screen's file prefetched when idle - on
+     a browser with no idle callback that lands inside this wait), and those
+     are not what this measures. */
+  window.fetch = async (u, o) => { if (/\/auth\/[ab]$/.test(String(u))) seen.push(o && o.signal); return { ok: true, status: 200, headers: new Headers(), json: async () => ({}), text: async () => '' }; };
   await AMV_API._fetch('/auth/a', { bodyTimeout: 80 });          // ordinary call
   await AMV_API._fetch('/auth/b', { bodyTimeout: 80, stream: true }); // caller reads the stream itself
   await new Promise(r => setTimeout(r, 300));
-  return { attached: seen.every(s => s && typeof s.aborted === 'boolean'),
+  return { attached: seen.length === 2 && seen.every(s => s && typeof s.aborted === 'boolean'),
            normalAborted: seen[0].aborted, streamAborted: seen[1].aborted };
 });
 ok(sig.attached === true, 'an abort signal is attached to every request');

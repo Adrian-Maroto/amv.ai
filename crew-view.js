@@ -1439,6 +1439,11 @@ function _cjFiltered(){
 function _cjEvery(j){
   try{ const sc = _cwJobWhen(j); return (j.on || _cwPickedWhen[j.id]) ? _cjWhenLabel(sc) : _cjWhenLabel({ cad: sc.cad, days: sc.days && sc.days.length === 5 ? sc.days : null }); }catch(e){ return ''; }
 }
+/* A job's words in the screen's language as they are drawn, not English
+   swapped out a moment later by the page's translator - which a slower
+   browser (WebKit, nightly) showed long enough to see. A catalogue job's
+   words are names from the country's own data and are left as they are. */
+function _cjSay(j, s){ return (j && j.ccKind) ? s : T(s); }
 function _cjCard(j){
   const allowed = _planAllowsCrew();
   const when = _cjEvery(j);
@@ -1449,11 +1454,11 @@ function _cjCard(j){
   return `<div class="cj-card${j.on ? ' on' : ''}${wait ? ' blocked' : ''}">
     <button class="cj-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
-      <span class="cj-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.title)}</span>
-      <span class="cj-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(j.desc || '')}</span>
+      <span class="cj-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(_cjSay(j, j.title))}</span>
+      <span class="cj-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(_cjSay(j, j.desc || ''))}</span>
       <span class="cj-card-w">${wait ? `<span class="cj-wait">${escH(T('Waiting to be connected'))}</span>` : j.on ? `<span class="cj-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
     </button>
-    ${allowed ? `<button class="cw-toggle cj-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + j.title)}"><span class="cw-knob"></span></button>` : ''}
+    ${allowed ? `<button class="cw-toggle cj-tg ${j.on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="${escH((j.on ? T('Turn off') : T('Turn on')) + ': ' + _cjSay(j, j.title))}"><span class="cw-knob"></span></button>` : ''}
   </div>`;
 }
 function _cjGridHTML(){

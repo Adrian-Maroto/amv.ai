@@ -2032,6 +2032,6 @@ window.openEveryday = openEveryday;
    those screens open: connecting an account, the connection state, running
    a task. Each of these is a stand-in; the file declares the real ones,
    which replace them as it loads. */
-function renderTasksView(){ _lazyScreen('integrations-view.js', renderTasksView, 'renderTasksView'); }
-function renderIntegrationsView(){ _lazyScreen('integrations-view.js', renderIntegrationsView, 'renderIntegrationsView'); }
+function renderTasksView(){ _lazyScreen('integrations-view.js', renderTasksView, 'renderTasksView', 'Tasks'); }
+function renderIntegrationsView(){ _lazyScreen('integrations-view.js', renderIntegrationsView, 'renderIntegrationsView', 'Integrations'); }
 function renderAutomationView(){ _lazyScreen('integrations-view.js', renderAutomationView, 'renderAutomationView'); }

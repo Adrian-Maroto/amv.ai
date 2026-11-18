@@ -48,6 +48,12 @@ section('The country’s jobs are fetched before Crew is opened');
                               for (const k of Object.keys(_cwLocalState)) delete _cwLocalState[k]; });
   await stub(page, 3000);
   const n = await page.evaluate(async () => {
+    /* The country's catalogue arriving is new rows - a redraw for a reason.
+       In a slower engine (WebKit) it can still be on its way from the visit
+       above, so it is waited for first: what is measured is only whether the
+       SAME answer redraws anything. */
+    try { if (await _ccReady()) { await ccCrewLoad(_cwCountryGuess()); } } catch (e) {}
+    await new Promise(r => setTimeout(r, 300));
     window.__paints = 0;
     new MutationObserver(() => { window.__paints++; }).observe(document.getElementById('vc'), { childList: true, subtree: true });
     const cc = _cwCountryGuess();

@@ -1998,10 +1998,18 @@ function _lazyLoad(file, here){
    file is fetched, and the file's real renderer - which replaces the
    stand-in as it loads - draws it. A failed fetch says so, with a way to try
    again; a screen left meanwhile is not drawn over. */
-function _lazyScreen(file, standIn, name){
+/* `title`, when given, is drawn as the screen's heading while its file
+   arrives - so a press lands on the screen it named at once, not on a bare
+   "Loading" (in a browser with no idle time to prefetch it, WebKit, the file
+   is often not here yet when the button is pressed). */
+function _lazyScreen(file, standIn, name, title){
   const vc = $('vc'); if(!vc) return;
   const tag = 'lz' + _rid(6);
-  vc.innerHTML = '<div class="lab-placeholder" data-lazy="' + tag + '" role="status" aria-live="polite">' + escH(T('Loading\u2026')) + '</div>';
+  const ph = '<div class="lab-placeholder" data-lazy="' + tag + '" role="status" aria-live="polite">' + escH(T('Loading\u2026')) + '</div>';
+  /* With a title, the rows-to-come are drawn as quiet placeholder lines
+     (the .int-wait shape the screens use while their data arrives). */
+  vc.innerHTML = title ? '<div class="sv fi"><div class="vi" aria-busy="true"><h2>' + escH(T(title)) + '</h2>'
+      + '<div class="int-wait" data-lazy="' + tag + '" role="status" aria-label="' + escH(T('Loading\u2026')) + '">' + '<div class="skel"></div>'.repeat(6) + '</div></div></div>' : ph;
   _lazyLoad(file, () => window[name] !== standIn).then(ok => {
     const ph = vc.querySelector('[data-lazy="' + tag + '"]'); if(!ph) return;
     if(ok){ window[name](); return; }

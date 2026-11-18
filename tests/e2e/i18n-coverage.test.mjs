@@ -148,6 +148,10 @@ section('Translating twice does not translate twice');
       const lines = prompt.split('\n').filter(Boolean);
       return JSON.stringify(lines.map(l => 'ES ' + l.replace(/^\d+\.\s*/, '')));
     };
+    /* Crew's own content first: its country catalogue arriving later is NEW
+       text to translate, not the same text asked for twice - and in a slower
+       engine (WebKit) it lands after the first pass has settled. */
+    try { if (await _ccReady()) await ccCrewLoad(_cwCountryGuess()); } catch (e) {}
     S.tab = 'crew'; setTab('crew');
     await new Promise(r => setTimeout(r, 150));
     _translateUI();
