@@ -2487,5 +2487,43 @@
   "it": "AMV non è riuscito a registrare questo acquisto. Controlla l’e-mail di conferma del negozio.",
   "ko": "AMV가 이 구매를 기록하지 못했습니다. 스토어의 확인 이메일을 확인하세요.",
   "ta": "AMV இந்த வாங்குதலைப் பதிவு செய்ய முடியவில்லை. கடையின் உறுதிப்படுத்தல் மின்னஞ்சலைப் பார்க்கவும்."
+ },
+ "Finished with problems": {
+  "es": "Terminado con problemas",
+  "zh": "已完成，但有问题",
+  "hi": "समस्याओं के साथ पूरा हुआ",
+  "ar": "انتهى مع وجود مشكلات",
+  "pt": "Concluído com problemas",
+  "fr": "Terminé avec des problèmes",
+  "de": "Mit Problemen beendet",
+  "ja": "問題ありで終了",
+  "ru": "Завершено с проблемами",
+  "ko": "문제와 함께 완료됨",
+  "it": "Terminato con problemi",
+  "tr": "Sorunlarla tamamlandı",
+  "id": "Selesai dengan masalah",
+  "vi": "Đã xong nhưng có vấn đề",
+  "bn": "সমস্যাসহ শেষ হয়েছে",
+  "ta": "சிக்கல்களுடன் முடிந்தது",
+  "ur": "مسائل کے ساتھ مکمل ہوا"
+ },
+ "Stopped before it finished.": {
+  "es": "Se detuvo antes de terminar.",
+  "zh": "在完成前已停止。",
+  "hi": "पूरा होने से पहले रुक गया।",
+  "ar": "توقّف قبل أن ينتهي.",
+  "pt": "Parou antes de terminar.",
+  "fr": "Arrêté avant la fin.",
+  "de": "Vor dem Ende angehalten.",
+  "ja": "完了する前に停止しました。",
+  "ru": "Остановлено до завершения.",
+  "ko": "끝나기 전에 중지되었습니다.",
+  "it": "Interrotto prima di finire.",
+  "tr": "Bitmeden durduruldu.",
+  "id": "Dihentikan sebelum selesai.",
+  "vi": "Đã dừng trước khi xong.",
+  "bn": "শেষ হওয়ার আগেই থেমে গেছে।",
+  "ta": "முடிவதற்கு முன்பே நிறுத்தப்பட்டது.",
+  "ur": "مکمل ہونے سے پہلے رک گیا۔"
  }
 }

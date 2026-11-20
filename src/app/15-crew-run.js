@@ -54,10 +54,15 @@ function _rrProg(){
   const lbl=document.getElementById('rr-prog-lbl');
   if(lbl) lbl.textContent=plan.length?('Step '+Math.min(done+active||1, plan.length)+' of '+plan.length):'';
 }
-function _rrComplete(){
+/* "All steps done" only when they were (Build 16 audit AG-11): the label
+   said so even when every step had failed or been refused. */
+function _rrComplete(okCount){
   document.querySelectorAll('.rr-stage.active').forEach(e=>{ e.className='rr-stage done'; });
-  const bar=document.getElementById('rr-bar'); if(bar) bar.style.width='100%';
-  const lbl=document.getElementById('rr-prog-lbl'); const plan=_AUTO.steps||[]; if(lbl&&plan.length) lbl.textContent='All '+plan.length+' steps done';
+  const plan=_AUTO.steps||[];
+  const n=(okCount==null)?plan.length:okCount;
+  const bar=document.getElementById('rr-bar'); if(bar) bar.style.width=(plan.length?Math.round(n/plan.length*100):100)+'%';
+  const lbl=document.getElementById('rr-prog-lbl');
+  if(lbl&&plan.length) lbl.textContent=n===plan.length?'All '+plan.length+' steps done':n+' of '+plan.length+' steps done';
 }
 function _rrTogglePause(){
   _AUTO.paused=!_AUTO.paused;
@@ -133,6 +138,14 @@ async function runAutonomous(goal, opts){
   try{ _rrInit(plan); }catch(e){}
 
   // 2) EXECUTE each step, feeding results forward
+  /* WHAT EACH STEP REALLY CAME TO (Build 16 audit AG-11). The run used to end
+     "Complete", and Crew showed it done at 100%, whatever happened - denied
+     steps, failed code, a deliverable that could not be compiled. Each step
+     now records its outcome, and only a run in which every step was done and
+     the deliverable was written ends Complete. A summary written over failed
+     steps is not evidence that the work happened. */
+  const outcome=new Array(plan.length).fill('');
+  let delivered=false, delivErr='';
   let context='';
   for(let i=0;i<plan.length && i<maxSteps;i++){
     if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
@@ -150,7 +163,7 @@ async function runAutonomous(goal, opts){
       /* An approval waits on a person, so it is the longest gap in the loop and
          the likeliest moment for Stop to be pressed. */
       if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
-      if(!ok){ _autoLog('<div class="auto-ev skip">Skipped (not approved): '+escH(s.step)+'</div>'); continue; }
+      if(!ok){ outcome[i]='denied'; _autoLog('<div class="auto-ev skip">Skipped (not approved): '+escH(s.step)+'</div>'); continue; }
     }
     _autoSetStatus('Step '+(i+1)+'/'+plan.length+': '+s.step);
     try{ _rrActive(i); }catch(e){}
@@ -199,6 +212,7 @@ async function runAutonomous(goal, opts){
         const body=fileWrite[2].replace(/```$/,'').trimEnd();
         const w=await _AUTO.workspace.writeFile(path, body);
         result='Wrote file '+path+(w.toDisk?' (saved to disk)':' (ready to download)');
+        outcome[i]='done';
         _autoStepDone(i, s.step, '✓ wrote '+path, '<div class="auto-out">'+escH(body.slice(0,400))+(body.length>400?'…':'')+'</div>');
         context+='\n\n['+s.step+']\n'+result; continue;
       }
@@ -207,13 +221,16 @@ async function runAutonomous(goal, opts){
         const lang=/def |import |print\(/.test(code)?'python':'js';
         const run=await runCode(code, lang);
         result='Ran '+lang+' → '+(run.ok?(run.stdout||run.result||'ok'):'error: '+run.stderr);
+        outcome[i]=run.ok?'done':'failed';
         _autoStepDone(i, s.step, (run.ok?'✓':'✕')+' executed code', '<pre>'+escH((run.stdout||run.result||run.stderr||'').slice(0,600))+'</pre>');
       } else {
         result=decide;
+        outcome[i]='done';
         _autoStepDone(i, s.step, '✓ done', '<div class="auto-out">'+(typeof md==='function'?md(decide.slice(0,800)):escH(decide.slice(0,800)))+'</div>');
       }
     }catch(err){
       result='(step failed: '+err.message+')';
+      outcome[i]='failed';
       _autoStepDone(i, s.step, '✕ '+err.message, '');
       if(/key/i.test(err.message)){ _autoSetStatus('Needs API key'); break; }
     }
@@ -232,8 +249,14 @@ async function runAutonomous(goal, opts){
         { prose:true, minLen:80 });
       const deliv=delivRes.text;
       _AUTO.deliverable=deliv;
-      _autoLog('<div class="auto-ev done"><b>✓ Done</b></div>');
-      try{ _rrComplete(); }catch(e){}
+      delivered=!!String(deliv||'').trim();
+      const okCount=outcome.filter(o=>o==='done').length;
+      const whole=delivered && okCount===plan.length;
+      _autoLog(whole ? '<div class="auto-ev done"><b>✓ Done</b></div>'
+        : '<div class="auto-ev stop"><b>Finished with problems</b><div>'+escH(okCount+' of '+plan.length+' steps were done'
+          + (outcome.some(o=>o==='denied')?'; some were not approved':'') + (outcome.some(o=>o==='failed')?'; some failed':'')
+          + '. The summary below covers only what was done.')+'</div></div>');
+      try{ _rrComplete(okCount); }catch(e){}
       const dv=$('auto-deliverable'); if(dv){
         const ws=_AUTO.workspace;
         const written=ws?ws.files.filter(f=>f.dirty||f.output||f.handle&&f._touched):[];
@@ -246,11 +269,24 @@ async function runAutonomous(goal, opts){
         on($('auto-new'),'click',openCowork);
         on($('auto-dl'),'click',()=>{ const n=ws.downloadOutputs(); toast(n?('Downloading '+n+' file'+(n>1?'s':'')):'No new files','info'); });
       }
-    }catch(e){ _autoLog('<div class="auto-ev stop">Could not compile: '+escH(e.message)+'</div>'); }
+    }catch(e){ delivErr=(e && e.message) || 'error'; _autoLog('<div class="auto-ev stop">Could not compile: '+escH(delivErr)+'</div>'); }
   }
-  _autoSetStatus(_AUTO.running?'Complete':'Stopped');
+  const wasStopped=!_AUTO.running;
+  const okSteps=outcome.filter(o=>o==='done').length;
+  const complete=!wasStopped && delivered && okSteps===plan.length;
+  _autoSetStatus(wasStopped?'Stopped':complete?'Complete':'Finished with problems');
   _AUTO.running=false;
-  try{ if(_mcVisTask){ _mcVisTask.status='done'; _mcVisTask.progress=100; _mcVisTask.result=_AUTO.deliverable||''; if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } } }catch(e){}
+  try{ if(_mcVisTask){
+    if(complete){ _mcVisTask.status='done'; _mcVisTask.progress=100; }
+    else {
+      _mcVisTask.status='failed';
+      _mcVisTask.progress=plan.length?Math.round(okSteps/plan.length*100):0;
+      _mcVisTask.error=wasStopped?'Stopped before it finished.'
+        : delivErr?('The result could not be put together: '+delivErr)
+        : (okSteps+' of '+plan.length+' steps were done'+(outcome.some(o=>o==='denied')?' (some were not approved)':'')+'.');
+    }
+    _mcVisTask.result=_AUTO.deliverable||'';
+    if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } } }catch(e){}
 }
 function _autoStepDone(i,title,badge,detail){
   try{ _rrDone(i, badge); }catch(e){}
