@@ -71,7 +71,10 @@ function reg(host) {
   if (p.length >= 3 && p[p.length - 1].length === 2 && SECOND.has(p[p.length - 2])) return p.slice(-3).join('.');
   return p.slice(-2).join('.');
 }
-const brand = (h) => reg(h).split('.')[0];
+/* No ranking by brand name (Build 16 audit AG-12). A site not in the list by
+   its own host or registrable domain used to take the rank of any domain that
+   shared its first label - so two unrelated owners called "metro" shared one
+   number. A rank is now only ever the site's own. */
 
 async function crux(cc) {
   const now = new Date();
@@ -82,33 +85,44 @@ async function crux(cc) {
     try { r = await fetch(CRUX + cc.toLowerCase() + '/' + ym + '.csv.gz', { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(120000) }); } catch (e) { continue; }
     if (!r.ok) continue;
     const text = gunzipSync(Buffer.from(await r.arrayBuffer())).toString('utf8');
-    const host = new Map(), byReg = new Map(), byBrand = new Map();
+    const host = new Map(), byReg = new Map();
     for (const line of text.split('\n')) {
       const c = line.lastIndexOf(','); if (c < 0) continue;
       const rank = +line.slice(c + 1); if (!rank) continue;
       let h; try { h = new URL(line.slice(0, c)).hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
       if (!(host.get(h) <= rank)) host.set(h, rank);
       const g = reg(h); if (!(byReg.get(g) <= rank)) byReg.set(g, rank);
-      const b = brand(h); if (b.length >= 4 && !(byBrand.get(b) <= rank)) byBrand.set(b, rank);
     }
-    return { ym, host, byReg, byBrand };
+    return { ym, host, byReg };
   }
   return null;
 }
 function rankOf(c, site) {
   const h = String(site).toLowerCase().replace(/^www\./, '');
-  return c.host.get(h) || c.byReg.get(reg(h)) || (brand(h).length >= 4 ? c.byBrand.get(brand(h)) : 0) || 0;
+  return c.host.get(h) || c.byReg.get(reg(h)) || 0;
 }
 
+const STALE_MONTHS = Math.max(1, +process.env.STALE_MONTHS || 3);
+function _stale(d) {
+  if (!d || d.v !== 3) return true;
+  const m = /Chrome UX Report (\d{4})(\d{2})/.exec(String(d.popular || ''));
+  if (!m) return true;
+  const now = new Date();
+  const age = (now.getUTCFullYear() - +m[1]) * 12 + (now.getUTCMonth() + 1 - +m[2]);
+  return age > STALE_MONTHS;
+}
 async function main() {
   const want = process.argv.slice(2).map(s => s.toUpperCase());
-  /* Named countries are always done again; otherwise a country already ranked
-     (v 3) is skipped, so a run that ran out of time is picked up where it
-     stopped rather than redone from A. SHARD/SHARDS split the rest across
-     parallel jobs, one file each, so no two jobs write the same file. */
+  /* Named countries are always done again. Otherwise a country is done when
+     it has never been ranked, or its ranking is from a Chrome UX Report month
+     more than STALE_MONTHS old - so a run with no list REFRESHES (Build 16
+     audit AG-12: every file was v 3, so the documented "every country" run
+     did nothing at all), while a run that ran out of time still picks up
+     where it stopped. SHARD/SHARDS split the rest across parallel jobs, one
+     file each, so no two jobs write the same file. */
   const SHARDS = Math.max(1, +process.env.SHARDS || 1), SHARD = (+process.env.SHARD || 0) % SHARDS;
   const files = readdirSync(OUT).filter(f => /^[A-Z]{2}\.json$/.test(f)).map(f => f.slice(0, 2))
-    .filter(cc => want.length ? want.includes(cc) : (() => { try { return JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8')).v !== 3; } catch (e) { return true; } })())
+    .filter(cc => want.length ? want.includes(cc) : (() => { try { return _stale(JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8'))); } catch (e) { return true; } })())
     .filter((cc, i) => i % SHARDS === SHARD);
   console.log('to do (shard ' + SHARD + ' of ' + SHARDS + '):', files.join(' ') || 'nothing');
   const END = Date.now() + (+process.env.BUDGET_MIN || 200) * 60000;
