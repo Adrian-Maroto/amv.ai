@@ -1101,14 +1101,17 @@ const AMV_API = {
       if(!new URL(from).hostname.endsWith('.' + location.hostname)) return false;
       const post = (url, body, creds) => fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
         credentials: creds, body: JSON.stringify(body) });
-      const old = await post(from + '/auth/refresh', {}, 'include');
+      /* A one-use carry code, never the long-lived token (Build 16 audit
+         SEC-03): the old address keeps its renewal in its own cookie. */
+      const old = await post(from + '/auth/refresh', { carry: true }, 'include');
       /* The old host has nothing either: there is no session to carry, now or
          later, so stop asking it. */
       if(old.status === 400 || old.status === 401){ try{ saveStr('amv_api_token_origin', ''); }catch(e){} return false; }
       if(!old.ok) return false;
       const d1 = await old.json().catch(()=>({}));
-      if(!d1.refreshToken || (this._authGen || 0) !== gen) return false;
-      const now = await post(this.base.replace(/\/$/,'') + '/auth/refresh', { refreshToken: d1.refreshToken }, _authCreds());
+      const carried = d1.carry ? { carryCode: d1.carry } : (d1.refreshToken ? { refreshToken: d1.refreshToken } : null);
+      if(!carried || (this._authGen || 0) !== gen) return false;
+      const now = await post(this.base.replace(/\/$/,'') + '/auth/refresh', carried, _authCreds());
       if(!now.ok) return false;
       const d2 = await now.json().catch(()=>({}));
       if(!d2.token || (this._authGen || 0) !== gen) return false;

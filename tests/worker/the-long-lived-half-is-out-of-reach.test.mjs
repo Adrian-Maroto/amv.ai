@@ -142,7 +142,10 @@ section('Signing up puts the long-lived token where script cannot read it');
   ok(/SameSite=None/i.test(sc), 'and SameSite=None, because the app and the API are different origins', sc);
   ok(/Path=\/auth/i.test(sc),
      'scoped to the two routes that need it, so it does not ride along on every call', sc);
-  ok(cookieValue(sc) === body.refreshToken, 'and it really is the refresh token', cookieValue(sc).slice(0, 12));
+  ok(cookieValue(sc).split('.').length === 3, 'and it really is a signed refresh token', cookieValue(sc).slice(0, 12));
+  /* Build 16 audit SEC-03: the cookie is the only copy. The body used to carry
+     the same token, which any script on the page could read. */
+  ok(!('refreshToken' in body) && !!body.token, 'and the body carries the short-lived token only, never the refresh token', Object.keys(body));
   ok(body.refreshInCookie === true,
      'the client is told the cookie is authoritative rather than left to guess', body.refreshInCookie);
 }
@@ -160,6 +163,22 @@ section('The cookie alone is enough to refresh');
   ok(r.status === 200, 'a refresh with no body but the cookie works', r.status);
   ok(!!d.token, 'and hands back a new access token', !!d.token);
   ok(/HttpOnly/i.test(setCookieOf(r)), 'rotating the cookie as it goes', setCookieOf(r).slice(0, 40));
+}
+
+section('Carrying a session to another address hands script a one-use code, never the token (SEC-03)');
+{
+  const env = locked();
+  const rt = cookieValue(setCookieOf(await signup(env)));
+  const r = await call(env, '/auth/refresh', { carry: true }, { Cookie: `${W.REFRESH_COOKIE}=${rt}` });
+  const d = await r.json();
+  ok(r.status === 200 && /^[a-f0-9]{64}$/.test(d.carry || '') && !('refreshToken' in d), 'the old address answers a carry code and no refresh token', Object.keys(d));
+  const a = await call(env, '/auth/refresh', { carryCode: d.carry });
+  const da = await a.json();
+  ok(a.status === 200 && !!da.token && /HttpOnly/i.test(setCookieOf(a)) && !('refreshToken' in da), 'the code opens a session whose renewal is in a cookie', [a.status, Object.keys(da)]);
+  const b = await call(env, '/auth/refresh', { carryCode: d.carry });
+  ok(b.status === 401, 'and it works once', b.status);
+  const c = await call(env, '/auth/refresh', { carryCode: 'f'.repeat(64) });
+  ok(c.status === 401, 'a code nobody issued opens nothing', c.status);
 }
 
 section('And a request with neither is refused');

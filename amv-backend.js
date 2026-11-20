@@ -22339,8 +22339,37 @@ const REFRESH_GRACE_MS = 30 * 1000;
 async function _retiredBySignOut(env, jti) {
   try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch(e) { /* without the mark a late renewal is treated as a replay, which only signs out more */ }
 }
+/* MOVING A SESSION TO THE APP'S OWN ADDRESS, WITHOUT HANDING SCRIPT THE
+   LONG-LIVED TOKEN (SEC-03). The page carries a sign-in over from the old
+   API address once. It used to read the refresh token out of that address's
+   renewal and send it to the new one - the very token the cookie exists to
+   hide. Now the old address hands back a carry code instead: random, kept
+   only as its hash, good for CARRY_TTL_S seconds and for one use, and it opens
+   a session on the new address that is set in that address's own cookie. */
+const CARRY_TTL_S = 120;
+async function _carryIssue(env, email, name, sid) {
+  const code = [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('');
+  await env.AMV_KV.put('carry:' + (await _sha256Hex(code)), JSON.stringify({ email, name: name || '', sid: sid || '', at: Date.now() }), { expirationTtl: CARRY_TTL_S });
+  return code;
+}
+async function _carryRedeem(request, env, code) {
+  if (!/^[a-f0-9]{64}$/.test(code)) return json({ error: 'invalid carry code' }, 400);
+  const h = await _sha256Hex(code);
+  const claim = await _claimOnceDetail(env, 'carryused', h, CARRY_TTL_S + 60);
+  if (claim.unavailable) return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
+  if (!claim.claimed) return json({ error: 'invalid or expired carry code' }, 401);
+  let rec = null; try { rec = JSON.parse((await env.AMV_KV.get('carry:' + h)) || 'null'); } catch (e) { rec = null; }
+  try { await env.AMV_KV.delete('carry:' + h); } catch (e) { /* spent by the claim above; it expires on its own */ }
+  if (!rec || !rec.email || Date.now() - (+rec.at || 0) > CARRY_TTL_S * 1000) return json({ error: 'invalid or expired carry code' }, 401);
+  const acct = await DB.get(env, 'acct', rec.email);
+  if (!acct) return json({ error: 'invalid or expired carry code' }, 401);
+  let sid = ''; try { sid = await _sessOpen(env, request, rec.email); } catch (e) { sid = ''; }
+  audit(env, 'session_carried', { email: rec.email });
+  return _tokenResponse(env, await issueTokens(env, rec.email, rec.name || acct.name || '', sid));
+}
 async function authRefresh(request, env) {
   const body = await request.json().catch(()=>({}));
+  if (body && typeof body.carryCode === 'string') return _carryRedeem(request, env, body.carryCode);
   /* The cookie first, because on a deployment where it is in force it is the
      copy the browser holds and the body is not sent at all. The body remains a
      fallback for a deployment with no configured origin, and for anything that
@@ -22404,7 +22433,13 @@ async function authRefresh(request, env) {
   } else {
     try { sid = await _sessOpen(env, request, data.email); } catch (e) { sid = ''; }
   }
-  return _tokenResponse(env, await issueTokens(env, data.email, data.name || '', sid));
+  const fresh = await issueTokens(env, data.email, data.name || '', sid);
+  /* Asked to carry this session to the app's own address: the renewal goes
+     on here as usual, and the answer carries a one-use code instead of any
+     token for the other address. */
+  if (body && body.carry === true && _cookieAuthOn(env))
+    return _tokenResponse(env, fresh, { carry: await _carryIssue(env, data.email, data.name || '', sid) });
+  return _tokenResponse(env, fresh);
 }
 
 /* Sign out everywhere: bump the user's token epoch, revoking all tokens. */
@@ -29881,6 +29916,12 @@ function _tokenResponse(env, tokens, extra) {
      own copy. Saying so explicitly beats having the client infer it from a
      header it cannot read. */
   body.refreshInCookie = true;
+  /* AND ONLY IN THE COOKIE (Build 16 audit SEC-03). The body carried the same
+     refresh token the HttpOnly cookie was set to keep away from script, so
+     the cookie protected nothing: any script on the page could read it from
+     the answer. A browser on a cookie deployment never needs it in the body -
+     the cookie renews the session - so it is not sent. */
+  delete body.refreshToken;
   const res = json(body, 200, { 'Set-Cookie': _refreshCookie(env, tokens.refreshToken, REFRESH_TTL_MS / 1000) });
   res.headers.append('Set-Cookie', _sessionHintCookie(REFRESH_TTL_MS / 1000));
   return res;

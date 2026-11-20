@@ -382,6 +382,12 @@ function _tokenResponse(env, tokens, extra) {
      own copy. Saying so explicitly beats having the client infer it from a
      header it cannot read. */
   body.refreshInCookie = true;
+  /* AND ONLY IN THE COOKIE (Build 16 audit SEC-03). The body carried the same
+     refresh token the HttpOnly cookie was set to keep away from script, so
+     the cookie protected nothing: any script on the page could read it from
+     the answer. A browser on a cookie deployment never needs it in the body -
+     the cookie renews the session - so it is not sent. */
+  delete body.refreshToken;
   const res = json(body, 200, { 'Set-Cookie': _refreshCookie(env, tokens.refreshToken, REFRESH_TTL_MS / 1000) });
   res.headers.append('Set-Cookie', _sessionHintCookie(REFRESH_TTL_MS / 1000));
   return res;
