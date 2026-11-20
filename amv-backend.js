@@ -4600,9 +4600,14 @@ export class AMVCounter {
       if (op === 'authRevokeAll') { a.epoch += 1; a.ended = {}; }
       if (op === 'authEndSession' && body.sid) {
         for (const k of Object.keys(a.ended)) if (a.ended[k] <= now) delete a.ended[k];
-        const keys = Object.keys(a.ended);
-        if (keys.length >= 500) delete a.ended[keys.sort((x, y) => a.ended[x] - a.ended[y])[0]];
-        a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
+        /* FULL IS NOT A REASON TO FORGET (Build 16 audit SEC-06). At 500
+           live endings the oldest was dropped - and the sign-in it ended,
+           still within its life, worked again. Now a full list moves the
+           account on a generation: every token from before is refused, the
+           list starts empty, and the person signs in again. Losing a
+           revocation is never the way out of running out of room. */
+        if (Object.keys(a.ended).length >= 500) { a.epoch += 1; a.ended = {}; }
+        else a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
       }
       await this.state.storage.put('auth', a);
       return json({ seeded: true, epoch: a.epoch, ended: false });
@@ -7357,7 +7362,7 @@ async function connUndo(request, env){
   { const k = _refuseApiKey(user, 'take back an action on a connected account'); if (k) return k; }
   if (!connConfigured(env)) return json({ error: 'not_configured' }, 503);
   const body = await request.json().catch(() => ({}));
-  const t = await verifyToken(String(body.token || ''), env.JWT_SECRET, env, 'undo');
+  const t = await verifyCurrentToken(String(body.token || ''), env.JWT_SECRET, env, 'undo');
   /* Expired, forged, revoked and somebody else's all read the same: a ticket
      that does not take anything back. Which one it was is nobody's business
      but the log's. */
@@ -21854,7 +21859,7 @@ async function _deviceTrustState(env, request, body, email) {
   if (!toks.length) return { trusted: false, reason: 'none' };
   let reason = 'none';
   for (const tok of toks) {
-    const c = await verifyToken(tok, env.JWT_SECRET, env, 'device');
+    let c = null; try { c = await verifyCurrentToken(tok, env.JWT_SECRET, env, 'device'); } catch (e) { c = null; }   // unconfirmed is not trusted: the code is asked for (SEC-04)
     if (c && String(c.email || '').toLowerCase() === email) return { trusted: true };
     try {
       const p = JSON.parse(atob(String(tok.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')));
@@ -22093,7 +22098,7 @@ async function authLoginResend(request, env) {
 async function adminUsers(request, env) {
   const auth = request.headers.get('Authorization')||'';
   const token = auth.replace(/^Bearer\s+/i,'');
-  const claims = token ? await verifyToken(token, env.JWT_SECRET, env, 'access') : null;
+  const claims = token ? await verifyCurrentToken(token, env.JWT_SECRET, env, 'access') : null;
   if(!claims || !claims.email) return json({ error:'unauthorized' }, 401);
   // must be an admin: either the configured owner email or an account flagged admin
   const acct = await DB.get(env, 'acct', String(claims.email).toLowerCase());
@@ -22376,7 +22381,7 @@ async function authRefresh(request, env) {
      is not a browser. */
   const refreshToken = _readRefreshCookie(request) || (body && body.refreshToken) || '';
   if (!refreshToken) return json({ error: 'refresh token required' }, 400);
-  const data = await verifyToken(refreshToken, env.JWT_SECRET, env, 'refresh');
+  const data = await verifyCurrentToken(refreshToken, env.JWT_SECRET, env, 'refresh');
   if (!data || !data.email) return json({ error: 'invalid or expired refresh token' }, 401);
   // AMV-011: refresh-token ROTATION with reuse detection. Each refresh token may
   // be exchanged exactly once. Claiming its jti is atomic (on D1); if the jti was
@@ -22433,7 +22438,7 @@ async function authRefresh(request, env) {
   } else {
     try { sid = await _sessOpen(env, request, data.email); } catch (e) { sid = ''; }
   }
-  const fresh = await issueTokens(env, data.email, data.name || '', sid);
+  const fresh = await issueTokens(env, data.email, data.name || '', sid, data.epoch || 0);
   /* Asked to carry this session to the app's own address: the renewal goes
      on here as usual, and the answer carries a one-use code instead of any
      token for the other address. */
@@ -22543,11 +22548,16 @@ async function sessionsEnd(request, env) {
   if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Which sign-in? The id was missing or malformed.' }, 400);
   if (user.sid && id === user.sid) return json({ error: 'That is this device. Use Sign out to end it.', code: 'this_device' }, 400);
   const key = _sessKey(user.email, id);
-  let rec = null;
-  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
-  if (!rec) return json({ ok: true, already: true });
-  await _sessEnd(env, user.email, id);
-  await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
+  /* Absent and unreadable are different answers, and neither is proof the
+     sign-in is over (SEC-05): it is ended in the revocation object either way,
+     and "done" is said only once that is confirmed. */
+  let rec = null, unread = false;
+  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { unread = true; }
+  const end = await _sessEnd(env, user.email, id);
+  if (!end.ended)
+    return json({ ok: false, code: 'end_pending', error: 'AMV could not confirm that sign-in has ended yet. Try again in a moment.' }, 503, { 'Retry-After': '5' });
+  if (!rec && !unread) return json({ ok: true, already: true });
+  await _userEvent(env, request, user.email, 'session_ended', { from: (rec && rec.dev) || 'a device' });
   return json({ ok: true });
 }
 
@@ -29645,6 +29655,19 @@ function _revocationRefusal() {
     status: 503, body: { error: 'AMV could not confirm your sign-in is still current. This request was not authorized. Please try again shortly.',
                          code: 'auth_unconfirmed' } } });
 }
+/* A VERIFIER WHOSE CALLER CANNOT FORGET THE OUTAGE RULE (Build 16 audit
+   SEC-04). verifyToken marks a token checked against the KV epoch alone, and
+   only requireUser read the mark - the operator's user list, renewing a
+   session and device trust called verifyToken directly and took the token
+   as good while the revocation object was down. Anything that grants (data,
+   a fresh pair, a skipped second step, an undo) goes through this, which
+   refuses an unconfirmed token as a short wait rather than a sign-out. Only
+   the access-reducing routes (signing out) keep the plain verifier. */
+async function verifyCurrentToken(token, secret, env, typ) {
+  const data = await verifyToken(token, secret, env, typ);
+  if (data && data._revUnconfirmed) throw _revocationRefusal();
+  return data;
+}
 function _revocationMustBeSure(request) {
   try { return !REVOCATION_ACCESS_REDUCING.has(new URL(request.url).pathname); } catch (e) { return true; }
 }
@@ -29655,14 +29678,25 @@ async function _tokenEpoch(env, email) { return (await _authState(env, email)).e
    session is marked ended in the object, which is what verifyToken asks.
    The object failing is said, not swallowed: the KV delete still ends it
    within about a minute, which is how it worked before. */
+/* Says whether the ending is CONFIRMED (Build 16 audit SEC-05): `ended` when
+   the revocation object recorded it - the one place verifyToken asks - or,
+   with no object bound, when the device record was deleted. Anything less is
+   `pending`, and the caller must not tell the person it is done. */
 async function _sessEnd(env, email, sid) {
-  if (!email || !sid) return;
-  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) { /* cleanup of a record already spent or fenced; it expires or is retried on its own */ }
+  if (!email || !sid) return { ended: false, pending: false };
+  let kvGone = true;
+  try { await env.AMV_KV.delete(_sessKey(email, sid)); } catch (e) { kvGone = false; }
   if (env.AMV_COUNTER) {
     try {
-      await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
-    } catch (e) { audit(env, 'session_end_slow', { email, error: String((e && e.message) || e).slice(0, 120) }); }
+      const r = await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
+      if (r && r.ok === false) throw new Error('the revocation object refused the ending');
+      return { ended: true };
+    } catch (e) {
+      audit(env, 'session_end_slow', { email, error: String((e && e.message) || e).slice(0, 120) });
+      return { ended: false, pending: true };
+    }
   }
+  return kvGone ? { ended: true } : { ended: false, pending: true };
 }
 async function _tokenEpochKV(env, email) {
   /* A READ THAT FAILED IS NOT THE ANSWER ZERO.
@@ -29943,8 +29977,13 @@ function _clearRefreshCookie(env) {
   return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
 }
 
-async function issueTokens(env, email, name, sid) {
+async function issueTokens(env, email, name, sid, expectEpoch) {
   const epoch = await _tokenEpoch(env, email);
+  /* A renewal issues under the generation it verified, never a newer one:
+     signed out everywhere between the check and this line, the old token
+     must not be traded for a pair of the new generation (SEC-04). */
+  if (expectEpoch != null && epoch !== expectEpoch)
+    throw Object.assign(new Error('signed out meanwhile'), { amvRefusal: { status: 401, body: { error: 'signed out', code: 'signed_out' } } });
   const base = { email, name: name || '' };
   if (sid) base.sid = String(sid);
   /* Tells the page that this is the operator, so it can show the owner's

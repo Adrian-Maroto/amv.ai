@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { authObjectOp } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -54,6 +55,9 @@ function mkCounter() {
   const claims = new Set(); const state = { down: false };
   return { state, ns: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body);
+    /* Revocation reads answered as the real object would: a renewal now
+       refuses when they cannot be confirmed (Build 16 audit SEC-04). */
+    const a = authObjectOp(n, b); if (a) return a;
     if (b.op === 'claim') {
       if (state.down) throw new Error('Durable Object reset because its code was updated.');
       if (claims.has(n)) return new Response(JSON.stringify({ claimed: false }));

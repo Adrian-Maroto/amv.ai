@@ -338,9 +338,14 @@ export class AMVCounter {
       if (op === 'authRevokeAll') { a.epoch += 1; a.ended = {}; }
       if (op === 'authEndSession' && body.sid) {
         for (const k of Object.keys(a.ended)) if (a.ended[k] <= now) delete a.ended[k];
-        const keys = Object.keys(a.ended);
-        if (keys.length >= 500) delete a.ended[keys.sort((x, y) => a.ended[x] - a.ended[y])[0]];
-        a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
+        /* FULL IS NOT A REASON TO FORGET (Build 16 audit SEC-06). At 500
+           live endings the oldest was dropped - and the sign-in it ended,
+           still within its life, worked again. Now a full list moves the
+           account on a generation: every token from before is refused, the
+           list starts empty, and the person signs in again. Losing a
+           revocation is never the way out of running out of room. */
+        if (Object.keys(a.ended).length >= 500) { a.epoch += 1; a.ended = {}; }
+        else a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
       }
       await this.state.storage.put('auth', a);
       return json({ seeded: true, epoch: a.epoch, ended: false });

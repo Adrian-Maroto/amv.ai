@@ -67,7 +67,7 @@ async function _deviceTrustState(env, request, body, email) {
   if (!toks.length) return { trusted: false, reason: 'none' };
   let reason = 'none';
   for (const tok of toks) {
-    const c = await verifyToken(tok, env.JWT_SECRET, env, 'device');
+    let c = null; try { c = await verifyCurrentToken(tok, env.JWT_SECRET, env, 'device'); } catch (e) { c = null; }   // unconfirmed is not trusted: the code is asked for (SEC-04)
     if (c && String(c.email || '').toLowerCase() === email) return { trusted: true };
     try {
       const p = JSON.parse(atob(String(tok.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')));
@@ -306,7 +306,7 @@ async function authLoginResend(request, env) {
 async function adminUsers(request, env) {
   const auth = request.headers.get('Authorization')||'';
   const token = auth.replace(/^Bearer\s+/i,'');
-  const claims = token ? await verifyToken(token, env.JWT_SECRET, env, 'access') : null;
+  const claims = token ? await verifyCurrentToken(token, env.JWT_SECRET, env, 'access') : null;
   if(!claims || !claims.email) return json({ error:'unauthorized' }, 401);
   // must be an admin: either the configured owner email or an account flagged admin
   const acct = await DB.get(env, 'acct', String(claims.email).toLowerCase());
@@ -589,7 +589,7 @@ async function authRefresh(request, env) {
      is not a browser. */
   const refreshToken = _readRefreshCookie(request) || (body && body.refreshToken) || '';
   if (!refreshToken) return json({ error: 'refresh token required' }, 400);
-  const data = await verifyToken(refreshToken, env.JWT_SECRET, env, 'refresh');
+  const data = await verifyCurrentToken(refreshToken, env.JWT_SECRET, env, 'refresh');
   if (!data || !data.email) return json({ error: 'invalid or expired refresh token' }, 401);
   // AMV-011: refresh-token ROTATION with reuse detection. Each refresh token may
   // be exchanged exactly once. Claiming its jti is atomic (on D1); if the jti was
@@ -646,7 +646,7 @@ async function authRefresh(request, env) {
   } else {
     try { sid = await _sessOpen(env, request, data.email); } catch (e) { sid = ''; }
   }
-  const fresh = await issueTokens(env, data.email, data.name || '', sid);
+  const fresh = await issueTokens(env, data.email, data.name || '', sid, data.epoch || 0);
   /* Asked to carry this session to the app's own address: the renewal goes
      on here as usual, and the answer carries a one-use code instead of any
      token for the other address. */
@@ -756,11 +756,16 @@ async function sessionsEnd(request, env) {
   if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Which sign-in? The id was missing or malformed.' }, 400);
   if (user.sid && id === user.sid) return json({ error: 'That is this device. Use Sign out to end it.', code: 'this_device' }, 400);
   const key = _sessKey(user.email, id);
-  let rec = null;
-  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
-  if (!rec) return json({ ok: true, already: true });
-  await _sessEnd(env, user.email, id);
-  await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
+  /* Absent and unreadable are different answers, and neither is proof the
+     sign-in is over (SEC-05): it is ended in the revocation object either way,
+     and "done" is said only once that is confirmed. */
+  let rec = null, unread = false;
+  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) { unread = true; }
+  const end = await _sessEnd(env, user.email, id);
+  if (!end.ended)
+    return json({ ok: false, code: 'end_pending', error: 'AMV could not confirm that sign-in has ended yet. Try again in a moment.' }, 503, { 'Retry-After': '5' });
+  if (!rec && !unread) return json({ ok: true, already: true });
+  await _userEvent(env, request, user.email, 'session_ended', { from: (rec && rec.dev) || 'a device' });
   return json({ ok: true });
 }
 

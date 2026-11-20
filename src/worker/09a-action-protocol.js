@@ -111,7 +111,7 @@ async function connUndo(request, env){
   { const k = _refuseApiKey(user, 'take back an action on a connected account'); if (k) return k; }
   if (!connConfigured(env)) return json({ error: 'not_configured' }, 503);
   const body = await request.json().catch(() => ({}));
-  const t = await verifyToken(String(body.token || ''), env.JWT_SECRET, env, 'undo');
+  const t = await verifyCurrentToken(String(body.token || ''), env.JWT_SECRET, env, 'undo');
   /* Expired, forged, revoked and somebody else's all read the same: a ticket
      that does not take anything back. Which one it was is nobody's business
      but the log's. */
