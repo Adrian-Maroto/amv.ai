@@ -6799,6 +6799,8 @@ function _wipeAccountState(){
   }catch(e){}
   try{
     S.memory=[]; S.convs=[]; S.cur=null; S.att=null; _CONV_SHELF=[];
+    /* A shopping trip approved by the account that is leaving is not this one's. */
+    try{ if(window.amvShop) window.amvShop.reset(); }catch(e){}
     try{ _libForget(); }catch(e){}
     /* Crew's country pages are a place in this account's visit; the next
        account starts on Crew's own page. (The country itself is in storage,
@@ -9225,6 +9227,10 @@ async function sendMsg(_opts) {
   if(S.busy && !_opts._continueTools) return;
   const txt = _opts._continueTools ? '' : ta.value.trim();
   const att = _opts._continueTools ? null : S.att;
+  /* A new request: a shopping trip approved for the last one ends here
+     (shopping.js, build 16 audit AG-04). Continuing a tool round is the same
+     request. */
+  if(!_opts._continueTools && txt){ window.__amvReq = (window.__amvReq || 0) + 1; try{ if(window.amvShop) window.amvShop.reset(); }catch(e){} }
   // A tool-continuation has no new user text - it resumes with tool results.
   if(!_opts._continueTools && !txt && !att) return;
   // Sign-up gate: you can explore the app freely, but sending a message requires
@@ -27958,9 +27964,8 @@ async function _amvRunTool(name, input, onStatus){
       return await window.amvShop.run(name, input);
     }
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
-      /* A pay or place-order button is never pressed without an approved
-         purchase - read from the live page, not the model (shopping.js). */
-      if(window.amvShop && window.amvShop.mine(name)){ const g = await window.amvShop.check(name, input); if(g) return g; }
+      /* A pay or place-order button is never pressed by AMV - checked in
+         runMcpTool, for every surface (shopping.js). */
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
       onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
@@ -48156,6 +48161,18 @@ async function runMcpTool(name, args){
       if(e && e.status === 401) _rmcpForgetTools(hit.id);
       return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
     }
+  }
+  /* ONE GUARD FOR EVERY SURFACE (build 16 audit, AG-01). Anything that
+     writes in AMV's browser - from chat, Build, or whatever comes next - is
+     checked here, at the one door to it, so a pay button is never pressed
+     by AMV whoever asked. The guard is loaded first; if it cannot be, the
+     write is not made. */
+  if(hit.id === MCP_BROWSER.id && /^browser_(click|press_key|type|fill_form|select_option|handle_dialog|drag)$/.test(hit.tool.name)){
+    try{ if(!window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop); }catch(e){}
+    if(!window.amvShop || typeof window.amvShop.check !== 'function')
+      return { ok:false, text:'AMV could not load the check it makes before acting in its browser, so it did not act. Try again in a moment.' };
+    const g = await window.amvShop.check(name, args || {});
+    if(g) return g;
   }
   try{
     const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });

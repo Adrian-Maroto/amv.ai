@@ -509,6 +509,18 @@ async function runMcpTool(name, args){
       return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
     }
   }
+  /* ONE GUARD FOR EVERY SURFACE (build 16 audit, AG-01). Anything that
+     writes in AMV's browser - from chat, Build, or whatever comes next - is
+     checked here, at the one door to it, so a pay button is never pressed
+     by AMV whoever asked. The guard is loaded first; if it cannot be, the
+     write is not made. */
+  if(hit.id === MCP_BROWSER.id && /^browser_(click|press_key|type|fill_form|select_option|handle_dialog|drag)$/.test(hit.tool.name)){
+    try{ if(!window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop); }catch(e){}
+    if(!window.amvShop || typeof window.amvShop.check !== 'function')
+      return { ok:false, text:'AMV could not load the check it makes before acting in its browser, so it did not act. Try again in a moment.' };
+    const g = await window.amvShop.check(name, args || {});
+    if(g) return g;
+  }
   try{
     const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });
     const text = (r && Array.isArray(r.content))

@@ -2123,6 +2123,8 @@ function _wipeAccountState(){
   }catch(e){}
   try{
     S.memory=[]; S.convs=[]; S.cur=null; S.att=null; _CONV_SHELF=[];
+    /* A shopping trip approved by the account that is leaving is not this one's. */
+    try{ if(window.amvShop) window.amvShop.reset(); }catch(e){}
     try{ _libForget(); }catch(e){}
     /* Crew's country pages are a place in this account's visit; the next
        account starts on Crew's own page. (The country itself is in storage,

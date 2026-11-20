@@ -1,5 +1,37 @@
 # AMV buys things - design (owner decision, Nov 16: "Both, in phases")
 
+## Contained, Nov 20 - the person presses the store's pay button (build 16 audit)
+
+The build 16 audit (AG-01..AG-04) found that the "one armed press" design
+depended on recognising a pay button by an English label list, in one surface
+(chat) and only when this module was loaded; that an unreadable page passed as
+an empty one; that a purchase card could approve the right number in the wrong
+currency or a shipping line as the total; that a store and its parent domain
+matched each other; and that a shopping-trip approval outlived its request.
+Until a safe adapter exists for a store's own transaction API, the final press
+is the person's:
+
+- **AMV never presses a pay button.** Approved or not. The guard is in
+  `runMcpTool` (38-mcp.js), the one door every surface uses to reach AMV's
+  browser; it loads `shopping.js` first and refuses the write if it cannot.
+  Labels are recognised in the seventeen interface languages and the common
+  store wording of each; on a page that reads as a checkout, a control it
+  cannot name (an icon, a missing reference), Enter, a submitted form and an
+  accepted dialog are refused too. A page that cannot be read: nothing written.
+- **The card is exact.** The store must be the page's host or a parent of it
+  that is a real registrable name (never co.uk); the total must appear next to
+  its currency and be the largest amount in that currency on the page.
+- **Bought means confirmed.** Only an order number and total in the held
+  currency found on the store's own page is Bought. Anything else is "Not
+  confirmed" - still counted against the limits, the safe side if it went
+  through - and says to check the store's email.
+- **A trip is one request.** The approval belongs to this account, this
+  conversation and this request, for twenty minutes at most; a new message,
+  another conversation or signing out ends it.
+
+Suite: `amv-never-presses-pay-without-your-tap` (32 checks; breaking the door
+or the largest-amount rule fails it).
+
 ## Phase 1 - AMV shops, the person approves the payment with one tap (built Nov 16)
 
 AMV does the whole purchase in **AMV's browser** on the person's own computer

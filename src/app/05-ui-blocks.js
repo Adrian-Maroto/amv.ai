@@ -798,6 +798,10 @@ async function sendMsg(_opts) {
   if(S.busy && !_opts._continueTools) return;
   const txt = _opts._continueTools ? '' : ta.value.trim();
   const att = _opts._continueTools ? null : S.att;
+  /* A new request: a shopping trip approved for the last one ends here
+     (shopping.js, build 16 audit AG-04). Continuing a tool round is the same
+     request. */
+  if(!_opts._continueTools && txt){ window.__amvReq = (window.__amvReq || 0) + 1; try{ if(window.amvShop) window.amvShop.reset(); }catch(e){} }
   // A tool-continuation has no new user text - it resumes with tool results.
   if(!_opts._continueTools && !txt && !att) return;
   // Sign-up gate: you can explore the app freely, but sending a message requires

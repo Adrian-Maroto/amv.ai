@@ -888,9 +888,8 @@ async function _amvRunTool(name, input, onStatus){
       return await window.amvShop.run(name, input);
     }
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
-      /* A pay or place-order button is never pressed without an approved
-         purchase - read from the live page, not the model (shopping.js). */
-      if(window.amvShop && window.amvShop.mine(name)){ const g = await window.amvShop.check(name, input); if(g) return g; }
+      /* A pay or place-order button is never pressed by AMV - checked in
+         runMcpTool, for every surface (shopping.js). */
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
       onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
