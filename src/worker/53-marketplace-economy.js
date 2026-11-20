@@ -454,9 +454,11 @@ class UnreadableRecordError extends Error {
   }
 }
 
-/* `keepFor(rec)`, when given, is how many seconds the saved record may live:
-   KV replaces a key's expiry on every write, so a record that expires must
-   be written WITH its expiry or it lives for ever (Build 16 audit SEC-01). */
+/* `keepFor`, when given, is how many seconds the saved record may live - a
+   number, or a function of the record: KV replaces a key's expiry on every
+   write, so a record that expires must be written WITH its expiry or it lives
+   for ever (Build 16 audit SEC-01). The due-hour buckets already passed a
+   number here, which was ignored, so they never expired either. */
 async function _withKV(env, name, key, mutate, empty, keepFor) {
   const fresh = () => (empty === undefined ? null : JSON.parse(JSON.stringify(empty)));
   return _withRecord(env, name, String(key || ''),
@@ -480,7 +482,7 @@ async function _withKV(env, name, key, mutate, empty, keepFor) {
     },
     async (e, k, rec) => {
       if (!rec) return;
-      const ttl = keepFor ? keepFor(rec) : null;
+      const ttl = typeof keepFor === 'function' ? keepFor(rec) : (Number.isFinite(+keepFor) && +keepFor > 0 ? +keepFor : null);
       if (ttl != null) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil(ttl)) });
       else await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec));
     },

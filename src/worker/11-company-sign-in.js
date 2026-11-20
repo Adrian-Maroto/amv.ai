@@ -237,14 +237,25 @@ async function _ssoTeamFor(env, email){
 }
 /* Whether a password or Google sign-in for this address must go through the
    company instead. The owner is never refused: they are the way back in. */
+/* A lookup that FAILED is not "no policy" (Build 16 audit SEC-07): it was
+   caught into null, and a password sign-in went on for an address whose
+   company requires its own. It now answers `unavailable`, which every caller
+   turns into a short wait (_ssoRequiredJson) - never a pass. */
 async function _ssoRequiredFor(env, email){
-  const team = await _ssoTeamFor(env, email).catch(() => null);
+  let team = null;
+  try { team = await _ssoTeamFor(env, email); }
+  catch (e) {
+    try { audit(env, 'sso_policy_unavailable', { domain: _ssoDomainOf(email) }); } catch (_) { /* logging: it never decides anything */ }
+    return { unavailable: true };
+  }
   if(!team || !team.sso.required) return null;
   if(String(team.ownerEmail || '').toLowerCase() === String(email || '').toLowerCase()) return null;
   return team;
 }
-const _ssoRequiredJson = (team) => json({ error:'Your company signs in to AMV through its own system. Use “Sign in with your company”.',
-                                          code:'sso_required', domain: team.sso.domain }, 403);
+const _ssoRequiredJson = (team) => team && team.unavailable
+  ? json({ error:'AMV could not check how your company signs in just now. Try again in a moment.', code:'sso_policy_unavailable' }, 503, { 'Retry-After': '5' })
+  : json({ error:'Your company signs in to AMV through its own system. Use “Sign in with your company”.',
+           code:'sso_required', domain: team.sso.domain }, 403);
 
 /* AN ACCOUNT FOR AN ADDRESS SOMEBODY ELSE HAS JUST VERIFIED (Google, or a
    company's provider).

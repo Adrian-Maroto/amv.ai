@@ -79,7 +79,12 @@ const seed = async (env, n) => {
       { email: 'u' + i + '@example.com', name: 'U' + i, provider: 'email', createdAt: Date.now() });
   }
 };
-const sessionOf = async (env, email) => (await W.issueTokens(env, email, 'O')).token;
+/* Operator access needs the address proved by an emailed code (Build 16 audit SEC-08). */
+const sessionOf = async (env, email) => {
+  const a = await W.DB.get(env, 'acct', email);
+  await W.DB.put(env, 'acct', email, Object.assign({ email }, a || {}, { emailVerifiedAt: Date.now() }));
+  return (await W.issueTokens(env, email, 'O')).token;
+};
 const hitUsers = async (env, token, ip = '4.4.4.4') => {
   const r = await worker.fetch(new Request('https://api.amv.test/admin/users?offset=0&limit=60', {
     headers: { Authorization: 'Bearer ' + token, 'CF-Connecting-IP': ip },
@@ -101,8 +106,8 @@ section('The screen still works, which is what this is all for');
   await seed(env, 3);
   const r = await hitUsers(env, await sessionOf(env, OWNER));
   ok(r.status === 200, 'the owner sees the list', r.status);
-  ok(r.body.users.length === 3, 'with everybody on it', r.body.users.length);
-  ok(r.body.total === 3, 'and a real total', r.body.total);
+  ok(r.body.users.length === 4, 'with everybody on it, the owner included', r.body.users.length);
+  ok(r.body.total === 4, 'and a real total', r.body.total);
 }
 
 section('THE FINDING: a store it cannot read is not a store with nobody in it');
@@ -134,7 +139,7 @@ section('An account that individually fails does not empty the whole screen');
   env._map.set('ent:u2@example.com', '{not json');
   const r = await hitUsers(env, await sessionOf(env, OWNER));
   ok(r.status === 200, 'the page still loads', r.status);
-  ok(r.body.users.length === 4, 'with everybody on it', r.body.users.length);
+  ok(r.body.users.length === 5, 'with everybody on it, the owner included', r.body.users.length);
 }
 
 section('And the screen is not open to anybody who is not the operator');

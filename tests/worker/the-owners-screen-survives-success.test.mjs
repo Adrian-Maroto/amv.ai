@@ -83,6 +83,8 @@ const call = (env, path, body, tok, method) => worker.fetch(new Request('https:/
 
 async function anOwnerAndSomeAccounts(env, howMany) {
   const tok = (await (await call(env, '/auth/signup', { email: OWNER, name: 'Olive', password: PW })).json()).token;
+  /* Operator access needs the address proved by an emailed code (Build 16 audit SEC-08). */
+  await W.DB.put(env, 'acct', OWNER, Object.assign({}, await W.DB.get(env, 'acct', OWNER), { emailVerifiedAt: Date.now() }));
   /* Written straight in. Signing each one up would test signup, and would take
      as long as the thing being measured. */
   for (let i = 0; i < howMany; i++) {

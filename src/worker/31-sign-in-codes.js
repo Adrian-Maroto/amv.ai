@@ -316,8 +316,21 @@ async function adminUsers(request, env) {
   // no hardcoded personal-email fallback. If it isn't set, nobody is owner (fail
   // closed) rather than a source-code constant silently granting privilege.
   const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
-  const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
-  if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
+  /* THE ADDRESS, AND PROOF OF ITS MAILBOX (Build 16 audit SEC-08). An account
+     signs up without confirming its address, so matching OWNER_EMAIL alone let
+     whoever registered that address first - before the operator did, or after
+     the setting was moved to an address nobody had proved - read every
+     account. Operator access needs the account's address confirmed by a code
+     from its inbox, for the owner and for an account flagged admin alike. */
+  /* Proved by a code from the inbox, or by a provider that verified the
+     address itself (Google, the company's own sign-in). */
+  const proved = !!(acct && (acct.emailVerifiedAt || ((acct.provider || 'email') !== 'email' && !acct.pwHash)));
+  const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail && proved;
+  if(!isOwner && !(acct && acct.admin && proved)) {
+    if (ownerEmail && String(claims.email).toLowerCase() === ownerEmail && !proved)
+      return json({ error:'Confirm this address first: sign out and sign in with the code AMV emails you, then open the console again.', code:'owner_unproved' }, 403);
+    return json({ error:'forbidden' }, 403);
+  }
   /* AMV-052: RATE LIMITED AND AUDITED LIKE EVERY OTHER ADMIN SURFACE.
 
      This route authenticates DIFFERENTLY from the rest on purpose - the owner's

@@ -219,6 +219,12 @@ section('Requiring company sign-in turns off passwords for the domain - not for 
   ok(o.d.code !== 'sso_required', 'the owner can still get in, so a broken provider cannot lock everybody out', o.d.code || o.status);
   const elsewhere = await call('/auth/login', { email: 'rival@rival.example', password: 'A-real-Passw0rd!' });
   ok(elsewhere.d.code !== 'sso_required', 'and other domains are untouched');
+  /* Build 16 audit SEC-07: a policy that cannot be read is not "no policy". */
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('ssodom:')) throw new Error('store unreachable'); return realGet.call(env.AMV_KV, k); };
+  const blind = await call('/auth/login', { email: 'leo@acme-corp.com', password: 'A-real-Passw0rd!' });
+  env.AMV_KV.get = realGet;
+  ok(blind.status === 503 && blind.d.code === 'sso_policy_unavailable' && !blind.d.token, 'the policy unreadable: a short wait, never a password sign-in', blind.d);
   await call('/team/sso', { action: 'require', on: false }, owner);
 }
 

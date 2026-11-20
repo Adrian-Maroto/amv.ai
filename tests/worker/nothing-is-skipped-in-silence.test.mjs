@@ -212,6 +212,8 @@ section('An admin screen that shows part of something says which part');
 {
   const env = mkEnv();
   const tok = (await (await call(env, '/auth/signup', { email: 'owner@example.com', name: 'O', password: 'A-real-Passw0rd!' })).json()).token;
+  /* Operator access needs the address proved by an emailed code (Build 16 audit SEC-08). */
+  await W.DB.put(env, 'acct', 'owner@example.com', Object.assign({}, await W.DB.get(env, 'acct', 'owner@example.com'), { emailVerifiedAt: Date.now() }));
   ok(!!tok, 'the owner is signed in', !!tok);
 
   const few = await (await call(env, '/admin/users', {}, tok)).json();

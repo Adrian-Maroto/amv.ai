@@ -82,7 +82,18 @@ section('AMV-034: no hardcoded owner-email fallback');
   env = mkEnv({ OWNER_EMAIL: HARD });
   tokn = (await W.issueTokens(env, HARD, 'X')).token;
   r = await W.adminUsers(new Request('https://api/admin/users', { headers: { Authorization: 'Bearer ' + tokn } }), env);
-  ok(r.status === 200, 'the configured OWNER_EMAIL grants owner access', r.status);
+  /* Build 16 audit SEC-08: the address alone is not enough - somebody could
+     have registered it before the operator did. */
+  ok(r.status === 403 && (await r.json()).code === 'owner_unproved', 'matching OWNER_EMAIL without a proved mailbox is not owner access', r.status);
+  store.set(`acct:${HARD}`, JSON.stringify({ email: HARD, emailVerifiedAt: Date.now() }));
+  r = await W.adminUsers(new Request('https://api/admin/users', { headers: { Authorization: 'Bearer ' + tokn } }), env);
+  ok(r.status === 200, 'the configured OWNER_EMAIL, its mailbox proved, grants owner access', r.status);
+  store.set(`acct:${HARD}`, JSON.stringify({ email: HARD, provider: 'google' }));
+  r = await W.adminUsers(new Request('https://api/admin/users', { headers: { Authorization: 'Bearer ' + tokn } }), env);
+  ok(r.status === 200, 'and so does an address the provider verified (a Google account, no password)', r.status);
+  store.set(`acct:${HARD}`, JSON.stringify({ email: HARD, provider: 'google', pwHash: 'x' }));
+  r = await W.adminUsers(new Request('https://api/admin/users', { headers: { Authorization: 'Bearer ' + tokn } }), env);
+  ok(r.status === 403, 'but not one that also carries a password nobody confirmed', r.status);
 }
 
 section('The page learns who the operator is from the session, not from its own source');

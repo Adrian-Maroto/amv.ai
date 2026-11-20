@@ -23,7 +23,8 @@ const env = { JWT_SECRET: 'x'.repeat(40), OWNER_EMAIL: 'owner@test.com', AMV_KV:
 }};
 
 // seed accounts
-store.set('acct:owner@test.com', JSON.stringify({ email:'owner@test.com', name:'Owner', createdAt:1700000000000 }));
+/* Operator access needs the address proved by an emailed code (Build 16 audit SEC-08). */
+store.set('acct:owner@test.com', JSON.stringify({ email:'owner@test.com', name:'Owner', createdAt:1700000000000, emailVerifiedAt:1700000000000 }));
 store.set('acct:alice@test.com', JSON.stringify({ email:'alice@test.com', name:'Alice', createdAt:1700000001000 }));
 store.set('acct:bob@test.com', JSON.stringify({ email:'bob@test.com', name:'Bob', createdAt:1700000002000 }));
 await W.setEntitlement(env, 'alice@test.com', 'pro');

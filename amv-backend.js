@@ -8030,14 +8030,25 @@ async function _ssoTeamFor(env, email){
 }
 /* Whether a password or Google sign-in for this address must go through the
    company instead. The owner is never refused: they are the way back in. */
+/* A lookup that FAILED is not "no policy" (Build 16 audit SEC-07): it was
+   caught into null, and a password sign-in went on for an address whose
+   company requires its own. It now answers `unavailable`, which every caller
+   turns into a short wait (_ssoRequiredJson) - never a pass. */
 async function _ssoRequiredFor(env, email){
-  const team = await _ssoTeamFor(env, email).catch(() => null);
+  let team = null;
+  try { team = await _ssoTeamFor(env, email); }
+  catch (e) {
+    try { audit(env, 'sso_policy_unavailable', { domain: _ssoDomainOf(email) }); } catch (_) { /* logging: it never decides anything */ }
+    return { unavailable: true };
+  }
   if(!team || !team.sso.required) return null;
   if(String(team.ownerEmail || '').toLowerCase() === String(email || '').toLowerCase()) return null;
   return team;
 }
-const _ssoRequiredJson = (team) => json({ error:'Your company signs in to AMV through its own system. Use “Sign in with your company”.',
-                                          code:'sso_required', domain: team.sso.domain }, 403);
+const _ssoRequiredJson = (team) => team && team.unavailable
+  ? json({ error:'AMV could not check how your company signs in just now. Try again in a moment.', code:'sso_policy_unavailable' }, 503, { 'Retry-After': '5' })
+  : json({ error:'Your company signs in to AMV through its own system. Use “Sign in with your company”.',
+           code:'sso_required', domain: team.sso.domain }, 403);
 
 /* AN ACCOUNT FOR AN ADDRESS SOMEBODY ELSE HAS JUST VERIFIED (Google, or a
    company's provider).
@@ -22108,8 +22119,21 @@ async function adminUsers(request, env) {
   // no hardcoded personal-email fallback. If it isn't set, nobody is owner (fail
   // closed) rather than a source-code constant silently granting privilege.
   const ownerEmail = String(env.OWNER_EMAIL || '').toLowerCase();
-  const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail;
-  if(!isOwner && !(acct && acct.admin)) return json({ error:'forbidden' }, 403);
+  /* THE ADDRESS, AND PROOF OF ITS MAILBOX (Build 16 audit SEC-08). An account
+     signs up without confirming its address, so matching OWNER_EMAIL alone let
+     whoever registered that address first - before the operator did, or after
+     the setting was moved to an address nobody had proved - read every
+     account. Operator access needs the account's address confirmed by a code
+     from its inbox, for the owner and for an account flagged admin alike. */
+  /* Proved by a code from the inbox, or by a provider that verified the
+     address itself (Google, the company's own sign-in). */
+  const proved = !!(acct && (acct.emailVerifiedAt || ((acct.provider || 'email') !== 'email' && !acct.pwHash)));
+  const isOwner = !!ownerEmail && String(claims.email).toLowerCase() === ownerEmail && proved;
+  if(!isOwner && !(acct && acct.admin && proved)) {
+    if (ownerEmail && String(claims.email).toLowerCase() === ownerEmail && !proved)
+      return json({ error:'Confirm this address first: sign out and sign in with the code AMV emails you, then open the console again.', code:'owner_unproved' }, 403);
+    return json({ error:'forbidden' }, 403);
+  }
   /* AMV-052: RATE LIMITED AND AUDITED LIKE EVERY OTHER ADMIN SURFACE.
 
      This route authenticates DIFFERENTLY from the rest on purpose - the owner's
@@ -34680,9 +34704,11 @@ class UnreadableRecordError extends Error {
   }
 }
 
-/* `keepFor(rec)`, when given, is how many seconds the saved record may live:
-   KV replaces a key's expiry on every write, so a record that expires must
-   be written WITH its expiry or it lives for ever (Build 16 audit SEC-01). */
+/* `keepFor`, when given, is how many seconds the saved record may live - a
+   number, or a function of the record: KV replaces a key's expiry on every
+   write, so a record that expires must be written WITH its expiry or it lives
+   for ever (Build 16 audit SEC-01). The due-hour buckets already passed a
+   number here, which was ignored, so they never expired either. */
 async function _withKV(env, name, key, mutate, empty, keepFor) {
   const fresh = () => (empty === undefined ? null : JSON.parse(JSON.stringify(empty)));
   return _withRecord(env, name, String(key || ''),
@@ -34706,7 +34732,7 @@ async function _withKV(env, name, key, mutate, empty, keepFor) {
     },
     async (e, k, rec) => {
       if (!rec) return;
-      const ttl = keepFor ? keepFor(rec) : null;
+      const ttl = typeof keepFor === 'function' ? keepFor(rec) : (Number.isFinite(+keepFor) && +keepFor > 0 ? +keepFor : null);
       if (ttl != null) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil(ttl)) });
       else await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec));
     },
