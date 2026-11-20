@@ -745,7 +745,13 @@ function _crewOnceAt(input){
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((input && input.date) || '').trim());
   const t = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String((input && input.time) || '09:00'));
   if(!d || !t || +t[1] > 23 || +t[2] > 59) return 0;
-  const at = new Date(+d[1], +d[2]-1, +d[3], +t[1], +t[2], 0, 0).getTime();
+  const when = new Date(+d[1], +d[2]-1, +d[3], +t[1], +t[2], 0, 0);
+  /* The date it names, or none (Build 16 audit AG-07): 30 February was
+     quietly 2 March, and a time the clocks skip in spring was another hour.
+     Read back, and refused unless every part is what was asked. */
+  if(when.getFullYear() !== +d[1] || when.getMonth() !== +d[2]-1 || when.getDate() !== +d[3]
+     || when.getHours() !== +t[1] || when.getMinutes() !== +t[2]) return 0;
+  const at = when.getTime();
   return (at > Date.now() + 60e3 && at < Date.now() + 365*864e5) ? at : 0;
 }
 async function _confirmModelTool(name, input){

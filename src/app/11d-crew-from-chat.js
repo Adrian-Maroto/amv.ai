@@ -79,8 +79,15 @@ function _crewErr(e){
    the cadence has no time of day (every 10 minutes, hourly) or no time was
    given, which leaves the server's own first-run rule in place. */
 const _CREW_DOW = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
-function _crewSchedOf(cad, input){
-  const m = String((input && input.time) || '').match(/^\s*(\d{1,2}):(\d{2})\s*$/);
+/* A MONTHLY JOB STAYS MONTHLY (Build 16 audit AG-07). Without a time it had
+   no schedule, and the server's only interval for it was a week - so "every
+   month on the 15th" was made weekly, and an update to monthly threw the old
+   schedule away. A monthly job with no time given runs at `fallback` (its
+   old time, or 09:00), and the answer says which time was used. */
+const CREW_DEFAULT_TIME = '09:00';
+function _crewSchedOf(cad, input, fallback){
+  const given = String((input && input.time) || '');
+  const m = (given || (cad === 'monthly' ? (fallback || CREW_DEFAULT_TIME) : '')).match(/^\s*(\d{1,2}):(\d{2})\s*$/);
   if(!m || ['daily','weekly','monthly'].indexOf(cad) < 0) return null;
   const hour = +m[1], minute = +m[2];
   if(hour > 23 || minute > 59) return null;
@@ -89,7 +96,13 @@ function _crewSchedOf(cad, input){
     if(!days.length) days = [new Date().getDay()];
     return { cad, hour, minute, days };
   }
-  if(cad === 'monthly') return { cad, hour, minute, dom: Math.min(31, Math.max(1, parseInt(input.day_of_month, 10) || 1)) };
+  if(cad === 'monthly'){
+    /* A day that is not a day of a month is refused, never moved. */
+    const raw = input.day_of_month;
+    const dom = (raw === undefined || raw === null || raw === '') ? 1 : Number(raw);
+    if(!Number.isInteger(dom) || dom < 1 || dom > 31) return null;
+    return { cad, hour, minute, dom };
+  }
   return { cad, hour, minute };
 }
 /* How a job's schedule reads, on the person's clock when it has one. */
@@ -219,6 +232,9 @@ async function _crewTool(name, input){
     }
     const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const sched = _crewSchedOf(asked || 'daily', input);
+    if(asked === 'monthly' && !sched)
+      return { text:'A monthly job needs a day of the month from 1 to 31 (and a time as 24-hour HH:MM if they have one). Ask the user, then call again. Nothing was created.', render:null };
+    const assumed = asked === 'monthly' && !input.time;
     let d;
     try{
       d = await _autoApi('/auto/create', Object.assign({ detail, repeat, kind:'task', approval, notify:'app' }, sched ? { sched } : {}));
@@ -235,6 +251,7 @@ async function _crewTool(name, input){
     return { text:'Created. It is in their Crew tab now and runs ' + _crewWhen(made)
       + ' on AMV\u2019s servers - with their computer off and AMV closed.'
       + (firstAt ? ' First run: ' + firstAt + '.' : '')
+      + (assumed ? ' No time was given, so it runs at ' + CREW_DEFAULT_TIME + ' on their clock - tell them, and that they can change it.' : '')
       + ({ auto:' Results are delivered without review.',
            suggest:' It will NOT run on its own - AMV tells them it is due and waits to be asked, which costs nothing.',
            require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
@@ -369,8 +386,17 @@ async function _crewTool(name, input){
       const askedRepeat = String(input.repeat || '');
       if(askedRepeat === 'monthly') patch.repeat = 'weekly';
       else if(_CREW_REPEATS.includes(askedRepeat)) patch.repeat = askedRepeat;
-      /* A new time keeps the cadence it has unless a new one was given. */
-      if(input.time){
+      /* A new time keeps the cadence it has unless a new one was given. A
+         change to monthly always carries its schedule: the time it had, or
+         the default, said out loud. */
+      let assumedTime = '';
+      if(askedRepeat === 'monthly' && !input.time){
+        const base = item.sched || {};
+        const had = (base.hour != null && base.minute != null) ? String(base.hour).padStart(2,'0') + ':' + String(base.minute).padStart(2,'0') : '';
+        const sc = _crewSchedOf('monthly', Object.assign({ day_of_month: base.dom }, input), had || CREW_DEFAULT_TIME);
+        if(!sc) return { text:'A monthly job needs a day of the month from 1 to 31. Ask the user which day. Nothing was changed.', render:null };
+        patch.sched = sc; assumedTime = had || CREW_DEFAULT_TIME;
+      } else if(input.time){
         const cad = askedRepeat || (item.sched && item.sched.cad) || item.repeat || 'daily';
         const base = item.sched || {};
         const sc = _crewSchedOf(cad, Object.assign({ days: (base.days || []).map(d => ['sun','mon','tue','wed','thu','fri','sat'][d]), day_of_month: base.dom }, input));
@@ -385,6 +411,7 @@ async function _crewTool(name, input){
       return { text:'Updated "' + what + '".'
         + (patch.detail ? ' It now does: ' + patch.detail.slice(0,120) + '.' : '')
         + (patch.sched ? ' It now runs ' + _crewWhen({ sched: patch.sched }) + ' on their clock.'
+           + (assumedTime ? ' No time was given, so it keeps ' + assumedTime + ' - say so.' : '')
            : patch.repeat ? ' It now runs ' + (_CREW_EVERY[patch.repeat] || patch.repeat) + ', starting one interval from now.' : '')
         + (patch.approval ? ({ auto:' Results are now delivered without review.',
                               suggest:' It will no longer run on its own - AMV will say it is due and wait to be asked.',
