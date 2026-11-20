@@ -119,13 +119,36 @@ async function _sendSignInCodeEmail(env, email, code, why, lang) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
+/* A CHALLENGE'S LIFE, ITS TRIES AND ITS ONE USE (Build 16 audit SEC-01/02).
+
+   A code lived only as long as its KV record's expiry - and the record was
+   rewritten after a wrong guess without one, which made it live for ever.
+   And its tries and its one use were counted in that same record, read from
+   a store that can answer with an older copy, so a lock around it bounded
+   nothing. Now a challenge carries an absolute deadline (`exp`) checked
+   before anything else and kept on every rewrite, and its tries and its use
+   are counted by the atomic counter: each submission is one increment, and
+   the use is a named step that happens once. A counter that cannot answer
+   refuses the attempt rather than giving it away. */
+function _codeExp(rec, ttlS){ return +rec.exp || ((+rec.at || 0) + ttlS * 1000); }
+function _codeLeft(rec, ttlS){ return (_codeExp(rec, ttlS) - Date.now()) / 1000; }
+async function _challengeTry(env, name, max, ttlS){
+  if (!env.AMV_COUNTER) return { ok: true };
+  const r = await counter(env, 'codeatt:' + name, { op: 'incr', amount: 1, strict: true, ttlMs: ttlS * 1000 + 60000 });
+  return { ok: +r.value <= max, n: +r.value };
+}
+async function _challengeUse(env, name, ttlS){
+  if (!env.AMV_COUNTER) return true;
+  const r = await counter(env, 'codeuse:' + name, { op: 'incr', amount: 1, once: 'used', strict: true, ttlMs: ttlS * 1000 + 60000 });
+  return !r.replay;
+}
 async function _startSignInCode(env, request, email, name, why, pending, reason, said) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   /* Kept with the code, so a resend is in the same language as the first. */
   const lang = _emailLang(request, said);
   await env.AMV_KV.put('signincode:' + id,
-    JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
+    JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(), exp: Date.now() + SIGNIN_CODE_TTL_S * 1000,
                      ...(pending ? { pending } : {}) }),
     { expirationTtl: SIGNIN_CODE_TTL_S });
   const sent = await _sendSignInCodeEmail(env, email, code, why, lang);
@@ -178,8 +201,11 @@ async function authLoginVerify(request, env) {
   const want = await _codeHash(id, code);
   let verdict;
   try {
-    verdict = await _withKV(env, 'signincode', id, (rec) => {
+    const tried = await _challengeTry(env, 'signin:' + id, SIGNIN_CODE_ATTEMPTS, SIGNIN_CODE_TTL_S);
+    if (!tried.ok) verdict = { exhausted: true };
+    else verdict = await _withKV(env, 'signincode', id, (rec) => {
       if (!rec || !rec.hash || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, SIGNIN_CODE_TTL_S)) return { gone: true };
       if ((+rec.attempts || 0) >= SIGNIN_CODE_ATTEMPTS) return { exhausted: true };
       const same = timingSafeEqual(new TextEncoder().encode(want), new TextEncoder().encode(rec.hash));
       if (!same) {
@@ -188,7 +214,8 @@ async function authLoginVerify(request, env) {
       }
       rec.used = true;
       return { ok: true, email: rec.email, name: rec.name, why: rec.why, at: +rec.at || 0, pending: rec.pending || null };
-    }, null);
+    }, null, (rec) => _codeLeft(rec, SIGNIN_CODE_TTL_S));
+    if (verdict && verdict.ok && !(await _challengeUse(env, 'signin:' + id, SIGNIN_CODE_TTL_S))) verdict = { gone: true };
   } catch (e) {
     if (_isBusy(e)) return json({ error: 'That code is being checked already. Try again in a moment.' }, 409);
     return json({ error: 'AMV could not check that code just now. Please try again in a moment.' }, 503);
@@ -257,11 +284,12 @@ async function authLoginResend(request, env) {
   try {
     rec = await _withKV(env, 'signincode', id, (r) => {
       if (!r || !r.hash || r.used) return { gone: true };
+      if (Date.now() >= _codeExp(r, SIGNIN_CODE_TTL_S)) return { gone: true };
       if ((+r.resends || 0) >= SIGNIN_CODE_RESENDS) return { capped: true };
       if (Date.now() - (+r.sentAt || +r.at || 0) < 30000) return { tooSoon: true };
       r.hash = hash; r.resends = (+r.resends || 0) + 1; r.sentAt = Date.now();
       return { ok: true, email: r.email, why: r.why, lang: r.lang };
-    }, null);
+    }, null, (r) => _codeLeft(r, SIGNIN_CODE_TTL_S));
   } catch (e) {
     return json({ error: 'AMV could not send a new code just now. Try again in a moment.' }, 503);
   }

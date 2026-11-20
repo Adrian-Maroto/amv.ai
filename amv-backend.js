@@ -19489,7 +19489,8 @@ async function authResetCode(request, env) {
   if (acct && emailConfigured) {
     const code = _sixDigitCode();
     await env.AMV_KV.put('resetcode:' + email,
-      JSON.stringify({ code, attempts: 0, at: Date.now() }),
+      JSON.stringify({ code, attempts: 0, at: Date.now(), exp: Date.now() + RESET_CODE_TTL * 1000,
+                       n: [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('') }),
       { expirationTtl: RESET_CODE_TTL });
     try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request, body.lang)); } catch (e) { delivered = false; }
     if (!delivered) {
@@ -19549,10 +19550,24 @@ async function authResetVerify(request, env) {
      deleted in place, because the lock's writer saves whatever load returned;
      the delete after it is cleanup, and a second attempt that gets in first
      sees `used` and is refused. */
-  let verdict;
+  /* Expiry, tries and the one use as for sign-in codes (SEC-01/02,
+     31-sign-in-codes.js). A reset code is kept per address, so its tries are
+     counted per issue of it (`n`), never across a fresh code. */
+  let verdict, issue = '';
   try {
     verdict = await _withKV(env, 'resetcode', email, (rec) => {
       if (!rec || !rec.code || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, RESET_CODE_TTL)) return { gone: true };
+      issue = String(rec.n || rec.at || '');
+      return { peek: true, commit: false };   // only reading: nothing is written back
+    }, null);
+    if (verdict && verdict.peek) {
+      const tried = await _challengeTry(env, 'reset:' + email + ':' + issue, RESET_CODE_ATTEMPTS, RESET_CODE_TTL);
+      if (!tried.ok) verdict = { exhausted: true };
+      else verdict = await _withKV(env, 'resetcode', email, (rec) => {
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, RESET_CODE_TTL)) return { gone: true };
+      if (String(rec.n || rec.at || '') !== issue) return { gone: true };
       if ((+rec.attempts || 0) >= RESET_CODE_ATTEMPTS) return { exhausted: true };
       if (rec.code !== code) {
         rec.attempts = (+rec.attempts || 0) + 1;
@@ -19560,7 +19575,9 @@ async function authResetVerify(request, env) {
       }
       rec.used = true;                   // consumed, once, under the lock
       return { ok: true };
-    }, null);
+    }, null, (rec) => _codeLeft(rec, RESET_CODE_TTL));
+      if (verdict && verdict.ok && !(await _challengeUse(env, 'reset:' + email + ':' + issue, RESET_CODE_TTL))) verdict = { gone: true };
+    }
   } catch (e) {
     /* The store could not be read, so nothing is known about this code. Letting
        it through would be a free attempt; counting it would let a storage fault
@@ -21889,13 +21906,36 @@ async function _sendSignInCodeEmail(env, email, code, why, lang) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
+/* A CHALLENGE'S LIFE, ITS TRIES AND ITS ONE USE (Build 16 audit SEC-01/02).
+
+   A code lived only as long as its KV record's expiry - and the record was
+   rewritten after a wrong guess without one, which made it live for ever.
+   And its tries and its one use were counted in that same record, read from
+   a store that can answer with an older copy, so a lock around it bounded
+   nothing. Now a challenge carries an absolute deadline (`exp`) checked
+   before anything else and kept on every rewrite, and its tries and its use
+   are counted by the atomic counter: each submission is one increment, and
+   the use is a named step that happens once. A counter that cannot answer
+   refuses the attempt rather than giving it away. */
+function _codeExp(rec, ttlS){ return +rec.exp || ((+rec.at || 0) + ttlS * 1000); }
+function _codeLeft(rec, ttlS){ return (_codeExp(rec, ttlS) - Date.now()) / 1000; }
+async function _challengeTry(env, name, max, ttlS){
+  if (!env.AMV_COUNTER) return { ok: true };
+  const r = await counter(env, 'codeatt:' + name, { op: 'incr', amount: 1, strict: true, ttlMs: ttlS * 1000 + 60000 });
+  return { ok: +r.value <= max, n: +r.value };
+}
+async function _challengeUse(env, name, ttlS){
+  if (!env.AMV_COUNTER) return true;
+  const r = await counter(env, 'codeuse:' + name, { op: 'incr', amount: 1, once: 'used', strict: true, ttlMs: ttlS * 1000 + 60000 });
+  return !r.replay;
+}
 async function _startSignInCode(env, request, email, name, why, pending, reason, said) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   /* Kept with the code, so a resend is in the same language as the first. */
   const lang = _emailLang(request, said);
   await env.AMV_KV.put('signincode:' + id,
-    JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
+    JSON.stringify({ email, name: name || '', why, lang, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(), exp: Date.now() + SIGNIN_CODE_TTL_S * 1000,
                      ...(pending ? { pending } : {}) }),
     { expirationTtl: SIGNIN_CODE_TTL_S });
   const sent = await _sendSignInCodeEmail(env, email, code, why, lang);
@@ -21948,8 +21988,11 @@ async function authLoginVerify(request, env) {
   const want = await _codeHash(id, code);
   let verdict;
   try {
-    verdict = await _withKV(env, 'signincode', id, (rec) => {
+    const tried = await _challengeTry(env, 'signin:' + id, SIGNIN_CODE_ATTEMPTS, SIGNIN_CODE_TTL_S);
+    if (!tried.ok) verdict = { exhausted: true };
+    else verdict = await _withKV(env, 'signincode', id, (rec) => {
       if (!rec || !rec.hash || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, SIGNIN_CODE_TTL_S)) return { gone: true };
       if ((+rec.attempts || 0) >= SIGNIN_CODE_ATTEMPTS) return { exhausted: true };
       const same = timingSafeEqual(new TextEncoder().encode(want), new TextEncoder().encode(rec.hash));
       if (!same) {
@@ -21958,7 +22001,8 @@ async function authLoginVerify(request, env) {
       }
       rec.used = true;
       return { ok: true, email: rec.email, name: rec.name, why: rec.why, at: +rec.at || 0, pending: rec.pending || null };
-    }, null);
+    }, null, (rec) => _codeLeft(rec, SIGNIN_CODE_TTL_S));
+    if (verdict && verdict.ok && !(await _challengeUse(env, 'signin:' + id, SIGNIN_CODE_TTL_S))) verdict = { gone: true };
   } catch (e) {
     if (_isBusy(e)) return json({ error: 'That code is being checked already. Try again in a moment.' }, 409);
     return json({ error: 'AMV could not check that code just now. Please try again in a moment.' }, 503);
@@ -22027,11 +22071,12 @@ async function authLoginResend(request, env) {
   try {
     rec = await _withKV(env, 'signincode', id, (r) => {
       if (!r || !r.hash || r.used) return { gone: true };
+      if (Date.now() >= _codeExp(r, SIGNIN_CODE_TTL_S)) return { gone: true };
       if ((+r.resends || 0) >= SIGNIN_CODE_RESENDS) return { capped: true };
       if (Date.now() - (+r.sentAt || +r.at || 0) < 30000) return { tooSoon: true };
       r.hash = hash; r.resends = (+r.resends || 0) + 1; r.sentAt = Date.now();
       return { ok: true, email: r.email, why: r.why, lang: r.lang };
-    }, null);
+    }, null, (r) => _codeLeft(r, SIGNIN_CODE_TTL_S));
   } catch (e) {
     return json({ error: 'AMV could not send a new code just now. Try again in a moment.' }, 503);
   }
@@ -34555,7 +34600,10 @@ class UnreadableRecordError extends Error {
   }
 }
 
-async function _withKV(env, name, key, mutate, empty) {
+/* `keepFor(rec)`, when given, is how many seconds the saved record may live:
+   KV replaces a key's expiry on every write, so a record that expires must
+   be written WITH its expiry or it lives for ever (Build 16 audit SEC-01). */
+async function _withKV(env, name, key, mutate, empty, keepFor) {
   const fresh = () => (empty === undefined ? null : JSON.parse(JSON.stringify(empty)));
   return _withRecord(env, name, String(key || ''),
     async (e, k) => {
@@ -34576,7 +34624,12 @@ async function _withKV(env, name, key, mutate, empty) {
         throw new UnreadableRecordError(id, 'invalid JSON');
       }
     },
-    async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec)); },
+    async (e, k, rec) => {
+      if (!rec) return;
+      const ttl = keepFor ? keepFor(rec) : null;
+      if (ttl != null) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil(ttl)) });
+      else await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec));
+    },
     mutate);
 }
 

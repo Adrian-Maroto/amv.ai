@@ -101,7 +101,8 @@ async function authResetCode(request, env) {
   if (acct && emailConfigured) {
     const code = _sixDigitCode();
     await env.AMV_KV.put('resetcode:' + email,
-      JSON.stringify({ code, attempts: 0, at: Date.now() }),
+      JSON.stringify({ code, attempts: 0, at: Date.now(), exp: Date.now() + RESET_CODE_TTL * 1000,
+                       n: [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('') }),
       { expirationTtl: RESET_CODE_TTL });
     try { delivered = await sendResetCodeEmail(env, email, code, _emailLang(request, body.lang)); } catch (e) { delivered = false; }
     if (!delivered) {
@@ -161,10 +162,24 @@ async function authResetVerify(request, env) {
      deleted in place, because the lock's writer saves whatever load returned;
      the delete after it is cleanup, and a second attempt that gets in first
      sees `used` and is refused. */
-  let verdict;
+  /* Expiry, tries and the one use as for sign-in codes (SEC-01/02,
+     31-sign-in-codes.js). A reset code is kept per address, so its tries are
+     counted per issue of it (`n`), never across a fresh code. */
+  let verdict, issue = '';
   try {
     verdict = await _withKV(env, 'resetcode', email, (rec) => {
       if (!rec || !rec.code || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, RESET_CODE_TTL)) return { gone: true };
+      issue = String(rec.n || rec.at || '');
+      return { peek: true, commit: false };   // only reading: nothing is written back
+    }, null);
+    if (verdict && verdict.peek) {
+      const tried = await _challengeTry(env, 'reset:' + email + ':' + issue, RESET_CODE_ATTEMPTS, RESET_CODE_TTL);
+      if (!tried.ok) verdict = { exhausted: true };
+      else verdict = await _withKV(env, 'resetcode', email, (rec) => {
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      if (Date.now() >= _codeExp(rec, RESET_CODE_TTL)) return { gone: true };
+      if (String(rec.n || rec.at || '') !== issue) return { gone: true };
       if ((+rec.attempts || 0) >= RESET_CODE_ATTEMPTS) return { exhausted: true };
       if (rec.code !== code) {
         rec.attempts = (+rec.attempts || 0) + 1;
@@ -172,7 +187,9 @@ async function authResetVerify(request, env) {
       }
       rec.used = true;                   // consumed, once, under the lock
       return { ok: true };
-    }, null);
+    }, null, (rec) => _codeLeft(rec, RESET_CODE_TTL));
+      if (verdict && verdict.ok && !(await _challengeUse(env, 'reset:' + email + ':' + issue, RESET_CODE_TTL))) verdict = { gone: true };
+    }
   } catch (e) {
     /* The store could not be read, so nothing is known about this code. Letting
        it through would be a free attempt; counting it would let a storage fault

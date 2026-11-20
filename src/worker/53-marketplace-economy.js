@@ -454,7 +454,10 @@ class UnreadableRecordError extends Error {
   }
 }
 
-async function _withKV(env, name, key, mutate, empty) {
+/* `keepFor(rec)`, when given, is how many seconds the saved record may live:
+   KV replaces a key's expiry on every write, so a record that expires must
+   be written WITH its expiry or it lives for ever (Build 16 audit SEC-01). */
+async function _withKV(env, name, key, mutate, empty, keepFor) {
   const fresh = () => (empty === undefined ? null : JSON.parse(JSON.stringify(empty)));
   return _withRecord(env, name, String(key || ''),
     async (e, k) => {
@@ -475,7 +478,12 @@ async function _withKV(env, name, key, mutate, empty) {
         throw new UnreadableRecordError(id, 'invalid JSON');
       }
     },
-    async (e, k, rec) => { if (rec) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec)); },
+    async (e, k, rec) => {
+      if (!rec) return;
+      const ttl = keepFor ? keepFor(rec) : null;
+      if (ttl != null) await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec), { expirationTtl: Math.max(60, Math.ceil(ttl)) });
+      else await e.AMV_KV.put(`${name}:${k}`, JSON.stringify(rec));
+    },
     mutate);
 }
 
