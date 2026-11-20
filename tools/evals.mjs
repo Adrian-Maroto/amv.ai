@@ -34,15 +34,28 @@ const CASES = opt('cases', join(ROOT, 'evals', 'cases.json'));
 const KEY = process.env.AMV_API_KEY || '';
 
 /* Grading: each check that fails says which, so a red case is actionable. */
+/* Checked against the OUTCOME, not only the format (Build 16 audit AG-13): a
+   wrong value in valid JSON, three bullets naming the wrong colours, and an
+   empty answer all passed. Now an empty answer fails every case unless it says
+   `allowEmpty`; `jsonEquals` compares the value, not just that it parses; and
+   `eachBullet` lists what the bullets must name, one pattern each. */
+const _same = (a, b) => JSON.stringify(_canon(a)) === JSON.stringify(_canon(b));
+function _canon(v) { if (Array.isArray(v)) return v.map(_canon); if (v && typeof v === 'object') return Object.keys(v).sort().reduce((o, k) => (o[k] = _canon(v[k]), o), {}); return v; }
 export function grade(c, text) {
   const why = [];
   const t = String(text || '');
+  if (!c.allowEmpty && !t.trim()) why.push('empty answer');
   for (const p of c.mustMatch || []) if (!new RegExp(p, 'i').test(t)) why.push('missing /' + p + '/');
   for (const p of c.mustNotMatch || []) if (new RegExp(p, 'i').test(t)) why.push('has /' + p + '/');
-  if (c.json) { try { JSON.parse(t.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { why.push('not JSON'); } }
-  if (c.bullets != null) {
-    const n = t.split('\n').filter(l => /^\s*([-*•]|\d+[.)])\s+\S/.test(l)).length;
-    if (n !== c.bullets) why.push(n + ' bullets, wanted ' + c.bullets);
+  if (c.json || c.jsonEquals !== undefined) {
+    let v, okJson = true;
+    try { v = JSON.parse(t.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { okJson = false; why.push('not JSON'); }
+    if (okJson && c.jsonEquals !== undefined && !_same(v, c.jsonEquals)) why.push('JSON is ' + JSON.stringify(v).slice(0, 80) + ', wanted ' + JSON.stringify(c.jsonEquals));
+  }
+  if (c.bullets != null || c.eachBullet) {
+    const lines = t.split('\n').filter(l => /^\s*([-*•]|\d+[.)])\s+\S/.test(l));
+    if (c.bullets != null && lines.length !== c.bullets) why.push(lines.length + ' bullets, wanted ' + c.bullets);
+    for (const p of c.eachBullet || []) if (!lines.some(l => new RegExp(p, 'i').test(l))) why.push('no bullet names /' + p + '/');
   }
   if (c.maxWords != null) { const n = t.trim().split(/\s+/).filter(Boolean).length; if (n > c.maxWords) why.push(n + ' words, at most ' + c.maxWords); }
   return why;

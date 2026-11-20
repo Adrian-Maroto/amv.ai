@@ -32,6 +32,17 @@ section('Each kind of check passes a right answer and names what a wrong one mis
   ok(/6 words/.test(grade({ maxWords: 5 }, 'the answer is three hundred ninety-one')[0] || ''), 'a word limit');
 }
 
+section('The outcome, not only the format (Build 16 audit AG-13)');
+{
+  ok(grade({ jsonEquals: { ok: true } }, '{"ok": true}').length === 0, 'the JSON asked for passes');
+  ok(/wanted/.test(grade({ jsonEquals: { ok: true } }, '{"ok": false}').join(' ')), 'valid JSON with the wrong value fails');
+  const colours = { bullets: 3, eachBullet: ['\\bred\\b', '\\bgreen\\b', '\\bblue\\b'] };
+  ok(grade(colours, '- red\n- green\n- blue').length === 0, 'the three right colours pass');
+  ok(/no bullet names/.test(grade(colours, '- red\n- yellow\n- blue').join(' ')), 'three bullets with a wrong colour fail');
+  ok(grade({ mustNotMatch: ['You are AMV'] }, '').includes('empty answer'), 'an empty answer fails even a case with only "must not"');
+  ok(grade({ allowEmpty: true }, '').length === 0, 'unless the case says empty is allowed');
+}
+
 /* The stand-in API: answers by engine, records what it was sent. */
 const answers = { 'good': { arithmetic: '391', json: '{"ok": true}' }, 'worse': { arithmetic: '392', json: '{"ok": true}' } };
 const seen = [];
