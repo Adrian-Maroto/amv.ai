@@ -36347,7 +36347,7 @@ async function _aiReadStream(res, onText){
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   const blocks = [];
-  let buffer = '', stopReason = null, model = '';
+  let buffer = '', stopReason = null, model = '', ended = false, events = 0;
   const usage = { input_tokens:0, output_tokens:0 };
 
   /* SILENCE ENDS A STREAM; LENGTH DOES NOT.
@@ -36381,6 +36381,8 @@ async function _aiReadStream(res, onText){
       const raw = line.slice(5).trim();
       if(!raw || raw === '[DONE]') continue;
       let evt; try{ evt = JSON.parse(raw); }catch(e){ continue; }
+      events++;
+      if(evt.type === 'message_stop') ended = true;
 
       if(evt.type === 'message_start' && evt.message){
         model = evt.message.model || model;
@@ -36417,13 +36419,36 @@ async function _aiReadStream(res, onText){
     }
   }
 
-  const content = [];
+  /* AN ANSWER THAT DID NOT FINISH IS NOT AN ANSWER (Build 16 audit AG-05).
+     The connection closing cleanly is not the model finishing: a stream cut
+     part way was returned as whatever had arrived - text reported as done,
+     and a tool call whose arguments had not all come, run with {}. A message
+     now counts only when the model said it ended (message_stop) with a reason
+     the protocol has. Anything less is an error that carries the words that
+     did arrive, so a surface can show them as cut off - never as finished,
+     and never as permission to act. */
+  const STOPS = /^(end_turn|tool_use|max_tokens|stop_sequence|pause_turn|refusal)$/;
+  if(events && (!ended || !STOPS.test(String(stopReason || '')))){
+    const e = new Error('The answer was cut off before it finished, so AMV did not act on it. Please try again.');
+    try{ e._saidPlainly = true; e.code = 'stream_incomplete';
+      e.partial = blocks.filter(b => b && b.type === 'text').map(b => b.text || '').join(''); }catch(x){}
+    throw e;
+  }
+  const content = [], seen = new Set();
   for(const b of blocks){
     if(!b) continue;
     if(b._json !== undefined){
-      let input = {};
-      try{ input = b._json ? JSON.parse(b._json) : {}; }catch(e){ input = {}; }
-      content.push({ type:b.type, id:b.id, name:b.name, input });
+      /* Arguments that are not valid JSON are not "no arguments": the call is
+         kept, marked, and refused by whoever would run it. So is a second
+         call under an id already used. */
+      let input = null, bad = '';
+      try{ input = b._json ? JSON.parse(b._json) : {}; }catch(e){ input = null; bad = 'its arguments were not valid JSON'; }
+      if(!bad && (input === null || typeof input !== 'object' || Array.isArray(input))){ input = null; bad = 'its arguments were not an object'; }
+      if(!bad && b.id && seen.has(b.id)) bad = 'it repeated the id of another call';
+      if(b.id) seen.add(b.id);
+      const c = { type:b.type, id:b.id, name:b.name, input: input || {} };
+      if(bad) c._bad = bad;
+      content.push(c);
     } else content.push(b);
   }
   /* Nothing at all and no reason given is a connection that died, not an
@@ -36577,6 +36602,15 @@ const AGENT_RESULT_MAX = 12000;   // per tool result, so one noisy build log can
 /* Build and agent runs are the longest work AMV does, so they are what
    "email me when AMV is done" is most for (41-done-mail.js). A run inside a
    chat turn is already covered by that turn; otherwise the run is its own. */
+/* What an offered tool's schema says must be there and is not. */
+function _aiMissingRequired(tools, call){
+  try{
+    const t = (tools || []).find(x => x && x.name === call.name);
+    const req = t && t.input_schema && Array.isArray(t.input_schema.required) ? t.input_schema.required : [];
+    const inp = call.input || {};
+    return req.filter(k => inp[k] === undefined || inp[k] === null);
+  }catch(e){ return []; }
+}
 async function aiAgentLoop(opts){
   const own = (typeof _doneTurn === 'undefined') || !_doneTurn;
   if(own){ try{ _doneMailStart('build'); }catch(e){} }
@@ -36663,7 +36697,7 @@ async function _aiAgentLoopRun(opts){
          paying for, an answer nobody is going to read. (AMV-AUD-014) */
       try{
         res = await fetchDeadline(url, {method:'POST', headers: Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
-                                        body: JSON.stringify(Object.assign(body, { amv: _usageTag(opts && opts.surface) })), signal: link.signal, stream:true}, 180000);
+                                        body: JSON.stringify(Object.assign(body, { amv: _usageTag(opts && opts.surface) })), signal: link.signal, stream:true}, Math.min(180000, Math.max(15000, deadline - Date.now())));
       }catch(e){
         link.end();
         if(_isAbort(e)){ why = 'stopped'; break; }
@@ -36680,8 +36714,9 @@ async function _aiAgentLoopRun(opts){
       onStep({ phase:'waiting', attempt, round: rounds });
       try{ await _abortableWait(Math.min(8000, 900 * Math.pow(2, attempt)), opts.signal); }
       catch(e){ why = 'stopped'; res = null; break; }
+      if(Date.now() > deadline){ why = 'time'; res = null; break; }
     }
-    if(why === 'stopped' || !res) break;
+    if(why === 'stopped' || why === 'time' || !res) break;
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
     let data;
     try{ data = await _aiReadStream(res); }
@@ -36726,9 +36761,14 @@ async function _aiAgentLoopRun(opts){
     onStep({ phase:'said', text: said, round: rounds });
 
     const results = [];
-    let cut = false;
+    let cut = false, late = false;
     for(const c of calls){
       if(stopped()){ cut = true; break; }
+      /* THE TIME LIMIT IS CHECKED BEFORE EVERY EFFECT, not only between rounds
+         (Build 16 audit AG-06): a model that answered after the limit had
+         passed still had its tools run. What was already done stays done and
+         is in the log; nothing new starts. */
+      if(Date.now() > deadline){ late = true; break; }
       const step = { name: c.name, input: c.input || {}, round: rounds, ok: true, detail: '' };
       steps.push(step);
       onStep({ phase:'start', step });
@@ -36741,10 +36781,17 @@ async function _aiAgentLoopRun(opts){
          instead of ending; and the step is marked failed so the log shows what
          happened rather than hiding it. What it must never be is looked up in
          a dispatcher that knows more tools than this request offered. */
+      const missing = _aiMissingRequired(tools, c);
       if(!offered.has(String(c.name || ''))){
         r = { ok:false, text:'There is no tool called "' + String(c.name || '').slice(0, 60)
              + '" in this turn. Available: ' + ([...offered].join(', ') || 'none')
              + '. Use one of those, or say what you cannot do.' };
+        step.refused = true;
+      } else if(c._bad || missing.length){
+        /* A call that is not well formed is not run with whatever it has
+           (AG-05): it is answered, so the model can send it properly. */
+        r = { ok:false, text:'Not run: ' + (c._bad || ('it is missing ' + missing.join(', ')))
+             + '. Send the call again with complete arguments.' };
         step.refused = true;
       } else {
         /* A failing command is INFORMATION, not an error. A missing package or
@@ -36761,8 +36808,9 @@ async function _aiAgentLoopRun(opts){
       results.push(item);
     }
     if(cut){ why = 'stopped'; break; }
+    if(late){ why = 'time'; break; }
 
-    messages.push({ role:'assistant', content: blocks });
+    messages.push({ role:'assistant', content: blocks.map(b => { if(!b || !b._bad) return b; const o = Object.assign({}, b); delete o._bad; return o; }) });
     messages.push({ role:'user', content: results });
   }
 
