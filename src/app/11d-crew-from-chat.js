@@ -485,6 +485,10 @@ async function _sectionTool(name, input){
   if(name === 'memory_add'){
     if(_isTempChat())
       return { text:'Not saved: this is a temporary chat, so nothing from it is remembered. Tell the user so, and that they can say it again in a normal chat if they want AMV to keep it.', render:null };
+    /* Off means off, from chat too (Build 16 audit AG-08). The Memory tab is
+       still theirs to add to by hand. */
+    if(typeof _memOn === 'function' && !_memOn())
+      return { text:'Not saved: Memory is switched off in Settings, so AMV does not remember things from chats. Tell the user so - they can switch it on in Settings, or add it themselves in the Memory tab.', render:null };
     const text = String(input.text||'').trim().slice(0, _MEM_MAX);
     if(text.length < 3) return { text:'That is not enough to remember. Ask the user what exactly they want AMV to know.', render:null };
     /* Refused rather than stored. A memory is replayed into every future

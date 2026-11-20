@@ -1045,10 +1045,23 @@ const D1_ROW_MAX_BYTES = 1900000;
    just been turned on. Every write of these kinds commits an exact revision
    (DB.put below, the lock in _withRecord) and every read takes the committed
    copy (_revRead). */
-const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
+/* And since Nov 20 (Build 16 audit STATE16-02): the records a person edits
+   from more than one device and is told were saved - Crew's jobs (`auto`),
+   named agents, approvals, consent, account links, Crew's job list, shares,
+   deployed-site lists, team tasks and handoffs, and support tickets. Each was
+   replaced whole under a lock from a KV read that could be stale, so a job
+   added on the laptop was lost when the phone's change went on from the copy
+   before it. The kinds read on public paths (a published site, a game, a
+   website widget) are left out on purpose: one more round trip on every
+   visitor's request is a cost those records do not earn, because only their
+   owner ever writes them, from one place at a time. A kind joins only if
+   nothing writes its KV key directly, since a write that skips the authority
+   is a write the authority would then refuse to read. */
+const REV_USER_KINDS = ['auto', 'agents', 'approvals', 'consent', 'links', 'crewjobs', 'shares', 'sites', 'teamtasks', 'handoff', 'support'];
+const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys', ...REV_USER_KINDS]);
 /* Of those, the ones written whole by DB.put rather than by a caller that
    already merges against a revision (chats do, through putIfRev). */
-const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
+const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys', ...REV_USER_KINDS]);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
 /* THE REVISION A LOCK HOLDER READ IS THE ONE IT WRITES FROM (build 16 audit
    STATE16-01). A whole-record write went on from whatever revision was
@@ -1071,7 +1084,7 @@ function _revFenced(kind, id, fn){
 }
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
-const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
+const _revBlobKeyOK = (k) => { const m = /^revblob:([a-z_]{1,24}):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.exec(String(k)); return !!(m && REV_KINDS.has(m[1])); };
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -18341,7 +18354,18 @@ async function _backupCommittedKey(env, blobKey){
   if (!st || st.unavailable) throw new Error('backup incomplete: the revision of ' + key + ' could not be read');
   if (!st.committed || st.absent || st.rev !== rev || (dg && dg !== st.digest)) return null;
   const raw = await env.AMV_KV.get(blobKey);
-  if (raw == null || (await _revDigest(raw)) !== st.digest) return null;
+  /* THE COMMITTED COPY, OR THE BACKUP IS NOT COMPLETE (Build 16 audit
+     STATE16-05). This snapshot IS the committed revision - the object just
+     said so - and its bytes are missing or are not what was committed. That
+     returned null, which both exporters read as "nothing to back up here",
+     and the backup went on to call itself complete without a record somebody
+     was told had been saved. It is the record and it cannot be read, so the
+     export stops and says which. The night tries again on its next tick; the
+     download fails visibly. */
+  if (raw == null || (await _revDigest(raw)) !== st.digest) {
+    audit(env, 'backup_committed_unreadable', { key: key.slice(0, 160), rev });
+    throw new Error('backup incomplete: the committed copy of ' + key + ' could not be read');
+  }
   return { key, raw };
 }
 async function* _backupCommittedOrphans(env){
@@ -18882,16 +18906,19 @@ async function _nightlyBackupSlice(env, atMs){
 
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
-  if (!st) {
-    /* No checkpoint for tonight - lost, expired or never written. A finished
-       night is told by its signed manifest, not by the checkpoint, so it is
-       not started again over the top of itself. */
+  /* A finished night is told by its signed manifest, not by the checkpoint -
+     and that is asked EVERY time, not only when the checkpoint is missing
+     (Build 16 audit STATE16-04). A stale checkpoint replayed after the night
+     finished used to resume it, write its parts again over the ones the
+     manifest's hashes describe, and leave the published backup unreadable.
+     The bucket is read-after-write consistent; the checkpoint's store is not. */
+  if (!st || !st.done) {
     let man = null;
     try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); man = o ? JSON.parse(await o.text()) : null; } catch (e) { man = null; }
     if (man && man.complete && await _manifestSigned(env, man)) {
       st = { day, done: true, gen: man.gen || '', part: man.parts, count: man.keyCount, startedAt: man.startedAt };
       await env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
-    } else {
+    } else if (!st) {
       const g = crypto.getRandomValues(new Uint8Array(8));
       st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
              prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
@@ -18950,6 +18977,37 @@ async function _nightlyBackupSlice(env, atMs){
     return { on: true, day, parts, count: st.count, more: true };
   }
 
+  /* EVERY PART IS WHAT THE CHECKPOINT SAYS, OR NOTHING IS PUBLISHED
+     (STATE16-04). A writer resuming from an older checkpoint can write a part
+     again with different records in it; the manifest would then promise a
+     hash the bucket does not hold, and the restore would refuse the night
+     only when it was needed. Each part is checked against the hash this run
+     recorded for it, and a night that does not match starts again in a new
+     generation - its own names, so nothing anybody could already rely on is
+     overwritten. And a manifest that appeared meanwhile is never replaced. */
+  for (let i = 0; i < st.part; i++) {
+    const want = Array.isArray(st.partSha) ? st.partSha[i] : null;
+    const got = await _nightlyPartSha(env, _nightlyPart(day, i, st.gen));
+    if (!want || got !== want) {
+      audit(env, 'nightly_backup_restarted', { day, gen: st.gen, part: i });
+      try { await alertOnce(env, 'nightly_backup_restarted', 'Tonight’s backup (' + day + ') found a part that did not match its record and started again from the beginning. The last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
+      const g = crypto.getRandomValues(new Uint8Array(8));
+      st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
+             prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+      await save();
+      return { on: true, day, more: true, restarted: true };
+    }
+  }
+  {
+    let other = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); other = o ? JSON.parse(await o.text()) : null; } catch (e) { other = null; }
+    if (other && other.complete && await _manifestSigned(env, other)) {
+      st = { day, done: true, gen: other.gen || '', part: other.parts, count: other.keyCount, startedAt: other.startedAt };
+      await save();
+      return { on: true, day, done: true, count: other.keyCount, parts: other.parts };
+    }
+  }
+
   /* Written last: a night without a manifest is not a backup. Signed (Nov 3
      audit REL-017), so a manifest somebody edited in the bucket - or one
      written by anything but this Worker - is not taken for a backup. */
@@ -18965,6 +19023,21 @@ async function _nightlyBackupSlice(env, atMs){
   audit(env, 'nightly_backup', { day, keyCount: st.count, parts: st.part, bytes: st.bytes });
   await _nightlyPrune(env, now);
   return { on: true, day, done: true, count: st.count, parts: st.part };
+}
+
+/* A part's hash as the bucket holds it: from its metadata when the bucket
+   can answer that alone, else from its bytes. Null when it is not there. */
+async function _nightlyPartSha(env, key){
+  try {
+    if (typeof env.AMV_BACKUPS.head === 'function') {
+      const h = await env.AMV_BACKUPS.head(key);
+      if (!h) return null;
+      const m = h.customMetadata && h.customMetadata.sha256;
+      if (m) return m;
+    }
+    const o = await env.AMV_BACKUPS.get(key);
+    return o ? await _sha256Hex(await o.text()) : null;
+  } catch (e) { return null; }
 }
 
 /* Thirty nights kept; anything older is deleted, part by part. */
@@ -32852,11 +32925,24 @@ async function _creditReverse(env, ref, why, refundedUSD){
   try{
     rec = _safeJson(await env.AMV_KV.get('creditpay:' + ref));
     if(!rec || !rec.subject) return false;
-    const already = +rec.reversed || 0;
+    /* HOW MUCH WAS ALREADY TAKEN BACK IS ASKED OF THE COUNTER (Build 16 audit
+       STATE16-03). It was read from this KV record, which can be stale: a
+       partial refund of 10 then one of 20 read "nothing taken yet" the second
+       time and took 20 more instead of 10. The total taken back now lives in
+       a counter of its own, read strictly - and the KV copy still counts, so
+       a pack refunded before this shipped is never taken back twice either:
+       a stale copy can only be lower than the truth, so the larger is right. */
+    const revName = 'creditrev:' + ref;
+    const held = await counter(env, revName, { op: 'get', strict: true });
+    const already = Math.max(+rec.reversed || 0, +(held && held.value) || 0);
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + (already + take).toFixed(2) });
+      const total = (already + take).toFixed(2);
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + total });
+      /* Named by the total too: a retry after the balance moved but before
+         this did finds the balance step already done and finishes this one. */
+      await counter(env, revName, { op: 'incr', amount: Math.max(0, already + take - (+(held && held.value) || 0)), keep: true, strict: true, once: 'revc:' + total });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
       /* Each part taken back is its own row, keyed by how much had been taken

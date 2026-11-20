@@ -141,7 +141,8 @@ async function _projectContextFor(msgs){
 /* Memory learned in a project chat goes to the project. */
 function _projAddMemory(ws, facts){
   const known = new Set((ws.memory || []).map(m => String(m.text || '').toLowerCase().trim()));
-  const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memDuplicate(f, known)).slice(0, 5);
+  /* The same screening as every other memory door (Build 16 audit AG-09). */
+  const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memLooksSecret(f) && !_memDuplicate(f, known)).slice(0, 5);
   if(!fresh.length) return 0;
   ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + _rid(3), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
     .concat(ws.memory || []).slice(0, PROJ_MEM_MAX);
@@ -239,7 +240,7 @@ function _renderProjectPanel(id){
     _projSaveFiles(id, _projFiles(id).filter(f => f.id !== b.dataset.pjRm)); _renderProjectPanel(id);
   }));
   body.querySelectorAll('[data-pj-forget]').forEach(b => on(b, 'click', () => {
-    ws.memory = (ws.memory || []).filter(m => m.id !== b.dataset.pjForget); _wsTouch(ws); _renderProjectPanel(id);
+    ws.memory = (ws.memory || []).filter(m => m.id !== b.dataset.pjForget); try{ _memForgetEpoch++; }catch(e){} _wsTouch(ws); _renderProjectPanel(id);
   }));
   _tpHook(ws);
 }

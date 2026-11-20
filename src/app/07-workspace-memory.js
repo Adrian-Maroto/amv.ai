@@ -1321,36 +1321,67 @@ function delMemory(id){
    assistant genuinely remembers and gets more useful each session.
    ============================================================ */
 let _memExtractBusy=false;
+/* MEMORY OFF MEANS NOTHING IS LEARNED (Build 16 audit AG-08). The switch in
+   Settings only kept memories out of the answer; the extraction after every
+   third message still ran, asked a model and saved what came back. It is
+   asked before scheduling, before the model is asked, and again before
+   anything is kept - turned off while a request is out, its answer is dropped. */
+function _memOn(){ try{ return loadStr('amv_cap_memory')!=='0'; }catch(e){ return false; } }
+function _memWho(){ try{ return (S.user && S.user.email ? String(S.user.email).toLowerCase() : 'guest'); }catch(e){ return 'guest'; } }
+try{ window._memOn = _memOn; }catch(e){}
 async function _maybeExtractMemory(msgs){
   try{
     if(_memExtractBusy) return;
+    if(!_memOn()) return;
+    if(typeof _isTempChat==='function' && _isTempChat()) return;
     if(!_aiBackendReady()) return;
     // only run occasionally (every few exchanges) to keep it cheap
     const userTurns=msgs.filter(m=>m.r==='u').length;
     if(userTurns<2 || userTurns%3!==0) return;
     _memExtractBusy=true;
+    /* WHERE IT IS LEARNED IS DECIDED BEFORE ASKING (AG-10). Read after the
+       model answered, the project was whichever one was open by then - so a
+       fact from one client's project landed in another's. The account, the
+       project and the conversation are taken now, and the answer is kept only
+       if all three still hold when it arrives. */
+    const who=_memWho();
+    const proj0=_curProject();
+    const wsId=proj0 ? proj0.id : null;
+    const conv=(typeof S!=='undefined' && S) ? S.cur : null;
+    const epoch=_memForgetEpoch;
     const recent=msgs.slice(-8).map(m=>(m.r==='u'?'User: ':'AMV: ')+(typeof m.c==='string'?m.c:'').slice(0,400)).join('\n');
-    const existing=S.memory.map(m=>m.text).join(' | ')||'(none yet)';
+    const existing=(proj0 ? (proj0.memory||[]) : S.memory).map(m=>m.text).join(' | ')||'(none yet)';
     const sys='Extract durable facts worth remembering about the USER from this conversation '+
       '(their name, role, preferences, ongoing projects, goals, constraints). '+
+      'Never include a password, key, code, card or account number, or any other secret. '+
       'Return ONLY a JSON array of short fact strings. Skip anything already known. '+
       'Return [] if nothing new. Already known: '+existing;
     const out=await aiComplete(recent, sys, {json:true, max_tokens:300, noLang:true});
+    if(!_memOn() || _memWho()!==who || _memForgetEpoch!==epoch) return;
+    if(typeof _isTempChat==='function' && _isTempChat()) return;
     let facts=[]; try{ facts=JSON.parse(String(out).replace(/```json|```/g,'').trim()); }catch(e){}
-    if(!Array.isArray(facts)||!facts.length){ _memExtractBusy=false; return; }
-    /* Learned inside a project, kept with the project - a client's details are
-       not general facts about the person. */
-    const proj=_curProject();
-    if(proj){ _projAddMemory(proj, facts); return; }
+    /* What a model proposes is a proposal (AG-09): the same screening every
+       other door applies - a secret is never kept, whoever suggested it. */
+    facts=(Array.isArray(facts)?facts:[]).filter(f=>typeof f==='string' && f.trim() && !_memLooksSecret(f));
+    if(!facts.length) return;
+    /* Learned inside a project, kept with THAT project - a client's details
+       are not general facts about the person. Gone since: nothing is kept. */
+    if(wsId){
+      const ws=_wsById(wsId);
+      if(ws) _projAddMemory(ws, facts);
+      return;
+    }
+    if(_curProject() && (typeof S==='undefined' || !S || S.cur!==conv)) return;
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
-    const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
+    const fresh=facts.filter(f=>!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
-      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
+      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim().slice(0,_MEM_MAX_AUTO),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
       if(typeof renderMemList==='function' && S.tab==='memory') renderMemList();
     }
   }catch(e){ /* extraction is best-effort */ }
   finally{ _memExtractBusy=false; }
 }
+const _MEM_MAX_AUTO=300;
 function _memDuplicate(fact, knownSet){
   const f=fact.toLowerCase().trim();
   if(knownSet.has(f)) return true;

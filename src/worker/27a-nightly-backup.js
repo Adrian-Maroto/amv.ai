@@ -74,16 +74,19 @@ async function _nightlyBackupSlice(env, atMs){
 
   let st;
   try { st = JSON.parse((await env.AMV_KV.get(_nightlyStateKey(day))) || 'null'); } catch (e) { st = null; }
-  if (!st) {
-    /* No checkpoint for tonight - lost, expired or never written. A finished
-       night is told by its signed manifest, not by the checkpoint, so it is
-       not started again over the top of itself. */
+  /* A finished night is told by its signed manifest, not by the checkpoint -
+     and that is asked EVERY time, not only when the checkpoint is missing
+     (Build 16 audit STATE16-04). A stale checkpoint replayed after the night
+     finished used to resume it, write its parts again over the ones the
+     manifest's hashes describe, and leave the published backup unreadable.
+     The bucket is read-after-write consistent; the checkpoint's store is not. */
+  if (!st || !st.done) {
     let man = null;
     try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); man = o ? JSON.parse(await o.text()) : null; } catch (e) { man = null; }
     if (man && man.complete && await _manifestSigned(env, man)) {
       st = { day, done: true, gen: man.gen || '', part: man.parts, count: man.keyCount, startedAt: man.startedAt };
       await env.AMV_KV.put(_nightlyStateKey(day), JSON.stringify(st), { expirationTtl: 40 * 86400 });
-    } else {
+    } else if (!st) {
       const g = crypto.getRandomValues(new Uint8Array(8));
       st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
              prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
@@ -142,6 +145,37 @@ async function _nightlyBackupSlice(env, atMs){
     return { on: true, day, parts, count: st.count, more: true };
   }
 
+  /* EVERY PART IS WHAT THE CHECKPOINT SAYS, OR NOTHING IS PUBLISHED
+     (STATE16-04). A writer resuming from an older checkpoint can write a part
+     again with different records in it; the manifest would then promise a
+     hash the bucket does not hold, and the restore would refuse the night
+     only when it was needed. Each part is checked against the hash this run
+     recorded for it, and a night that does not match starts again in a new
+     generation - its own names, so nothing anybody could already rely on is
+     overwritten. And a manifest that appeared meanwhile is never replaced. */
+  for (let i = 0; i < st.part; i++) {
+    const want = Array.isArray(st.partSha) ? st.partSha[i] : null;
+    const got = await _nightlyPartSha(env, _nightlyPart(day, i, st.gen));
+    if (!want || got !== want) {
+      audit(env, 'nightly_backup_restarted', { day, gen: st.gen, part: i });
+      try { await alertOnce(env, 'nightly_backup_restarted', 'Tonight’s backup (' + day + ') found a part that did not match its record and started again from the beginning. The last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
+      const g = crypto.getRandomValues(new Uint8Array(8));
+      st = { day, gen: 'g' + [...g].map(b => b.toString(16).padStart(2, '0')).join(''),
+             prefix: 0, cursor: null, part: 0, count: 0, bytes: 0, startedAt: now, done: false, failed: '' };
+      await save();
+      return { on: true, day, more: true, restarted: true };
+    }
+  }
+  {
+    let other = null;
+    try { const o = await env.AMV_BACKUPS.get(_nightlyManifest(day)); other = o ? JSON.parse(await o.text()) : null; } catch (e) { other = null; }
+    if (other && other.complete && await _manifestSigned(env, other)) {
+      st = { day, done: true, gen: other.gen || '', part: other.parts, count: other.keyCount, startedAt: other.startedAt };
+      await save();
+      return { on: true, day, done: true, count: other.keyCount, parts: other.parts };
+    }
+  }
+
   /* Written last: a night without a manifest is not a backup. Signed (Nov 3
      audit REL-017), so a manifest somebody edited in the bucket - or one
      written by anything but this Worker - is not taken for a backup. */
@@ -157,6 +191,21 @@ async function _nightlyBackupSlice(env, atMs){
   audit(env, 'nightly_backup', { day, keyCount: st.count, parts: st.part, bytes: st.bytes });
   await _nightlyPrune(env, now);
   return { on: true, day, done: true, count: st.count, parts: st.part };
+}
+
+/* A part's hash as the bucket holds it: from its metadata when the bucket
+   can answer that alone, else from its bytes. Null when it is not there. */
+async function _nightlyPartSha(env, key){
+  try {
+    if (typeof env.AMV_BACKUPS.head === 'function') {
+      const h = await env.AMV_BACKUPS.head(key);
+      if (!h) return null;
+      const m = h.customMetadata && h.customMetadata.sha256;
+      if (m) return m;
+    }
+    const o = await env.AMV_BACKUPS.get(key);
+    return o ? await _sha256Hex(await o.text()) : null;
+  } catch (e) { return null; }
 }
 
 /* Thirty nights kept; anything older is deleted, part by part. */

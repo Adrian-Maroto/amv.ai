@@ -45,10 +45,23 @@ const D1_ROW_MAX_BYTES = 1900000;
    just been turned on. Every write of these kinds commits an exact revision
    (DB.put below, the lock in _withRecord) and every read takes the committed
    copy (_revRead). */
-const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
+/* And since Nov 20 (Build 16 audit STATE16-02): the records a person edits
+   from more than one device and is told were saved - Crew's jobs (`auto`),
+   named agents, approvals, consent, account links, Crew's job list, shares,
+   deployed-site lists, team tasks and handoffs, and support tickets. Each was
+   replaced whole under a lock from a KV read that could be stale, so a job
+   added on the laptop was lost when the phone's change went on from the copy
+   before it. The kinds read on public paths (a published site, a game, a
+   website widget) are left out on purpose: one more round trip on every
+   visitor's request is a cost those records do not earn, because only their
+   owner ever writes them, from one place at a time. A kind joins only if
+   nothing writes its KV key directly, since a write that skips the authority
+   is a write the authority would then refuse to read. */
+const REV_USER_KINDS = ['auto', 'agents', 'approvals', 'consent', 'links', 'crewjobs', 'shares', 'sites', 'teamtasks', 'handoff', 'support'];
+const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys', ...REV_USER_KINDS]);
 /* Of those, the ones written whole by DB.put rather than by a caller that
    already merges against a revision (chats do, through putIfRev). */
-const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
+const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys', ...REV_USER_KINDS]);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
 /* THE REVISION A LOCK HOLDER READ IS THE ONE IT WRITES FROM (build 16 audit
    STATE16-01). A whole-record write went on from whatever revision was
@@ -71,7 +84,7 @@ function _revFenced(kind, id, fn){
 }
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
-const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
+const _revBlobKeyOK = (k) => { const m = /^revblob:([a-z_]{1,24}):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.exec(String(k)); return !!(m && REV_KINDS.has(m[1])); };
 async function _revDigest(text){
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text))));
   return [...h].map(b => b.toString(16).padStart(2, '0')).join('');

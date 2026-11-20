@@ -30,7 +30,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'signedhooks.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens };
+export { runDueAutomations, issueTokens, DB };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -104,6 +104,25 @@ const make = async (words) => {
 const sign = (id, kind, secret) => post('/auto/hook', { id, action: 'sign', kind, ...(secret ? { secret } : {}) });
 const payload = (tag) => JSON.stringify({ event: 'order.created', order: { id: tag, n: ++n } });
 
+
+/* A write that lands right after a read of this account's jobs: the read is
+   answered first, then the change is committed through the data layer - as a
+   concurrent request would commit it. (Raw KV is no longer a way to fake one:
+   Crew jobs are read as committed since the Build 16 audit, STATE16-02.) */
+function afterNextJobRead(write){
+  const real = env.AMV_COUNTER.get; let armed = true;
+  env.AMV_COUNTER.get = (n) => {
+    const stub = real.call(env.AMV_COUNTER, n);
+    if (n !== 'rev:auto:' + ME) return stub;
+    return { async fetch(u, init) {
+      const r = await stub.fetch(u, init);
+      if (armed && JSON.parse(init.body).op === 'revGet') { armed = false; env.AMV_COUNTER.get = real; await write(); }
+      return r;
+    } };
+  };
+  return () => { env.AMV_COUNTER.get = real; };
+}
+
 section('GitHub: X-Hub-Signature-256 over the body');
 {
   const j = await make();
@@ -124,7 +143,7 @@ section('GitHub: X-Hub-Signature-256 over the body');
   ok(replay.status === 200 && replay.d.duplicate, 'a replay with a made-up delivery id is still a duplicate - the id comes from what was signed', replay.d);
   /* Past the job's list of recent ids: GitHub's scheme carries no time, so
      only the longer memory stands between a captured request and a re-run. */
-  const it = job(j.id); it.hook.seen = []; const r = rec(); r.items = r.items.map(x => x.id === j.id ? it : x); store.set('auto:' + ME, JSON.stringify(r));
+  const it = job(j.id); it.hook.seen = []; const r = rec(); r.items = r.items.map(x => x.id === j.id ? it : x); await W.DB.put(env, 'auto', ME, r);
   const later = await send(j.url, b, { 'X-Hub-Signature-256': 'sha256=' + hmacHex(secret, b) });
   ok(later.status === 200 && later.d.duplicate, 'and still one after the job’s short list has moved on', later.d);
   const mine = await sign(j.id, 'github', 'my-own-github-secret-123');
@@ -174,7 +193,7 @@ section('A new secret: the old one works for a day, then not');
   const list = await post('/auto/list', {});
   const row = (list.d.items || []).find(x => x.id === j.id);
   ok(row && row.hook && row.hook.signed === 'stripe' && row.hook.oldSecretUntil > Date.now(), 'the job list says signing is on and the old secret is ending', row && row.hook);
-  const r = rec(); const it = r.items.find(x => x.id === j.id); it.hook.sig.pUntil = Date.now() - 1; store.set('auto:' + ME, JSON.stringify(r));
+  const r = rec(); const it = r.items.find(x => x.id === j.id); it.hook.sig.pUntil = Date.now() - 1; await W.DB.put(env, 'auto', ME, r);
   const c = payload('rot3');
   const late = await send(j.url, c, head(c, oldKey));
   ok(late.status === 401 && late.d.code === 'bad_signature', 'a day later the old secret is refused', late.d);
@@ -235,12 +254,13 @@ section('AMV’s standard (Standard Webhooks): webhook-id, webhook-timestamp, we
 
   /* Signing comes on between the request being checked and being kept: the
      check saw it off, so the lock must refuse rather than keep it unsigned. */
-  const before = JSON.parse(store.get('auto:' + ME));
+  const on = JSON.parse(store.get('auto:' + ME));
+  const before = JSON.parse(JSON.stringify(on));
   delete before.items.find(x => x.id === j.id).hook.sig;
-  let first = true;
-  env.AMV_KV.get = async (k) => { if (k === 'auto:' + ME && first) { first = false; return JSON.stringify(before); } return realGet.call(env.AMV_KV, k); };
+  await W.DB.put(env, 'auto', ME, before);
+  const undo = afterNextJobRead(() => W.DB.put(env, 'auto', ME, on));
   const race = await send(j.url, payload('race'), {});
-  env.AMV_KV.get = realGet;
+  undo();
   ok(race.status === 409 && race.d.code === 'signing_changed', 'a request checked while signing was off is not kept once it is on', race.d);
 
   const renew = await post('/auto/hook', { id: j.id, action: 'renew' });

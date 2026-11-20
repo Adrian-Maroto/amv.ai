@@ -501,7 +501,18 @@ async function _backupCommittedKey(env, blobKey){
   if (!st || st.unavailable) throw new Error('backup incomplete: the revision of ' + key + ' could not be read');
   if (!st.committed || st.absent || st.rev !== rev || (dg && dg !== st.digest)) return null;
   const raw = await env.AMV_KV.get(blobKey);
-  if (raw == null || (await _revDigest(raw)) !== st.digest) return null;
+  /* THE COMMITTED COPY, OR THE BACKUP IS NOT COMPLETE (Build 16 audit
+     STATE16-05). This snapshot IS the committed revision - the object just
+     said so - and its bytes are missing or are not what was committed. That
+     returned null, which both exporters read as "nothing to back up here",
+     and the backup went on to call itself complete without a record somebody
+     was told had been saved. It is the record and it cannot be read, so the
+     export stops and says which. The night tries again on its next tick; the
+     download fails visibly. */
+  if (raw == null || (await _revDigest(raw)) !== st.digest) {
+    audit(env, 'backup_committed_unreadable', { key: key.slice(0, 160), rev });
+    throw new Error('backup incomplete: the committed copy of ' + key + ' could not be read');
+  }
   return { key, raw };
 }
 async function* _backupCommittedOrphans(env){

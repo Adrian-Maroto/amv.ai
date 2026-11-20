@@ -97,11 +97,24 @@ async function _creditReverse(env, ref, why, refundedUSD){
   try{
     rec = _safeJson(await env.AMV_KV.get('creditpay:' + ref));
     if(!rec || !rec.subject) return false;
-    const already = +rec.reversed || 0;
+    /* HOW MUCH WAS ALREADY TAKEN BACK IS ASKED OF THE COUNTER (Build 16 audit
+       STATE16-03). It was read from this KV record, which can be stale: a
+       partial refund of 10 then one of 20 read "nothing taken yet" the second
+       time and took 20 more instead of 10. The total taken back now lives in
+       a counter of its own, read strictly - and the KV copy still counts, so
+       a pack refunded before this shipped is never taken back twice either:
+       a stale copy can only be lower than the truth, so the larger is right. */
+    const revName = 'creditrev:' + ref;
+    const held = await counter(env, revName, { op: 'get', strict: true });
+    const already = Math.max(+rec.reversed || 0, +(held && held.value) || 0);
     const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
     take = Math.max(0, Math.round((want - already) * 100) / 100);
     if(take > 0){
-      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + (already + take).toFixed(2) });
+      const total = (already + take).toFixed(2);
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, keep: true, strict: true, once: 'rev:' + ref + ':' + total });
+      /* Named by the total too: a retry after the balance moved but before
+         this did finds the balance step already done and finishes this one. */
+      await counter(env, revName, { op: 'incr', amount: Math.max(0, already + take - (+(held && held.value) || 0)), keep: true, strict: true, once: 'revc:' + total });
       rec.reversed = already + take;
       await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
       /* Each part taken back is its own row, keyed by how much had been taken

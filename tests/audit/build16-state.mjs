@@ -108,9 +108,14 @@ await test('STATE16-C3','A missing checkpoint does not restart a completed signe
 await test('STATE16-05','Unreadable committed orphan bytes are silently skipped by complete manual and nightly backups',async()=>{
  const f=fixture();f.beforePut=async k=>{if(k==='data:'+EM)throw Error('injected cache-copy write failure');};const ack=await W.DB.putIfRev(f.env,'data',EM,{_rev:1,text:'acknowledged content'},0);f.beforePut=null;
  f.getOverride=k=>k.startsWith('revblob:data:')?null:undefined;
- const manual=await (await W.backupExport(admin(f),f.env)).json();const nightly=await W._nightlyBackupSlice(f.env,Date.parse('2026-11-18T02:00:00Z'));
- const man=JSON.parse(f.r2.get('backups/2026-11-18/manifest.json'));
- return {reproduced:ack.ok&&manual.complete&&!manual.data['data:'+EM]&&nightly.done&&man.keyCount===0,ack,manualComplete:manual.complete,manualKeyCount:manual.keyCount,manualHasRecord:!!manual.data['data:'+EM],nightly,manifestKeyCount:man.keyCount,listedSnapshotKeys:[...f.live.keys()].filter(k=>k.startsWith('revblob:'))};
+ /* Imported Nov 20: both exports REFUSING (the stream errors, the night
+    throws and publishes no manifest) is the fixed behaviour, so a refusal is
+    recorded rather than taken for a harness error. */
+ let manual={},manualRefused=null,nightly={},nightlyRefused=null;
+ try{manual=await (await W.backupExport(admin(f),f.env)).json();}catch(e){manualRefused=e.message;}
+ try{nightly=await W._nightlyBackupSlice(f.env,Date.parse('2026-11-18T02:00:00Z'));}catch(e){nightlyRefused=e.message;}
+ const manRaw=f.r2.get('backups/2026-11-18/manifest.json');const man=manRaw?JSON.parse(manRaw):{};
+ return {reproduced:!!(ack.ok&&manual.complete&&!(manual.data||{})['data:'+EM]&&nightly.done&&man.keyCount===0),manualRefused,nightlyRefused,manifestPublished:!!manRaw,ack,manualComplete:manual.complete,manualKeyCount:manual.keyCount,manualHasRecord:!!(manual.data||{})['data:'+EM],nightly,manifestKeyCount:man.keyCount,listedSnapshotKeys:[...f.live.keys()].filter(k=>k.startsWith('revblob:'))};
 });
 await test('STATE16-C4','Readable committed orphan records are included in both backup paths',async()=>{
  const f=fixture();f.beforePut=async k=>{if(k==='data:'+EM)throw Error('cache copy unavailable');};const ack=await W.DB.putIfRev(f.env,'data',EM,{_rev:1,text:'recovered orphan'},0);f.beforePut=null;const manual=await(await W.backupExport(admin(f),f.env)).json();const nightly=await W._nightlyBackupSlice(f.env,Date.parse('2026-11-18T02:00:00Z'));return {controlPassed:ack.ok&&!!manual.data['data:'+EM]&&nightly.done&&[...f.r2.values()].some(v=>v.includes('recovered orphan')),manualKeyCount:manual.keyCount,nightly};

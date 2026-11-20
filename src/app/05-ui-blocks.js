@@ -1846,7 +1846,7 @@ async function _callAITurn(msgs, _opts) {
 
   setMsgs(msgs); S.busy=false; renderChatMsgs();
   // learn durable facts from this exchange (best-effort, runs in background)
-  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ if(!_isTempChat()) setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ if(!_isTempChat() && _memOn()) setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
 }
 /* Ask the server for an answer this device lost. The model may have finished
    after the connection dropped - those tokens are already paid for, so getting

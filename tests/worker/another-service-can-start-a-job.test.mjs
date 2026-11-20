@@ -27,7 +27,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'hooks.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens };
+export { runDueAutomations, issueTokens, DB };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -91,6 +91,25 @@ const job = (id) => rec().items.find(x => x.id === id);
 const tickAt = async (t) => { await W.runDueAutomations(env, t); return rec(); };
 
 let url = '', id = '';
+
+/* A write that lands right after a read of this account's jobs: the read is
+   answered first, then the change is committed through the data layer - as a
+   concurrent request would commit it. (Raw KV is no longer a way to fake one:
+   Crew jobs are read as committed since the Build 16 audit, STATE16-02.) */
+function afterNextJobRead(write){
+  const real = env.AMV_COUNTER.get; let armed = true;
+  env.AMV_COUNTER.get = (n) => {
+    const stub = real.call(env.AMV_COUNTER, n);
+    if (n !== 'rev:auto:' + ME) return stub;
+    return { async fetch(u, init) {
+      const r = await stub.fetch(u, init);
+      if (armed && JSON.parse(init.body).op === 'revGet') { armed = false; env.AMV_COUNTER.get = real; await write(); }
+      return r;
+    } };
+  };
+  return () => { env.AMV_COUNTER.get = real; };
+}
+
 section('A job with an address of its own');
 {
   const r = await post('/auto/create', { detail: 'Summarise the new order: who bought what, and anything unusual.', repeat: '10min', approval: 'auto',
@@ -173,14 +192,18 @@ section('A request that lands just after the tick read the job is not lost');
   await tickAt(job(id).next + 1000);   // nothing waiting
   await send(url, { event: 'order.created', order: { id: 5101 } });
   await new Promise(r => setTimeout(r, 3));   // the late one is stamped after it, as the route would
-  afterRead = () => {
+  /* Written the way the hook route writes it - through the data layer, so
+     the record's revision moves (Crew jobs are under the revision authority
+     since the Build 16 audit, STATE16-02). */
+  const undo = afterNextJobRead(async () => {
     const r = JSON.parse(store.get('auto:' + ME));
     const it = r.items.find(x => x.id === id);
     it.hookIn = (it.hookIn || []).concat({ id: 'late', at: Date.now(), body: '{"event":"order.created","order":{"id":5102}}' });
-    store.set('auto:' + ME, JSON.stringify(r));
-  };
+    await W.DB.put(env, 'auto', ME, r);
+  });
   prompts = [];
   await tickAt(job(id).next + 1000);
+  undo();
   const it = job(id);
   ok(prompts.length === 1 && /5101/.test(prompts[0]) && !/5102/.test(prompts[0]), 'the run read the one it had', prompts.length);
   ok((it.hookIn || []).some(d => /5102/.test(d.body)), 'and the one that landed after its read is still waiting', (it.hookIn || []).map(d => d.id));

@@ -18,7 +18,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* Still being repaired. Each must still reproduce until it is taken off. */
-const OPEN = new Set(['STATE16-02', 'STATE16-03', 'STATE16-04', 'STATE16-05']);
+const OPEN = new Set([]);
 const out = mkdtempSync(join(tmpdir(), 'b16-'));
 
 for (const name of ['build16-state']) {

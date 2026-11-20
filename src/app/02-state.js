@@ -1489,8 +1489,13 @@ function _splitTombs(kind, list){
   try{ store('amv_' + kind + '_gone', gone.filter(t => t.id && now - (t.updated || 0) < _TOMB_MS).slice(-2000)); }catch(e){ _logErr('sync.split.' + kind, e); }
   return live;
 }
+/* Moves on every forgetting, so an extraction that was asked before it is
+   not kept after it (Build 16 audit AG-10): a model working from the old
+   conversation could otherwise learn back what was just forgotten. */
+let _memForgetEpoch = 0;
 function _memForget(ids){
   const set = _tombAdd('memory', ids); if(!set.size) return;
+  _memForgetEpoch++;
   S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
 }
 try{ window._memForget = _memForget; }catch(e){}

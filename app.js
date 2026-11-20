@@ -4624,8 +4624,13 @@ function _splitTombs(kind, list){
   try{ store('amv_' + kind + '_gone', gone.filter(t => t.id && now - (t.updated || 0) < _TOMB_MS).slice(-2000)); }catch(e){ _logErr('sync.split.' + kind, e); }
   return live;
 }
+/* Moves on every forgetting, so an extraction that was asked before it is
+   not kept after it (Build 16 audit AG-10): a model working from the old
+   conversation could otherwise learn back what was just forgotten. */
+let _memForgetEpoch = 0;
 function _memForget(ids){
   const set = _tombAdd('memory', ids); if(!set.size) return;
+  _memForgetEpoch++;
   S.memory = (Array.isArray(S.memory) ? S.memory : []).filter(m => m && !set.has(m.id));
 }
 try{ window._memForget = _memForget; }catch(e){}
@@ -10275,7 +10280,7 @@ async function _callAITurn(msgs, _opts) {
 
   setMsgs(msgs); S.busy=false; renderChatMsgs();
   // learn durable facts from this exchange (best-effort, runs in background)
-  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ if(!_isTempChat()) setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ if(!_isTempChat() && _memOn()) setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
 }
 /* Ask the server for an answer this device lost. The model may have finished
    after the connection dropped - those tokens are already paid for, so getting
@@ -16991,36 +16996,67 @@ function delMemory(id){
    assistant genuinely remembers and gets more useful each session.
    ============================================================ */
 let _memExtractBusy=false;
+/* MEMORY OFF MEANS NOTHING IS LEARNED (Build 16 audit AG-08). The switch in
+   Settings only kept memories out of the answer; the extraction after every
+   third message still ran, asked a model and saved what came back. It is
+   asked before scheduling, before the model is asked, and again before
+   anything is kept - turned off while a request is out, its answer is dropped. */
+function _memOn(){ try{ return loadStr('amv_cap_memory')!=='0'; }catch(e){ return false; } }
+function _memWho(){ try{ return (S.user && S.user.email ? String(S.user.email).toLowerCase() : 'guest'); }catch(e){ return 'guest'; } }
+try{ window._memOn = _memOn; }catch(e){}
 async function _maybeExtractMemory(msgs){
   try{
     if(_memExtractBusy) return;
+    if(!_memOn()) return;
+    if(typeof _isTempChat==='function' && _isTempChat()) return;
     if(!_aiBackendReady()) return;
     // only run occasionally (every few exchanges) to keep it cheap
     const userTurns=msgs.filter(m=>m.r==='u').length;
     if(userTurns<2 || userTurns%3!==0) return;
     _memExtractBusy=true;
+    /* WHERE IT IS LEARNED IS DECIDED BEFORE ASKING (AG-10). Read after the
+       model answered, the project was whichever one was open by then - so a
+       fact from one client's project landed in another's. The account, the
+       project and the conversation are taken now, and the answer is kept only
+       if all three still hold when it arrives. */
+    const who=_memWho();
+    const proj0=_curProject();
+    const wsId=proj0 ? proj0.id : null;
+    const conv=(typeof S!=='undefined' && S) ? S.cur : null;
+    const epoch=_memForgetEpoch;
     const recent=msgs.slice(-8).map(m=>(m.r==='u'?'User: ':'AMV: ')+(typeof m.c==='string'?m.c:'').slice(0,400)).join('\n');
-    const existing=S.memory.map(m=>m.text).join(' | ')||'(none yet)';
+    const existing=(proj0 ? (proj0.memory||[]) : S.memory).map(m=>m.text).join(' | ')||'(none yet)';
     const sys='Extract durable facts worth remembering about the USER from this conversation '+
       '(their name, role, preferences, ongoing projects, goals, constraints). '+
+      'Never include a password, key, code, card or account number, or any other secret. '+
       'Return ONLY a JSON array of short fact strings. Skip anything already known. '+
       'Return [] if nothing new. Already known: '+existing;
     const out=await aiComplete(recent, sys, {json:true, max_tokens:300, noLang:true});
+    if(!_memOn() || _memWho()!==who || _memForgetEpoch!==epoch) return;
+    if(typeof _isTempChat==='function' && _isTempChat()) return;
     let facts=[]; try{ facts=JSON.parse(String(out).replace(/```json|```/g,'').trim()); }catch(e){}
-    if(!Array.isArray(facts)||!facts.length){ _memExtractBusy=false; return; }
-    /* Learned inside a project, kept with the project - a client's details are
-       not general facts about the person. */
-    const proj=_curProject();
-    if(proj){ _projAddMemory(proj, facts); return; }
+    /* What a model proposes is a proposal (AG-09): the same screening every
+       other door applies - a secret is never kept, whoever suggested it. */
+    facts=(Array.isArray(facts)?facts:[]).filter(f=>typeof f==='string' && f.trim() && !_memLooksSecret(f));
+    if(!facts.length) return;
+    /* Learned inside a project, kept with THAT project - a client's details
+       are not general facts about the person. Gone since: nothing is kept. */
+    if(wsId){
+      const ws=_wsById(wsId);
+      if(ws) _projAddMemory(ws, facts);
+      return;
+    }
+    if(_curProject() && (typeof S==='undefined' || !S || S.cur!==conv)) return;
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
-    const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
+    const fresh=facts.filter(f=>!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
-      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim(),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
+      S.memory=[...fresh.map(f=>({id:'m'+Date.now()+_rid(3),text:f.trim().slice(0,_MEM_MAX_AUTO),added:Date.now(),auto:true})), ...S.memory].slice(0,200);
       if(typeof renderMemList==='function' && S.tab==='memory') renderMemList();
     }
   }catch(e){ /* extraction is best-effort */ }
   finally{ _memExtractBusy=false; }
 }
+const _MEM_MAX_AUTO=300;
 function _memDuplicate(fact, knownSet){
   const f=fact.toLowerCase().trim();
   if(knownSet.has(f)) return true;
@@ -17422,7 +17458,8 @@ async function _projectContextFor(msgs){
 /* Memory learned in a project chat goes to the project. */
 function _projAddMemory(ws, facts){
   const known = new Set((ws.memory || []).map(m => String(m.text || '').toLowerCase().trim()));
-  const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memDuplicate(f, known)).slice(0, 5);
+  /* The same screening as every other memory door (Build 16 audit AG-09). */
+  const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memLooksSecret(f) && !_memDuplicate(f, known)).slice(0, 5);
   if(!fresh.length) return 0;
   ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + _rid(3), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
     .concat(ws.memory || []).slice(0, PROJ_MEM_MAX);
@@ -17520,7 +17557,7 @@ function _renderProjectPanel(id){
     _projSaveFiles(id, _projFiles(id).filter(f => f.id !== b.dataset.pjRm)); _renderProjectPanel(id);
   }));
   body.querySelectorAll('[data-pj-forget]').forEach(b => on(b, 'click', () => {
-    ws.memory = (ws.memory || []).filter(m => m.id !== b.dataset.pjForget); _wsTouch(ws); _renderProjectPanel(id);
+    ws.memory = (ws.memory || []).filter(m => m.id !== b.dataset.pjForget); try{ _memForgetEpoch++; }catch(e){} _wsTouch(ws); _renderProjectPanel(id);
   }));
   _tpHook(ws);
 }
@@ -28653,6 +28690,10 @@ async function _sectionTool(name, input){
   if(name === 'memory_add'){
     if(_isTempChat())
       return { text:'Not saved: this is a temporary chat, so nothing from it is remembered. Tell the user so, and that they can say it again in a normal chat if they want AMV to keep it.', render:null };
+    /* Off means off, from chat too (Build 16 audit AG-08). The Memory tab is
+       still theirs to add to by hand. */
+    if(typeof _memOn === 'function' && !_memOn())
+      return { text:'Not saved: Memory is switched off in Settings, so AMV does not remember things from chats. Tell the user so - they can switch it on in Settings, or add it themselves in the Memory tab.', render:null };
     const text = String(input.text||'').trim().slice(0, _MEM_MAX);
     if(text.length < 3) return { text:'That is not enough to remember. Ask the user what exactly they want AMV to know.', render:null };
     /* Refused rather than stored. A memory is replayed into every future
