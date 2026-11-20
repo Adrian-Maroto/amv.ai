@@ -80,16 +80,25 @@ export class AMVCounter {
          pack a second time. The name is kept with the value, in this
          object's own storage, so both move together. */
       const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
-      if (onceKey && (await this.state.storage.get(onceKey))) return json({ value: cur, replay: true });
+      /* A replay hands back what the first one recorded (`note`), so a step
+         whose answer was lost can be finished from the counter's own memory
+         rather than from a copy that may be stale (Build 16 audit STATE16-06). */
+      if (onceKey) { const seen = await this.state.storage.get(onceKey); if (seen) return json({ value: cur, replay: true, note: (seen && typeof seen === 'object') ? seen : null }); }
+      const note = (body.note && typeof body.note === 'object' && !Array.isArray(body.note) && JSON.stringify(body.note).length <= 2000) ? body.note : 1;
+      /* `requires`: the add only moves the value if that earlier step landed
+         here. Either way the name is spent, so the earlier step can no longer
+         land after it (see `unless` on reserve). This is what lets a hold
+         whose booking may or may not have happened be closed safely. */
+      const missing = !!(onceKey && body.requires && !(await this.state.storage.get('once:' + String(body.requires).slice(0, 200))));
       // never let a refund drive the counter negative
-      const next = Math.max(0, cur + (body.amount || 0));
+      const next = missing ? cur : Math.max(0, cur + (body.amount || 0));
       /* Both writes issued together, nothing awaited between them: the
          object commits them as one. */
-      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, 1)]);
+      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, note)]);
       else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
-      return json({ value: next });
+      return json(missing ? { value: next, missing: true } : { value: next });
     }
     /* ATOMIC TEST-AND-INCREMENT - this is what makes a quota a quota.
        A separate `get` then `incr` can be interleaved by concurrent requests:
@@ -102,12 +111,20 @@ export class AMVCounter {
       const amount = Number(body.amount);
       // reject invalid reservation amounts (NaN, non-finite, negative)
       if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: cur });
+      /* A booking named for what it is (`once`) is made once: a retry is told
+         it already stands. One whose closing step has already been taken
+         (`unless`) is never made at all - a hold released before its booking
+         arrived stays released. */
+      const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
+      if (onceKey && (await this.state.storage.get(onceKey))) return json({ allowed: true, value: cur, replay: true });
+      if (body.unless && (await this.state.storage.get('once:' + String(body.unless).slice(0, 200)))) return json({ allowed: false, value: cur, ended: true });
       const next = cur + amount;
       // Deny when the RESULT would exceed the cap, not merely when the current
       // value already does - otherwise the final reservation overshoots by up to
       // `amount` (AMV-017). Reserving up to exactly the cap is allowed.
       if (next > body.cap) return json({ allowed: false, value: cur });
-      await this.state.storage.put('v', next);
+      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, 1)]);
+      else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ allowed: true, value: next });

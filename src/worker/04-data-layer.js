@@ -50,6 +50,25 @@ const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
    already merges against a revision (chats do, through putIfRev). */
 const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
+/* THE REVISION A LOCK HOLDER READ IS THE ONE IT WRITES FROM (build 16 audit
+   STATE16-01). A whole-record write went on from whatever revision was
+   current: a writer whose lease ran out during a slow save could commit the
+   copy it read before another writer's change - a second sign-in step just
+   turned on - and both were told they succeeded. Now _withRecord gives each
+   holder a fence: the revision its read was committed at (_revRead fills it
+   in), and every write it makes commits from exactly that revision and moves
+   it on. Its own repeated writes inside the lock still succeed; a write made
+   after somebody else committed is refused, never written. The fence lives
+   in async-local storage, so it belongs to this holder and no other request. */
+const _revFenceStore = new _AmvALS();
+const _revFenceKey = (kind, id) => kind + ':' + id;
+function _revFenceOf(kind, id){ const m = _revFenceStore.getStore(); return m ? (m.get(_revFenceKey(kind, id)) || null) : null; }
+function _revFenced(kind, id, fn){
+  const outer = _revFenceStore.getStore();
+  const m = new Map(outer || []);
+  m.set(_revFenceKey(kind, id), { rev: null });
+  return _revFenceStore.run(m, fn);
+}
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
 const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
@@ -77,6 +96,8 @@ async function _revRead(env, kind, id, raw){
     try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
     throw new RecordSettlingError(kind + ':' + id);
   }
+  /* The revision this read stands on, for a lock holder's fence. */
+  { const f = _revFenceOf(kind, id); if(f && f.rev == null) f.rev = st.committed ? (+st.rev || 0) : (+st.rev || 0); }
   if(!st.committed) return raw;
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
@@ -122,6 +143,17 @@ async function _revPutCurrent(env, kind, id, obj){
     if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
   }
   const busy = new Error(kind + ' is being written by somebody else'); busy.code = 'record_busy'; throw busy;
+}
+/* A lock holder's write: from the revision it read, never from a newer one
+   somebody else committed meanwhile (STATE16-01). */
+async function _revPutFenced(env, kind, id, obj, fence){
+  const base = +fence.rev || 0;
+  obj._rev = base + 1;
+  const r = await DB.putIfRev(env, kind, id, obj, base);
+  if(r && r.ok){ fence.rev = base + 1; return; }
+  if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
+  try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base }); } catch(e) { /* logging: it never decides anything */ }
+  const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -280,7 +312,9 @@ const DB = {
          (B15-09). (Passing the revision read into this write was tried and
          taken out: several callers write the record themselves inside the
          lock, and a second write at the old revision refused all of them.) */
-      await _revPutCurrent(env, kind, id, obj);
+      const fence = _revFenceOf(kind, id);
+      if(fence && fence.rev != null) await _revPutFenced(env, kind, id, obj, fence);
+      else await _revPutCurrent(env, kind, id, obj);
     } else {
       await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
     }
@@ -1165,14 +1199,20 @@ async function _releaseSpendGate(env, book) {
    refused while a few cents remain. That is the correct direction for a control
    whose whole job is to stop a bill: being stopped one call early is a smaller
    harm than an unbounded overshoot, and it is what the token path already does. */
-async function _reserveUSD(env, name, usd, cap, ttlMs, keep) {
+async function _reserveUSD(env, name, usd, cap, ttlMs, keep, named) {
   /* No ceiling means nothing to reserve against - the counter is still written
      afterwards, it just cannot refuse. */
   if (cap == null) return { allowed: true, value: 0, reserved: 0 };
   const amount = Math.max(0, +usd || 0);
-  const r = await counter(env, name, keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs });
+  const payload = keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs };
+  /* A booking with a name (`once`, `unless`) - see the reserve op. */
+  if (named && named.once) { payload.once = named.once; if (named.unless) payload.unless = named.unless; }
+  const r = await counter(env, name, payload);
+  /* `unavailable` travels with the answer: a counter that could not answer
+     is not the same refusal as a full month, and callers say which. */
   return { allowed: !!(r && r.allowed), value: (r && r.value) || 0,
-           reserved: (r && r.allowed) ? amount : 0 };
+           reserved: (r && r.allowed) ? amount : 0,
+           unavailable: !!(r && r.unavailable), ended: !!(r && r.ended) };
 }
 /* Hand back money booked for work that did not happen. Never throws: a refund
    that fails must not also fail the refusal it belongs to. */

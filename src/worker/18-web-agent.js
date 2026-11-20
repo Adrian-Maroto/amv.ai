@@ -92,7 +92,8 @@ async function spendGet(request, env){
   if(!user) return json({ error:'sign in first' }, 401);
   const limits = await _spendLimits(env, user.email);
   const period = monthKey();
-  const state = await counter(env, `spendmo:${user.email}:${period}`, { op:'get' });
+  /* The month's total in the limits' own currency (Build 16 audit STATE16-09). */
+  const state = await counter(env, _spendMonthKey(user.email, limits.currency), { op:'get' });
   if(!state || state.unavailable || state.error || !Number.isFinite(state.value) || state.value < 0)
     return json({ ok:false, error:'Spending totals are temporarily unavailable.', code:'spend_unavailable' }, 503);
   const spent = state.value;
@@ -200,7 +201,17 @@ async function _spendAllowed(env, email, amount, clientLimit){
 }
 
 const SPEND_MONTH_TTL_MS = 86400000 * 70;
-const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
+/* ONE TOTAL PER CURRENCY (Build 16 audit STATE16-09). The limits can be
+   changed to another currency, and the month's total used to be one number
+   whatever it was counted in - 50 dollars and then 10 euros read as 60 euros.
+   Each currency now has a total of its own: a change of currency starts a new
+   budget in it, and a purchase held before the change settles into the total
+   it was booked against (its `ledgerKey`), never the new one. US dollars keep
+   the name they always had, so nothing booked before this is lost. */
+const _spendMonthKey = (email, currency) => {
+  const cur = String(currency || 'USD').toUpperCase();
+  return `spendmo:${email}:${monthKey()}` + (/^[A-Z]{3}$/.test(cur) && cur !== 'USD' ? ':' + cur : '');
+};
 
 /* BOOK the money, atomically, against the monthly cap.
 
@@ -212,7 +223,7 @@ const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
 
    Returns { ok } or { refused }. The reservation is real money held: whoever
    takes one owns releasing it. */
-async function _spendReserve(env, email, amount, clientLimit){
+async function _spendReserve(env, email, amount, clientLimit, named){
   const amt = +amount || 0;
   if(!(amt > 0)) return { ok:true, reserved:0 };
   const refused = await _spendAllowed(env, email, amt, clientLimit);
@@ -220,9 +231,12 @@ async function _spendReserve(env, email, amount, clientLimit){
 
   const L = await _spendLimits(env, email);
   const cap = +L.monthlyCap || 0;
-  const ledgerKey = _spendMonthKey(email);
-  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS);
+  /* A caller that recorded where it would book (a purchase hold, written
+     before the booking) books exactly there. */
+  const ledgerKey = (named && named.ledgerKey) || _spendMonthKey(email, L.currency);
+  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS, false, named);
   if(r.allowed) return { ok:true, reserved: amt, ledgerKey };
+  if(r.ended) return { refused:{ code:'hold_ended', need:'This purchase was already closed.', message:'Nothing was charged against your limit.' } };
 
   /* AMV-032: a counter that could not answer is not a counter that said yes.
      Refusing to spend somebody's money because the ledger is unreachable is the
@@ -245,7 +259,7 @@ async function _spendRelease(env, email, amount, ledgerKey){
   // Release only the bucket reserved by THIS run, including across midnight UTC.
   const prefix = `spendmo:${email}:`;
   if(typeof ledgerKey !== 'string' || !ledgerKey.startsWith(prefix) ||
-     !/^\d{4}-(0[1-9]|1[0-2])$/.test(ledgerKey.slice(prefix.length)))
+     !/^\d{4}-(0[1-9]|1[0-2])(?::[A-Z]{3})?$/.test(ledgerKey.slice(prefix.length)))
     throw new Error('Missing or invalid original spending reservation key');
   if(!Number.isFinite(amount) || amount <= 0) return;
   await _releaseUSD(env, ledgerKey, amount, SPEND_MONTH_TTL_MS);
@@ -258,14 +272,6 @@ function _webNeedsHumanCommit(verb){
   return ['click','type','select','press','submit'].includes(String(verb || '').toLowerCase());
 }
 
-/* Kept for the callers that spend outside a reservation. Inside browserRun the
-   money is reserved up front instead, because a check and a booking that are
-   two calls are two calls something can happen between. */
-async function _spendRecord(env, email, amount){
-  const amt = +amount || 0;
-  if(!(amt > 0)) return;
-  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){ await _writeFailed(env, 'spend_record', e); }
-}
 
 const WEB_MAX_STEPS = 24;
 const WEB_MAX_MS = 90000;

@@ -226,7 +226,11 @@ async function _shopPropose(input){
   SHOP.pending = { store, item, total, currency, hold, money, who: _shopWho(), until: Date.now() + SHOP_PENDING_MS };
   /* If nothing is confirmed, the hold is given back - and the person told. */
   setTimeout(() => {
-    if(SHOP.pending && SHOP.pending.hold === hold){
+    /* Not one the store may already have charged: once a confirmation was
+       tried, giving the hold back would leave a real purchase uncounted. It
+       stays counted against the month - the safe side - until a retried
+       confirmation records it. */
+    if(SHOP.pending && SHOP.pending.hold === hold && !SHOP.pending.settling){
       SHOP.pending = null;
       AMV_API._fetch('/v1/spend/release', { method:'POST', body: JSON.stringify({ hold }) })
         .catch(e => { try{ console.error('AMV: could not release a purchase hold', e); }catch(_){} });
@@ -251,11 +255,13 @@ async function _shopConfirm(input){
   const seen = _shopSame(s.host, c.store) && order.length >= 3 && s.text.indexOf(order) >= 0
     && currency === c.currency && _shopAmounts(s.text, currency).some(v => Math.abs(v - total) < 0.005);
   let d;
+  c.settling = true;
   try{
     const r = await AMV_API._fetch('/v1/spend/settle', { method:'POST', body: JSON.stringify({ hold: c.hold, total, order, verified: seen }) });
     d = await r.json().catch(() => ({}));
-    if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
-  }catch(e){ return { ok:false, text:'The purchase may have gone through, but AMV could not record it (' + ((e && e.message) || 'error') + '). Tell the person to check the store’s confirmation email.',
+    if(!r.ok || !d.ok) throw Object.assign(new Error(d.error || ('HTTP ' + r.status)), { pending: /_pending$/.test(String(d.code || '')) });
+  }catch(e){ return { ok:false, text:'The purchase may have gone through, but AMV could not record it (' + ((e && e.message) || 'error') + ').'
+      + ((e && e.pending) ? ' It is still waiting to be recorded: call confirm_purchase again with the same order number in a moment.' : '') + ' Tell the person to check the store’s confirmation email.',
     render:'<div class="chat-buy bad"><b>' + escH(T('Not confirmed')) + '</b> ' + escH(c.item) + '<span class="chat-buy-n">' + escH(T('AMV could not record this purchase. Check the store’s confirmation email.')) + '</span></div>' }; }
   SHOP.pending = null;
   const rc = d.receipt || {};

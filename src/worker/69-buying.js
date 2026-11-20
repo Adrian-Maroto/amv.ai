@@ -51,15 +51,38 @@ async function spendHold(request, env){
     return json({ ok:false, code:'currency_mismatch',
       need:'This store charges in ' + currency + ', and your spending limits are in ' + limits.currency + '.',
       message:'Change the currency of your limits in Spending to ' + currency + ' to buy here. AMV does not convert with a guessed rate.' }, 400);
-  const booked = await _spendReserve(env, user.email, amount);
+  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const now = Date.now();
+  /* THE HOLD IS WRITTEN DOWN BEFORE THE MONEY IS BOOKED (Build 16 audit
+     STATE16-07). Booked first, a hold whose record then failed to save was
+     money taken from the month with nothing anywhere that named it. Now the
+     record exists first ('reserving', with the total it will book against),
+     the booking is named after the hold so a retry cannot book it twice, and a
+     record that cannot be finished closes its own booking - so every failure
+     leaves either a hold that can be found or nothing booked at all. */
+  const base = { id, email:user.email, amount, currency, store, item, at:now,
+    ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
+  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 })); }
+  catch (e) {
+    audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
+    return json({ ok:false, code:'hold_unavailable', error:'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);
+  }
+  const booked = await _spendReserve(env, user.email, amount, undefined,
+    { once:_buyBooked(id), unless:_buyClosed(id), ledgerKey:base.ledgerKey });
   if(booked.refused){
+    try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'refused', reserved:0 })); }
+    catch (e) { audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'refused' }); }
     audit(env, 'buy_hold_refused', { by:user.email, amount, currency, store, why:booked.refused.code });
     return json(Object.assign({ ok:false }, booked.refused), 400);
   }
-  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-  const now = Date.now();
-  await DB.put(env, 'buyhold', id, { id, email:user.email, amount, currency, store, item, at:now,
-    status:'held', ledgerKey: booked.ledgerKey || '', reserved: booked.reserved || 0 });
+  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'held', reserved: booked.reserved || 0 })); }
+  catch (e) {
+    const end = await _buyClose(env, base, -amount, { kind:'released', at:Date.now() });
+    audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'held', closed: !end.pending });
+    return json({ ok:false, code:'hold_unavailable', error: end.pending
+      ? 'AMV could not finish holding this purchase. Do not buy it now - the amount will be given back to your month.'
+      : 'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);
+  }
   audit(env, 'buy_hold', { by:user.email, id, amount, currency, store });
   return json({ ok:true, hold:{ id, amount, currency, store, expiresAt: now + BUY_HOLD_WINDOW_MS } });
 }
@@ -70,11 +93,60 @@ async function _buyOwnHold(env, user, id){
   return (rec && rec.email === user.email) ? rec : null;
 }
 
+/* A HOLD CLOSES ONCE, AND THE COUNTER DECIDES (Build 16 audit STATE16-06/08).
+
+   A hold ends settled or released, and the only thing that knew which was the
+   hold's record in KV - read, checked, and written back as three steps. A
+   release replayed against a stale copy still read 'held' and gave the money
+   back a second time, out of some other purchase's booking. A settlement
+   whose adjustment failed fell back to a separate store, reported success,
+   and the month never learned what the store charged.
+
+   Now closing a hold is ONE named step on the month's own counter: the
+   adjustment (all of it back for a release; what the store charged minus what
+   was held for a settlement, either way round) and the hold's closing are one
+   write, under a name only this hold has. A second close of either kind is
+   told it already happened and is handed what the first recorded, so it can
+   finish the record from the counter rather than from a stale copy. Settling
+   and releasing are therefore one or the other, never both. It is `strict`:
+   a counter that cannot answer is not a close, the hold stays open, and the
+   person is told it is pending - never that it is done. `requires` means a
+   hold whose booking never arrived gives nothing back. */
+const _buyBooked = (id) => 'buybooked:' + id;
+const _buyClosed = (id) => 'buyclosed:' + id;
+async function _buyClose(env, rec, amount, note){
+  if(!rec.ledgerKey) return { pending:true };
+  const payload = { op:'incr', amount: _buyMoney(amount) || 0, once:_buyClosed(rec.id), note, strict:true, ttlMs: SPEND_MONTH_TTL_MS };
+  if(rec.named) payload.requires = _buyBooked(rec.id);
+  let r = null;
+  try { r = await counter(env, rec.ledgerKey, payload); }
+  catch (e) { audit(env, 'buy_close_pending', { id:rec.id, kind:note.kind, why:String((e && e.message) || e).slice(0, 120) }); return { pending:true }; }
+  if(!r || r.unavailable) return { pending:true };
+  return { note: r.replay ? (r.note || null) : note, replay: !!r.replay };
+}
+
+/* The record, brought up to what the counter says happened. */
+function _buyFinish(rec, note){
+  if(note && note.kind === 'settled'){
+    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over, verified:note.verified === true });
+  } else Object.assign(rec, { status:'released', releasedAt:(note && note.at) || Date.now() });
+  return rec;
+}
+const _buyReceiptOf = (rec) => ({ id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total:rec.total,
+  currency:rec.currency, order:rec.order, over:rec.over, verified: rec.verified === true });
+
 async function _buyReceipt(env, email, r){
   await _withKV(env, 'buys', email, (list) => {
     const l = Array.isArray(list) ? list : [];
+    /* Once per purchase: a settlement finished again from the counter does
+       not add a second receipt. */
+    if(l.some(x => x && x.id === r.id)) return false;
     l.unshift(r);
-    return l.slice(0, BUY_RECEIPTS_MAX);
+    /* _withKV saves the list it handed over, so the bound is applied to THAT
+       list - a shorter copy returned from here was never what was saved
+       (Build 16 audit STATE16-10). */
+    if(l.length > BUY_RECEIPTS_MAX) l.length = BUY_RECEIPTS_MAX;
+    return true;
   }, []);
 }
 
@@ -95,19 +167,24 @@ async function spendSettle(request, env){
 
   /* What the store charged against what was approved. Less: the rest goes
      back to the month. More: it has already happened - it is booked, so the
-     month tells the truth, and it is said out loud on the receipt. */
-  let over = 0;
-  if(total < rec.amount && rec.reserved > 0 && rec.ledgerKey) await _spendRelease(env, user.email, _buyMoney(rec.amount - total), rec.ledgerKey);
-  else if(total > rec.amount){ over = _buyMoney(total - rec.amount); await _spendRecord(env, user.email, over);
-    audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store }); }
-  rec.status = 'settled'; rec.settledAt = Date.now(); rec.total = total; rec.order = order; rec.over = over;
-  rec.verified = body.verified === true;
+     month tells the truth, and it is said out loud on the receipt. Either way
+     it is the one closing step (above). */
+  const held = rec.reserved > 0 ? rec.amount : 0;
+  const over = total > rec.amount ? _buyMoney(total - rec.amount) : 0;
+  const note = { kind:'settled', at:Date.now(), total, order, over, verified: body.verified === true };
+  const end = await _buyClose(env, rec, total - held, note);
+  if(end.pending) return json({ ok:false, code:'settle_pending',
+    error:'AMV could not record this purchase against your limit yet. Nothing is lost - it will be recorded when you try again.' }, 503);
+  _buyFinish(rec, end.note);
+  if(over > 0 && !end.replay) audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store });
   await DB.put(env, 'buyhold', rec.id, rec);
-  const receipt = { id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total, currency:rec.currency,
-    order, over, verified: rec.verified };
+  if(rec.status !== 'settled') return json({ error:'This purchase was already released.', code:'decided', status:rec.status }, 409);
+  const receipt = _buyReceiptOf(rec);
   await _buyReceipt(env, user.email, receipt);
-  audit(env, 'buy_settled', { by:user.email, id:rec.id, total, currency:rec.currency, store:rec.store, over });
-  await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total, currency:rec.currency });
+  if(!end.replay){
+    audit(env, 'buy_settled', { by:user.email, id:rec.id, total:rec.total, currency:rec.currency, store:rec.store, over:rec.over });
+    await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total:rec.total, currency:rec.currency });
+  }
   return json({ ok:true, receipt });
 }
 
@@ -117,12 +194,19 @@ async function spendRelease(request, env){
   const body = await request.json().catch(() => ({}));
   const rec = await _buyOwnHold(env, user, body.hold);
   if(!rec) return json({ error:'No such purchase.', code:'not_found' }, 404);
-  if(rec.status !== 'held') return json({ ok:true, status:rec.status });
-  if(rec.reserved > 0 && rec.ledgerKey) await _spendRelease(env, user.email, rec.reserved, rec.ledgerKey);
-  rec.status = 'released'; rec.releasedAt = Date.now();
+  /* 'reserving' is a hold whose record could not be finished: its booking may
+     or may not have landed, and closing it gives back only one that did. */
+  if(rec.status !== 'held' && rec.status !== 'reserving') return json({ ok:true, status:rec.status });
+  const back = rec.status === 'held' ? (rec.reserved || 0) : rec.amount;
+  const end = await _buyClose(env, rec, -back, { kind:'released', at:Date.now() });
+  if(end.pending) return json({ ok:false, code:'release_pending',
+    error:'AMV could not give this back to your month yet. Nothing is lost - try again in a moment.' }, 503);
+  const replay = end.replay;
+  _buyFinish(rec, end.note);
   await DB.put(env, 'buyhold', rec.id, rec);
-  audit(env, 'buy_released', { by:user.email, id:rec.id });
-  return json({ ok:true, status:'released' });
+  if(rec.status === 'settled') await _buyReceipt(env, user.email, _buyReceiptOf(rec));
+  if(!replay) audit(env, 'buy_released', { by:user.email, id:rec.id });
+  return json({ ok:true, status:rec.status });
 }
 
 async function spendBuys(request, env){

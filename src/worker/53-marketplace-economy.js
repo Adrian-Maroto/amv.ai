@@ -319,7 +319,10 @@ async function _withRecord(env, kind, id, load, save, mutate) {
     const lk = await _claimOnceDetail(env, 'rmut:' + kind, key, 15);
     if (lk.claimed) {
       const started = Date.now();
-      try {
+      /* A record under the revision authority is written from the revision
+         this holder read, even if its lease runs out mid-save (STATE16-01). */
+      const fenced = (fn) => (typeof REV_PUT_KINDS !== 'undefined' && REV_PUT_KINDS.has(kind)) ? _revFenced(kind, key, fn) : fn();
+      try { return await fenced(async () => {
         /* A guarded kind's load is the COMMITTED copy (B15-09: acct, ent,
            team, fam and apikeys joined the revision authority), so a stale
            regional copy is never what this lock reads and writes back. */
@@ -330,7 +333,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
           await save(env, key, rec);
         }
         return out;
-      } finally { await _releaseClaim(env, 'rmut:' + kind, key, lk.owner || null); }
+      }); } finally { await _releaseClaim(env, 'rmut:' + kind, key, lk.owner || null); }
     }
     await new Promise(r => setTimeout(r, 40 * (i + 1)));
   }

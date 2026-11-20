@@ -16049,3 +16049,19 @@ tombstones (`_tombAdd` in 02-state.js - the id, none of the content, newer than
 the item), and a tombstone is written where a PERSON deletes, never by noticing
 a list got shorter: signing out empties these lists too, and that must not
 delete anything anywhere.
+
+## 654. The step that decides money must be one write, on the thing that counts it (Nov 20)
+The Build 16 audit found a purchase hold whose state lived in a KV record: read
+it, check it says "held", give the money back, write "released". A release
+replayed against a stale copy still read "held" and gave the money back a second
+time, out of somebody else's purchase. A settlement whose adjustment failed fell
+back to a separate store nothing reads and still answered "settled". A hold
+booked before its record was saved was money gone from the month with nothing
+naming it.
+Rule: where a record and a counter must agree, the counter makes the decision.
+Closing a hold is one `incr` on the month's own counter, named after the hold
+(`once`), carrying what was decided (`note`) so a retry finishes the record from
+the counter instead of from a copy, `strict` so a counter that cannot answer is
+"pending", never "done". Write down the intent BEFORE booking, name the booking,
+and let the close spend that name (`requires`/`unless`) so a booking that never
+arrived gives nothing back and cannot land later.

@@ -1050,6 +1050,25 @@ const REV_KINDS = new Set(['data', 'acct', 'ent', 'team', 'fam', 'apikeys']);
    already merges against a revision (chats do, through putIfRev). */
 const REV_PUT_KINDS = new Set(['acct', 'ent', 'team', 'fam', 'apikeys']);
 const _revName = (kind, id) => 'rev:' + kind + ':' + id;
+/* THE REVISION A LOCK HOLDER READ IS THE ONE IT WRITES FROM (build 16 audit
+   STATE16-01). A whole-record write went on from whatever revision was
+   current: a writer whose lease ran out during a slow save could commit the
+   copy it read before another writer's change - a second sign-in step just
+   turned on - and both were told they succeeded. Now _withRecord gives each
+   holder a fence: the revision its read was committed at (_revRead fills it
+   in), and every write it makes commits from exactly that revision and moves
+   it on. Its own repeated writes inside the lock still succeed; a write made
+   after somebody else committed is refused, never written. The fence lives
+   in async-local storage, so it belongs to this holder and no other request. */
+const _revFenceStore = new _AmvALS();
+const _revFenceKey = (kind, id) => kind + ':' + id;
+function _revFenceOf(kind, id){ const m = _revFenceStore.getStore(); return m ? (m.get(_revFenceKey(kind, id)) || null) : null; }
+function _revFenced(kind, id, fn){
+  const outer = _revFenceStore.getStore();
+  const m = new Map(outer || []);
+  m.set(_revFenceKey(kind, id), { rev: null });
+  return _revFenceStore.run(m, fn);
+}
 const _revBlobKey = (kind, id, rev, digest) => 'revblob:' + kind + ':' + id + ':' + rev + (digest ? ':' + digest : '');
 /* New snapshots are content-addressed. Legacy revision-only keys remain readable. */
 const _revBlobKeyOK = (k) => /^revblob:(?:data|acct|ent|team|fam|apikeys):[^\s:]{1,320}:\d{1,15}(?::[a-f0-9]{64})?$/.test(String(k));
@@ -1077,6 +1096,8 @@ async function _revRead(env, kind, id, raw){
     try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
     throw new RecordSettlingError(kind + ':' + id);
   }
+  /* The revision this read stands on, for a lock holder's fence. */
+  { const f = _revFenceOf(kind, id); if(f && f.rev == null) f.rev = st.committed ? (+st.rev || 0) : (+st.rev || 0); }
   if(!st.committed) return raw;
   if(st.absent) return null;
   if(raw != null && (await _revDigest(raw)) === st.digest) return raw;
@@ -1122,6 +1143,17 @@ async function _revPutCurrent(env, kind, id, obj){
     if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
   }
   const busy = new Error(kind + ' is being written by somebody else'); busy.code = 'record_busy'; throw busy;
+}
+/* A lock holder's write: from the revision it read, never from a newer one
+   somebody else committed meanwhile (STATE16-01). */
+async function _revPutFenced(env, kind, id, obj, fence){
+  const base = +fence.rev || 0;
+  obj._rev = base + 1;
+  const r = await DB.putIfRev(env, kind, id, obj, base);
+  if(r && r.ok){ fence.rev = base + 1; return; }
+  if(r && r.unavailable) throw new RecordSettlingError(kind + ':' + id);
+  try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base }); } catch(e) { /* logging: it never decides anything */ }
+  const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
 }
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
@@ -1280,7 +1312,9 @@ const DB = {
          (B15-09). (Passing the revision read into this write was tried and
          taken out: several callers write the record themselves inside the
          lock, and a second write at the old revision refused all of them.) */
-      await _revPutCurrent(env, kind, id, obj);
+      const fence = _revFenceOf(kind, id);
+      if(fence && fence.rev != null) await _revPutFenced(env, kind, id, obj, fence);
+      else await _revPutCurrent(env, kind, id, obj);
     } else {
       await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
     }
@@ -2165,14 +2199,20 @@ async function _releaseSpendGate(env, book) {
    refused while a few cents remain. That is the correct direction for a control
    whose whole job is to stop a bill: being stopped one call early is a smaller
    harm than an unbounded overshoot, and it is what the token path already does. */
-async function _reserveUSD(env, name, usd, cap, ttlMs, keep) {
+async function _reserveUSD(env, name, usd, cap, ttlMs, keep, named) {
   /* No ceiling means nothing to reserve against - the counter is still written
      afterwards, it just cannot refuse. */
   if (cap == null) return { allowed: true, value: 0, reserved: 0 };
   const amount = Math.max(0, +usd || 0);
-  const r = await counter(env, name, keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs });
+  const payload = keep ? { op: 'reserve', amount, cap, keep: true } : { op: 'reserve', amount, cap, ttlMs };
+  /* A booking with a name (`once`, `unless`) - see the reserve op. */
+  if (named && named.once) { payload.once = named.once; if (named.unless) payload.unless = named.unless; }
+  const r = await counter(env, name, payload);
+  /* `unavailable` travels with the answer: a counter that could not answer
+     is not the same refusal as a full month, and callers say which. */
   return { allowed: !!(r && r.allowed), value: (r && r.value) || 0,
-           reserved: (r && r.allowed) ? amount : 0 };
+           reserved: (r && r.allowed) ? amount : 0,
+           unavailable: !!(r && r.unavailable), ended: !!(r && r.ended) };
 }
 /* Hand back money booked for work that did not happen. Never throws: a refund
    that fails must not also fail the refusal it belongs to. */
@@ -4289,16 +4329,25 @@ export class AMVCounter {
          pack a second time. The name is kept with the value, in this
          object's own storage, so both move together. */
       const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
-      if (onceKey && (await this.state.storage.get(onceKey))) return json({ value: cur, replay: true });
+      /* A replay hands back what the first one recorded (`note`), so a step
+         whose answer was lost can be finished from the counter's own memory
+         rather than from a copy that may be stale (Build 16 audit STATE16-06). */
+      if (onceKey) { const seen = await this.state.storage.get(onceKey); if (seen) return json({ value: cur, replay: true, note: (seen && typeof seen === 'object') ? seen : null }); }
+      const note = (body.note && typeof body.note === 'object' && !Array.isArray(body.note) && JSON.stringify(body.note).length <= 2000) ? body.note : 1;
+      /* `requires`: the add only moves the value if that earlier step landed
+         here. Either way the name is spent, so the earlier step can no longer
+         land after it (see `unless` on reserve). This is what lets a hold
+         whose booking may or may not have happened be closed safely. */
+      const missing = !!(onceKey && body.requires && !(await this.state.storage.get('once:' + String(body.requires).slice(0, 200))));
       // never let a refund drive the counter negative
-      const next = Math.max(0, cur + (body.amount || 0));
+      const next = missing ? cur : Math.max(0, cur + (body.amount || 0));
       /* Both writes issued together, nothing awaited between them: the
          object commits them as one. */
-      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, 1)]);
+      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, note)]);
       else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
-      return json({ value: next });
+      return json(missing ? { value: next, missing: true } : { value: next });
     }
     /* ATOMIC TEST-AND-INCREMENT - this is what makes a quota a quota.
        A separate `get` then `incr` can be interleaved by concurrent requests:
@@ -4311,12 +4360,20 @@ export class AMVCounter {
       const amount = Number(body.amount);
       // reject invalid reservation amounts (NaN, non-finite, negative)
       if (!Number.isFinite(amount) || amount < 0) return json({ allowed: false, value: cur });
+      /* A booking named for what it is (`once`) is made once: a retry is told
+         it already stands. One whose closing step has already been taken
+         (`unless`) is never made at all - a hold released before its booking
+         arrived stays released. */
+      const onceKey = body.once ? 'once:' + String(body.once).slice(0, 200) : '';
+      if (onceKey && (await this.state.storage.get(onceKey))) return json({ allowed: true, value: cur, replay: true });
+      if (body.unless && (await this.state.storage.get('once:' + String(body.unless).slice(0, 200)))) return json({ allowed: false, value: cur, ended: true });
       const next = cur + amount;
       // Deny when the RESULT would exceed the cap, not merely when the current
       // value already does - otherwise the final reservation overshoots by up to
       // `amount` (AMV-017). Reserving up to exactly the cap is allowed.
       if (next > body.cap) return json({ allowed: false, value: cur });
-      await this.state.storage.put('v', next);
+      if (onceKey) await Promise.all([this.state.storage.put('v', next), this.state.storage.put(onceKey, 1)]);
+      else await this.state.storage.put('v', next);
       if (body.ttlMs) await this.state.storage.setAlarm(Date.now() + body.ttlMs);
       else if (body.keep) await this.state.storage.deleteAlarm();
       return json({ allowed: true, value: next });
@@ -14460,7 +14517,8 @@ async function spendGet(request, env){
   if(!user) return json({ error:'sign in first' }, 401);
   const limits = await _spendLimits(env, user.email);
   const period = monthKey();
-  const state = await counter(env, `spendmo:${user.email}:${period}`, { op:'get' });
+  /* The month's total in the limits' own currency (Build 16 audit STATE16-09). */
+  const state = await counter(env, _spendMonthKey(user.email, limits.currency), { op:'get' });
   if(!state || state.unavailable || state.error || !Number.isFinite(state.value) || state.value < 0)
     return json({ ok:false, error:'Spending totals are temporarily unavailable.', code:'spend_unavailable' }, 503);
   const spent = state.value;
@@ -14568,7 +14626,17 @@ async function _spendAllowed(env, email, amount, clientLimit){
 }
 
 const SPEND_MONTH_TTL_MS = 86400000 * 70;
-const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
+/* ONE TOTAL PER CURRENCY (Build 16 audit STATE16-09). The limits can be
+   changed to another currency, and the month's total used to be one number
+   whatever it was counted in - 50 dollars and then 10 euros read as 60 euros.
+   Each currency now has a total of its own: a change of currency starts a new
+   budget in it, and a purchase held before the change settles into the total
+   it was booked against (its `ledgerKey`), never the new one. US dollars keep
+   the name they always had, so nothing booked before this is lost. */
+const _spendMonthKey = (email, currency) => {
+  const cur = String(currency || 'USD').toUpperCase();
+  return `spendmo:${email}:${monthKey()}` + (/^[A-Z]{3}$/.test(cur) && cur !== 'USD' ? ':' + cur : '');
+};
 
 /* BOOK the money, atomically, against the monthly cap.
 
@@ -14580,7 +14648,7 @@ const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
 
    Returns { ok } or { refused }. The reservation is real money held: whoever
    takes one owns releasing it. */
-async function _spendReserve(env, email, amount, clientLimit){
+async function _spendReserve(env, email, amount, clientLimit, named){
   const amt = +amount || 0;
   if(!(amt > 0)) return { ok:true, reserved:0 };
   const refused = await _spendAllowed(env, email, amt, clientLimit);
@@ -14588,9 +14656,12 @@ async function _spendReserve(env, email, amount, clientLimit){
 
   const L = await _spendLimits(env, email);
   const cap = +L.monthlyCap || 0;
-  const ledgerKey = _spendMonthKey(email);
-  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS);
+  /* A caller that recorded where it would book (a purchase hold, written
+     before the booking) books exactly there. */
+  const ledgerKey = (named && named.ledgerKey) || _spendMonthKey(email, L.currency);
+  const r = await _reserveUSD(env, ledgerKey, amt, cap, SPEND_MONTH_TTL_MS, false, named);
   if(r.allowed) return { ok:true, reserved: amt, ledgerKey };
+  if(r.ended) return { refused:{ code:'hold_ended', need:'This purchase was already closed.', message:'Nothing was charged against your limit.' } };
 
   /* AMV-032: a counter that could not answer is not a counter that said yes.
      Refusing to spend somebody's money because the ledger is unreachable is the
@@ -14613,7 +14684,7 @@ async function _spendRelease(env, email, amount, ledgerKey){
   // Release only the bucket reserved by THIS run, including across midnight UTC.
   const prefix = `spendmo:${email}:`;
   if(typeof ledgerKey !== 'string' || !ledgerKey.startsWith(prefix) ||
-     !/^\d{4}-(0[1-9]|1[0-2])$/.test(ledgerKey.slice(prefix.length)))
+     !/^\d{4}-(0[1-9]|1[0-2])(?::[A-Z]{3})?$/.test(ledgerKey.slice(prefix.length)))
     throw new Error('Missing or invalid original spending reservation key');
   if(!Number.isFinite(amount) || amount <= 0) return;
   await _releaseUSD(env, ledgerKey, amount, SPEND_MONTH_TTL_MS);
@@ -14626,14 +14697,6 @@ function _webNeedsHumanCommit(verb){
   return ['click','type','select','press','submit'].includes(String(verb || '').toLowerCase());
 }
 
-/* Kept for the callers that spend outside a reservation. Inside browserRun the
-   money is reserved up front instead, because a check and a booking that are
-   two calls are two calls something can happen between. */
-async function _spendRecord(env, email, amount){
-  const amt = +amount || 0;
-  if(!(amt > 0)) return;
-  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){ await _writeFailed(env, 'spend_record', e); }
-}
 
 const WEB_MAX_STEPS = 24;
 const WEB_MAX_MS = 90000;
@@ -34271,7 +34334,10 @@ async function _withRecord(env, kind, id, load, save, mutate) {
     const lk = await _claimOnceDetail(env, 'rmut:' + kind, key, 15);
     if (lk.claimed) {
       const started = Date.now();
-      try {
+      /* A record under the revision authority is written from the revision
+         this holder read, even if its lease runs out mid-save (STATE16-01). */
+      const fenced = (fn) => (typeof REV_PUT_KINDS !== 'undefined' && REV_PUT_KINDS.has(kind)) ? _revFenced(kind, key, fn) : fn();
+      try { return await fenced(async () => {
         /* A guarded kind's load is the COMMITTED copy (B15-09: acct, ent,
            team, fam and apikeys joined the revision authority), so a stale
            regional copy is never what this lock reads and writes back. */
@@ -34282,7 +34348,7 @@ async function _withRecord(env, kind, id, load, save, mutate) {
           await save(env, key, rec);
         }
         return out;
-      } finally { await _releaseClaim(env, 'rmut:' + kind, key, lk.owner || null); }
+      }); } finally { await _releaseClaim(env, 'rmut:' + kind, key, lk.owner || null); }
     }
     await new Promise(r => setTimeout(r, 40 * (i + 1)));
   }
@@ -44759,15 +44825,38 @@ async function spendHold(request, env){
     return json({ ok:false, code:'currency_mismatch',
       need:'This store charges in ' + currency + ', and your spending limits are in ' + limits.currency + '.',
       message:'Change the currency of your limits in Spending to ' + currency + ' to buy here. AMV does not convert with a guessed rate.' }, 400);
-  const booked = await _spendReserve(env, user.email, amount);
+  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const now = Date.now();
+  /* THE HOLD IS WRITTEN DOWN BEFORE THE MONEY IS BOOKED (Build 16 audit
+     STATE16-07). Booked first, a hold whose record then failed to save was
+     money taken from the month with nothing anywhere that named it. Now the
+     record exists first ('reserving', with the total it will book against),
+     the booking is named after the hold so a retry cannot book it twice, and a
+     record that cannot be finished closes its own booking - so every failure
+     leaves either a hold that can be found or nothing booked at all. */
+  const base = { id, email:user.email, amount, currency, store, item, at:now,
+    ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
+  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 })); }
+  catch (e) {
+    audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
+    return json({ ok:false, code:'hold_unavailable', error:'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);
+  }
+  const booked = await _spendReserve(env, user.email, amount, undefined,
+    { once:_buyBooked(id), unless:_buyClosed(id), ledgerKey:base.ledgerKey });
   if(booked.refused){
+    try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'refused', reserved:0 })); }
+    catch (e) { audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'refused' }); }
     audit(env, 'buy_hold_refused', { by:user.email, amount, currency, store, why:booked.refused.code });
     return json(Object.assign({ ok:false }, booked.refused), 400);
   }
-  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-  const now = Date.now();
-  await DB.put(env, 'buyhold', id, { id, email:user.email, amount, currency, store, item, at:now,
-    status:'held', ledgerKey: booked.ledgerKey || '', reserved: booked.reserved || 0 });
+  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'held', reserved: booked.reserved || 0 })); }
+  catch (e) {
+    const end = await _buyClose(env, base, -amount, { kind:'released', at:Date.now() });
+    audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'held', closed: !end.pending });
+    return json({ ok:false, code:'hold_unavailable', error: end.pending
+      ? 'AMV could not finish holding this purchase. Do not buy it now - the amount will be given back to your month.'
+      : 'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);
+  }
   audit(env, 'buy_hold', { by:user.email, id, amount, currency, store });
   return json({ ok:true, hold:{ id, amount, currency, store, expiresAt: now + BUY_HOLD_WINDOW_MS } });
 }
@@ -44778,11 +44867,60 @@ async function _buyOwnHold(env, user, id){
   return (rec && rec.email === user.email) ? rec : null;
 }
 
+/* A HOLD CLOSES ONCE, AND THE COUNTER DECIDES (Build 16 audit STATE16-06/08).
+
+   A hold ends settled or released, and the only thing that knew which was the
+   hold's record in KV - read, checked, and written back as three steps. A
+   release replayed against a stale copy still read 'held' and gave the money
+   back a second time, out of some other purchase's booking. A settlement
+   whose adjustment failed fell back to a separate store, reported success,
+   and the month never learned what the store charged.
+
+   Now closing a hold is ONE named step on the month's own counter: the
+   adjustment (all of it back for a release; what the store charged minus what
+   was held for a settlement, either way round) and the hold's closing are one
+   write, under a name only this hold has. A second close of either kind is
+   told it already happened and is handed what the first recorded, so it can
+   finish the record from the counter rather than from a stale copy. Settling
+   and releasing are therefore one or the other, never both. It is `strict`:
+   a counter that cannot answer is not a close, the hold stays open, and the
+   person is told it is pending - never that it is done. `requires` means a
+   hold whose booking never arrived gives nothing back. */
+const _buyBooked = (id) => 'buybooked:' + id;
+const _buyClosed = (id) => 'buyclosed:' + id;
+async function _buyClose(env, rec, amount, note){
+  if(!rec.ledgerKey) return { pending:true };
+  const payload = { op:'incr', amount: _buyMoney(amount) || 0, once:_buyClosed(rec.id), note, strict:true, ttlMs: SPEND_MONTH_TTL_MS };
+  if(rec.named) payload.requires = _buyBooked(rec.id);
+  let r = null;
+  try { r = await counter(env, rec.ledgerKey, payload); }
+  catch (e) { audit(env, 'buy_close_pending', { id:rec.id, kind:note.kind, why:String((e && e.message) || e).slice(0, 120) }); return { pending:true }; }
+  if(!r || r.unavailable) return { pending:true };
+  return { note: r.replay ? (r.note || null) : note, replay: !!r.replay };
+}
+
+/* The record, brought up to what the counter says happened. */
+function _buyFinish(rec, note){
+  if(note && note.kind === 'settled'){
+    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over, verified:note.verified === true });
+  } else Object.assign(rec, { status:'released', releasedAt:(note && note.at) || Date.now() });
+  return rec;
+}
+const _buyReceiptOf = (rec) => ({ id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total:rec.total,
+  currency:rec.currency, order:rec.order, over:rec.over, verified: rec.verified === true });
+
 async function _buyReceipt(env, email, r){
   await _withKV(env, 'buys', email, (list) => {
     const l = Array.isArray(list) ? list : [];
+    /* Once per purchase: a settlement finished again from the counter does
+       not add a second receipt. */
+    if(l.some(x => x && x.id === r.id)) return false;
     l.unshift(r);
-    return l.slice(0, BUY_RECEIPTS_MAX);
+    /* _withKV saves the list it handed over, so the bound is applied to THAT
+       list - a shorter copy returned from here was never what was saved
+       (Build 16 audit STATE16-10). */
+    if(l.length > BUY_RECEIPTS_MAX) l.length = BUY_RECEIPTS_MAX;
+    return true;
   }, []);
 }
 
@@ -44803,19 +44941,24 @@ async function spendSettle(request, env){
 
   /* What the store charged against what was approved. Less: the rest goes
      back to the month. More: it has already happened - it is booked, so the
-     month tells the truth, and it is said out loud on the receipt. */
-  let over = 0;
-  if(total < rec.amount && rec.reserved > 0 && rec.ledgerKey) await _spendRelease(env, user.email, _buyMoney(rec.amount - total), rec.ledgerKey);
-  else if(total > rec.amount){ over = _buyMoney(total - rec.amount); await _spendRecord(env, user.email, over);
-    audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store }); }
-  rec.status = 'settled'; rec.settledAt = Date.now(); rec.total = total; rec.order = order; rec.over = over;
-  rec.verified = body.verified === true;
+     month tells the truth, and it is said out loud on the receipt. Either way
+     it is the one closing step (above). */
+  const held = rec.reserved > 0 ? rec.amount : 0;
+  const over = total > rec.amount ? _buyMoney(total - rec.amount) : 0;
+  const note = { kind:'settled', at:Date.now(), total, order, over, verified: body.verified === true };
+  const end = await _buyClose(env, rec, total - held, note);
+  if(end.pending) return json({ ok:false, code:'settle_pending',
+    error:'AMV could not record this purchase against your limit yet. Nothing is lost - it will be recorded when you try again.' }, 503);
+  _buyFinish(rec, end.note);
+  if(over > 0 && !end.replay) audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store });
   await DB.put(env, 'buyhold', rec.id, rec);
-  const receipt = { id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total, currency:rec.currency,
-    order, over, verified: rec.verified };
+  if(rec.status !== 'settled') return json({ error:'This purchase was already released.', code:'decided', status:rec.status }, 409);
+  const receipt = _buyReceiptOf(rec);
   await _buyReceipt(env, user.email, receipt);
-  audit(env, 'buy_settled', { by:user.email, id:rec.id, total, currency:rec.currency, store:rec.store, over });
-  await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total, currency:rec.currency });
+  if(!end.replay){
+    audit(env, 'buy_settled', { by:user.email, id:rec.id, total:rec.total, currency:rec.currency, store:rec.store, over:rec.over });
+    await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total:rec.total, currency:rec.currency });
+  }
   return json({ ok:true, receipt });
 }
 
@@ -44825,12 +44968,19 @@ async function spendRelease(request, env){
   const body = await request.json().catch(() => ({}));
   const rec = await _buyOwnHold(env, user, body.hold);
   if(!rec) return json({ error:'No such purchase.', code:'not_found' }, 404);
-  if(rec.status !== 'held') return json({ ok:true, status:rec.status });
-  if(rec.reserved > 0 && rec.ledgerKey) await _spendRelease(env, user.email, rec.reserved, rec.ledgerKey);
-  rec.status = 'released'; rec.releasedAt = Date.now();
+  /* 'reserving' is a hold whose record could not be finished: its booking may
+     or may not have landed, and closing it gives back only one that did. */
+  if(rec.status !== 'held' && rec.status !== 'reserving') return json({ ok:true, status:rec.status });
+  const back = rec.status === 'held' ? (rec.reserved || 0) : rec.amount;
+  const end = await _buyClose(env, rec, -back, { kind:'released', at:Date.now() });
+  if(end.pending) return json({ ok:false, code:'release_pending',
+    error:'AMV could not give this back to your month yet. Nothing is lost - try again in a moment.' }, 503);
+  const replay = end.replay;
+  _buyFinish(rec, end.note);
   await DB.put(env, 'buyhold', rec.id, rec);
-  audit(env, 'buy_released', { by:user.email, id:rec.id });
-  return json({ ok:true, status:'released' });
+  if(rec.status === 'settled') await _buyReceipt(env, user.email, _buyReceiptOf(rec));
+  if(!replay) audit(env, 'buy_released', { by:user.email, id:rec.id });
+  return json({ ok:true, status:rec.status });
 }
 
 async function spendBuys(request, env){

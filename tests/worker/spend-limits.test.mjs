@@ -21,7 +21,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'spend.harness.mjs');
 writeFileSync(harness, src + `
-export { _spendClean, _spendLimits, _spendAllowed, _spendReserve, _spendRelease, _spendRecord,
+export { _spendClean, _spendLimits, _spendAllowed, _spendReserve, _spendRelease,
          spendGet, spendSet, _webIsMoney, _webSpendGate,
          WEB_ABSOLUTE_SPEND_CAP, SPEND_DEFAULTS, DB };
 export function __setRequireUser(fn){ requireUser = fn; }
