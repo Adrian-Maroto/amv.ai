@@ -18,7 +18,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'surecheck.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, authLoginVerify, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (!String(a[0]).startsWith('AUDIT')) quiet(...a); };
 globalThis.fetch = async () => new Response('{}', { status: 200 });
@@ -89,6 +89,14 @@ section('Ending a sign-in is said only when it holds');
   down = null;
   const r2 = await answer(W.sessionsEnd, post('/v1/sessions/end', { id: other }, me.token));
   ok(r2.status === 200 && r2.d.ok, 'once it can, it is done', r2);
+}
+
+section('A throttle that cannot decide does not let a guess through (SEC-11)');
+{
+  down = (n, p) => p.op === 'rateCheck';
+  const r = await answer(W.authLoginVerify, post('/auth/login/verify', { challenge: 'a'.repeat(48), code: '123456' }));
+  down = null;
+  ok(r.status === 503 && r.d.code === 'limit_unavailable', 'a sign-in code is not checked while its throttle is down', r);
 }
 
 section('Five hundred and one endings do not bring the first one back');

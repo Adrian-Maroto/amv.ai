@@ -21999,7 +21999,10 @@ async function authLoginVerify(request, env) {
   const code = String(body.code || '').replace(/\D/g, '');
   if (!id || code.length !== 6) return json({ error: 'Enter the 6-digit code.' }, 400);
   const lim = await limitAction(env, `signinverify:${_rlIp(request)}`, 30, 600);
-  if (!lim.ok && !lim.unavailable)
+  /* SEC-11: a throttle that cannot decide does not let a guess through. */
+  if (!lim.ok && lim.unavailable)
+    return json({ error: 'AMV cannot check that code just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' });
+  if (!lim.ok)
     return json({ error: 'Too many tries from here. Give it a moment.', code: 'rate_limited' }, 429, { 'Retry-After': '60' });
   const want = await _codeHash(id, code);
   let verdict;
@@ -46825,7 +46828,11 @@ async function _stepUp(env, request, user, proof){
   const f = _acctFactors(acct);
   const p = proof && typeof proof === 'object' ? proof : {};
   const lim = await limitAction(env, 'stepup:' + em, 10, 60);
-  if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
+  /* A throttle that cannot decide is not an open door (Build 16 audit SEC-11):
+     proving it is you is exactly what an unlimited guesser wants. */
+  if(!lim.ok) return lim.unavailable
+    ? json({ error: 'AMV cannot check this just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' })
+    : json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
   if(typeof p.password === 'string' && f.password){
     { const bad = _passwordTooLong(p.password); if(bad) return json(bad, 400); }
     if(await _pwMatches(env, acct, p.password)) return null;
@@ -47208,7 +47215,9 @@ async function totpConfirm(request, env){
   const em = String(user.email).toLowerCase();
   const body = await request.json().catch(() => ({}));
   const lim = await limitAction(env, 'totpset:' + em, 10, 60);
-  if(!lim.ok && !lim.unavailable) return json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
+  if(!lim.ok) return lim.unavailable   // SEC-11: undecided is not allowed
+    ? json({ error: 'AMV cannot check this just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' })
+    : json({ error: 'Too many tries. Wait a minute and try again.', code: 'rate_limited' }, 429);
   /* THE ANSWER SURVIVES A LOST RESPONSE (Nov 8 audit AUTH-026). The ten
      recovery codes are shown once, in this answer; when it was lost the
      setup was already spent, so asking again said "already confirmed" and

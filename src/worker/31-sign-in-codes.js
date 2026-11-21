@@ -196,7 +196,10 @@ async function authLoginVerify(request, env) {
   const code = String(body.code || '').replace(/\D/g, '');
   if (!id || code.length !== 6) return json({ error: 'Enter the 6-digit code.' }, 400);
   const lim = await limitAction(env, `signinverify:${_rlIp(request)}`, 30, 600);
-  if (!lim.ok && !lim.unavailable)
+  /* SEC-11: a throttle that cannot decide does not let a guess through. */
+  if (!lim.ok && lim.unavailable)
+    return json({ error: 'AMV cannot check that code just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' });
+  if (!lim.ok)
     return json({ error: 'Too many tries from here. Give it a moment.', code: 'rate_limited' }, 429, { 'Retry-After': '60' });
   const want = await _codeHash(id, code);
   let verdict;
