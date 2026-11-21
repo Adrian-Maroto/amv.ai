@@ -260,6 +260,7 @@ one except the two in the first table.
 |---|---|---|
 | `GLOBAL_DAILY_USD_CAP` | `500` | The most AMV spends on model calls in a day, across every account, before it refuses. Your runaway-bill protection. |
 | `NONESSENTIAL_WRITE_CAP` | `150` | The daily write budget telemetry and the waitlist share, so they cannot starve sign-ups. |
+| `AMV_OPS_PER_RUN` | `1000` | How many storage calls one background-jobs run plans for. Cloudflare's KV limits page says 1,000 per invocation; its Workers limits page says 10,000 on Workers Paid (configurable with `limits.subrequests`). At the default each minute loads fewer accounts and sweeps more slowly - late at scale, never broken. On Workers Paid set `10000`. See `docs/DUE-WORK.md`. |
 | `PARTNER_DAILY_USD_CAP` | none | The most the partner engines may spend in a day, on top of the overall ceiling. Reached, they are refused by name until tomorrow; AMV's own engines keep running. |
 | `BACKUP_SIGNING_KEY` | the token secret | Signs each nightly backup's manifest; a manifest that does not verify is neither counted by readiness nor restored. Set it to keep backups trusted across a change of the token secret. |
 | `PG_SHADOW` | none | Step 4 of the move to Postgres: which accounts are also read from Postgres and compared in the background (addresses and/or a share, like `amv@amv.homes,5%`). KV still answers. Results at `GET /admin/pg/shadow`. |
@@ -366,6 +367,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 |---|---|---|
 | `GLOBAL_DAILY_USD_CAP` | `500` | The hard ceiling on model spend across all users, per day |
 | `NONESSENTIAL_WRITE_CAP` | `150` | How many storage writes a day error telemetry and the waitlist may share. Free-tier KV allows 1000 a day for the whole account, so this keeps the least important writes from starving sign-ups and saves. Raise it on a paid plan. |
+| `AMV_OPS_PER_RUN` | `1000` | How many storage calls one background-jobs run plans for. Cloudflare's KV limits page says 1,000 per invocation; its Workers limits page says 10,000 on Workers Paid (configurable with `limits.subrequests`). At the default each minute loads fewer accounts and sweeps more slowly - late at scale, never broken. On Workers Paid set `10000`. See `docs/DUE-WORK.md`. |
 
 > Payout decisioning (the $100 auto-clear limit, the $600 identity threshold,
 > the 10% / 120-day reserve) is set in `amv-backend.js` next to `_payoutRisk`,

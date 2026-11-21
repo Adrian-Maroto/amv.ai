@@ -252,9 +252,11 @@ section('Deferred work keeps its place');
      a loop over an empty list contains the call and does nothing. */
   const i = tick.indexOf('AUTO_TICK_BUDGET_MS');
   const window = tick.slice(i, i + 700).replace(/\s+/g, ' ');
-  ok(/for\s*\(\s*const rest of (users|inline)\.slice\(/.test(window),
+  /* One write per bucket since Nov 21 (_autoBucketAddMany), so the shape is
+     the slice handed to it, each mapped to now. */
+  ok(/_autoBucketAddMany\(env, inline\.slice\(processed\)\.map\(rest => \(\{ email: rest\.id/.test(window),
      'the accounts that did not get their turn are the ones put back', window.slice(0, 200));
-  ok(/_autoBucketAdd\(env, rest\.id/.test(window),
+  ok(/next: Date\.now\(\)/.test(window),
      'and they go back into this hour', true);
 
   /* And the same for a skip, RUN rather than read. A source grep for the call
@@ -302,7 +304,9 @@ section('A sweep still happens every hour - a page at a time, never all at once'
      bounded number from where the last one stopped. Seeded here with more
      accounts than one sweep may read, and NO bookings, so the sweep is the
      only way any of them can be found. */
-  const env = mkEnv();
+  /* At the paid plan's 10,000 operations (AMV_OPS_PER_RUN), four pages a
+     sweep; the default budget is below. */
+  const env = Object.assign(mkEnv(), { AMV_OPS_PER_RUN: '10000' });
   const N = 2300;
   const base = at(9, 2);
   for (let i = 0; i < N; i++) {
@@ -323,11 +327,49 @@ section('A sweep still happens every hour - a page at a time, never all at once'
   ok(await booked(base + 3600e3) === N, 'the next sweep carries on from there: every account is found within one pass', await booked(base + 3600e3));
   ok(!env._store.get('autosweep:cursor'), 'and at the end it starts again from the beginning', env._store.get('autosweep:cursor'));
 
-  const small = mkEnv();
+  const small = Object.assign(mkEnv(), { AMV_OPS_PER_RUN: '10000' });
   for (let i = 0; i < 5; i++) small._store.set('auto:s' + i + '@x.com', JSON.stringify({ items: [{ id: 'j', active: true, detail: 'x', next: base + 3600e3, interval: 86400000, approval: 'suggest' }], results: [] }));
   await W.runDueAutomations(small, base);
   ok(await (async () => { const c = await W._autoDueCandidates(small, base + 3600e3); return c && c.size === 5; })() && !small._store.get('autosweep:cursor'),
      'a deployment smaller than one page is swept whole, exactly as before', true);
+}
+
+section('Within the storage budget one invocation is allowed (Build 16 audit OPS-07)');
+{
+  /* Cloudflare's KV page says 1,000 operations per invocation; its Workers
+     page says 10,000 on Paid. Without AMV_OPS_PER_RUN the tick plans for the
+     stricter one, and counts every storage call it makes to prove it. */
+  const base = at(9, 2);
+  const env = mkEnv();
+  for (let i = 0; i < 2300; i++) env._store.set('auto:lost' + String(i).padStart(5, '0') + '@x.com',
+    JSON.stringify({ items: [{ id: 'j', active: true, detail: 'later', next: base + 3600e3, interval: 86400000, approval: 'suggest' }], results: [] }));
+  let ops = 0;
+  for (const m of ['get', 'put', 'delete', 'list']) { const f = env.AMV_KV[m]; env.AMV_KV[m] = async (...a) => { ops++; return f(...a); }; }
+  await W.runDueAutomations(env, base);
+  ok(ops < 1000, 'a sweep on the default budget stays under 1,000 operations', ops);
+  ok(!!env._store.get('autosweep:cursor'), 'and carries on next time from where it stopped', true);
+
+  /* The index names more accounts than one tick may load. */
+  const big = mkEnv();
+  const named = 600;
+  const due = base - 60000;
+  for (let i = 0; i < named; i++) {
+    const em = 'due' + String(i).padStart(4, '0') + '@x.com';
+    big._store.set('auto:' + em, JSON.stringify({ items: [{ id: 'j', active: true, detail: 'x', next: due + 7 * 86400000, interval: 86400000, approval: 'suggest' }], results: [] }));
+    await W._autoBucketAdd(big, em, due);
+  }
+  const seen = new Set();
+  const get = big.AMV_KV.get;
+  big.AMV_KV.get = async (k) => { if (k.startsWith('auto:')) seen.add(k); return get(k); };
+  let r = null, n = 0, minute = at(9, 20);
+  for (; n < 6 && seen.size < named; n++) {
+    let o = 0; const g2 = big.AMV_KV.get; big.AMV_KV.get = async (k) => { o++; return g2(k); };
+    r = await W.runDueAutomations(big, minute + n * 60000);
+    big.AMV_KV.get = g2;
+    ok(o < 1000, 'tick ' + (n + 1) + ' stays within the budget', o);
+  }
+  ok(r && r.notLoaded > 0, 'a tick that cannot load them all says how many it left', r && r.notLoaded);
+  ok(seen.size === named, 'and turn by turn every account is loaded - none is always last', { seen: seen.size, ticks: n });
 }
 
 if (report('the-tick-costs-what-is-due-not-who-exists') > 0) process.exitCode = 1;

@@ -12911,35 +12911,50 @@ function _autoShardOf(email) {
 }
 
 async function _autoBucketAdd(env, email, nextMs) {
-  const em = String(email || '').toLowerCase();
-  const when = +nextMs || 0;
-  if (!em || !when) return;
-  let dropped = 0;
-  const hour = _autoHourKey(when), shard = _autoShardOf(em);
-  try {
-    await _withKV(env, `duehour:${hour}`, String(shard), (r) => {
-      r.emails = Array.isArray(r.emails) ? r.emails : [];
-      if (!r.emails.includes(em)) r.emails.push(em);
-      /* Bounded. An hour with more due accounts than this is past what one
-         tick can run anyway, and the hourly sweep is underneath it. */
-      if (r.emails.length > AUTO_BUCKET_MAX) { dropped = r.emails.length - AUTO_BUCKET_MAX; r.emails = r.emails.slice(-AUTO_BUCKET_MAX); }
-      return r;
-    }, { emails: [] }, AUTO_BUCKET_TTL_S);
-    /* A FULL BUCKET IS SAID (Build 16 audit OPS-07). What it drops is the
-       oldest booking in the hour, and that account is then found only by the
-       paged sweep - a pass of which takes longer the more accounts there are.
-       Nothing is lost, but jobs arrive late without anything failing, so the
-       first time an hour fills somebody is told which, and what to do. */
-    if (dropped) {
-      audit(env, 'auto_bucket_overflow', { hour, shard, dropped });
-      await alertOnce(env, 'auto_bucket_overflow',
-        'THE DUE-WORK INDEX IS FULL. Hour ' + hour + ', shard ' + shard + ' passed ' + AUTO_BUCKET_MAX.toLocaleString('en-US')
-        + ' accounts, so its oldest bookings were dropped. Those jobs still run, but only once the paged sweep reaches them, '
-        + 'which can be hours late at this size. Bind the AMV_JOBS queue (wrangler.toml) and raise AUTO_BUCKET_SHARDS; '
-        + 'docs/DUE-WORK.md has the plan.', 6 * 60);
+  return _autoBucketAddMany(env, [{ email, next: nextMs }]);
+}
+/* Several bookings, one read and one write per hour bucket they land in -
+   the sweep books up to a page of accounts at a time, and booking each on its
+   own was two operations an account on top of reading it, three times the
+   cost of the sweep itself (Build 16 audit OPS-07). */
+async function _autoBucketAddMany(env, list) {
+  const groups = new Map();
+  for (const x of (list || [])) {
+    const em = String((x && x.email) || '').toLowerCase();
+    const when = +(x && x.next) || 0;
+    if (!em || !when) continue;
+    const hour = _autoHourKey(when), shard = _autoShardOf(em), k = hour + '|' + shard;
+    if (!groups.has(k)) groups.set(k, { hour, shard, emails: [] });
+    groups.get(k).emails.push(em);
+  }
+  for (const g of groups.values()) {
+    const { hour, shard } = g;
+    let dropped = 0;
+    try {
+      await _withKV(env, `duehour:${hour}`, String(shard), (r) => {
+        r.emails = Array.isArray(r.emails) ? r.emails : [];
+        for (const em of g.emails) if (!r.emails.includes(em)) r.emails.push(em);
+        /* Bounded. An hour with more due accounts than this is past what one
+           tick can run anyway, and the hourly sweep is underneath it. */
+        if (r.emails.length > AUTO_BUCKET_MAX) { dropped = r.emails.length - AUTO_BUCKET_MAX; r.emails = r.emails.slice(-AUTO_BUCKET_MAX); }
+        return r;
+      }, { emails: [] }, AUTO_BUCKET_TTL_S);
+      /* A FULL BUCKET IS SAID (Build 16 audit OPS-07). What it drops is the
+         oldest booking in the hour, and that account is then found only by the
+         paged sweep - a pass of which takes longer the more accounts there are.
+         Nothing is lost, but jobs arrive late without anything failing, so the
+         first time an hour fills somebody is told which, and what to do. */
+      if (dropped) {
+        audit(env, 'auto_bucket_overflow', { hour, shard, dropped });
+        await alertOnce(env, 'auto_bucket_overflow',
+          'THE DUE-WORK INDEX IS FULL. Hour ' + hour + ', shard ' + shard + ' passed ' + AUTO_BUCKET_MAX.toLocaleString('en-US')
+          + ' accounts, so its oldest bookings were dropped. Those jobs still run, but only once the paged sweep reaches them, '
+          + 'which can be hours late at this size. Bind the AMV_JOBS queue (wrangler.toml) and raise AUTO_BUCKET_SHARDS; '
+          + 'docs/DUE-WORK.md has the plan.', 6 * 60);
+      }
+    } catch (e) {
+      audit(env, 'auto_bucket_write_failed', { count: g.emails.length, hour, shard, error: String((e && e.message) || e) });
     }
-  } catch (e) {
-    audit(env, 'auto_bucket_write_failed', { email: em, error: String((e && e.message) || e) });
   }
 }
 
@@ -13055,13 +13070,43 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
    at the beginning and reached the end without finding anything. */
 const AUTO_SWEEP_PAGE = 500;
 const AUTO_SWEEP_PAGES = 4;
+/* STORAGE OPERATIONS ONE TICK MAY MAKE (Build 16 audit OPS-07, Nov 21).
+
+   Cloudflare caps the calls one invocation makes to KV and the other
+   services. Its two pages disagree on the figure: the KV limits page says
+   1,000 operations per invocation on both plans; the Workers limits page
+   (updated Nov 18-19 2026) says Paid allows 10,000 by default, configurable
+   with `limits.subrequests`. A tick that passes the real cap throws partway,
+   runs nothing after that point, and does it again next tick in the same
+   place. So the tick plans within a budget: the stricter documented figure
+   unless the operator sets AMV_OPS_PER_RUN to what their plan allows
+   (GO-LIVE.md). The sweep's pages and the accounts it loads from the index
+   are sized to fit, leaving room for the runs themselves. */
+const AUTO_OPS_DEFAULT = 1000;
+function _autoOpsBudget(env) {
+  const n = parseInt(String((env && env.AMV_OPS_PER_RUN) || ''), 10);
+  return Number.isFinite(n) && n >= 200 ? Math.min(n, 1000000) : AUTO_OPS_DEFAULT;
+}
+/* A sweep page costs a list and one read per record. At most 60% of the
+   budget, never more pages than before, and always at least one. */
+function _autoSweepPages(env) {
+  return Math.max(1, Math.min(AUTO_SWEEP_PAGES, Math.floor(_autoOpsBudget(env) * 0.6 / (AUTO_SWEEP_PAGE + 1))));
+}
+/* Accounts loaded from the index in one tick: the index reads (48) off the
+   top, then about three operations an account (the record and its revision),
+   on 60% of the budget - the rest is for the runs. */
+function _autoLoadCap(env) {
+  const b = _autoOpsBudget(env);
+  return Math.max(50, Math.floor((b * 0.6 - AUTO_BUCKET_SHARDS * (AUTO_BUCKET_LOOKBACK_H + 1)) / 3));
+}
 async function _autoSweep(env) {
   let after = null;
   try { after = (await env.AMV_KV.get('autosweep:cursor')) || null; } catch (e) { after = null; }
   const fromStart = !after;
   const rows = [];
   let next = after;
-  for (let i = 0; i < AUTO_SWEEP_PAGES; i++) {
+  const pages = _autoSweepPages(env);
+  for (let i = 0; i < pages; i++) {
     const p = await DB.page(env, 'auto', next, AUTO_SWEEP_PAGE);
     rows.push(...p.rows);
     next = p.next;
@@ -13096,7 +13141,7 @@ async function runDueAutomations(env, atMs, opts){
      idea means read properly - and a full sweep runs in the first five minutes
      of every hour regardless. So the index can only ever make a tick cheaper;
      it can never be the reason a job does not run. */
-  let allUsers = [], truncated = false, viaIndex = false;
+  let allUsers = [], truncated = false, viaIndex = false, notLoaded = 0;
   const sweepDue = !quick && new Date(now).getUTCMinutes() < 5;
   /* Checked BEFORE the buckets, because reading the index to learn that an
      empty namespace has nothing due is 48 reads spent on a foregone
@@ -13114,9 +13159,33 @@ async function runDueAutomations(env, atMs, opts){
     allUsers = [];
   } else if (candidates && candidates.size > 0) {
     viaIndex = true;
-    for (const em of candidates) {
+    /* Within the budget, from a starting point that moves every minute.
+       An account stays in its hour's bucket after it has run, so the same
+       names come back tick after tick; a cut always made at the same place
+       would leave whoever is past it waiting until their hour is read no
+       more. Rotating the start by a whole cap each minute reaches every one
+       of them in (accounts / cap) minutes, and what is not loaded now is
+       counted, not dropped - it is still in the bucket. */
+    const list = [...candidates];
+    const cap = _autoLoadCap(env);
+    const from = list.length > cap ? (Math.floor(now / 60000) * cap) % list.length : 0;
+    const take = Math.min(cap, list.length);
+    for (let i = 0; i < take; i++) {
+      const em = list[(from + i) % list.length];
       const rec = await DB.get(env, 'auto', em);
       if (rec) allUsers.push({ id: em, value: rec });
+    }
+    notLoaded = list.length - take;
+    if (notLoaded > 0) {
+      audit(env, 'auto_index_capped', { named: list.length, loaded: take, budget: _autoOpsBudget(env) });
+      try {
+        await alertOnce(env, 'auto_index_capped',
+          'THE TICK CANNOT LOAD EVERY ACCOUNT THE DUE-WORK INDEX NAMES. ' + list.length.toLocaleString('en-US')
+          + ' are named this hour and one tick may load ' + take.toLocaleString('en-US') + ' within its storage budget ('
+          + _autoOpsBudget(env).toLocaleString('en-US') + ' operations). They are taken in turn, so each is reached within '
+          + Math.ceil(list.length / take) + ' minutes - late, not lost. Set AMV_OPS_PER_RUN to what your Cloudflare plan allows '
+          + 'and bind the AMV_JOBS queue; docs/DUE-WORK.md.', 6 * 60);
+      } catch (e) {}
     }
   } else {
     const s = await _autoSweep(env);
@@ -13126,13 +13195,15 @@ async function runDueAutomations(env, atMs, opts){
        near ones: booking every idle account here would be the same
        population-shaped cost moved from reads to writes, which is the thing
        being removed. */
+    const book = [];
     for (const u of allUsers) {
       let soonest = 0;
       for (const it of ((u.value && u.value.items) || [])) {
         if (it && it.active && it.next && (!soonest || it.next < soonest)) soonest = it.next;
       }
-      if (soonest && soonest - now < AUTO_BUCKET_LOOKAHEAD_MS) await _autoBucketAdd(env, u.id, soonest);
+      if (soonest && soonest - now < AUTO_BUCKET_LOOKAHEAD_MS) book.push({ email: u.id, next: soonest });
     }
+    await _autoBucketAddMany(env, book);
   }
 
   /* AMV-183: TWO fixes, and they only work together.
@@ -13200,9 +13271,7 @@ async function runDueAutomations(env, atMs, opts){
          re-booked them. Booked into the CURRENT hour, which is what the next
          tick reads - otherwise "the tick ran out of time" quietly becomes "the
          job did not run until the next sweep". */
-      for(const rest of inline.slice(processed)) {
-        try { await _autoBucketAdd(env, rest.id, Date.now()); } catch (e) {}
-      }
+      try { await _autoBucketAddMany(env, inline.slice(processed).map(rest => ({ email: rest.id, next: Date.now() }))); } catch (e) {}
       break;
     }
     processed++;
@@ -13226,7 +13295,7 @@ async function runDueAutomations(env, atMs, opts){
         + 'arriving late. Bind the AMV_JOBS queue (wrangler.toml) so each account runs on its own.', 3 * 60);
     }catch(e){}
   }
-  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated, lateS }, enqueued ? { enqueued } : {});
+  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated, lateS }, enqueued ? { enqueued } : {}, notLoaded ? { notLoaded } : {});
 }
 
 /* ONE ACCOUNT'S DUE WORK, start to finish: its plan, holds, ceilings and
@@ -38791,7 +38860,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', opsPerRun: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
@@ -38830,6 +38899,8 @@ function _readinessReport(env, seen) {
       effect: 'Set to 1 for an invite-only beta: a new account needs an invite code made in the owner console, or an existing person\u2019s referral link. Signing in is never affected. Unset, anybody can sign up.' },
     { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
+    { id: 'opsPerRun', name: 'Background jobs: storage calls per run', env: 'AMV_OPS_PER_RUN', set: _has(env, 'AMV_OPS_PER_RUN'),
+      effect: 'How many storage calls one background-jobs run plans for. Cloudflare\u2019s KV page says 1,000 per invocation and its Workers page says 10,000 on the Paid plan (configurable); unset, AMV plans for 1,000, which runs fewer accounts and a slower safety sweep each minute. Set it to what your plan allows, e.g. 10000 on Workers Paid. See docs/DUE-WORK.md.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
       effect: 'How many writes a day telemetry and the waitlist may spend before they are dropped, so they cannot exhaust the storage budget the product runs on.' },
     { id: 'partnerUrl', name: 'Partner models: endpoint', env: 'AMV_PARTNER_URL', set: _has(env, 'AMV_PARTNER_URL'),

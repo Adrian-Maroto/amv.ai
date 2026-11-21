@@ -25,15 +25,21 @@ Written Nov 21 for Build 16 audit OPS-07. The code is `src/worker/15-run-context
 |---|---|---|---|
 | Accounts per hour shard | 20,000 (`AUTO_BUCKET_MAX`) | the oldest bookings in that hour are dropped; those jobs wait for the sweep | **alert** `THE DUE-WORK INDEX IS FULL` + audit `auto_bucket_overflow` (Nov 21) |
 | Accounts per hour, all shards | 320,000 | as above, across shards | same alert, per shard |
-| Sweep pace | 2,000 records per tick | at 1,000,000 accounts one pass is ~500 ticks (~42 h at 5 min) - a dropped booking can be that late | lateness below |
+| Storage calls per run | 1,000 by default (`AMV_OPS_PER_RUN`) | Cloudflare's KV page says 1,000 per invocation, its Workers page 10,000 on Paid; past the real cap a run throws partway, every minute, in the same place. The tick now plans inside the budget | **alert** `THE TICK CANNOT LOAD EVERY ACCOUNT` + audit `auto_index_capped`; `notLoaded` in the summary |
+| Accounts loaded from the index per tick | 184 at 1,000; 1,984 at 10,000 | the rest wait their turn: the start rotates by a whole cap each minute, so every named account is loaded within (named / cap) minutes | same |
+| Sweep pace | 1 page (500 records) at 1,000; 4 pages (2,000) at 10,000 | at 1,000,000 accounts one pass is 500-2,000 ticks - a dropped booking can be that late | lateness below |
 | Tick budget, queue unbound | `AUTO_TICK_BUDGET_MS` | due accounts are deferred, most overdue first | **alert** `THE AUTONOMOUS TICK IS OUT OF TIME` + audit `auto_tick_deferred` |
 | Oldest due work | - | every run can succeed while this grows | **`lateS`** in the tick's summary (seconds the most overdue job waited; logged with `[cron] automations`) |
+
+Before Nov 21 the tick made these calls with no budget: a sweep of 2,000 records booked each one on its own (about 6,000 calls), and the fast path loaded every account the index named. Bookings now go in one write per hour bucket, and both paths are sized to the budget - measured by counting every storage call in `the-tick-costs-what-is-due-not-who-exists`.
 
 Nothing here loses a job outright: the sweep reaches every record. What grows is lateness,
 which is why the two alerts and `lateS` exist - lateness that nobody can see becomes "my job
 stopped running".
 
 ## The plan, in order
+
+0. **Set `AMV_OPS_PER_RUN`** to what the plan allows (10,000 on Workers Paid). Until it is set, AMV assumes the stricter documented figure. *Owner: it depends on the Cloudflare plan.*
 
 1. **Bind AMV_JOBS** (owner: it is a Cloudflare Queues resource and a cost line; the
    `wrangler.toml` block is written and commented, with the dead-letter queue). This removes
