@@ -263,6 +263,19 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
   ok(priced.hasPrice && priced.hasPlan,
      'and the price and the plan are right there when it does', priced);
   ok(priced.hasButton, 'with the button that takes them to it', priced);
+  /* Build 16 audit D16-01: to Plans, not the purchase budget - and back. */
+  const went = await page.evaluate(async () => {
+    const b = document.getElementById('cwp-plans'); if (!b) return { clicked: false };
+    b.click();
+    await new Promise(r => setTimeout(r, 400));
+    const onPlans = S.tab === 'plans' && !!document.querySelector('.pl2-t');
+    const back = document.getElementById('pl2-back');
+    if (back) back.click();
+    await new Promise(r => setTimeout(r, 500));
+    return { onPlans, hadBack: !!back, tab: S.tab, panel: !!document.querySelector('#ovr .cwp') };
+  });
+  ok(went.onPlans, 'See plans opens the plans page', went);
+  ok(went.hadBack && went.tab === 'crew' && went.panel, 'and Back to the job returns to the job, open', went);
 }
 
 section('Opening one shows the instruction it really runs');

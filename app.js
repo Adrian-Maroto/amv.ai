@@ -23506,7 +23506,9 @@ function cwPeek(id){
   onBackdrop($('cwp-bg'),closeOvr);
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
-  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
+  /* Plans, not the purchase budget (Build 16 audit D16-01) - and the way back
+     to this job, with the schedule picked so far, is kept for the plans page. */
+  on($('cwp-plans'),'click',()=>{ try{ _cwPickedWhen[j.id] = _cjReadWhen(); }catch(e){} S.plansFrom = { job: j.id, title: j.title || '' }; closeOvr(); setTab('plans'); });
   const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
   /* One thing missing: straight to where it is connected. More than one: the
      list of them, each with its own way in. */
@@ -42522,6 +42524,7 @@ function renderPlansView() {
   vc.innerHTML =
     '<div class="sv fi"><div class="vi pl2">'
       + '<div class="pl2-head">'
+        + (S.plansFrom && S.plansFrom.job ? '<button type="button" class="btn bs pl2-back" id="pl2-back">← ' + escH(T('Back to the job')) + '</button>' : '')
         + '<h1 class="pl2-t">' + escH(now === 'free' ? T('Upgrade your plan') : T('Change your plan')) + '</h1>'
         /* What each step buys, as PLAN_TIERS and the server have it. It used to
            say every paid plan ran the same engine, which Pro does not: Apex
@@ -42544,6 +42547,11 @@ function renderPlansView() {
     + '</div></div>';
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
+  });
+  on($('pl2-back'), 'click', () => {
+    const from = S.plansFrom; S.plansFrom = null;
+    setTab('crew');
+    if (from && from.job) setTimeout(() => { try { cwPeek(from.job); } catch (e) {} }, 0);
   });
   try { _localizePrices(document); } catch (e) {}
 }

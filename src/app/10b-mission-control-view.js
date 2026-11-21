@@ -408,7 +408,9 @@ function cwPeek(id){
   onBackdrop($('cwp-bg'),closeOvr);
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
-  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
+  /* Plans, not the purchase budget (Build 16 audit D16-01) - and the way back
+     to this job, with the schedule picked so far, is kept for the plans page. */
+  on($('cwp-plans'),'click',()=>{ try{ _cwPickedWhen[j.id] = _cjReadWhen(); }catch(e){} S.plansFrom = { job: j.id, title: j.title || '' }; closeOvr(); setTab('plans'); });
   const pick = () => { _cwPickedWhen[j.id] = _cjReadWhen(); const s = $('cwp-status'); if(s && !j.on) s.textContent = _cjWhenLabel(_cwPickedWhen[j.id]) + here; };
   /* One thing missing: straight to where it is connected. More than one: the
      list of them, each with its own way in. */

@@ -197,6 +197,7 @@ function renderPlansView() {
   vc.innerHTML =
     '<div class="sv fi"><div class="vi pl2">'
       + '<div class="pl2-head">'
+        + (S.plansFrom && S.plansFrom.job ? '<button type="button" class="btn bs pl2-back" id="pl2-back">← ' + escH(T('Back to the job')) + '</button>' : '')
         + '<h1 class="pl2-t">' + escH(now === 'free' ? T('Upgrade your plan') : T('Change your plan')) + '</h1>'
         /* What each step buys, as PLAN_TIERS and the server have it. It used to
            say every paid plan ran the same engine, which Pro does not: Apex
@@ -219,6 +220,11 @@ function renderPlansView() {
     + '</div></div>';
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
+  });
+  on($('pl2-back'), 'click', () => {
+    const from = S.plansFrom; S.plansFrom = null;
+    setTab('crew');
+    if (from && from.job) setTimeout(() => { try { cwPeek(from.job); } catch (e) {} }, 0);
   });
   try { _localizePrices(document); } catch (e) {}
 }

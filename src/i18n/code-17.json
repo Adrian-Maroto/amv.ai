@@ -2525,5 +2525,24 @@
   "bn": "শেষ হওয়ার আগেই থেমে গেছে।",
   "ta": "முடிவதற்கு முன்பே நிறுத்தப்பட்டது.",
   "ur": "مکمل ہونے سے پہلے رک گیا۔"
+ },
+ "Back to the job": {
+  "es": "Volver al trabajo",
+  "zh": "返回任务",
+  "hi": "काम पर वापस जाएं",
+  "ar": "العودة إلى المهمة",
+  "pt": "Voltar à tarefa",
+  "fr": "Retour à la tâche",
+  "de": "Zurück zur Aufgabe",
+  "ja": "ジョブに戻る",
+  "ru": "Назад к задаче",
+  "ko": "작업으로 돌아가기",
+  "it": "Torna al lavoro",
+  "tr": "İşe geri dön",
+  "id": "Kembali ke tugas",
+  "vi": "Quay lại công việc",
+  "bn": "কাজে ফিরে যান",
+  "ta": "பணிக்குத் திரும்பு",
+  "ur": "کام پر واپس جائیں"
  }
 }
