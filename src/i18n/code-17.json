@@ -2905,5 +2905,24 @@
   "bn": "{0} থেকে প্রতিটি সেবায় ভিজিট অনুযায়ী সাজানো (Chrome UX Report, {1}) - AMV-তে কোনো কাজ কতবার চলে তা অনুযায়ী নয়।",
   "ta": "{0}-இலிருந்து ஒவ்வொரு சேவைக்கும் வரும் வருகைகளின்படி வரிசைப்படுத்தப்பட்டது (Chrome UX Report, {1}) - AMV-இல் ஒரு பணி எத்தனை முறை இயங்குகிறது என்பதன்படி அல்ல.",
   "ur": "{0} سے ہر سروس پر وزٹ کے حساب سے ترتیب (Chrome UX Report، {1}) - اس حساب سے نہیں کہ AMV میں کوئی کام کتنی بار چلتا ہے۔"
+ },
+ "AMV asks you to connect an account when a job needs one.": {
+  "es": "AMV te pide conectar una cuenta cuando un trabajo la necesita.",
+  "zh": "当某项任务需要账户时，AMV 会请你连接。",
+  "hi": "जब किसी काम को खाते की ज़रूरत होती है, AMV आपसे उसे जोड़ने को कहता है।",
+  "ar": "يطلب منك AMV ربط حساب عندما تحتاجه مهمة.",
+  "pt": "O AMV pede para você conectar uma conta quando uma tarefa precisa dela.",
+  "fr": "AMV vous demande de connecter un compte lorsqu’une tâche en a besoin.",
+  "de": "AMV bittet dich, ein Konto zu verbinden, wenn ein Job eines braucht.",
+  "ja": "ジョブにアカウントが必要になると、AMV が接続をお願いします。",
+  "ru": "AMV попросит подключить аккаунт, когда он понадобится задаче.",
+  "ko": "작업에 계정이 필요하면 AMV가 연결을 요청합니다.",
+  "it": "AMV ti chiede di collegare un account quando un lavoro ne ha bisogno.",
+  "tr": "Bir iş hesap gerektirdiğinde AMV sizden bağlamanızı ister.",
+  "id": "AMV meminta Anda menghubungkan akun saat sebuah tugas membutuhkannya.",
+  "vi": "AMV sẽ yêu cầu bạn kết nối tài khoản khi một công việc cần đến.",
+  "bn": "কোনো কাজে অ্যাকাউন্ট লাগলে AMV আপনাকে সেটি যুক্ত করতে বলে।",
+  "ta": "ஒரு வேலைக்குக் கணக்கு தேவைப்படும்போது, AMV அதை இணைக்கச் சொல்லும்.",
+  "ur": "جب کسی کام کو اکاؤنٹ کی ضرورت ہو تو AMV آپ سے اسے جوڑنے کو کہتا ہے۔"
  }
 }

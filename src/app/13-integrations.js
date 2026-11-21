@@ -1146,6 +1146,7 @@ function _connSig(d){
 }
 function _connPaint(){
   try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
+  try{ const n=document.getElementById('set-conn-none'); if(n) n.innerHTML=_connNoneHTML(); }catch(e){}
   try{ const sec=document.getElementById('conn-sec'); if(sec) sec.hidden=!_connSecShown(); }catch(e){}
 }
 /* Try again has to mean try again: the record of having asked is cleared too,
@@ -1434,6 +1435,7 @@ function _connBodyHTML(){
      which is the directory below said a second time, above the thing it is
      for. Asked for: only what is connected, only once something is. Every one
      of those apps keeps its Connect on its own row in the directory. */
+  if(!items) return '<div class="conn-note">'+_connNoneHTML()+'</div>';
   return '<div class="conn-grid">'+items+'</div>';
 }
 /* The block is shown when it has something to say: a connection, or a reason
@@ -1450,13 +1452,31 @@ function _connLastH(){
   try{ const v = String(loadStr('amv_conn_h') || '').split('@'); return v[1] === String(Math.round(window.innerWidth / 40)) ? Math.min(1200, +v[0] || 0) : 0; }catch(e){ return 0; }
 }
 function _connLastN(){ try{ return Math.min(12, Math.max(0, parseInt(loadStr('amv_conn_n')||'0',10)||0)); }catch(e){ return 0; } }
+/* SHOWN WHEN IT HAS SOMETHING TO SAY. Empty and read, it is not there - the
+   owner asked for this block only once something is connected, and every app
+   keeps its Connect on its own row below. But a list that could not be read,
+   or a server not switched on to hold account keys, is not "nothing
+   connected", and is said (Build 16 audit D16-08) - for somebody signed in,
+   since signed out there is nothing that could be connected. */
 function _connSecShown(){
   const st=_connState;
   if(st.state==='error') return true;
   const d=st.data||{};
   if(st.state!=='done') return !!(d.configured && (d.items||[]).length) || ((st.state==='loading'||st.state==='idle') && _connLastN() > 0);
-  if(!d.configured) return false;
+  if(!d.configured) return !!(S.user && S.user.email);
   return !!((d.items||[]).length);
+}
+/* The words where the accounts would be, when there are none to draw:
+   loading, could not be read, no backend, not switched on, and none are five
+   different answers, and only the last is "nothing is connected". Used here
+   and by Settings → Connectors, and repainted with the list. */
+function _connNoneHTML(){
+  const st=_connState, d=st.data||{};
+  if(st.state==='off') return escH(T('This copy of AMV is not connected to a backend, so there is nowhere safe to keep an account token. Connected accounts are off rather than pretending to work.'));
+  if(st.state==='error') return escH(T('Your connected accounts could not be loaded'))+(st.err?' ('+escH(st.err)+')':'')+'. '+escH(T('They have not been disconnected.'))+' <button class="mc-sec-link" data-dact="connReload">'+escH(T('Try again'))+'</button>';
+  if(st.state!=='done') return '<span aria-busy="true">'+escH(T('Checking what is connected...'))+'</span>';
+  if(!d.configured) return '<b>'+escH(T('Not switched on yet.'))+'</b> '+escH(T('AMV will not hold an account token until the server has an encryption key for it, because storing one unencrypted is not a trade worth making. Nothing here works until that is set.'));
+  return escH(T('Nothing is connected yet.'))+' '+escH(T('AMV asks you to connect an account when a job needs one.'));
 }
 
 /* WHETHER THE SETUP PANEL IS OPEN, REMEMBERED.

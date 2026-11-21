@@ -972,7 +972,9 @@ function _renderSetPaneInner(only, into){
       _cl.querySelectorAll('.ax-legend, .int-seeall, .int-guest').forEach(x=>x.remove());
       _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });
       _cl.querySelectorAll('.ss2').forEach(g=>{ if(!g.querySelector('.int-card')) g.remove(); });
-      if(!_cl.querySelector('.int-card')) _cl.innerHTML='<p class="set-empty">'+escH(T('Nothing is connected yet.'))+'</p>';
+      /* Empty is said only when the list was read and is empty (Build 16
+         audit D16-08); loading or unreadable says that, and updates itself. */
+      if(!_cl.querySelector('.int-card')){ _cl.innerHTML='<p class="set-empty" id="set-conn-none" role="status"></p>'; try{ $('set-conn-none').innerHTML=_connNoneHTML(); }catch(e){ $('set-conn-none').textContent=T('Nothing is connected yet.'); } }
       else {
         /* ONE LIST OF YOUR ACCOUNTS (Nov 10, owner: "connected accounts has to
            actually look clear - all the accounts you are connected to"). Each
