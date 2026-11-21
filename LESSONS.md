@@ -16065,3 +16065,27 @@ the counter instead of from a copy, `strict` so a counter that cannot answer is
 "pending", never "done". Write down the intent BEFORE booking, name the booking,
 and let the close spend that name (`requires`/`unless`) so a booking that never
 arrived gives nothing back and cannot land later.
+
+## 655. A scheduled pass is bounded by the platform's call limit, not only by time (Nov 21)
+
+The background-jobs tick, the renewal sweep and the nightly backup were each
+bounded by time, and each by a record count somebody picked: 2,000 a sweep,
+2,000 a renewal tick, a 20-second backup slice. None counted the storage calls
+it made, and Cloudflare caps those per invocation - its KV page says 1,000, its
+Workers page 10,000 on Paid. The jobs sweep booked each record it read with a
+read and a write of its own, so 500 records cost about 3,000 calls; the fast
+path loaded every account the index named, however many. Past the real cap a
+run throws partway, in the same place every time, and the time budget never
+trips because the run did not run out of time. It was found only by wrapping
+the store in a counter inside the existing suites. Rule: a pass that walks
+records plans inside one per-run call budget (`_opsPerRun`, AMV_OPS_PER_RUN,
+default the stricter documented figure), writes what it can in one call per
+bucket rather than one per record, and its suite counts every call. When the
+provider's own pages disagree, plan for the stricter one and let the operator
+raise it - a pass that runs late is recoverable; one that throws in the same
+place every minute is not.
+
+Also from this round: a fixed-length read of a function's source (900
+characters) broke when a guard was added above its return; read to the closing
+brace. And a list keyed `cc|lang` since one change was passed whole to a
+function wanting `cc` - the new suite for the next change was what caught it.
