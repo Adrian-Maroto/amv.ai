@@ -1363,7 +1363,7 @@ let _cjCache = null, _cjCacheKey = '';
    how much their sites are visited from there (app-reach, Chrome UX Report);
    and the country's public holidays. */
 const _CJ_MAIL_JOBS = [
-  ['digest', '\uD83D\uDCEC', '{0} inbox digest', 'Each evening, the emails in my {0} inbox that actually need me - summarized, with what to do about each.', 'daily'],
+  ['digest', '\uD83D\uDCEC', '{0} inbox digest', 'Each evening, the emails in my {0} inbox that actually need me - summarized, with what to do about each.', 'daily', 18],
   ['alerts', '\uD83D\uDEA8', 'Important {0} email alerts', 'Tell me the moment something in my {0} inbox genuinely needs me - not a digest, an alert.', 'hourly'],
 ];
 const _cjInboxCalMade = {}, _cjInboxCalById = {};
@@ -1377,9 +1377,9 @@ function _cjInboxCal(cc){
     const mail = [];
     _appCats().forEach(c => (c.apps || []).forEach(a => { const m = /^mail:(.+)$/.exec(a.how || ''); if(m && AMV_MAIL_CC[m[1]] === cc) mail.push({ a, id: m[1], k: (typeof window._appReachKey === 'function' ? window._appReachKey(a, cc) : null) }); }));
     mail.sort((x, y) => (x.k == null ? 99 : x.k) - (y.k == null ? 99 : y.k));
-    mail.forEach(({ a, id }) => _CJ_MAIL_JOBS.forEach(([k, icon, title, desc, every]) => {
+    mail.forEach(({ a, id }) => _CJ_MAIL_JOBS.forEach(([k, icon, title, desc, every, hour]) => {
       const name = String(a.name).replace(/\s*\(.*\)\s*$/, '');
-      out.push({ id: 'cal_' + cc + '_' + id + '_' + k, cat: 'Inbox & calendar', icon, title: T(title).replace('{0}', name), desc: T(desc).replace('{0}', name), prompt: T(desc).replace('{0}', name), every, needs: 'Email', on: false, ccMail: id });
+      out.push({ id: 'cal_' + cc + '_' + id + '_' + k, cat: 'Inbox & calendar', icon, title: T(title).replace('{0}', name), desc: T(desc).replace('{0}', name), prompt: T(desc).replace('{0}', name), every, ...(hour != null ? { hour } : {}), needs: 'Email', on: false, ccMail: id });
     }));
   }catch(e){}
   const place = (() => { try{ const row = CW_WORLD_COUNTRIES.find(c => c[0] === cc); return row ? _cwPlaceName(row[1]) : cc; }catch(e){ return cc; } })();
