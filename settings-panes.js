@@ -621,7 +621,7 @@ function _renderSetPaneInner(only, into){
          with or without the engine - this used to say the opposite, which had
          stopped being true. */
       '<div class="ss2"><h3>'+escH(T('The app itself'))+'</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-        escH(T('Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.'))+'</p></div>'+
+        escH(T('Every screen - chat, Crew, Studio, Dev, Lab, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.'))+'</p></div>'+
       '<div class="ss2"><h3>Response language</h3>'+
         '<div class="lang-grid">'+
           Object.entries(LANGS).map(([code,l])=>

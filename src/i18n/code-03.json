@@ -588,23 +588,23 @@
   "ko": "Excel 재무 모델 팩",
   "ta": "Excel நிதி மாதிரி தொகுப்பு"
  },
- "Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.": {
-  "es": "Todas las pantallas (chat, Crew, Studio, Dev, Lab, el marketplace, ajustes) cambian con él al instante. Lo que escribes y los nombres de personas y apps se quedan exactamente como están.",
-  "zh": "所有界面——聊天、Crew、Studio、Dev、Lab、市场、设置——都会立即随之切换。你输入的内容以及人名和应用名称保持原样。",
-  "hi": "हर स्क्रीन - चैट, Crew, Studio, Dev, Lab, मार्केटप्लेस, सेटिंग्स - तुरंत इसके साथ बदल जाती है। आप जो लिखते हैं, और लोगों व ऐप्स के नाम, जैसे हैं वैसे ही रहते हैं।",
-  "ar": "كل الشاشات - الدردشة وCrew وStudio وDev وLab والمتجر والإعدادات - تتغير معها فورًا. ما تكتبه وأسماء الأشخاص والتطبيقات تبقى كما هي تمامًا.",
-  "pt": "Todas as telas - chat, Crew, Studio, Dev, Lab, o marketplace, configurações - mudam com ele na hora. O que você digita e os nomes de pessoas e apps ficam exatamente como estão.",
-  "fr": "Chaque écran - chat, Crew, Studio, Dev, Lab, la marketplace, les paramètres - change avec elle immédiatement. Ce que vous tapez, et les noms des personnes et des apps, restent exactement tels quels.",
-  "de": "Jeder Bildschirm – Chat, Crew, Studio, Dev, Lab, der Marktplatz, die Einstellungen – wechselt sofort mit. Was du eingibst und die Namen von Personen und Apps bleiben genau so, wie sie sind.",
-  "ja": "チャット、Crew、Studio、Dev、Lab、マーケットプレイス、設定など、すべての画面がすぐに切り替わります。あなたが入力した内容や、人やアプリの名前はそのまま残ります。",
-  "ru": "Все экраны — чат, Crew, Studio, Dev, Lab, маркетплейс, настройки — сразу переключаются вместе с ним. То, что вы пишете, и имена людей и приложений остаются как есть.",
-  "id": "Setiap layar - chat, Crew, Studio, Dev, Lab, marketplace, pengaturan - langsung ikut berganti. Yang Anda ketik, serta nama orang dan aplikasi, tetap persis seperti adanya.",
-  "bn": "প্রতিটি স্ক্রিন - চ্যাট, Crew, Studio, Dev, Lab, মার্কেটপ্লেস, সেটিংস - সঙ্গে সঙ্গে বদলে যায়। আপনি যা লেখেন, আর মানুষ ও অ্যাপের নাম, ঠিক যেমন আছে তেমনই থাকে।",
-  "ur": "ہر اسکرین - چیٹ، Crew، Studio، Dev، Lab، مارکیٹ پلیس، ترتیبات - فوراً اس کے ساتھ بدل جاتی ہے۔ آپ جو لکھتے ہیں، اور لوگوں اور ایپس کے نام، بالکل ویسے ہی رہتے ہیں۔",
-  "tr": "Her ekran - sohbet, Crew, Studio, Dev, Lab, pazar yeri, ayarlar - hemen onunla birlikte değişir. Yazdıklarınız ve kişilerle uygulamaların adları olduğu gibi kalır.",
-  "vi": "Mọi màn hình - trò chuyện, Crew, Studio, Dev, Lab, chợ ứng dụng, cài đặt - đổi theo ngay lập tức. Những gì bạn nhập, cùng tên người và ứng dụng, vẫn giữ nguyên.",
-  "it": "Ogni schermata - chat, Crew, Studio, Dev, Lab, il marketplace, le impostazioni - cambia subito con essa. Ciò che scrivi e i nomi di persone e app restano esattamente come sono.",
-  "ko": "채팅, Crew, Studio, Dev, Lab, 마켓플레이스, 설정 등 모든 화면이 즉시 함께 바뀝니다. 입력한 내용과 사람·앱 이름은 그대로 유지됩니다.",
-  "ta": "ஒவ்வொரு திரையும் - அரட்டை, Crew, Studio, Dev, Lab, சந்தை, அமைப்புகள் - உடனே மாறும். நீங்கள் தட்டச்சு செய்வதும், நபர்கள் மற்றும் ஆப்களின் பெயர்களும் அப்படியே இருக்கும்."
+ "Every screen - chat, Crew, Studio, Dev, Lab, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.": {
+  "es": "Todas las pantallas (chat, Crew, Studio, Dev, Lab, ajustes) cambian con él al instante. Lo que escribes y los nombres de personas y apps se quedan exactamente como están.",
+  "zh": "所有界面——聊天、Crew、Studio、Dev、Lab、设置——都会立即随之切换。你输入的内容以及人名和应用名称保持原样。",
+  "hi": "हर स्क्रीन - चैट, Crew, Studio, Dev, Lab, सेटिंग्स - तुरंत इसके साथ बदल जाती है। आप जो लिखते हैं, और लोगों व ऐप्स के नाम, जैसे हैं वैसे ही रहते हैं।",
+  "ar": "كل الشاشات - الدردشة وCrew وStudio وDev وLab والإعدادات - تتغير معها فورًا. ما تكتبه وأسماء الأشخاص والتطبيقات تبقى كما هي تمامًا.",
+  "pt": "Todas as telas - chat, Crew, Studio, Dev, Lab, configurações - mudam com ele na hora. O que você digita e os nomes de pessoas e apps ficam exatamente como estão.",
+  "fr": "Chaque écran - chat, Crew, Studio, Dev, Lab, les paramètres - change avec elle immédiatement. Ce que vous tapez, et les noms des personnes et des apps, restent exactement tels quels.",
+  "de": "Jeder Bildschirm – Chat, Crew, Studio, Dev, Lab, die Einstellungen – wechselt sofort mit. Was du eingibst und die Namen von Personen und Apps bleiben genau so, wie sie sind.",
+  "ja": "チャット、Crew、Studio、Dev、Lab、設定など、すべての画面がすぐに切り替わります。あなたが入力した内容や、人やアプリの名前はそのまま残ります。",
+  "ru": "Все экраны — чат, Crew, Studio, Dev, Lab, настройки — сразу переключаются вместе с ним. То, что вы пишете, и имена людей и приложений остаются как есть.",
+  "id": "Setiap layar - chat, Crew, Studio, Dev, Lab, pengaturan - langsung ikut berganti. Yang Anda ketik, serta nama orang dan aplikasi, tetap persis seperti adanya.",
+  "bn": "প্রতিটি স্ক্রিন - চ্যাট, Crew, Studio, Dev, Lab, সেটিংস - সঙ্গে সঙ্গে বদলে যায়। আপনি যা লেখেন, আর মানুষ ও অ্যাপের নাম, ঠিক যেমন আছে তেমনই থাকে।",
+  "ur": "ہر اسکرین - چیٹ، Crew، Studio، Dev، Lab، ترتیبات - فوراً اس کے ساتھ بدل جاتی ہے۔ آپ جو لکھتے ہیں، اور لوگوں اور ایپس کے نام، بالکل ویسے ہی رہتے ہیں۔",
+  "tr": "Her ekran - sohbet, Crew, Studio, Dev, Lab, ayarlar - hemen onunla birlikte değişir. Yazdıklarınız ve kişilerle uygulamaların adları olduğu gibi kalır.",
+  "vi": "Mọi màn hình - trò chuyện, Crew, Studio, Dev, Lab, cài đặt - đổi theo ngay lập tức. Những gì bạn nhập, cùng tên người và ứng dụng, vẫn giữ nguyên.",
+  "it": "Ogni schermata - chat, Crew, Studio, Dev, Lab, le impostazioni - cambia subito con essa. Ciò che scrivi e i nomi di persone e app restano esattamente come sono.",
+  "ko": "채팅, Crew, Studio, Dev, Lab, 설정 등 모든 화면이 즉시 함께 바뀝니다. 입력한 내용과 사람·앱 이름은 그대로 유지됩니다.",
+  "ta": "ஒவ்வொரு திரையும் - அரட்டை, Crew, Studio, Dev, Lab, அமைப்புகள் - உடனே மாறும். நீங்கள் தட்டச்சு செய்வதும், நபர்கள் மற்றும் ஆப்களின் பெயர்களும் அப்படியே இருக்கும்."
  }
 }

@@ -186,16 +186,19 @@ async function _mcCancelSched(id){
   renderCrewView();
 }
 window._mcCancelSched=_mcCancelSched;
-/* "From the marketplace" - crews the user bought, usable right here in Crew. */
+/* Crews somebody else made, saved to this account before the marketplace
+   was retired (Build 16 audit D16-05). Still theirs to run, said as what they
+   are: who made it, and that Run puts its steps in chat - nothing about
+   buying, and no promise of a swap of details the run does not make. */
 function _mcBoughtCrewsHTML(){
   let crews=[];
   try{ crews=(load('amv_saved_crews')||[]).filter(c=>c.fromMarket); }catch(e){}
   if(!crews.length) return '';
   return `<div class="mc-sec mc-bought owned-plugins" id="mc-bought">
-    <div class="sec-head"><h3>Marketplace plugins</h3><span class="sec-sub">Crews and workflows you bought, ready to run as your own. Click Run and AMV works it end to end - the seller’s details are swapped for yours automatically.</span></div>
+    <div class="sec-head"><h3>${escH(T('Saved from others'))}</h3><span class="sec-sub">${escH(T('Crews somebody else made that you saved. Run one to start it in chat with its steps.'))}</span></div>
     <div class="mc-grid">${crews.slice(0,8).map(c=>`<div class="mc-card">
-      <div class="mc-card-top"><span class="mc-card-t">${escH(c.title||'Crew')}</span><span class="mc-pill ok">Owned</span></div>
-      <div class="mc-card-sub">${(c.agents||[]).slice(0,4).map(a=>escH(a.role)).join(' → ')||(c.goal?escH(c.goal.slice(0,90)):'Multi-agent crew')}${c.seller?` · by ${escH(c.seller)}`:''}</div>
+      <div class="mc-card-top"><span class="mc-card-t">${escH(c.title||'Crew')}</span><span class="mc-pill">${escH(T('Saved'))}</span></div>
+      <div class="mc-card-sub">${(c.agents||[]).slice(0,4).map(a=>escH(a.role)).join(' → ')||(c.goal?escH(c.goal.slice(0,90)):'Multi-agent crew')}${c.seller?` · ${escH(T('made by {0}').replace('{0}',c.seller))}`:''}</div>
       <div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcUseCrew" data-darg="${escH(c.id)}">Run this</button></div>
     </div>`).join('')}</div>
   </div>`;

@@ -16443,7 +16443,7 @@ function _mktUsePurchase(it){
   // crew / workflow → install and run in Crew (real agents from the listing)
   if(home==='crew'){
     try{ AMVMarket.install(it); }catch(e){}
-    toast('Added to Crew - see “Marketplace plugins” at the bottom of this page.','success',4500);
+    toast(T('Added to Crew, under Saved from others.'),'success',4500);
     setTab('crew');
     setTimeout(()=>{ const el=document.getElementById('mc-bought'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, 700);
     return;
@@ -16475,10 +16475,10 @@ function _ownedMarketHTML(page){
   const items=_ownedForPage(page); if(!items.length) return '';
   const label={studio:'Use in Studio',dev:'Open in Dev',chat:'Try in chat'}[page]||'Use it';
   return `<div class="mc-sec mc-bought owned-plugins" id="owned-${page}">
-    <div class="sec-head"><h3>Marketplace plugins</h3><span class="sec-sub">Things you bought that work here. Open one to use it - your details are filled in for you.</span></div>
+    <div class="sec-head"><h3>${escH(T('Saved from others'))}</h3><span class="sec-sub">${escH(T('Made by somebody else and saved by you. Open one to put it in the box, ready to change before you send it.'))}</span></div>
     <div class="mc-grid">${items.slice(0,8).map(it=>`<div class="mc-card">
-      <div class="mc-card-top"><span class="mc-card-t">${escH(it.title||'Item')}</span><span class="mc-pill ok">Owned</span></div>
-      <div class="mc-card-sub">${escH((it.desc||it.cat||'').slice(0,120))}${it.author?` · by ${escH(it.author)}`:''}</div>
+      <div class="mc-card-top"><span class="mc-card-t">${escH(it.title||'Item')}</span><span class="mc-pill">${escH(T('Saved'))}</span></div>
+      <div class="mc-card-sub">${escH((it.desc||it.cat||'').slice(0,120))}${it.author?` · ${escH(T('made by {0}').replace('{0}',it.author))}`:''}</div>
       <div class="mc-card-act"><button class="btn mc-mini" data-dact="_ownedUse" data-darg="${escH(it.id)}">${label}</button></div>
     </div>`).join('')}</div>
   </div>`;
