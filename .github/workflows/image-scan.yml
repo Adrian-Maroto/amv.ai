@@ -62,3 +62,14 @@ jobs:
             exit 1
           fi
           echo "No HIGH or CRITICAL finding with a fix available."
+      - name: Record what was scanned
+        if: always()
+        run: |
+          # Build 16 audit SEC-16: the digests this scan judged, so a deploy
+          # can be compared with them (GO-LIVE.md, the cloud computer).
+          {
+            echo ""
+            echo "Scanned image: $(docker image inspect --format '{{.Id}}' amv-cloud:scan 2>/dev/null || echo unknown)"
+            echo "Base image: $(docker image inspect --format '{{index .RepoDigests 0}}' node:22-bookworm-slim 2>/dev/null || echo unknown)"
+            echo "Commit: ${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"

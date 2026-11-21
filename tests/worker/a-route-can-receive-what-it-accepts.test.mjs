@@ -61,5 +61,23 @@ for (const [path] of ROUTES) {
   ok(r.status === 413 && d.code === 'body_too_large', path + ' one byte past its bound is refused before reading', { status: r.status, code: d.code });
 }
 
+section('A body that does not declare its length is counted as it arrives (Build 16 audit SEC-17)');
+{
+  /* Sent as a stream with no Content-Length: the declared-length check has
+     nothing to read, so the bytes themselves are counted. A sign-in whose
+     body is past the default bound must not reach the handler as a parsed
+     request - it is answered as a body that could not be read. */
+  const big = '{"email":"a@b.com","password":"' + 'x'.repeat(W.BODY_MAX_BYTES * 4) + '"}';
+  const enc = new TextEncoder().encode(big);
+  let fed = 0;
+  const stream = new ReadableStream({ pull(c) { if (fed >= enc.length) { c.close(); return; } c.enqueue(enc.slice(fed, fed + 16384)); fed += 16384; } });
+  const req = new Request('https://api.amv.test/auth/login', { method: 'POST', duplex: 'half', body: stream,
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '55.55.55.56' } });
+  ok(!req.headers.get('content-length'), 'the request really declares no length', req.headers.get('content-length'));
+  const r = await W.default.fetch(req, env, ctx);
+  ok(fed < enc.length, 'and the Worker stopped reading it past the bound - it never took the whole body', { fed, size: enc.length });
+  ok(r.status >= 400 && r.status < 500, 'the answer is a refusal of the request, not a sign-in attempt', r.status);
+}
+
 if (report('a-route-can-receive-what-it-accepts') > 0) process.exitCode = 1;
 done();

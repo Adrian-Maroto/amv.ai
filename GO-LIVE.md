@@ -601,7 +601,14 @@ To switch it on (about ten minutes, once):
 2. Make the key both Workers share - any 32+ random characters, for example
    from a password manager. Never put it in a file.
 3. Deploy the cloud computer (it is its own Worker, in `cloud/`). Docker must
-   be running on the machine you deploy from:
+   be running on the machine you deploy from. Deploy only a commit whose
+   `image-scan` run is green, and on the same day: `wrangler deploy` builds
+   the image again, and the base image and system packages can move between
+   two builds (Build 16 audit SEC-16). The scan's summary records the image
+   and base digests it checked. Binding the deploy to that exact digest
+   needs a container registry the scan can push to and the deploy can pull
+   from - your choice of registry and its credentials; until then this
+   same-commit, same-day rule is the control:
 
    ```
    cd cloud

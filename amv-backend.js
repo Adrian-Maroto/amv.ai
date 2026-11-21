@@ -19865,6 +19865,7 @@ async function _serveRequest(request, env, ctx, rid) {
          with a hole in it by next month. */
       const tooBig = _bodyTooBig(request);
       if (tooBig) return _applyCors(request, env, tooBig);
+      request = _bodyCapped(request);
 
       /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
 
@@ -20316,6 +20317,30 @@ function _bodyTooBig(request) {
       + Math.round(max / 1024) + ' KB), so nothing was read.',
     code: 'body_too_large', limit: max,
   }, 413);
+}
+
+/* AND ON THE BYTES THAT ACTUALLY ARRIVE (Build 16 audit SEC-17). A body sent
+   without a Content-Length - chunked, or a length that is not a number - was
+   let through to handlers that read it whole with request.json(). The body is
+   now counted as it is read, and reading past the route's limit fails: the
+   handler sees a body that could not be read, which every one of them already
+   answers as a bad request, and nothing past the limit is ever held. */
+function _bodyCapped(request) {
+  const m = String(request.method || '').toUpperCase();
+  if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS' || !request.body) return request;
+  let path = '';
+  try { path = new URL(request.url).pathname.replace(/\/+$/, ''); } catch (e) {}
+  const max = _bodyMaxFor(path);
+  let seen = 0;
+  const cap = new TransformStream({
+    transform(chunk, ctl) {
+      seen += chunk.byteLength || 0;
+      if (seen > max) { ctl.error(Object.assign(new Error('body larger than ' + max + ' bytes'), { code: 'body_too_large' })); return; }
+      ctl.enqueue(chunk);
+    },
+  });
+  try { return new Request(request, { body: request.body.pipeThrough(cap), duplex: 'half' }); }
+  catch (e) { return request; }
 }
 
 /* THE ROUTES THAT CANNOT WORK WITHOUT A SIGNING KEY.
