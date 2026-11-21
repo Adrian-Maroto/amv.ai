@@ -269,14 +269,19 @@ function _renderTeamManageNow(vc, team){
     overBanner+
     seatManage+
     '<div class="team-presence" id="team-presence"></div>'+
-    '<div class="ss2"><h3>Shared library <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(projects &amp; prompts everyone can use)</span></h3>'+
-      (canWork?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
-        '<button class="btn bs" id="team-share-project" style="font-size:var(--t-sm)">Share a project</button>'+
-        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>':'')+
-      '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
-    '</div>'+
     '<div class="ss2"><h3>Projects you edit together <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(one copy, kept up to date for everyone)</span></h3>'+
       '<div id="team-projects"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
+    '</div>'+
+    /* TEMPLATES ARE COPIES; SHARED PROJECTS ARE ONE PROJECT (Build 16 audit
+       D16-10). The two sat under names that read alike - "Shared library" with
+       "Share a project", and "Projects you edit together" - though one hands
+       each teammate a copy and the other is one project everybody edits. The
+       work done together comes first, and each says which it is. */
+    '<div class="ss2"><h3>'+escH(T('Templates'))+' <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">('+escH(T('whoever uses one gets their own copy - their changes are not shared'))+')</span></h3>'+
+      (canWork?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+        '<button class="btn bs" id="team-share-project" style="font-size:var(--t-sm)">'+escH(T('Share a copy of a project'))+'</button>'+
+        '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>':'')+
+      '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div class="team-inv-row"><div class="team-inv-mail"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">'+escH(T('Member'))+'</option><option value="admin">'+escH(T('Admin'))+'</option><option value="viewer">'+escH(T('Viewer'))+'</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
@@ -392,7 +397,7 @@ function _renderTeamManageNow(vc, team){
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
       if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,cat:'Shared',text:s.item.body||s.item.text||'',custom:true,ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
-      else if(s.kind==='project' && s.item){ _saveWorkspaces([Object.assign({id:'w'+Date.now()},s.item)].concat(S.workspaces||[])); toast('Added to your projects','success'); }
+      else if(s.kind==='project' && s.item){ _saveWorkspaces([Object.assign({id:'w'+Date.now()},s.item)].concat(S.workspaces||[])); toast(T('A copy is in your projects. What you change in it is yours alone.'),'success',5000); }
     }));
     el.querySelectorAll('[data-tsr-del]').forEach(b=>on(b,'click',async()=>{
       try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }
@@ -417,7 +422,7 @@ function _renderTeamManageNow(vc, team){
     if(!items.length){ toast('You have no '+(kind==='prompt'?'prompts':'projects')+' to share yet','info'); return; }
     const r=$('ovr'); if(!r) return;
     r.innerHTML='<div class="ov" id="shp-bg"><div class="ob" style="max-width:440px"><button class="oc" data-dact="closeOvr">\u00d7</button>'+
-      '<h2 style="margin-bottom:4px">Share a '+kind+'</h2><p class="ob-sub" style="margin-bottom:14px">Everyone on your team will be able to use it.</p>'+
+      '<h2 style="margin-bottom:4px">'+escH(kind==='project'?T('Share a copy of a project'):'Share a prompt')+'</h2><p class="ob-sub" style="margin-bottom:14px">'+escH(kind==='project'?T('Each teammate who uses it gets their own copy, and their changes stay theirs. To edit one project together, open it and choose “Share with my team for editing”.'):T('Each teammate who uses it gets their own copy.'))+'</p>'+
       '<div class="shp-list">'+items.map((it,i)=>'<button class="shp-item" data-shp="'+i+'">'+escH(it.title||it.name||('Untitled '+kind))+'</button>').join('')+'</div></div></div>';
     onBackdrop($('shp-bg'),closeOvr);
     r.querySelectorAll('[data-shp]').forEach(b=>on(b,'click',async()=>{
