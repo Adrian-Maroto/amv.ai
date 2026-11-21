@@ -193,7 +193,10 @@ section('A throw the router cannot foresee still becomes AMV’s 500');
      worker.fetch and the visitor got Cloudflare's error page. */
   const down = () => ({
     JWT_SECRET: 'a-real-looking-secret-value-for-tests', APP_URL: 'https://amv.test',
-    AMV_KV: { async get() { throw new Error('KV is down: namespace ffff-secret'); },
+    /* The company sign-in lookup is answered (no policy): a failure there is
+       now a deliberate short wait, not an unforeseen throw (Build 16 audit
+       SEC-07), and this section is about the unforeseen kind. */
+    AMV_KV: { async get(k) { if (String(k).startsWith('ssodom:')) return null; throw new Error('KV is down: namespace ffff-secret'); },
               async put() { throw new Error('KV is down'); },
               async delete() { throw new Error('KV is down'); },
               async list() { throw new Error('KV is down'); } },

@@ -444,7 +444,8 @@ async function connRemove(request, env){
   /* Forgotten either way. Keeping a token AMV could not revoke would be holding
      a credential the person has asked it to stop holding - the honest failure
      is to drop it here and tell them to finish the job at the provider. */
-  await _connMerge(env, user.email, (rec) => { delete rec[id]; });
+  try{ await _connMerge(env, user.email, (rec) => { delete rec[id]; }); }
+  catch(e){ if(_isBusy(e)) return _busyJson('connections'); throw e; }
   audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
 
   return json({ ok:true, revoked,

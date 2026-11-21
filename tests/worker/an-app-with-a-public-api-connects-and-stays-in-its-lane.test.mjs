@@ -203,7 +203,10 @@ section('A call goes to its own app with its own token - never another’s');
     env.AMV_COUNTER = { idFromName: n => n, get: n => ({ async fetch(u, init) { const b = JSON.parse((init && init.body) || '{}'); if (b.op === 'claim') throw new Error('object unreachable'); return keep.get(n).fetch(u, init); } }) };
     const down = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'once?' } }, idempotencyKey: 'test-send-mail-key-0004' }, t);
     env.AMV_COUNTER = keep;
-    ok(down.status === 503 && down.d.error === 'idempotency_unavailable' && !sent.some(x => x.url.endsWith('/me/sendMail')), 'when once cannot be guaranteed, the change is not sent', [down.status, down.d.error]);
+    /* With the lock unreachable the connection itself cannot be used safely
+       either (SEC-13: nothing is written without it), so the refusal may come
+       from there first. Either way: a short wait, and nothing sent. */
+    ok(down.status === 503 && ['idempotency_unavailable', 'conn_busy'].includes(down.d.error) && !sent.some(x => x.url.endsWith('/me/sendMail')), 'when once cannot be guaranteed, the change is not sent', [down.status, down.d.error]);
   }
   const nokey = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'POST', path: 'me/sendMail', body: { message: { subject: 'hi' } } }, t);
   ok(nokey.status === 400 && nokey.d.error === 'idempotency_required', 'a change without a key is not sent', nokey.d);

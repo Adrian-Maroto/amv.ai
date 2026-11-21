@@ -315,6 +315,7 @@ const BACKUP_NEVER = [
      retry. */
   'reset:', 'resetcode:',   // password-reset tokens - the credential itself
   'signincode:',            // a sign-in code challenge, ten minutes long, same reason
+  'carry:',                 // a session carried to the app's address: one use, two minutes (SEC-03)
   'rtgrace:',               // when a refresh token was first used, kept two minutes for the overlap window
   'sess:',                  // a sign-in; restoring one would bring back a session somebody ended
   'emailhealth:',           // the provider's last refusal of the sender, re-learned on the next send

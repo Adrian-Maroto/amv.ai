@@ -24,7 +24,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'when.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { runDueAutomations, issueTokens, _whenMatch, _whenClean, INGEST_SRC_MAIL };
+export { runDueAutomations, issueTokens, _whenMatch, _whenClean, INGEST_SRC_MAIL, DB };
 export function __setConnUse(fn){ connUse = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -183,7 +183,7 @@ section('A mailbox it cannot watch for new mail is named, not watched badly');
 section('A page: it fires when a watched word appears or goes - not on every change');
 {
   vals.clear(); prompts = [];
-  store.set('auto:' + ME, JSON.stringify({ items: [], results: [] }));
+  await W.DB.put(env, 'auto', ME, { items: [], results: [] });   // through the data layer: Crew jobs are read as committed (STATE16-02)
   const bad = await post('/auto/create', { detail: 'Tell me.', repeat: '10min', when: { source: 'page', url: 'http://169.254.169.254/latest', appears: ['on sale'] } });
   ok(bad.status === 400, 'an internal address is refused before anything is watched', bad.status);
   const none = await post('/auto/create', { detail: 'Tell me.', repeat: '10min', when: { source: 'page', url: 'https://tickets.example.com/show' } });
@@ -221,7 +221,7 @@ section('A page: it fires when a watched word appears or goes - not on every cha
 section('A calendar: new events matching its words, not the ones already there');
 {
   vals.clear(); prompts = [];
-  store.set('auto:' + ME, JSON.stringify({ items: [], results: [] }));
+  await W.DB.put(env, 'auto', ME, { items: [], results: [] });   // through the data layer: Crew jobs are read as committed (STATE16-02)
   const r = await post('/auto/create', { detail: 'Tell me who is coming and what to prepare.', repeat: '10min', approval: 'auto', when: { source: 'calendar', words: ['interview'] } });
   ok(r.status === 200 && r.d.item.uses.includes('calendar.read'), 'created, reading the calendar', r.d.item && r.d.item.uses);
   CAL = [{ id: 'e1', summary: 'Interview with Ana', start: { dateTime: '2026-10-20T10:00:00Z' }, end: { dateTime: '2026-10-20T11:00:00Z' } }];
@@ -242,7 +242,7 @@ section('A calendar: new events matching its words, not the ones already there')
 section('A GitHub repository: new pull requests and issues of the kinds asked for');
 {
   vals.clear(); prompts = [];
-  store.set('auto:' + ME, JSON.stringify({ items: [], results: [] }));
+  await W.DB.put(env, 'auto', ME, { items: [], results: [] });   // through the data layer: Crew jobs are read as committed (STATE16-02)
   /* Connected as anybody connects GitHub: a Connected account that may read
      repositories. Without it the run is held, asking for the connection. */
   store.set('conn:' + ME, JSON.stringify({ g1: { provider: 'github', unattended: true, sealed: 'x', scopes: ['repo.read'] } }));

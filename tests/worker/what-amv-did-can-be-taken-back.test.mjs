@@ -97,7 +97,11 @@ function mkEnv() {
         if (b.op === 'claim') {
           if (claimsDown) return new Response('down', { status: 503 });
           if (claims.has(n)) return new Response(JSON.stringify({ claimed: false }));
-          claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: 'o' })); } }
+          claims.add(n); return new Response(JSON.stringify({ claimed: true, owner: 'o' })); }
+        /* Given back by its holder, as the real object does: a record lock
+           is never held for ever (connections are written only under it
+           since the Build 16 audit, SEC-13). */
+        if (b.op === 'release') { claims.delete(n); return new Response(JSON.stringify({ ok: true })); } }
       return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) }),
     JWT_SECRET: 'j'.repeat(40), ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     CONNECT_KEY: 'test-connect-key', GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',

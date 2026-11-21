@@ -5803,16 +5803,27 @@ function _connExpiry(d){ const n = Number(d && d.expires_in); return n > 0 ? Dat
    wait - on a provider's token or revoke endpoint, for seconds - and save the
    whole map back. Whatever another request changed during the wait was undone:
    a token renewed, a connection added, one removed. So each is a mutation
-   applied under the record lock; if the lock is busy it is applied to a fresh
-   read, which is still the record as it is now rather than as it was. */
+   applied under the record lock.
+
+   AND ONLY UNDER IT (Build 16 audit SEC-13). When the lock could not be had -
+   or anything else went wrong, an unreadable record or a fault in the change
+   itself - this used to make the change anyway, unlocked, over a fresh read:
+   exactly the lost write the lock exists to stop, and a disconnect could be
+   undone by a renewal racing it. A busy lock is now tried again a few times
+   (a renewed token must not be lost to a moment's contention), and then the
+   caller is told it did not happen. Nothing is ever written without the lock. */
 async function _connMerge(env, email, mutate){
-  try{ return await _withKind(env, CONN_KV, email, mutate, {}); }
-  catch(_l){
-    const cur = (await DB.get(env, CONN_KV, email)) || {};
-    const out = await mutate(cur);
-    await DB.put(env, CONN_KV, email, cur);
-    return out;
+  let last = null;
+  for(let i = 0; i < 4; i++){
+    try{ return await _withKind(env, CONN_KV, email, mutate, {}); }
+    catch(e){
+      last = e;
+      if(!_isBusy(e)) throw e;
+      await new Promise(r => setTimeout(r, 120 * (i + 1)));
+    }
   }
+  audit(env, 'conn_write_busy', { email: String(email || '').slice(0, 120) });
+  throw last;
 }
 /* And one revocation, for disconnecting and for account erasure. */
 async function _connRevokeRequest(env, p, tok){
@@ -6039,7 +6050,8 @@ async function connFinish(request, env){
     }),
     lastUsed: 0, lastJob: '',
   };
-  await _connMerge(env, user.email, (rec) => { rec[connId] = entry; });
+  try{ await _connMerge(env, user.email, (rec) => { rec[connId] = entry; }); }
+  catch(e){ if(_isBusy(e)) return _busyJson('connections'); throw e; }
   const lasting = !!d.refresh_token || !_connExpiry(d);
   audit(env, 'conn_added', { by:user.email, provider:st.provider, scopes:st.scopes, unattended:lasting });
 
@@ -6227,7 +6239,8 @@ async function connUse(env, email, need, jobId, opts){
   };
   /* A renewed token that is not saved is a spent refresh token and a dead
      connection, so this write is not skipped when the lock is busy. */
-  await _connMerge(env, email, stamp);
+  try{ await _connMerge(env, email, stamp); }
+  catch(e){ if(_isBusy(e)) return { ok:false, code:'conn_busy' }; throw e; }
   audit(env, 'conn_used', { by:email, id, provider:c.provider, need, job:c.lastJob, attended:!!o.attended });
 
   return { ok:true, id, provider:c.provider, token: tok.access };
@@ -8237,7 +8250,8 @@ async function connRemove(request, env){
   /* Forgotten either way. Keeping a token AMV could not revoke would be holding
      a credential the person has asked it to stop holding - the honest failure
      is to drop it here and tell them to finish the job at the provider. */
-  await _connMerge(env, user.email, (rec) => { delete rec[id]; });
+  try{ await _connMerge(env, user.email, (rec) => { delete rec[id]; }); }
+  catch(e){ if(_isBusy(e)) return _busyJson('connections'); throw e; }
   audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
 
   return json({ ok:true, revoked,
@@ -18184,6 +18198,7 @@ const BACKUP_NEVER = [
      retry. */
   'reset:', 'resetcode:',   // password-reset tokens - the credential itself
   'signincode:',            // a sign-in code challenge, ten minutes long, same reason
+  'carry:',                 // a session carried to the app's address: one use, two minutes (SEC-03)
   'rtgrace:',               // when a refresh token was first used, kept two minutes for the overlap window
   'sess:',                  // a sign-in; restoring one would bring back a session somebody ended
   'emailhealth:',           // the provider's last refusal of the sender, re-learned on the next send

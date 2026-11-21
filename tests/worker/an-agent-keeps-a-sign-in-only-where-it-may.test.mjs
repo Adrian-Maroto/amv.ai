@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { withAuthOps } from '../lib/auth-object.mjs';
+import { withAuthOps, revCommitOp } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -38,12 +38,16 @@ const BROWSER = { launch: async () => ({
   }),
   close: async () => { calls.push(['close']); },
 }) };
+const revs = new Map();
 const env = {
   JWT_SECRET: 'j'.repeat(48), APP_URL: 'https://amv.test', CONNECT_KEY: 'c'.repeat(44), BROWSER,
   AMV_KV: { async get(k) { return kv.has(k) ? kv.get(k) : null; }, async put(k, v) { kv.set(k, String(v)); }, async delete(k) { kv.delete(k); },
     async list({ prefix } = {}) { return { keys: [...kv.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
   AMV_COUNTER: withAuthOps({ idFromName: n => n, get: n => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = o => new Response(JSON.stringify(o));
+    /* Named agents are read and written through the revision authority since
+       the Build 16 audit (STATE16-02), so the object answers revisions too. */
+    { const rc = revCommitOp(n, b, revs); if (rc) return rc; }
     if (b.op === 'claim') return r({ claimed: true });
     if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return r({ value: vals.get(n) }); }
     if (b.op === 'get') return r({ value: cur });
@@ -345,8 +349,11 @@ section('Unknown is not absent, and a forget during a run is not undone by it (N
   await watched(await ag(), [cookie('tracker.example.com', 'T-21')]);
   ok((await W._agentJarLoad(env, ME, await ag())).some(c => c.value === 'T-21'), 'a usable sign-in is in place');
   const realCounter = env.AMV_COUNTER;
+  /* The agent itself is read first: it is under the revision authority now
+     (STATE16-02), so with the object unreachable it is not readable either. */
+  const agNow = await ag();
   env.AMV_COUNTER = { idFromName: n => n, get: () => ({ async fetch() { throw new Error('object unreachable'); } }) };
-  ok((await W._agentJarLoad(env, ME, await ag())).length === 0, 'with the generation unreadable no sign-in is used');
+  ok((await W._agentJarLoad(env, ME, agNow)).length === 0, 'with the generation unreadable no sign-in is used');
   let threw = false; try { await W._agentJarForget(env, ME, G, ''); } catch (e) { threw = true; }
   ok(threw, 'and a forget that cannot move the generation does not claim success');
   env.AMV_COUNTER = realCounter;
