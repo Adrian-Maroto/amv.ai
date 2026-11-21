@@ -68,8 +68,15 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 212], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 212 (Nov 17): Integrations' loading state while its order
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 216], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 216 (Nov 21, Build 16 audit D16-02 and D16-08): four. The
+     receipts list's loading, empty and could-not-load states (spending.js),
+     each one fixed sentence through escH(T()); and Settings → Connectors'
+     line where the accounts would be (settings-panes.js): an empty <p>, then
+     _connNoneHTML(), whose every part is escH(T()) or escH of the server's
+     error text. The receipts table itself was rewritten, not added; each of
+     its cells is through escH.
+     innerHTML 212 (Nov 17): Integrations' loading state while its order
      arrives (integrations-view.js) - a heading and two fixed sentences, each
      through escH(T()), and empty loading blocks; nothing from outside.
      innerHTML 211 (Nov 17): seven, every value through escH - Crew's Running

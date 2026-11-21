@@ -183,7 +183,9 @@ section('The screens that would be empty offer the next step');
     const r = seen[t];
     if (!r) return false;
     if (r.hasEmptyState) return false;
-    if (/create|start|add|try|generate|new |get started|first|give it/i.test(r.text)) return false;
+    /* "Pick one to open it in chat" (Tasks, since Build 16 D16-12) is the
+       same invitation in fewer words. */
+    if (/create|start|add|try|generate|new |get started|first|give it|pick one/i.test(r.text)) return false;
     /* An upgrade explainer: says what the feature is AND what it costs. */
     if (/\$\d/.test(r.text) && /pro|elite|ultra|plan/i.test(r.text)) return false;
     return true;

@@ -20459,8 +20459,18 @@ function _bodyCapped(request) {
       ctl.enqueue(chunk);
     },
   });
-  try { return new Request(request, { body: request.body.pipeThrough(cap), duplex: 'half' }); }
+  let out;
+  try { out = new Request(request, { body: request.body.pipeThrough(cap), duplex: 'half', cf: request.cf }); }
   catch (e) { return request; }
+  /* The new request is a new object, and two things hang off the old one by
+     identity: where it came in (the /api mount, held in _mountedAt) and the
+     platform's facts about the caller (request.cf - their country, their time
+     zone). Without them a request through the site's /api wrote links that
+     skipped the mount, and the network's country was lost from every job made
+     with a body. Carried over here, so the cap changes the body and nothing else. */
+  try { const at = _mountedAt.get(request); if (at) _mountedAt.set(out, at); } catch (e) { /* a mount it never had */ }
+  try { if (request.cf && !out.cf) Object.defineProperty(out, 'cf', { value: request.cf }); } catch (e) { /* runtimes that copy cf themselves */ }
+  return out;
 }
 
 /* THE ROUTES THAT CANNOT WORK WITHOUT A SIGNING KEY.

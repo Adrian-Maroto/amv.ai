@@ -2130,6 +2130,8 @@ function _wipeAccountState(){
        account starts on Crew's own page. (The country itself is in storage,
        which is already per account.) */
     S.crewPage='';
+    /* "Back to the job" on Plans points at this account's job. */
+    S.plansFrom=null;
     S._chatFiles=[]; S._labFiles=[]; S._chatHandoff=null; S._preSettingsTab=null;
     /* The screens this account visited are not a path the next one can walk. */
     try{ _NAV.stack.length=0; _navPaint(); }catch(e){}
