@@ -1972,7 +1972,8 @@ function likeMsg(idx, type) {
   if(!msgs[idx]) return;
   msgs[idx].like=msgs[idx].like===type?null:type;
   setMsgs(msgs); renderChatMsgs();
-  toast(type==='up'?'Feedback: helpful!':'Feedback: not helpful','success');
+  /* Taking it back says so (Build 16 audit D16-11). */
+  toast(!msgs[idx].like?T('Feedback removed'):type==='up'?'Feedback: helpful!':'Feedback: not helpful','success');
 }
 
 /* THE OFFICE EXPORTER, FETCHED THE FIRST TIME IT IS WANTED.
@@ -3127,8 +3128,8 @@ function renderChatMsgs() {
         _verSwitchHTML(m, i)+
       '</div>':
       '<div class="macts mact-bar">'+
-        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="'+escH(T('Good response'))+'" aria-label="'+escH(T('Good response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
-        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" aria-pressed="'+(m.like==='up')+'" title="'+escH(T('Good response'))+'" aria-label="'+escH(T('Good response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+
+        '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" aria-pressed="'+(m.like==='down')+'" title="'+escH(T('Bad response'))+'" aria-label="'+escH(T('Bad response'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="'+escH(T('Read aloud'))+'" aria-label="'+escH(T('Read aloud'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
         '<button class="mact" data-action="share-answer" data-idx="'+i+'" title="'+escH(T('Share'))+'" aria-label="'+escH(T('Share'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></button>'+
@@ -3342,7 +3343,9 @@ function _syncSpeakButtons(){
     document.querySelectorAll('[data-action="speak"]').forEach(b=>{
       const on=AMVSpeech.speaking && String(AMVSpeech._boundIdx)===b.dataset.idx;
       b.classList.toggle('speaking', on);
-      b.title = on ? 'Stop' : 'Read aloud';
+      b.title = on ? T('Stop') : T('Read aloud');
+      b.setAttribute('aria-label', b.title);   // what is heard matches what is shown (D16-11)
+      b.setAttribute('aria-pressed', String(on));
     });
   }catch(e){}
 }

@@ -53,6 +53,19 @@ section('Under an answer: copy, thumbs, read aloud, share, and More');
   const named = await page.evaluate(() => [...document.querySelectorAll('.mr:not(.u) .mact-bar > .mact, .mr:not(.u) .mact-morewrap > .mact')]
     .filter(b => !(b.getAttribute('aria-label') || b.title)).map(b => b.dataset.action));
   ok(named.length === 0, 'every icon has a name a screen reader says', named);
+  /* Build 16 audit D16-11: the thumbs say whether they are pressed, and
+     taking one back is said as taking it back. */
+  const fb = await page.evaluate(async () => {
+    const toasts = []; const t = window.toast; window.toast = (m) => toasts.push(String(m));
+    const up = () => document.querySelector('.mr:not(.u) [data-action="like-up"]');
+    const before = up().getAttribute('aria-pressed');
+    likeMsg(1, 'up'); const on = up().getAttribute('aria-pressed');
+    likeMsg(1, 'up'); const off = up().getAttribute('aria-pressed');
+    window.toast = t;
+    return { before, on, off, toasts };
+  });
+  ok(fb.before === 'false' && fb.on === 'true' && fb.off === 'false', 'the thumb says pressed and not pressed', fb);
+  ok(/removed/i.test(fb.toasts[1] || ''), 'and un-pressing it says the feedback was removed', fb.toasts);
 }
 
 section('The three dots open a named menu, and let go of it properly');

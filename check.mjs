@@ -1618,7 +1618,15 @@ step('Page weight is under control', () => {
      650). Owed back: the old Crew page (_cwForYouHTML, _cwMadeForHTML, the
      country pages and their styles) is still in the bundle with no screen
      drawing it, and taking it out returns several times these 2KB. */
-  const CEILING = 588 * 1024;   // gzipped, which is what actually crosses the network
+  /* 588 -> 592, 2026-11-21, deliberately: the Build 16 audit repairs that
+     live in the page - a stream counts only when the model said it ended, a
+     tool call is checked against its schema and the time limit, memory off
+     learns nothing and learns into the right project, a monthly job stays
+     monthly, the older runner reports failed and refused steps, Crew's See
+     plans goes to Plans and back, and the feedback and Read aloud buttons say
+     their state. The model-facing wording added with them was shortened
+     first (about 100 bytes back); what is left is the repairs themselves. */
+  const CEILING = 592 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
