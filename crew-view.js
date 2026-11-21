@@ -1480,7 +1480,10 @@ function _cjGridHTML(){
     return `<div class="cj-empty">${escH(T('No job here matches that.'))} <button class="cj-link" data-dact="cjAsk">${escH(T('Type it in the box above instead'))}</button></div>`;
   }
   const shown = list.slice(0, _cjN);
-  return `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
+  /* Popular says what it is ranked by (Build 16 audit D16-07). */
+  const note = _cjC === 'popular' ? (() => { try{ const cc = _cwCountryGuess(); const m = _cwMeta[cc];
+    return window.ccPopularNote(cc, (m && m.ranked && m.ranked.enough) ? 'counted' : 'crew'); }catch(e){ return ''; } })() : '';
+  return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
     + (list.length > shown.length ? `<div class="cj-more-w"><button class="btn bs cj-more" data-dact="cjMore">${escH(T('Show more'))} <span class="cj-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
 }
 function _cjChipsHTML(){

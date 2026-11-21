@@ -395,7 +395,8 @@ function _tkListHTML(){
   if(words.length || _tkC !== 'all'){
     const rows = (_tkC === 'popular' ? _tkList.slice(0, TK_POPULAR_N) : _tkList).filter(t => (_tkC === 'all' || _tkC === 'popular' || _tkCatOf(t) === _tkC) && hit(t));
     if(!rows.length) return `<div class="cj-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cj-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
-    return `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
+    const note = _tkC === 'popular' ? (() => { try{ return window.ccPopularNote(String(_tkCc).split('|')[0]); }catch(e){ return ''; } })() : '';
+    return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
       + (rows.length > _tkN ? `<div class="cj-more-w"><button class="btn bs" id="tk-more">${escH(T('Show more'))} <span class="cj-n">${(rows.length - _tkN).toLocaleString()}</span></button></div>` : '');
   }
   /* Everything: under each category, the first few and See all. */

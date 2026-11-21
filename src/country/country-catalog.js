@@ -640,7 +640,24 @@ async function ccLoad(cc){
   })();
   const d = await _ccCache[cc];
   if(!d) delete _ccCache[cc];   // a failed fetch is tried again next time
+  else _ccDone[cc] = d;
   return d;
+}
+/* WHAT "POPULAR" IS RANKED BY (Build 16 audit D16-07). A country's lists are
+   ordered by visits from that country to each service - the Chrome UX Report
+   for the month its file names - not by how often anybody runs the task in
+   AMV. The screen says which, and says so when the country's file has no
+   visit data at all, rather than letting the order look measured. null until
+   the country's file has arrived. */
+const _ccDone = {};
+function ccMeasure(cc){
+  const d = _ccDone[String(cc || '').toUpperCase()]; if(!d) return null;
+  const m = /Chrome UX Report (\d{4})(\d{2})\b/.exec(String(d.popular || ''));
+  const visits = !!m && Object.values(d.kinds || {}).some(l => (l || []).some(e => +e.r > 0));
+  let month = '';
+  if(m){ try{ const code = (typeof _lang === 'function' && _lang() !== 'auto') ? _lang() : undefined;
+    month = new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString(code, { month: 'long', year: 'numeric', timeZone: 'UTC' }); }catch(e){ month = m[1] + '-' + m[2]; } }
+  return { visits, month };
 }
 /* English only: "a {n}" before a vowel is "an" - "Find an Iberia flight". The
    translated titles are left alone ("a {n}" is "the" in Portuguese). */
@@ -705,7 +722,21 @@ function ccJobs(d){
 function ccServices(d){
   return _ccByPop(d).map(x => ({ kind: x.kind, e: x.e }));
 }
-try{ window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
+/* The sentence under a Popular list. Tasks are the country's services in
+   visit order and nothing else; Crew puts the jobs picked for the country
+   first, and - where the server has counted enough switch-ons there
+   (meta.ranked) - the ones people there switch on most. */
+function ccPopularNote(cc, crew){
+  const m = ccMeasure(cc); if(!m) return '';
+  let place = cc;
+  try{ const row = CW_WORLD_COUNTRIES.find(c => c[0] === cc); if(row) place = _cwPlaceName(row[1]); }catch(e){}
+  const t = !m.visits ? T('There is no visit data for {0}, so this list is in the catalogue’s own order - not a measure of what is popular.')
+    : crew === 'counted' ? T('Jobs picked for {0} and the ones people there switch on most in AMV come first; the rest by visits from {0} to each service (Chrome UX Report, {1}).')
+    : crew ? T('Jobs picked for {0} come first; the rest by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a job is run in AMV.')
+    : T('Ranked by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a task is run in AMV.');
+  return t.split('{0}').join(place).replace('{1}', m.month);
+}
+try{ window.ccPopularNote = ccPopularNote; window.ccMeasure = ccMeasure; window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
 
 /* CREW: the catalogue's jobs as ordinary Crew jobs, so the panel, the "when"
    picker and the switch treat them exactly like the rest. They run on AMV's

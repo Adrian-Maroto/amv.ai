@@ -1,0 +1,65 @@
+/* POPULAR SAYS WHAT IT MEASURED (Build 16 audit D16-07, Nov 21).
+
+   Popular on Tasks is the head of the country's list in visit order - the
+   Chrome UX Report's visits from that country to each service - and on Crew
+   the jobs picked for the country come first. Nothing on the screen said
+   so, and "Popular" reads as "what people run in AMV", which it is not. Now
+   a line under the chips says what the order is, from which month's report,
+   and says plainly when a country's file has no visit data at all. */
+import { bootApp } from '../lib/harness.mjs';
+import { ok, section, report, done } from '../lib/assert.mjs';
+
+const app = await bootApp({ tab: 'chat', user: { name: 'O', email: 'o@x.com', ini: 'O' } });
+const { page, errors } = app;
+const note = () => page.evaluate(() => { const n = document.querySelector('.cc-measure'); return n ? n.textContent : null; });
+
+section('Tasks');
+{
+  await page.evaluate(() => { saveStr('amv_plan', 'pro'); _cwSetCountry('ES'); setTab('tasks'); });
+  await page.waitForFunction(() => document.querySelectorAll('#tk2-body .tk-row').length > 5, null, { timeout: 20000 });
+  ok(await note() === null, 'All has no such line - it is not a ranking claim', await note());
+  await page.click('#tk2-cats [data-tkcat="popular"]');
+  const n = await note();
+  ok(/visits from Spain to each service/.test(n || '') && /Chrome UX Report, October 2026/.test(n || ''), 'Popular says it is visits from Spain, and from which month', n);
+  ok(/not by how often a task is run in AMV/.test(n || ''), 'and that it is not use in AMV', n);
+}
+
+section('A country whose file has no visit data');
+{
+  const n = await page.evaluate(async () => {
+    const real = await ccLoad('ES');
+    const bare = {}; for (const [k, l] of Object.entries(real.kinds)) bare[k] = l.map(e => { const c = Object.assign({}, e); delete c.r; return c; });
+    _ccDone.ES = Object.assign({}, real, { kinds: bare });
+    try { return { t: ccPopularNote('ES') }; } finally { _ccDone.ES = real; }
+  });
+  ok(/There is no visit data for Spain/.test(n.t) && /not a measure of what is popular/.test(n.t), 'it says the order is the catalogue\'s, not a measure', n.t);
+}
+
+section('Crew');
+{
+  await page.evaluate(() => setTab('crew'));
+  await page.waitForSelector('#cj-cats .cj-chip', { timeout: 20000 });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => cjCat('popular'));
+  const n = await note();
+  ok(/^Jobs picked for Spain come first/.test(n || '') && /Chrome UX Report, October 2026/.test(n || ''), 'Popular says the picked jobs lead and the rest is visits', n);
+  const counted = await page.evaluate(() => ccPopularNote('ES', 'counted'));
+  ok(/switch on most in AMV/.test(counted), 'and where the server has counted switch-ons there, it says that too', counted);
+  await page.evaluate(() => cjCat('all'));
+  ok(await note() === null, 'All has no such line', await note());
+}
+
+section('In Spanish');
+{
+  const n = await page.evaluate(async () => {
+    saveStr('amv_lang', 'es'); await _i18nLoadPack('es');
+    return ccPopularNote('ES');
+  }).catch(e => String(e));
+  ok(/Ordenado por visitas desde/.test(n) && /2026/.test(n), 'the sentence and the month are Spanish', n);
+  await page.evaluate(() => saveStr('amv_lang', 'en'));
+}
+
+ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
+await app.close();
+report();
+done();
