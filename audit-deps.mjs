@@ -18,6 +18,12 @@
  */
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
+/* A skipped audit is no audit (Build 17 audit B17-015). Offline on a laptop
+   it is said as a skip and the gate goes on; where a release is built - CI -
+   it fails, so no shipped build is ever recorded as scanned when it was not.
+   AMV_AUDIT_REQUIRED=0 turns that off for one run, on purpose. */
+const AUDIT_REQUIRED = process.env.AMV_AUDIT_REQUIRED === '1'
+  || (process.env.AMV_AUDIT_REQUIRED !== '0' && (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true'));
 
 /* Advisories that have been looked at and accepted, each with the reason and
  * the date it was assessed. An entry here is a claim that the code path is not
@@ -113,11 +119,11 @@ function audit() {
     if (e && (e.code === 'ETIMEDOUT' || e.killed === true || e.signal === 'SIGTERM')) {
       console.log('SKIP  the registry accepted the connection and did not answer within '
         + Math.round(AUDIT_TIMEOUT_MS / 1000) + 's, so no audit was run.');
-      process.exit(0);
+      process.exit(AUDIT_REQUIRED ? 3 : 0);
     }
     if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|network|offline|ETIMEDOUT/i.test(msg + out)) {
       console.log('SKIP  the registry is not reachable, so no audit was run.');
-      process.exit(0);
+      process.exit(AUDIT_REQUIRED ? 3 : 0);
     }
     console.error('FAIL  npm audit could not be run or read:\n' + msg.slice(0, 800));
     process.exit(1);
@@ -135,7 +141,7 @@ if (!report || typeof report !== 'object' || report.error || report.auditReportV
     || !report.metadata || typeof report.metadata.vulnerabilities !== 'object') {
   const why = report && report.error ? String(report.error.summary || report.error.code || 'an error').slice(0, 200) : 'an answer that is not an audit report';
   console.log('SKIP  npm audit returned ' + why + ', so no audit was run.');
-  process.exit(process.env.AMV_AUDIT_REQUIRED === '1' ? 3 : 0);
+  process.exit(AUDIT_REQUIRED ? 3 : 0);
 }
 const vulns = report.vulnerabilities;
 const counts = report.metadata.vulnerabilities;

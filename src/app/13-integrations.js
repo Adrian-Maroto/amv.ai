@@ -1412,7 +1412,11 @@ function _connBodyHTML(){
       '<span class="conn-tile" aria-hidden="true">'+escH(nm.charAt(0).toUpperCase())+'</span>'+
       '<div class="conn-main">'+
         '<div class="conn-name">'+escH(nm)+
-          (it.unattended
+          /* A connection that stopped working wears no green badge
+             (Build 17 audit B17-034): the tag says what is true now. */
+          (it.broken
+            ? '<span class="conn-tag off"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('not working'))+'</span>'
+            : it.unattended
             ? '<span class="conn-tag bg"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('works with AMV closed'))+'</span>'
             : '<span class="conn-tag open"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('only while AMV is open'))+'</span>')+
         '</div>'+

@@ -805,7 +805,10 @@ let _i18nBusy=false, _i18nObserver=null, _i18nRaf=0;
 function _i18nRoots(){
   const out=[];
   ['app','ovr'].forEach(id=>{ const el=document.getElementById(id); if(el) out.push(el); });
-  document.querySelectorAll('.prof-menu,.ctxm').forEach(el=>{ if(out.indexOf(el)<0) out.push(el); });
+  /* The cookie notice is appended to the body as well, and it is the first
+     thing a visitor reads - it stayed English in every language until the
+     Build 17 audit's right-to-left screenshots showed it (B17-029). */
+  document.querySelectorAll('.prof-menu,.ctxm,#cookie-consent-banner').forEach(el=>{ if(out.indexOf(el)<0) out.push(el); });
   return out;
 }
 function _i18nCache(){ try{ return load('amv_i18n_cache')||{}; }catch(e){ return {}; } }

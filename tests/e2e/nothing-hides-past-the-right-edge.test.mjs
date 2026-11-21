@@ -26,12 +26,21 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const TABS = ['apps', 'integrations', 'crew', 'billing', 'chat', 'plans', 'market',
               'tasks', 'settings', 'help', 'usage', 'handoff', 'upgrade'];
-const WIDTHS = [{ w: 320, h: 568 }, { w: 390, h: 844 },
-                { w: 768, h: 1024 }, { w: 1024, h: 768 }];
+/* The widths the Build 17 audit (B17-029) asked for, and right to left at
+   the narrowest and a desktop one. Zoom at 200% and 400% lays a page out as
+   a viewport a half and a quarter as wide, so 320 stands for both on a
+   1280-wide window. */
+const WIDTHS = [{ w: 320, h: 568 }, { w: 360, h: 780 }, { w: 390, h: 844 },
+                { w: 768, h: 1024 }, { w: 1024, h: 768 }, { w: 1440, h: 900 }, { w: 1920, h: 1080 },
+                { w: 320, h: 568, rtl: 'ar' }, { w: 1440, h: 900, rtl: 'ar' }];
 
 for (const v of WIDTHS) {
-  const app = await bootApp({ viewport: { width: v.w, height: v.h }, hasTouch: true });
+  const app = await bootApp({ viewport: { width: v.w, height: v.h }, hasTouch: v.w < 1024 });
   const { page, errors } = app;
+  if (v.rtl) {
+    await page.evaluate(async (code) => { saveStr('amv_lang', code); await _i18nLoadPack(code); _applyDir(); }, v.rtl);
+    ok(await page.evaluate(() => document.documentElement.dir) === 'rtl', 'the page is right to left in ' + v.rtl);
+  }
   const over = [];
   let measured = 0;
   for (const t of TABS) {
@@ -53,7 +62,7 @@ for (const v of WIDTHS) {
     if (r.page) over.push(t + ' PAGE scrolls sideways');
   }
 
-  section('Nothing sits past the right edge at ' + v.w + 'x' + v.h);
+  section('Nothing sits past the right edge at ' + v.w + 'x' + v.h + (v.rtl ? ', right to left' : ''));
   {
     /* A screen that renders nothing would pass this trivially. */
     ok(measured >= 8, 'enough screens actually rendered to measure', measured);

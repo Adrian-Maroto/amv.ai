@@ -717,7 +717,7 @@ function ccTasks(d){
 }
 function ccJobs(d){
   return _ccByPopPass(d, CC_CREW, (kind, e, i) => { const t = CC_CREW[kind][i];
-    return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2] }; });
+    return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}) }; });
 }
 function ccServices(d){
   return _ccByPop(d).map(x => ({ kind: x.kind, e: x.e }));
@@ -789,12 +789,15 @@ const _ccJobId = (kind, e, i, cc) => 'ccj-' + kind + '-' + e.q + '-' + i + (CC_C
 /* One job: entry `e` of kind `kind`, template `i`, listed in country `cc`.
    The one builder, so a job on the main list and the same job in the
    directory are the same object. */
+/* "Every evening" opens at 18:00 (Build 17 audit B17-033). This file is
+   fetched on its own, so it does not lean on the page's helper. */
+function _ccEvening(s){ return /^(Each|Every) evening\b|\btonight\b/i.test(String(s || '')); }
 function ccCrewJob(kind, e, i, cc){
   const t = CC_CREW[kind][i], prompt = _ccFill(t[1], e, true, cc);
   return {
     asks: _ccAsks(prompt),
     id: _ccJobId(kind, e, i, cc), icon: (CC_KINDS[kind] || ['\u2022'])[0], title: _ccTitle(t[0], e, cc),
-    desc: prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt, every: t[2],
+    desc: prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt, every: t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}),
     needs: 'Web research', cat: (CC_KINDS[kind] || ['', ''])[1], kind: 'research', ccKind: kind, site: e.s, src: e.q,
   };
 }

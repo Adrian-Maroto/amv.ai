@@ -8176,7 +8176,10 @@ let _i18nBusy=false, _i18nObserver=null, _i18nRaf=0;
 function _i18nRoots(){
   const out=[];
   ['app','ovr'].forEach(id=>{ const el=document.getElementById(id); if(el) out.push(el); });
-  document.querySelectorAll('.prof-menu,.ctxm').forEach(el=>{ if(out.indexOf(el)<0) out.push(el); });
+  /* The cookie notice is appended to the body as well, and it is the first
+     thing a visitor reads - it stayed English in every language until the
+     Build 17 audit's right-to-left screenshots showed it (B17-029). */
+  document.querySelectorAll('.prof-menu,.ctxm,#cookie-consent-banner').forEach(el=>{ if(out.indexOf(el)<0) out.push(el); });
   return out;
 }
 function _i18nCache(){ try{ return load('amv_i18n_cache')||{}; }catch(e){ return {}; } }
@@ -20738,6 +20741,12 @@ function _cwDefaultJobs(){
 }
 function _cwMadeForList(){ const c = _cwCatalog(); return c ? c.madeFor : []; }
 function _cwMadeMoreList(){ const c = _cwCatalog(); return c ? c.madeMore : []; }
+/* A job written as "each evening" or "every evening" opens at 18:00, not the
+   8:00 every other job opens at (Build 17 audit B17-033). Read from the
+   English template, before it is translated - the one text every language
+   starts from. */
+function _cwEveningTpl(s){ return /^(Each|Every) evening\b|\btonight\b/i.test(String(s || '')); }
+try{ window._cwEveningTpl=_cwEveningTpl; }catch(e){}
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
    Every preset already declared its requirements in `needs`, and nothing ever
@@ -21916,7 +21925,7 @@ function _cwMadeMore(cc){
   const receives = (CW_POP_BOOST.find(b => b[0] === 'REMIT') || ['', ''])[1].split(' ').indexOf(cc) >= 0;
   return _cwMadeMoreList().filter(m => _cwRowFor(m, f, cc)).map(m => _cwRemitHere(m[1] === 'remit' && receives, C, f, {
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
-    cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
+    cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], ...(_cwEveningTpl(m[6]) ? { hour: 18 } : {}), on: false, needs: 'Web research',
     title: cyc(_cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C)), desc: cyc(_cwFill(m[6], f, key(m), C)), where: key(m) ? String(f[key(m)]) : C,
     asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
     prompt: cyc(_cwFill(m[9], f, key(m), C)) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
@@ -23367,7 +23376,10 @@ function _cwJobWhen(j){
   if(_cwPickedWhen[j.id]) return Object.assign({}, _cwPickedWhen[j.id]);
   const e = String(j.every || 'daily');
   const cad = ['hourly', 'daily', 'weekly', 'monthly'].indexOf(e) >= 0 ? e : 'daily';
-  const sc = { cad, hour: 8, minute: 0, tz: _myTimeZone() };
+  /* A job that says when it runs keeps its word: "each evening" does not
+     open at 8:00 in the morning (Build 17 audit B17-033). */
+  const h = +j.hour;
+  const sc = { cad, hour: Number.isInteger(h) && h >= 0 && h <= 23 ? h : 8, minute: 0, tz: _myTimeZone() };
   if(cad === 'weekly') sc.days = [1];
   if(cad === 'monthly') sc.dom = 1;
   return sc;
@@ -23420,6 +23432,18 @@ function _cwFindJob(id){
   /* A row the directory of every job has drawn (crew-view.js, _cjdRows). */
   try{ const m = window._cjdMade; if(m && m[id]) return m[id]; }catch(e){}
   return null;
+}
+/* HOW A JOB ACTS, SAID BEFORE IT IS SWITCHED ON (Build 17 audit B17-033).
+   Three different things look alike on a card: a job that searches the web
+   and writes back, one that works through a connected account, and one that
+   drives websites in AMV's browser. Which it is decides what it can touch, so
+   the panel says it in one line, from what the job declares it needs. */
+function _cwMethod(j){
+  const needs = _cwNeedsList(j);
+  if(needs.indexOf('Web automation') >= 0) return T('It works on websites in AMV’s browser on your computer, where you are signed in. It asks you before paying for anything.');
+  if(_cwUseRows(j).some(u => !u.optional)) return T('It works through the accounts below, with only the access you give.');
+  if(needs.indexOf('Web research') >= 0) return T('It searches the web and sends you what it finds. No account is needed.');
+  return T('It writes you the result. No account is needed.');
 }
 function cwPeek(id){
   const j = _cwFindJob(id); if(!j) return;
@@ -23487,6 +23511,7 @@ function cwPeek(id){
     </header>
     <div class="cwp-scroll cj-p-b">
       <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
+      <div class="cj-p-row cwp-how"><div class="cj-p-k">${escH(T('How it works'))}</div><p class="cj-p-v">${escH(_cwMethod(j))}<small>${escH(_cwWhereLabel(j))}</small></p></div>
       <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
       ${loc ? `<div class="cj-p-row"><div class="cj-p-k">${escH(T('Where it looks'))}</div><p class="cwp-loc" data-no-i18n>${escH(loc)}</p></div>` : ''}
       ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}
@@ -34389,7 +34414,11 @@ function _connBodyHTML(){
       '<span class="conn-tile" aria-hidden="true">'+escH(nm.charAt(0).toUpperCase())+'</span>'+
       '<div class="conn-main">'+
         '<div class="conn-name">'+escH(nm)+
-          (it.unattended
+          /* A connection that stopped working wears no green badge
+             (Build 17 audit B17-034): the tag says what is true now. */
+          (it.broken
+            ? '<span class="conn-tag off"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('not working'))+'</span>'
+            : it.unattended
             ? '<span class="conn-tag bg"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('works with AMV closed'))+'</span>'
             : '<span class="conn-tag open"><span class="conn-dot" aria-hidden="true"></span>'+escH(T('only while AMV is open'))+'</span>')+
         '</div>'+

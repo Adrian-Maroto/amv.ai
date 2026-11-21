@@ -30,6 +30,10 @@ section('Connected accounts on a 320px screen');
   });
   ok(r.over <= 1 && r.grid.right <= r.vw + 1, 'the grid fits the screen', r);
   ok(r.cards.length === 2 && r.cards.every(c => c.card.right <= r.vw + 1 && inside(c.x, c.card)), 'every card, and its Disconnect, is on screen', r.cards);
+  const tags = await page.evaluate(() => [...document.querySelectorAll('#conn-sec .conn-row')].map(c => ({ broken: c.classList.contains('broken'), tag: (c.querySelector('.conn-tag') || {}).className || '', text: (c.querySelector('.conn-tag') || {}).textContent || '' })));
+  const bad = tags.find(t => t.broken), good = tags.find(t => !t.broken);
+  ok(bad && /\boff\b/.test(bad.tag) && /not working/.test(bad.text) && good && /\bbg\b/.test(good.tag),
+     'a connection that stopped working says so in its tag, and wears no green badge (Build 17 audit B17-034)', tags);
 }
 
 section('Inviting a teammate with a long address on a 320px screen');
@@ -69,6 +73,24 @@ section('A Crew card read right to left');
     return { overlap: !(g.right <= t.left + 1 || g.left >= t.right - 1 || g.bottom <= t.top + 1 || g.top >= t.bottom - 1), end: b.right - g.right < g.left - b.left };
   }));
   ok(l.length > 0 && l.every(x => !x.overlap && x.end), 'and on the right, clear of the name, left to right', l);
+}
+
+section('Right to left on a 320px phone: the closed menu is off the screen, the cookie notice is in Arabic (Build 17 audit B17-029)');
+{
+  const r = await page.evaluate(async () => {
+    saveStr('amv_lang', 'ar'); await _i18nLoadPack('ar'); _translateUI(); setTab('crew');
+    await new Promise(r => setTimeout(r, 600));
+    const sb = document.getElementById('sb'); if (!sb.classList.contains('cl')) toggleSb();
+    await new Promise(r => setTimeout(r, 400));
+    const b = sb.getBoundingClientRect();
+    const cc = document.querySelector('#cookie-consent-banner .cc-text');
+    return { dir: document.documentElement.dir, left: b.left, right: b.right, vw: innerWidth, cc: cc ? cc.textContent : null };
+  });
+  ok(r.dir === 'rtl' && (r.left >= r.vw - 1 || r.right <= 1), 'the closed menu covers nothing (it sat 50px over the start of every line)', r);
+  ok(r.cc === null || /[\u0600-\u06FF]/.test(r.cc), 'the cookie notice reads in Arabic', r.cc);
+  const open = await page.evaluate(async () => { toggleSb(); await new Promise(r => setTimeout(r, 400)); const b = document.getElementById('sb').getBoundingClientRect(); toggleSb(); return { left: b.left, right: b.right, vw: innerWidth }; });
+  ok(open.right <= open.vw + 1 && open.left >= -1, 'and opened, it is wholly on screen', open);
+  await page.evaluate(() => { saveStr('amv_lang', 'en'); _translateUI(); });
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

@@ -834,7 +834,7 @@ function _cwMadeMore(cc){
   const receives = (CW_POP_BOOST.find(b => b[0] === 'REMIT') || ['', ''])[1].split(' ').indexOf(cc) >= 0;
   return _cwMadeMoreList().filter(m => _cwRowFor(m, f, cc)).map(m => _cwRemitHere(m[1] === 'remit' && receives, C, f, {
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
-    cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
+    cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], ...(_cwEveningTpl(m[6]) ? { hour: 18 } : {}), on: false, needs: 'Web research',
     title: cyc(_cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C)), desc: cyc(_cwFill(m[6], f, key(m), C)), where: key(m) ? String(f[key(m)]) : C,
     asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
     prompt: cyc(_cwFill(m[9], f, key(m), C)) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',

@@ -47,6 +47,14 @@ function _renderSpendingPaneNow(pane, redraw){
   pane.innerHTML =
     '<h2 class="set-title">What AMV may spend for you</h2>'+
     '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
+    /* THREE KINDS OF MONEY, NAMED APART (Build 17 audit B17-032). A purchase,
+       the AMV plan and a connected bank are three different things, and a
+       person who links a bank should not read that as AMV paying from it. */
+    '<dl class="mf-src">'+
+      '<div><dt>'+escH(T('Purchases'))+'</dt><dd>'+escH(T('Paid at the store’s own checkout, with the payment method you choose there. AMV never holds or sees it.'))+'</dd></div>'+
+      '<div><dt>'+escH(T('Your AMV plan'))+'</dt><dd>'+escH(T('Billed separately, and not counted here.'))+' <button type="button" class="lnk-inline" data-dact="setTab" data-darg="billing">'+escH(T('Billing'))+'</button></dd></div>'+
+      '<div><dt>'+escH(T('Connected banks'))+'</dt><dd>'+escH(T('Read only. AMV cannot pay from them or move money.'))+'</dd></div>'+
+    '</dl>'+
     /* What this IS, before what it is set to.
 
        The pane opened straight into three number fields. Somebody who has never

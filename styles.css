@@ -17693,3 +17693,30 @@ html[dir="rtl"] .chome-sug{text-align:right}
 /* A384 - a receipt the person's computer saw on the store's page (Build 17
    audit B17-006): reported, quiet, never a "verified" badge. */
 .mf-seen{color:var(--mu);font-size:var(--t-xs)}
+/* ========== LAYER A385 (Nov 21): the phone menu, right to left (build 17 audit B17-029) ==========
+   The drawer sits on the right edge when the page reads right to left, but
+   its closed state still slid it left by its own width - so on a 320px phone
+   about 50px of it stayed over the page, covering the start of every line.
+   Closed slides it off the side it lives on. */
+@media(max-width:720px){
+  html[dir="rtl"] #sb.cl{transform:translateX(100%)!important}
+  html[dir="rtl"]:not(.sb-init) #sb{transform:translateX(100%)}
+  html[dir="rtl"] #sb:not(.cl){box-shadow:-6px 0 40px rgba(0,0,0,.55)}
+}
+/* ========== LAYER A386 (Nov 21): billing facts start on one line ==========
+   The first fact carried extra space from when the facts were one column; in
+   two columns it sat 8px below its neighbour. The space belongs to the list. */
+.vi-bill .bill-facts{padding-top:var(--sp-2)}
+.vi-bill .bill-facts > .bill-fact:first-child{padding-top:var(--sp-2)}
+/* ========== LAYER A387 (Nov 21): where the money comes from (build 17 audit B17-032) ==========
+   Three short rows under the Spending heading: a purchase, the AMV plan and a
+   connected bank are different things, said apart. */
+.mf-src{margin:var(--sp-3) 0 var(--sp-4);padding:0;display:grid;gap:var(--sp-2)}
+.mf-src > div{display:grid;grid-template-columns:minmax(120px,170px) 1fr;gap:var(--sp-3);align-items:baseline;padding:var(--sp-2) 0;border-top:1px solid var(--bd)}
+.mf-src > div:first-child{border-top:none}
+.mf-src dt{font-size:var(--t-sm);font-weight:600;color:var(--tx)}
+.mf-src dd{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+@media(max-width:520px){ .mf-src > div{grid-template-columns:1fr;gap:2px} }
+/* ========== LAYER A388 (Nov 21): a connection that stopped working (build 17 audit B17-034) ========== */
+.conn-tag.off{color:var(--red-txt, var(--red));border-color:color-mix(in srgb, var(--red) 40%, transparent)}
+.conn-tag.off .conn-dot{background:var(--red)}

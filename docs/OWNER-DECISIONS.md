@@ -539,6 +539,11 @@ approval after a week of shadow reads with no unexplained difference
 
 ## What needs the owner's own hand
 
+**Build 17 audit (Nov 21):** the fifteen findings only the owner can close,
+in the order AMV recommends, are in `docs/AUDIT-BUILD17-STATUS.md`. The first
+two - Workers Paid, then the job queue - are the floor.
+
+
 Only payments and accounts in the owner's name. Nothing here can be done from
 the repository.
 

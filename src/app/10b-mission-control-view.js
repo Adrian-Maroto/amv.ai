@@ -260,7 +260,10 @@ function _cwJobWhen(j){
   if(_cwPickedWhen[j.id]) return Object.assign({}, _cwPickedWhen[j.id]);
   const e = String(j.every || 'daily');
   const cad = ['hourly', 'daily', 'weekly', 'monthly'].indexOf(e) >= 0 ? e : 'daily';
-  const sc = { cad, hour: 8, minute: 0, tz: _myTimeZone() };
+  /* A job that says when it runs keeps its word: "each evening" does not
+     open at 8:00 in the morning (Build 17 audit B17-033). */
+  const h = +j.hour;
+  const sc = { cad, hour: Number.isInteger(h) && h >= 0 && h <= 23 ? h : 8, minute: 0, tz: _myTimeZone() };
   if(cad === 'weekly') sc.days = [1];
   if(cad === 'monthly') sc.dom = 1;
   return sc;
@@ -313,6 +316,18 @@ function _cwFindJob(id){
   /* A row the directory of every job has drawn (crew-view.js, _cjdRows). */
   try{ const m = window._cjdMade; if(m && m[id]) return m[id]; }catch(e){}
   return null;
+}
+/* HOW A JOB ACTS, SAID BEFORE IT IS SWITCHED ON (Build 17 audit B17-033).
+   Three different things look alike on a card: a job that searches the web
+   and writes back, one that works through a connected account, and one that
+   drives websites in AMV's browser. Which it is decides what it can touch, so
+   the panel says it in one line, from what the job declares it needs. */
+function _cwMethod(j){
+  const needs = _cwNeedsList(j);
+  if(needs.indexOf('Web automation') >= 0) return T('It works on websites in AMV’s browser on your computer, where you are signed in. It asks you before paying for anything.');
+  if(_cwUseRows(j).some(u => !u.optional)) return T('It works through the accounts below, with only the access you give.');
+  if(needs.indexOf('Web research') >= 0) return T('It searches the web and sends you what it finds. No account is needed.');
+  return T('It writes you the result. No account is needed.');
 }
 function cwPeek(id){
   const j = _cwFindJob(id); if(!j) return;
@@ -380,6 +395,7 @@ function cwPeek(id){
     </header>
     <div class="cwp-scroll cj-p-b">
       <p class="cwp-desc cj-p-d">${escH(j.desc)}</p>
+      <div class="cj-p-row cwp-how"><div class="cj-p-k">${escH(T('How it works'))}</div><p class="cj-p-v">${escH(_cwMethod(j))}<small>${escH(_cwWhereLabel(j))}</small></p></div>
       <div class="cj-p-row"><div class="cj-p-k">${escH(T('Schedule'))}</div>${when}</div>
       ${loc ? `<div class="cj-p-row"><div class="cj-p-k">${escH(T('Where it looks'))}</div><p class="cwp-loc" data-no-i18n>${escH(loc)}</p></div>` : ''}
       ${uses.length ? `<div class="cj-p-row${miss.length ? ' cwp-need' : ''}"><div class="cj-p-k">${escH(T('Connects to'))}</div><ul class="cwp-uses">${uses.map(useRow).join('')}</ul></div>` : ''}

@@ -96,6 +96,12 @@ function _cwDefaultJobs(){
 }
 function _cwMadeForList(){ const c = _cwCatalog(); return c ? c.madeFor : []; }
 function _cwMadeMoreList(){ const c = _cwCatalog(); return c ? c.madeMore : []; }
+/* A job written as "each evening" or "every evening" opens at 18:00, not the
+   8:00 every other job opens at (Build 17 audit B17-033). Read from the
+   English template, before it is translated - the one text every language
+   starts from. */
+function _cwEveningTpl(s){ return /^(Each|Every) evening\b|\btonight\b/i.test(String(s || '')); }
+try{ window._cwEveningTpl=_cwEveningTpl; }catch(e){}
 /* ── WHAT A JOB NEEDS, AGAINST WHAT IS ACTUALLY CONNECTED ────────────────────
 
    Every preset already declared its requirements in `needs`, and nothing ever
