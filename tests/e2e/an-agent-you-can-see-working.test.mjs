@@ -8,7 +8,7 @@
    agent on the server; the agent's card appears with its budget; Running jobs
    says whose job it is; pausing says so; deleting asks first, stops its job
    and the section goes away again. And it fits a phone. */
-import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
+import { bootLive, makeEnv, makeOutbound, liveDB } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
 
@@ -53,7 +53,7 @@ section('A job that has worked offers "Keep as an agent"; keeping it hands the j
   await page.evaluate(async () => { await _autoApi('/auto/create', { detail: 'Brief me on solar energy news', repeat: 'daily', kind: 'task', notify: 'app', approval: 'require' }); });
   /* It has run once, as the cron would have recorded. */
   const rec = await autoRec(); rec.items.forEach(i => { if (/solar/.test(i.detail)) i.runs = 1; });
-  await env.AMV_KV.put('auto:rui@example.com', JSON.stringify(rec));
+  await (await liveDB()).put(env, 'auto', 'rui@example.com', rec);
   await page.evaluate(async () => { try { await _autoRefresh(); } catch (e) {} setTab('crew'); });
   await page.waitForSelector('#mc-sched [data-dact="mcKeepAsAgent"]', { timeout: 20000 });
   ok(true, 'the running job offers to be kept as an agent');

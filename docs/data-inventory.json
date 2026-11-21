@@ -127,6 +127,13 @@
    "backup": false,
    "authority": "kv"
   },
+  "carry": {
+   "class": "security",
+   "holds": "a one-use code that carries a sign-in from the old address to the new one",
+   "kept": "two minutes",
+   "backup": false,
+   "authority": "kv"
+  },
   "cal": {
    "class": "content",
    "holds": "calendar data read for a job",
@@ -956,6 +963,13 @@
   "buyhold": {
    "class": "financial",
    "holds": "an amount held against a person's spending limits for one purchase, and how it was settled",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "buyholds": {
+   "class": "financial",
+   "holds": "the list of a person's purchase holds, so one that was never settled is found and released",
    "kept": "account lifetime",
    "backup": true,
    "authority": "kv"

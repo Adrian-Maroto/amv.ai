@@ -17,7 +17,7 @@
    Driven against the real Worker, then the real cron, so the screen is checked
    against what the server actually did rather than against itself. */
 import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
-import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
+import { bootLive, makeEnv, makeOutbound, liveDB } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
 
@@ -60,7 +60,7 @@ async function putJob(approval) {
   const r = (await rec()) || {};
   r.items = [{ id: 'j1', detail: 'Write my weekly summary', active: true, next: Date.now() - 60000,
                interval: 86400000, kind: 'task', approval, notify: 'app' }];
-  await KV.put('auto:' + EMAIL, JSON.stringify(r));
+  await (await liveDB()).put(env, 'auto', EMAIL, r);
 }
 async function cron() {
   modelCalls.length = 0;

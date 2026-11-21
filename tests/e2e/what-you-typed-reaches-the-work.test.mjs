@@ -16,7 +16,7 @@
    and then runs the real cron, and asserts on the system prompt the model was
    actually sent. Every link in that chain, end to end, once. */
 import { keepCrewSettingsOpen } from '../lib/crew-settings.mjs';
-import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
+import { bootLive, makeEnv, makeOutbound, liveDB } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
 
@@ -80,7 +80,7 @@ async function jobDueNow(detail) {
   const rec = (await readKV('auto:' + EMAIL)) || { items: [], results: [] };
   rec.items = [{ id: 'j1', detail, active: true, next: Date.now() - 60000,
                  interval: 86400000, kind: 'task', approval: 'require' }];
-  await KV.put('auto:' + EMAIL, JSON.stringify(rec));
+  await (await liveDB()).put(env, 'auto', EMAIL, rec);
 }
 
 section('A signed-in account on a plan that can run background work');

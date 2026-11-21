@@ -28,8 +28,10 @@ section('The server puts the name at the top level, and sends no user object');
    the same wrong idea of the shape. */
 {
   const be = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-  const fn = be.slice(be.indexOf('async function issueTokens'),
-                      be.indexOf('async function issueTokens') + 900);
+  /* The whole function, to its closing brace: a fixed 900 characters read
+     past the return once a guard was added above it (SEC-04). */
+  const at = be.indexOf('async function issueTokens');
+  const fn = be.slice(at, be.indexOf('\n}\n', at) + 2);
   ok(/return \{ token: access, refreshToken: refresh, email, name/.test(fn),
      'issueTokens returns name alongside the token', (fn.match(/return \{[^}]*\}/) || [''])[0]);
   ok(!/user\s*:/.test(fn), 'and no nested user object', (fn.match(/return \{[^}]*\}/) || [''])[0]);

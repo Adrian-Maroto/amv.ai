@@ -20,7 +20,7 @@
    endpoint, an email provider - and each of those is a named, inspectable stub
    so a test can say what the outside world did and assert on what AMV then
    believed. */
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { LAUNCH, BROWSER, ENGINE, armGeom, forEngine } from './harness.mjs';
@@ -337,4 +337,21 @@ export async function bootLive(opts = {}) {
       try { server.close(); } catch (e) {}
     },
   };
+}
+
+/* The Worker's own record layer, for a suite that puts a record in place the
+   way the Worker would. A kind under the revision authority (auto, agents,
+   approvals, ... - REV_USER_KINDS) is read only through its committed
+   revision, so a bare AMV_KV.put of one is a record the Worker reports as
+   unreadable: the suite would be testing a store nothing can write. Same
+   source, a second module instance; what the two share is the env. */
+let _liveDB = null;
+export async function liveDB() {
+  if (_liveDB) return _liveDB;
+  const dir = join(ROOT, 'tests/e2e/.build');
+  mkdirSync(dir, { recursive: true });
+  const h = join(dir, 'livedb.' + process.pid + '.harness.mjs');
+  writeFileSync(h, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB };\n');
+  try { _liveDB = (await import(h + '?t=' + Date.now())).DB; } finally { try { unlinkSync(h); } catch (e) {} }
+  return _liveDB;
 }
