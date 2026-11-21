@@ -419,18 +419,26 @@ async function _pkAssertFor(env, site, email, sent, purpose){
   const stored = acct && Array.isArray(acct.passkeys) ? acct.passkeys.find(k => k.id === cred.id) : null;
   if(!stored) throw new Error('pk_unknown');
   const r = await _pkVerifyAssertion({ id: cred.id, ...cred.response }, stored, { challenge: rec.c, origins: site.origins, rpId: site.rpId });
-  await _withAcct(env, email, (a) => {
+  /* THE LOCK'S OWN ANSWER DECIDES (Build 16 audit SEC-10). A refusal inside
+     the lock (a count that did not move forward) was returned and dropped,
+     and the re-read afterwards accepted the assertion whenever the stored
+     count equalled its count - which a second assertion racing with the same
+     count satisfies once the first has written it. Now the refusal is final,
+     and the passkey returned is the one the lock committed. A passkey that
+     never counts (count 0 on both sides, as synced passkeys do) still works. */
+  let used = null;
+  const out = await _withAcct(env, email, (a) => {
     const k = a && Array.isArray(a.passkeys) ? a.passkeys.find(x => x.id === cred.id) : null;
     if(!k) return { error: 'gone', status: 409 };
     /* Re-checked inside the lock: two uses racing with the same count must
        not both move it forward. */
     if((r.count || k.count) && r.count <= (k.count || 0)) return { error: 'pk_cloned', status: 409 };
     k.count = r.count; k.used = Date.now();
+    used = Object.assign({}, k);
   });
-  const after = await DB.get(env, 'acct', email);
-  const k2 = after && after.passkeys && after.passkeys.find(x => x.id === cred.id);
-  if(!k2 || k2.count !== r.count) throw new Error('pk_cloned');
-  return k2;
+  if(out && typeof out === 'object' && out.error) throw new Error(out.error === 'gone' ? 'pk_unknown' : 'pk_cloned');
+  if(!used || used.count !== r.count) throw new Error('pk_cloned');
+  return used;
 }
 
 /* POST /auth/passkey/options { purpose: 'register'|'signin', proof? } */

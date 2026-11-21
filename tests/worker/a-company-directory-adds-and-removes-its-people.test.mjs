@@ -107,6 +107,18 @@ section('A wrong token reaches nothing');
   ok(/scim\+json/.test(wrong.type) && wrong.d.schemas && /Error/.test(wrong.d.schemas[0]), 'answered as SCIM', wrong.d);
   const cfg = await scim('GET', '/ServiceProviderConfig', undefined, token);
   ok(cfg.status === 200 && cfg.d.patch.supported && cfg.d.filter.supported, 'the directory can read what is supported', cfg.d);
+  /* Build 16 audit SEC-09: the hashes were compared as strings with a byte
+     comparer, where every hex letter equals every other. A stored hash with
+     each letter swapped for another letter must not still match the token. */
+  const t0 = await team();
+  const real = t0.scim.hash;
+  const swapped = real.replace(/[a-f]/g, ch => ch === 'a' ? 'b' : 'a');
+  if (swapped !== real) {
+    await W.DB.put(env, 'team', t0.id, Object.assign({}, t0, { scim: Object.assign({}, t0.scim, { hash: swapped }) }));
+    const lett = await scim('GET', '/ServiceProviderConfig', undefined, token);
+    ok(lett.status === 401, 'a hash that differs only in its letters is a different hash', lett.status);
+    await W.DB.put(env, 'team', t0.id, Object.assign({}, await team(), { scim: Object.assign({}, t0.scim, { hash: real }) }));
+  }
 }
 
 let anaId = '';

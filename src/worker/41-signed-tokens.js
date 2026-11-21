@@ -43,10 +43,23 @@ function _safeJson(txt) {
   try { return JSON.parse(txt); } catch (e) { return null; }
 }
 
+/* BYTES, COMPARED AS BYTES (Build 16 audit SEC-09). This XORed whatever it
+   was handed, and SCIM handed it two hex STRINGS: "a" ^ "f" is 0 in
+   JavaScript, so every letter compared equal to every other letter, and a
+   token whose hash differed only in its letters was accepted. A string is
+   now turned into its bytes first, anything that is neither bytes nor text
+   is refused, and the comparison runs over byte values only. */
+function _tseBytes(v) {
+  if (v instanceof Uint8Array) return v;
+  if (typeof v === 'string') return new TextEncoder().encode(v);
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
+  return null;
+}
 function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
+  const x = _tseBytes(a), y = _tseBytes(b);
+  if (!x || !y || x.length !== y.length) return false;
   let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
   return diff === 0;
 }
 async function _hmacKey(secret) {

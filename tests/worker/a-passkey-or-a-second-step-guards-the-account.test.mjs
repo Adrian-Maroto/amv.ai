@@ -156,6 +156,22 @@ section('A passkey that keeps no counter cannot use one challenge twice at once'
   ok(both.filter(r => r.status === 200).length === 1, 'exactly one of two simultaneous uses signs in', both.map(r => r.status));
 }
 
+section('Two uses of one passkey with one count: one signs in (Build 16 audit SEC-10)');
+{
+  /* Two assertions carrying the same count, on two challenges, at once. The
+     lock refused the second and the refusal was dropped; a re-read then found
+     the count equal and let it in too. A passkey of its own, so the counts
+     here do not reach the others. */
+  const racer = await makeAuthenticator();
+  const o0 = await call('/auth/passkey/options', { purpose: 'register', proof: { password: PW } }, tok);
+  await call('/auth/passkey/register', { cid: o0.d.cid, name: 'Racer', credential: await racer.create({ challenge: o0.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) }, tok);
+  const [oa, ob] = [await call('/auth/passkey/options', { purpose: 'signin' }), await call('/auth/passkey/options', { purpose: 'signin' })];
+  const ga = await racer.get({ challenge: oa.d.publicKey.challenge, origin: ORIGIN, rpId: RP, countOverride: 5000 });
+  const gb = await racer.get({ challenge: ob.d.publicKey.challenge, origin: ORIGIN, rpId: RP, countOverride: 5000 });
+  const race = await Promise.all([call('/auth/passkey/signin', { cid: oa.d.cid, credential: ga }), call('/auth/passkey/signin', { cid: ob.d.cid, credential: gb })]);
+  ok(race.filter(r => r.status === 200).length === 1, 'one signs in, the copy does not', race.map(r => r.status));
+}
+
 section('Without the Durable Object, a challenge is still spent once - and still usable once');
 {
   /* Where claims fall back to storage they are written as kind:id. The first

@@ -81,6 +81,8 @@ async function _scimTeam(request, env){
   if(!m) return null;
   const team = await DB.get(env, 'team', m[2]);
   if(!team || !team.scim || !team.scim.hash) return null;
+  /* A stored hash that is not one is refused, never coerced (SEC-09). */
+  if(typeof team.scim.hash !== 'string' || !/^[a-f0-9]{64}$/.test(team.scim.hash)) return null;
   if(!timingSafeEqual(await _scimHash(m[1]), team.scim.hash)) return null;
   /* Company sign-in un-proved or removed since: SCIM stops with it. */
   if(!team.sso || !team.sso.verified) return null;
