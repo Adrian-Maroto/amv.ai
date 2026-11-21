@@ -323,8 +323,15 @@ async function main() {
                              { 'CF-Connecting-IP': '18.0.0.1' });
     const nosy = await post('/auth/signup', { email: 'nosy@smoke.test', name: 'N', password: PW },
                             { 'CF-Connecting-IP': '18.0.0.2' });
-    ok((await post('/admin/users', {}, { Authorization: 'Bearer ' + owner.body.token })).status === 200,
-       'the configured owner reaches it', true);
+    /* Build 16 audit SEC-08: the configured address is not enough on its own -
+       somebody could have registered it before the operator did - so the
+       owner's mailbox must be proved by a code from it. This run has no mail
+       provider to deliver one, so what the real runtime can show is the
+       refusal, with the code the console turns into "confirm your address".
+       The proved owner reaching it is admin-security.test.mjs. */
+    const unproved = await post('/admin/users', {}, { Authorization: 'Bearer ' + owner.body.token });
+    ok(unproved.status === 403 && unproved.body.code === 'owner_unproved',
+       'the configured owner, address not yet proved, is told to prove it', { status: unproved.status, code: unproved.body.code });
     ok((await post('/admin/users', {}, { Authorization: 'Bearer ' + nosy.body.token })).status === 403,
        'and a signed-in stranger does not', true);
     ok((await post('/admin/users', {}, { Authorization: 'Bearer smoke-test-only-admin-token' })).status === 401,
