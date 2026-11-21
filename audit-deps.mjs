@@ -29,6 +29,7 @@ import { readFileSync } from 'fs';
  */
 const ACCEPTED = {
   'extract-zip': {
+    advisories: ['GHSA-jmr9-qjv8-65gv', 'GHSA-7pqw-9j4j-h8q3'],
     since: '2026-08',
     why: 'Symlink path traversal while EXTRACTING a downloaded browser archive. '
        + 'It is reached by @puppeteer/browsers when puppeteer downloads a browser. '
@@ -38,11 +39,13 @@ const ACCEPTED = {
        + 'because anything calls it.',
   },
   '@puppeteer/browsers': {
+    via: ['extract-zip', 'proxy-agent'],
     since: '2026-08',
     why: 'Present only as the parent of extract-zip above, and unreachable for the same '
        + 'reason: nothing in a Worker downloads or extracts a browser.',
   },
   'basic-ftp': {
+    advisories: ['GHSA-c475-qrg2-pj4r', 'GHSA-5pm8-86m8-9m6r', 'GHSA-r4jh-29pc-gfqr'],
     since: '2026-10',
     why: 'Quadratic-time parsing of an FTP directory listing. Reached only through '
        + 'get-uri -> pac-proxy-agent -> proxy-agent -> @puppeteer/browsers, i.e. a proxy '
@@ -54,19 +57,23 @@ const ACCEPTED = {
        + 'exists and get-uri pins ^5, so forcing 6.x would be a major bump for dead code.',
   },
   'get-uri': {
+    via: ['basic-ftp'],
     since: '2026-10',
     why: 'Flagged only as the parent of basic-ftp above; unreachable for the same traced reason.',
   },
   'pac-proxy-agent': {
+    via: ['get-uri'],
     since: '2026-10',
     why: 'Flagged only as the parent of get-uri above; unreachable for the same traced reason.',
   },
   'proxy-agent': {
+    via: ['pac-proxy-agent'],
     since: '2026-10',
     why: 'Flagged only as the parent of pac-proxy-agent above; a dependency of '
        + '@puppeteer/browsers, which the Worker entry never imports (see basic-ftp).',
   },
   '@cloudflare/puppeteer': {
+    via: ['@puppeteer/browsers'],
     since: '2026-08',
     why: 'Flagged solely because it depends on the two above. The only version npm offers '
        + 'as a "fix" is 0.0.11, which is OLDER than what is installed and loses real fixes - '
@@ -118,16 +125,39 @@ function audit() {
 }
 
 const report = audit();
-const vulns = report.vulnerabilities || {};
-const counts = (report.metadata && report.metadata.vulnerabilities) || {};
+/* A REPORT, OR NO ASSESSMENT (Build 16 audit OPS-01). An npm failure that
+   printed an error object as JSON was read as a report with nothing in it -
+   every advisory "absent or assessed". Only npm's version-2 report, with its
+   vulnerabilities and metadata, is a report; anything else is said to be no
+   assessment at all. */
+if (!report || typeof report !== 'object' || report.error || report.auditReportVersion !== 2
+    || !report.vulnerabilities || typeof report.vulnerabilities !== 'object'
+    || !report.metadata || typeof report.metadata.vulnerabilities !== 'object') {
+  const why = report && report.error ? String(report.error.summary || report.error.code || 'an error').slice(0, 200) : 'an answer that is not an audit report';
+  console.log('SKIP  npm audit returned ' + why + ', so no audit was run.');
+  process.exit(process.env.AMV_AUDIT_REQUIRED === '1' ? 3 : 0);
+}
+const vulns = report.vulnerabilities;
+const counts = report.metadata.vulnerabilities;
 
+/* AN EXCEPTION IS FOR THE ADVISORIES IT NAMES (OPS-02). It was for a package:
+   a new critical advisory in a package already on this list passed without
+   anybody reading it. Each entry now names the advisories it was written for
+   (or, for a package flagged only through another, which ones), and anything
+   else about that package is unexpected. */
+const _adv = (x) => { const m = /GHSA-[a-z0-9-]+/i.exec(String((x && (x.url || x.source)) || '')); return m ? m[0] : String((x && x.source) || (x && x.title) || '?'); };
 const unexpected = [];
 for (const [name, v] of Object.entries(vulns)) {
   const sev = String(v.severity || '');
   if (sev === 'info' || sev === 'low') continue;
-  if (ACCEPTED[name]) continue;
+  const acc = ACCEPTED[name];
+  const via = Array.isArray(v.via) ? v.via : [];
+  const extra = acc ? via.filter(x => typeof x === 'string'
+    ? !(acc.via || []).includes(x)
+    : !(acc.advisories || []).includes(_adv(x))) : via;
+  if (acc && !extra.length) continue;
   unexpected.push({ name, severity: sev, range: v.range,
-    titles: (v.via || []).map(x => (typeof x === 'string' ? x : x.title)).filter(Boolean) });
+    titles: extra.map(x => (typeof x === 'string' ? 'through ' + x : _adv(x) + ' ' + (x.title || ''))).filter(Boolean) });
 }
 
 /* An accepted entry for something that is no longer flagged is a stale

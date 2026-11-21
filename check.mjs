@@ -1630,7 +1630,11 @@ step('Page weight is under control', () => {
    people learn to ignore - and it fails on any advisory nobody has written a
    reason for. */
 step('Dependencies have no unassessed advisories', () => {
-  sh('node audit-deps.mjs');
+  /* A scan that did not run is a stage that did not run (Build 16 audit
+     OPS-01/OPS-05): said as a skip, never a green tick. */
+  const out = sh('node audit-deps.mjs');
+  const skip = /^SKIP\s+(.*)$/m.exec(out);
+  return skip ? 'skipped: ' + skip[1].slice(0, 120) : undefined;
 });
 
 /* ── 4c. The Worker, in the runtime it actually deploys to ────────────────
@@ -1753,7 +1757,11 @@ if (!FAST) {
        a file moved meanwhile the marker names the tree that was actually
        proven, the hook declines to move main, and somebody runs it again -
        which is the correct outcome and the one that was not available. */
-    if (TREE_AT_START) writeFileSync(join(ROOT, '.gate-pass'), TREE_AT_START + '\n');
+    /* NO RELEASE MARKER OVER A STAGE THAT DID NOT RUN (Build 16 audit OPS-05).
+       The marker is what lets main move; a verdict that covers less than the
+       whole gate is reported, never stamped. */
+    if (TREE_AT_START && skipped.length) console.log(`${Y}! .gate-pass was not written: ${skipped.length} stage(s) did not run.${X}`);
+    else if (TREE_AT_START) writeFileSync(join(ROOT, '.gate-pass'), TREE_AT_START + '\n');
   } catch (e) { /* not a git checkout, or git is unavailable - not a gate failure */ }
 }
 console.log('');

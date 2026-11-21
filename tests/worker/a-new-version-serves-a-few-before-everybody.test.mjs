@@ -41,7 +41,7 @@ section('The serving version and the uploaded one are read from what wrangler pr
 }
 
 /* The stand-in readiness endpoint: ready per pinned version. */
-let readyFor = {}, blips = 0;
+let readyFor = {}, blips = 0, shape = {};
 const pins = [];
 const server = createServer((req, res) => {
   const pin = String(req.headers['cloudflare-workers-version-overrides'] || '');
@@ -49,6 +49,8 @@ const server = createServer((req, res) => {
   const m = /amv-ai="([^"]+)"/.exec(pin);
   let ready = !!(m && readyFor[m[1]]);
   if (ready && blips > 0) { blips--; ready = false; }
+  const sh = m && shape[m[1]];
+  if (sh) { res.writeHead(sh.status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(sh.body)); return; }
   res.writeHead(ready ? 200 : 503, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ready, failed: ready ? [] : ['kv'] }));
 });
@@ -65,6 +67,8 @@ appendFileSync(${JSON.stringify(log)}, a.join(' ') + '\\n');
 const mode = process.env.FAKE_MODE || '';
 if (a[0] === 'deployments') {
   if (mode === 'first') { console.log('{}'); process.exit(0); }
+  if (mode === 'statusfail') { console.error('Authentication error'); process.exit(1); }
+  if (mode === 'statusodd') { console.log(JSON.stringify({ id: 'dep', versions: [{ version_id: 'not-an-id', percentage: 100 }] })); process.exit(0); }
   console.log(JSON.stringify({ id: 'dep', versions: [{ version_id: '${OLD}', percentage: 100 }] }));
   process.exit(0);
 }
@@ -77,10 +81,10 @@ process.exit(0);
 `);
 chmodSync(fake, 0o755);
 
-function run(mode, ready, blipCount = 0) {
+function run(mode, ready, blipCount = 0, extra = {}, shapes = {}) {
   writeFileSync(log, '');
-  readyFor = ready; blips = blipCount; pins.length = 0;
-  const env = { ...process.env, WRANGLER: process.execPath + ' ' + fake, AMV_READY_URL: READY_URL, FAKE_MODE: mode,
+  readyFor = ready; blips = blipCount; pins.length = 0; shape = shapes;
+  const env = { ...process.env, ...extra, WRANGLER: process.execPath + ' ' + fake, AMV_READY_URL: READY_URL, FAKE_MODE: mode,
     CANARY_WATCH_SECONDS: '0.3', CANARY_CHECK_EVERY_SECONDS: '0.1', CANARY_RETRY_SECONDS: '0.05', GITHUB_SHA: 'abcdef1234', GITHUB_STEP_SUMMARY: join(dir, 'summary.md') };
   writeFileSync(env.GITHUB_STEP_SUMMARY, '');
   return new Promise(resolve => {
@@ -100,7 +104,9 @@ section('A ready canary goes from a tenth of traffic to all of it, and the sched
   ok(i100 > i10, 'and only then everybody');
   ok(r.calls.indexOf('triggers deploy') > i100, 'and the cron schedule is applied after it');
   ok(!r.calls.includes('deploy'), 'with no all-at-once deploy');
-  ok(pins.length >= 2 && pins.every(p => p === 'amv-ai="' + NEW + '"'), 'every readiness check was pinned to the new version');
+  /* The first look is at the serving version, for what it can do (OPS-04);
+     every check that decides is pinned to the new one. */
+  ok(pins.length >= 3 && pins[0] === 'amv-ai="' + OLD + '"' && pins.slice(1).every(p => p === 'amv-ai="' + NEW + '"'), 'the serving version is read once, then every readiness check is pinned to the new version', pins);
   ok(/Released through a canary/.test(r.summary), 'and the run summary says so');
 }
 
@@ -121,14 +127,42 @@ section('One blip that a retry clears does not stop a release');
   ok(r.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'to everybody');
 }
 
-section('A Durable Object migration, or nothing serving yet, deploys the ordinary way');
+section('A Durable Object migration is a deliberate full deploy; nothing serving yet deploys the ordinary way');
 {
-  const m = await run('migration', {});
-  ok(m.code === 0 && m.calls.includes('deploy'), 'a migration goes through a full deploy');
+  /* Build 16 audit OPS-03: a migration replaces everything with no canary, so
+     it is never taken on implicitly. */
+  const no = await run('migration', {});
+  ok(no.code === 1 && !no.calls.includes('deploy') && !no.calls.some(c => c.startsWith('versions deploy')), 'a migration without AMV_FULL_DEPLOY=1 deploys nothing', no.calls);
+  const m = await run('migration', {}, 0, { AMV_FULL_DEPLOY: '1' });
+  ok(m.code === 0 && m.calls.includes('deploy'), 'with it, a migration goes through a full deploy');
   ok(!m.calls.some(c => c.startsWith('versions deploy')), 'with no split attempted');
   ok(/Durable Object migration/.test(m.summary), 'and the summary says why');
   const f = await run('first', {});
   ok(f.code === 0 && f.calls.includes('deploy') && !f.calls.some(c => c.startsWith('versions')), 'the first deploy has nothing to fall back to and deploys plainly');
+}
+
+section('Not knowing what serves is not the same as nothing serving (OPS-03)');
+{
+  for (const mode of ['statusfail', 'statusodd']) {
+    const r = await run(mode, { [NEW]: true });
+    ok(r.code === 1 && !r.calls.includes('deploy') && !r.calls.some(c => c.startsWith('versions')), mode + ': nothing is deployed', r.calls);
+  }
+}
+
+section('Ready means all of it (OPS-04)');
+{
+  const r503 = await run('', {}, 0, {}, { [NEW]: { status: 503, body: { ready: true } } });
+  ok(r503.code === 1 && !r503.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'a 503 that says ready is not promoted', r503.calls.slice(-2));
+  const chk = await run('', {}, 0, {}, { [NEW]: { status: 200, body: { ready: true, checks: { kv: { ok: true }, model: { ok: false } } } } });
+  ok(chk.code === 1 && !chk.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'nor one with a failing check', chk.calls.slice(-2));
+  const lost = await run('', {}, 0, {}, {
+    [OLD]: { status: 200, body: { ready: true, checks: {}, capabilities: { model: true, email: true } } },
+    [NEW]: { status: 200, body: { ready: true, checks: {}, capabilities: { model: true, email: false } } } });
+  ok(lost.code === 1 && /email/.test(lost.out) && !lost.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'nor one that lost something the serving version can do', lost.out.slice(-200));
+  const fine = await run('', {}, 0, {}, {
+    [OLD]: { status: 200, body: { ready: true, checks: {}, capabilities: { model: true } } },
+    [NEW]: { status: 200, body: { ready: true, checks: { kv: { ok: true } }, capabilities: { model: true, email: true } } } });
+  ok(fine.code === 0 && fine.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'while a healthy one that can do as much is promoted', fine.calls.slice(-3));
 }
 
 section('An upload that fails changes nothing');

@@ -74,13 +74,41 @@ export function uploadedVersion(text) {
   return m ? m[1] : '';
 }
 
-async function readyOn(version) {
+/* READY MEANS ALL OF IT (Build 16 audit OPS-04). A 503 whose body said
+   ready:true was promoted, and so was a version that answered ready while a
+   capability the serving version had was gone. Ready is now: HTTP 200, the
+   body says ready, every check in it passed, and - once the serving
+   version's answer is known - nothing it can do is missing from the new one. */
+export function judgeReady(status, body, baseline) {
+  let j = null; try { j = JSON.parse(body); } catch (e) { j = null; }
+  if (status !== 200) return { ready: false, why: 'HTTP ' + status };
+  if (!j || j.ready !== true) return { ready: false, why: 'the answer did not say ready' };
+  const failed = Object.entries((j && j.checks) || {}).filter(([, c]) => !(c && c.ok)).map(([k]) => k);
+  if (failed.length) return { ready: false, why: 'checks failed: ' + failed.join(', ') };
+  const caps = (j && j.capabilities) || null;
+  if (baseline && caps) {
+    const lost = Object.entries(baseline).filter(([k, v]) => v === true && caps[k] !== true).map(([k]) => k);
+    if (lost.length) return { ready: false, why: 'can no longer do what the serving version does: ' + lost.join(', ') };
+  }
+  return { ready: true, why: '', caps };
+}
+async function readyOn(version, baseline) {
   try {
     const res = await fetch(READY_URL, { headers: { 'Cloudflare-Workers-Version-Overrides': WORKER + '="' + version + '"', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(15000) });
     const body = await res.text();
-    let ready = false; try { ready = JSON.parse(body).ready === true; } catch (e) {}
-    return { ready, status: res.status, body: body.slice(0, 300) };
-  } catch (e) { return { ready: false, status: 0, body: e.message }; }
+    const v = judgeReady(res.status, body, baseline);
+    return { ready: v.ready, why: v.why, caps: v.caps, status: res.status, body: body.slice(0, 300) };
+  } catch (e) { return { ready: false, why: e.message, status: 0, body: e.message }; }
+}
+/* NOTHING SERVING, PROVED (Build 16 audit OPS-03): a status that could not be
+   read, or read but not understood, is not "nothing to fall back to" - it is
+   not knowing, and not knowing is no reason to replace everything at once. */
+export function nothingServing(json) {
+  if (!json || typeof json !== 'object') return false;
+  let any = false;
+  (function walk(v) { if (any || !v || typeof v !== 'object') return; if (Array.isArray(v)) { if (v.length) any = true; return; }
+    for (const [k, x] of Object.entries(v)) { if (/^(versions|deployments)$/.test(k) && Array.isArray(x) && x.length) any = true; else walk(x); } })(json);
+  return !any;
 }
 
 function plainDeploy(reason) {
@@ -91,14 +119,26 @@ function plainDeploy(reason) {
 
 async function main() {
   const st = wrangler(['deployments', 'status', '--json'], { show: false });
-  let old = '';
-  if (st.ok) { try { old = servingVersion(JSON.parse(st.out.slice(st.out.indexOf('{')))); } catch (e) {} }
-  if (!old) return plainDeploy('no version is serving yet, or its id could not be read, so there is nothing to fall back to.');
+  let old = '', parsed = null;
+  if (st.ok) { try { parsed = JSON.parse(st.out.slice(st.out.indexOf('{'))); old = servingVersion(parsed); } catch (e) { parsed = null; } }
+  if (!old) {
+    if (st.ok && parsed && nothingServing(parsed)) return plainDeploy('no version is serving yet, so there is nothing to fall back to.');
+    say('::error title=Serving version unknown::The version serving now could not be read, so there is nothing proved to fall back to. Nothing was deployed. Check `npx wrangler deployments status` and run again.');
+    return 1;
+  }
   say('Serving now: ' + old);
+  const base = await readyOn(old);
+  const baseline = base.ready ? base.caps : null;
 
   const up = wrangler(['versions', 'upload', '--message', 'canary ' + SHA, '--tag', SHA]);
   if (!up.ok) {
-    if (/migration/i.test(up.out)) return plainDeploy('this release carries a Durable Object migration, which Cloudflare applies only through a full deploy.');
+    /* A migration replaces everything at once, with no canary and no
+       version to fall back to: a separate, deliberate release (OPS-03). */
+    if (/migration/i.test(up.out)) {
+      if (process.env.AMV_FULL_DEPLOY === '1') return plainDeploy('this release carries a Durable Object migration, which Cloudflare applies only through a full deploy, and AMV_FULL_DEPLOY=1 says it was reviewed as one.');
+      say('::error title=Migration needs a full deploy::This release carries a Durable Object migration, which cannot go through a canary. Nothing changed: ' + old + ' still serves everybody. Take a backup, then run it again with AMV_FULL_DEPLOY=1.');
+      return 1;
+    }
     say('::error title=Upload failed::The new version could not be uploaded. Nothing changed: ' + old + ' still serves everybody.');
     return 1;
   }
@@ -114,11 +154,11 @@ async function main() {
   const until = Date.now() + WATCH_MS;
   let checks = 0;
   for (;;) {
-    let r = await readyOn(neu);
-    if (!r.ready) { await sleep(RETRY_MS); r = await readyOn(neu); }
+    let r = await readyOn(neu, baseline);
+    if (!r.ready) { await sleep(RETRY_MS); r = await readyOn(neu, baseline); }
     checks++;
     if (!r.ready) {
-      say('The canary is not ready (HTTP ' + r.status + '): ' + r.body);
+      say('The canary is not ready (' + (r.why || 'HTTP ' + r.status) + '): ' + r.body);
       const back = wrangler(['versions', 'deploy', old + '@100%', '--yes', '--message', 'canary ' + SHA + ' was not ready - previous version back']);
       if (back.ok) {
         say('::error title=Canary refused::' + SHA + ' was not ready on ' + PERCENT + '% of traffic, so ' + old + ' serves everybody again.');
