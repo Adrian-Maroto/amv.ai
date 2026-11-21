@@ -1,5 +1,31 @@
 # AMV buys things - design (owner decision, Nov 16: "Both, in phases")
 
+## What a receipt is, Nov 21 (build 17 audit B17-005, B17-006, B17-021)
+
+- **A hold is one hold, however often it is asked for.** The page sends a key
+  with each purchase card (`key`, kept for its retries); the hold's id is made
+  from the account and that key, so a retry after a lost answer finds the same
+  hold. The same key with different terms is refused (`hold_terms_differ`), never
+  a second hold.
+- **"Seen on the page" is what the page saw, and it is named that.** The page
+  reports whether the order number and total were on the store's confirmation
+  page (`seenOnPage`). The server records it as reported by the page
+  (`source: 'reported'`) and never as `verified`: nothing on AMV's side has
+  checked it with the store or the bank. Spending shows "seen on the store's
+  page" or "not seen on the page", never "verified".
+- **Receipts are records, not a list.** Each purchase has its own record and an
+  index row per account (`buyix:`), read a page at a time, so two purchases at
+  once cannot lose each other and the history has no length cap. Older receipts
+  in the single list are still read and merged.
+- **What is still not claimed.** There is no merchant or payment transaction id
+  here, no refund or dispute record, and no status lookup at the store. Those
+  need a per-store contract with the store's own order API, or AMV's own cards
+  (phase 2), where the card network reports every authorization, capture,
+  refund and dispute. Until then the store's confirmation email and the bank
+  statement are the record; a receipt that is not confirmed says to check the
+  email. A store with an order API AMV can call is a separate
+  adapter, audited on its own - none exists yet.
+
 ## Contained, Nov 20 - the person presses the store's pay button (build 16 audit)
 
 The build 16 audit (AG-01..AG-04) found that the "one armed press" design

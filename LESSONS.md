@@ -16089,3 +16089,28 @@ Also from this round: a fixed-length read of a function's source (900
 characters) broke when a guard was added above its return; read to the closing
 brace. And a list keyed `cc|lang` since one change was passed whole to a
 function wanting `cc` - the new suite for the next change was what caught it.
+
+## 656. An answer that does not say no is not a yes (Nov 21)
+
+The Build 17 audit found the same defect in nine places: a step that did not
+refuse was read as a step that succeeded. Signing out reported done when the
+revocation object answered with anything at all - an epoch, an empty object -
+because the code checked for an error, not for the word "ended". A DNS lookup
+that failed returned no addresses, and no addresses read as "not private", so
+an address nobody could resolve was fetched. A rate limiter that could not be
+reached let every request through. A company sign-in callback was read and then
+deleted, so two copies arriving together both read it. An undo ticket's
+signature proved it genuine and nothing proved it unused. A local KV copy that
+was missing read as "this account does not exist". A listing's takedown lived
+on a record that counters wrote back whole, from a copy that could be a minute
+old. Rule: each of these now asks for a specific affirmative answer - `ended:
+true` with the session id, `revoked: true`, a DNS `Status`, a claim taken - and
+anything else is its own outcome (pending, unknown, try again), said to the
+person. Where the thing is monotonic (a takedown, a spent code, a used ticket),
+it is recorded in the atomic object, which cannot be read stale.
+
+Also from this round: probes that isolate one function in a VM rot the first
+time the function gains a dependency. The auditors' probes were rewritten as a
+suite against the real Worker (`the-build-17-audit-stays-fixed`), and each new
+section was checked by breaking the guard it covers; two sections that passed
+under the break were rewritten until they did not.
