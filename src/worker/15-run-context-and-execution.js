@@ -1598,10 +1598,13 @@ const AUTO_SWEEP_PAGES = 4;
    (GO-LIVE.md). The sweep's pages and the accounts it loads from the index
    are sized to fit, leaving room for the runs themselves. */
 const AUTO_OPS_DEFAULT = 1000;
-function _autoOpsBudget(env) {
+/* Every scheduled pass that walks records uses this one figure: the jobs
+   tick here, the renewal sweep (47) and the nightly backup (27a). */
+function _opsPerRun(env) {
   const n = parseInt(String((env && env.AMV_OPS_PER_RUN) || ''), 10);
   return Number.isFinite(n) && n >= 200 ? Math.min(n, 1000000) : AUTO_OPS_DEFAULT;
 }
+function _autoOpsBudget(env) { return _opsPerRun(env); }
 /* A sweep page costs a list and one read per record. At most 60% of the
    budget, never more pages than before, and always at least one. */
 function _autoSweepPages(env) {
@@ -1700,7 +1703,7 @@ async function runDueAutomations(env, atMs, opts){
           + _autoOpsBudget(env).toLocaleString('en-US') + ' operations). They are taken in turn, so each is reached within '
           + Math.ceil(list.length / take) + ' minutes - late, not lost. Set AMV_OPS_PER_RUN to what your Cloudflare plan allows '
           + 'and bind the AMV_JOBS queue; docs/DUE-WORK.md.', 6 * 60);
-      } catch (e) {}
+      } catch (e) { /* logging: it never decides anything */ }
     }
   } else {
     const s = await _autoSweep(env);

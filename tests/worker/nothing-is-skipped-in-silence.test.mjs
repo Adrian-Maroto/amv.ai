@@ -151,8 +151,10 @@ section('The renewal sweep checks every paying account, however many there are')
      there is nothing to alert about - a pass goes through everyone, a few
      pages per tick, and decides only once it has seen them all. Here: more
      paying accounts than one tick reads, and the lapsed one placed past the
-     old cut-off, where it used to be invisible for ever. */
-  const env = mkEnv();
+     old cut-off, where it used to be invisible for ever. At the paid plan's
+     storage budget (AMV_OPS_PER_RUN 10000) a tick reads SWEEP_SCAN_LIMIT;
+     the default budget is checked after. */
+  const env = mkEnv({ AMV_OPS_PER_RUN: '10000' });
   const N = W.SWEEP_SCAN_LIMIT + 300;
   for (let i = 0; i < N; i++)
     await W.DB.put(env, 'ent', 'p' + String(i).padStart(5, '0') + '@example.com', { plan: 'pro', source: 'stripe', renewedAt: Date.now() });
@@ -168,6 +170,21 @@ section('The renewal sweep checks every paying account, however many there are')
   ok(!alerted(/STOPPED SHORT/), 'and nothing stopped short, so nobody is paged about it', true);
   const s3 = await W.runRenewalSweep(env);
   ok(s3.ran === false, 'and the pass is once a day: a third tick starts nothing', s3);
+}
+
+section('On the default storage budget the renewal sweep reads fewer a tick, and still everyone');
+{
+  const env = mkEnv();
+  const N = 2000;
+  for (let i = 0; i < N; i++)
+    await W.DB.put(env, 'ent', 'q' + String(i).padStart(5, '0') + '@example.com', { plan: 'pro', source: 'stripe', renewedAt: Date.now() });
+  let ops = 0;
+  const kv = env.AMV_KV;
+  for (const m of ['get', 'put', 'delete', 'list']) { const f = kv[m].bind(kv); kv[m] = async (...a) => { ops++; return f(...a); }; }
+  let r = null, ticks = 0, most = 0;
+  do { ops = 0; r = await W.runRenewalSweep(env); most = Math.max(most, ops); ticks++; } while (r.partial && ticks < 10);
+  ok(most < 1000, 'no tick makes 1,000 storage calls', most);
+  ok(!r.partial && r.paid === N && ticks >= 3, 'and the pass still counts every paying account, over more ticks', { ticks, paid: r.paid });
 }
 
 section('Work that has to be complete to be correct is not capped at all');

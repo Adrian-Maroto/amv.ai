@@ -111,8 +111,12 @@ async function runRenewalSweep(env, now = Date.now()) {
       pass = { day, cursor: null, paid: 0, stale: [], staleCount: 0 };
     }
     let read = 0;
-    while (read < SWEEP_SCAN_LIMIT) {
-      const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, SWEEP_SCAN_LIMIT - read));
+    /* Within the storage calls one run may make (_opsPerRun, Build 16 audit
+       OPS-07): a record read is one call, and a fifth is left for the claims,
+       the pass and what the decision writes. The pass carries on next tick. */
+    const limit = Math.max(100, Math.min(SWEEP_SCAN_LIMIT, Math.floor(_opsPerRun(env) * 0.8) - 20));
+    while (read < limit) {
+      const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, limit - read));
       read += pg.rows.length;
       for (const row of pg.rows) {
         const e = row.value || {};

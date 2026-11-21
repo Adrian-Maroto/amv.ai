@@ -69,3 +69,20 @@ an objective nobody has agreed to is a number, not a promise.
 keeps the newest booking and pages once; a bucket with room pages nobody; the tick reports
 how late its most overdue job was; and the existing sections - most overdue first, stop on
 purpose, nobody starved.
+
+## The other passes that walk records
+
+The same budget (`_opsPerRun`) sizes the two other scheduled passes that read
+records one at a time, since Nov 21:
+
+- **Renewal sweep** (`47-renewal-sweep.js`): at most 80% of the budget in records
+  per tick (780 at the default, 2,000 at 10,000); the pass already carried on
+  across ticks and decides only once it has seen every paying account.
+- **Nightly backup** (`27a-nightly-backup.js`): a slice stops at 80% of the budget,
+  counting three calls a record, and resumes mid-page (`skip`). At the default a
+  night of 2,600 records takes about ten slices.
+
+Tested by counting every storage call: `nothing-is-skipped-in-silence` (renewal)
+and `every-night-is-backed-up` (backup) - no run reaches 1,000, and both still
+cover everything.
+

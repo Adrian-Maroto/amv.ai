@@ -143,7 +143,9 @@ section('A tick that dies part-way loses nothing; the night holds every record, 
   /* The first part's write fails: that tick throws, as a real one would. */
   let threw = false; try { await W.runNightlyBackup(env, T0); } catch (e) { threw = true; }
   ok(threw && !B.o.has('backups/' + DAY + '/manifest.json'), 'the failed tick wrote no manifest', threw);
-  let r; for (let i = 0; i < 10 && !(r && (r.done || r.failed)); i++) r = await W.runNightlyBackup(env, T0 + i * 300000);
+  /* Up to 30: on the default storage budget a slice holds a few hundred
+     records (AMV_OPS_PER_RUN), so 2,600 take around ten. */
+  let r; for (let i = 0; i < 30 && !(r && (r.done || r.failed)); i++) r = await W.runNightlyBackup(env, T0 + i * 300000);
   ok(r && r.done, 'later ticks finish the night', r);
   const got = nightRecords(B, DAY);
   const want = [...env._m.keys()].filter(k => /^(acct|ent|auto):/.test(k));
@@ -152,6 +154,19 @@ section('A tick that dies part-way loses nothing; the night holds every record, 
   const man = JSON.parse(B.o.get('backups/' + DAY + '/manifest.json'));
   ok(man.complete && man.keyCount === want.length && man.parts >= 3, 'the manifest, written last, says how much and in how many parts', man);
   ok(audits.some(a => a.event === 'nightly_backup' && a.keyCount === want.length), 'and it is on the record');
+}
+
+section('Each slice stays within the storage calls one run may make (Build 16 audit OPS-07)');
+{
+  const b = bucket();
+  const e = withKV(mkEnv({ AMV_BACKUPS: b })); seed(e);
+  let ops = 0;
+  for (const m of ['get', 'put', 'delete', 'list']) { const f = e.AMV_KV[m].bind(e.AMV_KV); e.AMV_KV[m] = async (...a) => { ops++; return f(...a); }; }
+  let r, most = 0, n = 0;
+  for (; n < 40 && !(r && (r.done || r.failed)); n++) { ops = 0; r = await W.runNightlyBackup(e, T0 + n * 300000); most = Math.max(most, ops); }
+  ok(r && r.done && most < 1000, 'no slice makes 1,000 storage calls, and the night still completes', { most, slices: n });
+  const got = nightRecords(b, DAY);
+  ok(got.size === [...e._m.keys()].filter(k => /^(acct|ent|auto):/.test(k)).length && [...got.values()].every(c => c === 1), 'with every record exactly once', got.size);
 }
 
 section('A record too large to restore abandons the night and says so');

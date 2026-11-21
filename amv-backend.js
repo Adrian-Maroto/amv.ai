@@ -13083,10 +13083,13 @@ const AUTO_SWEEP_PAGES = 4;
    (GO-LIVE.md). The sweep's pages and the accounts it loads from the index
    are sized to fit, leaving room for the runs themselves. */
 const AUTO_OPS_DEFAULT = 1000;
-function _autoOpsBudget(env) {
+/* Every scheduled pass that walks records uses this one figure: the jobs
+   tick here, the renewal sweep (47) and the nightly backup (27a). */
+function _opsPerRun(env) {
   const n = parseInt(String((env && env.AMV_OPS_PER_RUN) || ''), 10);
   return Number.isFinite(n) && n >= 200 ? Math.min(n, 1000000) : AUTO_OPS_DEFAULT;
 }
+function _autoOpsBudget(env) { return _opsPerRun(env); }
 /* A sweep page costs a list and one read per record. At most 60% of the
    budget, never more pages than before, and always at least one. */
 function _autoSweepPages(env) {
@@ -13185,7 +13188,7 @@ async function runDueAutomations(env, atMs, opts){
           + _autoOpsBudget(env).toLocaleString('en-US') + ' operations). They are taken in turn, so each is reached within '
           + Math.ceil(list.length / take) + ' minutes - late, not lost. Set AMV_OPS_PER_RUN to what your Cloudflare plan allows '
           + 'and bind the AMV_JOBS queue; docs/DUE-WORK.md.', 6 * 60);
-      } catch (e) {}
+      } catch (e) { /* logging: it never decides anything */ }
     }
   } else {
     const s = await _autoSweep(env);
@@ -19059,7 +19062,8 @@ async function _nightlyBackupSlice(env, atMs){
   let parts = 0;
   /* One stage past the prefixes: the records committed with no usual key
      (B15-18, 27-backup-restore.js). */
-  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
+  let ops = 0; const opsCap = Math.floor(_opsPerRun(env) * 0.8);
+  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS && ops + 4 <= opsCap) {
     const orphans = st.prefix === BACKUP_PREFIXES.length;
     const prefix = orphans ? 'revblob:' : BACKUP_PREFIXES[st.prefix];
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
@@ -19080,8 +19084,14 @@ async function _nightlyBackupSlice(env, atMs){
     /* Time is checked per record, and a page can be left part-way: `skip` is
        how many of this page's keys are already in a part (OPS-06). */
     let i = Math.max(0, +st.skip || 0), outOfTime = false;
+    ops++;   // the list
     for (; i < keys.length; i++) {
-      if (Date.now() - started >= NIGHTLY_SLICE_MS) { outOfTime = true; break; }
+      /* Out of time, or out of the storage calls one run may make
+         (_opsPerRun, Build 16 audit OPS-07): a record costs up to three - its
+         key, and for a record under the revision authority its commit and
+         snapshot. Either way the page is left where it stands (`skip`). */
+      if (Date.now() - started >= NIGHTLY_SLICE_MS || ops + 3 > opsCap) { outOfTime = true; break; }
+      ops += 3;
       const k0 = keys[i];
       let k = k0, raw;
       if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
@@ -32079,8 +32089,12 @@ async function runRenewalSweep(env, now = Date.now()) {
       pass = { day, cursor: null, paid: 0, stale: [], staleCount: 0 };
     }
     let read = 0;
-    while (read < SWEEP_SCAN_LIMIT) {
-      const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, SWEEP_SCAN_LIMIT - read));
+    /* Within the storage calls one run may make (_opsPerRun, Build 16 audit
+       OPS-07): a record read is one call, and a fifth is left for the claims,
+       the pass and what the decision writes. The pass carries on next tick. */
+    const limit = Math.max(100, Math.min(SWEEP_SCAN_LIMIT, Math.floor(_opsPerRun(env) * 0.8) - 20));
+    while (read < limit) {
+      const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, limit - read));
       read += pg.rows.length;
       for (const row of pg.rows) {
         const e = row.value || {};

@@ -104,7 +104,8 @@ async function _nightlyBackupSlice(env, atMs){
   let parts = 0;
   /* One stage past the prefixes: the records committed with no usual key
      (B15-18, 27-backup-restore.js). */
-  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS) {
+  let ops = 0; const opsCap = Math.floor(_opsPerRun(env) * 0.8);
+  while (st.prefix <= BACKUP_PREFIXES.length && Date.now() - started < NIGHTLY_SLICE_MS && ops + 4 <= opsCap) {
     const orphans = st.prefix === BACKUP_PREFIXES.length;
     const prefix = orphans ? 'revblob:' : BACKUP_PREFIXES[st.prefix];
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
@@ -125,8 +126,14 @@ async function _nightlyBackupSlice(env, atMs){
     /* Time is checked per record, and a page can be left part-way: `skip` is
        how many of this page's keys are already in a part (OPS-06). */
     let i = Math.max(0, +st.skip || 0), outOfTime = false;
+    ops++;   // the list
     for (; i < keys.length; i++) {
-      if (Date.now() - started >= NIGHTLY_SLICE_MS) { outOfTime = true; break; }
+      /* Out of time, or out of the storage calls one run may make
+         (_opsPerRun, Build 16 audit OPS-07): a record costs up to three - its
+         key, and for a record under the revision authority its commit and
+         snapshot. Either way the page is left where it stands (`skip`). */
+      if (Date.now() - started >= NIGHTLY_SLICE_MS || ops + 3 > opsCap) { outOfTime = true; break; }
+      ops += 3;
       const k0 = keys[i];
       let k = k0, raw;
       if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
