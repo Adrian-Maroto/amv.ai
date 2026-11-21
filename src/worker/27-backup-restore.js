@@ -80,7 +80,7 @@ const BACKUP_PREFIXES = [
   /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
      and their receipts. A restore without the holds would free money still
      booked against a purchase that may have happened. */
-  'buyhold:', 'buys:',
+  'buyhold:', 'buyholds:', 'buys:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing

@@ -24,6 +24,7 @@
 const BUY_HOLD_WINDOW_MS = 30 * 60 * 1000;     // a hold not settled in this long is released
 const BUY_SETTLE_WINDOW_MS = 24 * 3600 * 1000; // a confirmation can still be recorded this late
 const BUY_RECEIPTS_MAX = 100;
+const BUY_HOLDS_INDEX_MAX = 500;
 
 const _buyHost = (s) => {
   const h = String(s || '').trim().toLowerCase();
@@ -62,7 +63,13 @@ async function spendHold(request, env){
      leaves either a hold that can be found or nothing booked at all. */
   const base = { id, email:user.email, amount, currency, store, item, at:now,
     ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
-  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 })); }
+  /* Indexed by the person first (Build 16 audit SEC-14): a hold is kept by
+     its id, and without this neither their data export nor erasing their
+     account could find it. */
+  try {
+    await _withKV(env, 'buyholds', user.email, (l) => { l.unshift(id); if(l.length > BUY_HOLDS_INDEX_MAX) l.length = BUY_HOLDS_INDEX_MAX; return true; }, []);
+    await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+  }
   catch (e) {
     audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
     return json({ ok:false, code:'hold_unavailable', error:'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);

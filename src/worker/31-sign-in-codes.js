@@ -841,8 +841,10 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      and the refunded-invoice ledger are keyed by id and kept as the
      financial record, as payouts are. */
   'refundopen', 'refundlast', 'refundauto',
-  /* Their purchase receipts (69-buying.js) - what they bought and where. */
-  'buys',
+  /* Their purchase receipts (69-buying.js) - what they bought and where - and
+     the index of their purchase holds, which are kept by id (Build 16 audit
+     SEC-14): the export follows it to the holds and erasure deletes them. */
+  'buys', 'buyholds',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Family invitations waiting for this person: who asked, and until when. */
   'faminv',
@@ -962,6 +964,16 @@ async function accountExport(request, env) {
     }
     try { const v = await DB.get(env, kind, email); if (v != null) records[kind] = v; }
     catch (e) { noteFailure(kind, e); }
+  }
+
+  /* Each purchase hold the index names, so the export holds every one. */
+  if (records.buyholds && Array.isArray(records.buyholds)) {
+    const holds = [];
+    for (const id of records.buyholds.slice(0, 500)) {
+      try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
+      catch (e) { noteFailure('buyhold', e); }
+    }
+    records.buyhold = holds;
   }
 
   /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
@@ -1757,6 +1769,14 @@ async function _eraseAccount(env, email, opt) {
   /* `fin` is a live credential and `invsnap` is a record of somebody's account
      balances - both are exactly what erasure is for, and neither was listed. */
   const perUserKinds = PER_USER_KINDS;
+  /* Purchase holds are kept by id: found through their index, deleted before
+     the index itself goes (SEC-14). */
+  try {
+    const idx = await DB.get(env, 'buyholds', email);
+    for (const id of (Array.isArray(idx) ? idx : [])) {
+      try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
+    }
+  } catch { _eraseFailed('purchase holds'); }
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding
      otherwise is a legal call rather than an engineering one. It stays until

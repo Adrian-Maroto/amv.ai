@@ -153,6 +153,14 @@ section('A hold that could not be finished leaves something findable or nothing'
   ok(status(g, other.id) === 'held', 'the other purchase is untouched', status(g, other.id));
 }
 
+section('A hold can be found from its owner (Build 16 audit SEC-14)');
+{
+  const f = fixture(); await limits(f);
+  const a = (await hold(f)).hold, b = (await hold(f)).hold;
+  const idx = await W.DB.get(f.env, 'buyholds', EM);
+  ok(Array.isArray(idx) && idx[0] === b.id && idx[1] === a.id, 'each hold is in its owner’s index, newest first - what the export and erasure walk', idx);
+}
+
 section('Each currency is its own month');
 {
   const f = fixture(); await limits(f, 'USD');

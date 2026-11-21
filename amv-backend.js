@@ -17963,7 +17963,7 @@ const BACKUP_PREFIXES = [
   /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
      and their receipts. A restore without the holds would free money still
      booked against a purchase that may have happened. */
-  'buyhold:', 'buys:',
+  'buyhold:', 'buyholds:', 'buys:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing
@@ -22659,8 +22659,10 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      and the refunded-invoice ledger are keyed by id and kept as the
      financial record, as payouts are. */
   'refundopen', 'refundlast', 'refundauto',
-  /* Their purchase receipts (69-buying.js) - what they bought and where. */
-  'buys',
+  /* Their purchase receipts (69-buying.js) - what they bought and where - and
+     the index of their purchase holds, which are kept by id (Build 16 audit
+     SEC-14): the export follows it to the holds and erasure deletes them. */
+  'buys', 'buyholds',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* Family invitations waiting for this person: who asked, and until when. */
   'faminv',
@@ -22780,6 +22782,16 @@ async function accountExport(request, env) {
     }
     try { const v = await DB.get(env, kind, email); if (v != null) records[kind] = v; }
     catch (e) { noteFailure(kind, e); }
+  }
+
+  /* Each purchase hold the index names, so the export holds every one. */
+  if (records.buyholds && Array.isArray(records.buyholds)) {
+    const holds = [];
+    for (const id of records.buyholds.slice(0, 500)) {
+      try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
+      catch (e) { noteFailure('buyhold', e); }
+    }
+    records.buyhold = holds;
   }
 
   /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
@@ -23575,6 +23587,14 @@ async function _eraseAccount(env, email, opt) {
   /* `fin` is a live credential and `invsnap` is a record of somebody's account
      balances - both are exactly what erasure is for, and neither was listed. */
   const perUserKinds = PER_USER_KINDS;
+  /* Purchase holds are kept by id: found through their index, deleted before
+     the index itself goes (SEC-14). */
+  try {
+    const idx = await DB.get(env, 'buyholds', email);
+    for (const id of (Array.isArray(idx) ? idx : [])) {
+      try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
+    }
+  } catch { _eraseFailed('purchase holds'); }
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding
      otherwise is a legal call rather than an engineering one. It stays until
@@ -45089,6 +45109,7 @@ async function adminRefundDecide(request, env){
 const BUY_HOLD_WINDOW_MS = 30 * 60 * 1000;     // a hold not settled in this long is released
 const BUY_SETTLE_WINDOW_MS = 24 * 3600 * 1000; // a confirmation can still be recorded this late
 const BUY_RECEIPTS_MAX = 100;
+const BUY_HOLDS_INDEX_MAX = 500;
 
 const _buyHost = (s) => {
   const h = String(s || '').trim().toLowerCase();
@@ -45127,7 +45148,13 @@ async function spendHold(request, env){
      leaves either a hold that can be found or nothing booked at all. */
   const base = { id, email:user.email, amount, currency, store, item, at:now,
     ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
-  try { await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 })); }
+  /* Indexed by the person first (Build 16 audit SEC-14): a hold is kept by
+     its id, and without this neither their data export nor erasing their
+     account could find it. */
+  try {
+    await _withKV(env, 'buyholds', user.email, (l) => { l.unshift(id); if(l.length > BUY_HOLDS_INDEX_MAX) l.length = BUY_HOLDS_INDEX_MAX; return true; }, []);
+    await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+  }
   catch (e) {
     audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
     return json({ ok:false, code:'hold_unavailable', error:'AMV could not hold this purchase right now. Nothing was held - try again in a moment.' }, 503);
