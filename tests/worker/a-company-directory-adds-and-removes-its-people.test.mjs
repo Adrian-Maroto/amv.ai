@@ -97,6 +97,12 @@ section('Only the owner turns it on, and only with a proved domain');
   ok(t.scim && t.scim.hash && !JSON.stringify(t).includes(token.split('_').pop()), 'only the token’s hash is kept', t.scim);
   const get = await call('/team/sso', { action: 'get' }, owner);
   ok(get.d.scim && get.d.scim.on && !JSON.stringify(get.d).includes(token.split('_').pop()), 'and it is never shown again', get.d.scim);
+  /* Build 16 audit SEC-12: the team as a member reads it carries neither the
+     directory token's hash nor the company sign-in's sealed secret. */
+  const asMember = JSON.stringify((await call('/team/get', {}, member)).d);
+  const asOwner = JSON.stringify((await call('/team/get', {}, owner)).d);
+  ok(!asMember.includes(t.scim.hash) && !/"sealed"/.test(asMember) && !asOwner.includes(t.scim.hash) && !/"sealed"/.test(asOwner),
+     'the team read shows no hash and no sealed secret, to a member or the owner', asMember.slice(0, 200));
 }
 
 section('A wrong token reaches nothing');

@@ -24024,11 +24024,26 @@ async function teamGet(request, env){
      members the plan is currently covering (AMV-100). */
   const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
   const seated = new Set(_teamSeated(team).map(m => m.email));
-  const out = Object.assign({}, team, {
+  const out = Object.assign(_teamView(team), {
     members: (team.members||[]).map(m => Object.assign({}, m, { seated: seated.has(m.email) })),
     seats: { used: (team.members||[]).length, limit, over: Math.max(0, (team.members||[]).length - limit) },
   });
   return json({ ok:true, team: out });
+}
+/* WHAT A MEMBER IS SHOWN OF THE TEAM RECORD (Build 16 audit SEC-12). The
+   whole record was copied to every member: the company sign-in's sealed
+   client secret, the directory token's hash and the directory's group
+   mapping went to anybody on the team. The company sign-in and directory
+   are now shown as what they are (on or off, which domain, whether it is
+   required), the owner's settings stay on their own screen (/team/sso), and
+   the directory's internal fields are not shown to anybody here. */
+const _TEAM_HIDDEN = new Set(['sso', 'scim', 'scimGroups', 'scimAdminGroup', 'scimOff']);
+function _teamView(team){
+  const out = {};
+  for(const k of Object.keys(team || {})) if(!_TEAM_HIDDEN.has(k)) out[k] = team[k];
+  if(team && team.sso) out.sso = { domain: team.sso.domain || '', verified: !!team.sso.verified, required: !!team.sso.required };
+  if(team && team.scim) out.scim = { on: !team.scimOff };
+  return out;
 }
 async function _teamOf(env, email){
   const tid = await env.AMV_KV.get(`userteam:${email}`);
