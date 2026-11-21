@@ -2639,5 +2639,43 @@
   "bn": "AMV এখন যা কিনেছে তা লোড করতে পারেনি। এর মানে এই নয় যে কিছু কেনা হয়নি।",
   "ta": "AMV வாங்கியவற்றை இப்போது ஏற்ற முடியவில்லை. எதுவும் வாங்கவில்லை என்று இதற்குப் பொருள் இல்லை.",
   "ur": "AMV ابھی اپنی خریداریاں لوڈ نہیں کر سکا۔ اس کا مطلب یہ نہیں کہ کچھ نہیں خریدا گیا۔"
+ },
+ "AMV is not connected to its engine, so nothing was changed.": {
+  "es": "AMV no está conectado a su motor, así que no se cambió nada.",
+  "zh": "AMV 未连接到其引擎，因此没有做任何更改。",
+  "hi": "AMV अपने इंजन से जुड़ा नहीं है, इसलिए कुछ नहीं बदला गया।",
+  "ar": "AMV غير متصل بمحرّكه، لذلك لم يتغيّر شيء.",
+  "pt": "O AMV não está conectado ao seu motor, então nada foi alterado.",
+  "fr": "AMV n’est pas connecté à son moteur, donc rien n’a été modifié.",
+  "de": "AMV ist nicht mit seiner Engine verbunden, daher wurde nichts geändert.",
+  "ja": "AMV がエンジンに接続されていないため、何も変更されていません。",
+  "ru": "AMV не подключён к своему движку, поэтому ничего не изменено.",
+  "ko": "AMV가 엔진에 연결되어 있지 않아 아무것도 변경되지 않았습니다.",
+  "it": "AMV non è collegato al suo motore, quindi non è stato cambiato nulla.",
+  "tr": "AMV motoruna bağlı değil, bu yüzden hiçbir şey değiştirilmedi.",
+  "id": "AMV tidak terhubung ke mesinnya, jadi tidak ada yang diubah.",
+  "vi": "AMV chưa kết nối với công cụ của nó, nên không có gì thay đổi.",
+  "bn": "AMV তার ইঞ্জিনের সাথে যুক্ত নয়, তাই কিছুই পরিবর্তন হয়নি।",
+  "ta": "AMV அதன் இயந்திரத்துடன் இணைக்கப்படவில்லை, எனவே எதுவும் மாற்றப்படவில்லை.",
+  "ur": "AMV اپنے انجن سے منسلک نہیں ہے، اس لیے کچھ نہیں بدلا گیا۔"
+ },
+ "AMV could not confirm whether that took effect. Showing the job as it is now.": {
+  "es": "AMV no pudo confirmar si eso surtió efecto. Se muestra el trabajo tal como está ahora.",
+  "zh": "AMV 无法确认该操作是否生效。正在显示该任务的当前状态。",
+  "hi": "AMV पुष्टि नहीं कर सका कि यह लागू हुआ या नहीं। काम अभी जैसा है वैसा दिखाया जा रहा है।",
+  "ar": "تعذّر على AMV التأكد مما إذا كان ذلك قد نُفّذ. تُعرض المهمة كما هي الآن.",
+  "pt": "O AMV não conseguiu confirmar se isso teve efeito. Mostrando a tarefa como está agora.",
+  "fr": "AMV n’a pas pu confirmer si cela a pris effet. Voici la tâche telle qu’elle est maintenant.",
+  "de": "AMV konnte nicht bestätigen, ob das gewirkt hat. Die Aufgabe wird so gezeigt, wie sie jetzt ist.",
+  "ja": "AMV はそれが反映されたか確認できませんでした。現在のジョブの状態を表示しています。",
+  "ru": "AMV не удалось подтвердить, сработало ли это. Показываем задачу в её текущем состоянии.",
+  "ko": "AMV가 적용 여부를 확인하지 못했습니다. 작업의 현재 상태를 표시합니다.",
+  "it": "AMV non ha potuto confermare se ha avuto effetto. Ecco il lavoro com’è ora.",
+  "tr": "AMV bunun uygulanıp uygulanmadığını doğrulayamadı. İş şu anki haliyle gösteriliyor.",
+  "id": "AMV tidak dapat memastikan apakah itu berlaku. Menampilkan tugas seperti sekarang.",
+  "vi": "AMV không xác nhận được việc đó đã có hiệu lực chưa. Đang hiển thị công việc như hiện tại.",
+  "bn": "AMV নিশ্চিত করতে পারেনি সেটি কার্যকর হয়েছে কিনা। কাজটি এখন যেমন আছে তেমন দেখানো হচ্ছে।",
+  "ta": "அது செயல்பட்டதா என்பதை AMV உறுதிப்படுத்த முடியவில்லை. பணி இப்போது உள்ளபடி காட்டப்படுகிறது.",
+  "ur": "AMV تصدیق نہیں کر سکا کہ آیا یہ نافذ ہوا۔ کام ابھی جیسا ہے ویسا دکھایا جا رہا ہے۔"
  }
 }

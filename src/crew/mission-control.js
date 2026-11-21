@@ -1026,10 +1026,20 @@ async function mcServerJob(arg){
     /* Never redraw as though it worked - the job is still running, and saying
        otherwise is how somebody stops watching something that is still
        spending. */
-    toast((e && e.message === 'not-connected')
-      ? 'AMV is not connected to its engine, so that job could not be changed. It is still running.'
-      : 'That did not work: ' + ((e && e.message) || 'the server refused it') + '. The job is unchanged.',
-      'error', 6500);
+    /* What is KNOWN, and only that (Build 16 audit D16-03). Not connected:
+       nothing was sent, so nothing changed - which says nothing about
+       whether it was running. Refused by the server: unchanged. No answer,
+       or the server failing: the change may or may not have landed, so the
+       job is read back and shown as it really is. */
+    const sure = e && e.message !== 'not-connected' && e.status >= 400 && e.status < 500;
+    if(e && e.message === 'not-connected')
+      toast('AMV is not connected to its engine, so nothing was changed.', 'error', 6500);
+    else if(sure)
+      toast('That did not work: ' + ((e && e.message) || 'the server refused it') + '. The job is unchanged.', 'error', 6500);
+    else {
+      toast('AMV could not confirm whether that took effect. Showing the job as it is now.', 'error', 6500);
+      try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); renderCrewView(); }catch(_){}
+    }
   }
 }
 /* A JOB ANOTHER SERVICE STARTS: its address, asked for again or replaced.
