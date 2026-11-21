@@ -159,6 +159,31 @@ section('Adding an event comes back with a way to take it back, and taking it ba
   ok(sent.some(s => s.startsWith('DELETE ')) && sent.some(s => s.startsWith('GET ')), 'by deleting it and then looking', sent);
 }
 
+section('One ticket takes it back once, however often it is sent (Build 17 audit D17-004)');
+{
+  const r = await act('calendar.create', { title: 'Twice', start: '2026-11-02T12:00:00Z', end: '2026-11-02T13:00:00Z' });
+  const t = r.d.receipt.undo.token;
+  sent.length = 0;
+  const [a, b] = await Promise.all([undo(t), undo(t)]);
+  const deletes = sent.filter(s => s.startsWith('DELETE ')).length;
+  ok(deletes === 1, 'two at once reach the provider once', [deletes, a.status, b.status]);
+  const first = a.status === 200 ? a : b, second = a.status === 200 ? b : a;
+  ok(first.status === 200 && first.d.undone === true, 'one is the taking back', first);
+  ok(second.status === 409 || (second.status === 200 && second.d.repeat === true), 'the other is told it is under way, or what the first was told', second);
+  sent.length = 0;
+  const again = await undo(t);
+  ok(again.status === 200 && again.d.repeat === true && again.d.undone === true && !sent.some(s => s.startsWith('DELETE ')),
+     'sent again later, it is told the same and nothing reaches the provider', [again.status, again.d, sent]);
+  const r2 = await act('calendar.create', { title: 'Busy', start: '2026-11-02T14:00:00Z' });
+  claimsDown = true; sent.length = 0;
+  const busy = await undo(r2.d.receipt.undo.token);
+  claimsDown = false;
+  ok(busy.status === 503 && busy.d.error === 'undo_busy' && !sent.some(s => s.startsWith('DELETE ')),
+     'and when AMV cannot check whether it was used, it is a try-again - never a second run', [busy.status, busy.d]);
+  const later = await undo(r2.d.receipt.undo.token);
+  ok(later.status === 200 && later.d.undone === true, 'which then works', [later.status, later.d]);
+}
+
 section('A take-back the provider accepted and did not do is not "undone"');
 {
   const r = await act('calendar.create', { title: 'Dinner', start: '2026-11-02T19:00:00Z' });

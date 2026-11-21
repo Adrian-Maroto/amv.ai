@@ -391,7 +391,7 @@ function _readinessReport(env, seen) {
         const raw = String((env && env.ALLOWED_ORIGIN) || '');
         const eff = _originOf(raw);
         if (!eff || eff === '*')
-          return 'Cross-origin calls are currently allowed from ANY site, which is the default. Every browser-side control still applies and the server is still the authority, but another site can call this API with a visitor\u2019s credentials in the browser. Pin it to your own origin before launch.';
+          return 'Cross-origin calls are currently allowed from ANY site, which is the default. In this mode no cookie is accepted, so another site\u2019s page cannot use a visitor\u2019s sign-in - it has none to send - but sign-in is kept only by the token AMV\u2019s own page holds, and the renewal cookie that keeps it out of the page\u2019s reach stays off. Pin it to your own origin before launch.';
         const line = 'Browser calls to this API are accepted only from ' + eff
           + '. Anything served from a different host - www. against the bare domain, or your host\u2019s own preview address - is refused by the browser, so check the address people actually use.';
         return raw.trim() === eff ? line

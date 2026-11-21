@@ -503,7 +503,7 @@ async function marketInstall(request, env) {
   if (raw) {
     try {
       JSON.parse(raw);                       // still a listing, not a stray key
-      await _withKV(env, 'market', id, (rec) => {
+      await _withListing(env, id, (rec) => {
         if (rec) rec.installs = (rec.installs || 0) + 1;
       });
     } catch {}
@@ -535,7 +535,10 @@ async function marketDisable(request, env) {
   if (body.id) {
     const id = String(body.id);
     if (!/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
-    const rec = await _withKV(env, 'market', id, (r) => { if (r) { r.hidden = true; r.disabled = { at: Date.now(), reason }; } return r; });
+    if (!(await env.AMV_KV.get(`market:${id}`))) return json({ error: 'There is no listing with that id.', code: 'not_found' }, 404);
+    try { await _listingMarkDown(env, id, 'disabled'); }
+    catch (e) { return json({ error: 'AMV could not record the takedown just now, so nothing was changed. Try again in a moment.', code: 'takedown_unavailable' }, 503); }
+    const rec = await _withListing(env, id, (r) => { if (r) { r.hidden = true; r.disabled = { at: Date.now(), reason }; } return r; });
     if (!rec) return json({ error: 'There is no listing with that id.', code: 'not_found' }, 404);
     try { await _marketCacheBust(env); } catch (e) {}
     out.listing = id;
@@ -560,6 +563,7 @@ async function marketCheck(request, env) {
   for (const id of ids) {
     let it = null; try { it = JSON.parse((await env.AMV_KV.get(`market:${id}`)) || 'null'); } catch (e) { it = null; }
     if (it && it.disabled) disabled.push({ id, reason: it.disabled.reason || '', at: it.disabled.at || 0 });
+    else if (it) { const down = await _listingDown(env, id); if (down && down.disabled) disabled.push({ id, reason: 'Taken down by AMV.', at: 0 }); }
   }
   return json({ ok: true, disabled });
 }

@@ -117,7 +117,14 @@ async function runRenewalSweep(env, now = Date.now()) {
     const limit = Math.max(100, Math.min(SWEEP_SCAN_LIMIT, Math.floor(_opsPerRun(env) * 0.8) - 20));
     while (read < limit) {
       const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, limit - read));
-      read += pg.rows.length;
+      read += pg.rows.length + (pg.unreadable || []).length;
+      /* Counted, kept by name (Build 17 audit D17-005): a plan that would not
+         read was never examined, and the pass says so rather than finishing
+         as if it had seen every paying account. */
+      if ((pg.unreadable || []).length) {
+        pass.unreadable = (+pass.unreadable || 0) + pg.unreadable.length;
+        pass.unreadableIds = (pass.unreadableIds || []).concat(pg.unreadable).slice(0, 50);
+      }
       for (const row of pg.rows) {
         const e = row.value || {};
         if (_planPriceUSD(e.plan, e.custom) <= 0) continue;   // nothing is being paid for
@@ -150,7 +157,15 @@ async function runRenewalSweep(env, now = Date.now()) {
     if (pass.staleCount > stale.length) {
       audit(env, 'renewal_sweep_overflow', { stale: pass.staleCount, kept: stale.length, paid });
     }
-    return await _renewalDecide(env, day, paid, stale, pass.staleCount, truncated);
+    const out = await _renewalDecide(env, day, paid, stale, pass.staleCount, truncated);
+    if (pass.unreadable) {
+      audit(env, 'renewal_sweep_incomplete', { unreadable: pass.unreadable });
+      try { await alertOnce(env, 'renewal_sweep_unreadable', 'THE RENEWAL SWEEP COULD NOT READ ' + pass.unreadable + ' PLAN RECORD(S): '
+        + (pass.unreadableIds || []).slice(0, 5).join(', ') + '. Those accounts were not checked for a lapsed payment today; repair the records '
+        + '(record_corrupt in the audit log names each key).', 12 * 60); } catch (e) { /* logging: it never decides anything */ }
+      return Object.assign({}, out, { complete: false, unreadable: pass.unreadable });
+    }
+    return out;
   } finally { await _releaseClaim(env, 'renewpage', 'tick'); }
 }
 async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {

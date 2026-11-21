@@ -139,33 +139,50 @@ function _renderSpendingPaneNow(pane, redraw){
      nothing, which read as "nothing bought"; and only the first 25 were ever
      shown. Now loading, could-not-load (with Retry), nothing yet and the
      list - all of it, 25 at a time - are four different things on screen. */
+  /* Pages from the server (Build 17 audit B17-008): every receipt, the
+     next page fetched only when somebody asks for more. Each says whether
+     the person's computer saw the order on the store's page - reported, not
+     verified: AMV has no line to the store (B17-006). */
   const _mfBuys = () => {
     const b = $('mf-buys-b'); if(!b) return;
     b.innerHTML = '<p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p>';
-    AMV_API._fetch('/v1/spend/buys',{method:'GET'}).then(async r => {
+    const fetchPage = (cursor) => AMV_API._fetch('/v1/spend/buys' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''),{method:'GET'}).then(async r => {
       const d = await r.json().catch(() => null);
       if(!r.ok || !d || d.ok !== true || !Array.isArray(d.buys)) throw new Error('HTTP ' + r.status);
-      return d.buys;
-    }).then(list => {
-      const box = $('mf-buys-b'); if(!box) return;
-      if(!list.length){ box.innerHTML = '<p class="mf-empty">'+escH(T('Nothing has been bought in AMV’s browser yet.'))+'</p>'; return; }
-      const fmt=(n,c)=>{ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c}).format(+n||0); }catch(e){ return c+' '+n; } };
-      let shown = 25;
-      const draw = () => {
-        box.innerHTML='<table class="mf-tbl"><thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Store</th><th scope="col">Total</th><th scope="col">Order</th></tr></thead><tbody>'+
-          list.slice(0,shown).map(x=>'<tr><td>'+escH(_mfWhen(x.at))+'</td><td>'+escH(x.item||'-')+'</td><td>'+escH(x.store||'-')+'</td><td>'+escH(fmt(x.total,x.currency))
-            +(x.over>0?' <span class="mf-over">'+escH('+'+fmt(x.over,x.currency)+' over approved')+'</span>':'')+'</td><td>'+escH(x.order||'-')+(x.verified?'':' <span class="mf-over">not seen on the page</span>')+'</td></tr>').join('')+'</tbody></table>'
-          + (list.length > shown ? '<button type="button" class="btn bs" id="mf-buys-more">'+escH(T('Show {0} more').replace('{0}', String(Math.min(25, list.length - shown))))+'</button>' : '');
-        on($('mf-buys-more'),'click',()=>{ shown += 25; draw(); });
-      };
-      draw();
-    }).catch(e => {
+      return d;
+    });
+    const fail = (e) => {
       try{ console.error('AMV: could not load the purchase receipts', e); }catch(_){}
       const box = $('mf-buys-b'); if(!box) return;
       box.innerHTML = '<p class="mf-empty">'+escH(T('AMV could not load what it bought just now. This is not the same as nothing bought.'))+'</p>'
         + '<button type="button" class="btn bs" id="mf-buys-retry">'+escH(T('Try again'))+'</button>';
       on($('mf-buys-retry'),'click',_mfBuys);
-    });
+    };
+    fetchPage(null).then(d => {
+      const box = $('mf-buys-b'); if(!box) return;
+      const list = d.buys.slice(); let next = d.next || null;
+      if(!list.length && !next){ box.innerHTML = '<p class="mf-empty">'+escH(T('Nothing has been bought in AMV’s browser yet.'))+'</p>'; return; }
+      const fmt=(n,c)=>{ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c}).format(+n||0); }catch(e){ return c+' '+n; } };
+      let shown = 25;
+      const draw = () => {
+        const more = list.length > shown || !!next;
+        box.innerHTML='<table class="mf-tbl"><thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Store</th><th scope="col">Total</th><th scope="col">Order</th></tr></thead><tbody>'+
+          list.slice(0,shown).map(x=>'<tr><td>'+escH(_mfWhen(x.at))+'</td><td>'+escH(x.item||'-')+'</td><td>'+escH(x.store||'-')+'</td><td>'+escH(fmt(x.total,x.currency))
+            +(x.over>0?' <span class="mf-over">'+escH('+'+fmt(x.over,x.currency)+' over approved')+'</span>':'')+'</td><td>'+escH(x.order||'-')
+            +' <span class="'+(x.seenOnPage?'mf-seen':'mf-over')+'">'+escH(x.seenOnPage?T('seen on the store’s page'):T('not seen on the page'))+'</span></td></tr>').join('')+'</tbody></table>'
+          + (more ? '<button type="button" class="btn bs" id="mf-buys-more">'+escH(T('Show more'))+'</button>' : '');
+        on($('mf-buys-more'),'click',async()=>{
+          shown += 25;
+          if(list.length < shown && next){
+            const btn = $('mf-buys-more'); if(btn) btn.disabled = true;
+            try{ const d2 = await fetchPage(next); list.push(...d2.buys); next = d2.next || null; }
+            catch(e){ return fail(e); }
+          }
+          draw();
+        });
+      };
+      draw();
+    }).catch(fail);
   };
   if($('mf-buys')) _mfBuys();
   on($('mf-accept-terms'),'click',function(){

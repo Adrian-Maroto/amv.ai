@@ -17690,3 +17690,6 @@ html[dir="rtl"] .chome-sug{text-align:right}
 /* A383 - what a Popular list is ranked by, one quiet line above it
    (build 16 audit D16-07). */
 .cc-measure{margin:0 0 var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5;max-width:72ch}
+/* A384 - a receipt the person's computer saw on the store's page (Build 17
+   audit B17-006): reported, quiet, never a "verified" badge. */
+.mf-seen{color:var(--mu);font-size:var(--t-xs)}

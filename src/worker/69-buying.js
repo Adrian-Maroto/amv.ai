@@ -23,8 +23,38 @@
    with the reason, never converted with a guess. */
 const BUY_HOLD_WINDOW_MS = 30 * 60 * 1000;     // a hold not settled in this long is released
 const BUY_SETTLE_WINDOW_MS = 24 * 3600 * 1000; // a confirmation can still be recorded this late
-const BUY_RECEIPTS_MAX = 100;
-const BUY_HOLDS_INDEX_MAX = 500;
+
+/* ONE KEY PER PURCHASE, UNDER THE PERSON (Build 17 audit B17-003, 004, 007,
+   008). A person's purchases used to be found through two lists, each one KV
+   value rewritten on every purchase: read, add, write back. KV answers reads
+   from a cache, so a second purchase could rewrite the list from a copy that
+   did not yet hold the first, and the first vanished; and KV takes about one
+   write a second to a key, so two purchases close together failed the second
+   write after the money had already been closed. Neither list could hold
+   more than its cap either, so export and erasure lost the oldest.
+
+   Now each purchase writes its OWN index key, under a prefix that is the
+   person's, named so the newest sort first: nothing is read back to write
+   it, no two purchases share a key, and a listing of the prefix finds every
+   one of them, page by page. The purchase itself is still its hold record,
+   by id - the receipt is what a settled hold says. */
+const _buyIxPrefix = (email) => 'buyix:' + String(email).toLowerCase() + ':';
+const _buyIxKey = (email, at, id) => _buyIxPrefix(email) + String(1e13 - Math.max(0, Math.floor(+at || 0))).padStart(13, '0') + ':' + id;
+/* A person's hold ids, newest first, a page at a time; then, once the index
+   is exhausted, any from the legacy list not already seen. */
+async function _buyHoldIds(env, email, cursor, limit){
+  const ids = [];
+  if (!cursor || !String(cursor).startsWith('legacy')) {
+    const page = await env.AMV_KV.list({ prefix: _buyIxPrefix(email), cursor: cursor || undefined, limit: Math.max(1, Math.min(1000, limit || 100)) });
+    for (const k of (page.keys || [])) { const id = String(k.name).split(':').pop(); if (/^bh_[a-f0-9]{24}$/.test(id) && !ids.includes(id)) ids.push(id); }
+    if (!page.list_complete) return { ids, next: page.cursor || null };
+  }
+  /* Purchases made before the index existed, from the old list. */
+  let legacy = [];
+  try { const l = await DB.get(env, 'buyholds', email); legacy = Array.isArray(l) ? l.filter(x => /^bh_[a-f0-9]{24}$/.test(String(x))) : []; }
+  catch (e) { throw e; }
+  return { ids: ids.concat(legacy.filter(x => !ids.includes(x))), next: null, legacy: legacy.length };
+}
 
 const _buyHost = (s) => {
   const h = String(s || '').trim().toLowerCase();
@@ -46,14 +76,33 @@ async function spendHold(request, env){
     return json({ error:'That amount cannot be bought here.', code:'bad_amount' }, 400);
   if(!/^[A-Z]{3}$/.test(currency)) return json({ error:'Say which currency the store charges in.', code:'bad_currency' }, 400);
   if(!store || !item) return json({ error:'Say which store and what is being bought.', code:'bad_request' }, 400);
+  /* ONE PURCHASE, ONE HOLD, HOWEVER MANY TIMES IT IS ASKED (Build 17 audit
+     B17-005). Each hold used to get a fresh random id, so the same request
+     sent twice - a retry after an answer that never arrived - held the
+     amount twice. The page names each approved purchase with a key, and the
+     hold's id is made from the person and that key: asked again, the same
+     hold comes back; asked again with different terms, it is refused. */
+  const key = String(body.key || '');
+  if(!/^[A-Za-z0-9_-]{16,80}$/.test(key))
+    return json({ error:'Reload AMV to buy - this page is older than the server.', code:'reload_needed' }, 400);
 
   const limits = await _spendLimits(env, user.email);
   if(currency !== limits.currency)
     return json({ ok:false, code:'currency_mismatch',
       need:'This store charges in ' + currency + ', and your spending limits are in ' + limits.currency + '.',
       message:'Change the currency of your limits in Spending to ' + currency + ' to buy here. AMV does not convert with a guessed rate.' }, 400);
-  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const id = 'bh_' + (await _sha256Hex(user.email + '\n' + key)).slice(0, 24);
   const now = Date.now();
+  const prior = await DB.get(env, 'buyhold', id);
+  if(prior){
+    if(prior.email !== user.email || prior.amount !== amount || prior.currency !== currency || prior.store !== store || prior.item !== item)
+      return json({ ok:false, code:'hold_terms_differ', error:'This purchase was already held with different terms. Start it again.' }, 409);
+    if(prior.status === 'held') return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    if(prior.status === 'refused') return json({ ok:false, repeat:true, code:'refused', error:'This purchase was refused by your Spending limits.' }, 400);
+    if(prior.status !== 'reserving') return json({ ok:false, code:'decided', status:prior.status, error:'This purchase was already ' + prior.status + '.' }, 409);
+    /* 'reserving': the first request may still be booking it. Going on is
+       safe - the booking is named after the hold, so it lands once. */
+  }
   /* THE HOLD IS WRITTEN DOWN BEFORE THE MONEY IS BOOKED (Build 16 audit
      STATE16-07). Booked first, a hold whose record then failed to save was
      money taken from the month with nothing anywhere that named it. Now the
@@ -61,14 +110,16 @@ async function spendHold(request, env){
      the booking is named after the hold so a retry cannot book it twice, and a
      record that cannot be finished closes its own booking - so every failure
      leaves either a hold that can be found or nothing booked at all. */
-  const base = { id, email:user.email, amount, currency, store, item, at:now,
+  const base = { id, email:user.email, amount, currency, store, item, at: prior ? (+prior.at || now) : now,
     ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
   /* Indexed by the person first (Build 16 audit SEC-14): a hold is kept by
      its id, and without this neither their data export nor erasing their
      account could find it. */
   try {
-    await _withKV(env, 'buyholds', user.email, (l) => { l.unshift(id); if(l.length > BUY_HOLDS_INDEX_MAX) l.length = BUY_HOLDS_INDEX_MAX; return true; }, []);
-    await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+    if(!prior){
+      await env.AMV_KV.put(_buyIxKey(user.email, now, id), '1');
+      await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+    }
   }
   catch (e) {
     audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
@@ -135,27 +186,25 @@ async function _buyClose(env, rec, amount, note){
 /* The record, brought up to what the counter says happened. */
 function _buyFinish(rec, note){
   if(note && note.kind === 'settled'){
-    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over, verified:note.verified === true });
+    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over,
+      seenOnPage: note.seenOnPage === true || note.verified === true, verified: false });
   } else Object.assign(rec, { status:'released', releasedAt:(note && note.at) || Date.now() });
   return rec;
 }
+/* WHAT A RECEIPT CAN STAND BEHIND (Build 17 audit B17-006, B17-021). AMV
+   has no line to any store: the order number and total come from the
+   person's own computer, which read them off the store's confirmation page
+   (`seenOnPage`) or did not. That is reported, not verified - nobody at AMV
+   asked the store - so `verified` is false on every receipt until a store's
+   own API is used, and the screen says "seen on the store's page", never
+   "verified". A client saying verified:true is read as what it is: the page
+   check it ran. */
 const _buyReceiptOf = (rec) => ({ id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total:rec.total,
-  currency:rec.currency, order:rec.order, over:rec.over, verified: rec.verified === true });
+  currency:rec.currency, order:rec.order, over:rec.over, seenOnPage: rec.seenOnPage === true || (rec.verified === true && rec.seenOnPage == null),
+  verified: false, source: 'reported' });
 
-async function _buyReceipt(env, email, r){
-  await _withKV(env, 'buys', email, (list) => {
-    const l = Array.isArray(list) ? list : [];
-    /* Once per purchase: a settlement finished again from the counter does
-       not add a second receipt. */
-    if(l.some(x => x && x.id === r.id)) return false;
-    l.unshift(r);
-    /* _withKV saves the list it handed over, so the bound is applied to THAT
-       list - a shorter copy returned from here was never what was saved
-       (Build 16 audit STATE16-10). */
-    if(l.length > BUY_RECEIPTS_MAX) l.length = BUY_RECEIPTS_MAX;
-    return true;
-  }, []);
-}
+/* Receipts are the settled holds, found through the person's index
+   (_buyHoldIds); nothing is appended to a shared list any more. */
 
 async function spendSettle(request, env){
   const user = await requireUser(request, env);
@@ -178,16 +227,23 @@ async function spendSettle(request, env){
      it is the one closing step (above). */
   const held = rec.reserved > 0 ? rec.amount : 0;
   const over = total > rec.amount ? _buyMoney(total - rec.amount) : 0;
-  const note = { kind:'settled', at:Date.now(), total, order, over, verified: body.verified === true };
+  const note = { kind:'settled', at:Date.now(), total, order, over, seenOnPage: body.seenOnPage === true || body.verified === true };
   const end = await _buyClose(env, rec, total - held, note);
   if(end.pending) return json({ ok:false, code:'settle_pending',
     error:'AMV could not record this purchase against your limit yet. Nothing is lost - it will be recorded when you try again.' }, 503);
   _buyFinish(rec, end.note);
   if(over > 0 && !end.replay) audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store });
-  await DB.put(env, 'buyhold', rec.id, rec);
   if(rec.status !== 'settled') return json({ error:'This purchase was already released.', code:'decided', status:rec.status }, 409);
   const receipt = _buyReceiptOf(rec);
-  await _buyReceipt(env, user.email, receipt);
+  /* The money is closed above, on the counter. Writing the record can still
+     fail - KV taking one write a second to a key among them - and that must
+     not read as the purchase failing: it is counted, and settling again
+     finishes the record from the counter (the close replays its note). */
+  try { await DB.put(env, 'buyhold', rec.id, rec); }
+  catch (e) {
+    audit(env, 'buy_record_pending', { by:user.email, id:rec.id, why:String((e && e.message) || e).slice(0, 120) });
+    return json({ ok:true, receipt, recordPending:true }, 202);
+  }
   if(!end.replay){
     audit(env, 'buy_settled', { by:user.email, id:rec.id, total:rec.total, currency:rec.currency, store:rec.store, over:rec.over });
     await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total:rec.total, currency:rec.currency });
@@ -211,14 +267,37 @@ async function spendRelease(request, env){
   const replay = end.replay;
   _buyFinish(rec, end.note);
   await DB.put(env, 'buyhold', rec.id, rec);
-  if(rec.status === 'settled') await _buyReceipt(env, user.email, _buyReceiptOf(rec));
   if(!replay) audit(env, 'buy_released', { by:user.email, id:rec.id });
   return json({ ok:true, status:rec.status });
 }
 
+/* GET /v1/spend/buys?cursor=  Every receipt, a page at a time (Build 17 audit
+   B17-008): the settled holds through the person's index, then any from the
+   legacy list not already shown. A purchase record that cannot be read makes
+   the whole answer "could not load" (503) - never a shorter list that looks
+   complete, and never an empty one that looks like nothing was bought. */
 async function spendBuys(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
-  const list = await DB.get(env, 'buys', user.email);
-  return json({ ok:true, buys: Array.isArray(list) ? list : [] });
+  const url = new URL(request.url);
+  const cursor = String(url.searchParams.get('cursor') || '').slice(0, 400) || null;
+  let page, legacyList = [];
+  try {
+    page = await _buyHoldIds(env, user.email, cursor, 200);
+    if (!page.next) { const l = await DB.get(env, 'buys', user.email); legacyList = Array.isArray(l) ? l : []; }
+  } catch (e) {
+    return json({ ok:false, code:'receipts_unavailable', error:'AMV could not read your purchases just now.' }, 503, { 'Retry-After':'5' });
+  }
+  const buys = [];
+  for (const id of page.ids) {
+    let rec;
+    try { rec = await DB.get(env, 'buyhold', id); }
+    catch (e) { return json({ ok:false, code:'receipts_unavailable', error:'AMV could not read your purchases just now.' }, 503, { 'Retry-After':'5' }); }
+    if (rec && rec.email === user.email && rec.status === 'settled') buys.push(_buyReceiptOf(rec));
+  }
+  /* Receipts written to the old list before the index existed. */
+  for (const r of legacyList) if (r && r.id && !buys.some(b => b.id === r.id))
+    buys.push(Object.assign({}, r, { seenOnPage: r.seenOnPage === true || r.verified === true, verified: false, source: 'reported' }));
+  buys.sort((a, b) => (+b.at || 0) - (+a.at || 0));
+  return json({ ok:true, buys, next: page.next || null });
 }

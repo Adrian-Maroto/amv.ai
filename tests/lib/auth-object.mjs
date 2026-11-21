@@ -17,9 +17,9 @@ export function authObjectOp(name, body, store = authObjectOp._store) {
   const floor = Number(body.floor) || 0;
   let out;
   if (body.op === 'authGet') out = { seeded: rec.seeded, epoch: rec.epoch, ended: !!(body.sid && rec.ended.has(body.sid)) };
-  else if (body.op === 'authSeed') { rec.epoch = Math.max(rec.epoch, floor); rec.seeded = true; out = { epoch: rec.epoch }; }
-  else if (body.op === 'authRevokeAll') { rec.epoch = Math.max(rec.epoch, floor) + 1; rec.seeded = true; rec.ended.clear(); out = { epoch: rec.epoch }; }
-  else if (body.op === 'authEndSession') { rec.epoch = Math.max(rec.epoch, floor); rec.seeded = true; if (body.sid) rec.ended.add(body.sid); out = { ok: true, epoch: rec.epoch }; }
+  else if (body.op === 'authSeed') { rec.epoch = Math.max(rec.epoch, floor); rec.seeded = true; out = { seeded: true, epoch: rec.epoch, ended: false }; }
+  else if (body.op === 'authRevokeAll') { rec.epoch = Math.max(rec.epoch, floor) + 1; rec.seeded = true; rec.ended.clear(); out = { seeded: true, epoch: rec.epoch, revoked: true }; }
+  else if (body.op === 'authEndSession') { rec.epoch = Math.max(rec.epoch, floor); rec.seeded = true; if (body.sid) rec.ended.add(body.sid); out = { seeded: true, epoch: rec.epoch, ended: true, sid: String(body.sid || '').slice(0, 64) }; }
   else return null;
   store.set(name, rec);
   return new Response(JSON.stringify(out));
@@ -108,9 +108,11 @@ export function withAuthOps(ns) {
           const k = 'cl|' + String(id); const held = store.get(k); const now = Date.now();
           const out = (x) => new Response(JSON.stringify(x));
           if (b.op === 'claim') {
-            if (held && held.until > now) return out({ claimed: false, until: held.until });
+            /* As the object answers since the Build 17 audit: a refusal says
+               when the claim was made and what it was for. */
+            if (held && held.until > now) return out({ claimed: false, until: held.until, at: held.at, note: held.note });
             const owner = 'o' + Math.random().toString(36).slice(2);
-            store.set(k, { until: now + Math.max(1000, Number(b.ttlMs) || 30000), owner });
+            store.set(k, { until: now + Math.max(1000, Number(b.ttlMs) || 30000), owner, at: now, note: typeof b.note === 'string' ? b.note.slice(0, 16) : '' });
             return out({ claimed: true, owner });
           }
           if (!held) return out({ released: true, wasHeld: false });

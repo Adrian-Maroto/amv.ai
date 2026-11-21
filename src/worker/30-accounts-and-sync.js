@@ -621,8 +621,11 @@ async function authLogin(request, env) {
      other side of this one. */
   {
     const lim = await limitAction(env, `loginip:${ip}`, 30, 600);
+    /* Undecided admits a few from this address on this instance, then
+       refuses (Build 17 audit D17-008): the window of unbounded hashing the
+       note above accepted is now a bounded one. */
     if (!lim.ok) {
-      if (lim.unavailable) audit(env, 'login_limit_unavailable', {});
+      if (lim.unavailable && _localAdmit('loginip:' + ip, 10)) audit(env, 'login_limit_unavailable', {});
       else {
         audit(env, 'auth_fail', { email: em, reason: 'ip_throttled' });
         return json({ error: 'Too many sign-in attempts from here. Give it a moment and try again.',

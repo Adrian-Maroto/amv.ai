@@ -158,7 +158,7 @@ async function _sessEnd(env, email, sid) {
   if (env.AMV_COUNTER) {
     try {
       const r = await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
-      if (r && r.ok === false) throw new Error('the revocation object refused the ending');
+      if (!(r && r.ended === true && r.sid === String(sid).slice(0, 64))) throw new Error('the revocation object did not confirm the ending');
       return { ended: true };
     } catch (e) {
       audit(env, 'session_end_slow', { email, error: String((e && e.message) || e).slice(0, 120) });
@@ -203,6 +203,10 @@ async function _revokeOrSay(env, email, where) {
 }
 
 async function revokeUserTokens(env, email) {
+  /* Whether the revocation object took it (Build 17 audit D17-003): the KV
+     epoch below is raised either way, but only the object's word is
+     confirmation that every sign-in has ended. */
+  let confirmed = false;
   if (env.AMV_COUNTER) {
     /* Raised in the object first - that is the moment it takes effect - then
        copied to KV, which is what the fallback reads, so the two agree. If
@@ -212,8 +216,8 @@ async function revokeUserTokens(env, email) {
     let next = floor + 1;
     try {
       const r = await counter(env, _authName(email), { op: 'authRevokeAll', floor, strict: true });
-      if (!r || typeof r.epoch !== 'number') throw new Error('the revocation object answered without an epoch');
-      next = r.epoch;
+      if (!r || typeof r.epoch !== 'number' || r.revoked !== true) throw new Error('the revocation object did not confirm the revocation');
+      next = r.epoch; confirmed = true;
     } catch (e) {
       audit(env, 'revocation_degraded', { email, where: 'revoke', error: String((e && e.message) || e).slice(0, 120) });
     }
@@ -221,6 +225,8 @@ async function revokeUserTokens(env, email) {
   } else {
     const cur = await _tokenEpochKV(env, email);
     await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
+    /* No object bound (a development machine): KV is the only authority. */
+    confirmed = true;
   }
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
@@ -232,6 +238,7 @@ async function revokeUserTokens(env, email) {
   try { const r = await _agentJarForgetAll(env, email); if (r && !r.removed) audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins', queued: true }); }
   catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins' }); }
   try { await _pushForgetAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'notifications' }); }
+  return { confirmed };
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────

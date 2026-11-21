@@ -125,31 +125,59 @@ async function connUndo(request, env){
 
   const blocked = await guardAction(env, 'connact:w:' + user.email, 10, 100, 'actions on your connected accounts');
   if (blocked) return blocked;
+  /* ONE TICKET, ONE TAKING-BACK (Build 17 audit D17-004). A signature and an
+     expiry say the ticket is genuine, not that it is unused: the same ticket
+     sent twice - a double tap, a retry after a lost answer - took the action
+     back twice at the provider. It is claimed once, by the id inside it,
+     before anything reaches the provider; whoever comes second is given what
+     the first was told, and if the first is still working, told to wait. A
+     claim store that cannot answer is a try-again, never a second run. */
+  const tid = String(t.jti || '');
+  if (!tid) return json({ error: 'undo_expired', message: 'That can no longer be undone from AMV. Change it in the account itself.' }, 410);
+  const once = await _claimOnceDetail(env, 'undotkt', tid, Math.ceil(ACT_UNDO_TTL_MS / 1000) + 3600);
+  if (once.unavailable) return json({ error: 'undo_busy', message: 'AMV could not check that just now. Try again in a moment.' }, 503, { 'Retry-After': '5' });
+  if (!once.claimed) {
+    let prior = null;
+    try { prior = _safeJson(await env.AMV_KV.get('undoout:' + tid)); } catch (e) { prior = null; }
+    if (prior && prior.status) return json(Object.assign({ repeat: true }, prior.body || {}), prior.status);
+    return json({ error: 'undo_in_progress', message: 'That is already being taken back. Look in the account in a moment.' }, 409);
+  }
+  /* What this ticket's one run ended as, so a repeat is told the same. */
+  const said = async (status, body) => {
+    try { await env.AMV_KV.put('undoout:' + tid, JSON.stringify({ status, body }), { expirationTtl: Math.ceil(ACT_UNDO_TTL_MS / 1000) + 3600 }); } catch (e) { /* a repeat is then told the run is in progress, never run again */ }
+    return json(body, status);
+  };
   const got = await connUse(env, user.email, spec.undo.need || spec.need, 'undo:' + name, { attended: true });
-  if (!got.ok) return json({ error: got.code, message: 'That connection cannot take this back right now. Change it in the account itself.' }, 409);
+  if (!got.ok) {
+    /* Nothing reached the provider: the ticket is given back for a later try. */
+    try { await _releaseClaim(env, 'undotkt', tid); } catch (e) { /* the claim lapses with the ticket */ }
+    return json({ error: got.code, message: 'That connection cannot take this back right now. Change it in the account itself.' }, 409);
+  }
 
   let v;
   try { v = await spec.undo.run(got.token, t.ref || {}); }
   catch (e) {
     await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_failed', { by: user.email, action: name, error: String((e && e.message) || e).slice(0, 120) });
-    return json({ error: 'undo_failed', message: 'That could not be undone. Nothing else was changed.' }, 502);
+    /* The provider may or may not have done it; this ticket is not run again
+       blind. The account itself is the place to look. */
+    return said(502, { error: 'undo_failed', message: 'That could not be confirmed as undone. Look in the account itself before trying anything else.' });
   }
   /* Somebody (or something) changed it after AMV did. Putting AMV's "before"
      back now would throw their work away, so it is refused and said. */
   if (v === 'moved') {
     await _actCount(env, 'undo_refused', user.email);
     audit(env, 'action_undo_refused', { by: user.email, action: name });
-    return json({ error: 'changed_since', message: 'It has been changed since AMV did it, so AMV left it alone. Change it in the account itself.' }, 409);
+    return said(409, { error: 'changed_since', message: 'It has been changed since AMV did it, so AMV left it alone. Change it in the account itself.' });
   }
   if (v === false) {
     await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_not_confirmed', { by: user.email, action: name });
-    return json({ error: 'not_confirmed', message: 'The account said yes, but when AMV checked, it was still there. Look in the account.' }, 502);
+    return said(502, { error: 'not_confirmed', message: 'The account said yes, but when AMV checked, it was still there. Look in the account.' });
   }
   await _actCount(env, 'undone', user.email);
   audit(env, 'action_undone', { by: user.email, action: name, verified: v === true });
-  return json({ ok: true, action: name, undone: true, verified: v === true ? true : null,
+  return said(200, { ok: true, action: name, undone: true, verified: v === true ? true : null,
     message: v === true ? 'Undone.' : 'Asked to undo it, but AMV could not check afterwards. Look in the account.' });
 }
 

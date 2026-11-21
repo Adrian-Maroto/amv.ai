@@ -103,7 +103,11 @@ section('A deleted record is not answered from a stale copy when the authority c
   const e = environment(); e._doFault = async (n, b) => b.op === 'revGet' ? json({ unavailable: true }) : undefined;
   let threw = null; try { await W._revRead(e, 'data', 'deleted@example.com', JSON.stringify({ _rev: 1, chats: ['previously-deleted-content'] })); } catch (x) { threw = x; }
   ok(threw && threw.name === 'RecordSettlingError', 'refused as a short wait, never the old content', threw && threw.name);
-  ok(await W._revRead(e, 'data', 'nobody@example.com', null) === null, 'with nothing stored, absent is still an answer');
+  /* Reversed by the Build 17 audit (B17-002): KV answers a miss from a
+     cache, so nothing stored HERE is not proof nothing was committed
+     elsewhere. With the authority unreachable, absent is unknown too. */
+  let t2 = null; try { await W._revRead(e, 'data', 'nobody@example.com', null); } catch (x) { t2 = x; }
+  ok(t2 && t2.name === 'RecordSettlingError', 'and with nothing stored here, absent is not an answer either - a short wait', t2 && t2.name);
 }
 
 section('One transaction id is one transaction (R08, R09, R16)');

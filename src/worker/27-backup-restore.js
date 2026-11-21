@@ -83,7 +83,10 @@ const BACKUP_PREFIXES = [
   /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
      and their receipts. A restore without the holds would free money still
      booked against a purchase that may have happened. */
-  'buyhold:', 'buyholds:', 'buys:',
+  'buyhold:', 'buyholds:', 'buys:', 'buyix:',
+  /* A company sign-in's subject, so a restore keeps refusing a reassigned
+     mailbox (Build 17 audit D17-001). */
+  'ssosub:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing
@@ -171,6 +174,7 @@ const BACKUP_PREFIXES = [
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
   'autodone:', 'autotry:',  // a run's finished mark and its crash count: three days, about a run already over
+  'undoout:',               // an undo ticket's one outcome: a day, about a ticket already spent (Build 17 D17-004)
   'fgoal:',                 // which first goal somebody chose: an owner's figure that expires, nothing to restore
   /* Sign-in in flight: a passkey challenge (five minutes), a second-step
      challenge (ten), and an authenticator app half set up, its secret sealed

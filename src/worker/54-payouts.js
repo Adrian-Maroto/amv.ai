@@ -665,7 +665,7 @@ async function marketRate(request, env) {
      copy read before a sale or a status change landed, a rating put the old
      record back - so an item that had just sold went back on sale because
      somebody rated it. */
-  await _withKV(env, 'market', id, (rec) => {
+  await _withListing(env, id, (rec) => {
     if (!rec) return null;
     rec.rating = rating;
     rec.ratings = vals.length;

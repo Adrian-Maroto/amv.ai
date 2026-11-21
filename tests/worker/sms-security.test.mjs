@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
+import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -59,6 +60,39 @@ section('AMV-033: phone binding requires SMS verification');
   d = await jget(r);
   ok(r.status === 200 && d.verified === true, 'the correct code binds the phone');
   ok([...store.keys()].some(k => k.startsWith('sms:phone:')), 'the phone is now linked');
+  globalThis.fetch = realFetch;
+}
+
+/* ── Build 17 audit B17-010: a stale copy cannot hand back guesses ──────── */
+section('Guesses are counted where an older copy of the record cannot undo the count');
+{
+  const counts = new Map();
+  /* KV here answers with the copy as first written - what another region can
+     do for up to a minute - so the record's own attempt count never moves. */
+  let frozen = null;
+  const env = mkEnv(Object.assign({}, twilio, {
+    AMV_COUNTER: withAuthOps({ idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
+      const b = JSON.parse(init.body);
+      if (b.op === 'incr') { counts.set(n, (counts.get(n) || 0) + (b.amount || 1)); return new Response(JSON.stringify({ value: counts.get(n) })); }
+      if (b.op === 'claim') return new Response(JSON.stringify({ claimed: true, owner: 'o' }));
+      if (b.op === 'release') return new Response(JSON.stringify({ released: true }));
+      return new Response(JSON.stringify({ allowed: true, value: 0 }));
+    } }) }),
+  }));
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => (k.startsWith('smsverify:') && frozen) ? frozen : realGet(k);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+  const t = await tok(env, 'carol@x.com');
+  await W.smsRegister(jreq({ phone: '+15557654321' }, t), env);
+  const k = [...store.keys()].find(x => x.startsWith('smsverify:'));
+  frozen = store.get(k);
+  const code = JSON.parse(frozen).code;
+  const wrong = code === '000000' ? '111111' : '000000';
+  const statuses = [];
+  for (let i = 0; i < 8; i++) statuses.push((await W.smsRegister(jreq({ phone: '+15557654321', code: wrong }, t), env)).status);
+  const right = await W.smsRegister(jreq({ phone: '+15557654321', code }, t), env);
+  ok(statuses.slice(-1)[0] === 429 && right.status === 429, 'after the allowed guesses even the right code is refused, though the copy read says no attempts', [statuses, right.status]);
   globalThis.fetch = realFetch;
 }
 

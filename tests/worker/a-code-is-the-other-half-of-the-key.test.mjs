@@ -309,8 +309,19 @@ section('A sender the provider refuses outright locks nobody out - and says so')
   provider = 'refuse';
   const s = await call(env, '/auth/signup', { email: 'refused@example.com', name: 'R', password: PW });
   ok(!!s.d.token && !s.d.needsCode, 'sign-up finishes without a code that cannot be sent', s.d);
+  /* Build 17 audit D17-007: this account is under a run of wrong passwords
+     (mkEnv's default), which is the one case the code exists for - so it is
+     NOT skipped any more because the sender is refused. It waits, says why,
+     and points at the factors that still work. */
   const l = await call(env, '/auth/login', { email: 'refused@example.com', password: PW });
-  ok(!!l.d.token, 'and so does signing in on a new device', l.d);
+  ok(!l.d.token && l.status === 503 && l.d.code === 'signin_check_unavailable', 'an account under wrong-password attack is not let in on the password alone', { status: l.status, d: l.d });
+  /* And everybody else signs in as usual, which is what the owner needed:
+     the sender being refused locks out only the accounts a code was for. */
+  const calm = mkEnv({}, { attacked: false });
+  provider = 'refuse';
+  await call(calm, '/auth/signup', { email: 'calm@example.com', name: 'C', password: PW });
+  const lc = await call(calm, '/auth/login', { email: 'calm@example.com', password: PW });
+  ok(!!lc.d.token, 'and an account not under attack signs in on a new device as usual', lc.d);
   const bad = await call(env, '/auth/login', { email: 'refused@example.com', password: 'Wrong-Passw0rd!' });
   ok(!bad.d.token && bad.status >= 400, 'the password is still checked', bad.status);
   const rd = await W.default.fetch(new Request('https://api.amv.test/admin/readiness', { headers: { Authorization: 'Bearer a', 'CF-Connecting-IP': '7.7.7.7' } }), env, ctx);

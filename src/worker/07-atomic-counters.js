@@ -138,13 +138,18 @@ export class AMVCounter {
     if (op === 'claim') {
       const now = Date.now();
       const held = await this.state.storage.get('claim');
-      if (held && held.until > now) return json({ claimed: false, until: held.until });
+      /* When it was taken, and the taker's one-word note, come back with a
+         refusal (Build 17 audit D17-006): "used moments ago by a renewal"
+         and "used by a sign-out" are facts this object holds, and reading
+         them from a second store that may not have caught up turned two
+         tabs renewing together into a theft verdict. */
+      if (held && held.until > now) return json({ claimed: false, until: held.until, at: held.at || 0, note: held.note || '' });
       const ttl = Math.max(1000, Number(body.ttlMs) || 30000);
       /* AMV-013: WHO HOLDS IT, NOT JUST THAT IT IS HELD.
          A claim carries an owner token so a release can prove it is giving back
          the lock it took. See the release below for what that stops. */
       const owner = crypto.randomUUID();
-      await this.state.storage.put('claim', { until: now + ttl, owner });
+      await this.state.storage.put('claim', { until: now + ttl, owner, at: now, note: typeof body.note === 'string' ? body.note.slice(0, 16) : '' });
       await this.state.storage.setAlarm(now + ttl + 1000);
       return json({ claimed: true, until: now + ttl, owner });
     }
@@ -348,6 +353,11 @@ export class AMVCounter {
         else a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
       }
       await this.state.storage.put('auth', a);
+      /* Each write answers in its own words (Build 17 audit B17-001): an
+         ending names the session it ended, a revocation says it revoked, so
+         the caller can tell a committed change from any 200 with a body. */
+      if (op === 'authEndSession') return json({ seeded: true, epoch: a.epoch, ended: true, sid: String(body.sid || '').slice(0, 64) });
+      if (op === 'authRevokeAll') return json({ seeded: true, epoch: a.epoch, revoked: true });
       return json({ seeded: true, epoch: a.epoch, ended: false });
     }
     if (op === 'get') {
@@ -469,6 +479,23 @@ async function counter(env, name, payload) {
           throw new Error('counter answered without a valid committed revision');
         if (['revCommit', 'revReset'].includes(payload.op) && typeof out.ok !== 'boolean')
           throw new Error('counter answered without a commit decision');
+        /* THE SIGN-IN AUTHORITY ANSWERS IN ITS OWN SHAPE OR NOT AT ALL
+           (Build 17 audit B17-001). A 200 with {} used to read as "the
+           session ended", though nothing was written. Each operation must
+           come back with exactly what it did; anything else is the object not
+           answering, and the caller treats it as unconfirmed. */
+        if (String(payload.op || '').startsWith('auth')) {
+          const epochOk = Number.isSafeInteger(out.epoch) && out.epoch >= 0;
+          const floor = Math.max(0, Math.floor(Number(payload.floor) || 0));
+          if (payload.op === 'authGet' && !(typeof out.seeded === 'boolean' && epochOk && typeof out.ended === 'boolean'))
+            throw new Error('counter answered a sign-in read without its state');
+          if (payload.op === 'authSeed' && !(out.seeded === true && epochOk && out.epoch >= floor))
+            throw new Error('counter answered a seed without committing it');
+          if (payload.op === 'authEndSession' && !(out.seeded === true && epochOk && out.ended === true && out.sid === String(payload.sid || '').slice(0, 64)))
+            throw new Error('counter answered a session ending without confirming it');
+          if (payload.op === 'authRevokeAll' && !(out.seeded === true && epochOk && out.revoked === true && out.epoch > floor))
+            throw new Error('counter answered a revocation without confirming it');
+        }
         return out;
       } finally { if (timer) clearTimeout(timer); }
     }
@@ -802,6 +829,25 @@ async function _nonEssentialWrite(env, what) {
   return true;
 }
 
+/* WHEN THE LIMITER CANNOT ANSWER, A SMALL LOCAL ONE DOES (Build 17 audit
+   D17-008). A sign-in challenge is not a session, so refusing every one
+   while the shared limiter is down would turn a storage blip into "nobody can
+   sign in" - but letting every one through made an outage an open door for
+   unlimited challenges and identity-provider traffic. This instance admits
+   `max` per key per minute on its own and refuses the rest. Per instance, so
+   it is a bound on abuse, not a precise count; bounded in size, so a flood of
+   keys cannot grow it. */
+const _LOCAL_ADMIT = new Map();
+function _localAdmit(key, max) {
+  const now = Date.now(), win = Math.floor(now / 60000);
+  const k = String(key || '').slice(0, 200);
+  let e = _LOCAL_ADMIT.get(k);
+  if (!e || e.win !== win) { e = { win, n: 0 }; }
+  e.n++;
+  _LOCAL_ADMIT.delete(k); _LOCAL_ADMIT.set(k, e);
+  while (_LOCAL_ADMIT.size > 5000) _LOCAL_ADMIT.delete(_LOCAL_ADMIT.keys().next().value);
+  return e.n <= Math.max(1, max | 0);
+}
 async function limitAction(env, key, perMin, perDay = 0) {
   const minName = `act:${key}:${Math.floor(Date.now() / 60000)}`;
   const minRes = await counter(env, minName, { op: 'rateCheck', limit: perMin, windowMs: 60000 });

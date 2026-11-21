@@ -157,7 +157,7 @@ section('Only what the store’s page confirms is Bought');
   await page.evaluate(() => { window.__s.sent = []; });
   let r = await shop('run', 'confirm_purchase', { order: 'A-99999', total: 1234.5, currency: 'EUR' });
   let sent = await page.evaluate(() => window.__s.sent.slice());
-  ok(sent[0] && sent[0].body.verified === false, 'a declined page with an invented order is recorded as not seen', sent);
+  ok(sent[0] && sent[0].body.seenOnPage === false && !('verified' in sent[0].body), 'a declined page with an invented order is recorded as not seen', sent);
   ok(!/Bought/.test(r.render || '') && /Not confirmed/.test(r.render || '') && /NOT confirmed/.test(r.text), 'and is never shown as Bought', (r.render || '').slice(0, 160));
   /* Approved again, and this time the store confirms it. */
   await setPage(CHECKOUT);
@@ -166,7 +166,7 @@ section('Only what the store’s page confirms is Bought');
   await page.evaluate(() => { window.__s.sent = []; });
   r = await shop('run', 'confirm_purchase', { order: 'A-77812', total: 1234.5, currency: 'EUR' });
   sent = await page.evaluate(() => window.__s.sent.slice());
-  ok(r.ok && sent[0].path === '/v1/spend/settle' && sent[0].body.verified === true && sent[0].body.order === 'A-77812', 'seen on the page, and recorded as seen', sent);
+  ok(r.ok && sent[0].path === '/v1/spend/settle' && sent[0].body.seenOnPage === true && sent[0].body.order === 'A-77812', 'seen on the page, and recorded as seen', sent);
   ok(/class="chat-buy done"/.test(r.render || '') && /Bought/.test(r.render || ''), 'with a Bought receipt in chat', (r.render || '').slice(0, 120));
 }
 

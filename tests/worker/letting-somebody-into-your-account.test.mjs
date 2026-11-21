@@ -240,17 +240,26 @@ section('And it stops serving on a D1 deployment too, which is where it did not'
       return {
         bind(...args) {
           return {
+            /* As D1 answers: the row with its stamp, and how many rows a write changed. */
             async first() {
-              if (/SELECT json FROM kv/.test(q)) {
+              if (/SELECT json(, updated_at)? FROM kv/.test(q)) {
                 const v = rows.get(args[0] + ':' + args[1]);
-                return v ? { json: v } : null;
+                return v ? { json: v.json, updated_at: v.at } : null;
               }
               return null;
             },
             async run() {
-              if (/INSERT INTO kv/.test(q)) rows.set(args[0] + ':' + args[1], args[2]);
-              if (/DELETE FROM kv/.test(q)) rows.delete(args[0] + ':' + args[1]);
-              return {};
+              let changes = 0;
+              if (/INSERT INTO kv/.test(q)) {
+                const k = args[0] + ':' + args[1];
+                if (!(/DO NOTHING/.test(q) && rows.has(k))) { rows.set(k, { json: args[2], at: args[3] }); changes = 1; }
+              }
+              if (/^UPDATE kv SET json=\?, updated_at=\? WHERE kind=\? AND id=\? AND updated_at=\?/.test(q)) {
+                const k = args[2] + ':' + args[3]; const cur = rows.get(k);
+                if (cur && cur.at === args[4]) { rows.set(k, { json: args[0], at: args[1] }); changes = 1; }
+              }
+              if (/DELETE FROM kv/.test(q)) { changes = rows.delete(args[0] + ':' + args[1]) ? 1 : 0; }
+              return { meta: { changes } };
             },
             async all() { return { results: [] }; },
           };

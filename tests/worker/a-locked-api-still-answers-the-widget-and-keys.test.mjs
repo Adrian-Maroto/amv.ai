@@ -66,6 +66,14 @@ await seed(locked);
   ok(t.acao === SITE && t.creds === 'true', 'and a session token is not mistaken for an API key', t);
 }
 
+section('Locked: a neighbour of the site is still a stranger (Build 17 audit B17-031)');
+{
+  for (const o of ['https://evil.amv.example', 'https://amv.example.attacker-blog.example', 'http://amv.example', 'https://amv.example:8443', 'null']) {
+    const r = await hit(locked, 'POST', '/v1/entitlement', { origin: o });
+    ok(r.acao === SITE && r.acao !== o, 'answered as the site only, so ' + o + ' cannot read it', r);
+  }
+}
+
 section('Locked: the widget still answers on the customer’s site');
 {
   const cfg = await hit(locked, 'GET', '/v1/widget/config-public?k=pk_corswidget', { origin: THEIRS });

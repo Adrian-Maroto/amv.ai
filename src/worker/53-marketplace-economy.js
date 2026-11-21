@@ -489,6 +489,37 @@ async function _withKV(env, name, key, mutate, empty, keepFor) {
     mutate);
 }
 
+/* A TAKEDOWN IS KEPT WHERE AN OLDER COPY CANNOT UNDO IT (Build 17 audit
+   B17-010). A listing is one KV record that counters write whole - an install,
+   a sale, a rating - and the lock that serialises them reads a KV copy, which
+   in another region can be a minute old. Read from before a takedown, a
+   counter bump wrote the listing back without `hidden`, and a scam that had
+   been taken down was on sale again with nothing to say so. Nothing un-hides a
+   listing on purpose, so the takedown is also counted in the atomic object,
+   and every write of a listing puts it back. A listing whose state could not
+   be read keeps what the copy says - a count is not worth refusing a sale. */
+async function _listingMarkDown(env, id, why) {
+  await counter(env, (why === 'reported' ? 'mkthide:' : 'mktdown:') + id, { op: 'incr', amount: 1, strict: true });
+}
+async function _listingDown(env, id) {
+  try {
+    const [d, h] = await Promise.all([counter(env, 'mktdown:' + id, { op: 'get' }), counter(env, 'mkthide:' + id, { op: 'get' })]);
+    return { disabled: +(d && d.value) > 0, hidden: +(d && d.value) > 0 || +(h && h.value) > 0 };
+  } catch (e) { return null; }
+}
+async function _withListing(env, id, mutate) {
+  const down = await _listingDown(env, id);
+  return _withKV(env, 'market', id, (rec) => {
+    const out = mutate(rec);
+    if (rec && down && down.hidden && !rec.hidden) {
+      rec.hidden = true;
+      if (!down.disabled) { rec.hiddenReason = rec.hiddenReason || 'reported'; rec.hiddenAt = rec.hiddenAt || Date.now(); }
+    }
+    if (rec && down && down.disabled && !rec.disabled) rec.disabled = { at: Date.now(), reason: 'Taken down by AMV.' };
+    return out;
+  });
+}
+
 /* AMV-202: A LOCK ONLY HOLDS IF EVERY WRITER TAKES IT.
 
    setEntitlement has run under the ent record lock since AMV-196, which stops
@@ -651,7 +682,8 @@ async function marketBuy(request, env) {
      seller had taken down or one hidden after reports could still be paid for
      by anybody holding its id or an old link - a scam taken down went on
      taking money from everybody who already had the link. */
-  if ((it.status && it.status !== 'active') || it.hidden || (it.plugin && _mktPluginScan(it.plugin).refuse))
+  const down = await _listingDown(env, id);
+  if ((it.status && it.status !== 'active') || it.hidden || (down && down.hidden) || (it.plugin && _mktPluginScan(it.plugin).refuse))
     return json({ error: 'This listing is not on sale right now, so it cannot be bought. Nothing has been charged.', code: 'not_on_sale' }, 409);
 
   if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
@@ -949,7 +981,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, c
     /* AMV-204: the sale is recorded on the listing under the lock. This is the
        write a visitor's page view used to put back, which is how an item that
        had sold went back on sale. */
-    await _withKV(env, 'market', itemId, (rec) => {
+    await _withListing(env, itemId, (rec) => {
       if (!rec) return null;
       rec.sales = (rec.sales || 0) + 1; rec.installs = (rec.installs || 0) + 1;
       if (/^usr_/.test(itemId)) rec.status = 'sold';
@@ -1091,7 +1123,7 @@ async function _reverseSaleWork(env, rec, reason) {
   try {
     const it = await _getListing(env, rec.itemId);
     if (it) {
-      await _withKV(env, 'market', rec.itemId, (cur) => {
+      await _withListing(env, rec.itemId, (cur) => {
         if (!cur) return null;
         cur.sales = Math.max(0, (cur.sales || 1) - 1);
         if (/^usr_/.test(rec.itemId) && cur.status === 'sold') cur.status = 'active';

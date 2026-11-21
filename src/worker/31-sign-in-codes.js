@@ -161,19 +161,23 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
        true for every address and every attempt until the operator fixes it.
        Requiring a code then locks everybody out of their own account - the
        failure _codesOn already exists to avoid, reached by a setting that
-       looked right. So this is treated as what it is, a deployment whose email
-       does not reach people: the sign-in carries on without a code, the
-       operator is alerted, and the readiness screen says so. Every other
-       failure (the network, the per-address cap) still refuses, because those
-       pass, and passing through them would hand a code-free sign-in to anyone
-       who can make a send fail. Returns null for "carry on". */
+       looked right. Only a sign-up claim may carry on without it (null); a
+       sign-in that asked for a code is refused, below - see D17-007. */
     if (await _emailSenderRefused(env)) {
       /* A claim never passes through: without the inbox there is no proof, so
          the caller answers "account exists" exactly as before claims existed. */
       if (why === 'claim') return null;
-      audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
-      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) { /* logging: it never decides anything */ }
-      return null;
+      /* THE CHECK THAT WAS ASKED FOR IS NOT SKIPPED (Build 17 audit D17-007).
+         A sign-in reaches this only after a run of wrong passwords, on a
+         device the account has not proved itself on - exactly when a correct
+         password alone is least convincing. It used to carry on without the
+         code when the provider refused the sender. Now that sign-in waits:
+         the account's passkey or authenticator app still opens it, everybody
+         not under that suspicion signs in with their password as usual, and
+         the operator is told the sender needs fixing. */
+      audit(env, 'signin_code_unavailable', { email, why, reason: 'sender_refused' });
+      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). Accounts that need a code after wrong passwords cannot sign in with a password until it is fixed; passkeys and authenticator apps still work. Verify the sender domain with the email provider.', 60); } catch (e) { /* logging: it never decides anything */ }
+      return json({ error: 'AMV needs to check it is you after several wrong passwords, and cannot email you a code right now. Sign in with a passkey or your authenticator app, or try again later.', code: 'signin_check_unavailable' }, 503);
     }
     /* The daily allowance for this address used up is not "try again in a
        minute" - a minute changes nothing. Read without reserving (op:get), so
@@ -629,19 +633,29 @@ async function authRefresh(request, env) {
        providers keep for exactly this. After it, a reuse is a replay and is
        treated as one. */
   if (data.jti) {
-    const claim = await _claimOnceDetail(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000));
+    const claim = await _claimOnceDetail(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000), 'renew');
     if (claim.unavailable)
       return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
     if (claim.claimed) {
-      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* without the mark a second renewal is treated as a replay, which only signs out more */ }
+      /* Kept for a deployment with no revocation object, where the claim
+         below cannot say when it was taken. */
+      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* the object's own record answers where there is one */ }
     } else {
+      /* WHEN THE FIRST USE WAS, FROM THE PLACE THAT RECORDED IT (Build 17
+         audit D17-006). The claim object answers with the time and the kind
+         of its first use; the KV mark, written a moment after it, may not have
+         reached this region yet - and a missing mark read as "no first use
+         nearby", so two tabs renewing together signed the whole account out.
+         KV is asked only where the object said nothing (no object bound). */
       let mark = null;
-      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace: treated as a replay, which signs everything out */ }
+      if (!(claim.at > 0) || claim.note !== 'renew') {
+        try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace where the object said nothing */ }
+      }
       /* Spent by its own device signing out, moments ago: a renewal that was
          already on its way from that device. Refused - the session is over -
          but not as a theft, which would sign out every other device too. */
-      if (mark === 'out') return json({ error: 'signed out', code: 'signed_out' }, 401);
-      const first = +mark || 0;
+      if (claim.note === 'out' || mark === 'out') return json({ error: 'signed out', code: 'signed_out' }, 401);
+      const first = (claim.note === 'renew' && claim.at > 0) ? claim.at : (+mark || 0);
       if (!(first && Date.now() - first <= REFRESH_GRACE_MS)) {
         await revokeUserTokens(env, data.email);
         audit(env, 'refresh_replay', { email: data.email });
@@ -704,24 +718,22 @@ async function authLogout(request, env) {
     const rtOnly = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
     const rt = rtOnly ? await verifyToken(rtOnly, env.JWT_SECRET, env, 'refresh') : null;
     if (rt && rt.email && rt.jti) {
-      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
-      await _retiredBySignOut(env, rt.jti);
-      if (rt.sid) await _sessEnd(env, rt.email, rt.sid);
+      const done = await _retireDevice(env, rt.email, rt.jti, rt.sid);
       await _userEvent(env, request, rt.email, 'signed_out');
-      return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
+      return fin(_signedOutSays(env, 'device', done, rt.email));
     }
     return fin(json({ ok: true }, 200, _clearRefreshCookie(env)));   // nothing to revoke; never leak which
   }
   if (body && body.everywhere) {
-    await revokeUserTokens(env, data.email);
+    const all = await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere');
-    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
+    return fin(_signedOutSays(env, 'all', !!(all && all.confirmed), data.email));
   }
   /* Retire just this device's refresh token. Claiming its id is exactly what
      the refresh endpoint does on use, so a retired token is indistinguishable
      from one already spent - and a replay of it revokes the account, which is
      the correct response to a stolen token being reused. */
-  let scoped = false;
+  let scoped = false, jti = '';
   /* AMV-019: the cookie is where the refresh token lives on a deployment that
      has one, and script cannot read it - so a signing-out client has nothing to
      put in the body. Without looking here, every ordinary sign-out would find
@@ -730,24 +742,46 @@ async function authLogout(request, env) {
   const rtRaw = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
   if (rtRaw) {
     const rt = await verifyToken(rtRaw, env.JWT_SECRET, env, 'refresh');
-    if (rt && rt.email === data.email && rt.jti) {
-      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
-      await _retiredBySignOut(env, rt.jti);
-      scoped = true;
-    }
+    if (rt && rt.email === data.email && rt.jti) { jti = rt.jti; scoped = true; }
   }
   if (!scoped) {
     /* We were asked to sign out but given nothing that identifies WHICH session.
        A cached older build sends no body at all. The only safe reading of "sign
        me out" that we can actually honour is all of them - signing out nothing
        would leave a live token behind on a request that promised otherwise. */
-    await revokeUserTokens(env, data.email);
+    const all = await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
-    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
+    return fin(_signedOutSays(env, 'all', !!(all && all.confirmed), data.email));
   }
-  if (data.sid) await _sessEnd(env, data.email, data.sid);
+  const done = await _retireDevice(env, data.email, jti, data.sid);
   await _userEvent(env, request, data.email, 'signed_out');
-  return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
+  return fin(_signedOutSays(env, 'device', done, data.email));
+}
+/* A DEVICE IS SIGNED OUT WHEN BOTH ITS KEYS ARE PROVABLY DEAD (Build 17 audit
+   D17-003). Its refresh token is retired by claiming its id - taken now, or
+   already taken by an earlier use, either way it cannot renew again - and its
+   session is ended in the revocation object, which says so in its own words
+   (_sessEnd). A claim store that did not answer, or an ending not confirmed,
+   is not a sign-out: the answer says pending, and the browser forgets the
+   credentials anyway. */
+async function _retireDevice(env, email, jti, sid) {
+  let refreshDead = !jti;
+  if (jti) {
+    const c = await _claimOnceDetail(env, 'usedrefresh', jti, Math.floor(REFRESH_TTL_MS / 1000), 'out');
+    refreshDead = !!c.claimed || !c.unavailable;
+    await _retiredBySignOut(env, jti);
+  }
+  const sess = sid ? await _sessEnd(env, email, sid) : { ended: true };
+  return refreshDead && !!sess.ended;
+}
+function _signedOutSays(env, scope, confirmed, email) {
+  if (confirmed) return json({ ok: true, scope }, 200, _clearRefreshCookie(env));
+  try { audit(env, 'signout_unconfirmed', { email, scope }); } catch (e) { /* logging: it never decides anything */ }
+  return json({ ok: false, pending: true, scope, code: 'signout_unconfirmed',
+    error: scope === 'all'
+      ? 'This browser is signed out. AMV could not yet confirm that every other sign-in has ended - sign out everywhere again in a minute.'
+      : 'This browser is signed out. AMV could not yet confirm the server ended this sign-in - try signing out again in a minute.' },
+    202, _clearRefreshCookie(env));
 }
 
 /* GET /v1/sessions - where this account is signed in, newest first.
@@ -966,14 +1000,23 @@ async function accountExport(request, env) {
     catch (e) { noteFailure(kind, e); }
   }
 
-  /* Each purchase hold the index names, so the export holds every one. */
-  if (records.buyholds && Array.isArray(records.buyholds)) {
+  /* Every purchase hold, through the person's own index and then the legacy
+     list - all of them, page after page (Build 17 audit B17-007: the old
+     list held 500 and the export stopped there). */
+  {
     const holds = [];
-    for (const id of records.buyholds.slice(0, 500)) {
-      try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
-      catch (e) { noteFailure('buyhold', e); }
-    }
-    records.buyhold = holds;
+    try {
+      let cur = null, guard = 0;
+      do {
+        const pg = await _buyHoldIds(env, email, cur, 1000);
+        for (const id of pg.ids) {
+          try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
+          catch (e) { noteFailure('buyhold', e); }
+        }
+        cur = pg.next;
+      } while (cur && ++guard < 10000);
+    } catch (e) { noteFailure('buyhold', e); }
+    if (holds.length) records.buyhold = holds;
   }
 
   /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
@@ -1378,6 +1421,14 @@ async function _eraseAccount(env, email, opt) {
   const eraseFailed = [];
   const _eraseFailed = (what) => { if (!eraseFailed.includes(what)) eraseFailed.push(what); };
 
+  /* The company sign-in's subject index (Build 17 audit D17-001) holds the
+     address; it goes with the account. Read from the account before the
+     account itself is gone. */
+  try {
+    const a = await DB.get(env, 'acct', email);
+    if (a && a.sso && a.sso.iss && a.sso.sub) await env.AMV_KV.delete('ssosub:' + (await _sha256Hex(a.sso.iss + '\n' + a.sso.sub)));
+  } catch (e) { _eraseFailed('company sign-in link'); }
+
   // 1) Remove the user from their team's member list before dropping the pointer,
   //    so team records don't retain a ghost member. (A team-OWNER's team is left
   //    intact - ownership transfer/teardown is a separate flow.)
@@ -1771,11 +1822,23 @@ async function _eraseAccount(env, email, opt) {
   const perUserKinds = PER_USER_KINDS;
   /* Purchase holds are kept by id: found through their index, deleted before
      the index itself goes (SEC-14). */
+  /* Every one, through the person's own index and the legacy list (Build 17
+     audit B17-007), and then the index keys themselves. */
   try {
-    const idx = await DB.get(env, 'buyholds', email);
-    for (const id of (Array.isArray(idx) ? idx : [])) {
-      try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
-    }
+    let cur = null, guard = 0;
+    do {
+      const pg = await _buyHoldIds(env, email, cur, 1000);
+      for (const id of pg.ids) {
+        try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
+      }
+      cur = pg.next;
+    } while (cur && ++guard < 10000);
+    let ix = null, g2 = 0;
+    do {
+      const page = await env.AMV_KV.list({ prefix: _buyIxPrefix(email), cursor: ix || undefined, limit: 1000 });
+      for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); } catch { _eraseFailed('purchase holds'); } }
+      ix = page.list_complete ? null : page.cursor;
+    } while (ix && ++g2 < 10000);
   } catch { _eraseFailed('purchase holds'); }
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding

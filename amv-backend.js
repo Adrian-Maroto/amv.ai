@@ -1104,9 +1104,14 @@ async function _revRead(env, kind, id, raw){
      an erased account's conversations - and answering it put them back on
      the screen and into the next merge. Refused as a short wait instead. */
   if(!st || st.unavailable){
-    /* Nothing here to bring back: "absent" is safe to answer. */
-    if(raw == null) return null;
-    try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
+    /* AND NO COPY HERE IS NOT "IT DOES NOT EXIST" (Build 17 audit B17-002).
+       This used to answer absent when the local copy was missing, as if
+       there were nothing to bring back - but KV answers a miss from a cache,
+       and a record committed a moment ago elsewhere can be missing here. An
+       account, a plan or a team read as absent is a sign-up over an existing
+       account, a paid plan read as free, a member read as nobody. Unknown is
+       a short wait, whichever way the copy here points. */
+    try { audit(env, 'rev_read_unavailable', { kind, id, local: raw == null ? 'missing' : 'present' }); } catch(e) { /* logging: it never decides anything */ }
     throw new RecordSettlingError(kind + ':' + id);
   }
   /* The revision this read stands on, for a lock holder's fence. */
@@ -1168,6 +1173,37 @@ async function _revPutFenced(env, kind, id, obj, fence){
   try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base }); } catch(e) { /* logging: it never decides anything */ }
   const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
 }
+/* THE SAME FENCE ON THE DATABASE (Build 17 audit B17-009). With DATA_STORE=d1
+   a write was an unconditional upsert: a holder whose lock lapsed mid-change
+   could put an older whole record over a newer one. Inside a fenced change
+   the read records the row's `updated_at`, and the write goes ahead only
+   while the row still carries it - a compare-and-swap on the column the table
+   already has, so no schema change. Each write moves the stamp strictly
+   forward, so a holder that writes twice is still the holder. */
+function _d1FenceWants(kind, id){
+  if(!REV_PUT_KINDS.has(kind)) return null;
+  const f = _revFenceOf(kind, id);
+  return f && f.d1 == null ? f : null;
+}
+/* Only a fenced read asks for the stamp; every other read is the query it
+   always was. */
+async function _d1Row(env, kind, id){
+  const f = _d1FenceWants(kind, id);
+  if(!f) return env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+  const row = await env.DB.prepare('SELECT json, updated_at FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+  f.d1 = row ? (+row.updated_at || 0) : 0;
+  return row;
+}
+async function _d1PutFenced(env, kind, id, j, fence){
+  const stamp = Math.max(Date.now(), (+fence.d1 || 0) + 1);
+  const r = fence.d1 === 0
+    ? await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO NOTHING').bind(kind, id, j, stamp).run()
+    : await env.DB.prepare('UPDATE kv SET json=?, updated_at=? WHERE kind=? AND id=? AND updated_at=?').bind(j, stamp, kind, id, +fence.d1).run();
+  const changed = r && r.meta ? +r.meta.changes : NaN;
+  if(changed === 1){ fence.d1 = stamp; return; }
+  try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base: fence.d1, store: 'd1' }); } catch(e) { /* logging: it never decides anything */ }
+  const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
+}
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
   if(!env.AMV_COUNTER) return;
@@ -1210,7 +1246,7 @@ const DB = {
   async get(env, kind, id){
     let raw = null;
     if(this._hasD1(env)){
-      const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+      const row = await _d1Row(env, kind, id);
       raw = row && row.json ? row.json : null;
     } else {
       /* Step 5: for the read cohort, Postgres answers an account or a plan
@@ -1270,7 +1306,7 @@ const DB = {
   async getStrict(env, kind, id, shape = 'object'){
     let raw = null;
     if(this._hasD1(env)){
-      const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+      const row = await _d1Row(env, kind, id);
       raw = row == null ? null : row.json;
     } else {
       const pg = await _pgReadServe(env, kind, id);
@@ -1308,7 +1344,9 @@ const DB = {
         }
       }
       const ik = await _pgIntent(env, kind, id);
-      await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
+      const fence = REV_PUT_KINDS.has(kind) ? _revFenceOf(kind, id) : null;
+      if(fence && fence.d1 != null) await _d1PutFenced(env, kind, id, j, fence);
+      else await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
       _pgAfter(env, kind, id, obj, ik);
       return;
@@ -1527,21 +1565,31 @@ const DB = {
      `after` (a KV cursor, or the last D1 id), with the place to continue from
      - null at the end. Ordered on D1 so consecutive pages never overlap or
      skip; on KV the cursor is the store's own. */
+  /* A PAGE SAYS WHAT IT COULD NOT READ (Build 17 audit D17-005). A record
+     that would not parse used to be dropped here and the page went on as if
+     it had not been there, so a sweep reached the end and reported a
+     complete pass over records it never saw - a lapsed payment never
+     examined, an erasure that missed one. `unreadable` names them (the ids,
+     at most 50) so the caller can say its pass was not complete. */
   async page(env, kind, after, max){
-    const out = [];
+    const out = [], unreadable = [];
+    const bad = (id, bytes) => {
+      if (unreadable.length < 50) unreadable.push(String(id));
+      try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes, where: 'page' }); } catch(_) { /* logging: it never decides anything */ }
+    };
     const n = Math.max(1, Math.min(1000, max || 500));
     if(this._hasD1(env)){
       const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
       const rs = rows.results || [];
-      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
-      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { bad(r.id, String(r.json || '').length); } }
+      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null, unreadable };
     }
     const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
     for(const k of page.keys){
       const raw = await env.AMV_KV.get(k.name);
-      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { bad(k.name.slice(kind.length + 1), String(raw).length); } }
     }
-    return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
+    return { rows: out, next: page.list_complete ? null : (page.cursor || null), unreadable };
   },
 };
 
@@ -4400,13 +4448,18 @@ export class AMVCounter {
     if (op === 'claim') {
       const now = Date.now();
       const held = await this.state.storage.get('claim');
-      if (held && held.until > now) return json({ claimed: false, until: held.until });
+      /* When it was taken, and the taker's one-word note, come back with a
+         refusal (Build 17 audit D17-006): "used moments ago by a renewal"
+         and "used by a sign-out" are facts this object holds, and reading
+         them from a second store that may not have caught up turned two
+         tabs renewing together into a theft verdict. */
+      if (held && held.until > now) return json({ claimed: false, until: held.until, at: held.at || 0, note: held.note || '' });
       const ttl = Math.max(1000, Number(body.ttlMs) || 30000);
       /* AMV-013: WHO HOLDS IT, NOT JUST THAT IT IS HELD.
          A claim carries an owner token so a release can prove it is giving back
          the lock it took. See the release below for what that stops. */
       const owner = crypto.randomUUID();
-      await this.state.storage.put('claim', { until: now + ttl, owner });
+      await this.state.storage.put('claim', { until: now + ttl, owner, at: now, note: typeof body.note === 'string' ? body.note.slice(0, 16) : '' });
       await this.state.storage.setAlarm(now + ttl + 1000);
       return json({ claimed: true, until: now + ttl, owner });
     }
@@ -4610,6 +4663,11 @@ export class AMVCounter {
         else a.ended[String(body.sid).slice(0, 64)] = now + Math.max(60000, Number(body.ttlMs) || 31 * 86400000);
       }
       await this.state.storage.put('auth', a);
+      /* Each write answers in its own words (Build 17 audit B17-001): an
+         ending names the session it ended, a revocation says it revoked, so
+         the caller can tell a committed change from any 200 with a body. */
+      if (op === 'authEndSession') return json({ seeded: true, epoch: a.epoch, ended: true, sid: String(body.sid || '').slice(0, 64) });
+      if (op === 'authRevokeAll') return json({ seeded: true, epoch: a.epoch, revoked: true });
       return json({ seeded: true, epoch: a.epoch, ended: false });
     }
     if (op === 'get') {
@@ -4731,6 +4789,23 @@ async function counter(env, name, payload) {
           throw new Error('counter answered without a valid committed revision');
         if (['revCommit', 'revReset'].includes(payload.op) && typeof out.ok !== 'boolean')
           throw new Error('counter answered without a commit decision');
+        /* THE SIGN-IN AUTHORITY ANSWERS IN ITS OWN SHAPE OR NOT AT ALL
+           (Build 17 audit B17-001). A 200 with {} used to read as "the
+           session ended", though nothing was written. Each operation must
+           come back with exactly what it did; anything else is the object not
+           answering, and the caller treats it as unconfirmed. */
+        if (String(payload.op || '').startsWith('auth')) {
+          const epochOk = Number.isSafeInteger(out.epoch) && out.epoch >= 0;
+          const floor = Math.max(0, Math.floor(Number(payload.floor) || 0));
+          if (payload.op === 'authGet' && !(typeof out.seeded === 'boolean' && epochOk && typeof out.ended === 'boolean'))
+            throw new Error('counter answered a sign-in read without its state');
+          if (payload.op === 'authSeed' && !(out.seeded === true && epochOk && out.epoch >= floor))
+            throw new Error('counter answered a seed without committing it');
+          if (payload.op === 'authEndSession' && !(out.seeded === true && epochOk && out.ended === true && out.sid === String(payload.sid || '').slice(0, 64)))
+            throw new Error('counter answered a session ending without confirming it');
+          if (payload.op === 'authRevokeAll' && !(out.seeded === true && epochOk && out.revoked === true && out.epoch > floor))
+            throw new Error('counter answered a revocation without confirming it');
+        }
         return out;
       } finally { if (timer) clearTimeout(timer); }
     }
@@ -5064,6 +5139,25 @@ async function _nonEssentialWrite(env, what) {
   return true;
 }
 
+/* WHEN THE LIMITER CANNOT ANSWER, A SMALL LOCAL ONE DOES (Build 17 audit
+   D17-008). A sign-in challenge is not a session, so refusing every one
+   while the shared limiter is down would turn a storage blip into "nobody can
+   sign in" - but letting every one through made an outage an open door for
+   unlimited challenges and identity-provider traffic. This instance admits
+   `max` per key per minute on its own and refuses the rest. Per instance, so
+   it is a bound on abuse, not a precise count; bounded in size, so a flood of
+   keys cannot grow it. */
+const _LOCAL_ADMIT = new Map();
+function _localAdmit(key, max) {
+  const now = Date.now(), win = Math.floor(now / 60000);
+  const k = String(key || '').slice(0, 200);
+  let e = _LOCAL_ADMIT.get(k);
+  if (!e || e.win !== win) { e = { win, n: 0 }; }
+  e.n++;
+  _LOCAL_ADMIT.delete(k); _LOCAL_ADMIT.set(k, e);
+  while (_LOCAL_ADMIT.size > 5000) _LOCAL_ADMIT.delete(_LOCAL_ADMIT.keys().next().value);
+  return e.n <= Math.max(1, max | 0);
+}
 async function limitAction(env, key, perMin, perDay = 0) {
   const minName = `act:${key}:${Math.floor(Date.now() / 60000)}`;
   const minRes = await counter(env, minName, { op: 'rateCheck', limit: perMin, windowMs: 60000 });
@@ -7389,31 +7483,59 @@ async function connUndo(request, env){
 
   const blocked = await guardAction(env, 'connact:w:' + user.email, 10, 100, 'actions on your connected accounts');
   if (blocked) return blocked;
+  /* ONE TICKET, ONE TAKING-BACK (Build 17 audit D17-004). A signature and an
+     expiry say the ticket is genuine, not that it is unused: the same ticket
+     sent twice - a double tap, a retry after a lost answer - took the action
+     back twice at the provider. It is claimed once, by the id inside it,
+     before anything reaches the provider; whoever comes second is given what
+     the first was told, and if the first is still working, told to wait. A
+     claim store that cannot answer is a try-again, never a second run. */
+  const tid = String(t.jti || '');
+  if (!tid) return json({ error: 'undo_expired', message: 'That can no longer be undone from AMV. Change it in the account itself.' }, 410);
+  const once = await _claimOnceDetail(env, 'undotkt', tid, Math.ceil(ACT_UNDO_TTL_MS / 1000) + 3600);
+  if (once.unavailable) return json({ error: 'undo_busy', message: 'AMV could not check that just now. Try again in a moment.' }, 503, { 'Retry-After': '5' });
+  if (!once.claimed) {
+    let prior = null;
+    try { prior = _safeJson(await env.AMV_KV.get('undoout:' + tid)); } catch (e) { prior = null; }
+    if (prior && prior.status) return json(Object.assign({ repeat: true }, prior.body || {}), prior.status);
+    return json({ error: 'undo_in_progress', message: 'That is already being taken back. Look in the account in a moment.' }, 409);
+  }
+  /* What this ticket's one run ended as, so a repeat is told the same. */
+  const said = async (status, body) => {
+    try { await env.AMV_KV.put('undoout:' + tid, JSON.stringify({ status, body }), { expirationTtl: Math.ceil(ACT_UNDO_TTL_MS / 1000) + 3600 }); } catch (e) { /* a repeat is then told the run is in progress, never run again */ }
+    return json(body, status);
+  };
   const got = await connUse(env, user.email, spec.undo.need || spec.need, 'undo:' + name, { attended: true });
-  if (!got.ok) return json({ error: got.code, message: 'That connection cannot take this back right now. Change it in the account itself.' }, 409);
+  if (!got.ok) {
+    /* Nothing reached the provider: the ticket is given back for a later try. */
+    try { await _releaseClaim(env, 'undotkt', tid); } catch (e) { /* the claim lapses with the ticket */ }
+    return json({ error: got.code, message: 'That connection cannot take this back right now. Change it in the account itself.' }, 409);
+  }
 
   let v;
   try { v = await spec.undo.run(got.token, t.ref || {}); }
   catch (e) {
     await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_failed', { by: user.email, action: name, error: String((e && e.message) || e).slice(0, 120) });
-    return json({ error: 'undo_failed', message: 'That could not be undone. Nothing else was changed.' }, 502);
+    /* The provider may or may not have done it; this ticket is not run again
+       blind. The account itself is the place to look. */
+    return said(502, { error: 'undo_failed', message: 'That could not be confirmed as undone. Look in the account itself before trying anything else.' });
   }
   /* Somebody (or something) changed it after AMV did. Putting AMV's "before"
      back now would throw their work away, so it is refused and said. */
   if (v === 'moved') {
     await _actCount(env, 'undo_refused', user.email);
     audit(env, 'action_undo_refused', { by: user.email, action: name });
-    return json({ error: 'changed_since', message: 'It has been changed since AMV did it, so AMV left it alone. Change it in the account itself.' }, 409);
+    return said(409, { error: 'changed_since', message: 'It has been changed since AMV did it, so AMV left it alone. Change it in the account itself.' });
   }
   if (v === false) {
     await _actCount(env, 'undo_failed', user.email);
     audit(env, 'action_undo_not_confirmed', { by: user.email, action: name });
-    return json({ error: 'not_confirmed', message: 'The account said yes, but when AMV checked, it was still there. Look in the account.' }, 502);
+    return said(502, { error: 'not_confirmed', message: 'The account said yes, but when AMV checked, it was still there. Look in the account.' });
   }
   await _actCount(env, 'undone', user.email);
   audit(env, 'action_undone', { by: user.email, action: name, verified: v === true });
-  return json({ ok: true, action: name, undone: true, verified: v === true ? true : null,
+  return said(200, { ok: true, action: name, undone: true, verified: v === true ? true : null,
     message: v === true ? 'Undone.' : 'Asked to undo it, but AMV could not check afterwards. Look in the account.' });
 }
 
@@ -8098,7 +8220,8 @@ async function _federatedAccount(env, email, fresh){
 /* Step one: where to send somebody who typed their work address. */
 async function authSsoStart(request, env){
   const lim = await limitAction(env, 'ssostart:' + _rlIp(request), 20, 300);
-  if(!lim.ok && !lim.unavailable) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
+  /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+  if(!lim.ok && (!lim.unavailable || !_localAdmit('ssostart:' + _rlIp(request), 5))) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   if(!/^[^@\s]+@[^@\s]+$/.test(email) || email.length > 254) return json({ error:'Put in your work email address.', code:'bad_email' }, 400);
@@ -8127,14 +8250,23 @@ async function authSsoStart(request, env){
 /* Step two: the provider sent them back with a code. */
 async function authSsoFinish(request, env){
   const lim = await limitAction(env, 'ssofin:' + _rlIp(request), 20, 300);
-  if(!lim.ok && !lim.unavailable) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
+  /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+  if(!lim.ok && (!lim.unavailable || !_localAdmit('ssofinish:' + _rlIp(request), 5))) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
   const body = await request.json().catch(() => ({}));
   const state = String(body.state || ''), code = String(body.code || '');
   if(!/^s_[A-Za-z0-9_-]{20,80}$/.test(state) || !code || code.length > 4096) return json({ error:'That sign-in link is not valid.', code:'sso_bad_state' }, 400);
-  /* Spent on first use, before anything else, so a replayed return finds nothing. */
+  /* SPENT ONCE, WHERE ONLY ONE CALLER CAN SPEND IT (Build 17 audit D17-002).
+     Reading the state and then deleting it let two returns carrying it - a
+     double-submitted form, a replay - both read it before either deleted it,
+     and both went on to exchange a code. The claim object says yes to one
+     caller only, before anything is exchanged; one that cannot answer is a
+     try-again, never a pass. */
+  const spent = await _claimOnceDetail(env, 'ssost', state, SSO_STATE_TTL_S + 60);
+  if(spent.unavailable) return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' });
+  if(!spent.claimed) return json({ error:'That sign-in expired or was already used. Start again.', code:'sso_bad_state' }, 400);
   const raw = await env.AMV_KV.get('ssost:' + state);
   if(!raw) return json({ error:'That sign-in expired or was already used. Start again.', code:'sso_bad_state' }, 400);
-  await env.AMV_KV.delete('ssost:' + state);
+  try{ await env.AMV_KV.delete('ssost:' + state); }catch(e){ /* already spent by the claim above */ }
   const st = _safeJson(raw) || {};
   if(Date.now() - (+st.at || 0) > SSO_STATE_TTL_S * 1000) return json({ error:'That sign-in expired. Start again.', code:'sso_bad_state' }, 400);
   const team = await DB.get(env, 'team', String(st.teamId || ''));
@@ -8166,10 +8298,52 @@ async function authSsoFinish(request, env){
     const other = await DB.get(env, 'team', prior);
     if(other && _role(other, email)) return json({ error:'This account is in another AMV team. Leave it first, then sign in with your company.', code:'already_in_team' }, 409);
   }
+  /* WHO, NOT JUST WHICH ADDRESS (Build 17 audit D17-001). A company's
+     system names a person by an issuer and a subject that never change; the
+     address is a label it can move to somebody else. An account is bound to
+     the subject that first signed in to it, and a different subject arriving
+     with the same address - a mailbox reassigned to a new employee - is
+     refused, never merged. Linking a subject to an account that already
+     exists needs the system to say the address is verified (email_verified
+     true); a missing claim is enough only to make a brand-new account, or to
+     bind an account this company's sign-in made before binding existed. */
+  const iss = String(team.sso.issuer || ''), sub = typeof claims.sub === 'string' ? claims.sub.trim() : '';
+  if(!sub || sub.length > 255) return refuse('sso_no_subject', 'Your company’s system did not say who this is. Whoever runs it needs to include the subject (sub) claim.');
+  const verifiedClaim = claims.email_verified === true || claims.email_verified === 'true';
+  const bindKey = 'ssosub:' + (await _sha256Hex(iss + '\n' + sub));
+  let boundTo = null;
+  try{ boundTo = await env.AMV_KV.get(bindKey); }catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
+  if(boundTo && boundTo !== email)
+    return refuse('sso_email_changed', 'Your company’s system now gives this person a different email address than before, so AMV opened neither account. Ask whoever runs AMV for your company to contact support.');
+  let existing = null;
+  try{ existing = await DB.getStrict(env, 'acct', email); }catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
+  const mismatch = 'This address belongs to an AMV account that your company’s system gave to a different person before, so AMV did not open it. Ask whoever runs AMV for your company to contact support.';
+  if(existing){
+    const b = existing.sso;
+    if(b && b.iss === iss && b.sub !== sub) return refuse('sso_subject_mismatch', mismatch);
+    const legacySso = !b && (existing.provider || 'email') === 'sso';
+    if((!b || b.iss !== iss) && !verifiedClaim && !legacySso)
+      return refuse('sso_unverified', 'Your company’s system did not confirm this address is verified, and an AMV account already uses it. Whoever runs your company’s sign-in needs to send the email_verified claim.');
+  }
   const name = String(claims.name || email.split('@')[0]).slice(0, 120);
   let fed;
-  try{ fed = await _federatedAccount(env, email, { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request) }); }
+  try{ fed = await _federatedAccount(env, email, { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request), sso: { iss, sub, at: Date.now() } }); }
   catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+  /* Bound under the account's lock, and refused there if a different subject
+     got there first - the check above read a moment ago. */
+  if(!fed.created){
+    let clash = false;
+    try{
+      await _withAcct(env, email, (rec) => {
+        if(!rec) return;
+        if(rec.sso && rec.sso.iss === iss && rec.sso.sub !== sub){ clash = true; return; }
+        if(!rec.sso || rec.sso.iss !== iss || rec.sso.sub !== sub) rec.sso = { iss, sub, at: Date.now() };
+      });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+    if(clash) return refuse('sso_subject_mismatch', mismatch);
+  }
+  try{ if(boundTo !== email) await env.AMV_KV.put(bindKey, email); }
+  catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
   if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
   const acct = fed.acct, created = fed.created;
   if(created){
@@ -13119,12 +13293,13 @@ async function _autoSweep(env) {
   let after = null;
   try { after = (await env.AMV_KV.get('autosweep:cursor')) || null; } catch (e) { after = null; }
   const fromStart = !after;
-  const rows = [];
+  const rows = [], unreadable = [];
   let next = after;
   const pages = _autoSweepPages(env);
   for (let i = 0; i < pages; i++) {
     const p = await DB.page(env, 'auto', next, AUTO_SWEEP_PAGE);
     rows.push(...p.rows);
+    unreadable.push(...(p.unreadable || []));
     next = p.next;
     if (!next) break;
   }
@@ -13132,8 +13307,15 @@ async function _autoSweep(env) {
     if (next) await env.AMV_KV.put('autosweep:cursor', String(next), { expirationTtl: 86400 });
     else if (after) await env.AMV_KV.delete('autosweep:cursor');
   } catch (e) {}
-  if (fromStart && !next && rows.length === 0) await _markKindEmpty(env, 'auto');
-  return { rows, wrapped: !next };
+  /* A job record that would not read is somebody's jobs not run, and never
+     the evidence that there are none (Build 17 audit D17-005): the
+     namespace is not marked empty past one, and somebody is told which. */
+  if (unreadable.length) {
+    try { await alertOnce(env, 'auto_sweep_unreadable', 'THE JOBS SWEEP COULD NOT READ ' + unreadable.length + ' JOB RECORD(S): ' + unreadable.slice(0, 5).join(', ')
+      + '. Their jobs are not running until the record is repaired (record_corrupt in the audit log names the key).', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
+  }
+  if (fromStart && !next && rows.length === 0 && !unreadable.length) await _markKindEmpty(env, 'auto');
+  return { rows, wrapped: !next, unreadable: unreadable.length };
 }
 
 async function runDueAutomations(env, atMs, opts){
@@ -14136,7 +14318,15 @@ async function _autoEnqueue(env, users, now){
     const slice = toSend.slice(i, i + AUTO_QUEUE_BATCH);
     try{
       const bodies = [];
-      for(const u of slice){ const ref = await _qSeal(env, u.id); bodies.push({ body: Object.assign(ref ? { ref } : { email: u.id }, { due: u.soonest || now, at: now }) }); }
+      /* Sealed or not sent (Build 17 audit B17-022). Without a key to seal
+         with, a message used to carry the address itself, into the queue, its
+         retries and its dead letters. Now the account is not queued at all:
+         it runs inline, as when the queue is down, and the operator is told. */
+      for(const u of slice){
+        const ref = await _qSeal(env, u.id);
+        if(!ref) throw Object.assign(new Error('no key to seal queue messages with'), { code: 'queue_unsealed' });
+        bodies.push({ body: { ref, due: u.soonest || now, at: now } });
+      }
       await env.AMV_JOBS.sendBatch(bodies);
       sent += slice.length;
     }catch(e){
@@ -14968,7 +15158,12 @@ async function fetchGuarded(rawUrl, init, ms){
   for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
-    if(await _resolvesPrivate(new URL(gate.url).hostname)) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
+    const where = await _resolvesPrivate(new URL(gate.url).hostname);
+    /* A name whose answer could not be read is not let through as public
+       (Build 17 audit B17-023): it is refused this time and asked again on
+       the next request - nothing is remembered from a failed lookup. */
+    if(where === 'unknown') return { blocked: true, why: 'AMV could not check where that address points just now, so it was not opened. Try again in a moment.', url: target, hop };
+    if(where) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
     if(![301, 302, 303, 307, 308].includes(r.status)) return { blocked: false, response: r };
     const loc = r.headers.get('location');
@@ -15017,15 +15212,21 @@ async function _resolvesPrivate(host){
   if(!h || /^[\d.]+$/.test(h) || h.includes(':')) return false;          // a literal: the gate already read it
   const hit = _dnsSeen.get(h);
   if(hit && Date.now() - hit.at < DNS_KEEP_MS) return hit.bad;
+  /* null is "no answer"; [] is "answered, no addresses" (Build 17 audit
+     B17-023). Only the second is an answer. */
   const ask = async (type) => {
     try {
       const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=' + type + '&name=' + encodeURIComponent(h), { headers: { Accept: 'application/dns-json' } }, 3000);
-      if(!r || !r.ok) return [];
+      if(!r || !r.ok) return null;
       const d = await r.json();
+      if(!d || typeof d.Status !== 'number') return null;
       return ((d && d.Answer) || []).filter(a => a && (a.type === 1 || a.type === 28)).map(a => String(a.data || ''));
-    } catch (e) { return []; }
+    } catch (e) { return null; }
   };
-  const ips = [].concat(...(await Promise.all([ask('A'), ask('AAAA')])));
+  const got = await Promise.all([ask('A'), ask('AAAA')]);
+  /* Neither lookup answered: unknown, not public - and not remembered. */
+  if(got[0] === null && got[1] === null) return 'unknown';
+  const ips = [].concat(...got.map(x => x || []));
   const bad = ips.some(ip => ip && !_webHostAllowed('http://' + (ip.includes(':') ? '[' + ip + ']' : ip) + '/').ok);
   if(_dnsSeen.size > 2000) _dnsSeen.clear();
   _dnsSeen.set(h, { at: Date.now(), bad });
@@ -18099,7 +18300,10 @@ const BACKUP_PREFIXES = [
   /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
      and their receipts. A restore without the holds would free money still
      booked against a purchase that may have happened. */
-  'buyhold:', 'buyholds:', 'buys:',
+  'buyhold:', 'buyholds:', 'buys:', 'buyix:',
+  /* A company sign-in's subject, so a restore keeps refusing a reassigned
+     mailbox (Build 17 audit D17-001). */
+  'ssosub:',
   /* Newly visible to the roster rather than newly durable: both used a bare
      namespace write until the lock moved them (AMV-042). They are real content
      that people wrote and that buyers read before deciding to spend - losing
@@ -18187,6 +18391,7 @@ const BACKUP_PREFIXES = [
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
   'autodone:', 'autotry:',  // a run's finished mark and its crash count: three days, about a run already over
+  'undoout:',               // an undo ticket's one outcome: a day, about a ticket already spent (Build 17 D17-004)
   'fgoal:',                 // which first goal somebody chose: an owner's figure that expires, nothing to restore
   /* Sign-in in flight: a passkey challenge (five minutes), a second-step
      challenge (ten), and an authenticator app half set up, its secret sealed
@@ -21877,8 +22082,11 @@ async function authLogin(request, env) {
      other side of this one. */
   {
     const lim = await limitAction(env, `loginip:${ip}`, 30, 600);
+    /* Undecided admits a few from this address on this instance, then
+       refuses (Build 17 audit D17-008): the window of unbounded hashing the
+       note above accepted is now a bounded one. */
     if (!lim.ok) {
-      if (lim.unavailable) audit(env, 'login_limit_unavailable', {});
+      if (lim.unavailable && _localAdmit('loginip:' + ip, 10)) audit(env, 'login_limit_unavailable', {});
       else {
         audit(env, 'auth_fail', { email: em, reason: 'ip_throttled' });
         return json({ error: 'Too many sign-in attempts from here. Give it a moment and try again.',
@@ -22175,19 +22383,23 @@ async function _startSignInCode(env, request, email, name, why, pending, reason,
        true for every address and every attempt until the operator fixes it.
        Requiring a code then locks everybody out of their own account - the
        failure _codesOn already exists to avoid, reached by a setting that
-       looked right. So this is treated as what it is, a deployment whose email
-       does not reach people: the sign-in carries on without a code, the
-       operator is alerted, and the readiness screen says so. Every other
-       failure (the network, the per-address cap) still refuses, because those
-       pass, and passing through them would hand a code-free sign-in to anyone
-       who can make a send fail. Returns null for "carry on". */
+       looked right. Only a sign-up claim may carry on without it (null); a
+       sign-in that asked for a code is refused, below - see D17-007. */
     if (await _emailSenderRefused(env)) {
       /* A claim never passes through: without the inbox there is no proof, so
          the caller answers "account exists" exactly as before claims existed. */
       if (why === 'claim') return null;
-      audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
-      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) { /* logging: it never decides anything */ }
-      return null;
+      /* THE CHECK THAT WAS ASKED FOR IS NOT SKIPPED (Build 17 audit D17-007).
+         A sign-in reaches this only after a run of wrong passwords, on a
+         device the account has not proved itself on - exactly when a correct
+         password alone is least convincing. It used to carry on without the
+         code when the provider refused the sender. Now that sign-in waits:
+         the account's passkey or authenticator app still opens it, everybody
+         not under that suspicion signs in with their password as usual, and
+         the operator is told the sender needs fixing. */
+      audit(env, 'signin_code_unavailable', { email, why, reason: 'sender_refused' });
+      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). Accounts that need a code after wrong passwords cannot sign in with a password until it is fixed; passkeys and authenticator apps still work. Verify the sender domain with the email provider.', 60); } catch (e) { /* logging: it never decides anything */ }
+      return json({ error: 'AMV needs to check it is you after several wrong passwords, and cannot email you a code right now. Sign in with a passkey or your authenticator app, or try again later.', code: 'signin_check_unavailable' }, 503);
     }
     /* The daily allowance for this address used up is not "try again in a
        minute" - a minute changes nothing. Read without reserving (op:get), so
@@ -22643,19 +22855,29 @@ async function authRefresh(request, env) {
        providers keep for exactly this. After it, a reuse is a replay and is
        treated as one. */
   if (data.jti) {
-    const claim = await _claimOnceDetail(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000));
+    const claim = await _claimOnceDetail(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000), 'renew');
     if (claim.unavailable)
       return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
     if (claim.claimed) {
-      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* without the mark a second renewal is treated as a replay, which only signs out more */ }
+      /* Kept for a deployment with no revocation object, where the claim
+         below cannot say when it was taken. */
+      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch(e) { /* the object's own record answers where there is one */ }
     } else {
+      /* WHEN THE FIRST USE WAS, FROM THE PLACE THAT RECORDED IT (Build 17
+         audit D17-006). The claim object answers with the time and the kind
+         of its first use; the KV mark, written a moment after it, may not have
+         reached this region yet - and a missing mark read as "no first use
+         nearby", so two tabs renewing together signed the whole account out.
+         KV is asked only where the object said nothing (no object bound). */
       let mark = null;
-      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace: treated as a replay, which signs everything out */ }
+      if (!(claim.at > 0) || claim.note !== 'renew') {
+        try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) { /* unread is no grace where the object said nothing */ }
+      }
       /* Spent by its own device signing out, moments ago: a renewal that was
          already on its way from that device. Refused - the session is over -
          but not as a theft, which would sign out every other device too. */
-      if (mark === 'out') return json({ error: 'signed out', code: 'signed_out' }, 401);
-      const first = +mark || 0;
+      if (claim.note === 'out' || mark === 'out') return json({ error: 'signed out', code: 'signed_out' }, 401);
+      const first = (claim.note === 'renew' && claim.at > 0) ? claim.at : (+mark || 0);
       if (!(first && Date.now() - first <= REFRESH_GRACE_MS)) {
         await revokeUserTokens(env, data.email);
         audit(env, 'refresh_replay', { email: data.email });
@@ -22718,24 +22940,22 @@ async function authLogout(request, env) {
     const rtOnly = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
     const rt = rtOnly ? await verifyToken(rtOnly, env.JWT_SECRET, env, 'refresh') : null;
     if (rt && rt.email && rt.jti) {
-      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
-      await _retiredBySignOut(env, rt.jti);
-      if (rt.sid) await _sessEnd(env, rt.email, rt.sid);
+      const done = await _retireDevice(env, rt.email, rt.jti, rt.sid);
       await _userEvent(env, request, rt.email, 'signed_out');
-      return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
+      return fin(_signedOutSays(env, 'device', done, rt.email));
     }
     return fin(json({ ok: true }, 200, _clearRefreshCookie(env)));   // nothing to revoke; never leak which
   }
   if (body && body.everywhere) {
-    await revokeUserTokens(env, data.email);
+    const all = await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere');
-    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
+    return fin(_signedOutSays(env, 'all', !!(all && all.confirmed), data.email));
   }
   /* Retire just this device's refresh token. Claiming its id is exactly what
      the refresh endpoint does on use, so a retired token is indistinguishable
      from one already spent - and a replay of it revokes the account, which is
      the correct response to a stolen token being reused. */
-  let scoped = false;
+  let scoped = false, jti = '';
   /* AMV-019: the cookie is where the refresh token lives on a deployment that
      has one, and script cannot read it - so a signing-out client has nothing to
      put in the body. Without looking here, every ordinary sign-out would find
@@ -22744,24 +22964,46 @@ async function authLogout(request, env) {
   const rtRaw = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
   if (rtRaw) {
     const rt = await verifyToken(rtRaw, env.JWT_SECRET, env, 'refresh');
-    if (rt && rt.email === data.email && rt.jti) {
-      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
-      await _retiredBySignOut(env, rt.jti);
-      scoped = true;
-    }
+    if (rt && rt.email === data.email && rt.jti) { jti = rt.jti; scoped = true; }
   }
   if (!scoped) {
     /* We were asked to sign out but given nothing that identifies WHICH session.
        A cached older build sends no body at all. The only safe reading of "sign
        me out" that we can actually honour is all of them - signing out nothing
        would leave a live token behind on a request that promised otherwise. */
-    await revokeUserTokens(env, data.email);
+    const all = await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
-    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
+    return fin(_signedOutSays(env, 'all', !!(all && all.confirmed), data.email));
   }
-  if (data.sid) await _sessEnd(env, data.email, data.sid);
+  const done = await _retireDevice(env, data.email, jti, data.sid);
   await _userEvent(env, request, data.email, 'signed_out');
-  return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
+  return fin(_signedOutSays(env, 'device', done, data.email));
+}
+/* A DEVICE IS SIGNED OUT WHEN BOTH ITS KEYS ARE PROVABLY DEAD (Build 17 audit
+   D17-003). Its refresh token is retired by claiming its id - taken now, or
+   already taken by an earlier use, either way it cannot renew again - and its
+   session is ended in the revocation object, which says so in its own words
+   (_sessEnd). A claim store that did not answer, or an ending not confirmed,
+   is not a sign-out: the answer says pending, and the browser forgets the
+   credentials anyway. */
+async function _retireDevice(env, email, jti, sid) {
+  let refreshDead = !jti;
+  if (jti) {
+    const c = await _claimOnceDetail(env, 'usedrefresh', jti, Math.floor(REFRESH_TTL_MS / 1000), 'out');
+    refreshDead = !!c.claimed || !c.unavailable;
+    await _retiredBySignOut(env, jti);
+  }
+  const sess = sid ? await _sessEnd(env, email, sid) : { ended: true };
+  return refreshDead && !!sess.ended;
+}
+function _signedOutSays(env, scope, confirmed, email) {
+  if (confirmed) return json({ ok: true, scope }, 200, _clearRefreshCookie(env));
+  try { audit(env, 'signout_unconfirmed', { email, scope }); } catch (e) { /* logging: it never decides anything */ }
+  return json({ ok: false, pending: true, scope, code: 'signout_unconfirmed',
+    error: scope === 'all'
+      ? 'This browser is signed out. AMV could not yet confirm that every other sign-in has ended - sign out everywhere again in a minute.'
+      : 'This browser is signed out. AMV could not yet confirm the server ended this sign-in - try signing out again in a minute.' },
+    202, _clearRefreshCookie(env));
 }
 
 /* GET /v1/sessions - where this account is signed in, newest first.
@@ -22980,14 +23222,23 @@ async function accountExport(request, env) {
     catch (e) { noteFailure(kind, e); }
   }
 
-  /* Each purchase hold the index names, so the export holds every one. */
-  if (records.buyholds && Array.isArray(records.buyholds)) {
+  /* Every purchase hold, through the person's own index and then the legacy
+     list - all of them, page after page (Build 17 audit B17-007: the old
+     list held 500 and the export stopped there). */
+  {
     const holds = [];
-    for (const id of records.buyholds.slice(0, 500)) {
-      try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
-      catch (e) { noteFailure('buyhold', e); }
-    }
-    records.buyhold = holds;
+    try {
+      let cur = null, guard = 0;
+      do {
+        const pg = await _buyHoldIds(env, email, cur, 1000);
+        for (const id of pg.ids) {
+          try { const h = await DB.get(env, 'buyhold', String(id)); if (h && h.email === email) holds.push(h); }
+          catch (e) { noteFailure('buyhold', e); }
+        }
+        cur = pg.next;
+      } while (cur && ++guard < 10000);
+    } catch (e) { noteFailure('buyhold', e); }
+    if (holds.length) records.buyhold = holds;
   }
 
   /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
@@ -23392,6 +23643,14 @@ async function _eraseAccount(env, email, opt) {
   const eraseFailed = [];
   const _eraseFailed = (what) => { if (!eraseFailed.includes(what)) eraseFailed.push(what); };
 
+  /* The company sign-in's subject index (Build 17 audit D17-001) holds the
+     address; it goes with the account. Read from the account before the
+     account itself is gone. */
+  try {
+    const a = await DB.get(env, 'acct', email);
+    if (a && a.sso && a.sso.iss && a.sso.sub) await env.AMV_KV.delete('ssosub:' + (await _sha256Hex(a.sso.iss + '\n' + a.sso.sub)));
+  } catch (e) { _eraseFailed('company sign-in link'); }
+
   // 1) Remove the user from their team's member list before dropping the pointer,
   //    so team records don't retain a ghost member. (A team-OWNER's team is left
   //    intact - ownership transfer/teardown is a separate flow.)
@@ -23785,11 +24044,23 @@ async function _eraseAccount(env, email, opt) {
   const perUserKinds = PER_USER_KINDS;
   /* Purchase holds are kept by id: found through their index, deleted before
      the index itself goes (SEC-14). */
+  /* Every one, through the person's own index and the legacy list (Build 17
+     audit B17-007), and then the index keys themselves. */
   try {
-    const idx = await DB.get(env, 'buyholds', email);
-    for (const id of (Array.isArray(idx) ? idx : [])) {
-      try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
-    }
+    let cur = null, guard = 0;
+    do {
+      const pg = await _buyHoldIds(env, email, cur, 1000);
+      for (const id of pg.ids) {
+        try { await DB.del(env, 'buyhold', String(id)); } catch { _eraseFailed('purchase holds'); }
+      }
+      cur = pg.next;
+    } while (cur && ++guard < 10000);
+    let ix = null, g2 = 0;
+    do {
+      const page = await env.AMV_KV.list({ prefix: _buyIxPrefix(email), cursor: ix || undefined, limit: 1000 });
+      for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); } catch { _eraseFailed('purchase holds'); } }
+      ix = page.list_complete ? null : page.cursor;
+    } while (ix && ++g2 < 10000);
   } catch { _eraseFailed('purchase holds'); }
   /* `billing` is deliberately NOT in that list. Invoices and payment records
      carry retention obligations that erasure does not override, and deciding
@@ -29975,7 +30246,7 @@ async function _sessEnd(env, email, sid) {
   if (env.AMV_COUNTER) {
     try {
       const r = await counter(env, _authName(email), { op: 'authEndSession', sid, ttlMs: REFRESH_TTL_MS, floor: await _tokenEpochKV(env, email), strict: true });
-      if (r && r.ok === false) throw new Error('the revocation object refused the ending');
+      if (!(r && r.ended === true && r.sid === String(sid).slice(0, 64))) throw new Error('the revocation object did not confirm the ending');
       return { ended: true };
     } catch (e) {
       audit(env, 'session_end_slow', { email, error: String((e && e.message) || e).slice(0, 120) });
@@ -30020,6 +30291,10 @@ async function _revokeOrSay(env, email, where) {
 }
 
 async function revokeUserTokens(env, email) {
+  /* Whether the revocation object took it (Build 17 audit D17-003): the KV
+     epoch below is raised either way, but only the object's word is
+     confirmation that every sign-in has ended. */
+  let confirmed = false;
   if (env.AMV_COUNTER) {
     /* Raised in the object first - that is the moment it takes effect - then
        copied to KV, which is what the fallback reads, so the two agree. If
@@ -30029,8 +30304,8 @@ async function revokeUserTokens(env, email) {
     let next = floor + 1;
     try {
       const r = await counter(env, _authName(email), { op: 'authRevokeAll', floor, strict: true });
-      if (!r || typeof r.epoch !== 'number') throw new Error('the revocation object answered without an epoch');
-      next = r.epoch;
+      if (!r || typeof r.epoch !== 'number' || r.revoked !== true) throw new Error('the revocation object did not confirm the revocation');
+      next = r.epoch; confirmed = true;
     } catch (e) {
       audit(env, 'revocation_degraded', { email, where: 'revoke', error: String((e && e.message) || e).slice(0, 120) });
     }
@@ -30038,6 +30313,8 @@ async function revokeUserTokens(env, email) {
   } else {
     const cur = await _tokenEpochKV(env, email);
     await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
+    /* No object bound (a development machine): KV is the only authority. */
+    confirmed = true;
   }
   /* The epoch already ends every token; the records go too, so the device list
      does not show sign-ins that can no longer do anything. */
@@ -30049,6 +30326,7 @@ async function revokeUserTokens(env, email) {
   try { const r = await _agentJarForgetAll(env, email); if (r && !r.removed) audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins', queued: true }); }
   catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'agent sign-ins' }); }
   try { await _pushForgetAll(env, email); } catch (e) { audit(env, 'signout_everywhere_partial', { email, what: 'notifications' }); }
+  return { confirmed };
 }
 
 /* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────
@@ -30502,7 +30780,7 @@ async function smsRegister(request, env) {
        a reason for these two to differ. */
     const vcode = _sixDigitCode();
     await env.AMV_KV.put(`smsverify:${email}:${phone}`,
-      JSON.stringify({ code: vcode, attempts: 0, at: Date.now() }), { expirationTtl: 600 });
+      JSON.stringify({ code: vcode, attempts: 0, at: Date.now(), n: _sixDigitCode() + '.' + Date.now() }), { expirationTtl: 600 });
     try { await sendSms(env, phone, `Your AMV verification code is ${vcode}. It expires in 10 minutes.`); }
     catch (e) { return json({ error: 'Could not send the verification code.' }, 502); }
     return json({ ok: true, pending: true });
@@ -30519,10 +30797,27 @@ async function smsRegister(request, env) {
      code: a read, a compare, an increment and a write is four steps with three
      gaps, and guesses arriving together all read the same number and all decide
      they are under the limit. */
-  let verdict;
+  /* AND COUNTED WHERE A STALE COPY CANNOT UNDO THE COUNT (Build 17 audit
+     B17-010). The lock serialises guesses, but its read is a KV copy, which in
+     another region can be a minute old - an older copy with fewer attempts
+     on it handed back guesses. Each try is counted in the atomic object first,
+     per issue of the code, as sign-in and reset codes are; the attempts on
+     the record are the second count, kept for the message. */
+  let verdict, issue = '';
   try {
     verdict = await _withKV(env, 'smsverify', `${email}:${phone}`, (rec) => {
-      if (!rec || !rec.code) return { gone: true };
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      issue = String(rec.n || rec.at || '');
+      return { peek: true, commit: false };
+    }, null);
+    if (verdict && verdict.peek) {
+      let tried;
+      try { tried = await _challengeTry(env, 'sms:' + email + ':' + phone + ':' + issue, SMS_CODE_MAX_ATTEMPTS, 600); }
+      catch (e) { return json({ error: 'AMV cannot check that code just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' }); }
+      if (!tried.ok) verdict = { exhausted: true };
+      else verdict = await _withKV(env, 'smsverify', `${email}:${phone}`, (rec) => {
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      if (String(rec.n || rec.at || '') !== issue) return { gone: true };
       if ((rec.attempts || 0) >= SMS_CODE_MAX_ATTEMPTS) return { exhausted: true };
       rec.attempts = (rec.attempts || 0) + 1;
       const match = timingSafeEqual(new TextEncoder().encode(code), new TextEncoder().encode(String(rec.code)));
@@ -30530,6 +30825,7 @@ async function smsRegister(request, env) {
       rec.used = true;
       return { ok: true };
     }, null);
+    }
   } catch (e) {
     if (_isBusy(e)) return _busyJson('phone verification');
     /* A verification code is a throwaway, so a record that cannot be read is
@@ -32146,7 +32442,14 @@ async function runRenewalSweep(env, now = Date.now()) {
     const limit = Math.max(100, Math.min(SWEEP_SCAN_LIMIT, Math.floor(_opsPerRun(env) * 0.8) - 20));
     while (read < limit) {
       const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, limit - read));
-      read += pg.rows.length;
+      read += pg.rows.length + (pg.unreadable || []).length;
+      /* Counted, kept by name (Build 17 audit D17-005): a plan that would not
+         read was never examined, and the pass says so rather than finishing
+         as if it had seen every paying account. */
+      if ((pg.unreadable || []).length) {
+        pass.unreadable = (+pass.unreadable || 0) + pg.unreadable.length;
+        pass.unreadableIds = (pass.unreadableIds || []).concat(pg.unreadable).slice(0, 50);
+      }
       for (const row of pg.rows) {
         const e = row.value || {};
         if (_planPriceUSD(e.plan, e.custom) <= 0) continue;   // nothing is being paid for
@@ -32179,7 +32482,15 @@ async function runRenewalSweep(env, now = Date.now()) {
     if (pass.staleCount > stale.length) {
       audit(env, 'renewal_sweep_overflow', { stale: pass.staleCount, kept: stale.length, paid });
     }
-    return await _renewalDecide(env, day, paid, stale, pass.staleCount, truncated);
+    const out = await _renewalDecide(env, day, paid, stale, pass.staleCount, truncated);
+    if (pass.unreadable) {
+      audit(env, 'renewal_sweep_incomplete', { unreadable: pass.unreadable });
+      try { await alertOnce(env, 'renewal_sweep_unreadable', 'THE RENEWAL SWEEP COULD NOT READ ' + pass.unreadable + ' PLAN RECORD(S): '
+        + (pass.unreadableIds || []).slice(0, 5).join(', ') + '. Those accounts were not checked for a lapsed payment today; repair the records '
+        + '(record_corrupt in the audit log names each key).', 12 * 60); } catch (e) { /* logging: it never decides anything */ }
+      return Object.assign({}, out, { complete: false, unreadable: pass.unreadable });
+    }
+    return out;
   } finally { await _releaseClaim(env, 'renewpage', 'tick'); }
 }
 async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
@@ -33125,7 +33436,7 @@ async function _claimOnce(env, kind, id, ttlSec){
    caller that only needs yes/no keeps _claimOnce; a caller that treats "taken"
    as an accusation - refresh-token reuse revokes the whole account - must not
    make that accusation over a store that did not answer. */
-async function _claimOnceDetail(env, kind, id, ttlSec){
+async function _claimOnceDetail(env, kind, id, ttlSec, note){
   if(!id) return { claimed: true };
   /* Prefer the Durable Object: it serializes ops, so the check and the claim
      cannot interleave. This matters most for money - two simultaneous
@@ -33133,7 +33444,7 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
      KV path is last and is best-effort ONLY, because get-then-put races. */
   if(env && env.AMV_COUNTER){
     try{
-      const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 });
+      const r = await counter(env, 'claim:' + kind + ':' + id, Object.assign({ op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 }, note ? { note: String(note).slice(0, 16) } : {}));
       /* AMV-032: a bound Durable Object that could not answer is a fault, not a
          reason to take the lock through a path that cannot hold it. Refusing
          means the caller retries or reports busy; falling through would mean
@@ -33154,7 +33465,8 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            isolate overwrote it, and the first holder's release then freed
            the second's lock. A caller that keeps its own owner releases
            with that, whatever the map says now. */
-        return { claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' };
+        return Object.assign({ claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' },
+          r.claimed ? {} : { at: Number.isFinite(+r.at) ? +r.at : 0, note: typeof r.note === 'string' ? r.note : '' });
       }
     }catch(e){ /* answered below: the object is bound, so nothing else may decide */ }
     /* Bound but no usable answer - a malformed reply, a throw (Nov 8 verified
@@ -34454,7 +34766,7 @@ async function marketInstall(request, env) {
   if (raw) {
     try {
       JSON.parse(raw);                       // still a listing, not a stray key
-      await _withKV(env, 'market', id, (rec) => {
+      await _withListing(env, id, (rec) => {
         if (rec) rec.installs = (rec.installs || 0) + 1;
       });
     } catch {}
@@ -34486,7 +34798,10 @@ async function marketDisable(request, env) {
   if (body.id) {
     const id = String(body.id);
     if (!/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
-    const rec = await _withKV(env, 'market', id, (r) => { if (r) { r.hidden = true; r.disabled = { at: Date.now(), reason }; } return r; });
+    if (!(await env.AMV_KV.get(`market:${id}`))) return json({ error: 'There is no listing with that id.', code: 'not_found' }, 404);
+    try { await _listingMarkDown(env, id, 'disabled'); }
+    catch (e) { return json({ error: 'AMV could not record the takedown just now, so nothing was changed. Try again in a moment.', code: 'takedown_unavailable' }, 503); }
+    const rec = await _withListing(env, id, (r) => { if (r) { r.hidden = true; r.disabled = { at: Date.now(), reason }; } return r; });
     if (!rec) return json({ error: 'There is no listing with that id.', code: 'not_found' }, 404);
     try { await _marketCacheBust(env); } catch (e) {}
     out.listing = id;
@@ -34511,6 +34826,7 @@ async function marketCheck(request, env) {
   for (const id of ids) {
     let it = null; try { it = JSON.parse((await env.AMV_KV.get(`market:${id}`)) || 'null'); } catch (e) { it = null; }
     if (it && it.disabled) disabled.push({ id, reason: it.disabled.reason || '', at: it.disabled.at || 0 });
+    else if (it) { const down = await _listingDown(env, id); if (down && down.disabled) disabled.push({ id, reason: 'Taken down by AMV.', at: 0 }); }
   }
   return json({ ok: true, disabled });
 }
@@ -35005,6 +35321,37 @@ async function _withKV(env, name, key, mutate, empty, keepFor) {
     mutate);
 }
 
+/* A TAKEDOWN IS KEPT WHERE AN OLDER COPY CANNOT UNDO IT (Build 17 audit
+   B17-010). A listing is one KV record that counters write whole - an install,
+   a sale, a rating - and the lock that serialises them reads a KV copy, which
+   in another region can be a minute old. Read from before a takedown, a
+   counter bump wrote the listing back without `hidden`, and a scam that had
+   been taken down was on sale again with nothing to say so. Nothing un-hides a
+   listing on purpose, so the takedown is also counted in the atomic object,
+   and every write of a listing puts it back. A listing whose state could not
+   be read keeps what the copy says - a count is not worth refusing a sale. */
+async function _listingMarkDown(env, id, why) {
+  await counter(env, (why === 'reported' ? 'mkthide:' : 'mktdown:') + id, { op: 'incr', amount: 1, strict: true });
+}
+async function _listingDown(env, id) {
+  try {
+    const [d, h] = await Promise.all([counter(env, 'mktdown:' + id, { op: 'get' }), counter(env, 'mkthide:' + id, { op: 'get' })]);
+    return { disabled: +(d && d.value) > 0, hidden: +(d && d.value) > 0 || +(h && h.value) > 0 };
+  } catch (e) { return null; }
+}
+async function _withListing(env, id, mutate) {
+  const down = await _listingDown(env, id);
+  return _withKV(env, 'market', id, (rec) => {
+    const out = mutate(rec);
+    if (rec && down && down.hidden && !rec.hidden) {
+      rec.hidden = true;
+      if (!down.disabled) { rec.hiddenReason = rec.hiddenReason || 'reported'; rec.hiddenAt = rec.hiddenAt || Date.now(); }
+    }
+    if (rec && down && down.disabled && !rec.disabled) rec.disabled = { at: Date.now(), reason: 'Taken down by AMV.' };
+    return out;
+  });
+}
+
 /* AMV-202: A LOCK ONLY HOLDS IF EVERY WRITER TAKES IT.
 
    setEntitlement has run under the ent record lock since AMV-196, which stops
@@ -35167,7 +35514,8 @@ async function marketBuy(request, env) {
      seller had taken down or one hidden after reports could still be paid for
      by anybody holding its id or an old link - a scam taken down went on
      taking money from everybody who already had the link. */
-  if ((it.status && it.status !== 'active') || it.hidden || (it.plugin && _mktPluginScan(it.plugin).refuse))
+  const down = await _listingDown(env, id);
+  if ((it.status && it.status !== 'active') || it.hidden || (down && down.hidden) || (it.plugin && _mktPluginScan(it.plugin).refuse))
     return json({ error: 'This listing is not on sale right now, so it cannot be bought. Nothing has been charged.', code: 'not_on_sale' }, 409);
 
   if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
@@ -35465,7 +35813,7 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref, c
     /* AMV-204: the sale is recorded on the listing under the lock. This is the
        write a visitor's page view used to put back, which is how an item that
        had sold went back on sale. */
-    await _withKV(env, 'market', itemId, (rec) => {
+    await _withListing(env, itemId, (rec) => {
       if (!rec) return null;
       rec.sales = (rec.sales || 0) + 1; rec.installs = (rec.installs || 0) + 1;
       if (/^usr_/.test(itemId)) rec.status = 'sold';
@@ -35607,7 +35955,7 @@ async function _reverseSaleWork(env, rec, reason) {
   try {
     const it = await _getListing(env, rec.itemId);
     if (it) {
-      await _withKV(env, 'market', rec.itemId, (cur) => {
+      await _withListing(env, rec.itemId, (cur) => {
         if (!cur) return null;
         cur.sales = Math.max(0, (cur.sales || 1) - 1);
         if (/^usr_/.test(rec.itemId) && cur.status === 'sold') cur.status = 'active';
@@ -36652,7 +37000,7 @@ async function marketRate(request, env) {
      copy read before a sale or a status change landed, a rating put the old
      record back - so an item that had just sold went back on sale because
      somebody rated it. */
-  await _withKV(env, 'market', id, (rec) => {
+  await _withListing(env, id, (rec) => {
     if (!rec) return null;
     rec.rating = rating;
     rec.ratings = vals.length;
@@ -36762,6 +37110,7 @@ async function marketReport(request, env) {
   let hidden = false;
   if (rec.count >= REPORT_AUTOHIDE && !it.hidden) {
     try {
+      try { await _listingMarkDown(env, id, 'reported'); } catch (e) { audit(env, 'listing_hide_unrecorded', { id }); }
       await _withKind(env, 'market', id, (m) => {
         if (!m || !m.id) return;
         m.hidden = true;
@@ -38816,7 +39165,7 @@ function _readinessReport(env, seen) {
         const raw = String((env && env.ALLOWED_ORIGIN) || '');
         const eff = _originOf(raw);
         if (!eff || eff === '*')
-          return 'Cross-origin calls are currently allowed from ANY site, which is the default. Every browser-side control still applies and the server is still the authority, but another site can call this API with a visitor\u2019s credentials in the browser. Pin it to your own origin before launch.';
+          return 'Cross-origin calls are currently allowed from ANY site, which is the default. In this mode no cookie is accepted, so another site\u2019s page cannot use a visitor\u2019s sign-in - it has none to send - but sign-in is kept only by the token AMV\u2019s own page holds, and the renewal cookie that keeps it out of the page\u2019s reach stays off. Pin it to your own origin before launch.';
         const line = 'Browser calls to this API are accepted only from ' + eff
           + '. Anything served from a different host - www. against the bare domain, or your host\u2019s own preview address - is refused by the browser, so check the address people actually use.';
         return raw.trim() === eff ? line
@@ -45310,8 +45659,38 @@ async function adminRefundDecide(request, env){
    with the reason, never converted with a guess. */
 const BUY_HOLD_WINDOW_MS = 30 * 60 * 1000;     // a hold not settled in this long is released
 const BUY_SETTLE_WINDOW_MS = 24 * 3600 * 1000; // a confirmation can still be recorded this late
-const BUY_RECEIPTS_MAX = 100;
-const BUY_HOLDS_INDEX_MAX = 500;
+
+/* ONE KEY PER PURCHASE, UNDER THE PERSON (Build 17 audit B17-003, 004, 007,
+   008). A person's purchases used to be found through two lists, each one KV
+   value rewritten on every purchase: read, add, write back. KV answers reads
+   from a cache, so a second purchase could rewrite the list from a copy that
+   did not yet hold the first, and the first vanished; and KV takes about one
+   write a second to a key, so two purchases close together failed the second
+   write after the money had already been closed. Neither list could hold
+   more than its cap either, so export and erasure lost the oldest.
+
+   Now each purchase writes its OWN index key, under a prefix that is the
+   person's, named so the newest sort first: nothing is read back to write
+   it, no two purchases share a key, and a listing of the prefix finds every
+   one of them, page by page. The purchase itself is still its hold record,
+   by id - the receipt is what a settled hold says. */
+const _buyIxPrefix = (email) => 'buyix:' + String(email).toLowerCase() + ':';
+const _buyIxKey = (email, at, id) => _buyIxPrefix(email) + String(1e13 - Math.max(0, Math.floor(+at || 0))).padStart(13, '0') + ':' + id;
+/* A person's hold ids, newest first, a page at a time; then, once the index
+   is exhausted, any from the legacy list not already seen. */
+async function _buyHoldIds(env, email, cursor, limit){
+  const ids = [];
+  if (!cursor || !String(cursor).startsWith('legacy')) {
+    const page = await env.AMV_KV.list({ prefix: _buyIxPrefix(email), cursor: cursor || undefined, limit: Math.max(1, Math.min(1000, limit || 100)) });
+    for (const k of (page.keys || [])) { const id = String(k.name).split(':').pop(); if (/^bh_[a-f0-9]{24}$/.test(id) && !ids.includes(id)) ids.push(id); }
+    if (!page.list_complete) return { ids, next: page.cursor || null };
+  }
+  /* Purchases made before the index existed, from the old list. */
+  let legacy = [];
+  try { const l = await DB.get(env, 'buyholds', email); legacy = Array.isArray(l) ? l.filter(x => /^bh_[a-f0-9]{24}$/.test(String(x))) : []; }
+  catch (e) { throw e; }
+  return { ids: ids.concat(legacy.filter(x => !ids.includes(x))), next: null, legacy: legacy.length };
+}
 
 const _buyHost = (s) => {
   const h = String(s || '').trim().toLowerCase();
@@ -45333,14 +45712,33 @@ async function spendHold(request, env){
     return json({ error:'That amount cannot be bought here.', code:'bad_amount' }, 400);
   if(!/^[A-Z]{3}$/.test(currency)) return json({ error:'Say which currency the store charges in.', code:'bad_currency' }, 400);
   if(!store || !item) return json({ error:'Say which store and what is being bought.', code:'bad_request' }, 400);
+  /* ONE PURCHASE, ONE HOLD, HOWEVER MANY TIMES IT IS ASKED (Build 17 audit
+     B17-005). Each hold used to get a fresh random id, so the same request
+     sent twice - a retry after an answer that never arrived - held the
+     amount twice. The page names each approved purchase with a key, and the
+     hold's id is made from the person and that key: asked again, the same
+     hold comes back; asked again with different terms, it is refused. */
+  const key = String(body.key || '');
+  if(!/^[A-Za-z0-9_-]{16,80}$/.test(key))
+    return json({ error:'Reload AMV to buy - this page is older than the server.', code:'reload_needed' }, 400);
 
   const limits = await _spendLimits(env, user.email);
   if(currency !== limits.currency)
     return json({ ok:false, code:'currency_mismatch',
       need:'This store charges in ' + currency + ', and your spending limits are in ' + limits.currency + '.',
       message:'Change the currency of your limits in Spending to ' + currency + ' to buy here. AMV does not convert with a guessed rate.' }, 400);
-  const id = 'bh_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const id = 'bh_' + (await _sha256Hex(user.email + '\n' + key)).slice(0, 24);
   const now = Date.now();
+  const prior = await DB.get(env, 'buyhold', id);
+  if(prior){
+    if(prior.email !== user.email || prior.amount !== amount || prior.currency !== currency || prior.store !== store || prior.item !== item)
+      return json({ ok:false, code:'hold_terms_differ', error:'This purchase was already held with different terms. Start it again.' }, 409);
+    if(prior.status === 'held') return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    if(prior.status === 'refused') return json({ ok:false, repeat:true, code:'refused', error:'This purchase was refused by your Spending limits.' }, 400);
+    if(prior.status !== 'reserving') return json({ ok:false, code:'decided', status:prior.status, error:'This purchase was already ' + prior.status + '.' }, 409);
+    /* 'reserving': the first request may still be booking it. Going on is
+       safe - the booking is named after the hold, so it lands once. */
+  }
   /* THE HOLD IS WRITTEN DOWN BEFORE THE MONEY IS BOOKED (Build 16 audit
      STATE16-07). Booked first, a hold whose record then failed to save was
      money taken from the month with nothing anywhere that named it. Now the
@@ -45348,14 +45746,16 @@ async function spendHold(request, env){
      the booking is named after the hold so a retry cannot book it twice, and a
      record that cannot be finished closes its own booking - so every failure
      leaves either a hold that can be found or nothing booked at all. */
-  const base = { id, email:user.email, amount, currency, store, item, at:now,
+  const base = { id, email:user.email, amount, currency, store, item, at: prior ? (+prior.at || now) : now,
     ledgerKey: _spendMonthKey(user.email, limits.currency), named:true };
   /* Indexed by the person first (Build 16 audit SEC-14): a hold is kept by
      its id, and without this neither their data export nor erasing their
      account could find it. */
   try {
-    await _withKV(env, 'buyholds', user.email, (l) => { l.unshift(id); if(l.length > BUY_HOLDS_INDEX_MAX) l.length = BUY_HOLDS_INDEX_MAX; return true; }, []);
-    await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+    if(!prior){
+      await env.AMV_KV.put(_buyIxKey(user.email, now, id), '1');
+      await DB.put(env, 'buyhold', id, Object.assign({}, base, { status:'reserving', reserved:0 }));
+    }
   }
   catch (e) {
     audit(env, 'buy_hold_unrecorded', { by:user.email, id, stage:'intent' });
@@ -45422,27 +45822,25 @@ async function _buyClose(env, rec, amount, note){
 /* The record, brought up to what the counter says happened. */
 function _buyFinish(rec, note){
   if(note && note.kind === 'settled'){
-    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over, verified:note.verified === true });
+    Object.assign(rec, { status:'settled', settledAt:note.at, total:note.total, order:note.order, over:note.over,
+      seenOnPage: note.seenOnPage === true || note.verified === true, verified: false });
   } else Object.assign(rec, { status:'released', releasedAt:(note && note.at) || Date.now() });
   return rec;
 }
+/* WHAT A RECEIPT CAN STAND BEHIND (Build 17 audit B17-006, B17-021). AMV
+   has no line to any store: the order number and total come from the
+   person's own computer, which read them off the store's confirmation page
+   (`seenOnPage`) or did not. That is reported, not verified - nobody at AMV
+   asked the store - so `verified` is false on every receipt until a store's
+   own API is used, and the screen says "seen on the store's page", never
+   "verified". A client saying verified:true is read as what it is: the page
+   check it ran. */
 const _buyReceiptOf = (rec) => ({ id:rec.id, at:rec.settledAt, store:rec.store, item:rec.item, approved:rec.amount, total:rec.total,
-  currency:rec.currency, order:rec.order, over:rec.over, verified: rec.verified === true });
+  currency:rec.currency, order:rec.order, over:rec.over, seenOnPage: rec.seenOnPage === true || (rec.verified === true && rec.seenOnPage == null),
+  verified: false, source: 'reported' });
 
-async function _buyReceipt(env, email, r){
-  await _withKV(env, 'buys', email, (list) => {
-    const l = Array.isArray(list) ? list : [];
-    /* Once per purchase: a settlement finished again from the counter does
-       not add a second receipt. */
-    if(l.some(x => x && x.id === r.id)) return false;
-    l.unshift(r);
-    /* _withKV saves the list it handed over, so the bound is applied to THAT
-       list - a shorter copy returned from here was never what was saved
-       (Build 16 audit STATE16-10). */
-    if(l.length > BUY_RECEIPTS_MAX) l.length = BUY_RECEIPTS_MAX;
-    return true;
-  }, []);
-}
+/* Receipts are the settled holds, found through the person's index
+   (_buyHoldIds); nothing is appended to a shared list any more. */
 
 async function spendSettle(request, env){
   const user = await requireUser(request, env);
@@ -45465,16 +45863,23 @@ async function spendSettle(request, env){
      it is the one closing step (above). */
   const held = rec.reserved > 0 ? rec.amount : 0;
   const over = total > rec.amount ? _buyMoney(total - rec.amount) : 0;
-  const note = { kind:'settled', at:Date.now(), total, order, over, verified: body.verified === true };
+  const note = { kind:'settled', at:Date.now(), total, order, over, seenOnPage: body.seenOnPage === true || body.verified === true };
   const end = await _buyClose(env, rec, total - held, note);
   if(end.pending) return json({ ok:false, code:'settle_pending',
     error:'AMV could not record this purchase against your limit yet. Nothing is lost - it will be recorded when you try again.' }, 503);
   _buyFinish(rec, end.note);
   if(over > 0 && !end.replay) audit(env, 'buy_over_approved', { by:user.email, id:rec.id, approved:rec.amount, charged:total, store:rec.store });
-  await DB.put(env, 'buyhold', rec.id, rec);
   if(rec.status !== 'settled') return json({ error:'This purchase was already released.', code:'decided', status:rec.status }, 409);
   const receipt = _buyReceiptOf(rec);
-  await _buyReceipt(env, user.email, receipt);
+  /* The money is closed above, on the counter. Writing the record can still
+     fail - KV taking one write a second to a key among them - and that must
+     not read as the purchase failing: it is counted, and settling again
+     finishes the record from the counter (the close replays its note). */
+  try { await DB.put(env, 'buyhold', rec.id, rec); }
+  catch (e) {
+    audit(env, 'buy_record_pending', { by:user.email, id:rec.id, why:String((e && e.message) || e).slice(0, 120) });
+    return json({ ok:true, receipt, recordPending:true }, 202);
+  }
   if(!end.replay){
     audit(env, 'buy_settled', { by:user.email, id:rec.id, total:rec.total, currency:rec.currency, store:rec.store, over:rec.over });
     await _userEvent(env, request, user.email, 'purchase', { store:rec.store, total:rec.total, currency:rec.currency });
@@ -45498,16 +45903,39 @@ async function spendRelease(request, env){
   const replay = end.replay;
   _buyFinish(rec, end.note);
   await DB.put(env, 'buyhold', rec.id, rec);
-  if(rec.status === 'settled') await _buyReceipt(env, user.email, _buyReceiptOf(rec));
   if(!replay) audit(env, 'buy_released', { by:user.email, id:rec.id });
   return json({ ok:true, status:rec.status });
 }
 
+/* GET /v1/spend/buys?cursor=  Every receipt, a page at a time (Build 17 audit
+   B17-008): the settled holds through the person's index, then any from the
+   legacy list not already shown. A purchase record that cannot be read makes
+   the whole answer "could not load" (503) - never a shorter list that looks
+   complete, and never an empty one that looks like nothing was bought. */
 async function spendBuys(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
-  const list = await DB.get(env, 'buys', user.email);
-  return json({ ok:true, buys: Array.isArray(list) ? list : [] });
+  const url = new URL(request.url);
+  const cursor = String(url.searchParams.get('cursor') || '').slice(0, 400) || null;
+  let page, legacyList = [];
+  try {
+    page = await _buyHoldIds(env, user.email, cursor, 200);
+    if (!page.next) { const l = await DB.get(env, 'buys', user.email); legacyList = Array.isArray(l) ? l : []; }
+  } catch (e) {
+    return json({ ok:false, code:'receipts_unavailable', error:'AMV could not read your purchases just now.' }, 503, { 'Retry-After':'5' });
+  }
+  const buys = [];
+  for (const id of page.ids) {
+    let rec;
+    try { rec = await DB.get(env, 'buyhold', id); }
+    catch (e) { return json({ ok:false, code:'receipts_unavailable', error:'AMV could not read your purchases just now.' }, 503, { 'Retry-After':'5' }); }
+    if (rec && rec.email === user.email && rec.status === 'settled') buys.push(_buyReceiptOf(rec));
+  }
+  /* Receipts written to the old list before the index existed. */
+  for (const r of legacyList) if (r && r.id && !buys.some(b => b.id === r.id))
+    buys.push(Object.assign({}, r, { seenOnPage: r.seenOnPage === true || r.verified === true, verified: false, source: 'reported' }));
+  buys.sort((a, b) => (+b.at || 0) - (+a.at || 0));
+  return json({ ok:true, buys, next: page.next || null });
 }
 /* ══════════════════════════════════════════════════════════════════════
    SPEECH: LISTENING TO AUDIO, AND SPEAKING ANSWERS ALOUD, ON THE SERVER.
@@ -47166,7 +47594,8 @@ async function passkeyOptions(request, env){
   const body = await request.json().catch(() => ({}));
   if(body.purpose === 'signin'){
     const lim = await limitAction(env, 'pksign:' + _rlIp(request), 30, 600);
-    if(!lim.ok && !lim.unavailable) return json({ error: 'Too many sign-in attempts from here. Give it a moment.', code: 'rate_limited' }, 429);
+    /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+    if(!lim.ok && (!lim.unavailable || !_localAdmit('pksign:' + _rlIp(request), 5))) return json({ error: 'Too many sign-in attempts from here. Give it a moment.', code: 'rate_limited' }, 429);
     const ch = await _pkChallenge(env, 'signin', '');
     return json({ ok: true, cid: ch.id, publicKey: { challenge: ch.c, rpId: site.rpId, userVerification: 'required', timeout: PK_CHALLENGE_S * 1000 } });
   }

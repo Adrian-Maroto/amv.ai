@@ -292,7 +292,8 @@ async function _federatedAccount(env, email, fresh){
 /* Step one: where to send somebody who typed their work address. */
 async function authSsoStart(request, env){
   const lim = await limitAction(env, 'ssostart:' + _rlIp(request), 20, 300);
-  if(!lim.ok && !lim.unavailable) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
+  /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+  if(!lim.ok && (!lim.unavailable || !_localAdmit('ssostart:' + _rlIp(request), 5))) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   if(!/^[^@\s]+@[^@\s]+$/.test(email) || email.length > 254) return json({ error:'Put in your work email address.', code:'bad_email' }, 400);
@@ -321,14 +322,23 @@ async function authSsoStart(request, env){
 /* Step two: the provider sent them back with a code. */
 async function authSsoFinish(request, env){
   const lim = await limitAction(env, 'ssofin:' + _rlIp(request), 20, 300);
-  if(!lim.ok && !lim.unavailable) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
+  /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+  if(!lim.ok && (!lim.unavailable || !_localAdmit('ssofinish:' + _rlIp(request), 5))) return json({ error:'Too many sign-in attempts from here. Give it a moment.', code:'rate_limited' }, 429, { 'Retry-After':'60' });
   const body = await request.json().catch(() => ({}));
   const state = String(body.state || ''), code = String(body.code || '');
   if(!/^s_[A-Za-z0-9_-]{20,80}$/.test(state) || !code || code.length > 4096) return json({ error:'That sign-in link is not valid.', code:'sso_bad_state' }, 400);
-  /* Spent on first use, before anything else, so a replayed return finds nothing. */
+  /* SPENT ONCE, WHERE ONLY ONE CALLER CAN SPEND IT (Build 17 audit D17-002).
+     Reading the state and then deleting it let two returns carrying it - a
+     double-submitted form, a replay - both read it before either deleted it,
+     and both went on to exchange a code. The claim object says yes to one
+     caller only, before anything is exchanged; one that cannot answer is a
+     try-again, never a pass. */
+  const spent = await _claimOnceDetail(env, 'ssost', state, SSO_STATE_TTL_S + 60);
+  if(spent.unavailable) return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' });
+  if(!spent.claimed) return json({ error:'That sign-in expired or was already used. Start again.', code:'sso_bad_state' }, 400);
   const raw = await env.AMV_KV.get('ssost:' + state);
   if(!raw) return json({ error:'That sign-in expired or was already used. Start again.', code:'sso_bad_state' }, 400);
-  await env.AMV_KV.delete('ssost:' + state);
+  try{ await env.AMV_KV.delete('ssost:' + state); }catch(e){ /* already spent by the claim above */ }
   const st = _safeJson(raw) || {};
   if(Date.now() - (+st.at || 0) > SSO_STATE_TTL_S * 1000) return json({ error:'That sign-in expired. Start again.', code:'sso_bad_state' }, 400);
   const team = await DB.get(env, 'team', String(st.teamId || ''));
@@ -360,10 +370,52 @@ async function authSsoFinish(request, env){
     const other = await DB.get(env, 'team', prior);
     if(other && _role(other, email)) return json({ error:'This account is in another AMV team. Leave it first, then sign in with your company.', code:'already_in_team' }, 409);
   }
+  /* WHO, NOT JUST WHICH ADDRESS (Build 17 audit D17-001). A company's
+     system names a person by an issuer and a subject that never change; the
+     address is a label it can move to somebody else. An account is bound to
+     the subject that first signed in to it, and a different subject arriving
+     with the same address - a mailbox reassigned to a new employee - is
+     refused, never merged. Linking a subject to an account that already
+     exists needs the system to say the address is verified (email_verified
+     true); a missing claim is enough only to make a brand-new account, or to
+     bind an account this company's sign-in made before binding existed. */
+  const iss = String(team.sso.issuer || ''), sub = typeof claims.sub === 'string' ? claims.sub.trim() : '';
+  if(!sub || sub.length > 255) return refuse('sso_no_subject', 'Your company’s system did not say who this is. Whoever runs it needs to include the subject (sub) claim.');
+  const verifiedClaim = claims.email_verified === true || claims.email_verified === 'true';
+  const bindKey = 'ssosub:' + (await _sha256Hex(iss + '\n' + sub));
+  let boundTo = null;
+  try{ boundTo = await env.AMV_KV.get(bindKey); }catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
+  if(boundTo && boundTo !== email)
+    return refuse('sso_email_changed', 'Your company’s system now gives this person a different email address than before, so AMV opened neither account. Ask whoever runs AMV for your company to contact support.');
+  let existing = null;
+  try{ existing = await DB.getStrict(env, 'acct', email); }catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
+  const mismatch = 'This address belongs to an AMV account that your company’s system gave to a different person before, so AMV did not open it. Ask whoever runs AMV for your company to contact support.';
+  if(existing){
+    const b = existing.sso;
+    if(b && b.iss === iss && b.sub !== sub) return refuse('sso_subject_mismatch', mismatch);
+    const legacySso = !b && (existing.provider || 'email') === 'sso';
+    if((!b || b.iss !== iss) && !verifiedClaim && !legacySso)
+      return refuse('sso_unverified', 'Your company’s system did not confirm this address is verified, and an AMV account already uses it. Whoever runs your company’s sign-in needs to send the email_verified claim.');
+  }
   const name = String(claims.name || email.split('@')[0]).slice(0, 120);
   let fed;
-  try{ fed = await _federatedAccount(env, email, { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request) }); }
+  try{ fed = await _federatedAccount(env, email, { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request), sso: { iss, sub, at: Date.now() } }); }
   catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+  /* Bound under the account's lock, and refused there if a different subject
+     got there first - the check above read a moment ago. */
+  if(!fed.created){
+    let clash = false;
+    try{
+      await _withAcct(env, email, (rec) => {
+        if(!rec) return;
+        if(rec.sso && rec.sso.iss === iss && rec.sso.sub !== sub){ clash = true; return; }
+        if(!rec.sso || rec.sso.iss !== iss || rec.sso.sub !== sub) rec.sso = { iss, sub, at: Date.now() };
+      });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+    if(clash) return refuse('sso_subject_mismatch', mismatch);
+  }
+  try{ if(boundTo !== email) await env.AMV_KV.put(bindKey, email); }
+  catch(e){ return json({ error:'AMV could not finish signing you in just now. Start again in a moment.', code:'sso_busy' }, 503, { 'Retry-After':'5' }); }
   if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
   const acct = fed.acct, created = fed.created;
   if(created){

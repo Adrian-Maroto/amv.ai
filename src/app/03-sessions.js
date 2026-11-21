@@ -2397,7 +2397,7 @@ function signOut(opts){
      signs in, and so the logout below is not itself among what is cancelled.
      (AMV-AUD-014) */
   try{ if(window.AMV_API && typeof AMV_API.abortAll === 'function') AMV_API.abortAll(); }catch(e){}
-  try{ if(window.AMV_API && AMV_API.live) AMV_API.logout(false, { forgetDevice: !!(opts && opts.forgetDevice) }); }catch(e){}   // even with no access token: the cookie is the session
+  try{ if(window.AMV_API && AMV_API.live) Promise.resolve(AMV_API.logout(false, { forgetDevice: !!(opts && opts.forgetDevice) })).then(r=>{ if(r === 'pending'){ try{ toast(T('Signed out on this device. AMV could not yet confirm the server ended this sign-in - it will refuse it once it can check.'),'info',9000); }catch(e){} } }).catch(()=>{}); }catch(e){}   // even with no access token: the cookie is the session
   /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
      mode both halves are held in module variables, and a sign-out that emptied
      storage while leaving a usable token in memory would be a sign-out that

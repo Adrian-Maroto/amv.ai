@@ -208,6 +208,48 @@ section('A stranger who signed up with the address first loses it to the company
   ok(old.status === 401, 'and the stranger’s session is over', old.status);
 }
 
+section('A person is who the provider says, not which address they hold (Build 17 audit D17-001)');
+{
+  /* Leo signs in; later his mailbox is given to somebody else, whom the
+     provider names with a different subject. The second person must not get
+     Leo's account. */
+  const leo = await signIn((p) => good(p, { email: 'leo@acme-corp.com', sub: 'u-leo', name: 'Leo' }));
+  ok(leo.f.status === 200 && !!leo.f.d.token, 'the first subject signs in and is bound to the account', leo.f.d);
+  const heir = await signIn((p) => good(p, { email: 'leo@acme-corp.com', sub: 'u-someone-new', name: 'New hire' }));
+  ok(heir.f.status === 401 && heir.f.d.code === 'sso_subject_mismatch' && !heir.f.d.token, 'a different subject with the same address is refused, not merged', heir.f.d);
+  const back = await signIn((p) => good(p, { email: 'leo@acme-corp.com', sub: 'u-leo', name: 'Leo' }));
+  ok(back.f.status === 200 && !!back.f.d.token, 'and Leo himself still gets in', back.f.d.code);
+  const moved = await signIn((p) => good(p, { email: 'leo.renamed@acme-corp.com', sub: 'u-leo', name: 'Leo' }));
+  ok(moved.f.status === 401 && moved.f.d.code === 'sso_email_changed', 'the same subject arriving with another address opens neither account', moved.f.d);
+  const nosub = await signIn((p) => { const c = good(p, { email: 'zoe@acme-corp.com' }); delete c.sub; return c; });
+  ok(nosub.f.status === 401 && nosub.f.d.code === 'sso_no_subject', 'a token without a subject is refused', nosub.f.d);
+}
+
+section('An existing account is linked only on an explicit verified address (Build 17 audit D17-001)');
+{
+  const pw = (await call('/auth/signup', { email: 'ivy@acme-corp.com', name: 'Ivy', password: 'Ivy-Passw0rd-123!' })).d.token;
+  ok(!!pw, 'Ivy has a password account at her work address');
+  const raw = await W.DB.get(env, 'acct', 'ivy@acme-corp.com');
+  await W.DB.put(env, 'acct', 'ivy@acme-corp.com', Object.assign({}, raw, { emailVerifiedAt: Date.now() }));
+  const silent = await signIn((p) => { const c = good(p, { email: 'ivy@acme-corp.com', sub: 'u-ivy' }); delete c.email_verified; return c; });
+  ok(silent.f.status === 401 && silent.f.d.code === 'sso_unverified', 'with the verified claim missing, it is not linked to her existing account', silent.f.d);
+  const said = await signIn((p) => good(p, { email: 'ivy@acme-corp.com', sub: 'u-ivy' }));
+  ok(said.f.status === 200 && !!said.f.d.token, 'with email_verified true, it is', said.f.d.code);
+  const fresh = await signIn((p) => { const c = good(p, { email: 'max@acme-corp.com', sub: 'u-max' }); delete c.email_verified; return c; });
+  ok(fresh.f.status === 200 && !!fresh.f.d.token, 'a brand-new account may be made without the claim, bound to its subject from the start', fresh.f.d.code);
+}
+
+section('A sign-in return is spent once, even by two at the same moment (Build 17 audit D17-002)');
+{
+  const s = await call('/auth/sso/start', { email: 'ana@acme-corp.com' });
+  const p = Object.fromEntries(new URL(s.d.url).searchParams);
+  nextToken = async () => sign(good(p));
+  const [a, b] = await Promise.all([call('/auth/sso/finish', { code: 'the-code', state: p.state }), call('/auth/sso/finish', { code: 'the-code-2', state: p.state })]);
+  const wins = [a, b].filter(x => x.status === 200 && x.d.token).length;
+  ok(wins === 1, 'exactly one of two simultaneous returns signs in', [a.status, b.status]);
+  ok([a, b].some(x => x.status === 400 && x.d.code === 'sso_bad_state'), 'the other is told the sign-in was already used', [a.d.code, b.d.code]);
+}
+
 section('Requiring company sign-in turns off passwords for the domain - not for the owner');
 {
   const req = await call('/team/sso', { action: 'require', on: true }, owner);

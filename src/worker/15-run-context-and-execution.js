@@ -1634,12 +1634,13 @@ async function _autoSweep(env) {
   let after = null;
   try { after = (await env.AMV_KV.get('autosweep:cursor')) || null; } catch (e) { after = null; }
   const fromStart = !after;
-  const rows = [];
+  const rows = [], unreadable = [];
   let next = after;
   const pages = _autoSweepPages(env);
   for (let i = 0; i < pages; i++) {
     const p = await DB.page(env, 'auto', next, AUTO_SWEEP_PAGE);
     rows.push(...p.rows);
+    unreadable.push(...(p.unreadable || []));
     next = p.next;
     if (!next) break;
   }
@@ -1647,8 +1648,15 @@ async function _autoSweep(env) {
     if (next) await env.AMV_KV.put('autosweep:cursor', String(next), { expirationTtl: 86400 });
     else if (after) await env.AMV_KV.delete('autosweep:cursor');
   } catch (e) {}
-  if (fromStart && !next && rows.length === 0) await _markKindEmpty(env, 'auto');
-  return { rows, wrapped: !next };
+  /* A job record that would not read is somebody's jobs not run, and never
+     the evidence that there are none (Build 17 audit D17-005): the
+     namespace is not marked empty past one, and somebody is told which. */
+  if (unreadable.length) {
+    try { await alertOnce(env, 'auto_sweep_unreadable', 'THE JOBS SWEEP COULD NOT READ ' + unreadable.length + ' JOB RECORD(S): ' + unreadable.slice(0, 5).join(', ')
+      + '. Their jobs are not running until the record is repaired (record_corrupt in the audit log names the key).', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
+  }
+  if (fromStart && !next && rows.length === 0 && !unreadable.length) await _markKindEmpty(env, 'auto');
+  return { rows, wrapped: !next, unreadable: unreadable.length };
 }
 
 async function runDueAutomations(env, atMs, opts){

@@ -17,7 +17,7 @@ const resultsFile = process.argv[3];
 const out = path.join(path.dirname(new URL(import.meta.url).pathname), '.build');
 fs.mkdirSync(out, { recursive: true });
 const h = path.join(out,'build16-state-harness.' + process.pid + '.mjs');
-fs.writeFileSync(h, fs.readFileSync(path.join(root,'amv-backend.js'),'utf8')+'\nexport {DB,counter,_withKind,_withAuto,_withWallet,_wallet,_creditGrant,_creditReverse,_creditState,backupExport,_nightlyBackupSlice,_sha256Hex,_backupCommittedKey,REV_KINDS,issueTokens,spendHold,spendRelease,spendSettle,spendGet,spendSet,_buyReceipt,_spendMonthKey};\n');
+fs.writeFileSync(h, fs.readFileSync(path.join(root,'amv-backend.js'),'utf8')+'\nexport {DB,counter,_withKind,_withAuto,_withWallet,_wallet,_creditGrant,_creditReverse,_creditState,backupExport,_nightlyBackupSlice,_sha256Hex,_backupCommittedKey,REV_KINDS,issueTokens,spendHold,spendRelease,spendSettle,spendBuys,spendGet,spendSet,_spendMonthKey};\n');
 const realFetch = globalThis.fetch;
 globalThis.fetch = async ()=> { throw Error('Audit network disabled'); };
 const W = await import(pathToFileURL(h));
@@ -123,7 +123,7 @@ await test('STATE16-C4','Readable committed orphan records are included in both 
 
 
 async function buySetup(){const f=fixture();await W.DB.put(f.env,'acct',EM,{email:EM,name:'Synthetic'});const token=(await W.issueTokens(f.env,EM,'Synthetic')).token;f.request=(route,body)=>new Request('https://audit.invalid'+route,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});await W.spendSet(f.request('/v1/spend/set',{enabled:true,perPurchase:200,monthlyCap:1000,autoUnder:100,currency:'USD'}),f.env);return f;}
-async function hold(f,amount=50,currency='USD'){const r=await W.spendHold(f.request('/v1/spend/hold',{amount,currency,store:'shop.example.invalid',item:'synthetic item'}),f.env);const body=await r.json();if(!body.ok)throw Error(JSON.stringify(body));return body.hold;}
+async function hold(f,amount=50,currency='USD'){const r=await W.spendHold(f.request('/v1/spend/hold',{amount,currency,store:'shop.example.invalid',item:'synthetic item',key:'k'+crypto.randomUUID().replace(/-/g,'')}),f.env);const body=await r.json();if(!body.ok)throw Error(JSON.stringify(body));return body.hold;}
 async function spendValue(f,key){return (await W.counter(f.env,key||W._spendMonthKey(EM),{op:'get',strict:true})).value;}
 await test('STATE16-06','Retrying a released purchase against stale hold state subtracts another purchase reservation',async()=>{
  const f=await buySetup();const a=await hold(f),b=await hold(f);const key='buyhold:'+a.id,stale=f.live.get(key);const before=await spendValue(f);
@@ -146,8 +146,16 @@ await test('STATE16-09','Changing limit currency mixes different currencies into
  const summary=await(await W.spendGet(f.request('/v1/spend/get',{}),f.env)).json();
  return {reproduced:summary.limits.currency==='EUR'&&summary.spentThisMonth===60,summary,actualComposition:[{amount:50,currency:'USD'},{amount:10,currency:'EUR'}],conversionPerformed:false};
 });
+/* Adapted Nov 21 (Build 17 audit B17-003/004/008): the receipt list this
+   reproduced is gone - each purchase is its own record, listed through the
+   person's index. The defect was a list that did not keep what it said it
+   kept; the same question asked of what replaced it: every settled purchase
+   is listed, and no shared list is written. */
 await test('STATE16-10','Receipt retention limit does not limit the persisted list',async()=>{
- const f=fixture();for(let i=0;i<105;i++)await W._buyReceipt(f.env,EM,{id:'synthetic-'+i,at:i,total:1,currency:'USD'});const receipts=JSON.parse(f.live.get('buys:'+EM));return {reproduced:receipts.length===105,persisted:receipts.length,documentedLimit:100};
+ const f=await buySetup();const ids=[];for(let i=0;i<3;i++){const h=await hold(f,5);ids.push(h.id);await W.spendSettle(f.request('/v1/spend/settle',{hold:h.id,total:5,order:'ORD-'+i}),f.env);}
+ const r=await(await W.spendBuys(new Request('https://audit.invalid/v1/spend/buys',{headers:f.request('/x',{}).headers}),f.env)).json();
+ const listed=(r.buys||[]).map(x=>x.id);
+ return {reproduced:!(ids.every(id=>listed.includes(id))&&!f.live.has('buys:'+EM)),listed:listed.length,sharedListWritten:f.live.has('buys:'+EM)};
 });
 await test('STATE16-C5','A normal single release frees only its own reservation',async()=>{
  const f=await buySetup();const a=await hold(f),b=await hold(f);await W.spendRelease(f.request('/v1/spend/release',{hold:a.id}),f.env);const final=await spendValue(f);return {controlPassed:final===50&&JSON.parse(f.live.get('buyhold:'+b.id)).status==='held',final};

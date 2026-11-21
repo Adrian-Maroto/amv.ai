@@ -54,7 +54,12 @@ async function fetchGuarded(rawUrl, init, ms){
   for(let hop = 0; hop <= OUTBOUND_MAX_HOPS; hop++){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
-    if(await _resolvesPrivate(new URL(gate.url).hostname)) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
+    const where = await _resolvesPrivate(new URL(gate.url).hostname);
+    /* A name whose answer could not be read is not let through as public
+       (Build 17 audit B17-023): it is refused this time and asked again on
+       the next request - nothing is remembered from a failed lookup. */
+    if(where === 'unknown') return { blocked: true, why: 'AMV could not check where that address points just now, so it was not opened. Try again in a moment.', url: target, hop };
+    if(where) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
     if(![301, 302, 303, 307, 308].includes(r.status)) return { blocked: false, response: r };
     const loc = r.headers.get('location');
@@ -103,15 +108,21 @@ async function _resolvesPrivate(host){
   if(!h || /^[\d.]+$/.test(h) || h.includes(':')) return false;          // a literal: the gate already read it
   const hit = _dnsSeen.get(h);
   if(hit && Date.now() - hit.at < DNS_KEEP_MS) return hit.bad;
+  /* null is "no answer"; [] is "answered, no addresses" (Build 17 audit
+     B17-023). Only the second is an answer. */
   const ask = async (type) => {
     try {
       const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=' + type + '&name=' + encodeURIComponent(h), { headers: { Accept: 'application/dns-json' } }, 3000);
-      if(!r || !r.ok) return [];
+      if(!r || !r.ok) return null;
       const d = await r.json();
+      if(!d || typeof d.Status !== 'number') return null;
       return ((d && d.Answer) || []).filter(a => a && (a.type === 1 || a.type === 28)).map(a => String(a.data || ''));
-    } catch (e) { return []; }
+    } catch (e) { return null; }
   };
-  const ips = [].concat(...(await Promise.all([ask('A'), ask('AAAA')])));
+  const got = await Promise.all([ask('A'), ask('AAAA')]);
+  /* Neither lookup answered: unknown, not public - and not remembered. */
+  if(got[0] === null && got[1] === null) return 'unknown';
+  const ips = [].concat(...got.map(x => x || []));
   const bad = ips.some(ip => ip && !_webHostAllowed('http://' + (ip.includes(':') ? '[' + ip + ']' : ip) + '/').ok);
   if(_dnsSeen.size > 2000) _dnsSeen.clear();
   _dnsSeen.set(h, { at: Date.now(), bad });

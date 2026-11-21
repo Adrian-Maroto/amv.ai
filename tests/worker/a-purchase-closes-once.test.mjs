@@ -24,7 +24,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'closesonce.' + process.pid + '.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { spendHold, spendSettle, spendRelease, spendBuys, spendSet, spendGet, DB, counter, _spendMonthKey };
+export { spendHold, spendSettle, spendRelease, spendBuys, spendSet, spendGet, DB, counter, _spendMonthKey, _buyHoldIds };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -59,7 +59,7 @@ const req = (path, body) => new Request('https://x' + path, { method: body ? 'PO
   headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '5.5.5.' + Math.floor(Math.random() * 200) }, body: body ? JSON.stringify(body) : undefined });
 const call = async (f, fn, path, body) => { const r = await fn(req(path, body), f.env); return { status: r.status, d: await r.json() }; };
 const limits = (f, currency = 'USD') => call(f, W.spendSet, '/v1/spend/set', { enabled: true, perPurchase: 200, monthlyCap: 1000, autoUnder: 100, currency });
-const hold = async (f, amount = 50, currency = 'USD') => (await call(f, W.spendHold, '/v1/spend/hold', { amount, currency, store: 'shop.example.com', item: 'A kettle' })).d;
+const hold = async (f, amount = 50, currency = 'USD') => (await call(f, W.spendHold, '/v1/spend/hold', { amount, currency, store: 'shop.example.com', item: 'A kettle', key: 'k' + crypto.randomUUID().replace(/-/g, '') })).d;
 const month = async (f, currency) => (await W.counter(f.env, W._spendMonthKey(EM, currency), { op: 'get', strict: true })).value;
 const settle = (f, id, total, order = 'A-1') => call(f, W.spendSettle, '/v1/spend/settle', { hold: id, total, order, verified: true });
 const release = (f, id) => call(f, W.spendRelease, '/v1/spend/release', { hold: id });
@@ -157,8 +157,11 @@ section('A hold can be found from its owner (Build 16 audit SEC-14)');
 {
   const f = fixture(); await limits(f);
   const a = (await hold(f)).hold, b = (await hold(f)).hold;
-  const idx = await W.DB.get(f.env, 'buyholds', EM);
-  ok(Array.isArray(idx) && idx[0] === b.id && idx[1] === a.id, 'each hold is in its owner’s index, newest first - what the export and erasure walk', idx);
+  /* One index key per hold under the owner since Build 17 (B17-007): no
+     shared list, no cap - what the export and erasure walk. */
+  const idx = (await W._buyHoldIds(f.env, EM, null, 100)).ids;
+  ok(Array.isArray(idx) && idx.includes(a.id) && idx.includes(b.id), 'each hold is in its owner’s index - what the export and erasure walk', idx);
+  ok((await W.DB.get(f.env, 'buyholds', EM)) === null, 'and no shared list is written', await W.DB.get(f.env, 'buyholds', EM));
 }
 
 section('Each currency is its own month');

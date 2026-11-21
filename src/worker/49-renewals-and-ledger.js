@@ -445,7 +445,7 @@ async function _claimOnce(env, kind, id, ttlSec){
    caller that only needs yes/no keeps _claimOnce; a caller that treats "taken"
    as an accusation - refresh-token reuse revokes the whole account - must not
    make that accusation over a store that did not answer. */
-async function _claimOnceDetail(env, kind, id, ttlSec){
+async function _claimOnceDetail(env, kind, id, ttlSec, note){
   if(!id) return { claimed: true };
   /* Prefer the Durable Object: it serializes ops, so the check and the claim
      cannot interleave. This matters most for money - two simultaneous
@@ -453,7 +453,7 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
      KV path is last and is best-effort ONLY, because get-then-put races. */
   if(env && env.AMV_COUNTER){
     try{
-      const r = await counter(env, 'claim:' + kind + ':' + id, { op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 });
+      const r = await counter(env, 'claim:' + kind + ':' + id, Object.assign({ op:'claim', ttlMs:(ttlSec||CLAIM_ONCE_TTL_S)*1000 }, note ? { note: String(note).slice(0, 16) } : {}));
       /* AMV-032: a bound Durable Object that could not answer is a fault, not a
          reason to take the lock through a path that cannot hold it. Refusing
          means the caller retries or reports busy; falling through would mean
@@ -474,7 +474,8 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            isolate overwrote it, and the first holder's release then freed
            the second's lock. A caller that keeps its own owner releases
            with that, whatever the map says now. */
-        return { claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' };
+        return Object.assign({ claimed: r.claimed, owner: r.claimed ? (r.owner || '') : '' },
+          r.claimed ? {} : { at: Number.isFinite(+r.at) ? +r.at : 0, note: typeof r.note === 'string' ? r.note : '' });
       }
     }catch(e){ /* answered below: the object is bound, so nothing else may decide */ }
     /* Bound but no usable answer - a malformed reply, a throw (Nov 8 verified

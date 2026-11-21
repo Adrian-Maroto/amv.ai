@@ -104,9 +104,14 @@ async function _revRead(env, kind, id, raw){
      an erased account's conversations - and answering it put them back on
      the screen and into the next merge. Refused as a short wait instead. */
   if(!st || st.unavailable){
-    /* Nothing here to bring back: "absent" is safe to answer. */
-    if(raw == null) return null;
-    try { audit(env, 'rev_read_unavailable', { kind, id }); } catch(e) { /* logging: it never decides anything */ }
+    /* AND NO COPY HERE IS NOT "IT DOES NOT EXIST" (Build 17 audit B17-002).
+       This used to answer absent when the local copy was missing, as if
+       there were nothing to bring back - but KV answers a miss from a cache,
+       and a record committed a moment ago elsewhere can be missing here. An
+       account, a plan or a team read as absent is a sign-up over an existing
+       account, a paid plan read as free, a member read as nobody. Unknown is
+       a short wait, whichever way the copy here points. */
+    try { audit(env, 'rev_read_unavailable', { kind, id, local: raw == null ? 'missing' : 'present' }); } catch(e) { /* logging: it never decides anything */ }
     throw new RecordSettlingError(kind + ':' + id);
   }
   /* The revision this read stands on, for a lock holder's fence. */
@@ -168,6 +173,37 @@ async function _revPutFenced(env, kind, id, obj, fence){
   try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base }); } catch(e) { /* logging: it never decides anything */ }
   const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
 }
+/* THE SAME FENCE ON THE DATABASE (Build 17 audit B17-009). With DATA_STORE=d1
+   a write was an unconditional upsert: a holder whose lock lapsed mid-change
+   could put an older whole record over a newer one. Inside a fenced change
+   the read records the row's `updated_at`, and the write goes ahead only
+   while the row still carries it - a compare-and-swap on the column the table
+   already has, so no schema change. Each write moves the stamp strictly
+   forward, so a holder that writes twice is still the holder. */
+function _d1FenceWants(kind, id){
+  if(!REV_PUT_KINDS.has(kind)) return null;
+  const f = _revFenceOf(kind, id);
+  return f && f.d1 == null ? f : null;
+}
+/* Only a fenced read asks for the stamp; every other read is the query it
+   always was. */
+async function _d1Row(env, kind, id){
+  const f = _d1FenceWants(kind, id);
+  if(!f) return env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+  const row = await env.DB.prepare('SELECT json, updated_at FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+  f.d1 = row ? (+row.updated_at || 0) : 0;
+  return row;
+}
+async function _d1PutFenced(env, kind, id, j, fence){
+  const stamp = Math.max(Date.now(), (+fence.d1 || 0) + 1);
+  const r = fence.d1 === 0
+    ? await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO NOTHING').bind(kind, id, j, stamp).run()
+    : await env.DB.prepare('UPDATE kv SET json=?, updated_at=? WHERE kind=? AND id=? AND updated_at=?').bind(j, stamp, kind, id, +fence.d1).run();
+  const changed = r && r.meta ? +r.meta.changes : NaN;
+  if(changed === 1){ fence.d1 = stamp; return; }
+  try { audit(env, 'rev_fence_refused', { kind, id: String(id).slice(0, 120), base: fence.d1, store: 'd1' }); } catch(e) { /* logging: it never decides anything */ }
+  const busy = new Error(kind + ' was changed by somebody else meanwhile'); busy.code = 'record_busy'; throw busy;
+}
 /* A delete, committed: readers then answer "absent" whatever copies remain. */
 async function _revCommitAbsent(env, kind, id){
   if(!env.AMV_COUNTER) return;
@@ -210,7 +246,7 @@ const DB = {
   async get(env, kind, id){
     let raw = null;
     if(this._hasD1(env)){
-      const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+      const row = await _d1Row(env, kind, id);
       raw = row && row.json ? row.json : null;
     } else {
       /* Step 5: for the read cohort, Postgres answers an account or a plan
@@ -270,7 +306,7 @@ const DB = {
   async getStrict(env, kind, id, shape = 'object'){
     let raw = null;
     if(this._hasD1(env)){
-      const row = await env.DB.prepare('SELECT json FROM kv WHERE kind=? AND id=?').bind(kind, id).first();
+      const row = await _d1Row(env, kind, id);
       raw = row == null ? null : row.json;
     } else {
       const pg = await _pgReadServe(env, kind, id);
@@ -308,7 +344,9 @@ const DB = {
         }
       }
       const ik = await _pgIntent(env, kind, id);
-      await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
+      const fence = REV_PUT_KINDS.has(kind) ? _revFenceOf(kind, id) : null;
+      if(fence && fence.d1 != null) await _d1PutFenced(env, kind, id, j, fence);
+      else await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?) ON CONFLICT(kind,id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at')
         .bind(kind, id, j, Date.now()).run();
       _pgAfter(env, kind, id, obj, ik);
       return;
@@ -527,21 +565,31 @@ const DB = {
      `after` (a KV cursor, or the last D1 id), with the place to continue from
      - null at the end. Ordered on D1 so consecutive pages never overlap or
      skip; on KV the cursor is the store's own. */
+  /* A PAGE SAYS WHAT IT COULD NOT READ (Build 17 audit D17-005). A record
+     that would not parse used to be dropped here and the page went on as if
+     it had not been there, so a sweep reached the end and reported a
+     complete pass over records it never saw - a lapsed payment never
+     examined, an erasure that missed one. `unreadable` names them (the ids,
+     at most 50) so the caller can say its pass was not complete. */
   async page(env, kind, after, max){
-    const out = [];
+    const out = [], unreadable = [];
+    const bad = (id, bytes) => {
+      if (unreadable.length < 50) unreadable.push(String(id));
+      try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes, where: 'page' }); } catch(_) { /* logging: it never decides anything */ }
+    };
     const n = Math.max(1, Math.min(1000, max || 500));
     if(this._hasD1(env)){
       const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
       const rs = rows.results || [];
-      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
-      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch(e) { bad(r.id, String(r.json || '').length); } }
+      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null, unreadable };
     }
     const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
     for(const k of page.keys){
       const raw = await env.AMV_KV.get(k.name);
-      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ } }
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch(e) { bad(k.name.slice(kind.length + 1), String(raw).length); } }
     }
-    return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
+    return { rows: out, next: page.list_complete ? null : (page.cursor || null), unreadable };
   },
 };
 

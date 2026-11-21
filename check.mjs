@@ -1376,6 +1376,14 @@ step('No decision is read out of a store nothing writes', () => {
      so the allowance is per reader, and any other function touching it fails
      here. */
   const ALLOWED = {
+    /* The two lists purchases were kept in until Build 17 (B17-003/007/008):
+       each purchase now writes its own index key (buyix:). These are read
+       only to show, export and erase what was written before that, never to
+       decide anything, and go once no account holds one. */
+    buyholds: { readers: ['_buyHoldIds'],
+      reason: 'legacy index of purchase holds from before Build 17, read alongside buyix: so old purchases are still listed, exported and erased.' },
+    buys: { readers: ['spendBuys'],
+      reason: 'legacy receipt list from before Build 17, read alongside the settled holds so old receipts still show.' },
     goauth: { readers: ['_eraseAccount'],
       reason: 'retired with googleOAuthExchange. Erasure still revokes a refresh token left behind on an '
             + 'old account - a cleanup, not a decision. Nothing may answer a capability question from it '

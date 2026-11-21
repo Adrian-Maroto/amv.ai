@@ -1375,6 +1375,10 @@ const AMV_API = {
       /* Whatever the answer, this device is signed out here. */
       this._rtMem = '';
       const d = await r.json().catch(()=>({}));
+      /* 'pending' (Build 17 audit D17-003): the browser is signed out, but
+         the server could not yet confirm the sign-in ended - not the same as
+         done, and not the same as nothing happening. */
+      if(d && d.pending) return 'pending';
       return !!(d && d.ok);
     }catch(e){ return false; }
   },

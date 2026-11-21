@@ -38,7 +38,7 @@ W.__setRequireUser(async () => USER);
 const call = async (fn, path, body) => { const r = await fn(new Request('https://x' + path, { method: body ? 'POST' : 'GET',
   headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '5.5.5.' + Math.floor(Math.random() * 200) }, body: body ? JSON.stringify(body) : undefined }), env);
   return { status: r.status, d: await r.json() }; };
-const hold = (b) => call(W.spendHold, '/v1/spend/hold', Object.assign({ store: 'shop.example.com', item: 'A kettle', currency: 'USD' }, b));
+const hold = (b) => call(W.spendHold, '/v1/spend/hold', Object.assign({ store: 'shop.example.com', item: 'A kettle', currency: 'USD', key: 'k' + crypto.randomUUID().replace(/-/g, '') }, b));
 const month = async () => +((await W.counter(env, `spendmo:${USER.email}:${W.monthKey()}`, { op: 'get' })).value || 0);
 const limits = (l) => W.DB.put(env, 'spendlimits', USER.email, Object.assign({ enabled: true, autoUnder: 50, perPurchase: 100, monthlyCap: 150, currency: 'USD' }, l));
 
@@ -72,7 +72,9 @@ section('Settled at what the store charged');
   store.clear(); await limits({});
   let h = (await hold({ amount: 80 })).d.hold;
   let s = await call(W.spendSettle, '/v1/spend/settle', { hold: h.id, total: 75.5, order: 'A-1001', verified: true });
-  ok(s.d.ok && s.d.receipt.total === 75.5 && s.d.receipt.over === 0 && s.d.receipt.verified, 'a lower total is settled', s.d);
+  /* Seen on the store's page, as the person's computer reported it - never
+     "verified": nobody at AMV asked the store (Build 17 audit B17-006). */
+  ok(s.d.ok && s.d.receipt.total === 75.5 && s.d.receipt.over === 0 && s.d.receipt.seenOnPage === true && s.d.receipt.verified === false, 'a lower total is settled, and reported as seen on the page - not verified', s.d);
   ok(await month() === 75.5, 'and the rest goes back to the month', await month());
   const again = await call(W.spendSettle, '/v1/spend/settle', { hold: h.id, total: 75.5, order: 'A-1001' });
   ok(again.status === 409, 'a purchase is settled once', again.d);

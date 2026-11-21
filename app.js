@@ -1375,6 +1375,10 @@ const AMV_API = {
       /* Whatever the answer, this device is signed out here. */
       this._rtMem = '';
       const d = await r.json().catch(()=>({}));
+      /* 'pending' (Build 17 audit D17-003): the browser is signed out, but
+         the server could not yet confirm the sign-in ended - not the same as
+         done, and not the same as nothing happening. */
+      if(d && d.pending) return 'pending';
       return !!(d && d.ok);
     }catch(e){ return false; }
   },
@@ -7081,7 +7085,7 @@ function signOut(opts){
      signs in, and so the logout below is not itself among what is cancelled.
      (AMV-AUD-014) */
   try{ if(window.AMV_API && typeof AMV_API.abortAll === 'function') AMV_API.abortAll(); }catch(e){}
-  try{ if(window.AMV_API && AMV_API.live) AMV_API.logout(false, { forgetDevice: !!(opts && opts.forgetDevice) }); }catch(e){}   // even with no access token: the cookie is the session
+  try{ if(window.AMV_API && AMV_API.live) Promise.resolve(AMV_API.logout(false, { forgetDevice: !!(opts && opts.forgetDevice) })).then(r=>{ if(r === 'pending'){ try{ toast(T('Signed out on this device. AMV could not yet confirm the server ended this sign-in - it will refuse it once it can check.'),'info',9000); }catch(e){} } }).catch(()=>{}); }catch(e){}   // even with no access token: the cookie is the session
   /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
      mode both halves are held in module variables, and a sign-out that emptied
      storage while leaving a usable token in memory would be a sign-out that
@@ -43509,6 +43513,13 @@ function _actSignOutEverywhere(sayId){
     if(say) say.textContent = 'Ending all sessions…';
     let ok = false;
     try{ ok = await AMV_API.logout(true); }catch(e){}
+    if(ok === 'pending'){
+      /* This browser is out; the others are not confirmed out. Said as that,
+         and this device signs out - the person asked for it to. */
+      try{ toast(T('Signed out here. AMV could not yet confirm your other devices are signed out - sign in and try again in a minute.'),'error',9000); }catch(e){}
+      signOut();
+      return;
+    }
     if(!ok){
       if(say) say.textContent = 'Nothing was signed out - your other sessions are STILL SIGNED IN. Please try again.';
       try{ toast('Sign out everywhere failed - nothing was changed','error',5000); }catch(e){}

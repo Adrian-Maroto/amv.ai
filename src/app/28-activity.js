@@ -189,6 +189,13 @@ function _actSignOutEverywhere(sayId){
     if(say) say.textContent = 'Ending all sessions…';
     let ok = false;
     try{ ok = await AMV_API.logout(true); }catch(e){}
+    if(ok === 'pending'){
+      /* This browser is out; the others are not confirmed out. Said as that,
+         and this device signs out - the person asked for it to. */
+      try{ toast(T('Signed out here. AMV could not yet confirm your other devices are signed out - sign in and try again in a minute.'),'error',9000); }catch(e){}
+      signOut();
+      return;
+    }
     if(!ok){
       if(say) say.textContent = 'Nothing was signed out - your other sessions are STILL SIGNED IN. Please try again.';
       try{ toast('Sign out everywhere failed - nothing was changed','error',5000); }catch(e){}

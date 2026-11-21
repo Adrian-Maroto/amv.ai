@@ -98,6 +98,7 @@ async function marketReport(request, env) {
   let hidden = false;
   if (rec.count >= REPORT_AUTOHIDE && !it.hidden) {
     try {
+      try { await _listingMarkDown(env, id, 'reported'); } catch (e) { audit(env, 'listing_hide_unrecorded', { id }); }
       await _withKind(env, 'market', id, (m) => {
         if (!m || !m.id) return;
         m.hidden = true;

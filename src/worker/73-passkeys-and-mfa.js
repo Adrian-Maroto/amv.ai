@@ -451,7 +451,8 @@ async function passkeyOptions(request, env){
   const body = await request.json().catch(() => ({}));
   if(body.purpose === 'signin'){
     const lim = await limitAction(env, 'pksign:' + _rlIp(request), 30, 600);
-    if(!lim.ok && !lim.unavailable) return json({ error: 'Too many sign-in attempts from here. Give it a moment.', code: 'rate_limited' }, 429);
+    /* Undecided is bounded here, not open (Build 17 audit D17-008). */
+    if(!lim.ok && (!lim.unavailable || !_localAdmit('pksign:' + _rlIp(request), 5))) return json({ error: 'Too many sign-in attempts from here. Give it a moment.', code: 'rate_limited' }, 429);
     const ch = await _pkChallenge(env, 'signin', '');
     return json({ ok: true, cid: ch.id, publicKey: { challenge: ch.c, rpId: site.rpId, userVerification: 'required', timeout: PK_CHALLENGE_S * 1000 } });
   }

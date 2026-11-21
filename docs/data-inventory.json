@@ -757,6 +757,20 @@
    "backup": true,
    "authority": "kv"
   },
+  "ssosub": {
+   "class": "security",
+   "holds": "which account a company sign-in's issuer and subject belong to, keyed by a hash of the pair; the value is the address",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "undoout": {
+   "class": "operational",
+   "holds": "what a connected-account undo ticket's one run ended as, so a repeat of the ticket is told the same and not run again",
+   "kept": "a day and an hour",
+   "backup": false,
+   "authority": "kv"
+  },
   "ssost": {
    "class": "security",
    "holds": "a company sign-in state and nonce",
@@ -970,6 +984,13 @@
   "buyholds": {
    "class": "financial",
    "holds": "the list of a person's purchase holds, so one that was never settled is found and released",
+   "kept": "account lifetime",
+   "backup": true,
+   "authority": "kv"
+  },
+  "buyix": {
+   "class": "financial",
+   "holds": "one key per purchase hold under the person's address, so every purchase can be listed, exported and erased without a shared list",
    "kept": "account lifetime",
    "backup": true,
    "authority": "kv"

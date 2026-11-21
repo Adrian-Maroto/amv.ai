@@ -52,5 +52,21 @@ section('Taken down: out of the catalogue, told to devices, the seller frozen - 
   ok(pub.status === 403 && pub.d.code === 'seller_suspended', 'and the seller cannot publish a new version', pub.status);
 }
 
+section('A count written from a copy older than the takedown does not put it back (Build 17 audit B17-010)');
+{
+  /* Another region still holds the listing as it was before the takedown,
+     and that is the copy an install there reads, bumps and writes back. */
+  const before = JSON.stringify({ id: 'bad_plugin', title: 'Handy writer', author: BAD, kind: 'plugin', status: 'active', price: 0, installs: 9 });
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => k === 'market:bad_plugin' ? before : realGet(k);
+  const fan = await W.issueTokens(env, 'fan@test.com', 'Fan');
+  await req('/v1/market/install', { id: 'bad_plugin' }, { Authorization: 'Bearer ' + fan.token });
+  env.AMV_KV.get = realGet;
+  const now = JSON.parse(store.get('market:bad_plugin'));
+  ok(now.hidden === true && !!now.disabled, 'the listing written back is still taken down', now);
+  const list = await req('/v1/market/list');
+  ok(!(list.d.items || list.d.listings || []).some(x => x.id === 'bad_plugin'), 'and it is still out of the catalogue');
+}
+
 if (report('a-compromised-publisher-is-switched-off') > 0) process.exitCode = 1;
 done();

@@ -86,7 +86,15 @@ async function _autoEnqueue(env, users, now){
     const slice = toSend.slice(i, i + AUTO_QUEUE_BATCH);
     try{
       const bodies = [];
-      for(const u of slice){ const ref = await _qSeal(env, u.id); bodies.push({ body: Object.assign(ref ? { ref } : { email: u.id }, { due: u.soonest || now, at: now }) }); }
+      /* Sealed or not sent (Build 17 audit B17-022). Without a key to seal
+         with, a message used to carry the address itself, into the queue, its
+         retries and its dead letters. Now the account is not queued at all:
+         it runs inline, as when the queue is down, and the operator is told. */
+      for(const u of slice){
+        const ref = await _qSeal(env, u.id);
+        if(!ref) throw Object.assign(new Error('no key to seal queue messages with'), { code: 'queue_unsealed' });
+        bodies.push({ body: { ref, due: u.soonest || now, at: now } });
+      }
       await env.AMV_JOBS.sendBatch(bodies);
       sent += slice.length;
     }catch(e){

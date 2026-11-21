@@ -213,8 +213,14 @@ async function _shopPropose(input){
   });
   if(ok !== true) return { ok:false, text:'The person chose not to buy it. Do not ask them to press the final button. Ask what they want instead.' };
   let d;
+  /* One key for this approved purchase (Build 17 audit B17-005): sent again
+     after a dropped answer, the server hands back the same hold instead of
+     holding the amount a second time. */
+  const key = 'k' + crypto.randomUUID().replace(/-/g, '');
   try{
-    const r = await AMV_API._fetch('/v1/spend/hold', { method:'POST', body: JSON.stringify({ amount: total, currency, store, item }) });
+    let r;
+    try{ r = await AMV_API._fetch('/v1/spend/hold', { method:'POST', body: JSON.stringify({ amount: total, currency, store, item, key }) }); }
+    catch(e){ r = await AMV_API._fetch('/v1/spend/hold', { method:'POST', body: JSON.stringify({ amount: total, currency, store, item, key }) }); }
     d = await r.json().catch(() => ({}));
     if(!r.ok || !d.ok){
       const why = [d.need, d.message].filter(Boolean).join(' ') || d.error || 'The purchase could not be held.';
@@ -257,7 +263,7 @@ async function _shopConfirm(input){
   let d;
   c.settling = true;
   try{
-    const r = await AMV_API._fetch('/v1/spend/settle', { method:'POST', body: JSON.stringify({ hold: c.hold, total, order, verified: seen }) });
+    const r = await AMV_API._fetch('/v1/spend/settle', { method:'POST', body: JSON.stringify({ hold: c.hold, total, order, seenOnPage: seen }) });
     d = await r.json().catch(() => ({}));
     if(!r.ok || !d.ok) throw Object.assign(new Error(d.error || ('HTTP ' + r.status)), { pending: /_pending$/.test(String(d.code || '')) });
   }catch(e){ return { ok:false, text:'The purchase may have gone through, but AMV could not record it (' + ((e && e.message) || 'error') + ').'

@@ -62,7 +62,7 @@ async function smsRegister(request, env) {
        a reason for these two to differ. */
     const vcode = _sixDigitCode();
     await env.AMV_KV.put(`smsverify:${email}:${phone}`,
-      JSON.stringify({ code: vcode, attempts: 0, at: Date.now() }), { expirationTtl: 600 });
+      JSON.stringify({ code: vcode, attempts: 0, at: Date.now(), n: _sixDigitCode() + '.' + Date.now() }), { expirationTtl: 600 });
     try { await sendSms(env, phone, `Your AMV verification code is ${vcode}. It expires in 10 minutes.`); }
     catch (e) { return json({ error: 'Could not send the verification code.' }, 502); }
     return json({ ok: true, pending: true });
@@ -79,10 +79,27 @@ async function smsRegister(request, env) {
      code: a read, a compare, an increment and a write is four steps with three
      gaps, and guesses arriving together all read the same number and all decide
      they are under the limit. */
-  let verdict;
+  /* AND COUNTED WHERE A STALE COPY CANNOT UNDO THE COUNT (Build 17 audit
+     B17-010). The lock serialises guesses, but its read is a KV copy, which in
+     another region can be a minute old - an older copy with fewer attempts
+     on it handed back guesses. Each try is counted in the atomic object first,
+     per issue of the code, as sign-in and reset codes are; the attempts on
+     the record are the second count, kept for the message. */
+  let verdict, issue = '';
   try {
     verdict = await _withKV(env, 'smsverify', `${email}:${phone}`, (rec) => {
-      if (!rec || !rec.code) return { gone: true };
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      issue = String(rec.n || rec.at || '');
+      return { peek: true, commit: false };
+    }, null);
+    if (verdict && verdict.peek) {
+      let tried;
+      try { tried = await _challengeTry(env, 'sms:' + email + ':' + phone + ':' + issue, SMS_CODE_MAX_ATTEMPTS, 600); }
+      catch (e) { return json({ error: 'AMV cannot check that code just now. Try again in a moment.', code: 'limit_unavailable' }, 503, { 'Retry-After': '5' }); }
+      if (!tried.ok) verdict = { exhausted: true };
+      else verdict = await _withKV(env, 'smsverify', `${email}:${phone}`, (rec) => {
+      if (!rec || !rec.code || rec.used) return { gone: true };
+      if (String(rec.n || rec.at || '') !== issue) return { gone: true };
       if ((rec.attempts || 0) >= SMS_CODE_MAX_ATTEMPTS) return { exhausted: true };
       rec.attempts = (rec.attempts || 0) + 1;
       const match = timingSafeEqual(new TextEncoder().encode(code), new TextEncoder().encode(String(rec.code)));
@@ -90,6 +107,7 @@ async function smsRegister(request, env) {
       rec.used = true;
       return { ok: true };
     }, null);
+    }
   } catch (e) {
     if (_isBusy(e)) return _busyJson('phone verification');
     /* A verification code is a throwaway, so a record that cannot be read is
