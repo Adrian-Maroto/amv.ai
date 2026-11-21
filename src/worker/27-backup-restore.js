@@ -41,6 +41,9 @@
    Shared here so they cannot drift apart again. A limit the writer does not
    know about is not a limit, it is a trap laid for the worst day of the year. */
 const BACKUP_MAX_VALUE_BYTES = 2 * 1024 * 1024;   // per record
+/* Bytes as they are stored and sent, not JavaScript characters (Build 16 audit
+   OPS-06): a record of Chinese or emoji is up to four times its length. */
+const _utf8Len = (t) => { const x = String(t == null ? '' : t); let n = 0; for (let i = 0; i < x.length; i++) { const c = x.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; } else n += 3; } return n; };
 const BACKUP_MAX_KEYS        = 500000;            // per snapshot
 
 const BACKUP_PREFIXES = [
@@ -589,7 +592,7 @@ async function backupExport(request, env){
              can go and look at it now, while the store is healthy - instead of
              discovering the gap at the moment they are trying to recover from
              something else. */
-          if (raw.length > BACKUP_MAX_VALUE_BYTES) {
+          if (_utf8Len(raw) > BACKUP_MAX_VALUE_BYTES) {
             failed.push(key);
             throw new Error('backup incomplete: ' + key + ' is ' + raw.length
               + ' bytes, larger than the ' + BACKUP_MAX_VALUE_BYTES
@@ -685,7 +688,7 @@ async function _restoreEntries(env, entries, mode, t){
   const lost = t.lost;
   for(const [key, val] of entries){
     if(!allowed(key)){ refused++; continue; }
-    if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
+    if(typeof val !== 'string' || _utf8Len(val) > BACKUP_MAX_VALUE_BYTES){
       unrestorable++; if(lost.length < 20) lost.push(key); continue;
     }
     /* AN ERASED ACCOUNT STAYS ERASED (Nov 8 verified audit, batch B). A

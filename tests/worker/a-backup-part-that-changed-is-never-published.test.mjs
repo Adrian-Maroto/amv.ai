@@ -86,6 +86,29 @@ section('A stale checkpoint replayed after it finished changes nothing');
   ok(partsMatch(manifest()), 'the published night still matches', true);
 }
 
+section('Parts are bounded by bytes, and a slice can stop mid-page (Build 16 audit OPS-06)');
+{
+  const DAY2 = '2026-11-19';
+  now = Date.parse(DAY2 + 'T02:00:00Z');
+  live.clear(); r2.clear();
+  const big = 'x'.repeat(1900 * 1024);
+  for (let i = 0; i < 6; i++) live.set('acct:big' + i + '@example.com', JSON.stringify({ name: 'B' + i, blob: big }));
+  /* Each record read costs eight seconds of the slice's twenty. */
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('acct:big')) now += 8000; return realGet.call(env.AMV_KV, k); };
+  let out = null, slices = 0;
+  while (!(out && out.done) && slices < 20) { slices++; out = await W._nightlyBackupSlice(env, now); now += 1000; }
+  env.AMV_KV.get = realGet;
+  const man = JSON.parse(r2.get('backups/' + DAY2 + '/manifest.json') || 'null');
+  ok(out && out.done && man && man.keyCount === 6, 'every record is in the night, once', { out, keys: man && man.keyCount, slices });
+  ok(slices > 2, 'over several slices, each stopping part-way through the page', slices);
+  const sizes = man ? Array.from({ length: man.parts }, (_, i) => Buffer.byteLength(r2.get('backups/' + DAY2 + '/' + man.gen + '/part-' + String(i).padStart(6, '0') + '.ndjson') || '')) : [];
+  ok(sizes.length >= 2 && sizes.every(n => n <= 8 * 1024 * 1024 + 4096), 'and no part is larger than the bound', sizes);
+  const names = new Set();
+  for (let i = 0; man && i < man.parts; i++) for (const l of r2.get('backups/' + DAY2 + '/' + man.gen + '/part-' + String(i).padStart(6, '0') + '.ndjson').trim().split('\n')) names.add(JSON.parse(l).k);
+  ok([...names].filter(k => k.startsWith('acct:big')).length === 6, 'no record lost or doubled across the stops', [...names]);
+}
+
 Date.now = realNow; console.log = quiet;
 if (report('a-backup-part-that-changed-is-never-published') > 0) process.exitCode = 1;
 done();

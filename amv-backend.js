@@ -17924,6 +17924,9 @@ async function handoffAct(request, env){
    Shared here so they cannot drift apart again. A limit the writer does not
    know about is not a limit, it is a trap laid for the worst day of the year. */
 const BACKUP_MAX_VALUE_BYTES = 2 * 1024 * 1024;   // per record
+/* Bytes as they are stored and sent, not JavaScript characters (Build 16 audit
+   OPS-06): a record of Chinese or emoji is up to four times its length. */
+const _utf8Len = (t) => { const x = String(t == null ? '' : t); let n = 0; for (let i = 0; i < x.length; i++) { const c = x.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; } else n += 3; } return n; };
 const BACKUP_MAX_KEYS        = 500000;            // per snapshot
 
 const BACKUP_PREFIXES = [
@@ -18472,7 +18475,7 @@ async function backupExport(request, env){
              can go and look at it now, while the store is healthy - instead of
              discovering the gap at the moment they are trying to recover from
              something else. */
-          if (raw.length > BACKUP_MAX_VALUE_BYTES) {
+          if (_utf8Len(raw) > BACKUP_MAX_VALUE_BYTES) {
             failed.push(key);
             throw new Error('backup incomplete: ' + key + ' is ' + raw.length
               + ' bytes, larger than the ' + BACKUP_MAX_VALUE_BYTES
@@ -18568,7 +18571,7 @@ async function _restoreEntries(env, entries, mode, t){
   const lost = t.lost;
   for(const [key, val] of entries){
     if(!allowed(key)){ refused++; continue; }
-    if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
+    if(typeof val !== 'string' || _utf8Len(val) > BACKUP_MAX_VALUE_BYTES){
       unrestorable++; if(lost.length < 20) lost.push(key); continue;
     }
     /* AN ERASED ACCOUNT STAYS ERASED (Nov 8 verified audit, batch B). A
@@ -18889,6 +18892,9 @@ async function _workerError(env, where, err, extra){
 
 const NIGHTLY_SLICE_MS = 20 * 1000;
 const NIGHTLY_PAGE = 1000;
+/* A part is at most this many bytes (Build 16 audit OPS-06): a page of large
+   records is several parts, never one string of hundreds of megabytes. */
+const NIGHTLY_PART_BYTES = 8 * 1024 * 1024;
 const NIGHTLY_KEEP_DAYS = 30;
 const NIGHTLY_LATE_HOUR_UTC = 6;
 
@@ -18968,34 +18974,49 @@ async function _nightlyBackupSlice(env, atMs){
     const orphans = st.prefix === BACKUP_PREFIXES.length;
     const prefix = orphans ? 'revblob:' : BACKUP_PREFIXES[st.prefix];
     const page = await env.AMV_KV.list({ prefix, cursor: st.cursor || undefined, limit: NIGHTLY_PAGE });
-    const lines = [];
-    for (const k0 of (page.keys || [])) {
-      let k = k0, raw;
-      if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
-      else raw = await _backupValue(env, k.name);
-      if (raw == null) continue;
-      if (raw.length > BACKUP_MAX_VALUE_BYTES) {
-        st.failed = k.name + ' is ' + raw.length + ' bytes, larger than a restore accepts';
-        await save();
-        audit(env, 'nightly_backup_failed', { day, key: k.name, bytes: raw.length });
-        try { await alertOnce(env, 'nightly_backup_failed',
-          'Tonight’s backup was abandoned: ' + st.failed + ', so it could not have been restored in full. '
-          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
-        return { on: true, day, failed: st.failed };
-      }
-      lines.push(JSON.stringify({ k: k.name, v: raw }));
-      st.bytes += raw.length + k.name.length;
-    }
-    if (lines.length) {
+    let lines = [], lineBytes = 0;
+    /* Each part's checksum, kept for the manifest (Nov 1 audit DR-004): a
+       restore checks every part against it before anything is written. */
+    const flush = async () => {
+      if (!lines.length) return;
       const body = lines.join('\n') + '\n';
-      /* Each part's checksum, kept for the manifest (Nov 1 audit DR-004): a
-         restore checks every part against it before anything is written. */
       const sha = await _sha256Hex(body);
       await env.AMV_BACKUPS.put(_nightlyPart(day, st.part, st.gen), body, { httpMetadata: { contentType: 'application/x-ndjson' }, customMetadata: { sha256: sha } });
       st.partSha = Array.isArray(st.partSha) ? st.partSha : [];
       st.partSha[st.part] = sha;
       st.part++; st.count += lines.length; parts++;
+      lines = []; lineBytes = 0;
+    };
+    const keys = page.keys || [];
+    /* Time is checked per record, and a page can be left part-way: `skip` is
+       how many of this page's keys are already in a part (OPS-06). */
+    let i = Math.max(0, +st.skip || 0), outOfTime = false;
+    for (; i < keys.length; i++) {
+      if (Date.now() - started >= NIGHTLY_SLICE_MS) { outOfTime = true; break; }
+      const k0 = keys[i];
+      let k = k0, raw;
+      if (orphans) { const got = await _backupCommittedKey(env, k0.name); if (!got) continue; k = { name: got.key }; raw = got.raw; }
+      else raw = await _backupValue(env, k.name);
+      if (raw == null) continue;
+      const size = _utf8Len(raw);
+      if (size > BACKUP_MAX_VALUE_BYTES) {
+        st.failed = k.name + ' is ' + size + ' bytes, larger than a restore accepts';
+        await save();
+        audit(env, 'nightly_backup_failed', { day, key: k.name, bytes: size });
+        try { await alertOnce(env, 'nightly_backup_failed',
+          'Tonight’s backup was abandoned: ' + st.failed + ', so it could not have been restored in full. '
+          + 'The record needs looking at; the last complete backup is untouched.', 6 * 60); } catch (e) { /* logging: it never decides anything */ }
+        return { on: true, day, failed: st.failed };
+      }
+      const line = JSON.stringify({ k: k.name, v: raw });
+      const lb = _utf8Len(line) + 1;
+      if (lines.length && lineBytes + lb > NIGHTLY_PART_BYTES) await flush();
+      lines.push(line); lineBytes += lb;
+      st.bytes += size + k.name.length;
     }
+    await flush();
+    if (outOfTime) { st.skip = i; break; }
+    st.skip = 0;
     if (page.list_complete) { st.prefix++; st.cursor = null; }
     else st.cursor = page.cursor;
     /* No same-key checkpoint rewrite per page: KV permits one write per
