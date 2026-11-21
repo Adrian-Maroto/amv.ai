@@ -15159,9 +15159,9 @@ async function fetchGuarded(rawUrl, init, ms){
     const gate = _webHostAllowed(target);
     if(!gate.ok) return { blocked: true, why: gate.why, url: target, hop };
     const where = await _resolvesPrivate(new URL(gate.url).hostname);
-    /* A name whose answer could not be read is not let through as public
+    /* A name whose lookup was made to fail is not let through as public
        (Build 17 audit B17-023): it is refused this time and asked again on
-       the next request - nothing is remembered from a failed lookup. */
+       the next request - nothing is remembered from it. */
     if(where === 'unknown') return { blocked: true, why: 'AMV could not check where that address points just now, so it was not opened. Try again in a moment.', url: target, hop };
     if(where) return { blocked: true, why: 'That address points at a private or internal network, which the agent cannot reach.', url: target, hop };
     const r = await fetchDeadline(gate.url, Object.assign({}, opts, { redirect: 'manual' }), ms);
@@ -15200,9 +15200,10 @@ async function fetchGuarded(rawUrl, init, ms){
    10.0.0.5 or 169.254.169.254 passed it. Every hop's name is now looked up
    (A and AAAA, over DNS-over-HTTPS) and refused when any answer is a private,
    loopback, link-local or metadata address - the same ranges as the gate.
-   A lookup that cannot be made does not refuse: a Worker's own egress does
-   not reach private networks, so this is a second wall, not the only one;
-   and answers are kept for a minute so a page of requests is one lookup.
+   A lookup the name's owner made fail is refused; one the lookup service
+   could not make at all is not - a Worker's own egress does not reach
+   private networks, so this is a second wall, not the only one (see `ask`).
+   Answers are kept for a minute so a page of requests is one lookup.
    A name that answers public here and private a moment later (rebinding) is
    bounded by that same egress, which resolves it again itself. */
 const _dnsSeen = new Map();
@@ -15212,21 +15213,33 @@ async function _resolvesPrivate(host){
   if(!h || /^[\d.]+$/.test(h) || h.includes(':')) return false;          // a literal: the gate already read it
   const hit = _dnsSeen.get(h);
   if(hit && Date.now() - hit.at < DNS_KEEP_MS) return hit.bad;
-  /* null is "no answer"; [] is "answered, no addresses" (Build 17 audit
-     B17-023). Only the second is an answer. */
+  /* WHICH FAILURES SAY NOTHING, AND WHICH AN ATTACKER CAN CAUSE (Build 17
+     audit B17-023). A name's owner controls its DNS server, so they can make
+     the lookup for it fail on purpose - a refusal (SERVFAIL, REFUSED) or a
+     server that never answers, so the lookup runs out of time - and then the
+     Worker's own fetch resolves it again, perhaps to an address inside. Those
+     two are refused, and not remembered. The lookup service itself being
+     unreachable or answering nonsense is not something the name's owner can
+     cause, and refusing then would stop every outside call for everybody
+     while the Worker's own egress, which reaches no private network, still
+     stands - so that one goes ahead, as before. NXDOMAIN is an answer. */
   const ask = async (type) => {
+    let r;
     try {
-      const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=' + type + '&name=' + encodeURIComponent(h), { headers: { Accept: 'application/dns-json' } }, 3000);
-      if(!r || !r.ok) return null;
-      const d = await r.json();
-      if(!d || typeof d.Status !== 'number') return null;
-      return ((d && d.Answer) || []).filter(a => a && (a.type === 1 || a.type === 28)).map(a => String(a.data || ''));
-    } catch (e) { return null; }
+      r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=' + type + '&name=' + encodeURIComponent(h), { headers: { Accept: 'application/dns-json' } }, 3000);
+    } catch (e) {
+      return (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) ? 'refused' : 'down';
+    }
+    if(!r || !r.ok) return 'down';
+    let d = null; try { d = await r.json(); } catch (e) { d = null; }
+    if(!d || typeof d.Status !== 'number') return 'down';
+    if(d.Status !== 0 && d.Status !== 3) return 'refused';
+    return (d.Answer || []).filter(a => a && (a.type === 1 || a.type === 28)).map(a => String(a.data || ''));
   };
   const got = await Promise.all([ask('A'), ask('AAAA')]);
-  /* Neither lookup answered: unknown, not public - and not remembered. */
-  if(got[0] === null && got[1] === null) return 'unknown';
-  const ips = [].concat(...got.map(x => x || []));
+  if(got.includes('refused')) return 'unknown';
+  if(got.every(x => x === 'down')) return false;
+  const ips = [].concat(...got.map(x => Array.isArray(x) ? x : []));
   const bad = ips.some(ip => ip && !_webHostAllowed('http://' + (ip.includes(':') ? '[' + ip + ']' : ip) + '/').ok);
   if(_dnsSeen.size > 2000) _dnsSeen.clear();
   _dnsSeen.set(h, { at: Date.now(), bad });

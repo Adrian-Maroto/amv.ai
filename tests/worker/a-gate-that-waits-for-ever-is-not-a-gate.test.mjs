@@ -61,9 +61,13 @@ section('And it skips rather than failing, which is the whole point');
   /* The stage exists to catch advisories, not to punish a bad connection. A
      gate that goes red on a train is a gate people learn to ignore - so an
      unreachable registry must exit 0 and say so, on both paths. */
-  const skips = [...code.matchAll(/console\.log\('SKIP[\s\S]{0,220}?process\.exit\(0\)/g)];
-  ok(skips.length >= 2,
-     'both the stall and the refusal exit zero after saying why', skips.length);
+  /* Except where a release is built (Build 17 audit B17-015): in CI a skip
+     is a failure, so no shipped build is recorded as scanned when it was not. */
+  const skips = [...code.matchAll(/console\.log\('SKIP[\s\S]{0,220}?process\.exit\(AUDIT_REQUIRED \? 3 : 0\)/g)];
+  ok(skips.length >= 3,
+     'the stall, the refusal and an unreadable answer exit zero on a laptop after saying why, and fail in CI', skips.length);
+  ok(/const AUDIT_REQUIRED = [\s\S]{0,200}process\.env\.CI === 'true'/.test(code),
+     'and CI is what makes a skip a failure', /AUDIT_REQUIRED/.test(code));
   ok(/console\.error\('FAIL[\s\S]{0,120}process\.exit\(1\)/.test(code),
      'while a genuinely unreadable audit still fails, so this is not a blanket pass');
 }

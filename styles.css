@@ -17720,3 +17720,5 @@ html[dir="rtl"] .chome-sug{text-align:right}
 /* ========== LAYER A388 (Nov 21): a connection that stopped working (build 17 audit B17-034) ========== */
 .conn-tag.off{color:var(--red-txt, var(--red));border-color:color-mix(in srgb, var(--red) 40%, transparent)}
 .conn-tag.off .conn-dot{background:var(--red)}
+/* The Billing link in that list is a tap target too: 24px tall at least. */
+.mf-src .lnk-inline{display:inline-block;min-height:24px;line-height:24px;padding:0 2px}

@@ -21,7 +21,7 @@ For those, this file says exactly what to do and what AMV recommends.
 | B17-015 | A dependency audit that could not run fails in CI instead of passing as a skip | `audit-deps.mjs` (CI) |
 | B17-021 | What a receipt is and is not, written down (`docs/BUYING.md`); transaction ids, refunds and disputes need a store contract or phase 2 cards | - (documentation) |
 | B17-022 | A job-queue message is sealed or not sent; with no key the account runs inline | the-build-17-audit-stays-fixed |
-| B17-023 | An address whose DNS lookup failed is refused and asked again next time; NXDOMAIN is still an answer | the-build-17-audit-stays-fixed |
+| B17-023 | A lookup the name's owner can make fail (SERVFAIL/REFUSED, or one that runs out of time) is refused and asked again next time. The lookup service itself being down still lets requests through, as designed: the Worker's own egress reaches no private network, and refusing then would stop every outside call for everybody | the-build-17-audit-stays-fixed, a-name-that-points-inside-is-refused |
 | B17-029 | Sweep at 320/360/390/768/1024/1440/1920 and right-to-left. Found and fixed: the phone menu stuck 50px over the page right to left; the cookie notice English in every language; billing facts misaligned | nothing-hides-past-the-right-edge, a-narrow-or-rtl-screen-hides-nothing |
 | B17-031 | Readiness wording corrected (with no origin set, no cookie is accepted; sign-in is not exposed). Neighbouring origins checked: subdomain, lookalike, http, other port, `null` | a-locked-api-still-answers-the-widget-and-keys |
 | B17-032 | Spending names a purchase, the AMV plan and a connected bank apart | a-job-and-a-payment-say-how-they-act |

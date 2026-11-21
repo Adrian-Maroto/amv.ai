@@ -33,6 +33,8 @@ globalThis.fetch = async (url) => {
     if (dns === 'down') throw new TypeError('fetch failed');
     if (dns === 'garbled') return new Response('<html>busy</html>', { status: 200 });
     if (dns === 'error') return new Response('', { status: 502 });
+    if (dns === 'servfail') return new Response(JSON.stringify({ Status: 2 }), { status: 200 });
+    if (dns === 'slow') throw new DOMException('The operation timed out.', 'TimeoutError');
     if (dns === 'private') return new Response(JSON.stringify({ Status: 0, Answer: /type=A&/.test(u) ? [{ type: 1, data: '10.0.0.7' }] : [] }), { status: 200 });
     if (dns === 'nxdomain') return new Response(JSON.stringify({ Status: 3 }), { status: 200 });
     return new Response(JSON.stringify({ Status: 0, Answer: /type=A&/.test(u) ? [{ type: 1, data: '93.184.216.34' }] : [] }), { status: 200 });
@@ -162,12 +164,20 @@ section('A job message is sealed or not sent (B17-022)');
   ok(!JSON.stringify(sent).includes('e@x.test'), 'and no address goes onto the queue', sent);
 }
 
-section('An address nobody could look up is not opened (B17-023)');
+section('A lookup the name\u2019s owner made fail is not opened; a lookup service that is down stops nothing (B17-023)');
 {
-  for (const mode of ['down', 'garbled', 'error']) {
+  for (const mode of ['servfail', 'slow']) {
     dns = mode;
     const g = await W.fetchGuarded('https://' + mode + '.example.net/', {}, 3000);
     ok(g.blocked === true && /could not check where that address points/.test(g.why), 'lookup ' + mode + ': refused, and said why', g);
+    dns = 'ok';
+    const again = await W.fetchGuarded('https://' + mode + '.example.net/', {}, 3000);
+    ok(again.blocked === false, 'and nothing is remembered from it: asked again, it goes through', again.why);
+  }
+  for (const mode of ['down', 'garbled', 'error']) {
+    dns = mode;
+    const g = await W.fetchGuarded('https://' + mode + '.example.org/', {}, 3000);
+    ok(g.blocked === false, 'the lookup service ' + mode + ': the request goes ahead, bounded by the Worker\u2019s own egress', g.why);
   }
   dns = 'private';
   const p = await W.fetchGuarded('https://example.com/', {}, 3000);
