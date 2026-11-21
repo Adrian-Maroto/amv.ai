@@ -1415,6 +1415,7 @@ const AUTO_BUCKET_LOOKBACK_H = 2;
    reads to writes. */
 const AUTO_BUCKET_LOOKAHEAD_MS = 3 * 3600000;
 const AUTO_BUCKET_TTL_S = 60 * 60 * 30;   // an hour bucket outlives any lookback
+const AUTO_BUCKET_MAX = 20000;            // accounts one hour's shard holds
 
 const _autoHourKey = (ms) => new Date(ms || Date.now()).toISOString().slice(0, 13);  // YYYY-MM-DDTHH
 function _autoShardOf(email) {
@@ -1428,15 +1429,30 @@ async function _autoBucketAdd(env, email, nextMs) {
   const em = String(email || '').toLowerCase();
   const when = +nextMs || 0;
   if (!em || !when) return;
+  let dropped = 0;
+  const hour = _autoHourKey(when), shard = _autoShardOf(em);
   try {
-    await _withKV(env, `duehour:${_autoHourKey(when)}`, String(_autoShardOf(em)), (r) => {
+    await _withKV(env, `duehour:${hour}`, String(shard), (r) => {
       r.emails = Array.isArray(r.emails) ? r.emails : [];
       if (!r.emails.includes(em)) r.emails.push(em);
       /* Bounded. An hour with more due accounts than this is past what one
          tick can run anyway, and the hourly sweep is underneath it. */
-      if (r.emails.length > 20000) r.emails = r.emails.slice(-20000);
+      if (r.emails.length > AUTO_BUCKET_MAX) { dropped = r.emails.length - AUTO_BUCKET_MAX; r.emails = r.emails.slice(-AUTO_BUCKET_MAX); }
       return r;
     }, { emails: [] }, AUTO_BUCKET_TTL_S);
+    /* A FULL BUCKET IS SAID (Build 16 audit OPS-07). What it drops is the
+       oldest booking in the hour, and that account is then found only by the
+       paged sweep - a pass of which takes longer the more accounts there are.
+       Nothing is lost, but jobs arrive late without anything failing, so the
+       first time an hour fills somebody is told which, and what to do. */
+    if (dropped) {
+      audit(env, 'auto_bucket_overflow', { hour, shard, dropped });
+      await alertOnce(env, 'auto_bucket_overflow',
+        'THE DUE-WORK INDEX IS FULL. Hour ' + hour + ', shard ' + shard + ' passed ' + AUTO_BUCKET_MAX.toLocaleString('en-US')
+        + ' accounts, so its oldest bookings were dropped. Those jobs still run, but only once the paged sweep reaches them, '
+        + 'which can be hours late at this size. Bind the AMV_JOBS queue (wrangler.toml) and raise AUTO_BUCKET_SHARDS; '
+        + 'docs/DUE-WORK.md has the plan.', 6 * 60);
+    }
   } catch (e) {
     audit(env, 'auto_bucket_write_failed', { email: em, error: String((e && e.message) || e) });
   }
@@ -1671,6 +1687,10 @@ async function runDueAutomations(env, atMs, opts){
   }
   users.sort((a,b)=> a.soonest - b.soonest);
   const queued = users.length;
+  /* How late the most overdue due work is when this tick picks it up
+     (Build 16 audit OPS-07). The figure a backlog shows first: every run can
+     succeed while this grows. Reported with the tick, in whole seconds. */
+  const lateS = users.length ? Math.max(0, Math.round((now - users[0].soonest) / 1000)) : 0;
   let processed = 0;
   /* With the AMV_JOBS queue bound (15a-job-queue.js), each due account goes
      out as a message and runs in a consumer of its own; only what could not
@@ -1721,7 +1741,7 @@ async function runDueAutomations(env, atMs, opts){
         + 'arriving late. Bind the AMV_JOBS queue (wrangler.toml) so each account runs on its own.', 3 * 60);
     }catch(e){}
   }
-  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated }, enqueued ? { enqueued } : {});
+  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated, lateS }, enqueued ? { enqueued } : {});
 }
 
 /* ONE ACCOUNT'S DUE WORK, start to finish: its plan, holds, ceilings and

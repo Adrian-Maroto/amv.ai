@@ -39,7 +39,8 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'scans.harness.mjs');
 writeFileSync(harness, src
   + '\nexport { DB, scan, SCAN_ALL, SWEEP_SCAN_LIMIT, ADMIN_USERS_LIMIT, SUPPORT_SCAN_LIMIT,'
-  + ' runRenewalSweep, runDueAutomations, AUTO_TICK_BUDGET_MS };\n');
+  + ' runRenewalSweep, runDueAutomations, AUTO_TICK_BUDGET_MS,'
+  + ' _autoBucketAdd, _autoHourKey, _autoShardOf, AUTO_BUCKET_MAX };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -382,6 +383,33 @@ section('A tick that runs out of time stops on purpose and says what it left');
     if (!(rec.results || []).length) missed.push(i);
   }
   ok(missed.length === 0, 'nobody is starved by the cut-off', missed);
+}
+
+section('A full hour in the due-work index is said, not silently trimmed (Build 16 audit OPS-07)');
+{
+  const env = mkEnv();
+  const when = Date.now() + 3600000;
+  const em = 'one-too-many@example.com';
+  const key = 'duehour:' + W._autoHourKey(when) + ':' + W._autoShardOf(em);
+  env.AMV_KV._map.set(key, JSON.stringify({ emails: Array.from({ length: W.AUTO_BUCKET_MAX }, (_, i) => 'a' + i + '@example.com') }));
+  await W._autoBucketAdd(env, em, when);
+  const kept = JSON.parse(env.AMV_KV._map.get(key)).emails;
+  ok(kept.length === W.AUTO_BUCKET_MAX && kept.includes(em), 'the bucket stays bounded, and keeps the newest booking', kept.length);
+  ok(alerted(/DUE-WORK INDEX IS FULL/) && alerted(new RegExp(W._autoHourKey(when))), 'and somebody is told which hour filled', alerts.slice(-1)[0]);
+  alerts = [];
+  await W._autoBucketAdd(env, 'fits@example.com', when + 86400000);
+  ok(!alerted(/DUE-WORK INDEX IS FULL/), 'a bucket with room pages nobody', alerts.length);
+}
+
+section('The tick says how late its most overdue work was');
+{
+  const env = mkEnv();
+  await withDueJob(env, 'late@example.com', 2 * 3600000);
+  await withDueJob(env, 'prompt@example.com', 60 * 1000);
+  const r = await W.runDueAutomations(env);
+  ok(r.lateS >= 2 * 3600 - 5 && r.lateS <= 2 * 3600 + 120, 'two hours late, from the most overdue job', r.lateS);
+  const idle = await W.runDueAutomations(mkEnv());
+  ok(idle.lateS === 0 || idle.lateS === undefined, 'and nothing due is not late', idle.lateS);
 }
 
 globalThis.fetch = realFetch;
