@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="5948a8185cc2192c">
+<meta name="amv-build" content="9f53800fa4b8cc60">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10767,6 +10767,17 @@ font-size:var(--t-xs)!important;font-weight:500;color:var(--mu)!important}
 .model-picker .mp-think[aria-checked="true"] .mp-sw::after{transform:translateX(14px);background:#fff}
 @media (prefers-reduced-motion:reduce){.model-picker .mp-sw,.model-picker .mp-sw::after{transition:none}}
 .tk2-wait{margin:var(--sp-4) 0;color:var(--mu);font-size:var(--t-base)}
+.conn-grid{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}
+.conn-grid > *{min-width:0}
+.mc-grid{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+.int-req .int-list{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+.team-inv-row{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:flex-end}
+.team-inv-mail{flex:1 1 220px;min-width:0}
+.team-inv-mail input{width:100%;min-width:0}
+.cj-card .cj-tg{right:auto;inset-inline-end:var(--sp-4)}
+.cj-card-b{padding-right:var(--sp-4);padding-inline-end:68px}
+.cj-card:not(:has(.cj-tg)) .cj-card-b{padding-inline-end:var(--sp-4)}
+#app .tk2 .tk2-row .tk-d{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 </style>
 <!-- BUILD:CSS:END -->
 <script>

@@ -17667,3 +17667,23 @@ html[dir="rtl"] .chome-sug{text-align:right}
 /* A381b - Tasks says Loading in the list's own place (no header line that
    vanishes and moves the page up). */
 .tk2-wait{margin:var(--sp-4) 0;color:var(--mu);font-size:var(--t-base)}
+/* ========== LAYER A382 (Nov 21): narrow, enlarged and right-to-left (build 16 audit D16-13) ==========
+   The last three grid tracks that could not yield below their minimum on a
+   320px screen or at 200% text: Connected accounts (300px), Crew's mission
+   grid and the Integrations request list (280px). The invite row wraps its
+   Role and Invite under the address instead of squeezing a long address into
+   nothing. The Crew toggle and the room kept for it are logical, so in Arabic
+   and Urdu it sits at the start of the card, not on top of the title. */
+.conn-grid{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}
+.conn-grid > *{min-width:0}
+.mc-grid{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+.int-req .int-list{grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))}
+.team-inv-row{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:flex-end}
+.team-inv-mail{flex:1 1 220px;min-width:0}
+.team-inv-mail input{width:100%;min-width:0}
+.cj-card .cj-tg{right:auto;inset-inline-end:var(--sp-4)}
+.cj-card-b{padding-right:var(--sp-4);padding-inline-end:68px}
+.cj-card:not(:has(.cj-tg)) .cj-card-b{padding-inline-end:var(--sp-4)}
+/* A task's line under its name wraps to two lines rather than vanishing
+   into an ellipsis at enlarged text; the whole of it opens with the task. */
+#app .tk2 .tk2-row .tk-d{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

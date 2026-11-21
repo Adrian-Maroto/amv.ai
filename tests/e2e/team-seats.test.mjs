@@ -260,7 +260,10 @@ section('Settings answers "what is spending", before asking for numbers');
      assertion. */
   ok(/stock photo/i.test(r) && /paid data source/i.test(r),
      'what would actually get bought', /stock photo/i.test(r));
-  ok(/never a subscription/i.test(r), 'and what it will never do');
+  /* Build 16 audit D16-04: only what the server enforces is promised - no
+     transfers, no payments to people, the store's own pay button pressed by
+     the person, never by AMV. */
+  ok(/does not move money between your accounts/i.test(r) && /never presses it for you/i.test(r), 'and what it will not do');
   ok(/would not mind losing/i.test(r),
      'with the monthly ceiling explained as the most you can lose');
 }
