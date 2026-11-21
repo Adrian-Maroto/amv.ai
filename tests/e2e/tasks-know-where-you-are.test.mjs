@@ -115,6 +115,27 @@ section('Refused location is said, and the list still works');
   await page.evaluate(() => closeOvr());
 }
 
+section('Another language draws the tasks again (Build 16 audit D16-12)');
+{
+  /* The list holds titles already turned into a language; it is kept per
+     country AND language, so a switch builds it again rather than showing
+     the old language's titles. */
+  const r = await page.evaluate(async () => {
+    let built = 0; const real = window.ccTasks; window.ccTasks = (d) => { built++; return real(d); };
+    const was = loadStr('amv_lang');
+    setTab('chat'); setTab('tasks');
+    await new Promise(x => setTimeout(x, 600));
+    const same = built;
+    saveStr('amv_lang', was === 'es' ? 'fr' : 'es');
+    setTab('chat'); setTab('tasks');
+    await new Promise(x => setTimeout(x, 1200));
+    const after = built;
+    saveStr('amv_lang', was || ''); window.ccTasks = real;
+    return { same, after };
+  });
+  ok(r.same === 0 && r.after >= 1, 'the same language reuses the list; a new one builds it again', r);
+}
+
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
 await app.close();
 report();

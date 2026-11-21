@@ -2696,5 +2696,43 @@
   "bn": "মতামত সরানো হয়েছে",
   "ta": "கருத்து நீக்கப்பட்டது",
   "ur": "رائے ہٹا دی گئی"
+ },
+ "AMV could not reach the server, so this was not sent. Try again when you are back online.": {
+  "es": "AMV no pudo conectar con el servidor, así que esto no se envió. Inténtalo de nuevo cuando vuelvas a tener conexión.",
+  "zh": "AMV 无法连接服务器，因此未发送。恢复联网后请重试。",
+  "hi": "AMV सर्वर तक नहीं पहुँच सका, इसलिए यह नहीं भेजा गया। ऑनलाइन होने पर फिर से कोशिश करें।",
+  "ar": "تعذّر على AMV الوصول إلى الخادم، لذلك لم يُرسَل هذا. حاول مرة أخرى عند عودة الاتصال.",
+  "pt": "O AMV não conseguiu acessar o servidor, então isto não foi enviado. Tente novamente quando estiver online.",
+  "fr": "AMV n’a pas pu joindre le serveur, donc ceci n’a pas été envoyé. Réessayez une fois de nouveau en ligne.",
+  "de": "AMV konnte den Server nicht erreichen, daher wurde dies nicht gesendet. Versuche es erneut, wenn du wieder online bist.",
+  "ja": "AMV がサーバーに接続できなかったため、送信されていません。オンラインに戻ったらもう一度お試しください。",
+  "ru": "AMV не удалось связаться с сервером, поэтому это не отправлено. Повторите попытку, когда будете в сети.",
+  "ko": "AMV가 서버에 연결하지 못해 전송되지 않았습니다. 다시 온라인 상태가 되면 시도하세요.",
+  "it": "AMV non è riuscito a raggiungere il server, quindi non è stato inviato. Riprova quando sei di nuovo online.",
+  "tr": "AMV sunucuya ulaşamadı, bu yüzden gönderilmedi. Tekrar çevrimiçi olduğunda yeniden dene.",
+  "id": "AMV tidak dapat menjangkau server, jadi ini tidak terkirim. Coba lagi saat kembali online.",
+  "vi": "AMV không kết nối được máy chủ nên chưa gửi được. Hãy thử lại khi có mạng.",
+  "bn": "AMV সার্ভারে পৌঁছাতে পারেনি, তাই এটি পাঠানো হয়নি। আবার অনলাইনে এলে চেষ্টা করুন।",
+  "ta": "AMV சேவையகத்தை அடைய முடியவில்லை, எனவே இது அனுப்பப்படவில்லை. மீண்டும் இணைப்பில் வந்ததும் முயற்சிக்கவும்.",
+  "ur": "AMV سرور تک نہیں پہنچ سکا، اس لیے یہ نہیں بھیجا گیا۔ دوبارہ آن لائن ہونے پر کوشش کریں۔"
+ },
+ "Pick one to open it in chat, ready for you to send.": {
+  "es": "Elige una para abrirla en el chat, lista para que la envíes.",
+  "zh": "选择一项，它会在聊天中打开，等你发送。",
+  "hi": "एक चुनें, यह चैट में खुलेगा, भेजने के लिए तैयार।",
+  "ar": "اختر واحدة لتُفتح في الدردشة، جاهزة لترسلها.",
+  "pt": "Escolha uma para abri-la no chat, pronta para você enviar.",
+  "fr": "Choisissez-en une pour l’ouvrir dans le chat, prête à envoyer.",
+  "de": "Wähle eine aus, um sie im Chat zu öffnen, bereit zum Senden.",
+  "ja": "選ぶとチャットで開き、送信できる状態になります。",
+  "ru": "Выберите одну — она откроется в чате, готовая к отправке.",
+  "ko": "하나를 고르면 채팅에서 열려 보낼 준비가 됩니다.",
+  "it": "Scegline una per aprirla nella chat, pronta da inviare.",
+  "tr": "Birini seç; sohbette açılır, göndermeye hazır olur.",
+  "id": "Pilih satu untuk membukanya di chat, siap kamu kirim.",
+  "vi": "Chọn một mục để mở trong trò chuyện, sẵn sàng để bạn gửi.",
+  "bn": "একটি বেছে নিন, এটি চ্যাটে খুলবে, পাঠানোর জন্য তৈরি।",
+  "ta": "ஒன்றைத் தேர்ந்தெடுங்கள்; அது அரட்டையில் திறக்கும், நீங்கள் அனுப்பத் தயாராக.",
+  "ur": "ایک منتخب کریں، یہ چیٹ میں کھلے گا، بھیجنے کے لیے تیار۔"
  }
 }

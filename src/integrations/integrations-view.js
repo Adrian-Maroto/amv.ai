@@ -438,15 +438,20 @@ function tkCountry(){
 try{ window.tkCountry = tkCountry; }catch(e){}
 function renderTasksView(){
   const vc=$('vc'); if(!vc) return;
-  const cc=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
-  const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc):null;
-  if(cc !== _tkCc){ _tkList = []; _tkCc = cc; }
+  const cc0=(typeof _cwCountryGuess==='function')?_cwCountryGuess():'';
+  const row=(typeof _cwCountryRow==='function')?_cwCountryRow(cc0):null;
+  /* The list holds titles already in a language, so it is kept per country
+     AND language (Build 16 audit D16-12): switching language draws the
+     country's tasks again in the new one. */
+  let lang = ''; try{ lang = typeof _lang === 'function' ? _lang() : ''; }catch(e){}
+  const cc = cc0, key = cc0 + '|' + lang;
+  if(key !== _tkCc){ _tkList = []; _tkCc = key; _tkAnswered = ''; }
   const head = row ? _cwSayPlace('For {country}', row[1], _cwThe(row[1])) : T('Tasks');
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
         <p class="tk2-sub" id="tk2-sub" hidden></p>
-        ${row ? `<p class="tk2-go">${escH(T('Pick one and AMV starts on it in chat.'))}</p>` : ''}</div>
+        ${row ? `<p class="tk2-go">${escH(T('Pick one to open it in chat, ready for you to send.'))}</p>` : ''}</div>
       <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
     ${_autoServerHTML()}
@@ -464,23 +469,24 @@ function renderTasksView(){
   on($('tk2-cats'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); } });
   on($('tk2-body'), 'click', (e) => { const b = e.target.closest && e.target.closest('.tk2-all[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); try{ $('tk2-cats').scrollIntoView({ block:'nearest' }); }catch(_){} } });
   on($('tk-more'), 'click', () => { _tkN += 120; _tkPaint(); });
-  if(!_tkList.length) _tkLoad(cc);
+  if(!_tkList.length) _tkLoad(cc, key);
 }
 /* The country's tasks, from its file (country-catalog.js). */
-async function _tkLoad(cc){
+async function _tkLoad(cc, key){
+  key = key || cc;
   try{
     const d = (cc && await _ccReady()) ? await window.ccLoad(cc) : null;
     const list = d ? window.ccTasks(d) : [];
     list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
-    if(cc !== _tkCc) return;
-    _tkList = list; _tkAnswered = cc;
+    if(key !== _tkCc) return;
+    _tkList = list; _tkAnswered = key;
     const sub = $('tk2-sub');
     /* No grand total (the owner: "don't write 5000"): the line is only for
        the two things worth saying - still loading, or nothing here. */
     if(sub){ sub.hidden = !!list.length; sub.innerHTML = list.length ? '' : escH(cc ? T('AMV has no tasks for this country yet.') : T('Choose your country to see its tasks.')); }
     _tkPaint();
   }catch(e){
-    _tkAnswered = cc; try{ _tkPaint(); }catch(_){}
+    _tkAnswered = key; try{ _tkPaint(); }catch(_){}
     const sub = $('tk2-sub'); if(sub){ sub.hidden = false; sub.textContent = T('The tasks could not load. Check your connection and try again.'); }
   }
 }

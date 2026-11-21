@@ -26,7 +26,10 @@ const TP_FILES_MAX = 20, TP_INSTR_MAX = 4000;
 async function _tpCall(path, body){
   let r;
   try{ r = await AMV_API._fetch(path, { method:'POST', body: JSON.stringify(body || {}) }); }
-  catch(e){ return { ok:false, offline:true, error: T('AMV could not reach the server. Your changes are kept here and will be sent when you are back online.') }; }
+  /* Nothing here is queued for later, so nothing promises it is (Build 16
+     audit D16-09): the change was not sent, and saying when it will be would
+     be a guess. */
+  catch(e){ return { ok:false, offline:true, error: T('AMV could not reach the server, so this was not sent. Try again when you are back online.') }; }
   const d = await r.json().catch(() => ({}));
   return Object.assign({ status: r.status }, d, { ok: r.ok && !!d.ok });
 }
