@@ -603,8 +603,7 @@ async function _aiAgentLoopRun(opts){
       } else if(c._bad || missing.length){
         /* A call that is not well formed is not run with whatever it has
            (AG-05): it is answered, so the model can send it properly. */
-        r = { ok:false, text:'Not run: ' + (c._bad || ('it is missing ' + missing.join(', ')))
-             + '. Send the call again with complete arguments.' };
+        r = { ok:false, text:'Not run: ' + (c._bad || ('it is missing ' + missing.join(', '))) + '. Send it again, complete.' };
         step.refused = true;
       } else {
         /* A failing command is INFORMATION, not an error. A missing package or

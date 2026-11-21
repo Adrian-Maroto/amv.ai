@@ -115,7 +115,7 @@ function _renderSpendingPaneNow(pane, redraw){
     '</div>' : '')+
     '<div class="ss2"><h3>Purchases</h3>'+
       (hist.length ?
-        '<table class="mf-tbl"><caption class="mf-cap">Everything AMV has bought for you</caption>'+
+        '<table class="mf-tbl"><caption class="mf-cap">'+escH(T('Purchases recorded on this device'))+'</caption>'+
         '<thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Where</th><th scope="col">Amount</th></tr></thead><tbody>'+
         hist.map(h => '<tr><td>'+escH(_mfWhen(h.at))+'</td><td>'+escH(h.item||'-')+'</td>'+
           '<td>'+escH(h.merchant||'-')+'</td><td>'+escH(_mfMoney(h.amount))+'</td></tr>').join('')+
@@ -125,19 +125,43 @@ function _renderSpendingPaneNow(pane, redraw){
     /* What AMV bought in its browser, from the server's receipts
        (69-buying.js): store, total, order number, and whether the order was
        seen on the store's own confirmation page. */
-    (AMVSpend.serverBacked() ? '<div class="ss2" id="mf-buys" hidden><h3>Bought in AMV\u2019s browser</h3><div id="mf-buys-b"></div></div>' : '')+
+    (AMVSpend.serverBacked() ? '<div class="ss2" id="mf-buys"><h3>Bought in AMV\u2019s browser</h3><div id="mf-buys-b" role="status" aria-live="polite"><p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p></div></div>' : '')+
     '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
 
-  if($('mf-buys')){
-    AMV_API._fetch('/v1/spend/buys',{method:'GET'}).then(r=>r.json()).then(d=>{
-      const list=(d&&d.buys)||[]; const box=$('mf-buys'), b=$('mf-buys-b'); if(!box||!b||!list.length) return;
+  /* EVERY STATE SAID, AND EVERY RECEIPT REACHABLE (Build 16 audit D16-02).
+     The section stayed hidden when the request failed or came back with
+     nothing, which read as "nothing bought"; and only the first 25 were ever
+     shown. Now loading, could-not-load (with Retry), nothing yet and the
+     list - all of it, 25 at a time - are four different things on screen. */
+  const _mfBuys = () => {
+    const b = $('mf-buys-b'); if(!b) return;
+    b.innerHTML = '<p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p>';
+    AMV_API._fetch('/v1/spend/buys',{method:'GET'}).then(async r => {
+      const d = await r.json().catch(() => null);
+      if(!r.ok || !d || d.ok !== true || !Array.isArray(d.buys)) throw new Error('HTTP ' + r.status);
+      return d.buys;
+    }).then(list => {
+      const box = $('mf-buys-b'); if(!box) return;
+      if(!list.length){ box.innerHTML = '<p class="mf-empty">'+escH(T('Nothing has been bought in AMV’s browser yet.'))+'</p>'; return; }
       const fmt=(n,c)=>{ try{ return new Intl.NumberFormat(undefined,{style:'currency',currency:c}).format(+n||0); }catch(e){ return c+' '+n; } };
-      b.innerHTML='<table class="mf-tbl"><thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Store</th><th scope="col">Total</th><th scope="col">Order</th></tr></thead><tbody>'+
-        list.slice(0,25).map(x=>'<tr><td>'+escH(_mfWhen(x.at))+'</td><td>'+escH(x.item||'-')+'</td><td>'+escH(x.store||'-')+'</td><td>'+escH(fmt(x.total,x.currency))
-          +(x.over>0?' <span class="mf-over">'+escH('+'+fmt(x.over,x.currency)+' over approved')+'</span>':'')+'</td><td>'+escH(x.order||'-')+(x.verified?'':' <span class="mf-over">not seen on the page</span>')+'</td></tr>').join('')+'</tbody></table>';
-      box.hidden=false;
-    }).catch(e=>{ try{ console.error('AMV: could not load the purchase receipts', e); }catch(_){} });
-  }
+      let shown = 25;
+      const draw = () => {
+        box.innerHTML='<table class="mf-tbl"><thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Store</th><th scope="col">Total</th><th scope="col">Order</th></tr></thead><tbody>'+
+          list.slice(0,shown).map(x=>'<tr><td>'+escH(_mfWhen(x.at))+'</td><td>'+escH(x.item||'-')+'</td><td>'+escH(x.store||'-')+'</td><td>'+escH(fmt(x.total,x.currency))
+            +(x.over>0?' <span class="mf-over">'+escH('+'+fmt(x.over,x.currency)+' over approved')+'</span>':'')+'</td><td>'+escH(x.order||'-')+(x.verified?'':' <span class="mf-over">not seen on the page</span>')+'</td></tr>').join('')+'</tbody></table>'
+          + (list.length > shown ? '<button type="button" class="btn bs" id="mf-buys-more">'+escH(T('Show {0} more').replace('{0}', String(Math.min(25, list.length - shown))))+'</button>' : '');
+        on($('mf-buys-more'),'click',()=>{ shown += 25; draw(); });
+      };
+      draw();
+    }).catch(e => {
+      try{ console.error('AMV: could not load the purchase receipts', e); }catch(_){}
+      const box = $('mf-buys-b'); if(!box) return;
+      box.innerHTML = '<p class="mf-empty">'+escH(T('AMV could not load what it bought just now. This is not the same as nothing bought.'))+'</p>'
+        + '<button type="button" class="btn bs" id="mf-buys-retry">'+escH(T('Try again'))+'</button>';
+      on($('mf-buys-retry'),'click',_mfBuys);
+    });
+  };
+  if($('mf-buys')) _mfBuys();
   on($('mf-accept-terms'),'click',function(){
     try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
     catch(e){ toast(e.message||'Could not save that','error'); }

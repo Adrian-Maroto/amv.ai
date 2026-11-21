@@ -39,7 +39,7 @@ section('Memory off: nothing is asked and nothing is kept');
   });
   ok(r.asks === 0, 'no model is asked what it learned', r);
   ok(r.kept === 0, 'and nothing is remembered', r);
-  ok(/switched off/.test(r.chat), 'asking chat to remember is told Memory is off', r.chat);
+  ok(/Memory is off/.test(r.chat), 'asking chat to remember is told Memory is off', r.chat);
 }
 
 section('Switched off while the model is answering: the answer is dropped');

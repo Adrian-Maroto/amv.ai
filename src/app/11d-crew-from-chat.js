@@ -233,7 +233,7 @@ async function _crewTool(name, input){
     const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const sched = _crewSchedOf(asked || 'daily', input);
     if(asked === 'monthly' && !sched)
-      return { text:'A monthly job needs a day of the month from 1 to 31 (and a time as 24-hour HH:MM if they have one). Ask the user, then call again. Nothing was created.', render:null };
+      return { text:'A monthly job needs a day of the month, 1 to 31. Ask the user. Nothing was created.', render:null };
     const assumed = asked === 'monthly' && !input.time;
     let d;
     try{
@@ -251,7 +251,7 @@ async function _crewTool(name, input){
     return { text:'Created. It is in their Crew tab now and runs ' + _crewWhen(made)
       + ' on AMV\u2019s servers - with their computer off and AMV closed.'
       + (firstAt ? ' First run: ' + firstAt + '.' : '')
-      + (assumed ? ' No time was given, so it runs at ' + CREW_DEFAULT_TIME + ' on their clock - tell them, and that they can change it.' : '')
+      + (assumed ? ' No time given: it runs at ' + CREW_DEFAULT_TIME + ' their time - say so.' : '')
       + ({ auto:' Results are delivered without review.',
            suggest:' It will NOT run on its own - AMV tells them it is due and waits to be asked, which costs nothing.',
            require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
@@ -394,7 +394,7 @@ async function _crewTool(name, input){
         const base = item.sched || {};
         const had = (base.hour != null && base.minute != null) ? String(base.hour).padStart(2,'0') + ':' + String(base.minute).padStart(2,'0') : '';
         const sc = _crewSchedOf('monthly', Object.assign({ day_of_month: base.dom }, input), had || CREW_DEFAULT_TIME);
-        if(!sc) return { text:'A monthly job needs a day of the month from 1 to 31. Ask the user which day. Nothing was changed.', render:null };
+        if(!sc) return { text:'A monthly job needs a day of the month, 1 to 31. Ask the user. Nothing was changed.', render:null };
         patch.sched = sc; assumedTime = had || CREW_DEFAULT_TIME;
       } else if(input.time){
         const cad = askedRepeat || (item.sched && item.sched.cad) || item.repeat || 'daily';
@@ -515,7 +515,7 @@ async function _sectionTool(name, input){
     /* Off means off, from chat too (Build 16 audit AG-08). The Memory tab is
        still theirs to add to by hand. */
     if(typeof _memOn === 'function' && !_memOn())
-      return { text:'Not saved: Memory is switched off in Settings, so AMV does not remember things from chats. Tell the user so - they can switch it on in Settings, or add it themselves in the Memory tab.', render:null };
+      return { text:'Not saved: Memory is off in Settings. Tell the user; they can turn it on, or add it in the Memory tab.', render:null };
     const text = String(input.text||'').trim().slice(0, _MEM_MAX);
     if(text.length < 3) return { text:'That is not enough to remember. Ask the user what exactly they want AMV to know.', render:null };
     /* Refused rather than stored. A memory is replayed into every future

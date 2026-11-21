@@ -253,9 +253,7 @@ async function runAutonomous(goal, opts){
       const okCount=outcome.filter(o=>o==='done').length;
       const whole=delivered && okCount===plan.length;
       _autoLog(whole ? '<div class="auto-ev done"><b>✓ Done</b></div>'
-        : '<div class="auto-ev stop"><b>Finished with problems</b><div>'+escH(okCount+' of '+plan.length+' steps were done'
-          + (outcome.some(o=>o==='denied')?'; some were not approved':'') + (outcome.some(o=>o==='failed')?'; some failed':'')
-          + '. The summary below covers only what was done.')+'</div></div>');
+        : '<div class="auto-ev stop"><b>Finished with problems</b><div>'+escH(okCount+' of '+plan.length+' steps done.')+'</div></div>');
       try{ _rrComplete(okCount); }catch(e){}
       const dv=$('auto-deliverable'); if(dv){
         const ws=_AUTO.workspace;
@@ -283,7 +281,7 @@ async function runAutonomous(goal, opts){
       _mcVisTask.progress=plan.length?Math.round(okSteps/plan.length*100):0;
       _mcVisTask.error=wasStopped?'Stopped before it finished.'
         : delivErr?('The result could not be put together: '+delivErr)
-        : (okSteps+' of '+plan.length+' steps were done'+(outcome.some(o=>o==='denied')?' (some were not approved)':'')+'.');
+        : (okSteps+' of '+plan.length+' steps were done'+(outcome.some(o=>o==='denied')?' (some not approved)':'')+'.');
     }
     _mcVisTask.result=_AUTO.deliverable||'';
     if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } } }catch(e){}
