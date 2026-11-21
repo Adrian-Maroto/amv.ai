@@ -88,7 +88,13 @@ const send = async (url, body, headers = {}, method = 'POST') => {
 };
 const rec = () => JSON.parse(store.get('auto:' + ME) || '{"items":[],"results":[]}');
 const job = (id) => rec().items.find(x => x.id === id);
-const tickAt = async (t) => { await W.runDueAutomations(env, t); return rec(); };
+/* The every-minute tick (quick), which takes the jobs from the due-work index
+   and never runs the hourly sweep. A tick in the first five minutes of an
+   hour also sweeps, reading the record from the page and then inside its own
+   lock - so "a write right after the tick's read" landed inside that locked
+   write, which no real request can do (the hook route writes under the same
+   lock). This suite failed only when the clock put it there. */
+const tickAt = async (t) => { await W.runDueAutomations(env, t, { quick: true }); return rec(); };
 
 let url = '', id = '';
 

@@ -86,3 +86,15 @@ Tested by counting every storage call: `nothing-is-skipped-in-silence` (renewal)
 and `every-night-is-backed-up` (backup) - no run reaches 1,000, and both still
 cover everything.
 
+
+## On Workers Free
+
+Workers Free allows 50 calls to outside services (the model, mail) per run and
+10 ms of CPU. Past the call limit every later call in the run fails with "Too
+many subrequests"; since Nov 21 the tick recognises that (`_autoPlatformLimit`),
+stops the run, reschedules the job it was on as a failed run would be - without
+counting an error or an attempt against it - leaves the rest for the next run,
+and pages once (`BACKGROUND JOBS HIT THE CLOUDFLARE PLAN'S CALL LIMIT`). The CPU
+limit cannot be caught from inside the run: the platform ends it. Neither can be
+measured from the repository (`wrangler dev --local` enforces neither), so the
+first real reading is the deployment's own logs.

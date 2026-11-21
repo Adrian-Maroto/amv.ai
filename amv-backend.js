@@ -12782,6 +12782,19 @@ function _autoTransient(e){
   return false;
 }
 
+/* THE PLATFORM'S CALL LIMIT, NOT THE JOB (free-plan readiness, Nov 21).
+
+   Cloudflare stops a run that makes more calls than its plan allows - 50 to
+   outside services on Workers Free - and every call after that point in the
+   same run fails the same way. Counted as the job's failure, one busy minute
+   would mark every job behind it failed, spend their attempts, and after five
+   such minutes switch healthy jobs off for good. It is the run's limit: the
+   run stops there, the job is not blamed, and the operator is told. */
+function _autoPlatformLimit(e){
+  const m = String((e && (e.message || e.code)) || e || '');
+  return /too many subrequests|too many api requests by single worker invocation/i.test(m);
+}
+
 /* Run it, and try again where trying again is the answer. Resolves with the
    attempt count so the record can state it; rejects carrying the same count on
    the error, because a give-up message that cannot say how hard it tried is
@@ -13144,7 +13157,7 @@ async function runDueAutomations(env, atMs, opts){
      idea means read properly - and a full sweep runs in the first five minutes
      of every hour regardless. So the index can only ever make a tick cheaper;
      it can never be the reason a job does not run. */
-  let allUsers = [], truncated = false, viaIndex = false, notLoaded = 0;
+  let allUsers = [], truncated = false, viaIndex = false, notLoaded = 0, platformStopped = false;
   const sweepDue = !quick && new Date(now).getUTCMinutes() < 5;
   /* Checked BEFORE the buckets, because reading the index to learn that an
      empty namespace has nothing due is 48 reads spent on a foregone
@@ -13281,6 +13294,24 @@ async function runDueAutomations(env, atMs, opts){
 
     const r = await _autoRunAccount(env, email, rec, now, started + AUTO_TICK_BUDGET_MS);
     scanned += r.scanned; ran += r.ran; failed += r.failed;
+    /* The platform stopped this run's calls: nothing after this point can
+       reach a model or a mailbox, so the rest wait - booked into this hour,
+       most overdue first next time, exactly as when the tick runs out of
+       time. */
+    if (r.platformStop) {
+      deferred = inline.length - processed; platformStopped = true;
+      try { await _autoBucketAddMany(env, inline.slice(processed).map(rest => ({ email: rest.id, next: Date.now() }))); } catch (e) { /* booked again by the next sweep */ }
+      break;
+    }
+  }
+  if (platformStopped) {
+    try {
+      await alertOnce(env, 'auto_platform_limit',
+        'BACKGROUND JOBS HIT THE CLOUDFLARE PLAN\u2019S CALL LIMIT. A run stopped at the number of calls one invocation may make '
+        + '(50 to outside services on Workers Free). No job was marked failed for it, and the ' + deferred + ' accounts left '
+        + 'run next time, most overdue first - but with this many jobs due, they will run late. Workers Paid allows 10,000; '
+        + 'then set AMV_OPS_PER_RUN. docs/DUE-WORK.md.', 6 * 60);
+    } catch (e) { /* logging: it never decides anything */ }
   }
 
   /* Running out of time once is a busy minute. Running out of time every tick
@@ -13298,7 +13329,7 @@ async function runDueAutomations(env, atMs, opts){
         + 'arriving late. Bind the AMV_JOBS queue (wrangler.toml) so each account runs on its own.', 3 * 60);
     }catch(e){}
   }
-  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated, lateS }, enqueued ? { enqueued } : {}, notLoaded ? { notLoaded } : {});
+  return Object.assign({ scanned, ran, failed, queued, processed, deferred, truncated, lateS }, enqueued ? { enqueued } : {}, notLoaded ? { notLoaded } : {}, platformStopped ? { platformLimit: true } : {});
 }
 
 /* ONE ACCOUNT'S DUE WORK, start to finish: its plan, holds, ceilings and
@@ -13314,7 +13345,7 @@ const AUTO_RUN_MAX_TRIES = 3;
 async function _autoRunAccount(env, email, rec, now, deadline){
   /* In quarantine (15a-job-queue.js, TASK-005): nothing runs until released. */
   if(await _autoQuarantined(env, email)) return { scanned: 0, ran: 0, failed: 0, quarantined: true };
-  let scanned = 0, ran = 0, failed = 0;
+  let scanned = 0, ran = 0, failed = 0, platformStop = false;
   let changed = false;
   /* Held until the results this account produced are durable. See the end of
      this block: advancing "AMV has told them about this mail" before they can
@@ -13884,6 +13915,16 @@ async function _autoRunAccount(env, email, rec, now, deadline){
       }
     }catch(e){
       if(e && e.__quiet){ item.next = _autoNextAfter(item, now, 'ran'); changed = true; continue; }
+      /* Not this job's failure: the run reached the platform's call limit.
+         Rescheduled the way a failed run is (so whatever half-happened is not
+         repeated a minute later), with no error, no attempt and no result
+         counted against it, and the rest of this account waits for the next
+         run. */
+      if(_autoPlatformLimit(e)){
+        item.next = _autoNextAfter(item, now, 'failed'); changed = true; platformStop = true;
+        audit(env, 'auto_platform_limit', { autoId: item.id, error: String(e.message || e).slice(0, 120) });
+        break;
+      }
       runFailed = true;
       const why = String(e.message||e).slice(0,200);
       item.lastError = why;
@@ -14004,7 +14045,7 @@ async function _autoRunAccount(env, email, rec, now, deadline){
     try{ await fn(); }
     catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
   }
-  return { scanned, ran, failed };
+  return { scanned, ran, failed, platformStop };
 }
 
 

@@ -429,6 +429,35 @@ section('The tick says how late its most overdue work was');
   ok(idle.lateS === 0 || idle.lateS === undefined, 'and nothing due is not late', idle.lateS);
 }
 
+section('The platform\u2019s call limit stops the run, and is not counted against anybody\u2019s job');
+{
+  /* Workers Free allows 50 calls to outside services per run; past that every
+     one fails with "Too many subrequests". Here the third model call does. */
+  const env = mkEnv();
+  for (let i = 0; i < 5; i++) await withDueJob(env, 'busy' + i + '@example.com', (5 - i) * 3600000);
+  const stub = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url, opts) => {
+    if (/model\.example/.test(String(url)) && ++calls > 2) throw new Error('Too many subrequests.');
+    return stub(url, opts);
+  };
+  alerts = [];
+  const r = await W.runDueAutomations(env);
+  globalThis.fetch = stub;
+  ok(r.platformLimit === true && r.failed === 0, 'the run stops at the limit, with nothing marked failed', r);
+  ok(r.deferred > 0 && r.processed + r.deferred === 5, 'and the accounts it did not reach are left for next time', r);
+  const recs = [];
+  for (let i = 0; i < 5; i++) recs.push(await W.DB.get(env, 'auto', 'busy' + i + '@example.com'));
+  /* The two that ran before the limit record their one successful attempt;
+     the one the limit stopped, and the two never reached, record none. */
+  const ranOk = recs.filter(x => (x.results || []).some(z => z.kind !== 'failed'));
+  ok(ranOk.length === 2 && recs.every(x => !(x.items[0].errors > 0) && x.items[0].active !== false),
+     'no job carries an error for it, and none is switched off', recs.map(x => [x.items[0].errors || 0, x.items[0].attempts || 0]));
+  ok(recs.filter(x => !(x.results || []).length).every(x => !(x.items[0].attempts > 0)), 'and none that did not run has an attempt spent', recs.map(x => x.items[0].attempts || 0));
+  ok(recs.every(x => !(x.results || []).some(z => z.kind === 'failed')), 'and nobody is told their job failed', true);
+  ok(alerted(/CALL LIMIT/), 'the operator is told, with what to do', alerts.slice(-1)[0]);
+}
+
 globalThis.fetch = realFetch;
 if (report('nothing-is-skipped-in-silence') > 0) process.exitCode = 1;
 done();
