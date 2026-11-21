@@ -60,25 +60,31 @@ function _renderSpendingPaneNow(pane, redraw){
       '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
       'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
       'it may buy it, and how much it may spend without stopping to ask you.</p>'+
-      '<p><b>It is off until you turn it on.</b> With it off, AMV will never pay for anything, however '+
+      /* Said as AMV can show it (Build 16 audit D16-04): each sentence here is
+         a rule the server enforces or a fact of how buying works - nothing
+         wider than that. */
+      '<p><b>It is off until you turn it on.</b> With it off, AMV approves no purchase, however '+
       'it is asked - it stops and tells you what it needs instead.</p>'+
       '<ul class="mf-what-l">'+
-        '<li><b>What it buys</b> - only things a job you started actually needs. Never a subscription, '+
-          'never anything recurring, and never on a site you have not approved.</li>'+
-        '<li><b>What it never does</b> - it does not move money between your accounts, does not send '+
-          'money to people, and cannot spend anything after you switch this off.</li>'+
-        '<li><b>Why the limits matter</b> - the three numbers below are hard stops, checked before '+
-          'every purchase. The monthly ceiling is the one that decides the most you can lose in a bad '+
-          'month, so set it to a number you would not mind losing.</li>'+
-        '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
-          'and how much, and it is only visible to you.</li>'+
+        '<li><b>How it buys</b> - AMV fills in the store\u2019s checkout in its browser and asks you first; '+
+          'you press the store\u2019s own pay button. It never presses it for you.</li>'+
+        '<li><b>What it does not do</b> - it does not move money between your accounts or send money '+
+          'to people. Switching this off stops any new purchase being approved; one you already paid for '+
+          'at the store is between you and the store.</li>'+
+        '<li><b>Why the limits matter</b> - the three numbers below are checked on your account before '+
+          'each purchase is approved, and the amount is held against the month first. A store can still '+
+          'charge more than it showed; when that happens it is booked and said on the receipt. The '+
+          'monthly ceiling decides the most AMV can approve in a month, so set it to a number you would '+
+          'not mind losing.</li>'+
+        '<li><b>It is written down</b> - each purchase recorded on your account appears below with what '+
+          'it was, where, and how much, and only you can see it.</li>'+
       '</ul>'+
     '</div></details>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+
       '<div class="prv-pref"><div><div class="prv-pref-t">Let AMV spend money for me</div>'+
-        '<div class="prv-pref-s">Off means AMV will never pay for anything, however it is asked.</div></div>'+
+        '<div class="prv-pref-s">Off means AMV approves no purchase, however it is asked.</div></div>'+
         '<label class="sw"><input type="checkbox" id="mf-enabled" '+(c.enabled?'checked':'')+
         ' aria-label="Let AMV spend money for me"><span class="sw-sl"></span></label></div>'+
       '<div class="mf-grid">'+

@@ -763,7 +763,7 @@ function _renderSetPaneInner(only, into){
     const connected=!!(window.AMV_API && AMV_API.live);
     pane.innerHTML=
       '<h2 class="set-title">AI Connection</h2>'+
-      '<div class="set-sub">AMV runs on your secure backend. The AI key lives <b>only on your server</b> - never in the browser - so usage, billing, and limits are always enforced and can never be bypassed.</div>'+
+      '<div class="set-sub">AMV runs on your secure backend. The AI key lives <b>only on your server</b> - never in the browser - so usage, billing and limits are decided there, not by this page.</div>'+
       '<div class="conn-status '+(connected?'ok':'off')+'" id="conn-status">'+
         '<span class="conn-dot"></span>'+(connected?'Connected - AMV is ready':'Not connected - add your backend URL below')+
       '</div>'+
