@@ -103,5 +103,67 @@ section('Released, and only by its owner');
   ok(r.status === 409, 'and a released purchase cannot then be settled', r.d);
 }
 
+section('One purchase, one hold, however often it is asked (Build 17 audit B17-005)');
+{
+  store.clear(); await limits({});
+  const key = 'k' + 'a'.repeat(30);
+  const a = await hold({ amount: 30, key });
+  const b = await hold({ amount: 30, key });
+  ok(a.d.ok && b.d.ok && b.d.repeat === true && a.d.hold.id === b.d.hold.id, 'asked twice, the same hold comes back', [a.d, b.d]);
+  ok(await month() === 30, 'and the month is booked once', await month());
+  const c = await hold({ amount: 31, key });
+  ok(c.status === 409 && c.d.code === 'hold_terms_differ' && await month() === 30, 'the same purchase with a different total is refused, never a second hold', c.d);
+  const old = await hold({ amount: 30, key: 'short' });
+  ok(old.status === 400 && old.d.code === 'reload_needed', 'a page too old to send a key is told to reload', old.d);
+  await call(W.spendRelease, '/v1/spend/release', { hold: a.d.hold.id });
+  const after = await hold({ amount: 30, key });
+  ok(after.status === 409 && after.d.code === 'decided' && after.d.status === 'released', 'and once decided, asking again does not reopen it', after.d);
+  await limits({ perPurchase: 10 });
+  const rkey = 'k' + 'b'.repeat(30);
+  const r1 = await hold({ amount: 20, key: rkey });
+  const r2 = await hold({ amount: 20, key: rkey });
+  ok(r1.status === 400 && r2.status === 400 && r2.d.repeat === true && r2.d.code === 'refused', 'a refused purchase asked again is told it was refused', [r1.d, r2.d]);
+}
+
+section('Receipts: a page at a time, older ones still read, and a failed read is said (Build 17 audit B17-003, B17-008)');
+{
+  store.clear(); await limits({});
+  const h = (await hold({ amount: 12 })).d.hold;
+  await call(W.spendSettle, '/v1/spend/settle', { hold: h.id, total: 12, order: 'N-1', seenOnPage: true });
+  /* A receipt written to the old single list, before the index. */
+  await W.DB.put(env, 'buys', USER.email, [{ id: 'bh_' + 'c'.repeat(24), store: 'old.example.com', item: 'Old thing', total: 5, currency: 'USD', at: 1, verified: true }]);
+  let r = await call(W.spendBuys, '/v1/spend/buys');
+  ok(r.d.ok && r.d.buys.length === 2 && r.d.next === null, 'the new receipt and the old one, both', r.d);
+  const old = r.d.buys.find(x => x.store === 'old.example.com');
+  ok(old && old.seenOnPage === true && old.verified === false && old.source === 'reported', 'and the old one is relabelled as reported, never verified', old);
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('buyhold:')) throw new Error('storage down'); return realGet(k); };
+  r = await call(W.spendBuys, '/v1/spend/buys');
+  env.AMV_KV.get = realGet;
+  ok(r.status === 503 && r.d.code === 'receipts_unavailable', 'a receipt that cannot be read is said, not left out of the list', r.d);
+  const realList = env.AMV_KV.list;
+  env.AMV_KV.list = async () => { throw new Error('list down'); };
+  r = await call(W.spendBuys, '/v1/spend/buys');
+  env.AMV_KV.list = realList;
+  ok(r.status === 503 && r.d.code === 'receipts_unavailable', 'and so is an index that cannot be read', r.d);
+}
+
+section('The money is closed even when the record write is refused (Build 17 audit B17-004)');
+{
+  store.clear(); await limits({});
+  const h = (await hold({ amount: 25 })).d.hold;
+  const realPut = env.AMV_KV.put;
+  let n = 0;
+  env.AMV_KV.put = async (k, v) => { if (String(k).startsWith('buyhold:') && ++n === 1) throw new Error('429 Too Many Requests'); return realPut(k, v); };
+  const s1 = await call(W.spendSettle, '/v1/spend/settle', { hold: h.id, total: 25, order: 'P-1', seenOnPage: true });
+  env.AMV_KV.put = realPut;
+  ok(s1.status === 202 && s1.d.ok === true && s1.d.recordPending === true && s1.d.receipt, 'settled, and said that the record is still being written', s1.d);
+  ok(await month() === 25, 'the month counts it once', await month());
+  const s2 = await call(W.spendSettle, '/v1/spend/settle', { hold: h.id, total: 25, order: 'P-1', seenOnPage: true });
+  ok(s2.status === 200 && await month() === 25, 'settling again finishes the record without counting it twice', [s2.status, await month()]);
+  const r = await call(W.spendBuys, '/v1/spend/buys');
+  ok(r.d.buys.length === 1 && r.d.buys[0].order === 'P-1', 'and the receipt is there', r.d.buys);
+}
+
 report();
 done();

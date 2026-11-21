@@ -87,6 +87,17 @@ section('A subscription nobody has confirmed in over a month is caught');
   ok(!fresh.pastDueSince, 'and a current subscription is left alone', !!fresh.pastDueSince);
 }
 
+section('A plan record that cannot be read is named, and the pass is not called complete (Build 17 audit D17-005)');
+{
+  const env = mkEnv();
+  await seed(env, 'lapsed@x.com', 'pro', 50);
+  await seed(env, 'current@x.com', 'pro', 3);
+  await env.AMV_KV.put('ent:broken@x.com', '{not json');
+  const r = await W.runRenewalSweep(env);
+  ok(r.complete === false && r.unreadable === 1, 'the pass says it did not see everything', r);
+  ok(alerts.some(a => /COULD NOT READ 1 PLAN RECORD/.test(a) && /broken@x\.com/.test(a)), 'and pages with which record', alerts.slice(-2));
+}
+
 section('It never drops somebody straight to Free');
 {
   /* Past due is a seven-day window with full access, not a switch. Cutting a

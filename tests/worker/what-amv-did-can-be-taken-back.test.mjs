@@ -184,6 +184,29 @@ section('One ticket takes it back once, however often it is sent (Build 17 audit
   ok(later.status === 200 && later.d.undone === true, 'which then works', [later.status, later.d]);
 }
 
+section('A take-back that could not start gives the ticket back; one that broke midway is not run again (Build 17 audit D17-004)');
+{
+  const r = await act('calendar.create', { title: 'Gone', start: '2026-11-02T15:00:00Z' });
+  const t = r.d.receipt.undo.token;
+  const keep = await W.DB.get(env, W.CONN_KV, ME);
+  await W.DB.put(env, W.CONN_KV, ME, {});
+  sent.length = 0;
+  const off = await undo(t);
+  await W.DB.put(env, W.CONN_KV, ME, keep);
+  ok(off.status === 409 && !sent.some(s => s.startsWith('DELETE ')), 'with the connection gone nothing reaches the provider', [off.status, off.d]);
+  const on = await undo(t);
+  ok(on.status === 200 && on.d.undone === true, 'and the same ticket works once it is back', [on.status, on.d]);
+  const r2 = await act('calendar.create', { title: 'Breaks', start: '2026-11-02T16:00:00Z' });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { if ((init && init.method) === 'DELETE') throw new TypeError('connection reset'); return realFetch(url, init); };
+  const broke = await undo(r2.d.receipt.undo.token);
+  globalThis.fetch = realFetch;
+  ok(broke.status === 502 && broke.d.error === 'undo_failed', 'a provider that broke midway is said as unconfirmed', [broke.status, broke.d]);
+  sent.length = 0;
+  const again = await undo(r2.d.receipt.undo.token);
+  ok(again.status === 502 && again.d.repeat === true && !sent.some(s => s.startsWith('DELETE ')), 'and the ticket is not run blind a second time', [again.status, again.d]);
+}
+
 section('A take-back the provider accepted and did not do is not "undone"');
 {
   const r = await act('calendar.create', { title: 'Dinner', start: '2026-11-02T19:00:00Z' });

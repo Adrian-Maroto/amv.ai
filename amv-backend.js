@@ -45699,9 +45699,10 @@ async function _buyHoldIds(env, email, cursor, limit){
     if (!page.list_complete) return { ids, next: page.cursor || null };
   }
   /* Purchases made before the index existed, from the old list. */
-  let legacy = [];
-  try { const l = await DB.get(env, 'buyholds', email); legacy = Array.isArray(l) ? l.filter(x => /^bh_[a-f0-9]{24}$/.test(String(x))) : []; }
-  catch (e) { throw e; }
+  /* A read that fails throws to the caller, which says so; it is never an
+     empty history. */
+  const l = await DB.get(env, 'buyholds', email);
+  const legacy = Array.isArray(l) ? l.filter(x => /^bh_[a-f0-9]{24}$/.test(String(x))) : [];
   return { ids: ids.concat(legacy.filter(x => !ids.includes(x))), next: null, legacy: legacy.length };
 }
 
