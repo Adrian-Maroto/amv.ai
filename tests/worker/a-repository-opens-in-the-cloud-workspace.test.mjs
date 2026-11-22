@@ -140,18 +140,27 @@ function archive(extra) {
 
 /* ── GitHub ───────────────────────────────────────────────────────────── */
 const GH_TOKEN = 'gho_secret_token_value_for_this_suite';
-let tarball = archive(), seen = [];
+let tarball = archive(), seen = [], archiveHost = 'codeload.github.com', reachedInside = false;
+const DNS = { 'api.github.com': '140.82.112.6', 'codeload.github.com': '140.82.112.10', 'codeload.inside.example': '10.0.0.7' };
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = String(input && input.url ? input.url : input);
   const auth = (init && init.headers && (init.headers.Authorization || init.headers.authorization)) || (input && input.headers && input.headers.get && input.headers.get('Authorization')) || '';
   if (/^https:\/\/(api\.github\.com|codeload\.github\.com)\//.test(url)) seen.push({ url, auth: String(auth) });
+  if (url.startsWith('https://codeload.inside.example/')) reachedInside = true;
   const J = (o, s) => new Response(JSON.stringify(o), { status: s || 200, headers: { 'Content-Type': 'application/json' } });
+  /* Where each name points, answered here (Build 18 audit B18-013): asked of
+     the real lookup service, this suite failed on any machine whose network
+     refuses it - the safety check doing its job, on the wrong question. */
+  if (url.startsWith('https://cloudflare-dns.com/dns-query')) {
+    const q = new URL(url), addr = DNS[q.searchParams.get('name')];
+    return J({ Status: 0, Answer: addr && q.searchParams.get('type') === 'A' ? [{ type: 1, data: addr }] : [] });
+  }
   if (url === 'https://api.github.com/repos/octo/hello') return J({ default_branch: 'main' });
   if (url === 'https://api.github.com/repos/octo/hello/commits/main') return J({ sha: SHA });
   if (url === 'https://api.github.com/repos/octo/hello/tarball/' + SHA)
-    return new Response(null, { status: 302, headers: { Location: 'https://codeload.github.com/octo/hello/legacy.tar.gz/' + SHA } });
-  if (url.startsWith('https://codeload.github.com/')) return new Response(tarball, { status: 200, headers: { 'Content-Type': 'application/x-gzip' } });
+    return new Response(null, { status: 302, headers: { Location: 'https://' + archiveHost + '/octo/hello/legacy.tar.gz/' + SHA } });
+  if (url.startsWith('https://codeload.github.com/') || url.startsWith('https://codeload.inside.example/')) return new Response(tarball, { status: 200, headers: { 'Content-Type': 'application/x-gzip' } });
   return realFetch(input, init);
 };
 async function withGitHub(env, email, scopes) {
@@ -220,6 +229,16 @@ section('An archive past the bound is refused before anything is written');
   const r = await jsonOf(await call(env, '/v1/computer/checkout', { repo: 'octo/hello' }, pat));
   tarball = archive();
   ok(r.status === 413 && r.d.error === 'too_large', 'more than it unpacks to is refused, and said', r);
+  ok(asked.length === before, 'and the machine was not touched', asked.length - before);
+}
+
+section('A download that is sent somewhere private is refused, and nothing is written');
+{
+  const before = asked.length;
+  archiveHost = 'codeload.inside.example';
+  const r = await jsonOf(await call(env, '/v1/computer/checkout', { repo: 'octo/hello' }, pat));
+  archiveHost = 'codeload.github.com';
+  ok(r.status === 502 && r.d.error === 'blocked' && !reachedInside, 'a redirect to a name that points inside is refused by the address check, and never fetched', [r.status, r.d, reachedInside]);
   ok(asked.length === before, 'and the machine was not touched', asked.length - before);
 }
 

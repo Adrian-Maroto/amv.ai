@@ -98,7 +98,22 @@ async function spendHold(request, env){
   if(prior){
     if(prior.email !== user.email || prior.amount !== amount || prior.currency !== currency || prior.store !== store || prior.item !== item)
       return json({ ok:false, code:'hold_terms_differ', error:'This purchase was already held with different terms. Start it again.' }, 409);
-    if(prior.status === 'held') return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    if(prior.status === 'held') {
+      /* An earlier settlement/release can have committed in the month counter
+         while writing this KV record failed. Never arm that hold again from a
+         cached 'held' status: ask the authority if it has already closed. */
+      if (env.AMV_COUNTER) {
+        if (!prior.ledgerKey) return json({ ok:false, code:'hold_uncertain', error:'AMV cannot verify this earlier purchase. Check its status before trying again.' }, 503);
+        let ended;
+        try { ended = await counter(env, prior.ledgerKey, { op:'onceGet', once:_buyClosed(id), strict:true }); }
+        catch (e) { ended = null; }
+        if (!ended || ended.unavailable || typeof ended.exists !== 'boolean')
+          return json({ ok:false, code:'hold_uncertain', error:'AMV cannot check whether this purchase already completed. Please try again later.' }, 503);
+        if (ended.exists) return json({ ok:false, code:'decided', status:(ended.note && ended.note.kind) || 'closed',
+          error:'This purchase was already completed or released. Check its receipt before starting another.' }, 409);
+      }
+      return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    }
     if(prior.status === 'refused') return json({ ok:false, repeat:true, code:'refused', error:'This purchase was refused by your Spending limits.' }, 400);
     if(prior.status !== 'reserving') return json({ ok:false, code:'decided', status:prior.status, error:'This purchase was already ' + prior.status + '.' }, 409);
     /* 'reserving': the first request may still be booking it. Going on is

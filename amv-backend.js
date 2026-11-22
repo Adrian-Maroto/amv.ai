@@ -4382,6 +4382,15 @@ export class AMVCounter {
       await this.state.storage.setAlarm(now + windowMs + 5000);
       return json({ allowed: true, count: rec.count });
     }
+    /* Read the named terminal effect of a purchase before rearming a stale
+       hold record. The counter is authoritative; a KV receipt may lag it. */
+    if (op === 'onceGet') {
+      const once = String(body.once || '').slice(0, 200);
+      if (!once) return json({ error: 'missing_once' }, 400);
+      const seen = await this.state.storage.get('once:' + once);
+      return json({ exists: seen !== undefined && seen !== null,
+        note: (seen && typeof seen === 'object') ? seen : null });
+    }
     if (op === 'incr') {
       const cur = (await this.state.storage.get('v')) || 0;
       /* ONCE, WHEN IT IS MONEY (Nov 7 audit FIN-026). An add named by the
@@ -4780,6 +4789,8 @@ async function counter(env, name, payload) {
         if (!out || typeof out !== 'object' || Array.isArray(out)) throw new Error('counter answered something that is not a record');
         /* HTTP 200 and an object are not an operation-specific answer. In
            particular {} must not mean 'not revoked' or 'no committed data'. */
+        if (payload.op === 'onceGet' && typeof out.exists !== 'boolean')
+          throw new Error('counter answered without a named effect decision');
         if (payload.strict && ['get', 'incr'].includes(payload.op) &&
             (typeof out.value !== 'number' || !Number.isFinite(out.value) || out.value < 0))
           throw new Error('counter answered without a valid value');
@@ -4876,8 +4887,9 @@ async function counter(env, name, payload) {
       audit(env, 'atomic_unavailable', { op: 'revCas', name: String(name).slice(0, 120) });
       return { ok: false, unavailable: true, code: 'atomic_unavailable' };
     }
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session' || payload.op === 'clear')) {
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck' || payload.op === 'session' || payload.op === 'clear' || payload.op === 'onceGet')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
+      if (payload.op === 'onceGet') return { exists: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
       if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
       return { allowed: false, unavailable: true, code: 'atomic_unavailable', value: 0 };
@@ -4969,6 +4981,7 @@ async function _counterKVFallback(env, name, payload) {
     ses.count += amount; await save(ses);
     return { allowed: true, value: ses.count, start: ses.start };
   }
+  if (op === 'onceGet') return { exists: false, unavailable: true };
   if (op === 'get') {
     const raw = await env.AMV_KV.get('ctr:' + name);
     if (payload.keep && raw != null) await env.AMV_KV.put('ctr:' + name, raw);
@@ -45788,7 +45801,22 @@ async function spendHold(request, env){
   if(prior){
     if(prior.email !== user.email || prior.amount !== amount || prior.currency !== currency || prior.store !== store || prior.item !== item)
       return json({ ok:false, code:'hold_terms_differ', error:'This purchase was already held with different terms. Start it again.' }, 409);
-    if(prior.status === 'held') return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    if(prior.status === 'held') {
+      /* An earlier settlement/release can have committed in the month counter
+         while writing this KV record failed. Never arm that hold again from a
+         cached 'held' status: ask the authority if it has already closed. */
+      if (env.AMV_COUNTER) {
+        if (!prior.ledgerKey) return json({ ok:false, code:'hold_uncertain', error:'AMV cannot verify this earlier purchase. Check its status before trying again.' }, 503);
+        let ended;
+        try { ended = await counter(env, prior.ledgerKey, { op:'onceGet', once:_buyClosed(id), strict:true }); }
+        catch (e) { ended = null; }
+        if (!ended || ended.unavailable || typeof ended.exists !== 'boolean')
+          return json({ ok:false, code:'hold_uncertain', error:'AMV cannot check whether this purchase already completed. Please try again later.' }, 503);
+        if (ended.exists) return json({ ok:false, code:'decided', status:(ended.note && ended.note.kind) || 'closed',
+          error:'This purchase was already completed or released. Check its receipt before starting another.' }, 409);
+      }
+      return json({ ok:true, repeat:true, hold:{ id, amount, currency, store, expiresAt: (+prior.at || now) + BUY_HOLD_WINDOW_MS } });
+    }
     if(prior.status === 'refused') return json({ ok:false, repeat:true, code:'refused', error:'This purchase was refused by your Spending limits.' }, 400);
     if(prior.status !== 'reserving') return json({ ok:false, code:'decided', status:prior.status, error:'This purchase was already ' + prior.status + '.' }, 409);
     /* 'reserving': the first request may still be booking it. Going on is

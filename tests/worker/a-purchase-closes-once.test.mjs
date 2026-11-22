@@ -179,6 +179,30 @@ section('Each currency is its own month');
   ok(await month(f, 'EUR') === 0 && await month(f, 'USD') === 45, 'releasing the euro one gives back euros only', { usd: await month(f, 'USD'), eur: await month(f, 'EUR') });
 }
 
+
+section('Closed hold cannot be rearmed after receipt storage fails (Build 18 independent audit)');
+{
+  const f = fixture(); await limits(f);
+  const key = 'retryPurchase' + crypto.randomUUID().replace(/-/g, '');
+  const b = { amount: 25, currency: 'USD', store: 'shop.example.com', item: 'Coat', key };
+  const first = await call(f, W.spendHold, '/v1/spend/hold', b);
+  ok(first.status === 200 && first.d.ok && first.d.hold, 'initial hold is approved', first.d);
+  const prior = await call(f, W.spendHold, '/v1/spend/hold', b);
+  ok(prior.status === 200 && prior.d.repeat === true, 'genuine still-active hold retries without double booking', prior.d);
+  const held = first.d.hold;
+  f.beforePut = k => { if (k === 'buyhold:' + held.id) throw new Error('receipt storage failed'); };
+  const s = await call(f, W.spendSettle, '/v1/spend/settle', { hold: held.id, total: 25, order:'ORDER-9', verified:true });
+  f.beforePut = null;
+  ok(s.status === 202 && await month(f) === 25 && status(f, held.id) === 'held', 'counter is settled but KV hold record is stale', { status:s.status, body:s.d, month: await month(f) });
+  const rearm = await call(f, W.spendHold, '/v1/spend/hold', b);
+  ok(rearm.status === 409 && rearm.d.code === 'decided' && await month(f) === 25,
+    'a closed hold cannot be rearmed by retrying the identical request', { rearm, month: await month(f) });
+  f.failCounter = (n, p) => n.startsWith('spendmo:') && p.op === 'onceGet';
+  const undecidable = await call(f, W.spendHold, '/v1/spend/hold', b);
+  ok(undecidable.status === 503 && undecidable.d.code === 'hold_uncertain',
+    'outage of the settlement authority does not turn into permission to buy', undecidable);
+}
+
 console.log = log;
 if (report('a-purchase-closes-once') > 0) process.exitCode = 1;
 done();

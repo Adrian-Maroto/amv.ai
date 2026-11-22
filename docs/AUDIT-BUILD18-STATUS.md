@@ -1,0 +1,36 @@
+# Build 18 audit - status (Nov 22, 2026)
+
+Source: the independent "AMV Build 18 final pre-purchase engineering audit"
+(30 new items, B18-001..030). Each row says what was done here, with the
+evidence, or why it is not code.
+
+## Fixed in code, with a test proved by breaking the fix
+
+| Item | What | Evidence |
+|---|---|---|
+| B18-001 | A closed purchase hold could be armed again from a stale stored copy after settlement's receipt write failed. The auditor's patch was applied as given: a retried hold asks the counter whether it closed (`onceGet`), 409 if it did, 503 if the counter cannot say. | `a-purchase-closes-once`: 32/32. With the old `spendHold` restored, the two new assertions fail. |
+| B18-013 | The repository checkout suite asked the real DNS service, so it failed on any machine whose network refuses it. Lookups are now answered inside the suite, and a new case sends the download to a name that points inside: refused as `blocked`, never fetched. | `a-repository-opens-in-the-cloud-workspace`: 27/27. Giving that name a public address fails the new assertions. |
+| B18-026 | `GO-LIVE.md` said the counter and Browser Rendering need Workers Paid. Corrected to the free-plan facts the auditor cited (SQLite Durable Objects on Free; a small daily Browser Rendering allowance), marked as their reading: Cloudflare's docs are not reachable from this session. | `GO-LIVE.md` rows for `AMV_COUNTER` and `BROWSER`. |
+
+## Environment, not product (B18-008..012, 014)
+
+The auditor's machine had no terser, acorn, Playwright, bubblewrap or
+PostgreSQL, so 11 suites could not run there. All 11 run and pass in this
+repository's gate (`CI=true npm run check`, 25/25 stages, all suites) with
+PostgreSQL 16, bubblewrap and Chromium installed, and on GitHub's CI before
+every deploy. B18-024's 4 MB figure is the `--no-minify` build; the shipped
+page is minified (about 1.5 MB) and held under a gzipped ceiling by the gate.
+
+## Owner or live infrastructure (not closable from code)
+
+B18-002/003 (PostgreSQL as sole authority, historical backfill),
+B18-004/005/006/007 (queue, browser, cloud computer, workspaces bindings -
+`consumer_full` preflight fails on purpose until they exist),
+B18-015 (restore drill), B18-016/019/020 (live sign-in providers, Stripe
+sandbox, email domain), B18-017 (merchant verification - checkout stays
+person-operated, docs/BUYING.md), B18-018 (model evals need the model key),
+B18-021 (independent penetration test), B18-022/023 (load, on-call),
+B18-025 (visual QA on real devices), B18-027 (per-country capability ledger
+with live contract tests), B18-028 (checked live from outside by the
+`synthetic` workflow: server source 404), B18-029/030 (key inventory,
+signed launch gate).
