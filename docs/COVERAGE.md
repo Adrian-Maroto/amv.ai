@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-22 from 421 suites.
+2026-11-22 from 422 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.7%.
+Functions 139/139 (100.0%), code 91.8%.
 
 
 ### Company sign-in and SCIM
@@ -89,10 +89,10 @@ Functions 52/52 (100.0%), code 93.3%.
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.6% |
+| `28-password-reset.js` | 7/7 | 92.7% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
-| `31-sign-in-codes.js` | 38/38 | 90.2% |
+| `31-sign-in-codes.js` | 38/38 | 90.3% |
 | `32-teams.js` | 13/13 | 95.3% |
 | `33-team-roles.js` | 34/34 | 86.8% |
 | `34-chat-sync.js` | 16/16 | 95.8% |
@@ -123,7 +123,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `58-public-config-and-funnel.js` | 3/3 | 99.1% |
 | `59-support.js` | 3/3 | 97.9% |
 | `60-readiness.js` | 9/9 | 96.6% |
-| `61-owner-digest.js` | 35/35 | 87.6% |
+| `61-owner-digest.js` | 35/35 | 87.8% |
 | `62-global-mail.js` | 28/28 | 89.8% |
 | `63-run-needs.js` | 3/3 | 99.4% |
 | `64-job-boards.js` | 2/2 | 95.6% |
@@ -132,7 +132,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `67-weekly-habits.js` | 2/2 | 100.0% |
 | `68-cloud-library.js` | 22/22 | 90.2% |
 | `68-refunds.js` | 10/10 | 86.8% |
-| `69-buying.js` | 8/8 | 92.3% |
+| `69-buying.js` | 8/8 | 92.9% |
 | `69-speech.js` | 8/8 | 93.8% |
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
@@ -145,7 +145,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `77a-agent-signins.js` | 25/25 | 88.2% |
 | `78-teach-replay.js` | 5/5 | 87.0% |
 | `79-meaning.js` | 3/3 | 98.1% |
-| `80-switches.js` | 10/10 | 90.9% |
+| `80-switches.js` | 10/10 | 92.7% |
 | `81-web-push.js` | 15/15 | 94.7% |
 | `82-tasks.js` | 4/4 | 94.4% |
 | `83-support.js` | 4/4 | 84.6% |
