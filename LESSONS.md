@@ -16192,3 +16192,17 @@ and the last three builds' files stay published, so a deploy never strands
 a tab that is already open. Rule: when a change moves where something can
 fail, write the failure first - a faster page that can sit blank is not
 faster.
+
+## 661
+**Nov 22 - a test store that never pages cannot test paging.** `makeKV`,
+which 58 suites share, cut a listing at its limit and still answered
+`list_complete: true`. Every loop in the Worker that walks a listing page
+by page was therefore shown exactly one page in every test, so "the export
+and erasure walk every purchase hold" was a sentence nothing could check -
+which is why the Build 18 plan still called SEC-14 partial. The store now
+lists in byte order, 1,000 keys a page, with a cursor that resumes AFTER the
+last key returned; the first version counted positions, and deleting a page
+made the next page skip a thousand keys, a fault of the store and not of the
+code. Rule: a fake is part of the test. Where it is simpler than the real
+thing in the one way the code under test depends on, the test proves nothing
+about that way.
