@@ -817,7 +817,9 @@ function safePath(p){
   let real = abs;
   { let base = abs, tail = '';
     while (base !== dirname(base) && !existsSync(base)) { tail = join(basename(base), tail); base = dirname(base); }
-    try { real = join(realpathSync(base), tail); } catch (e) {} }
+    /* Where it really leads, unknown, is not "not a credential store"
+       (failure sweep, Nov 22): refused rather than checked by its name. */
+    try { real = join(realpathSync(base), tail); } catch (e) { throw Object.assign(new Error('where this path leads could not be read'), { code: 'path_unreadable' }); } }
   if (_secretHit(real)) throw _secret();
   return abs;
 }
@@ -827,8 +829,10 @@ const _secret = () => Object.assign(new Error('a credential store'), { code: 'se
 function _secretHit(real){
   for (const s of secretPaths()) {
     if (_under(ROOT, s.p)) continue;
-    let sp = s.p; try { sp = realpathSync(s.p); } catch (e) {}
-    if (_under(real, sp)) return true;
+    /* Compared as named AND as resolved, so a store whose real path could
+       not be read is still matched by its name (failure sweep, Nov 22). */
+    let sp = s.p; try { sp = realpathSync(s.p); } catch (e) { sp = s.p; }
+    if (_under(real, sp) || _under(real, s.p)) return true;
   }
   return false;
 }
@@ -1945,6 +1949,7 @@ const server = createServer(async (req, res) => {
   } catch (e) {
     if (e.code === 'outside_root') return json(res, 403, { error: 'outside_root' });
     if (e.code === 'secret_path') return json(res, 403, { error: 'secret_path' });
+    if (e.code === 'path_unreadable') return json(res, 403, { error: 'path_unreadable' });
     if (e.code === 'ENOENT') return json(res, 404, { error: 'not_found' });
     return json(res, 500, { error: 'failed', message: String(e.message || e).slice(0, 200) });
   }
