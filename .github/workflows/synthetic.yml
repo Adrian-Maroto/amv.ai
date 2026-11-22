@@ -75,6 +75,19 @@ jobs:
           if [ "$code" = "200" ] && grep -q '<title' /tmp/page; then row "Page loads" "yes, $(wc -c < /tmp/page) bytes" "${t}s"
           else row "Page loads" "**no** (HTTP $code)" "${t}s"; fail=1; fi
 
+          # 3b. Does the code the page names arrive, byte for byte? The page loads
+          # its code from /app.<hash>.js with an integrity value (Nov 22); a
+          # missing or different file is a page that shows only a Reload notice.
+          name=$(grep -o 'src="/app\.[a-f0-9]\{12\}\.js"' /tmp/page | head -1 | sed 's/src="\///; s/"$//')
+          if [ -z "$name" ]; then row "App code arrives" "**no**: the page names no code file" "-"; fail=1
+          else
+            out=$(curl -sS -o /tmp/code -w '%{http_code} %{time_total}' --max-time 30 "$SITE/$name" || echo "000 0")
+            code=${out%% *}; t=${out##* }
+            match=$(node -e "const fs=require('fs');const p=fs.readFileSync('/tmp/page','utf8');const m=p.match(/integrity=\"(sha384-[^\"]+)\" data-amv-app/);const h='sha384-'+require('crypto').createHash('sha384').update(fs.readFileSync('/tmp/code')).digest('base64');console.log(m&&m[1]===h?'yes':'no')")
+            if [ "$code" = "200" ] && [ "$match" = "yes" ]; then row "App code arrives" "yes, $name, integrity matches" "${t}s"
+            else row "App code arrives" "**no**: $name answered HTTP $code, integrity $match" "${t}s"; fail=1; fi
+          fi
+
           # 4. Is the source still private? (the host serves public/ only)
           code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$SITE/amv-backend.js" || echo 000)
           if [ "$code" = "404" ]; then row "Server source not served" "yes" "-"
