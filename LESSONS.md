@@ -16114,3 +16114,21 @@ time the function gains a dependency. The auditors' probes were rewritten as a
 suite against the real Worker (`the-build-17-audit-stays-fixed`), and each new
 section was checked by breaking the guard it covers; two sections that passed
 under the break were rewritten until they did not.
+
+## 657. A fix that no suite fails without is a fix that is not there yet (Nov 22)
+
+The failure sweep read 288 places where the Worker turns a failure into an
+answer and fixed six that turned "could not check" into "all clear". Breaking
+each fix afterwards showed that none of the six had a test: every one could
+have been undone the next day with the gate green. The Build 17 repairs, each
+written with its test, were caught; the sweep fixes, written in bulk, were
+not. Rule: a fix lands with the assertion that fails without it, and "with"
+is checked by breaking the fix, not by reading the test. Two more from the
+same round: an assertion that accepts either of two signals (the audit line
+OR the page) cannot notice one of them going - require each; and a mutation
+that changes nothing (a key set early in an object literal and set again
+later) proves nothing - read the mutated line before believing a survivor.
+
+Also: main went red after a ship because a suite inherited the CI
+environment, which the local gate did not have. The gate now runs with
+CI=true before main moves.

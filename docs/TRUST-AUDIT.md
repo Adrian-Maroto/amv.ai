@@ -2282,3 +2282,32 @@ All twenty-six now pass and run inside the gate
 (`the-build-15-audit-stays-fixed`). Still unmeasured: none of this has run on
 live Cloudflare KV / Durable Objects or against a live Postgres - the
 reproductions use the repository's in-memory doubles.
+
+## 22 November: the Build 17 guards and the failure sweep, broken one at a time
+
+Nineteen guards - the Build 17 repairs not already broken while they were
+written, and the six fixes from the sweep of every catch that turns a failure
+into an answer - each defeated in `amv-backend.js` and run against the suites
+that should notice, attributed by the failing assertion.
+
+First pass: eleven caught, eight survived.
+
+- **Six real gaps, all from the sweep.** The kill switch read as off when
+  unreadable, the cookie strip and the size cap handing the request on when
+  they failed, a backup value that does not parse restored over a live one,
+  the ledger line that failed without paging, "have you chosen" read as yes:
+  none had a suite. `the-failure-sweep-stays-fixed` now drives each through
+  the real function or router with the store failing at that point. The
+  ledger case first passed with the page removed, because it accepted the
+  audit line instead - tightened to require both.
+- **One invalid mutation.** The receipt's `verified` was added at the front of
+  an object literal that sets it again later, so nothing changed. Redone on
+  the line itself: caught by `a-purchase-is-held-against-your-limits-first`.
+- **One second wall.** The session ending's own check for "ended, this
+  session" survived because `counter()` beneath it already refuses any answer
+  without both; that layer held. Left as is and said here.
+
+Second pass: all seven re-run caught, each by the assertion written for it.
+
+Still unmeasured: the web agent's "where the page went" read (needs a browser
+driver that fails `page.url()`), and everything here on live Cloudflare.
