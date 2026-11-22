@@ -2,14 +2,14 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-22 from 420 suites.
+2026-11-22 from 421 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
 this is branch coverage in bytes. Browser suites (tests/e2e) are not counted here: they drive
 the Worker too, so these numbers are a floor.
 
-**Whole Worker:** functions 1307/1307 (100.0%), code 92.8%.
+**Whole Worker:** functions 1309/1309 (100.0%), code 92.8%.
 
 ## The trust areas
 
@@ -37,7 +37,7 @@ Functions 77/77 (100.0%), code 93.9%.
 
 ### Spending limits and usage
 
-Functions 50/50 (100.0%), code 93.3%.
+Functions 50/50 (100.0%), code 93.2%.
 
 
 ### Action protocol (writes on connected accounts)
@@ -64,23 +64,23 @@ Functions 52/52 (100.0%), code 93.3%.
 | `04d-pg-read.js` | 17/17 | 92.5% |
 | `05-audit-log.js` | 13/13 | 97.9% |
 | `06-input-validation.js` | 2/2 | 90.7% |
-| `07-atomic-counters.js` | 19/19 | 94.9% |
+| `07-atomic-counters.js` | 19/19 | 94.6% |
 | `08-automations.js` | 7/7 | 97.8% |
 | `09-connected-accounts.js` | 36/36 | 88.7% |
 | `09a-action-protocol.js` | 6/6 | 91.0% |
 | `10-cloud-computer.js` | 12/12 | 91.5% |
-| `10a-cloud-checkout.js` | 4/4 | 77.1% |
+| `10a-cloud-checkout.js` | 4/4 | 77.6% |
 | `11-company-sign-in.js` | 15/15 | 79.8% |
 | `12-app-connectors.js` | 34/34 | 90.6% |
 | `13-schedules-and-approvals.js` | 30/30 | 92.7% |
 | `14-renewal-finder.js` | 25/25 | 98.4% |
-| `15-run-context-and-execution.js` | 36/36 | 93.4% |
+| `15-run-context-and-execution.js` | 36/36 | 93.3% |
 | `15a-job-queue.js` | 12/12 | 92.8% |
 | `16-site-deploys.js` | 6/6 | 92.9% |
 | `17-error-reporting.js` | 2/2 | 99.5% |
 | `18-web-agent.js` | 11/11 | 96.2% |
 | `19-outbound-requests.js` | 5/5 | 92.1% |
-| `20-school.js` | 10/10 | 85.5% |
+| `20-school.js` | 10/10 | 85.6% |
 | `21-web-agent-secrets.js` | 13/13 | 98.3% |
 | `22-subscribe.js` | 4/4 | 89.7% |
 | `23-consent.js` | 1/1 | 95.7% |
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 86.8% |
-| `39-resumable-streams.js` | 17/17 | 94.7% |
+| `39-resumable-streams.js` | 17/17 | 94.6% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -110,7 +110,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `45-abuse-and-activity.js` | 6/6 | 96.7% |
 | `46-referrals.js` | 27/27 | 96.2% |
 | `47-renewal-sweep.js` | 7/7 | 94.2% |
-| `48-other-calendars.js` | 10/10 | 79.8% |
+| `48-other-calendars.js` | 10/10 | 77.8% |
 | `49-renewals-and-ledger.js` | 15/15 | 92.5% |
 | `50-extra-usage.js` | 13/13 | 92.6% |
 | `51-marketplace.js` | 3/3 | 93.4% |
@@ -122,17 +122,17 @@ Functions 52/52 (100.0%), code 93.3%.
 | `57-public-api.js` | 7/7 | 94.9% |
 | `58-public-config-and-funnel.js` | 3/3 | 99.1% |
 | `59-support.js` | 3/3 | 97.9% |
-| `60-readiness.js` | 9/9 | 97.1% |
+| `60-readiness.js` | 9/9 | 96.6% |
 | `61-owner-digest.js` | 35/35 | 87.6% |
-| `62-global-mail.js` | 26/26 | 89.7% |
+| `62-global-mail.js` | 28/28 | 89.8% |
 | `63-run-needs.js` | 3/3 | 99.4% |
 | `64-job-boards.js` | 2/2 | 95.6% |
 | `65-country-capabilities.js` | 6/6 | 99.9% |
-| `66-telegram.js` | 5/5 | 76.5% |
+| `66-telegram.js` | 5/5 | 75.7% |
 | `67-weekly-habits.js` | 2/2 | 100.0% |
 | `68-cloud-library.js` | 22/22 | 90.2% |
 | `68-refunds.js` | 10/10 | 86.8% |
-| `69-buying.js` | 8/8 | 92.7% |
+| `69-buying.js` | 8/8 | 92.3% |
 | `69-speech.js` | 8/8 | 93.8% |
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
