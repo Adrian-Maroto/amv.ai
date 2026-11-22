@@ -53,6 +53,7 @@ function wrangler(args, { show = true } = {}) {
   return { ok: r.status === 0, out };
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const VISIBLE_RETRY_S = +process.env.CANARY_VISIBLE_RETRY_SECONDS || 5;
 
 /* The version serving most traffic now. Read from the JSON wrangler prints,
    walked rather than addressed, so a field moving between wrangler releases
@@ -103,6 +104,10 @@ async function readyOn(version, baseline) {
 /* NOTHING SERVING, PROVED (Build 16 audit OPS-03): a status that could not be
    read, or read but not understood, is not "nothing to fall back to" - it is
    not knowing, and not knowing is no reason to replace everything at once. */
+/* Cloudflare's answer for a version it accepted a moment ago and cannot see yet. */
+export function notVisibleYet(out) {
+  return /code:\s*100146\b/.test(String(out || '')) || /version could not be found/i.test(String(out || ''));
+}
 export function nothingServing(json) {
   if (!json || typeof json !== 'object') return false;
   let any = false;
@@ -145,7 +150,18 @@ async function main() {
   const neu = uploadedVersion(up.out);
   if (!neu) { say('::error title=No version id::The upload succeeded but printed no version id. Nothing changed: ' + old + ' still serves everybody.'); return 1; }
 
-  if (!wrangler(['versions', 'deploy', neu + '@' + PERCENT + '%', old + '@' + (100 - PERCENT) + '%', '--yes', '--message', 'canary ' + SHA]).ok) {
+  /* A version Cloudflare has just accepted can be "not found" for a few
+     seconds (code 100146): the upload and the traffic split read different
+     copies. Seen Nov 22 - a good release stopped two seconds after its
+     upload. That answer, and only that one, is asked again, briefly; any
+     other refusal stops as before, and the old version serves throughout. */
+  let split = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) { say('The new version is not visible to Cloudflare yet; asking again in ' + (VISIBLE_RETRY_S * attempt) + 's.'); await sleep(VISIBLE_RETRY_S * 1000 * attempt); }
+    split = wrangler(['versions', 'deploy', neu + '@' + PERCENT + '%', old + '@' + (100 - PERCENT) + '%', '--yes', '--message', 'canary ' + SHA]);
+    if (split.ok || !notVisibleYet(split.out)) break;
+  }
+  if (!split.ok) {
     say('::error title=Canary not started::Could not split traffic. ' + old + ' still serves everybody.');
     return 1;
   }

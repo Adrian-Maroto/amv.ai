@@ -61,7 +61,7 @@ const dir = mkdtempSync(join(tmpdir(), 'amv-canary-'));
 const log = join(dir, 'calls.log');
 const fake = join(dir, 'wrangler.mjs');
 writeFileSync(fake, `#!/usr/bin/env node
-import { appendFileSync } from 'fs';
+import { appendFileSync, readFileSync } from 'fs';
 const a = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, a.join(' ') + '\\n');
 const mode = process.env.FAKE_MODE || '';
@@ -77,6 +77,11 @@ if (a[0] === 'versions' && a[1] === 'upload') {
   if (mode === 'uploadfail') { console.error('Authentication error'); process.exit(1); }
   console.log('Worker Version ID: ${NEW}'); process.exit(0);
 }
+if (a[0] === 'versions' && a[1] === 'deploy' && (mode === 'notvisible' || mode === 'splitfail')) {
+  const tries = readFileSync(${JSON.stringify(log)}, 'utf8').split('\\n').filter(l => l.startsWith('versions deploy')).length;
+  if (mode === 'splitfail') { console.error('Authentication error [code: 10000]'); process.exit(1); }
+  if (tries <= 2) { console.error('The requested Worker version could not be found, please check the ID being passed and try again. [code: 100146]'); process.exit(1); }
+}
 process.exit(0);
 `);
 chmodSync(fake, 0o755);
@@ -85,7 +90,7 @@ function run(mode, ready, blipCount = 0, extra = {}, shapes = {}) {
   writeFileSync(log, '');
   readyFor = ready; blips = blipCount; pins.length = 0; shape = shapes;
   const env = { ...process.env, ...extra, WRANGLER: process.execPath + ' ' + fake, AMV_READY_URL: READY_URL, FAKE_MODE: mode,
-    CANARY_WATCH_SECONDS: '0.3', CANARY_CHECK_EVERY_SECONDS: '0.1', CANARY_RETRY_SECONDS: '0.05', GITHUB_SHA: 'abcdef1234', GITHUB_STEP_SUMMARY: join(dir, 'summary.md') };
+    CANARY_WATCH_SECONDS: '0.3', CANARY_CHECK_EVERY_SECONDS: '0.1', CANARY_RETRY_SECONDS: '0.05', CANARY_VISIBLE_RETRY_SECONDS: '0.05', GITHUB_SHA: 'abcdef1234', GITHUB_STEP_SUMMARY: join(dir, 'summary.md') };
   writeFileSync(env.GITHUB_STEP_SUMMARY, '');
   return new Promise(resolve => {
     const p = spawn(process.execPath, [SCRIPT], { env });
@@ -163,6 +168,16 @@ section('Ready means all of it (OPS-04)');
     [OLD]: { status: 200, body: { ready: true, checks: {}, capabilities: { model: true } } },
     [NEW]: { status: 200, body: { ready: true, checks: { kv: { ok: true } }, capabilities: { model: true, email: true } } } });
   ok(fine.code === 0 && fine.calls.some(c => c.startsWith('versions deploy ' + NEW + '@100%')), 'while a healthy one that can do as much is promoted', fine.calls.slice(-3));
+}
+
+section('A version Cloudflare cannot see yet is asked for again; any other refusal stops (Nov 22)');
+{
+  const r = await run('notvisible', { [NEW]: true });
+  const splits = r.calls.filter(c => c.startsWith('versions deploy ' + NEW + '@10%'));
+  ok(splits.length === 3 && r.code === 0, 'two "not found" answers, then the split goes ahead and the release continues', [r.code, splits.length, r.out.slice(-300)]);
+  const f = await run('splitfail', { [NEW]: true });
+  const fs = f.calls.filter(c => c.startsWith('versions deploy ' + NEW + '@10%'));
+  ok(f.code === 1 && fs.length === 1 && /still serves everybody/.test(f.out), 'another refusal is not retried, and the old version keeps serving', [f.code, fs.length]);
 }
 
 section('An upload that fails changes nothing');
