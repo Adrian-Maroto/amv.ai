@@ -23644,23 +23644,46 @@ async function _erasePendNote(env, email, failed) {
   const k = ERASE_PEND_PREFIX + email;
   let prev = null; try { prev = JSON.parse((await env.AMV_KV.get(k)) || 'null'); } catch (e) { prev = null; }
   const rec = { email, failed, first: (prev && prev.first) || Date.now(), last: Date.now(), tries: ((prev && prev.tries) || 0) + 1 };
-  await env.AMV_KV.put(k, JSON.stringify(rec));
+  /* When it was last tried rides on the key, so the retry run can take the
+     longest-waiting first without reading every record. */
+  await env.AMV_KV.put(k, JSON.stringify(rec), { metadata: { last: rec.last } });
   await _queueTouched(env, 'erasepend');
   return rec;
 }
 async function runPendingErasures(env, max) {
   const out = { tried: 0, finished: 0, still: 0 };
   if (await _queueKnownEmpty(env, 'erasepend')) return out;
-  let page; try { page = await env.AMV_KV.list({ prefix: ERASE_PEND_PREFIX, limit: Math.max(1, Math.min(25, max || 5)) }); }
-  catch (e) { audit(env, 'erase_retry_unreadable', { why: String((e && e.message) || e).slice(0, 120) }); return out; }
-  if (!(page.keys || []).length && page.list_complete !== false) await _queueMarkEmpty(env, 'erasepend');
-  for (const k of page.keys || []) {
+  /* THE LONGEST-WAITING FIRST, FROM EVERY PAGE (Nov 22). This took the
+     first 25 keys by address, so 25 erasures that keep failing - a provider
+     that will not revoke, say - were retried for ever while every erasure
+     behind them in the alphabet was never retried at all. A person's right
+     to be erased cannot depend on where their address sorts. Every page is
+     read (names and metadata only) and the ones tried longest ago go first;
+     a key from before the metadata counts as never tried. */
+  const n = Math.max(1, Math.min(25, max || 5));
+  const all = [];
+  try {
+    let cur = null, pages = 0;
+    do {
+      const page = await env.AMV_KV.list({ prefix: ERASE_PEND_PREFIX, limit: 1000, cursor: cur || undefined });
+      for (const k of (page.keys || [])) all.push({ name: k.name, last: Number(k.metadata && k.metadata.last) || 0 });
+      cur = page.list_complete ? null : page.cursor;
+    } while (cur && ++pages < 100);
+  } catch (e) { audit(env, 'erase_retry_unreadable', { why: String((e && e.message) || e).slice(0, 120) }); return out; }
+  if (!all.length) await _queueMarkEmpty(env, 'erasepend');
+  all.sort((a, b) => a.last - b.last || (a.name < b.name ? -1 : 1));
+  for (const k of all.slice(0, n)) {
     const email = String(k.name).slice(ERASE_PEND_PREFIX.length);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) continue;
     out.tried++;
     let res;
     try { res = await _eraseAccount(env, email, { retry: true }); }
-    catch (e) { audit(env, 'erase_retry_threw', { email, why: String((e && e.message) || e).slice(0, 120) }); out.still++; continue; }
+    catch (e) {
+      audit(env, 'erase_retry_threw', { email, why: String((e && e.message) || e).slice(0, 120) }); out.still++;
+      /* Counted as tried, so it moves behind the others instead of holding the front. */
+      try { await _erasePendNote(env, email, ['the retry stopped with an error']); } catch (e2) { audit(env, 'erase_pend_not_noted', { email }); }
+      continue;
+    }
     if (res && res.status === 200) out.finished++; else out.still++;
   }
   return out;

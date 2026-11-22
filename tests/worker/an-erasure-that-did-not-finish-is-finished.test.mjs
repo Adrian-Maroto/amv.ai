@@ -25,13 +25,21 @@ const quiet = console.log; console.log = () => {};
 const PW = 'correct-horse-9';
 
 function makeEnv() {
-  const kv = new Map();
+  const kv = new Map(), md = new Map();
   const env = { _kv: kv, JWT_SECRET: 'test-secret-abcdefghijklmnopqrstuv', ALERT_WEBHOOK: 'https://hooks.example/owner', _fail: null };
+  /* Lists as the real store does: byte order, pages of at most 1,000, a
+     cursor resuming after the last key, and each key's metadata. */
   env.AMV_KV = {
     get: async k => (kv.has(k) ? kv.get(k) : null),
-    put: async (k, v) => { kv.set(k, String(v)); },
-    delete: async k => { if (env._fail && env._fail.test(String(k))) throw new Error('storage fault'); kv.delete(k); },
-    list: async ({ prefix, limit }) => ({ keys: [...kv.keys()].filter(k => k.startsWith(prefix || '')).slice(0, limit || 1000).map(name => ({ name })), list_complete: true }),
+    put: async (k, v, o) => { kv.set(k, String(v)); if (o && o.metadata) md.set(k, o.metadata); else md.delete(k); },
+    delete: async k => { if (env._fail && env._fail.test(String(k))) throw new Error('storage fault'); kv.delete(k); md.delete(k); },
+    list: async ({ prefix, limit, cursor } = {}) => {
+      const after = cursor ? Buffer.from(cursor, 'base64url').toString() : null;
+      const all = [...kv.keys()].filter(k => k.startsWith(prefix || '') && (after === null || k > after)).sort();
+      const n = Math.max(1, Math.min(1000, limit || 1000));
+      const keys = all.slice(0, n).map(name => md.has(name) ? { name, metadata: md.get(name) } : { name });
+      return all.length > n ? { keys, list_complete: false, cursor: Buffer.from(keys[n - 1].name).toString('base64url') } : { keys, list_complete: true };
+    },
   };
   return env;
 }
@@ -81,6 +89,27 @@ section('One that never finishes is told to the owner, after the retries, once')
   ok(told.length === 1 && /did not complete after/i.test(told[0]) && /stuck@x\.com/.test(told[0]), 'after the last try the owner is told what is left, and where', told);
   await W.runPendingErasures(e2, 5);
   ok(told.length === 1, 'and not again that day', told.length);
+}
+
+section('Erasures that keep failing do not hold the others back');
+{
+  /* Thirty that cannot finish, at addresses that sort first, and one near
+     the end that can. The retry used to take the first 25 keys by address,
+     every run, so the one at the end was never retried at all. */
+  const env = makeEnv();
+  for (let i = 0; i < 30; i++) {
+    const e = 'a' + String(i).padStart(2, '0') + '@x.com';
+    await env.AMV_KV.put('resetcode:' + e, JSON.stringify({ code: '1' }));
+    await env.AMV_KV.put('erasepend:' + e, JSON.stringify({ email: e, failed: ['reset code'], first: 1, last: 1, tries: 1 }));
+  }
+  await env.AMV_KV.put('resetcode:zz@x.com', JSON.stringify({ code: '2' }));
+  await env.AMV_KV.put('erasepend:zz@x.com', JSON.stringify({ email: 'zz@x.com', failed: ['reset code'], first: 2, last: 2, tries: 1 }), { metadata: { last: 2 } });
+  env._fail = /^resetcode:a\d\d@/;
+  const r1 = await W.runPendingErasures(env, 25);
+  const r2 = await W.runPendingErasures(env, 25);
+  ok(r1.tried === 25 && r1.finished === 0, 'the first run tries 25 of the ones that cannot finish', r1);
+  ok(r2.finished >= 1 && !env._kv.has('erasepend:zz@x.com') && !env._kv.has('resetcode:zz@x.com'),
+     'and the next run reaches the one at the end of the alphabet and finishes it', r2);
 }
 
 console.log = quiet;

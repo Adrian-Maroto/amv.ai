@@ -16208,7 +16208,7 @@ thing in the one way the code under test depends on, the test proves nothing
 about that way.
 
 ## 662
-**Nov 22 - "bounded per tick" was bounded to the first fifty by address.**
+**Nov 22 - "bounded per tick" was bounded to the first fifty by address.** (The same flaw held pending account erasures: 25 a run, first by address, so 25 that keep failing starved every erasure behind them; now the longest-waiting go first, from every page.)
 The email outbox drain listed 50 keys and stopped. Keys are
 `outbox:<address>:<id>`, so in a long provider outage the first fifty -
 the same addresses near the start of the alphabet, all waiting on their
