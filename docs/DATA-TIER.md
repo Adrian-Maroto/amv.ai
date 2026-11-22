@@ -128,8 +128,13 @@ lines, the `pgrepair:` list, and a read-back of every account compared with
 KV (a difference is re-checked once, then counted on `migration_accounts`).
 `GET /admin/pg/backfill` shows each phase, the row counts, the accounts that
 differ and the repairs left; `stop` pauses it and `restart` runs it again
-from the start without copying anything twice. It does not copy credit packs
-bought before step 2, or seller lines older than the 500 a history keeps.
+from the start without copying anything twice. Credit packs bought before
+step 2, and seller lines older than the 500 a history keeps, have no row of
+their own - but their money is not lost: the `opencredit`/`openseller` phases
+write one opening row per balance (the balance AMV holds, less what the
+ledger already has), and `reconcredit`/`reconseller` compare every balance
+with its ledger sum to the cent; money may not be read from Postgres while
+any differs (Build 18 audit B18-003 read the sentence before this one alone).
 Shadow reads (step 4) are built (`src/worker/04c-pg-shadow.js`, tested in
 the same suite) and start when the `PG_SHADOW` variable names a cohort:
 addresses and/or a share of everybody by a hash of the address

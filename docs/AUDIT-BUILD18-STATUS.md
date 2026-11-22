@@ -24,7 +24,7 @@ page is minified (about 1.5 MB) and held under a gzipped ceiling by the gate.
 
 ## Owner or live infrastructure (not closable from code)
 
-B18-002/003 (PostgreSQL as sole authority, historical backfill),
+B18-002 (PostgreSQL as sole authority; B18-003 is already covered by the opening-balance and reconcile phases - docs/DATA-TIER.md corrected),
 B18-004/005/006/007 (queue, browser, cloud computer, workspaces bindings -
 `consumer_full` preflight fails on purpose until they exist),
 B18-015 (restore drill), B18-016/019/020 (live sign-in providers, Stripe

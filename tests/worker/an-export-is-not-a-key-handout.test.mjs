@@ -104,10 +104,10 @@ section('The Canvas token is not stored in the clear either');
   ok(li > -1, 'the school loader was located', li);
   const loader = code.slice(li, code.indexOf('\n};', li) + 3);
   ok(loader.length > 80 && /_loadSchool/.test(loader), 'and its body was actually read', loader.length);
-  ok(/_mailDecrypt\(/.test(loader), 'and it decrypts, so consumers keep reading rec.token', true);
+  ok(/_mailDecrypt(?:Ex)?\(/.test(loader), 'and it decrypts, so consumers keep reading rec.token', true);
 
   /* Nothing else may decrypt it, or the single door is not a door. */
-  const decrypts = (code.match(/_mailDecrypt\(env, rec\.secret\)/g) || []).length;
+  const decrypts = (code.match(/_mailDecrypt(?:Ex)?\(env, rec\.secret\)/g) || []).length;
   ok(decrypts >= 1, 'the decrypt happens where the record is loaded', decrypts);
 }
 
