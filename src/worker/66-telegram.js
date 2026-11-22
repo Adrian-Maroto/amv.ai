@@ -100,8 +100,10 @@ async function telegramStatus(request, env) {
 async function _telegramSend(env, email, text) {
   const rec = await DB.get(env, 'telegram', email);
   if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
-  const token = await _mailDecrypt(env, rec.secret);
+  const opened = await _mailDecryptEx(env, rec.secret);
+  const token = opened && opened.plain;
   if (!token) return { sent: false, reason: 'unreadable' };
+  if (opened.stale) await _mailReseal(env, 'telegram', email, (r) => r.secret, (r, v) => { r.secret = v; });
   /* Checked AGAIN on the way out. The connect proved this token before storing
      it, but what is interpolated here came back from storage rather than from
      the check, and a value that goes into a URL should be proved by the code

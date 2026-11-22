@@ -266,6 +266,7 @@ one except the two in the first table.
 | `PG_SHADOW` | none | Step 4 of the move to Postgres: which accounts are also read from Postgres and compared in the background (addresses and/or a share, like `amv@amv.homes,5%`). KV still answers. Results at `GET /admin/pg/shadow`. |
 | `PG_READ` | none | Step 5 of the move to Postgres: which accounts have their account and plan answered by Postgres (same shape as `PG_SHADOW`). Written there first, checked against KV after every answer, and handed back to KV on any difference or failure. Start it only after a clean week of `PG_SHADOW`. |
 | `PASSWORD_PEPPER_PREVIOUS` | none | Only while rotating `PASSWORD_PEPPER`: the old value, so passwords made with it still verify and move to the new one at their next sign-in. |
+| `MAIL_CRED_KEY_PREVIOUS` | none | Only while rotating `MAIL_CRED_KEY`: the old value. Stored mailbox passwords, school and Telegram tokens and calendar links sealed with it still open, and each is sealed again with the new key the next time it is used (`cred_resealed` in the audit log). Delete it once those stop appearing. Without it, a new `MAIL_CRED_KEY` makes every stored one unreadable and everybody reconnects. |
 | `MODEL_API_URL` | built-in | Point at a proxy or a specific region. |
 | `MODEL_API_FALLBACK_URL` | none | A second endpoint tried when the primary cannot answer. |
 | `APP_ORIGIN` | none | Read only when `APP_URL` is unset. Set `APP_URL` and ignore this. |

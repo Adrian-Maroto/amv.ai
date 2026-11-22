@@ -148,6 +148,14 @@ function _readinessReport(env, seen) {
         ? 'A ROTATION IS IN PROGRESS. CONNECT_KEY_PREV is set, so records sealed under the previous key can still be read; each one re-seals under the current key the next time it is used. Remove CONNECT_KEY_PREV once every connection has been used, and check the audit log for conn_resealed before you do.'
         : 'Nothing to do - no rotation is in progress. To rotate: put the new value in CONNECT_KEY and the old one in CONNECT_KEY_PREV, leave it a while, then remove CONNECT_KEY_PREV. Rotating without it makes every stored connection unreadable and every customer reconnect every account.',
       how: 'Only during a rotation: ' + put('CONNECT_KEY_PREV') },
+    /* The same state for the key that seals mailbox passwords, school and
+       Telegram tokens and calendar links (Build 18 audit B18-029). */
+    { id: 'mailCredKeyPrev', name: 'Stored credentials (key rotation)', blocking: false,
+      on: !_has(env, 'MAIL_CRED_KEY_PREVIOUS'),
+      turnsOn: _has(env, 'MAIL_CRED_KEY_PREVIOUS')
+        ? 'A ROTATION IS IN PROGRESS. MAIL_CRED_KEY_PREVIOUS is set, so mailbox passwords, school and Telegram tokens and calendar links sealed under the previous key can still be read; each is sealed again under the current key the next time it is used. Remove MAIL_CRED_KEY_PREVIOUS once cred_resealed stops appearing in the audit log.'
+        : 'Nothing to do - no rotation is in progress. To rotate: put the old value in MAIL_CRED_KEY_PREVIOUS and the new one in MAIL_CRED_KEY, leave it a while, then remove MAIL_CRED_KEY_PREVIOUS. Rotating without it makes every stored credential unreadable and everybody reconnects.',
+      how: 'Only during a rotation: ' + put('MAIL_CRED_KEY_PREVIOUS') },
     /* Each provider is its own line, because "connected accounts is on" is not
        a thing - Google can be live while Microsoft is dark, and the operator
        needs to see which. */
@@ -499,7 +507,7 @@ function _readinessReport(env, seen) {
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
-    connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
+    connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts', mailCredKeyPrev: 'Connected accounts',
     connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', opsPerRun: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',

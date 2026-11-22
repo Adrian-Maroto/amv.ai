@@ -86,8 +86,10 @@ const _loadSchool = async (env, em) => {
   const rec = await DB.get(env, 'school', em);
   if (!rec) return null;
   if (rec.secret) {
-    const token = await _mailDecrypt(env, rec.secret);
+    const opened = await _mailDecryptEx(env, rec.secret);
+    const token = opened && opened.plain;
     if (!token) return null;
+    if (opened.stale) await _mailReseal(env, 'school', em, (r) => r.secret, (r, v) => { r.secret = v; });
     return { ...rec, token };
   }
   return rec;

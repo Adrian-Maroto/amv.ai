@@ -201,8 +201,12 @@ async function calEvents(request, env) {
   const events = [];
   const failed = [];
   for (const f of feeds) {
-    let url = '';
-    try { url = await _mailDecrypt(env, f.url); } catch (e) { url = ''; }
+    let url = '', stale = false;
+    try { const o = await _mailDecryptEx(env, f.url); url = (o && o.plain) || ''; stale = !!(o && o.stale); } catch (e) { url = ''; }
+    if (url && stale) {
+      const old = f.url, at = (r) => (Array.isArray(r.feeds) ? r.feeds : []).find(x => x.url === old);
+      await _mailReseal(env, 'cal', user.email, (r) => (at(r) || {}).url, (r, v) => { const x = at(r); if (x) x.url = v; });
+    }
     if (!url) { failed.push({ label: f.label, why: 'the stored link could not be read' }); continue; }
     try {
       /* fetchGuarded, not fetch: it re-checks the gate on EVERY hop, so a feed

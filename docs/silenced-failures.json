@@ -147,7 +147,7 @@
   "61-owner-digest.js:_outboxSendOne": 3,
   "61-owner-digest.js:_outboxConsume": 1,
   "61-owner-digest.js:_emailSenderRefused": 1,
-  "62-global-mail.js:_mailDecrypt": 1,
+  "62-global-mail.js:_mailDecryptEx": 1,
   "62-global-mail.js:_mailWire": 2,
   "62-global-mail.js:_mimeWord": 2,
   "62-global-mail.js:_imapSession": 2,

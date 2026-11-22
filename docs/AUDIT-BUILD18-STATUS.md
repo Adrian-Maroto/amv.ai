@@ -8,6 +8,7 @@ evidence, or why it is not code.
 
 | Item | What | Evidence |
 |---|---|---|
+| B18-029 | `MAIL_CRED_KEY` could not be rotated: replacing it made every stored mailbox password, school and Telegram token and calendar link unreadable. `MAIL_CRED_KEY_PREVIOUS` now reads the old seals and each is sealed again where it is used. The key order and every rotation are in `docs/KEYS.md`. | `a-rotated-credential-key-keeps-connections`: 8/8. Removing the re-seal, or the PREVIOUS read, fails it. |
 | B18-001 | A closed purchase hold could be armed again from a stale stored copy after settlement's receipt write failed. The auditor's patch was applied as given: a retried hold asks the counter whether it closed (`onceGet`), 409 if it did, 503 if the counter cannot say. | `a-purchase-closes-once`: 32/32. With the old `spendHold` restored, the two new assertions fail. |
 | B18-013 | The repository checkout suite asked the real DNS service, so it failed on any machine whose network refuses it. Lookups are now answered inside the suite, and a new case sends the download to a name that points inside: refused as `blocked`, never fetched. | `a-repository-opens-in-the-cloud-workspace`: 27/27. Giving that name a public address fails the new assertions. |
 | B18-026 | `GO-LIVE.md` said the counter and Browser Rendering need Workers Paid. Corrected to the free-plan facts the auditor cited (SQLite Durable Objects on Free; a small daily Browser Rendering allowance), marked as their reading: Cloudflare's docs are not reachable from this session. | `GO-LIVE.md` rows for `AMV_COUNTER` and `BROWSER`. |
@@ -32,5 +33,4 @@ person-operated, docs/BUYING.md), B18-018 (model evals need the model key),
 B18-021 (independent penetration test), B18-022/023 (load, on-call),
 B18-025 (visual QA on real devices), B18-027 (per-country capability ledger
 with live contract tests), B18-028 (checked live from outside by the
-`synthetic` workflow: server source 404), B18-029/030 (key inventory,
-signed launch gate).
+`synthetic` workflow: server source 404), B18-030 (signed launch gate).

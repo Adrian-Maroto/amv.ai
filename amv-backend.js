@@ -15433,8 +15433,10 @@ const _loadSchool = async (env, em) => {
   const rec = await DB.get(env, 'school', em);
   if (!rec) return null;
   if (rec.secret) {
-    const token = await _mailDecrypt(env, rec.secret);
+    const opened = await _mailDecryptEx(env, rec.secret);
+    const token = opened && opened.plain;
     if (!token) return null;
+    if (opened.stale) await _mailReseal(env, 'school', em, (r) => r.secret, (r, v) => { r.secret = v; });
     return { ...rec, token };
   }
   return rec;
@@ -33011,8 +33013,12 @@ async function calEvents(request, env) {
   const events = [];
   const failed = [];
   for (const f of feeds) {
-    let url = '';
-    try { url = await _mailDecrypt(env, f.url); } catch (e) { url = ''; }
+    let url = '', stale = false;
+    try { const o = await _mailDecryptEx(env, f.url); url = (o && o.plain) || ''; stale = !!(o && o.stale); } catch (e) { url = ''; }
+    if (url && stale) {
+      const old = f.url, at = (r) => (Array.isArray(r.feeds) ? r.feeds : []).find(x => x.url === old);
+      await _mailReseal(env, 'cal', user.email, (r) => (at(r) || {}).url, (r, v) => { const x = at(r); if (x) x.url = v; });
+    }
     if (!url) { failed.push({ label: f.label, why: 'the stored link could not be read' }); continue; }
     try {
       /* fetchGuarded, not fetch: it re-checks the gate on EVERY hop, so a feed
@@ -38989,6 +38995,14 @@ function _readinessReport(env, seen) {
         ? 'A ROTATION IS IN PROGRESS. CONNECT_KEY_PREV is set, so records sealed under the previous key can still be read; each one re-seals under the current key the next time it is used. Remove CONNECT_KEY_PREV once every connection has been used, and check the audit log for conn_resealed before you do.'
         : 'Nothing to do - no rotation is in progress. To rotate: put the new value in CONNECT_KEY and the old one in CONNECT_KEY_PREV, leave it a while, then remove CONNECT_KEY_PREV. Rotating without it makes every stored connection unreadable and every customer reconnect every account.',
       how: 'Only during a rotation: ' + put('CONNECT_KEY_PREV') },
+    /* The same state for the key that seals mailbox passwords, school and
+       Telegram tokens and calendar links (Build 18 audit B18-029). */
+    { id: 'mailCredKeyPrev', name: 'Stored credentials (key rotation)', blocking: false,
+      on: !_has(env, 'MAIL_CRED_KEY_PREVIOUS'),
+      turnsOn: _has(env, 'MAIL_CRED_KEY_PREVIOUS')
+        ? 'A ROTATION IS IN PROGRESS. MAIL_CRED_KEY_PREVIOUS is set, so mailbox passwords, school and Telegram tokens and calendar links sealed under the previous key can still be read; each is sealed again under the current key the next time it is used. Remove MAIL_CRED_KEY_PREVIOUS once cred_resealed stops appearing in the audit log.'
+        : 'Nothing to do - no rotation is in progress. To rotate: put the old value in MAIL_CRED_KEY_PREVIOUS and the new one in MAIL_CRED_KEY, leave it a while, then remove MAIL_CRED_KEY_PREVIOUS. Rotating without it makes every stored credential unreadable and everybody reconnects.',
+      how: 'Only during a rotation: ' + put('MAIL_CRED_KEY_PREVIOUS') },
     /* Each provider is its own line, because "connected accounts is on" is not
        a thing - Google can be live while Microsoft is dark, and the operator
        needs to see which. */
@@ -39340,7 +39354,7 @@ function _readinessReport(env, seen) {
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', pepper: 'Signing in', pepperPrev: 'Signing in', apiOrigin: 'Signing in',
-    connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
+    connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts', mailCredKeyPrev: 'Connected accounts',
     connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', cloudLibrary: 'Core', jobQueue: 'Core', opsPerRun: 'Core', nightlyBackup: 'Core', backupSign: 'Core', auditIdKey: 'Core', inviteOnly: 'Core', controlPlane: 'Core', pgShadow: 'Core', pgRead: 'Core', partnerCap: 'Core', meaning: 'Core', fileIndex: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
@@ -41127,8 +41141,8 @@ async function _mailCredSalt(secret) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
 }
 
-async function _mailCredKey(env, version) {
-  const secret = String((env && env.MAIL_CRED_KEY) || '');
+async function _mailCredKey(env, version, previous) {
+  const secret = String((env && (previous ? env.MAIL_CRED_KEY_PREVIOUS : env.MAIL_CRED_KEY)) || '');
   if (_mailCredWeak(secret)) return null;
   const enc = new TextEncoder();
   const salt = version === 1
@@ -41167,6 +41181,17 @@ async function _mailEncrypt(env, plain) {
 }
 
 async function _mailDecrypt(env, blob) {
+  const r = await _mailDecryptEx(env, blob);
+  return r ? r.plain : null;
+}
+/* A ROTATION, NOT A LOCKOUT (Build 18 audit B18-029). Replacing MAIL_CRED_KEY
+   used to make every stored mailbox password, school token, Telegram token
+   and calendar link unreadable at once - after a suspected leak, the only
+   remedy cost everybody their connections. The old value now goes in
+   MAIL_CRED_KEY_PREVIOUS: what it sealed is still read, says it is `stale`,
+   and is sealed again with the new key where it is used (_mailReseal). Once
+   nothing stale is read any more, the old value is deleted. */
+async function _mailDecryptEx(env, blob) {
   if (!blob) return null;
   const raw0 = (() => {
     try { return Uint8Array.from(atob(String(blob)), (c) => c.charCodeAt(0)); }
@@ -41176,16 +41201,39 @@ async function _mailDecrypt(env, blob) {
   /* v2 and the v1 that came before it. Trying both is what makes this a
      rotation rather than a lockout - a mailbox connected last week must keep
      working, and its owner should never find out this changed. */
-  for (const version of [2, 1]) {
-    const key = await _mailCredKey(env, version);
-    if (!key) return null;
-    try {
-      const iv = raw0.subarray(0, 12), ct = raw0.subarray(12);
-      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-      return new TextDecoder().decode(pt);
-    } catch (e) { /* wrong key for this blob; try the older one */ }
+  for (const previous of [false, true]) {
+    if (previous && _mailCredWeak(String((env && env.MAIL_CRED_KEY_PREVIOUS) || ''))) break;
+    for (const version of [2, 1]) {
+      const key = await _mailCredKey(env, version, previous);
+      if (!key) return null;
+      try {
+        const iv = raw0.subarray(0, 12), ct = raw0.subarray(12);
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+        return { plain: new TextDecoder().decode(pt), stale: previous || version !== 2 };
+      } catch (e) { /* wrong key for this blob; try the older one */ }
+    }
   }
   return null;
+}
+/* Seal a stale credential again with the current key, under the record's
+   lock, only if the record still holds the same sealed value. A failure is
+   logged and changes nothing: the old key still reads it next time. */
+async function _mailReseal(env, kind, id, pick, put) {
+  try {
+    await _withKind(env, kind, id, async (rec) => {
+      if (!rec) return rec;
+      const old = pick(rec);
+      const r = old ? await _mailDecryptEx(env, old) : null;
+      if (!r || !r.stale) return rec;
+      const fresh = await _mailEncrypt(env, r.plain);
+      if (!fresh) return rec;
+      put(rec, fresh);
+      return rec;
+    });
+    audit(env, 'cred_resealed', { kind });
+  } catch (e) {
+    audit(env, 'cred_reseal_failed', { kind, error: String((e && e.message) || e).slice(0, 80) });
+  }
 }
 
 /* What the browser is allowed to know about a connection. Everything except
@@ -41688,8 +41736,10 @@ async function mailDisconnect(request, env) {
 async function _mailCfgFor(env, email) {
   const rec = await DB.get(env, 'mailcfg', email);
   if (!rec || !rec.secret) return null;
-  const password = await _mailDecrypt(env, rec.secret);
+  const opened = await _mailDecryptEx(env, rec.secret);
+  const password = opened && opened.plain;
   if (!password) return null;
+  if (opened.stale) await _mailReseal(env, 'mailcfg', email, (r) => r.secret, (r, v) => { r.secret = v; });
   return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp,
            /* Records written before STARTTLS existed have neither field, and
               465 implicit TLS is what they were connected with, so that is the
@@ -42810,8 +42860,10 @@ async function telegramStatus(request, env) {
 async function _telegramSend(env, email, text) {
   const rec = await DB.get(env, 'telegram', email);
   if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
-  const token = await _mailDecrypt(env, rec.secret);
+  const opened = await _mailDecryptEx(env, rec.secret);
+  const token = opened && opened.plain;
   if (!token) return { sent: false, reason: 'unreadable' };
+  if (opened.stale) await _mailReseal(env, 'telegram', email, (r) => r.secret, (r, v) => { r.secret = v; });
   /* Checked AGAIN on the way out. The connect proved this token before storing
      it, but what is interpolated here came back from storage rather than from
      the check, and a value that goes into a URL should be proved by the code

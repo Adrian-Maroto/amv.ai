@@ -328,8 +328,8 @@ async function _mailCredSalt(secret) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
 }
 
-async function _mailCredKey(env, version) {
-  const secret = String((env && env.MAIL_CRED_KEY) || '');
+async function _mailCredKey(env, version, previous) {
+  const secret = String((env && (previous ? env.MAIL_CRED_KEY_PREVIOUS : env.MAIL_CRED_KEY)) || '');
   if (_mailCredWeak(secret)) return null;
   const enc = new TextEncoder();
   const salt = version === 1
@@ -368,6 +368,17 @@ async function _mailEncrypt(env, plain) {
 }
 
 async function _mailDecrypt(env, blob) {
+  const r = await _mailDecryptEx(env, blob);
+  return r ? r.plain : null;
+}
+/* A ROTATION, NOT A LOCKOUT (Build 18 audit B18-029). Replacing MAIL_CRED_KEY
+   used to make every stored mailbox password, school token, Telegram token
+   and calendar link unreadable at once - after a suspected leak, the only
+   remedy cost everybody their connections. The old value now goes in
+   MAIL_CRED_KEY_PREVIOUS: what it sealed is still read, says it is `stale`,
+   and is sealed again with the new key where it is used (_mailReseal). Once
+   nothing stale is read any more, the old value is deleted. */
+async function _mailDecryptEx(env, blob) {
   if (!blob) return null;
   const raw0 = (() => {
     try { return Uint8Array.from(atob(String(blob)), (c) => c.charCodeAt(0)); }
@@ -377,16 +388,39 @@ async function _mailDecrypt(env, blob) {
   /* v2 and the v1 that came before it. Trying both is what makes this a
      rotation rather than a lockout - a mailbox connected last week must keep
      working, and its owner should never find out this changed. */
-  for (const version of [2, 1]) {
-    const key = await _mailCredKey(env, version);
-    if (!key) return null;
-    try {
-      const iv = raw0.subarray(0, 12), ct = raw0.subarray(12);
-      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-      return new TextDecoder().decode(pt);
-    } catch (e) { /* wrong key for this blob; try the older one */ }
+  for (const previous of [false, true]) {
+    if (previous && _mailCredWeak(String((env && env.MAIL_CRED_KEY_PREVIOUS) || ''))) break;
+    for (const version of [2, 1]) {
+      const key = await _mailCredKey(env, version, previous);
+      if (!key) return null;
+      try {
+        const iv = raw0.subarray(0, 12), ct = raw0.subarray(12);
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+        return { plain: new TextDecoder().decode(pt), stale: previous || version !== 2 };
+      } catch (e) { /* wrong key for this blob; try the older one */ }
+    }
   }
   return null;
+}
+/* Seal a stale credential again with the current key, under the record's
+   lock, only if the record still holds the same sealed value. A failure is
+   logged and changes nothing: the old key still reads it next time. */
+async function _mailReseal(env, kind, id, pick, put) {
+  try {
+    await _withKind(env, kind, id, async (rec) => {
+      if (!rec) return rec;
+      const old = pick(rec);
+      const r = old ? await _mailDecryptEx(env, old) : null;
+      if (!r || !r.stale) return rec;
+      const fresh = await _mailEncrypt(env, r.plain);
+      if (!fresh) return rec;
+      put(rec, fresh);
+      return rec;
+    });
+    audit(env, 'cred_resealed', { kind });
+  } catch (e) {
+    audit(env, 'cred_reseal_failed', { kind, error: String((e && e.message) || e).slice(0, 80) });
+  }
 }
 
 /* What the browser is allowed to know about a connection. Everything except
@@ -889,8 +923,10 @@ async function mailDisconnect(request, env) {
 async function _mailCfgFor(env, email) {
   const rec = await DB.get(env, 'mailcfg', email);
   if (!rec || !rec.secret) return null;
-  const password = await _mailDecrypt(env, rec.secret);
+  const opened = await _mailDecryptEx(env, rec.secret);
+  const password = opened && opened.plain;
   if (!password) return null;
+  if (opened.stale) await _mailReseal(env, 'mailcfg', email, (r) => r.secret, (r, v) => { r.secret = v; });
   return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp,
            /* Records written before STARTTLS existed have neither field, and
               465 implicit TLS is what they were connected with, so that is the
