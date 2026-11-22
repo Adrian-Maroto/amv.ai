@@ -18,7 +18,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'surecheck.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, authLoginVerify, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens, _stepUp, _hashPassword };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, authLoginVerify, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens, _stepUp, _hashPassword, _deviceTrustState, _deviceTokenFor };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (!String(a[0]).startsWith('AUDIT')) quiet(...a); };
 globalThis.fetch = async () => new Response('{}', { status: 200 });
@@ -117,6 +117,28 @@ section('Proving it is you, for a change to how you sign in, waits while its thr
   const d = r ? await r.json() : null;
   ok(r && r.status === 503 && d.code === 'limit_unavailable', 'with it down, not even the right password is checked - a short wait instead', [r && r.status, d]);
   down = null;
+}
+
+section('A device the revocation object could not confirm is asked for the code - and not told it was signed out everywhere');
+{
+  /* Found by a gate run on a loaded machine (Nov 22): the check timed out,
+     the code was rightly asked for, and the screen said "your account was
+     signed out on every device" - which nobody had done. */
+  const DV = 'dev@example.com';
+  await W.DB.put(env, 'acct', DV, { email: DV, name: 'Dev', createdAt: Date.now() - 1e6 });
+  down = null;
+  const dt = await W._deviceTokenFor(env, DV);
+  const req = new Request('https://x/auth/login', { method: 'POST' });
+  const good = await W._deviceTrustState(env, req, { deviceToken: dt }, DV);
+  ok(good.trusted === true, 'with the object answering, the device is trusted', good);
+  down = authDown;
+  const unsure = await W._deviceTrustState(env, req, { deviceToken: dt }, DV);
+  down = null;
+  ok(unsure.trusted === false && unsure.reason === 'unconfirmed', 'unconfirmed: not trusted, and the reason says it could not be checked', unsure);
+  await new Promise(r => setTimeout(r, 1100));
+  await W.revokeUserTokens(env, DV);
+  const out = await W._deviceTrustState(env, req, { deviceToken: dt }, DV);
+  ok(out.trusted === false && out.reason === 'revoked', 'while a real "sign out everywhere" still says so', out);
 }
 
 section('Five hundred and one endings do not bring the first one back');

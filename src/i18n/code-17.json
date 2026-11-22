@@ -5470,5 +5470,24 @@
   "bn": "উপলক্ষ, বাজেট আর আসা মানুষদের সঙ্গে মানানসই জায়গা খোঁজে, আপনার চাওয়া সময়ে সত্যিই কী খালি আছে দেখে, আর আপনি হ্যাঁ বললে বুক করে। আপনার নামে কিছু রিজার্ভ করার আগে জিজ্ঞেস করে।",
   "ta": "நிகழ்வு, பட்ஜெட், வருபவர்களுக்குப் பொருந்தும் இடத்தைக் கண்டுபிடித்து, நீங்கள் விரும்பும் நேரத்தில் உண்மையில் என்ன கிடைக்கிறது என்று சரிபார்த்து, நீங்கள் சரி என்றதும் முன்பதிவு செய்கிறது. உங்கள் பெயரில் எதையும் முன்பதிவு செய்யும் முன் கேட்கிறது.",
   "ur": "موقع، بجٹ اور آنے والے لوگوں کے مطابق جگہ تلاش کرتا ہے، دیکھتا ہے کہ آپ کے چاہے وقت پر واقعی کیا دستیاب ہے، اور آپ کے ہاں کہنے پر بک کرتا ہے۔ آپ کے نام پر کچھ بھی ریزرو کرنے سے پہلے پوچھتا ہے۔"
+ },
+ "AMV could not confirm this device just now, so it needs to check it is you. Enter the 6-digit code we sent to:": {
+  "es": "AMV no pudo confirmar este dispositivo en este momento, así que necesita comprobar que eres tú. Introduce el código de 6 dígitos que enviamos a:",
+  "zh": "AMV 暂时无法确认此设备，因此需要确认是你本人。请输入我们发送到以下地址的 6 位验证码：",
+  "hi": "AMV अभी इस डिवाइस की पुष्टि नहीं कर सका, इसलिए उसे जाँचना होगा कि यह आप हैं। वह 6 अंकों का कोड दर्ज करें जो हमने यहाँ भेजा है:",
+  "ar": "لم يتمكن AMV من تأكيد هذا الجهاز الآن، لذا يحتاج إلى التحقق من أنك أنت. أدخل الرمز المكوّن من 6 أرقام الذي أرسلناه إلى:",
+  "pt": "A AMV não conseguiu confirmar este dispositivo agora, então precisa verificar que é você. Digite o código de 6 dígitos que enviamos para:",
+  "fr": "AMV n’a pas pu confirmer cet appareil pour le moment : il doit donc vérifier que c’est bien vous. Saisissez le code à 6 chiffres envoyé à :",
+  "de": "AMV konnte dieses Gerät gerade nicht bestätigen und muss daher prüfen, dass Sie es sind. Geben Sie den 6-stelligen Code ein, den wir gesendet haben an:",
+  "ja": "AMV は今このデバイスを確認できなかったため、本人確認が必要です。次のアドレスに送信した6桁のコードを入力してください：",
+  "ru": "AMV сейчас не удалось подтвердить это устройство, поэтому нужно проверить, что это вы. Введите 6-значный код, который мы отправили на:",
+  "ko": "AMV가 지금 이 기기를 확인하지 못해 본인 확인이 필요합니다. 다음 주소로 보낸 6자리 코드를 입력하세요:",
+  "it": "AMV non è riuscito a confermare questo dispositivo in questo momento, quindi deve verificare che sei tu. Inserisci il codice a 6 cifre che abbiamo inviato a:",
+  "tr": "AMV bu cihazı şu anda doğrulayamadı, bu yüzden siz olduğunuzu kontrol etmesi gerekiyor. Şu adrese gönderdiğimiz 6 haneli kodu girin:",
+  "id": "AMV tidak dapat mengonfirmasi perangkat ini saat ini, jadi perlu memastikan bahwa ini Anda. Masukkan kode 6 digit yang kami kirim ke:",
+  "vi": "AMV hiện không thể xác nhận thiết bị này, nên cần kiểm tra đó là bạn. Hãy nhập mã 6 chữ số chúng tôi đã gửi tới:",
+  "bn": "AMV এই মুহূর্তে এই ডিভাইসটি নিশ্চিত করতে পারেনি, তাই এটি যাচাই করতে হবে যে এটি আপনি। আমরা যে ৬-সংখ্যার কোড পাঠিয়েছি সেটি লিখুন:",
+  "ta": "AMV இப்போது இந்தச் சாதனத்தை உறுதிப்படுத்த முடியவில்லை, எனவே இது நீங்கள்தான் என்று சரிபார்க்க வேண்டும். நாங்கள் இங்கு அனுப்பிய 6 இலக்கக் குறியீட்டை உள்ளிடவும்:",
+  "ur": "AMV ابھی اس ڈیوائس کی تصدیق نہیں کر سکا، اس لیے اسے جانچنا ہوگا کہ یہ آپ ہیں۔ وہ 6 ہندسوں کا کوڈ درج کریں جو ہم نے یہاں بھیجا ہے:"
  }
 }

@@ -67,13 +67,19 @@ async function _deviceTrustState(env, request, body, email) {
   if (!toks.length) return { trusted: false, reason: 'none' };
   let reason = 'none';
   for (const tok of toks) {
-    let c = null; try { c = await verifyCurrentToken(tok, env.JWT_SECRET, env, 'device'); } catch (e) { c = null; }   // unconfirmed is not trusted: the code is asked for (SEC-04)
+    /* Unconfirmed is not trusted: the code is asked for (SEC-04). But it is
+       not "signed out everywhere" either - that was said whenever the
+       revocation object was slow to answer, which is false (Nov 22). */
+    let c = null, unsure = false;
+    try { c = await verifyCurrentToken(tok, env.JWT_SECRET, env, 'device'); }
+    catch (e) { c = null; unsure = !!(e && e.amvRefusal && e.amvRefusal.body && e.amvRefusal.body.code === 'auth_unconfirmed'); }
     if (c && String(c.email || '').toLowerCase() === email) return { trusted: true };
     try {
       const p = JSON.parse(atob(String(tok.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')));
       if (String(p.email || '').toLowerCase() !== email) continue;
       if (p.exp && p.exp * 1000 < Date.now()) reason = 'expired';
-      else if (reason !== 'expired') reason = 'revoked';
+      else if (unsure) { if (reason !== 'expired') reason = 'unconfirmed'; }
+      else if (reason !== 'expired' && reason !== 'unconfirmed') reason = 'revoked';
     } catch (e) { /* an unreadable record is treated as absent here, and the caller fails closed on absent */ }
   }
   return { trusted: false, reason };

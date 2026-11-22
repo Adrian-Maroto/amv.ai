@@ -729,6 +729,7 @@ function _askForCode(d, email, kind){
         '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter the 6-digit code we sent to:'
           : d.reason === 'revoked' ? 'Your account was signed out on every device, so this one needs to confirm it is you. Enter the 6-digit code we sent to:'
           : d.reason === 'expired' ? 'It has been a while since this device confirmed it is you. Enter the 6-digit code we sent to:'
+          : d.reason === 'unconfirmed' ? 'AMV could not confirm this device just now, so it needs to check it is you. Enter the 6-digit code we sent to:'
           : 'This browser has not confirmed it is you yet. Enter the 6-digit code we sent to:')+'</p>'+
         '<p class="fp-sub cv-to" data-no-i18n><b><bdi>'+escH(d.to || email)+'</bdi></b></p>'+
         '<div id="cv-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
