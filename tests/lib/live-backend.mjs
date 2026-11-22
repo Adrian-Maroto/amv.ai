@@ -48,10 +48,20 @@ export function makeKV() {
     async get(k) { return m.has(k) ? m.get(k) : null; },
     async put(k, v) { m.set(k, v); },
     async delete(k) { m.delete(k); },
-    async list({ prefix, limit } = {}) {
-      let keys = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name }));
-      if (limit) keys = keys.slice(0, limit);
-      return { keys, list_complete: true };
+    /* As the real store lists (Nov 22): keys in byte order, at most 1,000 a
+       page (and never more than `limit`), with a cursor and list_complete
+       false while more remain. This used to cut the list at `limit` and still
+       say list_complete:true, so code that pages was never shown a second
+       page here, and code that does not page could never be caught. */
+    async list({ prefix, limit, cursor } = {}) {
+      /* The cursor resumes AFTER the last key returned, not at a position, so
+         deleting what a page returned does not make the next page skip keys
+         (a position-counting cursor did exactly that). */
+      const after = cursor ? Buffer.from(String(cursor), 'base64url').toString('utf8') : null;
+      const all = [...m.keys()].filter(k => (!prefix || k.startsWith(prefix)) && (after === null || k > after)).sort();
+      const n = Math.max(1, Math.min(1000, limit || 1000));
+      const keys = all.slice(0, n).map(name => ({ name }));
+      return all.length > n ? { keys, list_complete: false, cursor: Buffer.from(keys[keys.length - 1].name, 'utf8').toString('base64url') } : { keys, list_complete: true };
     },
   };
 }
