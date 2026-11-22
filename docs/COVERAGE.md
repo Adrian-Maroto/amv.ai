@@ -17,12 +17,12 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.6%.
+Functions 139/139 (100.0%), code 91.7%.
 
 
 ### Company sign-in and SCIM
 
-Functions 30/30 (100.0%), code 81.6%.
+Functions 30/30 (100.0%), code 81.7%.
 
 
 ### Teams and permissions
@@ -70,11 +70,11 @@ Functions 52/52 (100.0%), code 93.3%.
 | `09a-action-protocol.js` | 6/6 | 91.0% |
 | `10-cloud-computer.js` | 12/12 | 91.5% |
 | `10a-cloud-checkout.js` | 4/4 | 77.1% |
-| `11-company-sign-in.js` | 15/15 | 79.6% |
+| `11-company-sign-in.js` | 15/15 | 79.8% |
 | `12-app-connectors.js` | 34/34 | 90.6% |
 | `13-schedules-and-approvals.js` | 30/30 | 92.7% |
 | `14-renewal-finder.js` | 25/25 | 98.4% |
-| `15-run-context-and-execution.js` | 36/36 | 93.3% |
+| `15-run-context-and-execution.js` | 36/36 | 93.4% |
 | `15a-job-queue.js` | 12/12 | 92.8% |
 | `16-site-deploys.js` | 6/6 | 92.9% |
 | `17-error-reporting.js` | 2/2 | 99.5% |
@@ -89,7 +89,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.7% |
+| `28-password-reset.js` | 7/7 | 92.6% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.2% |
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 86.8% |
-| `39-resumable-streams.js` | 17/17 | 94.6% |
+| `39-resumable-streams.js` | 17/17 | 94.7% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.0% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
