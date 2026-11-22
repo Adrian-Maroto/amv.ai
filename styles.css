@@ -17637,3 +17637,4 @@ body.light .plnpop-elite{color:#fff!important}
 .cj-chip-wait{display:inline-block;flex:none;width:92px;min-height:32px;border-radius:var(--r-pill);background:var(--s2);opacity:.6}
 @media (pointer:coarse), (max-width:1100px){ .cj-chip-wait{min-height:44px} }
 @media (prefers-reduced-motion:no-preference){ .cj-chip-wait{animation:cjw 1.2s ease-in-out infinite alternate} @keyframes cjw{from{opacity:.35}to{opacity:.7}} }
+.crew-now-row.on .crew-now-dot{background:var(--grn);opacity:.85}

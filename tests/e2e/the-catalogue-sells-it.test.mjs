@@ -400,7 +400,7 @@ section('On a paid plan the same panel turns the job on for real');
   }, id);
   await L.settle();
 
-  ok(/turn it on/i.test(r.label), 'the panel offers to turn it on', r.label);
+  ok(/^\s*run\s*$/i.test(r.label), 'the panel offers to run it (the owner\u2019s word, Nov 22)', r.label);
   ok(!r.plans, 'and no longer sells them a plan they already have', r.plans);
 
   const after = await KV.get('auto:' + EMAIL);

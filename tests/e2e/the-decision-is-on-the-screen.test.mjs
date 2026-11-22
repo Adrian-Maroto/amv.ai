@@ -54,7 +54,7 @@ section('The decision is on the screen when the panel opens');
       overflows: scroller.scrollHeight - scroller.clientHeight,
     };
   }, worst.id);
-  ok(/turn it on/i.test(r.label), 'the action says what it does', r.label);
+  ok(/^\s*run\s*$/i.test(r.label), 'the action says what it does: Run', r.label);
   ok(r.overflows > 0, 'the job’s own text is longer than the panel', String(r.overflows));
   ok(r.inside, 'and the action is still inside the panel', JSON.stringify(r));
   ok(r.onScreen, 'and inside the window, without scrolling first', JSON.stringify(r));

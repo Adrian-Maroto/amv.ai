@@ -167,12 +167,12 @@ section('And the job is remembered, so finishing comes back to it');
     await new Promise(res => setTimeout(res, 450));
     const after = load('amv_cw_resume');
     return { remembered: before && before.job, stamped: !!(before && before.at),
-             came, onNeeds: !!document.getElementById('cwn-back'),
+             came, onNeeds: !!document.querySelector('#ovr .cwp #cwp-t'),
              again: after && after.job, want: jid };
   }, shapes.bank);
   ok(r.remembered === r.want, 'the job was written down before leaving', r);
   ok(r.stamped, 'with a time on it, so a note left an hour ago is not still standing', r);
-  ok(r.came && r.onNeeds, 'and coming back reopens what it needs', r);
+  ok(r.came && r.onNeeds, 'and coming back reopens the job\u2019s own panel, where what it needs is ticked as it is connected', r);
   ok(!r.again, 'once - a stale note is not a standing instruction', r);
 }
 

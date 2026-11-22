@@ -74,7 +74,10 @@ function _mcState(){
     failed: bg.filter(t=>t.status==='failed'),
     done: bg.filter(t=>t.status==='done' && !isRunOfLiveJob(t)),
     runsOfJobs: bg.filter(t=>t.status==='done' && isRunOfLiveJob(t)),
-    auton: jobs.filter(j=>j.on),
+    /* A Crew job whose work is scheduled on the server IS that server job:
+       listing both showed one job twice, counted twice, with two different
+       labels (Nov 22). Only the ones running in this browser are listed here. */
+    auton: jobs.filter(j=>j.on && !(j.autoId && (typeof _AUTOS !== 'undefined' && Array.isArray(_AUTOS) ? _AUTOS : []).some(x => x && x.id === j.autoId))),
     sched,
     /* THE JOBS THE SERVER IS ACTUALLY RUNNING.
 
@@ -945,7 +948,7 @@ function _mcServerSchedRow(x){
     : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : '')));
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
-      <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
+      <div class="mc-sched-goal">${escH((()=>{ try{ const j = _cwJobs().find(m => m && m.autoId === x.id); if(j && j.title) return j.title; }catch(e){} return String(x.detail||'Background job').slice(0,180); })())}</div>
       <div class="mc-sched-meta">${x.agent && _mcAgentName(x.agent) ? escH(T('Agent: {0}').replace('{0}', _mcAgentName(x.agent))) + ' · ' : ''}${escH(when)} · Runs on AMV's servers, whether or not this is open</div>
       <div class="mc-sched-mode-row">${(()=>{
         /* What this job will ACTUALLY do tonight - its own level capped by the
@@ -1123,9 +1126,9 @@ function _mcAutonSchedRow(j){
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(j.title)}</div>
       <div class="mc-sched-meta">${escH(j.desc||T('Runs in the background'))} · ${escH(_cwUsesLine(j, j.needs||''))}</div>
-      <div class="mc-sched-mode-row"><span class="mc-sched-mode auto">Autonomous - emails you results automatically</span></div>
+      <div class="mc-sched-mode-row"><span class="mc-sched-mode">${escH(T('Runs while AMV is open'))}</span></div>
     </div>
-    <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>
+    <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">${escH(T('Turn off'))}</button></div>
   </div>`;
 }
 /* A rotation rewraps the example. One listener for the page, finding the box
@@ -1492,11 +1495,21 @@ function _cjGridHTML(){
    chips pushing in - the owner's "it shows something then instantly
    changes". Until the country's own list has been tried, the row holds its
    place with quiet blanks of the same height; the jobs below do not change. */
-const _cjTried = {};
+const _cjTried = {}, _cjAsked = {};
+/* Whoever draws the blanks asks for the list too, and draws again when it
+   is in: the country can become known after Crew opened (the server's
+   answer to "where is this?"), and a redraw for a new country is not the
+   first render that used to ask. */
+function _cjEnsure(cc){
+  if(_cjAsked[cc]) return; _cjAsked[cc] = true;
+  const fin = () => { _cjTried[cc] = true; try{ if(_cwCountryGuess() === cc && document.getElementById('cj-grid')) _cjRepaint(); }catch(e){} };
+  try{ _ccReady().then(ok => ok ? ccCrewLoad(cc) : null).then(fin, fin); }catch(e){ fin(); }
+}
 function _cjChipsHTML(){
   try{
     const cc = _cwCountryGuess();
     if(cc && !(window._ccCrewJobs || {})[cc] && !_cjTried[cc]){
+      _cjEnsure(cc);
       return '<span class="cj-chip-wait" aria-hidden="true"></span>'.repeat(7);
     }
   }catch(e){}
@@ -1625,6 +1638,27 @@ function _crewNowHTML(){
   res.filter(r => r && +r.at > now - 864e5).sort((a, b) => b.at - a.at).slice(0, 3).forEach(r => {
     const o = OUT[r.outcome] || (r.kind === 'failed' ? OUT.failed : OUT['in-app']);
     rows.push({ k: o[0], t: r.detail || goal(st.server.find(x => x.id === r.autoId)), s: T(o[1]) + ' · ' + _crewAgo(r.at) });
+  });
+  /* EVERY JOB THAT IS SWITCHED ON, WITH WHEN IT RUNS (Nov 22). The owner:
+     "they see it at their Crew as running - every day, or every morning at
+     7". This panel listed only what was executing this minute, so a job
+     switched on a moment ago read "Nothing is running right now" with the
+     job behind a See all. Each scheduled job is now a row of its own: the
+     Crew job's own title where it came from one, how often and at what time,
+     and when it next runs. What is executing or just finished stays above. */
+  const shownIds = new Set(st.server.filter(x => live(x) && !x.waiting && x.next && x.next <= now + 60e3).map(x => x.id));
+  const mine = (() => { try{ return _cwJobs(); }catch(e){ return []; } })();
+  const schedOf = (x) => {
+    const j = mine.find(m => m && m.autoId === x.id);
+    let sc = null; try{ sc = j ? _cwJobWhen(j) : null; }catch(e){}
+    if(!sc && x.sched && typeof x.sched === 'object') sc = x.sched;
+    if(!sc && x.repeat) sc = { cad: x.repeat };
+    return { title: (j && j.title) || goal(x), when: sc ? _cjWhenLabel(sc) : '' };
+  };
+  st.server.filter(x => live(x) && !shownIds.has(x.id)).sort((a, b) => (a.next || 9e15) - (b.next || 9e15)).slice(0, 8).forEach(x => {
+    const w = schedOf(x);
+    const nx = x.next && x.next > now ? T('next {0}').replace('{0}', _crewAgo(x.next, true)) : '';
+    rows.push({ k: x.waiting ? 'wait' : 'on', t: w.title, s: [w.when, x.waiting ? T('Ready for your approval') : nx].filter(Boolean).join(' \u00b7 ') });
   });
   const on = st.server.filter(live).length + st.auton.length;
   const nextJob = st.server.filter(x => live(x) && !x.waiting && x.next > now + 60e3).sort((a, b) => a.next - b.next)[0];

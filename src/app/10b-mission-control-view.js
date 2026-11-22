@@ -410,7 +410,7 @@ function cwPeek(id){
             : `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
                ${miss.length
                   ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
-                  : `<button class="btn bp" id="cwp-go">${escH(T('Turn it on'))}</button>`}`)
+                  : `<button class="btn bp" id="cwp-go">${escH(T('Run'))}</button>`}`)
         : `<span class="cj-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
            <button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            <button class="btn bp" id="cwp-plans">${escH(T('See plans'))} →</button>`}

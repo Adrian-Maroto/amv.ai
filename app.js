@@ -21231,7 +21231,11 @@ function cwResumeIfAny(){
   const id = _cwResumeJob();
   if(!id) return false;
   _cwResumeJob('');
-  try{ cwNeeds(id); return true; }catch(e){ return false; }
+  /* Back to the job's own panel (Nov 22, the owner: "AMV opens a thing saying
+     this job will do this and needs this; connect, and then click Run"). The
+     panel now shows what was connected, ticked, and Run where Connect was -
+     not a second, different screen to read before the same button. */
+  try{ cwPeek(id); return true; }catch(e){ try{ cwNeeds(id); return true; }catch(_e){ return false; } }
 }
 try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
 
@@ -21267,7 +21271,7 @@ function cwNeeds(jobId){
       + '<div class="cwc-acts cwn-acts">'
         + '<button class="btn bs" id="cwn-back">\u2190 Back to the job</button>'
         + (left.length ? '' : '<button class="btn bp" id="cwn-on">'
-            + (j.on ? 'Turn it off' : 'Turn it on') + '</button>')
+            + escH(j.on ? T('Turn it off') : T('Run')) + '</button>')
       + '</div>'
     + '</div>'
   + '</div></div>';
@@ -23559,7 +23563,7 @@ function cwPeek(id){
             : `<button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
                ${miss.length
                   ? `<button class="btn bp" id="cwp-need-go2">${escH(T('Connect what it needs'))} →</button>`
-                  : `<button class="btn bp" id="cwp-go">${escH(T('Turn it on'))}</button>`}`)
+                  : `<button class="btn bp" id="cwp-go">${escH(T('Run'))}</button>`}`)
         : `<span class="cj-p-plan">${escH(T('Included with {0}').replace('{0}', P.name))} · $${P.price}/${escH(T('month'))}</span>
            <button class="btn bs" id="cwp-cancel">${escH(T('Close'))}</button>
            <button class="btn bp" id="cwp-plans">${escH(T('See plans'))} →</button>`}
