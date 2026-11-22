@@ -90,7 +90,11 @@ section('What the eye sees and what a screen reader hears are the same toggle');
      asserts on a value mid-animation fails for a reason that has nothing to
      do with the product. */
   const gold = await page.waitForFunction(
-    () => getComputedStyle(document.getElementById('star-filter')).color === 'rgb(224, 179, 65)',
+    /* The theme's own gold, read from the theme - not a value copied here,
+       which went stale the day the palette was calmed (Nov 22). */
+    () => { const el = document.getElementById('star-filter'); const probe = document.createElement('span');
+      probe.style.color = getComputedStyle(document.body).getPropertyValue('--gold').trim(); document.body.appendChild(probe);
+      const want = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(el).color === want; },
     null, { timeout: 3000 }).then(() => true, () => false);
   ok(gold, 'and it is visibly lit, not only announced');
   const label = await page.getAttribute('#star-filter', 'aria-label');

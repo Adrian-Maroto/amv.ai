@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="77bea58259d48851">
+<meta name="amv-build" content="d6248f424365aefe">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10295,13 +10295,13 @@ body.light .plnpop-elite{color:#fff!important}
 :root:not(#_a):not(#_b) .btn, :root:not(#_a):not(#_b) .bp, :root:not(#_a):not(#_b) .bs, :root:not(#_a):not(#_b) .bd2, :root:not(#_a):not(#_b) .cj-all, :root:not(#_a):not(#_b) .int-seemore, :root:not(#_a):not(#_b) .set-close,
 :root:not(#_a):not(#_b) .dev-upload-btn, :root:not(#_a):not(#_b) .mc-cmd-go {
 display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:8px;
-min-height:38px!important; padding:0 18px!important; border-radius:var(--r-pill)!important;
+min-height:44px!important; padding:0 20px!important; border-radius:var(--r-pill)!important;
 font-family:var(--fn)!important; font-size:var(--t-base)!important; line-height:1.2!important;
 white-space:nowrap; text-decoration:none!important; cursor:pointer;
 transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease),box-shadow .15s var(--ease),opacity .15s var(--ease)!important;
 transform:none!important; box-shadow:none!important;
 }
-:root:not(#_a):not(#_b) .btn.mc-mini { min-height:32px!important; padding:0 14px!important; font-size:var(--t-sm)!important }
+:root:not(#_a):not(#_b) .btn.mc-mini { min-height:36px!important; padding:0 14px!important; font-size:var(--t-sm)!important }
 :root:not(#_a):not(#_b) .mc-cmd-go, :root:not(#_a):not(#_b) .cj-run { min-height:44px!important; padding:0 22px!important }
 :root:not(#_a):not(#_b) .btn, :root:not(#_a):not(#_b) .bs, :root:not(#_a):not(#_b) .cj-all, :root:not(#_a):not(#_b) .int-seemore, :root:not(#_a):not(#_b) .set-close, :root:not(#_a):not(#_b) .dev-upload-btn {
 background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(--tx)!important; font-weight:500!important;
@@ -10336,7 +10336,11 @@ background:var(--s2)!important; border-color:var(--bdl)!important;
 :root:not(#_a):not(#_b) .cj-chip.on, :root:not(#_a):not(#_b) .hc-chip.on, :root:not(#_a):not(#_b) .build-mode.on, :root:not(#_a):not(#_b) .team-cyc.on, :root:not(#_a):not(#_b) .temp-toggle.on {
 background:var(--tx)!important; border-color:var(--tx)!important; color:var(--bg)!important;
 }
-:root:not(#_a):not(#_b) .cj-chip.on *, :root:not(#_a):not(#_b) .hc-chip.on * { color:inherit!important }
+:root:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-toggle).on * { color:inherit!important }
+body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-toggle).on {
+background:var(--accent-fill)!important; border-color:var(--accent-fill)!important; color:#fff!important;
+}
+@media (pointer:fine) and (min-width:1101px) { :root:not(#_a):not(#_b) .chome-chip { min-height:28px!important; padding:0 12px!important } }
 :root:not(#_a):not(#_b) .vi-conn .int-act .btn.bp {
 background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(--tx)!important; font-weight:600!important;
 }
