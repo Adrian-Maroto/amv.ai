@@ -17632,3 +17632,8 @@ body.light .plnpop-elite{color:#fff!important}
   :root:not(#_a):not(#_b) :is(.btn,.bp,.bs,.bd2) { padding:0 14px!important }
   :root:not(#_a):not(#_b) .cc-actions .btn { flex:1 1 0; min-width:0; white-space:normal!important; text-align:center }
 }
+/* Crew's category row while the country's list is on its way (A391, Nov 22):
+   blanks the size of a chip, so nothing moves when the real ones arrive. */
+.cj-chip-wait{display:inline-block;flex:none;width:92px;min-height:32px;border-radius:var(--r-pill);background:var(--s2);opacity:.6}
+@media (pointer:coarse), (max-width:1100px){ .cj-chip-wait{min-height:44px} }
+@media (prefers-reduced-motion:no-preference){ .cj-chip-wait{animation:cjw 1.2s ease-in-out infinite alternate} @keyframes cjw{from{opacity:.35}to{opacity:.7}} }

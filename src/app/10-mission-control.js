@@ -79,13 +79,21 @@ function _crewPrefetch(){
      the code workspace's - for the same reason: opening one draws at once. */
   const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); _loadCrewView();
     _lazyLoad('code-view.js', () => typeof window._devDeploy === 'function');
-    _lazyLoad('integrations-view.js', () => window._intViewHere === true);
-    _ccReady();
+    /* With the order its apps are drawn in (app-reach.json): Integrations
+       drew a loading shape first while that arrived (Nov 22). */
+    try{ Promise.resolve(_lazyLoad('integrations-view.js', () => window._intViewHere === true)).then(() => { try{ if(typeof window._appReachLoad === 'function') window._appReachLoad(); }catch(e){} }).catch(() => {}); }catch(e){}
+    /* The country's catalogue too, built once while nobody is waiting, so
+       Crew and Tasks open on their real lists (Nov 22: they drew a small
+       list first and changed a moment later). */
+    _ccReady().then(ok => { if(!ok) return; const cc = _cwCountryGuess(); if(cc){ try{ window.ccLoad(cc); }catch(e){} try{ window.ccCrewLoad(cc); }catch(e){} } }).catch(() => {});
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
     /* Spending's pane too: it was fetched on the first open, so the screen
        opened on "Loading…" and filled in a moment later (the owner: "spending
        has lag"). */
-    try{ _spendingLoad(); }catch(e){} }catch(e){} };
+    try{ _spendingLoad(); }catch(e){}
+    /* Usage and Help as well: each opened on "Loading…" for a moment the
+       first time (Nov 22, measured at 4x CPU on slow 4G). */
+    try{ _usageLoad(); }catch(e){} try{ _faqsLoad(); }catch(e){} }catch(e){} };
   if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
   else setTimeout(go, 1500);
 }

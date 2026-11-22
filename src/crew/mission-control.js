@@ -1486,7 +1486,20 @@ function _cjGridHTML(){
   return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
     + (list.length > shown.length ? `<div class="cj-more-w"><button class="btn bs cj-more" data-dact="cjMore">${escH(T('Show more'))} <span class="cj-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
 }
+/* THE CHIPS WAIT FOR THE COUNTRY'S LIST (Nov 22). Before a country's
+   catalogue arrives the list is a small built-in one, so the chips read "All
+   126, Money 20" and a moment later "All 23,052, Money 745", with five more
+   chips pushing in - the owner's "it shows something then instantly
+   changes". Until the country's own list has been tried, the row holds its
+   place with quiet blanks of the same height; the jobs below do not change. */
+const _cjTried = {};
 function _cjChipsHTML(){
+  try{
+    const cc = _cwCountryGuess();
+    if(cc && !(window._ccCrewJobs || {})[cc] && !_cjTried[cc]){
+      return '<span class="cj-chip-wait" aria-hidden="true"></span>'.repeat(7);
+    }
+  }catch(e){}
   const all = _cjList();
   const n = {}; all.forEach(j => { const c = _cjCat(j); n[c] = (n[c] || 0) + 1; });
   const chip = (k, label, c) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
@@ -1817,7 +1830,11 @@ function _cjWire(vc){
   /* Drawn again only when the list really changed - the second visit to Crew
      already drew the kept list on arrival. */
   const had = ((window._ccCrewJobs || {})[_cwCountryGuess()]);
-  _ccReady().then(ok => ok ? ccCrewLoad(_cwCountryGuess()) : null).then(l => { if(l && l !== had && document.getElementById('cj-grid')) _cjRepaint(); }).catch(() => {});
+  const cc0 = _cwCountryGuess();
+  const tried = () => { const waited = cc0 && !_cjTried[cc0]; if(cc0) _cjTried[cc0] = true; return waited; };
+  _ccReady().then(ok => ok ? ccCrewLoad(cc0) : null)
+    .then(l => { const waited = tried(); if(((l && l !== had) || waited) && document.getElementById('cj-grid')) _cjRepaint(); })
+    .catch(() => { if(tried() && document.getElementById('cj-grid')) _cjRepaint(); });
 }
 
 /* SEE ALL JOBS (Nov 15). The owner: "an option to see all jobs - a directory
