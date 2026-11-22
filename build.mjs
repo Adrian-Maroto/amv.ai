@@ -1177,8 +1177,35 @@ function appFilesKept() {
   try { prev = JSON.parse(readFileSync(APP_HISTORY, 'utf8')).files || []; } catch (e) { prev = []; }
   const cur = APP_FILES.current;
   if (!cur) throw new Error('no app code file was built');
+  /* COMMITTED FILES FIRST (Nov 22). Every local build is a new name, so a
+     few builds while working pushed the file the LIVE page names out of the
+     list, and the next deploy would have stopped serving it. What is
+     committed is what has been, or is about to be, deployed; a name only
+     ever built on this machine is the first to go. A committed file the
+     working copy lost is put back from the commit. */
+  let committed = [];
+  try { committed = execSync('git ls-tree --name-only HEAD ' + PUBLISH_DIR + '/', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').map(s => s.slice(PUBLISH_DIR.length + 1)).filter(f => /^app\.[a-f0-9]{12}\.js$/.test(f)); } catch (e) { committed = []; }
+  for (const f of committed) {
+    if (f !== cur && !existsSync(PUBLISH_DIR + '/' + f)) {
+      try { writeFileSync(PUBLISH_DIR + '/' + f, execSync('git show HEAD:' + PUBLISH_DIR + '/' + f, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 })); } catch (e) { /* not recoverable here: it is simply not kept */ }
+    }
+  }
+  /* And before those, the file the DEPLOYED page names (main) and the one the
+     last commit's page names: a branch can hold several commits that were
+     never deployed, and the tabs open right now run main's. */
+  const named = [];
+  for (const ref of ['origin/main', 'HEAD']) {
+    try { const m = execSync('git show ' + ref + ':' + PUBLISH_DIR + '/index.html', { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }).toString().match(/<script src="\/(app\.[a-f0-9]{12}\.js)"/); if (m && !named.includes(m[1])) named.push(m[1]); } catch (e) { /* no such ref here */ }
+  }
+  for (const f of named) {
+    if (f !== cur && !existsSync(PUBLISH_DIR + '/' + f)) {
+      for (const ref of ['origin/main', 'HEAD']) { try { writeFileSync(PUBLISH_DIR + '/' + f, execSync('git show ' + ref + ':' + PUBLISH_DIR + '/' + f, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 })); break; } catch (e) { /* try the next ref */ } }
+    }
+  }
+  const old = named.concat(prev.filter(f => !named.includes(f)), committed.filter(f => !prev.includes(f) && !named.includes(f)))
+    .filter(f => f !== cur && /^app\.[a-f0-9]{12}\.js$/.test(f) && existsSync(PUBLISH_DIR + '/' + f));
   /* An older name stays only while its bytes are still there to serve. */
-  const list = [cur].concat(prev.filter(f => f !== cur && /^app\.[a-f0-9]{12}\.js$/.test(f) && existsSync(PUBLISH_DIR + '/' + f))).slice(0, APP_KEEP);
+  const list = [cur].concat(old.filter(f => named.includes(f)), old.filter(f => !named.includes(f) && committed.includes(f)), old.filter(f => !named.includes(f) && !committed.includes(f))).slice(0, APP_KEEP);
   writeFileSync(APP_HISTORY, JSON.stringify({ note: 'The app code files the host keeps: the current one first. Written by build.mjs.', files: list }, null, 1) + '\n');
   return list;
 }

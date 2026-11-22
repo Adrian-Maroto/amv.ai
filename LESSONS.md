@@ -16220,3 +16220,18 @@ its next try as metadata, the drain walks every page passing over what is
 not due without reading it, and up to fifty due emails are tried. Rule: a
 cap on work per run must be a cap on work done, never a cap on what is
 looked at - otherwise the order of the keys decides who is served.
+
+## 663
+**Nov 22 - a choice read once, at start-up, belongs to whoever was known at
+start-up.** Crew's country is saved per account and was read when the
+script started. A page that started before the account was known (back from
+a sign-in, a session still being restored) read the guest's empty slot,
+guessed from the network and showed the owner another country after a
+refresh; a country picked before signing in was lost at sign-in. It is now
+read for whoever is signed in each time it is asked for, and a guest's pick
+is carried into an account that has none
+(`the-country-you-chose-is-still-chosen`: 3 of 7 fail without it). Also:
+the build kept "the last three" code files by build, so three local builds
+pushed out the file the live page names; it now keeps the file main's page
+names and the last commit's first. Rule: anything per-account must be read
+per-account at the moment of use, not cached from the moment of load.

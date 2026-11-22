@@ -22817,7 +22817,30 @@ async function _cwAskWhere(){
 /* Which country the top of Crew was last drawn for, so a late answer that
    agrees with it does not redraw anything. */
 let _cwGuessDrawn = '';
+/* WHOSE CHOICE IT IS, READ AGAIN WHEN THAT CHANGES (Nov 22).
+
+   The choice was read once, when the script started. Whoever was known then
+   decided which saved choice was read - so a page that started before the
+   account was (returning from a Google sign-in, a session still being
+   restored) read the guest's empty slot, guessed from the network, and
+   showed another country than the one picked. And a country picked before
+   signing in was filed under the guest and lost at sign-in. Now the choice
+   is read for whoever is signed in at the moment it is asked for; a guest's
+   pick is carried into the account that signs in when that account has none
+   of its own. */
+let _cwCountryWho = (()=>{ try{ return _scopeKey(''); }catch(e){ return ''; } })();
+function _cwCountrySync(){
+  let who = ''; try{ who = _scopeKey(''); }catch(e){ return; }
+  if(who === _cwCountryWho) return;
+  _cwCountryWho = who;
+  let v = ''; try{ v = loadStr('amv_cw_country') || ''; }catch(e){}
+  if(!v && who !== 'u:guest|'){
+    try{ const g = localStorage.getItem('u:guest|amv_cw_country') || ''; if(g && g !== '-'){ v = g; saveStr('amv_cw_country', g); } }catch(e){}
+  }
+  if(v !== _cwCountry){ _cwCountry = v; _cwShowcaseCache = null; }
+}
 function _cwCountryGuess(){
+  _cwCountrySync();
   /* A country somebody chose ("This is my country") wins over any guess. The
      old "Everywhere" choice (`-`) has no control any more, so it reads as no
      choice at all rather than as "show nowhere". */
@@ -22999,6 +23022,7 @@ let _cwBrowse = '';
    the country it was ranked for, and without this the hundred under the new
    country's name would have been the old country's hundred. */
 function _cwSetCountry(cc){
+  _cwCountrySync();
   _cwCountry = String(cc || '').toUpperCase();
   try{ saveStr('amv_cw_country', _cwCountry); }catch(e){}
   _cwShowcaseCache = null;
