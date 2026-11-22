@@ -108,7 +108,7 @@ function renderChartSVG(spec){
   const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
   const range=(max-min)||1;
   const iw=W-padL-padR, ih=H-padT-padB;
-  const colors=['#5590ff','#5590ff','#4ade80','#e0b341','#ff4d4d','#5590ff','#ff7eb6'];
+  const colors=['#5784da','#5784da','#5bb37f','#cfa851','#e06464','#5784da','#ff7eb6'];
   const x0=padL, y0=H-padB;
   let svg='<svg viewBox="0 0 '+W+' '+H+'" class="cht-svg" xmlns="http://www.w3.org/2000/svg">';
   // gridlines + y labels
@@ -122,8 +122,8 @@ function renderChartSVG(spec){
     const step=data.length>1?iw/(data.length-1):0;
     let pts=data.map((d,i)=>{ const x=x0+step*i; const y=padT+ih*(1-((+d.value-min)/range)); return [x,y]; });
     let path=pts.map((pt,i)=>(i?'L':'M')+pt[0]+' '+pt[1]).join(' ');
-    svg+='<path d="'+path+'" fill="none" stroke="#5590ff" stroke-width="2.5"/>';
-    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5590ff"/>';
+    svg+='<path d="'+path+'" fill="none" stroke="#5784da" stroke-width="2.5"/>';
+    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5784da"/>';
       svg+='<text x="'+pt[0]+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((data[i].label||'')+'')+'</text>'; });
   } else {
     const n=data.length, gap=10, bw=(iw/n)-gap;
@@ -4182,7 +4182,7 @@ function _renderSbUsage(){
   el.style.display='';
   el.innerHTML=
     '<div class="sb-usage-top"><span>'+(full?'Usage full':near?'Usage running low':'Usage')+'</span><span class="sb-usage-pct">'+pct+'%</span></div>'+
-    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#ff4d4d':near?'#e0b341':'var(--accent)')+'"></div></div>'+
+    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#e06464':near?'#cfa851':'var(--accent)')+'"></div></div>'+
     (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">Upgrade for more</button>'
       : '<div class="sb-usage-reset">Resets in '+escH(AMVUsage.resetLabel())+'</div>');
   const up=el.querySelector('[data-sb-upgrade]');
@@ -4203,8 +4203,8 @@ function renderDashboard(){
         '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
-        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
-        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(87, 132, 218,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5bb37f" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Quick Actions</h3>'+
         '<div class="qa-g">'+
@@ -4218,7 +4218,7 @@ function renderDashboard(){
         '<div class="ss2"><h3>Recent Conversations</h3>'+
           '<div style="display:flex;flex-direction:column">'+
                         recent.map(c=>'<div class="ait" style="cursor:pointer" data-lcid="'+c.id+'">'+
-              '<div class="aiic" style="background:rgba(85,144,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
+              '<div class="aiic" style="background:rgba(87, 132, 218,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
               '<div><div class="aiit">'+escH(c.title||'New Conversation')+'</div><div class="aitm">'+c.msgs.length+' messages · '+(c.starred?'⭐ Starred · ':'')+new Date(c.created).toLocaleDateString()+'</div></div>'+
             '</div>').join('')+
           '</div>'+

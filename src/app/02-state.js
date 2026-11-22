@@ -875,11 +875,11 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
    Auto asks for the most any engine gives; the server clamps it to the one it
    picks. */
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5784da', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#5bb37f', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5784da', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
   swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#e06464', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', ctx:1000000, tokens:32000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
      it out of the picker and kept it in the product's own idea of what it can

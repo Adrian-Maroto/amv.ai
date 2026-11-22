@@ -1879,7 +1879,7 @@ function amvMark(size, opts){
     '<svg class="amv-mark" width="'+s+'" height="'+s+'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block">'+
       '<defs>'+
         '<linearGradient id="'+gid+'" x1="6" y1="34" x2="34" y2="6" gradientUnits="userSpaceOnUse">'+
-          '<stop stop-color="#5590ff"/><stop offset="1" stop-color="#4d7ef5"/>'+
+          '<stop stop-color="#5784da"/><stop offset="1" stop-color="#3f6bc4"/>'+
         '</linearGradient>'+
         (glow?'<filter id="'+gid+'f" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>':'')+
       '</defs>'+
@@ -1902,7 +1902,7 @@ function _defaultAvatarSVG(){
   // (a duplicate SVG def id makes the second reference the first, misrendering).
   const g='amvAvG'+(++_amvMarkSeq);
   return '<svg viewBox="0 0 40 40" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" style="display:block">'+
-    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5590ff"/><stop offset="1" stop-color="#4478e8"/></linearGradient></defs>'+
+    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5784da"/><stop offset="1" stop-color="#3f6bc4"/></linearGradient></defs>'+
     '<rect width="40" height="40" fill="url(#'+g+')"/>'+
     '<text x="20" y="26" text-anchor="middle" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">A</text>'+
   '</svg>';

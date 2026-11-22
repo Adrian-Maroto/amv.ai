@@ -1879,7 +1879,7 @@ function amvMark(size, opts){
     '<svg class="amv-mark" width="'+s+'" height="'+s+'" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block">'+
       '<defs>'+
         '<linearGradient id="'+gid+'" x1="6" y1="34" x2="34" y2="6" gradientUnits="userSpaceOnUse">'+
-          '<stop stop-color="#5590ff"/><stop offset="1" stop-color="#4d7ef5"/>'+
+          '<stop stop-color="#5784da"/><stop offset="1" stop-color="#3f6bc4"/>'+
         '</linearGradient>'+
         (glow?'<filter id="'+gid+'f" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>':'')+
       '</defs>'+
@@ -1902,7 +1902,7 @@ function _defaultAvatarSVG(){
   // (a duplicate SVG def id makes the second reference the first, misrendering).
   const g='amvAvG'+(++_amvMarkSeq);
   return '<svg viewBox="0 0 40 40" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" style="display:block">'+
-    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5590ff"/><stop offset="1" stop-color="#4478e8"/></linearGradient></defs>'+
+    '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5784da"/><stop offset="1" stop-color="#3f6bc4"/></linearGradient></defs>'+
     '<rect width="40" height="40" fill="url(#'+g+')"/>'+
     '<text x="20" y="26" text-anchor="middle" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">A</text>'+
   '</svg>';
@@ -4017,11 +4017,11 @@ try{ window.OWNER_EMAIL=OWNER_EMAIL; window._isOwnerEmail=_isOwnerEmail; }catch(
    Auto asks for the most any engine gives; the server clamps it to the one it
    picks. */
 const MODELS = {
-  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
-  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
-  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
+  auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5784da', model:'auto', ctx:1000000, tokens:32000, cost:0, rec:'free' },
+  fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#5bb37f', model:'amv-pulse', ctx:1000000, tokens:16000, cost:1, rec:'free' },
+  core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5784da', model:'amv-core', ctx:1000000, tokens:16000, cost:2, rec:'free' },
   swift:  { label:'AMV Swift', desc:'A top engine at its fastest', color:'#22c3e6', model:'amv-swift', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
-  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
+  coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#e06464', model:'amv-forge', ctx:1000000, tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', ctx:1000000, tokens:32000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
      it out of the picker and kept it in the product's own idea of what it can
@@ -8555,7 +8555,7 @@ function renderChartSVG(spec){
   const max=Math.max(...vals, 0), min=Math.min(...vals, 0);
   const range=(max-min)||1;
   const iw=W-padL-padR, ih=H-padT-padB;
-  const colors=['#5590ff','#5590ff','#4ade80','#e0b341','#ff4d4d','#5590ff','#ff7eb6'];
+  const colors=['#5784da','#5784da','#5bb37f','#cfa851','#e06464','#5784da','#ff7eb6'];
   const x0=padL, y0=H-padB;
   let svg='<svg viewBox="0 0 '+W+' '+H+'" class="cht-svg" xmlns="http://www.w3.org/2000/svg">';
   // gridlines + y labels
@@ -8569,8 +8569,8 @@ function renderChartSVG(spec){
     const step=data.length>1?iw/(data.length-1):0;
     let pts=data.map((d,i)=>{ const x=x0+step*i; const y=padT+ih*(1-((+d.value-min)/range)); return [x,y]; });
     let path=pts.map((pt,i)=>(i?'L':'M')+pt[0]+' '+pt[1]).join(' ');
-    svg+='<path d="'+path+'" fill="none" stroke="#5590ff" stroke-width="2.5"/>';
-    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5590ff"/>';
+    svg+='<path d="'+path+'" fill="none" stroke="#5784da" stroke-width="2.5"/>';
+    pts.forEach((pt,i)=>{ svg+='<circle cx="'+pt[0]+'" cy="'+pt[1]+'" r="3.5" fill="#5784da"/>';
       svg+='<text x="'+pt[0]+'" y="'+(y0+18)+'" text-anchor="middle" class="cht-ax">'+escH((data[i].label||'')+'')+'</text>'; });
   } else {
     const n=data.length, gap=10, bw=(iw/n)-gap;
@@ -12629,7 +12629,7 @@ function _renderSbUsage(){
   el.style.display='';
   el.innerHTML=
     '<div class="sb-usage-top"><span>'+(full?'Usage full':near?'Usage running low':'Usage')+'</span><span class="sb-usage-pct">'+pct+'%</span></div>'+
-    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#ff4d4d':near?'#e0b341':'var(--accent)')+'"></div></div>'+
+    '<div class="sb-usage-bar"><div class="sb-usage-fill" style="width:'+pct+'%;background:'+(full?'#e06464':near?'#cfa851':'var(--accent)')+'"></div></div>'+
     (near&&plan!=='ultra' ? '<button class="sb-usage-upg" data-sb-upgrade="1">Upgrade for more</button>'
       : '<div class="sb-usage-reset">Resets in '+escH(AMVUsage.resetLabel())+'</div>');
   const up=el.querySelector('[data-sb-upgrade]');
@@ -12650,8 +12650,8 @@ function renderDashboard(){
         '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
-        '<div class="dc"><div class="dicon" style="background:rgba(85,144,255,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
-        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(87, 132, 218,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="dn">'+cc+'</div><div class="dl">Conversations</div></div>'+
+        '<div class="dc"><div class="dicon" style="background:rgba(16,185,129,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5bb37f" stroke-width="2" stroke-linecap="round"><path d="M12 2a5 5 0 1 0 5 5H7a5 5 0 0 0 5-5z"/><path d="M12 12v10"/></svg></div><div class="dn">'+S.memory.length+'</div><div class="dl">Memories Saved</div></div>'+
       '</div>'+
       '<div class="ss2"><h3>Quick Actions</h3>'+
         '<div class="qa-g">'+
@@ -12665,7 +12665,7 @@ function renderDashboard(){
         '<div class="ss2"><h3>Recent Conversations</h3>'+
           '<div style="display:flex;flex-direction:column">'+
                         recent.map(c=>'<div class="ait" style="cursor:pointer" data-lcid="'+c.id+'">'+
-              '<div class="aiic" style="background:rgba(85,144,255,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
+              '<div class="aiic" style="background:rgba(87, 132, 218,.1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>'+
               '<div><div class="aiit">'+escH(c.title||'New Conversation')+'</div><div class="aitm">'+c.msgs.length+' messages · '+(c.starred?'⭐ Starred · ':'')+new Date(c.created).toLocaleDateString()+'</div></div>'+
             '</div>').join('')+
           '</div>'+
@@ -14911,7 +14911,7 @@ function _renderTeamManage(vc, team){
 }
 
 const _TASK_LABEL={todo:'To do',in_progress:'In progress',done:'Done'};
-const _PRIO_C={high:'var(--red,#ff4d4d)',normal:'var(--mu,#9a9085)',low:'var(--dim,#5f574d)'};
+const _PRIO_C={high:'var(--red,#e06464)',normal:'var(--mu,#9a9085)',low:'var(--dim,#5f574d)'};
 async function _loadTeamTasks(team, role, myEmail){
   const canManage = role==='owner'||role==='admin';
   const board=$('tt-board'); if(!board) return;
@@ -17247,7 +17247,7 @@ function renderWsGrid(){
          other devices - and the picker that sets it locally says nothing about
          what comes back. The same field is already read through _safeIcon in
          the project switcher; these two disagreeing was the bug. */
-      '<div class="wsic" style="background:rgba(85,144,255,.1)">'+_safeIcon(ws.icon)+'</div>'+
+      '<div class="wsic" style="background:rgba(87, 132, 218,.1)">'+_safeIcon(ws.icon)+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
@@ -30376,7 +30376,7 @@ function _founderDashHTML(d){
   const sp=d.spend||{}, us=d.users||{}, rev=d.revenue||{}, mg=d.margin||{};
   const byPlan=us.byPlan||{};
   const spendPct=Math.min(100, sp.pctOfCap||0);
-  const spendColor = spendPct>=90?'#ff4d4d':(spendPct>=70?'#e0b341':'var(--accent)');
+  const spendColor = spendPct>=90?'#e06464':(spendPct>=70?'#cfa851':'var(--accent)');
   const rows=(d.topSpenders||[]).slice(0,12).map(u=>
     '<div class="fd-row"><span class="fd-row-email">'+_esc(u.email)+'</span><span class="fd-row-plan">'+u.plan+'</span><span class="fd-row-cost">'+money(u.monthCostUSD)+'</span></div>').join('')
     || '<div class="fd-row"><span style="color:var(--mu)">No usage yet.</span></div>';
@@ -32367,7 +32367,7 @@ if(savedTheme === 'light') document.body.classList.add('light');
    not #6366f1 for the reason written beside the accent blocks: the primary
    button puts near-black text on it, and #6366f1 could not carry it. */
 const ACCENT_THEMES=[
-  {id:'',        name:'Azure',   dot:'#5590ff'},
+  {id:'',        name:'Azure',   dot:'#5784da'},
   {id:'violet',  name:'Violet',  dot:'#9d7bff'},
   {id:'indigo',  name:'Indigo',  dot:'#686bf1'},
   {id:'magenta', name:'Magenta', dot:'#e879f9'},

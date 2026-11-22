@@ -427,14 +427,14 @@ async function sharePage(request, env, id){
     '.wrap{max-width:720px;margin:0 auto;padding:28px 20px 64px}' +
     '.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap}' +
     '.brand{font-weight:700;letter-spacing:-.02em}' +
-    '.cta{display:inline-block;padding:8px 18px;border-radius:999px;background:#5590ff;color:#fff;text-decoration:none;font-size:14px;font-weight:500}' +
+    '.cta{display:inline-block;padding:8px 18px;border-radius:999px;background:#5784da;color:#fff;text-decoration:none;font-size:14px;font-weight:500}' +
     'h1{font-size:23px;line-height:1.3;margin:0 0 22px}' +
     '.m{margin:0 0 14px;padding:13px 16px;border:1px solid #26262b;border-radius:12px;background:#141418}' +
     '.m.u{background:none;border-style:dashed}' +
     '.who{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a8a92;margin-bottom:6px}' +
     '.t{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}' +
     '.foot{margin-top:34px;padding-top:20px;border-top:1px solid #26262b;font-size:13.5px;color:#8a8a92}' +
-    '.foot a{color:#5590ff}' +
+    '.foot a{color:#5784da}' +
     '</style></head><body><div class="wrap">' +
     '<div class="top"><span class="brand">AMV.AI</span>' +
     '<a class="cta" href="' + _shareEsc(base) + '">Try AMV free</a></div>' +

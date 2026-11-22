@@ -412,7 +412,7 @@ function _renderTeamManage(vc, team){
 }
 
 const _TASK_LABEL={todo:'To do',in_progress:'In progress',done:'Done'};
-const _PRIO_C={high:'var(--red,#ff4d4d)',normal:'var(--mu,#9a9085)',low:'var(--dim,#5f574d)'};
+const _PRIO_C={high:'var(--red,#e06464)',normal:'var(--mu,#9a9085)',low:'var(--dim,#5f574d)'};
 async function _loadTeamTasks(team, role, myEmail){
   const canManage = role==='owner'||role==='admin';
   const board=$('tt-board'); if(!board) return;

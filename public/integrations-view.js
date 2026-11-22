@@ -678,7 +678,7 @@ function _bgAddTask(task){
 }
 function renderAutomationView(){
   const vc=$('vc'); if(!vc) return;
-  const sc=s=>s==='done'?'#4ade80':s==='running'?'#5590ff':s==='failed'?'#ff4d4d':'#e0b341';
+  const sc=s=>s==='done'?'#5bb37f':s==='running'?'#5784da':s==='failed'?'#e06464':'#cfa851';
   const si=s=>s==='done'?'✓':s==='running'?'⟳':s==='failed'?'✕':'⏳';
   const cards=['<button type="button" class="bgq-card" data-dact="_bgAddGmailCheck"><span class="bgq-ic" aria-hidden="true">📧</span><span class="bgq-t">Check Gmail</span><span class="bgq-s">Analyze unread emails</span></button>',
   '<button type="button" class="bgq-card" data-dact="_bgAddCalendarCheck"><span class="bgq-ic" aria-hidden="true">📅</span><span class="bgq-t">Plan my week</span><span class="bgq-s">Calendar optimization</span></button>',
@@ -701,7 +701,7 @@ function renderAutomationView(){
     return h;
   }).join('') : emptyState({svg:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',title:'No automations yet',sub:'Set AMV to run on a schedule - a daily news brief, a weekly report - and it works while you don\u2019t. Pick a quick automation above to start.'});
   vc.innerHTML=`<div class="sv fi"><div class="vi"><h2>Automation</h2><p class="vsub">Hand the AI a repeating job and it runs on its own in the background - checking email, summarizing, monitoring - even after you close the tab. Tap a card to queue a task; results land here when each one finishes.</p>
-<div class="ss2" style="background:linear-gradient(135deg,rgba(85,144,255,.08),rgba(85,144,255,.05));border-color:rgba(88,166,255,.2)">
+<div class="ss2" style="background:linear-gradient(135deg,rgba(87, 132, 218,.08),rgba(87, 132, 218,.05));border-color:rgba(88,166,255,.2)">
 <h3>&#9889; Quick Automations</h3>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>

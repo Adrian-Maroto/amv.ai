@@ -342,7 +342,7 @@ function _founderDashHTML(d){
   const sp=d.spend||{}, us=d.users||{}, rev=d.revenue||{}, mg=d.margin||{};
   const byPlan=us.byPlan||{};
   const spendPct=Math.min(100, sp.pctOfCap||0);
-  const spendColor = spendPct>=90?'#ff4d4d':(spendPct>=70?'#e0b341':'var(--accent)');
+  const spendColor = spendPct>=90?'#e06464':(spendPct>=70?'#cfa851':'var(--accent)');
   const rows=(d.topSpenders||[]).slice(0,12).map(u=>
     '<div class="fd-row"><span class="fd-row-email">'+_esc(u.email)+'</span><span class="fd-row-plan">'+u.plan+'</span><span class="fd-row-cost">'+money(u.monthCostUSD)+'</span></div>').join('')
     || '<div class="fd-row"><span style="color:var(--mu)">No usage yet.</span></div>';

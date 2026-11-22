@@ -732,7 +732,7 @@ if(savedTheme === 'light') document.body.classList.add('light');
    not #6366f1 for the reason written beside the accent blocks: the primary
    button puts near-black text on it, and #6366f1 could not carry it. */
 const ACCENT_THEMES=[
-  {id:'',        name:'Azure',   dot:'#5590ff'},
+  {id:'',        name:'Azure',   dot:'#5784da'},
   {id:'violet',  name:'Violet',  dot:'#9d7bff'},
   {id:'indigo',  name:'Indigo',  dot:'#686bf1'},
   {id:'magenta', name:'Magenta', dot:'#e879f9'},

@@ -17,7 +17,7 @@ window._fraudAct=_fraudAct;
 
 /* Render one full fraud assessment as an operator card. */
 function _fraudCard(a){
-  const rc={low:'#4ade80',medium:'#e0b341',high:'#ff8c42',critical:'#ff4d4d'};
+  const rc={low:'#5bb37f',medium:'#cfa851',high:'#ff8c42',critical:'#e06464'};
   const chips=(arr)=>arr.map(x=>'<span class="fr-chip">'+escH(x)+'</span>').join('');
   const linkRows=[];
   const L=a.linked||{};
@@ -219,7 +219,7 @@ function _admGrowthBlock(live, backendLive){
   }
   const g=live.growth, uu=live.users||{};
   const wow = (g.wowGrowthPct==null) ? '-' : (g.wowGrowthPct>=0?'+':'')+g.wowGrowthPct+'%';
-  const wowColor = (g.wowGrowthPct==null) ? '' : (g.wowGrowthPct>=0 ? '#4ade80' : '#ff6b6b');
+  const wowColor = (g.wowGrowthPct==null) ? '' : (g.wowGrowthPct>=0 ? '#5bb37f' : '#ff6b6b');
   const spark=_admSparkline((g.signups30||[]).map(d=>d.count));
   return '<div class="adm-kpi-grid">'+
       _admKpi('Signups today', String(g.signupsToday!=null?g.signupsToday:'-'), 'New accounts')+
@@ -266,7 +266,7 @@ function _admRenderTab(tab, backendLive, live){
     return;
   }
   const m=_admMetrics(); const u=m.u;
-  const sev={crit:'#ff4d4d',warn:'#e0b341',ok:'#4ade80'};
+  const sev={crit:'#e06464',warn:'#cfa851',ok:'#5bb37f'};
   const cap=(typeof AEGIS!=='undefined'&&AEGIS.cfg)?AEGIS.cfg.dailyTokenCap:2000000;
   const used=u.inTok+u.outTok; const pct=Math.min(used/cap*100,100);
   const errRate=u.reqs?((u.errors/u.reqs)*100):0;
@@ -327,8 +327,8 @@ function _admRenderTab(tab, backendLive, live){
       const by=f.byCurrency||{ [t.currency||'USD']: t };
       totalsHtml=Object.keys(by).map(cur=>{ const b=by[cur]||{}; return '<div class="adm-stats">'+
         _admStat(escH(money(b.gross,cur)),'Gross received'+(Object.keys(by).length>1?' ('+escH(cur)+')':''))+
-        _admStat(escH(money(b.refunded,cur)),'Refunded', (b.refunded>0?'#e0b341':''))+
-        _admStat(escH(money(b.net,cur)),'Net', '#4ade80')+
+        _admStat(escH(money(b.refunded,cur)),'Refunded', (b.refunded>0?'#cfa851':''))+
+        _admStat(escH(money(b.net,cur)),'Net', '#5bb37f')+
         _admStat((b.count||0).toLocaleString(),'Transactions')+
       '</div>'; }).join('')+(t.scope==='page'?'<p class="adm-note">These totals cover the transactions on this page, not all time.</p>':'');
     }
@@ -458,7 +458,7 @@ function _admRenderTab(tab, backendLive, live){
       '</div>')+
       _admCard('Recent errors', recentErrs.length
         ? '<div class="adm-loglist">'+recentErrs.map(e=>'<div class="adm-logrow"><span class="adm-badge off">'+escH(e.where||e.event||'error')+'</span><span>'+escH(e.msg||e.raw||'-')+'</span><span class="adm-logtime">'+_admAgo(e.ts)+'</span></div>').join('')+'</div>'
-        : '<div class="adm-allclear"><span class="adm-signal-dot" style="background:#4ade80"></span> No errors logged. Everything\u2019s running clean.</div>', 'last 15')+
+        : '<div class="adm-allclear"><span class="adm-signal-dot" style="background:#5bb37f"></span> No errors logged. Everything\u2019s running clean.</div>', 'last 15')+
       _admCard('Infrastructure health', _admPending('Uptime, server health, GPU/CPU utilization, database health, storage usage, network latency by region, global server status'))+
       _admCard('Operations', _admPending('Deployment status, version rollout, model deployment, backup status, disaster recovery, incident management, predictive capacity planning'));
   }

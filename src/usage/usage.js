@@ -17,7 +17,7 @@ function _usageContentHTML(){
   const us=AMVUsage.status();
   const srvOwned=_usageServerOwned();
   const planName=(PLANS[loadStr('amv_plan')||'free']&&PLANS[loadStr('amv_plan')||'free'].name)||'Free';
-  const barColor = us.pct>=90 ? '#ff4d4d' : (us.pct>=70 ? '#e0b341' : 'var(--accent)');
+  const barColor = us.pct>=90 ? '#e06464' : (us.pct>=70 ? '#cfa851' : 'var(--accent)');
   const usagePanel=
     '<div class="ss2 usage-panel"><h3>Current usage</h3>'+
       '<div class="usage-head">'+

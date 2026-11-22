@@ -1556,7 +1556,7 @@ function renderWsGrid(){
          other devices - and the picker that sets it locally says nothing about
          what comes back. The same field is already read through _safeIcon in
          the project switcher; these two disagreeing was the bug. */
-      '<div class="wsic" style="background:rgba(85,144,255,.1)">'+_safeIcon(ws.icon)+'</div>'+
+      '<div class="wsic" style="background:rgba(87, 132, 218,.1)">'+_safeIcon(ws.icon)+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
