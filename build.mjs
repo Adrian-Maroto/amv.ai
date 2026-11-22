@@ -516,11 +516,15 @@ async function rebuild() {
        hash of the BUNDLE - so exactly that framing comes off before anything
        runs it, or the inline fallback is refused by the page's own policy the
        one time it is needed. (AMV-AUD-027) */
-    "var t=c.textContent;if(t.charAt(0)==='\\n')t=t.slice(1);if(t.slice(-1)==='\\n')t=t.slice(0,-1);" +
-    "var code=t.split('<\\\\/scr_AMV_ipt').join('</script');" +
-    "function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}" +
+    /* No copy of 1.5 MB unless there is something to restore (Nov 22, measured:
+       the split/join and the two slices were the launcher's 87 ms on a 4x
+       slower phone). The Blob runs the block as written - a newline either
+       side means nothing to JavaScript - and only the inline fallback, which
+       the policy checks by hash, is cut to exactly the bundle. */
+    "var t=c.textContent,S='<\\\\/scr_AMV_ipt';if(t.indexOf(S)>=0)t=t.split(S).join('</script');" +
+    "function inlineRun(){var x=t;if(x.charAt(0)==='\\n')x=x.slice(1);if(x.slice(-1)==='\\n')x=x.slice(0,-1);var e=document.createElement('script');e.textContent=x;document.body.appendChild(e);}" +
     "try{var s=document.createElement('script');" +
-    "s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));" +
+    "s.src=URL.createObjectURL(new Blob([t],{type:'application/javascript'}));" +
     "s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}" +
     "catch(e){inlineRun();}})();";
 
