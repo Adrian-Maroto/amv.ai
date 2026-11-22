@@ -40692,7 +40692,8 @@ async function _sendEmail(env, to, subject, html, text, cls) {
       const id = idem.slice(4);
       const key = 'outbox:' + String(to).toLowerCase().trim() + ':' + id;
       await env.AMV_KV.put(key, JSON.stringify({ id, idem, to, subject, html, text, cls: cls || 'other', from,
-        attempts: 2, next: Date.now() + EMAIL_OUTBOX_BACKOFF_MS[0], at: Date.now() }), { expirationTtl: 3 * 86400 });
+        attempts: 2, next: Date.now() + EMAIL_OUTBOX_BACKOFF_MS[0], at: Date.now() }),
+        { expirationTtl: 3 * 86400, metadata: { next: Date.now() + EMAIL_OUTBOX_BACKOFF_MS[0] } });
       audit(env, 'email_queued', { cls, to });
       await _outboxPoint(env, key, EMAIL_OUTBOX_BACKOFF_MS[0]);
     } catch (e) { audit(env, 'email_lost', { cls, to, error: String((e && e.message) || e).slice(0, 120) }); }
@@ -40709,14 +40710,31 @@ async function _outboxDrain(env, now) {
   const t = now || Date.now();
   let sent = 0, retried = 0, gaveUp = 0, seen = 0;
   if (!env.EMAIL_API_KEY) return { sent, retried, gaveUp, seen };
-  const page = await env.AMV_KV.list({ prefix: 'outbox:', limit: 50 });
-  for (const k of page.keys) {
-    const r = await _outboxSendOne(env, k.name, t);
-    if (r === 'gone') continue;
-    seen++;
-    if (r === 'sent') sent++; else if (r === 'retried') retried++; else if (r === 'gaveUp') gaveUp++;
-  }
-  return { sent, retried, gaveUp, seen };
+  /* EVERY PAGE, NOT THE FIRST FIFTY (Nov 22). This read the first 50 keys -
+     by address - and nothing past them. In a long provider outage the first
+     fifty are all waiting on their backoff, so mail to every address further
+     down the alphabet was never reached and expired with its record after
+     three days, unsent and unreported. Each key now carries its next try as
+     metadata, so the listing says what is due without reading a record: the
+     whole outbox is walked a page at a time, what is not due is passed over,
+     and up to 50 due emails are tried. A key written before the metadata
+     existed counts as due, and its record decides. */
+  let cur = null, pages = 0, due = 0, waiting = 0;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'outbox:', limit: 1000, cursor: cur || undefined });
+    for (const k of (page.keys || [])) {
+      const nx = k.metadata && Number(k.metadata.next);
+      if (nx && nx > t) { waiting++; continue; }
+      if (due >= 50) { waiting++; continue; }
+      due++;
+      const r = await _outboxSendOne(env, k.name, t);
+      if (r === 'gone') continue;
+      seen++;
+      if (r === 'sent') sent++; else if (r === 'retried') retried++; else if (r === 'gaveUp') gaveUp++;
+    }
+    cur = page.list_complete ? null : page.cursor;
+  } while (cur && ++pages < 100);
+  return { sent, retried, gaveUp, seen, waiting };
 }
 
 /* One waiting email, by its key: 'gone' (sent already, or erased with its
@@ -40740,7 +40758,7 @@ async function _outboxSendOne(env, key, now) {
     return 'gaveUp';
   }
   it.attempts += 1; it.next = t + EMAIL_OUTBOX_BACKOFF_MS[step];
-  await env.AMV_KV.put(key, JSON.stringify(it), { expirationTtl: 3 * 86400 });
+  await env.AMV_KV.put(key, JSON.stringify(it), { expirationTtl: 3 * 86400, metadata: { next: it.next } });
   await _outboxPoint(env, key, EMAIL_OUTBOX_BACKOFF_MS[step]);
   return 'retried';
 }

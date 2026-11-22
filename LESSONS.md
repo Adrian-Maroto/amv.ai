@@ -16206,3 +16206,17 @@ made the next page skip a thousand keys, a fault of the store and not of the
 code. Rule: a fake is part of the test. Where it is simpler than the real
 thing in the one way the code under test depends on, the test proves nothing
 about that way.
+
+## 662
+**Nov 22 - "bounded per tick" was bounded to the first fifty by address.**
+The email outbox drain listed 50 keys and stopped. Keys are
+`outbox:<address>:<id>`, so in a long provider outage the first fifty -
+the same addresses near the start of the alphabet, all waiting on their
+backoff - were the only ones the tick ever looked at, and mail to everyone
+further down expired with its record after three days, unsent and never
+reported, under a comment promising it is never silently dropped. Found by
+reading every listing in the Worker after LESSONS 661. Each key now carries
+its next try as metadata, the drain walks every page passing over what is
+not due without reading it, and up to fifty due emails are tried. Rule: a
+cap on work per run must be a cap on work done, never a cap on what is
+looked at - otherwise the order of the keys decides who is served.

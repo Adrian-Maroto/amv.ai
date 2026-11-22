@@ -36,9 +36,19 @@ globalThis.fetch = async (url, init) => {
   if (/alert/.test(u)) { alerts.push(JSON.parse(init.body || '{}')); return new Response('{}'); }
   return new Response('{}');
 };
-const mkEnv = () => { const m = new Map(); return { EMAIL_API_KEY: 're_test', RESET_EMAIL_FROM: 'AMV <hi@amv.test>', ALERT_WEBHOOK: 'https://alert.example/hook',
-  AMV_KV: { _m: m, async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, String(v)); }, async delete(k) { m.delete(k); },
-    async list({ prefix, limit } = {}) { const keys = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })); return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true }; } } }; };
+/* The store lists as the real one does: byte order, at most 1,000 a page,
+   a cursor that resumes after the last key, and each key's metadata. */
+const mkEnv = () => { const m = new Map(), md = new Map(); return { EMAIL_API_KEY: 're_test', RESET_EMAIL_FROM: 'AMV <hi@amv.test>', ALERT_WEBHOOK: 'https://alert.example/hook',
+  AMV_KV: { _m: m, _md: md, async get(k) { return m.has(k) ? m.get(k) : null; },
+    async put(k, v, o) { m.set(k, String(v)); if (o && o.metadata) md.set(k, o.metadata); else md.delete(k); },
+    async delete(k) { m.delete(k); md.delete(k); },
+    async list({ prefix, limit, cursor } = {}) {
+      const after = cursor ? Buffer.from(cursor, 'base64url').toString() : null;
+      const all = [...m.keys()].filter(k => (!prefix || k.startsWith(prefix)) && (after === null || k > after)).sort();
+      const n = Math.max(1, Math.min(1000, limit || 1000));
+      const keys = all.slice(0, n).map(name => md.has(name) ? { name, metadata: md.get(name) } : { name });
+      return all.length > n ? { keys, list_complete: false, cursor: Buffer.from(keys[n - 1].name).toString('base64url') } : { keys, list_complete: true };
+    } } }; };
 const outbox = (env) => [...env.AMV_KV._m.keys()].filter(k => k.startsWith('outbox:'));
 const send = (env, cls) => W._sendEmail(env, 'ana@example.com', 'Your job finished', '<p>done</p>', 'done', cls);
 
@@ -64,6 +74,41 @@ section('Still down: job mail waits in the outbox, and is not called sent');
   r = await W._outboxDrain(env, Date.now() + W.EMAIL_OUTBOX_BACKOFF_MS[0] + 1000);
   ok(r.sent === 1 && posts.length === 1 && posts[0].idem === firstIdem, 'when due, it is sent - with the key it was first tried with', { r, idem: posts[0] && posts[0].idem });
   ok(outbox(env).length === 0, 'and removed');
+}
+
+section('A long outage: mail further down the alphabet is still reached');
+{
+  /* 1,200 emails to addresses that sort first, all waiting on their backoff,
+     and one to an address near the end that is due. The tick used to read the
+     first fifty keys and stop, so the due one was never tried. */
+  const env = mkEnv(); const now = Date.now();
+  for (let i = 0; i < 1200; i++) {
+    const key = 'outbox:a' + String(i).padStart(5, '0') + '@example.com:' + i;
+    await env.AMV_KV.put(key, JSON.stringify({ id: String(i), idem: 'amv-w' + i, to: 'a' + i + '@example.com', subject: 's', html: 'h', text: 't', cls: 'auto', attempts: 3, next: now + 3600000, at: now }), { metadata: { next: now + 3600000 } });
+  }
+  await env.AMV_KV.put('outbox:zed@example.com:z1', JSON.stringify({ id: 'z1', idem: 'amv-z1', to: 'zed@example.com', subject: 'Your job finished', html: 'h', text: 't', cls: 'auto', attempts: 2, next: now - 1000, at: now - 400000 }), { metadata: { next: now - 1000 } });
+  /* And one written before keys carried their next try: it counts as due. */
+  await env.AMV_KV.put('outbox:zoe@example.com:z2', JSON.stringify({ id: 'z2', idem: 'amv-z2', to: 'zoe@example.com', subject: 'A message', html: 'h', text: 't', cls: 'message', attempts: 2, next: now - 1000, at: now - 400000 }));
+  plan = []; posts = [];
+  const r = await W._outboxDrain(env, now);
+  const to = posts.map(p => [].concat(p.body.to)[0]);
+  ok(to.includes('zed@example.com'), 'the due email past the first page is sent', { r, to });
+  ok(to.includes('zoe@example.com'), 'and one from before the metadata is tried too', to);
+  ok(posts.length === 2 && r.waiting === 1200, 'while the 1,200 not yet due are passed over without a send', { posts: posts.length, waiting: r.waiting });
+  ok(!env.AMV_KV._m.has('outbox:zed@example.com:z1'), 'and the sent one is gone from the outbox');
+}
+
+section('A retry keeps its next try on the key, so the next tick can pass it over');
+{
+  const env = mkEnv(); plan = ['net', 'net']; posts = [];
+  await send(env, 'auto');
+  const key = outbox(env)[0];
+  ok(env.AMV_KV._md.get(key) && env.AMV_KV._md.get(key).next > Date.now(), 'the queued email carries its next try as metadata', env.AMV_KV._md.get(key));
+  plan = [503]; posts = [];
+  const later = Date.now() + W.EMAIL_OUTBOX_BACKOFF_MS[0] + 1000;
+  await W._outboxDrain(env, later);
+  const md = env.AMV_KV._md.get(key);
+  ok(posts.length === 1 && md && md.next > later, 'and after a failed retry the key names the new time', md);
 }
 
 section('With the job queue bound, a waiting email is tried when it is due, not at the next tick');

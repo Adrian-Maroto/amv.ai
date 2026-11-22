@@ -42,12 +42,12 @@ const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascrip
    no test here runs long enough for one to matter, and pretending to honour
    them would be a second implementation to get wrong. */
 export function makeKV() {
-  const m = new Map();
+  const m = new Map(), md = new Map();
   return {
     _map: m,
     async get(k) { return m.has(k) ? m.get(k) : null; },
-    async put(k, v) { m.set(k, v); },
-    async delete(k) { m.delete(k); },
+    async put(k, v, o) { m.set(k, v); if (o && o.metadata) md.set(k, o.metadata); else md.delete(k); },
+    async delete(k) { m.delete(k); md.delete(k); },
     /* As the real store lists (Nov 22): keys in byte order, at most 1,000 a
        page (and never more than `limit`), with a cursor and list_complete
        false while more remain. This used to cut the list at `limit` and still
@@ -60,7 +60,7 @@ export function makeKV() {
       const after = cursor ? Buffer.from(String(cursor), 'base64url').toString('utf8') : null;
       const all = [...m.keys()].filter(k => (!prefix || k.startsWith(prefix)) && (after === null || k > after)).sort();
       const n = Math.max(1, Math.min(1000, limit || 1000));
-      const keys = all.slice(0, n).map(name => ({ name }));
+      const keys = all.slice(0, n).map(name => md.has(name) ? { name, metadata: md.get(name) } : { name });
       return all.length > n ? { keys, list_complete: false, cursor: Buffer.from(keys[keys.length - 1].name, 'utf8').toString('base64url') } : { keys, list_complete: true };
     },
   };
