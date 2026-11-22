@@ -390,9 +390,9 @@ function renderUsageView(){
    here, only arithmetic on a price. */
 function _invoiceTableHTML(plan, P, sinceDate){
   if(plan==='free') return '<div class="bill-inv-empty">No invoices yet. Your first payment will show up here.</div>';
-  return '<div class="bill-inv-empty">Invoices come from the payment processor, and this deployment is not '+
+  return '<div class="bill-inv-empty">'+escH(T('Invoices come from the payment processor, and this deployment is not '+
     'connected to one - so there is nothing to show and nothing has been charged. Connect a backend and every '+
-    'real invoice appears here, with its number, amount and a PDF.</div>';
+    'real invoice appears here, with its number, amount and a PDF.'))+'</div>';
 }
 try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 
@@ -573,7 +573,7 @@ function renderBillingView(targetEl){
         /* Renewal moved up into the line under the plan, where somebody looks
            for it, so it is not repeated here. */
         '<dl class="bill-facts">'+
-          _bfact('Billing email', escH(email))+
+          _bfact(T('Billing email'), escH(email))+
           /* MESSAGES, BECAUSE THAT IS WHAT THE SERVER COUNTS.
 
              This row said "2.3M tokens a month" while Spending - the screen
@@ -614,7 +614,7 @@ function renderBillingView(targetEl){
           (sinceDate?_bfact('Started', escH(fmt(sinceDate))):'')+
           /* Extra usage: the balance is the server's, filled in once it answers,
              and the button opens the packs. */
-          _bfact('Extra usage', '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">Add</button>')+
+          _bfact(T('Extra usage'), '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">'+escH(T('Add'))+'</button>')+
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
@@ -713,10 +713,10 @@ function renderBillingView(targetEl){
         '<div id="bill-pm-body">'+
           (plan==='free'
             ? '<p class="bill-pm-none">No card on file. You are on Free, so there is nothing to pay and nothing stored.</p>'
-            : '<p class="bill-pm-none">Your card is held by our payment processor. Open billing to see it, change it, or download a receipt.</p>')+
+            : '<p class="bill-pm-none">'+escH(T('Your card is held by our payment processor. Open billing to see it, change it, or download a receipt.'))+'</p>')+
         '</div>'+
         (plan!=='free'?'<div class="bill-acts">'+
-          '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
+          '<button class="btn bp" id="portal-open-btn">'+escH(T('Manage billing'))+'</button>'+
           (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
         '</div>':'')+
       '</div>'+
@@ -739,8 +739,8 @@ function renderBillingView(targetEl){
          goes through the processor, which is the only thing that can really end
          a subscription. */
       '<div class="ss2 bill-leave"><h3>'+escH(T('Cancellation'))+'</h3>'+
-        '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
-        '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
+        '<button class="bill-cancel-link" id="bill-cancel">'+escH(T('Cancel subscription'))+'</button>'+
+        '<p class="bill-leave-s">'+escH(T('You keep {0} until the end of the period you have already paid for, and nothing you have made is deleted.').replace('{0}', () => P.name))+'</p>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       /* FOUR EMOJI REASSURANCE CARDS, REMOVED FROM THE SETTINGS SCREEN.

@@ -21,7 +21,7 @@ function _usageContentHTML(){
   const usagePanel=
     '<div class="ss2 usage-panel"><h3>Current usage</h3>'+
       '<div class="usage-head">'+
-        '<div><div class="usage-pct">'+(100-us.pct)+'%</div><div class="usage-pct-l">remaining on your '+planName+' plan</div></div>'+
+        '<div><div class="usage-pct">'+(100-us.pct)+'%</div><div class="usage-pct-l">'+escH(T('remaining on your {0} plan').replace('{0}', () => planName))+'</div></div>'+
         '<div class="usage-reset"><div class="usage-reset-n">'+AMVUsage.resetLabel()+'</div><div class="usage-reset-l">until usage resets</div></div>'+
       '</div>'+
       '<div class="usage-meta">'+
