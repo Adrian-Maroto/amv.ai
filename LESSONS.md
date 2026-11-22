@@ -16132,3 +16132,19 @@ later) proves nothing - read the mutated line before believing a survivor.
 Also: main went red after a ship because a suite inherited the CI
 environment, which the local gate did not have. The gate now runs with
 CI=true before main moves.
+
+## 658. A check that passes on an empty answer is not a check (Nov 22)
+
+Two in one day. The SEC-12 test asserted that a member's view of the team
+carried no secret - and the member was never on the team, so the view was
+`team: null` and the assertion was true of nothing. The new language sweep
+opened "sign-in" with `openAuth('signin')`; the mode is `login`, so both views
+were sign-up and the sign-in form was never measured. Both passed, and both
+were found only by breaking the thing they guarded and watching them stay
+green. Rule: before asserting what an answer lacks, assert that it is the
+answer you meant - the team was read, the dialog is the one asked for - and
+measure a new check by breaking what it covers (LESSONS 657).
+
+And one shape to read for everywhere: a stop, a revoke or a delete inside an
+empty catch, followed by "done". The cloud computer did this in five places;
+the repair is to read the result back and say when it did not hold.

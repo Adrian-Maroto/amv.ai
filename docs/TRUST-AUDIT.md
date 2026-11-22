@@ -2311,3 +2311,53 @@ Second pass: all seven re-run caught, each by the assertion written for it.
 
 Still unmeasured: the web agent's "where the page went" read (needs a browser
 driver that fails `page.url()`), and everything here on live Cloudflare.
+
+## 22 November, second round: the Build 16 guards, and the cloud computer's stops
+
+Twenty-two Build 16 guards (SEC-01..17, STATE16-01..09) defeated one at a time
+in `amv-backend.js`, run against the suites that mention each, attributed by
+the failing assertion.
+
+First pass, the first eight suites that name each guard: twelve caught, ten
+survived. Re-run against the suites that name the audit item (and
+`the-build-16-audit-stays-fixed`), seven of the ten were caught - the first
+pass had picked the wrong suites, not missed a gap. Three were real:
+
+- **SEC-11, step-up.** With the throttle undecided, proving it is you went
+  straight on to checking the password: unlimited guesses at the check that
+  guards changing a passkey, a second factor or recovery codes. Nothing
+  noticed. `a-sign-in-that-cannot-be-checked-grants-nothing` now drives
+  `_stepUp` with the counter refusing `rateCheck`: the right password is not
+  even checked.
+- **SEC-12, the team a member reads.** The existing check passed on an EMPTY
+  answer: the member in that suite was never on the team, so `/team/get`
+  answered `team: null` and "no hash, no sealed secret" was true of nothing.
+  The member is now really on the team, the suite asserts the team was read
+  before asserting what it lacks, and the directory's group mapping and admin
+  group are checked too.
+- **SEC-13, a connection write without its lock.** Giving up on a busy lock
+  and answering as though the change happened passed every suite: the one
+  case that held the lock was also refused by a second guard first.
+  `an-app-with-a-public-api-connects-and-stays-in-its-lane` now holds the
+  record's lock during a removal: 503, never "Disconnected", the app still
+  listed, and removed once the lock is free.
+
+All three re-broken after their tests: caught, each by its own assertion.
+
+**The cloud computer (`cloud/computer.mjs`), read for silenced failures.**
+Erasure, putting back a copy, starting fresh and trusting an unchecked copy
+each stopped the machine inside an empty catch and then said they were done.
+A machine still running could then save its disk over the copy just chosen
+at its next checkpoint, and erasure answered `forgotten` with the person's
+files on a running machine. `_stopForNextStart` reads the stop back; one still
+running is marked `stopPending` - nothing on it is saved, nothing runs on it,
+going idle stops it without saving, erasure answers 503 so the Worker tries
+again - and the next start clears it. Driven in
+`the-cloud-workspace-outlives-its-container` with `destroy()` throwing;
+making the helper claim success again fails six assertions.
+
+The page's own silenced failures (about 1,880 in `src/app`) were triaged by
+shape, not read one by one: no catch on the page returns a yes into a consent,
+money or sign-in decision, and the two that return "go ahead" (`_budgetGuard`,
+`_planAllowedModel`) are hints the server decides again (`plan_required`
+before anything is counted). The rest return the strict answer or are cleanup.

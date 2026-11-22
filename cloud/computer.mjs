@@ -228,7 +228,28 @@ export class AMVComputer extends Container {
     return next;
   }
 
+  /* STOPPED, OR SAID THAT IT WAS NOT (failure sweep, Nov 22). Putting back a
+     copy, starting fresh and trusting an unchecked copy each choose what the
+     NEXT start unpacks, and erasure ends a machine with the person's files on
+     it. Each stopped the machine inside a catch that swallowed a failure and
+     then said it was done - so a machine still running could save its disk
+     over the copy just chosen at its next checkpoint, and an erased account's
+     files sat on a machine reported as gone. The stop is now read back. One
+     still running is marked so nothing on it is saved and nothing runs on it
+     until it starts again, and the caller is told. */
+  async _stopForNextStart(why) {
+    if (!this.container.running) return true;
+    try { await this.destroy(); }
+    catch (e) { console.log(JSON.stringify({ event: 'workspace_stop_failed', why, error: String((e && e.message) || e).slice(0, 160) })); }
+    if (!this.container.running) return true;
+    await this._setSt({ stopPending: { at: Date.now(), why } });
+    console.log(JSON.stringify({ event: 'workspace_still_running', why }));
+    return false;
+  }
+
   async onStart() {
+    /* A fresh start is the stop that was waiting: what it unpacks is the copy chosen. */
+    if ((await this._st()).stopPending) await this._setSt({ stopPending: null });
     if (!this._wsOn()) return;
     let why = '';
     try {
@@ -284,6 +305,11 @@ export class AMVComputer extends Container {
     /* Never over the good copy from a machine that did not get it back. */
     if ((await this._st()).restoreFailed) {
       console.log(JSON.stringify({ event: 'workspace_not_saved', why: 'restore_failed' }));
+      return false;
+    }
+    /* Nor from a machine that was meant to stop so its next start unpacks another copy. */
+    if ((await this._st()).stopPending) {
+      console.log(JSON.stringify({ event: 'workspace_not_saved', why: 'stop_pending' }));
       return false;
     }
     try {
@@ -359,7 +385,9 @@ export class AMVComputer extends Container {
   }
 
   async onActivityExpired() {
-    if (this._wsOn() && this.container.running && !(await this._st()).restoreFailed) {
+    /* A machine meant to stop is not saved first (its disk is not the copy chosen) - it stops. */
+    const pend = (await this._st()).stopPending;
+    if (this._wsOn() && this.container.running && !pend && !(await this._st()).restoreFailed) {
       if (await this._wsSave()) {
         await this._setSt({ saveFails: null, unsavedHeld: null });
         await this._kvPut('ws_saved_at', Date.now());
@@ -398,7 +426,10 @@ export class AMVComputer extends Container {
         for (const v of await this._wsVersions()) await this.env.WORKSPACES.delete(v.key);
         await this.env.WORKSPACES.delete('ws/' + this.ctx.id.toString() + '.restore.tgz');
       }
-      try { if (this.container.running) await this.destroy(); } catch (e) {}
+      /* Not forgotten while the machine is still up with their files on it:
+         the erasure tries again, and the saved copies are already gone. */
+      if (!(await this._stopForNextStart('forget')))
+        return new Response(JSON.stringify({ error: 'The saved workspace is deleted, but the machine has not stopped yet.', code: 'machine_still_running' }), { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } });
       return new Response(JSON.stringify({ forgotten: true }), { headers: { 'Content-Type': 'application/json' } });
     }
     /* The earlier copies, and putting one back. AMV's key only - the main
@@ -434,9 +465,9 @@ export class AMVComputer extends Container {
           return reply({ discarded: false, saved: true });
         }
         await this._setSt({ saveFails: null, unsavedHeld: null, lostUnsaved: { at: Date.now(), tries: st0.unsavedHeld.tries || 0, chosen: true } });
-        try { if (this.container.running) await this.destroy(); } catch (e) {}
+        const stopped = await this._stopForNextStart('discard');
         console.log(JSON.stringify({ event: 'workspace_discarded_unsaved' }));
-        return reply({ discarded: true });
+        return reply(stopped ? { discarded: true } : { discarded: true, stopPending: true });
       }
       /* A copy saved before checksums, used anyway because the person chose
          to: unpacked at the next start, then saved again with its checksum. */
@@ -444,9 +475,9 @@ export class AMVComputer extends Container {
         const st0 = await this._st();
         if (!(st0.restoreFailed && st0.restoreFailed.unverified)) return reply({ error: 'There is no unchecked copy waiting.', code: 'not_needed' }, 409);
         await this._setSt({ restoreFailed: null, trustOnce: true });
-        try { if (this.container.running) await this.destroy(); } catch (e) {}
+        const stopped = await this._stopForNextStart('trust');
         console.log(JSON.stringify({ event: 'workspace_trusted_unverified' }));
-        return reply({ trusted: true });
+        return reply(stopped ? { trusted: true } : { trusted: true, stopPending: true });
       }
       /* START FRESH after a failed restore, on purpose: the copy that could
          not be put back is kept as an earlier copy first, then the machine
@@ -459,9 +490,9 @@ export class AMVComputer extends Container {
         catch (e) { return reply({ error: 'The copy that could not be put back could not be kept, so nothing was changed. Try again in a minute.', code: 'keep_failed' }, 503); }
         await this.env.WORKSPACES.delete(this._wsKey());
         await this._setSt({ restoreFailed: null });
-        try { if (this.container.running) await this.destroy(); } catch (e) {}
+        const stopped = await this._stopForNextStart('fresh');
         console.log(JSON.stringify({ event: 'workspace_started_fresh' }));
-        return reply({ fresh: true });
+        return reply(stopped ? { fresh: true } : { fresh: true, stopPending: true });
       }
       const body = await request.json().catch(() => ({}));
       const id = String(body.id || '');
@@ -494,9 +525,9 @@ export class AMVComputer extends Container {
       await this.env.WORKSPACES.delete(stage);
       if (!moved) return reply({ error: 'That saved copy could not be read.', code: 'not_found' }, 404);
       await this._setSt({ restoreFailed: null });
-      try { if (this.container.running) await this.destroy(); } catch (e) {}
+      const stopped = await this._stopForNextStart('rollback');
       console.log(JSON.stringify({ event: 'workspace_rolled_back', to: id }));
-      return reply({ restored: true, id });
+      return reply(stopped ? { restored: true, id } : { restored: true, id, stopPending: true });
     }
     /* Nothing below is reached without a call signed for this machine. */
     if (!(await this._callOk(request, url.pathname)))
@@ -507,6 +538,12 @@ export class AMVComputer extends Container {
     if ((await this._st()).restoreFailed)
       return new Response(JSON.stringify({ error: 'Your saved workspace could not be put back on this machine, so it is not running anything until it is. Put back an earlier saved copy, or start fresh (the copy is kept).', code: 'workspace_restore_failed' }),
         { status: 409, headers: { 'Content-Type': 'application/json' } });
+    /* A machine meant to stop does no work either: its disk is not the copy
+       the person chose, and the next start unpacks that one. Asked to stop
+       again here, and through once it has. */
+    if ((await this._st()).stopPending && !(await this._stopForNextStart('retry')))
+      return new Response(JSON.stringify({ error: 'This machine is restarting with the copy you chose. Try again in a minute.', code: 'workspace_restarting' }),
+        { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } });
     /* Everything else is passed to the machine: only with a call signed for
        it, and with this machine's own key in place of whatever came in. A
        container about to start gets a key no earlier container had. */

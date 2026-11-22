@@ -573,6 +573,44 @@ section('A rollback does not throw away running work it could not save');
   ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), cur) === 0 && !m.destroyed, 'nothing was put back and the machine was not stopped');
 }
 
+section('A machine that would not stop is said, and its disk is never saved over the copy chosen (failure sweep, Nov 22)');
+{
+  /* Each of these used to stop the machine inside a catch that swallowed the
+     failure, then answer as though it had stopped. */
+  const env = { AMV_COMPUTER_KEY: KEY, WORKSPACES: bucket() };
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  await new Promise(r => setTimeout(r, 3));
+  await new AMVComputer({ id, container: portTo(A.base), storage: memStorage() }, env).onActivityExpired();
+  const storage = memStorage();
+  const m = new AMVComputer({ id, container: Object.assign(portTo(A.base), { running: true }), storage }, env);
+  m.destroy = async () => { throw new Error('the container service did not answer'); };
+  const list = await (await m.fetch(new Request('http://amv-computer/amv-workspace/versions', { method: 'POST', headers: await signed('/amv-workspace/versions') }))).json();
+  const pick = list.versions[0].id;
+  const rb = await m.fetch(new Request('http://amv-computer/amv-workspace/rollback', { method: 'POST', headers: await signed('/amv-workspace/rollback', null, null, null, JSON.stringify({ id: pick })), body: JSON.stringify({ id: pick }) }));
+  const rbd = await rb.json();
+  ok(rb.status === 200 && rbd.restored && rbd.stopPending === true, 'the copy is chosen, and the answer says the machine has not restarted yet', rbd);
+  const chosen = Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz'));
+  writeFileSync(join(one, 'notes.md'), 'the old disk, still running\n');
+  ok((await m._wsSave()) === false, 'a save from the machine that should have stopped is refused');
+  m._checkpointing = false; await m._kvPut('ws_saved_at', 1); await m._checkpointMaybe();
+  ok(Buffer.compare(Buffer.from(env.WORKSPACES.m.get('ws/a1b2c3d4.tgz')), chosen) === 0, 'and no checkpoint writes the old disk over the copy chosen');
+  const work = await m.fetch(new Request('http://amv-computer/amv-bridge/exec', { method: 'POST', body: '{}', headers: await signed('/amv-bridge/exec', null, null, null, '{}') }));
+  const wd = await work.json().catch(() => ({}));
+  ok(work.status === 503 && wd.code === 'workspace_restarting', 'nothing runs on the old disk meanwhile', [work.status, wd]);
+  const fg = await m.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: await signed('/amv-workspace/forget') }));
+  const fgd = await fg.json().catch(() => ({}));
+  ok(fg.status === 503 && fgd.code === 'machine_still_running' && !fgd.forgotten && env.WORKSPACES.m.size === 0,
+     'erasure deletes the copies but does not say "forgotten" while the machine is up, so it is tried again', [fg.status, fgd]);
+  /* Going idle stops it - without saving first. */
+  let stopped = false; m.stop = async () => { stopped = true; m.container.running = false; };
+  await m.onActivityExpired();
+  ok(stopped && env.WORKSPACES.m.size === 0, 'going idle stops it without saving the old disk', [stopped, [...env.WORKSPACES.m.keys()]]);
+  const again = await m.fetch(new Request('http://amv-computer/amv-workspace/forget', { method: 'POST', headers: await signed('/amv-workspace/forget') }));
+  ok(again.status === 200 && (await again.json()).forgotten === true, 'and once it is down, erasure is done');
+  await m.onStart();
+  ok(!(await storage.get('ws_state')).stopPending, 'the next start is the stop that was waiting');
+}
+
 /* The main Worker's half: deleting the account asks the computer to forget. */
 section('Deleting an account reaches the computer Worker');
 {

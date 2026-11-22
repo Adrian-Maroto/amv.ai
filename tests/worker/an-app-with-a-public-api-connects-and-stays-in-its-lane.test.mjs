@@ -310,6 +310,27 @@ section('Removing one app while another renews does not undo the renewal');
      'and Dropbox keeps the token it renewed during the removal', opened && { access: opened.access, refresh: opened.refresh });
 }
 
+section('Removing an app while its record is held elsewhere is refused, and the app stays (SEC-13)');
+{
+  /* Found by breaking it (Nov 22): if the change gave up on a busy lock and
+     answered as though it had happened, nothing here noticed - the person
+     would read "Disconnected" with the app still connected. */
+  const env = mkEnv(), t = await tok(env);
+  await connect(env, t, 'slack', ['slack.read'], () => ({ ok: true, authed_user: { access_token: 'xoxp-held', token_type: 'user' } }));
+  const slackId = Object.keys(await W.DB.get(env, W.CONN_KV, ME)).find(k => k.startsWith('slack'));
+  const keep = env.AMV_COUNTER;
+  env.AMV_COUNTER = { idFromName: n => n, get: n => ({ async fetch(u, init) {
+    const b = JSON.parse((init && init.body) || '{}');
+    if (b.op === 'claim' && /conn/.test(String(n))) return new Response(JSON.stringify({ claimed: false }));
+    return keep.get(n).fetch(u, init); } }) };
+  let rm;
+  try { rm = await call(env, '/v1/connect/remove', { id: slackId }, t); } finally { env.AMV_COUNTER = keep; }
+  ok(rm.status === 503 && rm.d.ok !== true && !/Disconnected/.test(rm.d.message || ''), 'it says the record was busy - never "Disconnected"', [rm.status, rm.d]);
+  ok(Object.keys(await W.DB.get(env, W.CONN_KV, ME)).includes(slackId), 'and the app is still listed, so the person can see it and try again');
+  const again = await call(env, '/v1/connect/remove', { id: slackId }, t);
+  ok(again.status === 200 && !Object.keys((await W.DB.get(env, W.CONN_KV, ME)) || {}).includes(slackId), 'once the record is free, removing it works');
+}
+
 section('Two sign-ins finishing at once are both kept');
 {
   /* Two tabs, or a sign-in finishing while a job stamps "last used": each used

@@ -18,7 +18,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'surecheck.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, authLoginVerify, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { authRefresh, adminUsers, sessionsEnd, authLoginVerify, issueTokens, verifyToken, DB, counter, _authName, revokeUserTokens, _stepUp, _hashPassword };\n');
 const W = await import(harness + '?t=' + Date.now());
 const quiet = console.log; console.log = (...a) => { if (!String(a[0]).startsWith('AUDIT')) quiet(...a); };
 globalThis.fetch = async () => new Response('{}', { status: 200 });
@@ -97,6 +97,26 @@ section('A throttle that cannot decide does not let a guess through (SEC-11)');
   const r = await answer(W.authLoginVerify, post('/auth/login/verify', { challenge: 'a'.repeat(48), code: '123456' }));
   down = null;
   ok(r.status === 503 && r.d.code === 'limit_unavailable', 'a sign-in code is not checked while its throttle is down', r);
+}
+
+section('Proving it is you, for a change to how you sign in, waits while its throttle is down (SEC-11)');
+{
+  /* Found by breaking it (Nov 22): with the throttle undecided, the step-up
+     went straight on to checking the password - unlimited guesses at the one
+     check that guards changing a passkey, a second factor or recovery codes. */
+  const SU = 'sam@example.com', salt = 'c2FsdHNhbHRzYWx0';
+  await W.DB.put(env, 'acct', SU, { email: SU, name: 'Sam', provider: 'email', salt, pwIter: 1000, pwHash: await W._hashPassword('right horse battery staple', salt, 1000), createdAt: Date.now() - 1e6 });
+  const req = new Request('https://x/auth/passkeys/remove', { method: 'POST' });
+  down = null;
+  const fine = await W._stepUp(env, req, { email: SU }, { password: 'right horse battery staple' });
+  ok(fine === null, 'with the throttle answering, the right password proves it', fine && fine.status);
+  const wrong = await W._stepUp(env, req, { email: SU }, { password: 'wrong guess' });
+  ok(wrong && wrong.status >= 400, 'and a wrong one does not', wrong && wrong.status);
+  down = (n, p) => p.op === 'rateCheck';
+  const r = await W._stepUp(env, req, { email: SU }, { password: 'right horse battery staple' });
+  const d = r ? await r.json() : null;
+  ok(r && r.status === 503 && d.code === 'limit_unavailable', 'with it down, not even the right password is checked - a short wait instead', [r && r.status, d]);
+  down = null;
 }
 
 section('Five hundred and one endings do not bring the first one back');

@@ -98,11 +98,28 @@ section('Only the owner turns it on, and only with a proved domain');
   const get = await call('/team/sso', { action: 'get' }, owner);
   ok(get.d.scim && get.d.scim.on && !JSON.stringify(get.d).includes(token.split('_').pop()), 'and it is never shown again', get.d.scim);
   /* Build 16 audit SEC-12: the team as a member reads it carries neither the
-     directory token's hash nor the company sign-in's sealed secret. */
-  const asMember = JSON.stringify((await call('/team/get', {}, member)).d);
+     directory token's hash nor the company sign-in's sealed secret - nor the
+     directory's own wiring: which of the company's groups are mirrored, and
+     which one makes an admin, is the owner's to see on the owner's screen (a
+     member who knows the admin group knows which group to get added to).
+     Pat is made a real member for this: until Nov 22 Pat was not on the team,
+     the read answered `team: null`, and this check passed on an empty answer -
+     found by breaking the guard and seeing nothing fail. */
+  const t1 = await team();
+  const wired = Object.assign({}, t1, {
+    members: (t1.members || []).concat([{ email: 'pat@acme-corp.com', role: 'member', joinedAt: Date.now() }]),
+    scimGroups: [{ id: 'g1', name: 'Payroll-Approvers', members: ['pat@acme-corp.com'] }], scimAdminGroup: 'Payroll-Approvers' });
+  await W.DB.put(env, 'team', t1.id, wired);
+  m.set('userteam:pat@acme-corp.com', t1.id);
+  const asMemberD = (await call('/team/get', {}, member)).d;
+  const asMember = JSON.stringify(asMemberD);
   const asOwner = JSON.stringify((await call('/team/get', {}, owner)).d);
+  ok(asMemberD.team && asMemberD.team.name === 'Acme', 'the member really reads the team (so what follows is not checked against nothing)', asMember.slice(0, 160));
   ok(!asMember.includes(t.scim.hash) && !/"sealed"/.test(asMember) && !asOwner.includes(t.scim.hash) && !/"sealed"/.test(asOwner),
      'the team read shows no hash and no sealed secret, to a member or the owner', asMember.slice(0, 200));
+  ok(!/Payroll-Approvers/.test(asMember) && !/scimGroups|scimAdminGroup|scimOff/.test(asMember), 'and no mirrored group or admin-group name reaches a member', asMember.slice(0, 240));
+  await W.DB.put(env, 'team', t1.id, t1);
+  m.delete('userteam:pat@acme-corp.com');
 }
 
 section('A wrong token reaches nothing');
