@@ -670,7 +670,19 @@ html,body{height:100%;overflow:hidden}
    LAYER 21 - PREMIUM DESIGN REBUILD (final, authoritative)
    Neutralizes boxy base styles; one calm editorial system.
    ============================================================ *//* ---- 1. Surfaces: opaque dark cards -> soft translucent glass ---- */
-.ss2,.wsc,.memc,.stc,.ho-card,.dc,.lp,.plc,.plnc,.cw-job,.hsi,.card,.qab{
+.ss2,
+.wsc,
+.memc,
+.stc,
+.ho-card,
+.dc,
+.lp,
+.plc,
+.plnc,
+.cw-job,
+.hsi,
+.card,
+.qab{
   background:var(--panel)!important;
   border:1px solid var(--glass-soft2)!important;
   border-radius:var(--r-2xl)!important;
@@ -713,7 +725,10 @@ html,body{height:100%;overflow:hidden}
 .ss2 + .ss2{margin-top:26px!important}
 
 /* ---- 6. Card hover lift (premium feel) ---- */
-.wsc,.memc,.stc,.dsn-tile{transition:transform .22s var(--ease),border-color .22s,background .22s,box-shadow .22s}
+.wsc,
+.memc,
+.stc,
+.dsn-tile{transition:transform .22s var(--ease),border-color .22s,background .22s,box-shadow .22s}
 .wsc:hover,
 .memc:hover,
 .stc:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.13)!important}
@@ -747,7 +762,21 @@ html,body{height:100%;overflow:hidden}
 
 /* --- 1. Kill glassmorphism everywhere (no blur, solid quiet surfaces) --- */
 *{backdrop-filter:none;-webkit-backdrop-filter:none}
-.ss2,.wsc,.memc,.stc,.ho-card,.dc,.lp,.plc,.plnc,.cw-job,.hsi,.card,.qab,.dsn-tile,.cht{
+.ss2,
+.wsc,
+.memc,
+.stc,
+.ho-card,
+.dc,
+.lp,
+.plc,
+.plnc,
+.cw-job,
+.hsi,
+.card,
+.qab,
+.dsn-tile,
+.cht{
   background:#15191f!important;
   border:1px solid #232a33!important;
   box-shadow:none;
@@ -874,7 +903,10 @@ html,body{height:100%;overflow:hidden}
    Editorial serif headings, warm charcoal, coral signature.
    Applies across every view, chrome, and component.
    ============================================================ *//* ---- Display headings site-wide (AMV signature type) ---- */
-.vi h2,#nav-title,.ss2 h2,.sec-head h2{
+.vi h2,
+#nav-title,
+.ss2 h2,
+.sec-head h2{
   font-family:var(--fdisplay);
   font-weight:500!important;
   letter-spacing:-.5px;
@@ -897,7 +929,21 @@ body { background:var(--bg)!important; }
 .eyebrow{ color:var(--accent-txt)!important; opacity:1; font-weight:600; letter-spacing:.14em; }
 
 /* ---- Surfaces: warm, soft, minimal (no glass, gentle borders) ---- */
-.ss2,.wsc,.memc,.stc,.ho-card,.dc,.lp,.plc,.plnc,.cw-job,.hsi,.card,.qab,.dsn-tile,.cht{
+.ss2,
+.wsc,
+.memc,
+.stc,
+.ho-card,
+.dc,
+.lp,
+.plc,
+.plnc,
+.cw-job,
+.hsi,
+.card,
+.qab,
+.dsn-tile,
+.cht{
   background:var(--s1)!important;
   border:1px solid var(--bd)!important;
   border-radius:var(--r-xl)!important;
@@ -1280,14 +1326,32 @@ body::before{display:none!important}            /* remove the ambient radial was
 body.light{--hair:rgba(0,0,0,.09);--hair-strong:rgba(0,0,0,.14);--surface:#ffffff;--surface-2:#f0efec}
 
 /* ---- 2. Surfaces: quieter, fewer frames. Cards lose their hard border. ---- */
-.ss2,.wsc,.memc,.stc,.ho-card,.dc,.plc,.cw-job,.card,.dsn-tile,.cht,.crew-res,.dna-pal-card,.dna-swatch,.sched-panel,.tpl-card{
+.ss2,
+.wsc,
+.memc,
+.stc,
+.ho-card,
+.dc,
+.plc,
+.cw-job,
+.card,
+.dsn-tile,
+.cht,
+.crew-res,
+.dna-pal-card,
+.dna-swatch,
+.sched-panel,
+.tpl-card{
   background:var(--surface)!important;
   border:1px solid transparent!important;        /* default: NO visible frame */
   box-shadow:none;
   border-radius:var(--rad-md)!important;
 }
 /* only show a hairline on hover where interactive, instead of a permanent box */
-.wsc:hover,.dsn-tile:hover,.tpl-card:hover,.dna-pal-card:hover{
+.wsc:hover,
+.dsn-tile:hover,
+.tpl-card:hover,
+.dna-pal-card:hover{
   background:var(--surface-2)!important;
   border-color:var(--hair)!important;
   transform:none!important;                        /* drop the bouncy lift */
@@ -1854,17 +1918,34 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 
 /* de-glass everything: no blur, no milky gradient panels */
-.dsn-tile,.wsc,.ho-card,.crew-res,.cw-job,.agent,.vcard,.ss2,.card{
+.dsn-tile,
+.wsc,
+.ho-card,
+.crew-res,
+.cw-job,
+.agent,
+.vcard,
+.ss2,
+.card{
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
 /* unify card surfaces: flat surface, single hairline, calm radius */
-.dsn-tile,.wsc,.ho-card,.crew-res,.cw-job,.agent,.dna-pal-card{
+.dsn-tile,
+.wsc,
+.ho-card,
+.crew-res,
+.cw-job,
+.agent,
+.dna-pal-card{
   background:var(--surface)!important;
   border:1px solid var(--hair)!important;
   border-radius:var(--rad)!important;
   box-shadow:none;
 }
-.dsn-tile:hover,.wsc:hover,.ho-card:hover,.agent:hover{
+.dsn-tile:hover,
+.wsc:hover,
+.ho-card:hover,
+.agent:hover{
   border-color:var(--hair-strong)!important;
   background:var(--surface-2)!important;
 }
@@ -3298,7 +3379,9 @@ h2.st,
 /* Inline code: slightly tighter, better weight */
 code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'kern' 0;letter-spacing:0}
 /* Small UI labels: subtle positive tracking reads cleaner at small sizes */
-.set-sub,.eyebrow,.hi-kind{font-feature-settings:'kern' 1}
+.set-sub,
+.eyebrow,
+.hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
 /* ============================================================
@@ -7035,7 +7118,13 @@ html,body{height:100%;height:100dvh}
    that is already taller gets shrunk and text still wraps.
    ============================================================ */
 @media (pointer: coarse), (max-width: 560px){
-  .cw-toggle,.chome-chip,.lab-run-btn,.lab-fix-btn,.dev-upload-btn,.fr-x,.seat-step{
+  .cw-toggle,
+.chome-chip,
+.lab-run-btn,
+.lab-fix-btn,
+.dev-upload-btn,
+.fr-x,
+.seat-step{
     min-height:44px;
     display:inline-flex;
     align-items:center;
@@ -11759,7 +11848,10 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    they want stopped, and a mis-tap there costs more than a mis-tap anywhere
    else on the screen. */
 @media(hover:none){
-  .mc-pause,.mc-mini,.rr-controls button,.mc-cmd-go{ min-height:44px; }
+  .mc-pause,
+.mc-mini,
+.rr-controls button,
+.mc-cmd-go{ min-height:44px; }
 }
 
 /* ── LAYER A188 · what an approval costs you, said before you press it ───────
@@ -12968,16 +13060,9 @@ p.bill-leave-s{
 :is(#vc,#set-modal) .vi-bill .bill-facts dd{ margin:0; color:var(--tx); }
 
 /* Upgrades as rows, not pills. */
-:is(#vc{
-  display:flex; flex-direction:column; gap:var(--sp-2); align-items:stretch;
-}
-:is(#vc{
-  width:100%; justify-content:space-between; text-align:left;
-  padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md); font-size:var(--t-md);
-}
-:is(#vc{
-  background:var(--s2); border:1px solid var(--bd); color:var(--tx);
-}
+
+
+
 
 /* ======================================================================
    LAYER A213 - the way back to Build exists whenever there is work to leave
@@ -14291,23 +14376,17 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 :is(#vc,#set-modal) .vi-bill .bill-facts dd{ font-size:var(--t-md); color:var(--tx); line-height:1.45; }
 
 /* The recommendation, without the wall of colour. */
-:is(#vc{
-  background:var(--s1)!important;
-  color:var(--tx)!important;
-  border:1.5px solid var(--accent)!important;
-  box-shadow:none!important;
-  font-weight:500!important;
-}
-:is(#vc{ background:var(--s2)!important; }
+
+
 /* Its own children stop being white-on-accent and go back to the page's
    ordinary text colours, which is what they were written for. */
-:is(#vc,:is(#vc{ color:var(--mu)!important; }
-:is(#vc{ color:var(--tx)!important; }
+
+
 /* The "/mo" after the price was set to #fff for the filled row it used to sit
    on. On a raised surface that is white on near-white - 1.05:1 in the light
    theme, which is not low contrast, it is invisible. It follows the page's
    muted text now, like the "/mo" on every other row. */
-:is(#vc{ color:var(--mu)!important; }
+
 /* The tag is what says "recommended" now, so it is the one accent-coloured
    thing in the row. */
 /* THE BADGE IS LEFT ENTIRELY ALONE, and that is the finding.
@@ -14357,8 +14436,8 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 :is(#vc,#set-modal) .uni-plan.cannot .uni-why{
   font-size:var(--t-base); color:var(--mu); line-height:1.5; margin:0;
 }
-:is(#vc,:is(#vc,#set-modal) .uni-instead{ margin-top:var(--sp-3); }
-:is(#vc,:is(#vc,#set-modal) .uni-instead > b{
+:is(#vc,#set-modal) .uni-instead{ margin-top:var(--sp-3); }
+:is(#vc,#set-modal) .uni-instead > b{
   display:block; font-size:var(--t-xs); font-weight:650;
   letter-spacing:.04em; text-transform:uppercase;
   color:var(--dim); margin-bottom:var(--sp-2);
@@ -17302,7 +17381,8 @@ html[dir="rtl"] .chome-sug{text-align:right}
 .dev-shell.dev-blank .dev-chat-pane > .dev-bar{order:4}
 .dev-shell.dev-blank .dev-chat-pane > .dev-input{order:5}
 .dev-shell.dev-blank .dev-chat-pane > #dev-hero{order:6;margin-top:var(--sp-4)!important}
-.dev-shell.dev-blank .dev-chat-pane > .bld-recents,.dev-shell.dev-blank .dev-chat-pane > section{order:7}
+.dev-shell.dev-blank .dev-chat-pane > .bld-recents,
+.dev-shell.dev-blank .dev-chat-pane > section{order:7}
 .dev-shell.dev-blank #dev-hero{display:flex;flex-direction:column;align-items:center;gap:var(--sp-3)}
 .dev-shell.dev-blank .dev-hero-chips{justify-content:center!important}
 .dev-shell.dev-blank .dev-chip{border-radius:var(--r-pill)!important;background:var(--s2)!important;border:1px solid transparent!important;font-size:var(--t-sm)!important}

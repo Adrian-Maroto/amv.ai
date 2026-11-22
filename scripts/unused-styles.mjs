@@ -45,7 +45,25 @@ export function unusedStyles(root = ROOT) {
   return [...classes].filter(c => !ALLOW.has(c) && !words.has(c) && !built(c)).sort();
 }
 
+/* A selector whose brackets do not close (Nov 22). The first pruning of the
+   rules above split ':is(#vc,#set-modal) .x' at its inner comma and left
+   ':is(#vc' behind: an unclosed bracket makes the browser read on past the
+   rule, and 1,672 rules in use vanished from 50 screens. Every selector's
+   ( ) and [ ] must balance. */
+export function unbalancedSelectors(root = ROOT) {
+  const css = readFileSync(join(root, 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const bad = [];
+  for (const m of css.matchAll(/([^{}]+)\{/g)) {
+    const sel = m[1].trim(); let p = 0, b = 0, q = '';
+    for (const ch of sel) { if (q) { if (ch === q) q = ''; continue; } if (ch === '"' || ch === "'") q = ch; else if (ch === '(') p++; else if (ch === ')') p--; else if (ch === '[') b++; else if (ch === ']') b--; if (p < 0 || b < 0) break; }
+    if (p !== 0 || b !== 0 || q) bad.push(sel.slice(0, 80));
+  }
+  return bad;
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const u = unusedStyles();
   console.log(u.length + (u.length ? ': ' + u.join(' ') : ''));
+  const bad = unbalancedSelectors();
+  if (bad.length) console.log('unbalanced: ' + bad.join(' | '));
 }

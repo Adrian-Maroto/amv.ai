@@ -16148,3 +16148,17 @@ measure a new check by breaking what it covers (LESSONS 657).
 And one shape to read for everywhere: a stop, a revoke or a delete inside an
 empty catch, followed by "done". The cloud computer did this in five places;
 the repair is to read the result back and say when it did not hold.
+
+## 659. A stylesheet edit is checked by a browser's own parse, not by a regex (Nov 22)
+
+Removing the rules for 159 unused classes was done by a script that split
+selector lists on every comma. ':is(#vc,#set-modal) .bill-swap' was cut at
+the comma inside ':is()', ':is(#vc' was kept, and an unclosed bracket makes
+the browser read on past the rule: 1,672 rules in use vanished and 50 suites
+failed. The fast gate was green - nothing checked the stylesheet's shape.
+Redone with top-level splitting only, and verified the one way that cannot
+share the script's bug: both stylesheets parsed by Chromium (CSSStyleSheet),
+every resulting rule compared - 366 unused removed, 32 trimmed, 0 in-use rules
+changed or lost. The gate now fails any selector whose brackets do not
+close. Rule: a tool that rewrites CSS is proved by what the browser parses
+from its output, compared with what it parsed before.

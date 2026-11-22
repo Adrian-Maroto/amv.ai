@@ -28,7 +28,7 @@ import { tmpdir } from 'os';
 import { codeOnly } from './tests/lib/source.mjs';
 import { renderCapabilities } from './tools/capabilities-doc.mjs';
 import { silencedFailures, BASELINE as SILENCED_BASELINE } from './scripts/silenced-failures.mjs';
-import { unusedStyles } from './scripts/unused-styles.mjs';
+import { unusedStyles, unbalancedSelectors } from './scripts/unused-styles.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
@@ -594,6 +594,8 @@ step('No class is applied without something to apply', () => {
    prefix. Remove the rules, or name the class in its ALLOW list with why. */
 step('No style is written for a class nothing applies', () => {
   const left = unusedStyles(ROOT);
+  const bad = unbalancedSelectors(ROOT);
+  if (bad.length) throw new Error(bad.length + ' selector(s) in styles.css whose brackets do not close - the browser reads on past them and drops the rules after:\n    ' + bad.slice(0, 10).join('\n    '));
   if (left.length) throw new Error(left.length + ' class(es) styled in styles.css that no code applies - remove their rules, or add each to ALLOW in scripts/unused-styles.mjs with the reason:\n    ' + left.slice(0, 40).join(' '));
 });
 
