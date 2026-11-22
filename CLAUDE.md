@@ -53,8 +53,15 @@ Companion docs (do not duplicate them here - read them):
 - The app ships as a SINGLE-FILE build, but the JS SOURCE is MODULAR:
   `src/app/NN-name.js` files (01-core, 02-state, ... 38-mcp) are
   concatenated IN NAME ORDER to form the bundle. `node build.mjs` concatenates
-  them (regenerating `app.js`) and injects that + `styles.css` into `index.html`
-  between the BUILD:CSS / BUILD:JS markers.
+  them (regenerating `app.js`), inlines `styles.css` into `index.html` between
+  the BUILD:CSS markers, and writes the minified bundle to `app.<hash>.js` (named
+  by its content, loaded `defer` with a Subresource Integrity value from the
+  BUILD:JS block). A repeat visit reuses the cached, already-compiled file
+  (blocking time 482 -> 217 ms at 4x CPU). The last three builds' files stay in
+  `public/` (`app-files.json`) so a tab opened before a deploy still finds its
+  code; a file that is missing or altered shows a translated Reload notice
+  (`the-page-starts-when-its-first-way-is-refused`). Tests read the bundle from
+  the file the page names, never from inside `index.html`.
   - **Edit `src/app/*.js`, NOT `app.js`.** `app.js` is the GENERATED
     concatenation - the build overwrites it from the modules every run, so any
     hand-edit to `app.js` is lost. It stays committed only so `check.mjs`,
@@ -69,15 +76,16 @@ Companion docs (do not duplicate them here - read them):
     boundaries is preserved, so top-level order dependencies still hold.
   - The nav/body shell in `index.html` is safe to edit directly; everything
     else comes from the sources. Always rebuild.
-  - `node build.mjs` MINIFIES by default, because `index.html` is the artifact
-    every visitor downloads (1.9MB minified, ~560KB over the wire). That is the
+  - `node build.mjs` MINIFIES by default, because the page and its code file
+    are what every visitor downloads (~1.5MB of code minified, ~560KB over the
+    wire together). That is the
     JS through terser AND the CSS with its comments stripped - the stylesheet
     used to ship 145KB of prose, 60KB gzipped, a tenth of the whole page, that
     only developers ever read. `styles.css` and `app.js` are both written
     unminified beside it, and those are the copies `check.mjs`, `preflight` and
     grep read - so the readable
     artifact is kept where it is actually used. `--no-minify` opts out.
-    `npm run check` has a gzipped ceiling on `index.html`, so it can only grow
+    `npm run check` has a gzipped ceiling on `index.html` plus its code file, so it can only grow
     by somebody raising it on purpose.
 - **What the static host publishes is `public/`.** The build writes it: the
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
@@ -100,8 +108,9 @@ Companion docs (do not duplicate them here - read them):
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
   too - which it was, confirmed live. Add a file to `PUBLISH` in `build.mjs`
-  only when a visitor's browser actually requests it; `app.js` and `styles.css`
-  are inlined into the page and deliberately stay out.
+  only when a visitor's browser actually requests it; `app.js` (the readable
+  bundle - the page loads the minified `app.<hash>.js`) and `styles.css`
+  (inlined) deliberately stay out.
   `the-host-publishes-only-what-a-visitor-needs` fails on drift, on a leak, and
   on a page asset that was never published.
   **SETTLED - DO NOT RAISE IT AGAIN.** The host's publish directory IS `public`.

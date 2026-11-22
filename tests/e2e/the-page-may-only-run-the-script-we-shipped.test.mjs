@@ -36,7 +36,7 @@
    Booted in a real browser at the end, because a CSP that blocks the app's own
    bundle is exactly the failure this change could cause and it does not show
    up in any amount of string matching. */
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
@@ -68,7 +68,7 @@ section('The header does not allow inline script');
 section('It names what it does allow, by hash');
 {
   const hashes = scriptSrc.split(/\s+/).filter(t => /^'sha256-/.test(t));
-  ok(hashes.length >= 3,
+  ok(hashes.length >= 2,
      'script-src pins the inline scripts by sha256', hashes.length);
 
   /* Every executable inline script on the page must be one of them. A script
@@ -88,21 +88,33 @@ section('It names what it does allow, by hash');
   ok(missing.length === 0,
      'and every inline script the browser would execute is covered by one', missing);
 
-  /* The launcher falls back to running the bundle inline when a blob URL
-     cannot be created. Its hash has to be there too or that fallback is a
-     blocked script and the app does not start at all on those browsers. */
+  /* The code is a file of its own (Nov 22), named by its content and
+     pinned by Subresource Integrity: a copy that differs by one byte - a
+     tampering proxy, a half-written cache - is refused by the browser and
+     never runs. So the integrity value must be the real file's, and the file
+     the readable bundle minified, not an older build left on the host. */
   const app = clientSource();
-  const inert = (html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/) || [, ''])[1];
-  const restored = inert.split('<\\/scr_AMV_ipt').join('</script');
-  ok(!!restored, 'the bundle is embedded as an inert block');
-  const bundleHash = "'sha256-" + createHash('sha256').update(Buffer.from(restored, 'utf8')).digest('base64') + "'";
-  ok(hashes.indexOf(bundleHash) >= 0,
-     'the inline fallback for the bundle is allowed rather than silently blocked');
+  const tag = (html.match(/<script src="\/(app\.[a-f0-9]{12}\.js)" defer integrity="(sha384-[A-Za-z0-9+/=]+)" data-amv-app><\/script>/) || []);
+  ok(!!tag[1], 'the page loads its code from one named file, deferred, with an integrity value', tag[0]);
+  const codePath = join(ROOT, 'public', tag[1] || 'missing');
+  const code = existsSync(codePath) ? readFileSync(codePath) : Buffer.alloc(0);
+  ok(code.length > 0, 'and that file is published beside the page', tag[1]);
+  ok(tag[2] === 'sha384-' + createHash('sha384').update(code).digest('base64'),
+     'and the integrity value is that exact file\'s', tag[2]);
+  ok((tag[1] || '').slice(4, 16) === createHash('sha256').update(code).digest('hex').slice(0, 12),
+     'and its name is its own content hash, so a new build is a new name', tag[1]);
+  ok(!html.includes('id="amv-app-code"'),
+     'and no inline copy of the bundle is left on the page');
   ok(app.length > 0, 'and the readable bundle is written beside it', app.length);
 }
 
 section('THE OTHER HALF: nothing on the page is wired by attribute');
+const shippedCode = (() => {
+  const n = (html.match(/<script src="\/(app\.[a-f0-9]{12}\.js)"/) || [])[1];
+  return n && existsSync(join(ROOT, 'public', n)) ? readFileSync(join(ROOT, 'public', n), 'utf8') : '';
+})();
 {
+  ok(shippedCode.length > 0, 'the code file is read too: the bundle is no longer inside the page', shippedCode.length);
   /* Any of these in the shipped artifact is a control that the header above
      has just turned off. Searched over the whole file, which includes the
      bundle - so a template that emits one is caught the same as markup. */
@@ -113,7 +125,7 @@ section('THE OTHER HALF: nothing on the page is wired by attribute');
   const found = [];
   for (const ev of EVENTS) {
     const re = new RegExp('\\son' + ev + '\\s*=\\s*["\'`]', 'gi');
-    const hits = html.match(re);
+    const hits = (html + '\n' + shippedCode).match(re);
     if (hits) found.push(ev + ' x' + hits.length);
   }
   ok(found.length === 0,
@@ -121,7 +133,7 @@ section('THE OTHER HALF: nothing on the page is wired by attribute');
 
   /* javascript: in an href is inline script by another spelling, and is the
      one form CSP still blocks only when unsafe-inline is absent. */
-  ok(!/(href|src|action)\s*=\s*["']\s*javascript:/i.test(html),
+  ok(!/(href|src|action)\s*=\s*["']\s*javascript:/i.test(html + '\n' + shippedCode),
      'and no attribute smuggles one in as a javascript: URL');
 }
 

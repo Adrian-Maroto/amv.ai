@@ -105,8 +105,9 @@ section('And the words are actually wired to the send path');
      to appear in the bundle somewhere that is not its own definition or its
      window export. A behaviour test cannot see this, because the behaviour is
      "somebody else invokes me". */
-  const uses = await page.evaluate(() => {
-    const src = (document.getElementById('amv-app-code') || {}).textContent || '';
+  const uses = await page.evaluate(async () => {
+    const s = document.querySelector('script[data-amv-app]');
+    const src = s ? await (await fetch(s.src)).text() : '';
     if (!src) return { noSource: true };
     const hits = (src.match(/_detectChatTone\s*\(/g) || []).length;
     const setHits = (src.match(/_setChatTone\s*\(/g) || []).length;

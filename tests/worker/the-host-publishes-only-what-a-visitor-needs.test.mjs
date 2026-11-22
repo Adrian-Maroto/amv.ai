@@ -21,6 +21,7 @@
    a snapshot that silently goes stale the first time an asset is added - and a
    stale publish directory is worse than none, because it looks settled. */
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -99,8 +100,28 @@ ok(JSON.stringify(ccPub) === JSON.stringify(ccBuilt), `${DIR}/countries holds ex
 for (const f of ccBuilt) if (ccPub.includes(f))
   ok(readFileSync(R('data', 'countries', f)).equals(readFileSync(R(DIR, 'countries', f))), `${DIR}/countries/${f} is byte-identical to data/countries/${f}`);
 
+section('The app code files: the current build and the few before it');
+/* The page loads its code from a file named by its content (build.mjs, step
+   3). The last few builds' files stay published, so a tab opened before a
+   deploy can still fetch the code its page names; app-files.json is that list,
+   current first. Each must be exactly what its name says, and the current one
+   the build's own. */
+const kept = existsSync(R('app-files.json')) ? (JSON.parse(readFileSync(R('app-files.json'), 'utf8')).files || []) : [];
+const codeFiles = present.filter(n => /^app\.[a-f0-9]{12}\.js$/.test(n));
+ok(kept.length >= 1 && kept.length <= 3, 'app-files.json names the current code file and at most two before it', kept);
+ok(codeFiles.length === kept.length && codeFiles.every(n => kept.includes(n)), 'and exactly those are published', codeFiles);
+for (const n of codeFiles) {
+  ok(createHash('sha256').update(readFileSync(R(DIR, n))).digest('hex').slice(0, 12) === n.slice(4, 16),
+     `${DIR}/${n} is the content its name says`);
+}
+ok(!!kept[0] && existsSync(R(kept[0])) && readFileSync(R(kept[0])).equals(readFileSync(R(DIR, kept[0]))),
+   'the current one is byte-identical to the one just built', kept[0]);
+ok(!!kept[0] && readFileSync(R(DIR, 'index.html'), 'utf8').includes('src="/' + kept[0] + '"'),
+   'and it is the one the published page names');
+ok(!existsSync(R(DIR, 'app-files.json')), 'the list itself is not published');
+
 section('Nothing else is in it');
-const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR && n !== 'countries');
+const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR && n !== 'countries' && !codeFiles.includes(n));
 ok(extra.length === 0,
    `${DIR}/ holds only what a visitor needs`, extra);
 
@@ -119,12 +140,13 @@ for (const f of NEVER) {
 }
 
 /* app.js and styles.css are the two the answer is "no" for a reason worth
-   stating: the build inlines both into index.html, so a visitor never asks
-   for either, and they stay at the root because check.mjs, the preflight and
-   grep read them. Publishing them would ship the whole app twice. */
+   stating: app.js is the READABLE bundle (the page loads the minified,
+   content-named file above), and the stylesheet is inlined into index.html.
+   Both stay at the root because check.mjs, the preflight and grep read them.
+   Publishing them would ship the whole app twice. */
 const page = readFileSync(R('index.html'), 'utf8');
 ok(!/<script[^>]+src="\/?app\.js"/.test(page) && !/<link[^>]+href="\/?styles\.css"/.test(page),
-   'the page inlines its CSS and JS, so neither needs publishing');
+   'the page asks for neither the readable bundle nor the stylesheet');
 
 section('Everything the page asks this origin for is in it');
 /* Root-relative href/src/content attributes: the manifest, the icons, and
@@ -142,7 +164,7 @@ const ASSET_REF = /(?:href|src|content)\s*=\s*["']\/([^"'/\s][^"'\s]*)["']/g;
 for (const text of [page, readFileSync(R('app.js'), 'utf8')])
   for (const m of text.matchAll(ASSET_REF)) if (!/^v\d|^api\/|^auth\/|^admin\//.test(m[1]) && /\.[a-z0-9]{2,12}$/i.test(m[1].split(/[?#]/)[0])) refs.add(m[1].split(/[?#]/)[0]);
 for (const r of [...refs].sort()) {
-  ok(PUBLISH.includes(r), `the page asks for /${r}, and it is published`);
+  ok(PUBLISH.includes(r) || r === kept[0], `the page asks for /${r}, and it is published`);
 }
 ok(refs.size > 0, 'the scan found the page’s own assets at all', [...refs]);
 

@@ -20,7 +20,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const NOT_THE_PAGE = new Set(['sw.js', 'sandbox.js', 'picker.js', 'amv-vscode.js']);
 export const CLIENT_FILES = ['app.js'].concat(
   (existsSync(join(ROOT, 'public')) ? readdirSync(join(ROOT, 'public')) : [])
-    .filter(f => f.endsWith('.js') && !NOT_THE_PAGE.has(f)).sort().map(f => 'public/' + f));
+    /* app.<hash>.js is app.js minified, which is already first in the list. */
+    .filter(f => f.endsWith('.js') && !NOT_THE_PAGE.has(f) && !/^app\.[a-f0-9]{12}\.js$/.test(f)).sort().map(f => 'public/' + f));
 export function clientSource(){
   return CLIENT_FILES.filter(f => existsSync(join(ROOT, f))).map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n;\n');
 }

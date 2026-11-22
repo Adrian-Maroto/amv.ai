@@ -16172,3 +16172,23 @@ it was proved twice: by the browser's parse, and by rendering 25 screens at
 comparing every element's box and computed style - one difference, an
 animation caught at another moment. Rule: a static "unused" judgement is a
 hypothesis; the rendered page under both is the evidence.
+
+## 660
+**Nov 22 - moving the code out of the page moved a failure, so the failure
+was built and tested before the move shipped.** The 1.5 MB bundle lived
+inert inside `index.html` and was compiled again on every visit. As a file
+of its own, named by its content and pinned by Subresource Integrity, a
+repeat visit reuses the browser's cached compile: blocking time at 4x CPU
+482 -> 217 ms, first visit 628 -> 554, paint unchanged (three runs each,
+slow 4G). But a page can now arrive without its code, and the host rewrites
+every unknown path to the page - so a pruned old build answers its tab with
+HTML, which fails integrity and runs nothing. That case, a one-byte
+alteration, and a Spanish visitor are each caused on purpose in
+`the-page-starts-when-its-first-way-is-refused`; with the integrity value
+removed, five of its assertions fail. Two further rules came out of it:
+the file is addressed from the root (`/app.<hash>.js`), because the app
+serves itself at `/crew` and a relative name works there only by accident;
+and the last three builds' files stay published, so a deploy never strands
+a tab that is already open. Rule: when a change moves where something can
+fail, write the failure first - a faster page that can sit blank is not
+faster.

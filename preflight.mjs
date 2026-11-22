@@ -346,7 +346,9 @@ if (backend && toml) {
 /* ── 8. The built index.html is fresh (build ran after last source change) ── */
 if (existsSync(R('index.html')) && existsSync(R('app.js'))) {
   try {
-    const html = read('index.html');
+    const html0 = read('index.html') || '';
+    const cf = (html0.match(/<script src="\/(app\.[a-f0-9]{12}\.js)"[^>]*data-amv-app/) || [])[1];
+    const html = html0 + (cf ? (read(cf) || '') : '');
     // a cheap freshness check: a distinctive recent string should be in the build
     const appHasMarker = /_buildResearchPanel|openResearchWatch|_abuseRecord/.test(read('app.js') || '');
     const htmlHasMarker = /_buildResearchPanel|openResearchWatch/.test(html || '');

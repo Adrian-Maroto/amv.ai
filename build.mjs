@@ -216,6 +216,7 @@ function assembleJS() {
   emitBridge();
   const { shipped, packs } = splitI18n(full);
   writeI18nPacks(packs);
+  LOAD_FAILED_WORDS = loadFailedWords(packs);
   writeFileSync('app.js', shipped);   // regenerate the committed bundle - exactly what ships, unminified
   return shipped;
 }
@@ -239,6 +240,20 @@ function assembleJS() {
    first, then the generated ones. */
 const I18N_START = '/* BUILD:I18N-DATA:START';
 const I18N_END = '/* BUILD:I18N-DATA:END */';
+/* The notice shown when the code file never arrives runs before the app, so
+   before its translations: the two sentences it needs are carried in the
+   launcher itself, in every language, from the same dictionary. */
+const LOAD_FAILED_MSG = 'AMV could not finish loading. Check your connection, then reload.';
+let LOAD_FAILED_WORDS = null;
+function loadFailedWords(packs) {
+  const out = {};
+  for (const c of I18N_LANGS) {
+    const p = packs[c] || {};
+    if (!p[LOAD_FAILED_MSG] || !p.Reload) throw new Error('i18n: the loading-failed notice has no ' + c + ' translation');
+    out[c] = [p[LOAD_FAILED_MSG], p.Reload];
+  }
+  return out;
+}
 function splitI18n(full) {
   const a = full.indexOf(I18N_START), b = full.indexOf(I18N_END);
   if (a < 0 || b < 0 || b < a) {
@@ -495,48 +510,58 @@ async function rebuild() {
   // are inserted literally and never interpreted as replacement patterns.
   html = html.replace(cssPat, (m, a, _b, c) => a + '\n' + css + '\n' + c);
 
-  // 3) JS between markers - deferred, non-render-blocking pattern.
-  //    The app code goes in an inert <script type="text/plain"> and a tiny
-  //    launcher converts it to a deferred Blob script so it never blocks paint.
-  //    Defensive: escape any literal </script that would otherwise terminate the
-  //    text/plain block early; the launcher restores it before execution. This
-  //    keeps the build correct even if future code embeds a literal script tag.
-  const SCRIPT_SENTINEL = '<\\/scr_AMV_ipt';
-  const appSafe = app.replace(/<\/script/gi, SCRIPT_SENTINEL);
+  // 3) JS between markers: the bundle as ONE file of its own, named by its
+  //    content and checked by the browser against its hash.
+  /* THE APP'S CODE IS A FILE, NOT A BLOCK OF THE PAGE (Nov 22, measured).
+     It used to ship inert inside index.html and start as a Blob script. A
+     blob: address is new on every visit, so the browser could never keep the
+     compiled code: every visit compiled 1.5 MB again, and re-downloaded it
+     with the page. On a 4x slower phone over a slow connection, a repeat
+     visit blocked the main thread for ~420 ms; served as this file it is
+     ~195 ms (the longest single freeze ~265 -> ~185 ms), and the page a
+     repeat visit downloads is the shell, not the shell plus the code.
+     It is still ONE script - one shared scope, nothing split, nothing
+     deferred per screen (BUNDLE-SPLIT.md is about splitting and still
+     stands). `app.<hash>.js` changes name whenever its bytes change, so no
+     cache can serve old code under a new page; `integrity` makes the browser
+     refuse any file that is not these bytes; 'self' in script-src already
+     allows it. The previous builds' files stay published (APP_KEEP) so a page
+     loaded just before a deploy still finds its own code. */
+  const appHash = createHash('sha256').update(Buffer.from(app, 'utf8')).digest('hex').slice(0, 12);
+  const appFile = 'app.' + appHash + '.js';
+  const appSri = 'sha384-' + createHash('sha384').update(Buffer.from(app, 'utf8')).digest('base64');
+  writeFileSync(appFile, app);
+  for (const f of readdirSync('.')) if (/^app\.[a-f0-9]{12}\.js$/.test(f) && f !== appFile) unlinkSync(f);
+  APP_FILES.current = appFile;
   /* The font stylesheet ships as media="print" so it blocks nothing; this is
      what applies it. It has to live here rather than in an inline onload=
      attribute, because script-src carries no 'unsafe-inline' and the browser
      refuses those - the usual recipe would have loaded the font never. Done
-     first and guarded, so a failure here cannot stop the app booting. */
+     first and guarded, so a failure here cannot stop the app booting.
+     Then: if the code file does not arrive - offline on a first visit, a
+     blocked request, bytes that fail their integrity check - the page says
+     so and offers a reload, instead of sitting there looking finished. */
   const launcher =
     "(function(){try{var f=document.getElementById('amv-fonts');" +
     "if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();" +
-    "(function(){var c=document.getElementById('amv-app-code');if(!c)return;" +
-    /* The block is written as "\n" + bundle + "\n", and the policy pins the
-       hash of the BUNDLE - so exactly that framing comes off before anything
-       runs it, or the inline fallback is refused by the page's own policy the
-       one time it is needed. (AMV-AUD-027) */
-    /* No copy of 1.5 MB unless there is something to restore (Nov 22, measured:
-       the split/join and the two slices were the launcher's 87 ms on a 4x
-       slower phone). The Blob runs the block as written - a newline either
-       side means nothing to JavaScript - and only the inline fallback, which
-       the policy checks by hash, is cut to exactly the bundle. */
-    "var t=c.textContent,S='<\\\\/scr_AMV_ipt';if(t.indexOf(S)>=0)t=t.split(S).join('</script');" +
-    "function inlineRun(){var x=t;if(x.charAt(0)==='\\n')x=x.slice(1);if(x.slice(-1)==='\\n')x=x.slice(0,-1);var e=document.createElement('script');e.textContent=x;document.body.appendChild(e);}" +
-    "try{var s=document.createElement('script');" +
-    "s.src=URL.createObjectURL(new Blob([t],{type:'application/javascript'}));" +
-    "s.defer=true;s.onerror=inlineRun;document.body.appendChild(s);}" +
-    "catch(e){inlineRun();}})();";
+    "(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;" +
+    "s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;" +
+    "var W=" + JSON.stringify(LOAD_FAILED_WORDS).replace(/</g, '\\u003c') + ",l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}" +
+    "if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||[" + JSON.stringify(LOAD_FAILED_MSG) + ",'Reload'];" +
+    "var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;" +
+    "d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';" +
+    "var t=document.createElement('span');t.textContent=w[0];" +
+    "var b=document.createElement('button');b.type='button';b.textContent=w[1];" +
+    "b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';" +
+    "b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();";
 
   const jsPat = /(<!-- BUILD:JS:START -->)[\s\S]*?(<!-- BUILD:JS:END -->)/;
   if (!jsPat.test(html)) throw new Error('JS build markers not found');
   const jsBlock =
     '<!-- BUILD:JS:START -->\n' +
-    '<script id="amv-app-code" type="text/plain">\n' + appSafe + '\n</script>\n' +
+    '<script src="/' + appFile + '" defer integrity="' + appSri + '" data-amv-app></script>\n' +
     '<script>' + launcher + '</script>\n' +
     '<!-- BUILD:JS:END -->';
-  // Replacer FUNCTION so `$` / `$'` / `$&` sequences inside the app code are
-  // inserted verbatim (a replacement STRING would corrupt them).
   html = html.replace(jsPat, () => jsBlock);
 
   /* THE BACKEND ADDRESS THE SHIPPED ARTIFACT TALKS TO.
@@ -566,22 +591,16 @@ async function rebuild() {
     html = allowApiOrigin(html, apiBase, prev);
   }
 
-  // 4) validate the assembled code BEFORE writing - a broken build must never
-  //    overwrite a working index.html. Extract the emitted code, un-escape the
-  //    sentinel, and syntax-check it. Only write if it passes.
-  const m = html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/);
-  if (!m) throw new Error('assembled app code block not found - aborting write');
-  validate(m[1].split(SCRIPT_SENTINEL).join('</script'));
-
-  // Sanity: the embedded code must exactly equal what we intended to embed
-  // (the source, or its minified form) - guards against replacement corruption.
-  if (m[1].split(SCRIPT_SENTINEL).join('</script') !== app) {
-    throw new Error('assembled code does not match intended bundle - aborting write');
-  }
+  // 4) validate what was written BEFORE the page that names it - a broken
+  //    build must never overwrite a working index.html.
+  const written = readFileSync(appFile, 'utf8');
+  validate(written);
+  if (written !== app) throw new Error('the written code file does not match the intended bundle - aborting write');
+  if (!html.includes('src="/' + appFile + '"')) throw new Error('the page does not name its code file - aborting write');
 
   // 5) pin the inline scripts by hash so the CSP does not have to trust every
   //    inline script on the page. See sealScriptCSP.
-  html = sealScriptCSP(html, app);
+  html = sealScriptCSP(html);
 
   /* WHAT BUILD IS THE LIVE SITE ACTUALLY SERVING.
      
@@ -608,7 +627,8 @@ async function rebuild() {
      check and no support question can use. These two reads are the exact
      substrings a visitor downloads. */
   const cssOut = (html.match(/<!-- BUILD:CSS:START -->\s*<style>([\s\S]*?)<\/style>\s*<!-- BUILD:CSS:END -->/) || [, null])[1];
-  const jsOut = (html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/) || [, null])[1];
+  /* The code a visitor downloads is the file the page names, so that is what is hashed. */
+  const jsOut = html.includes('src="/' + appFile + '"') ? readFileSync(appFile, 'utf8') : null;
   if (cssOut === null || jsOut === null) {
     throw new Error('cannot read back the page payload to stamp it - aborting write');
   }
@@ -740,7 +760,7 @@ function allowApiOrigin(html, apiBase, previousBase) {
   return html.replace(cspPat, (_m, a, _b, c) => a + sealed + c);
 }
 
-function sealScriptCSP(html, appCode) {
+function sealScriptCSP(html) {
   const sha = (text) =>
     "'sha256-" + createHash('sha256').update(Buffer.from(text, 'utf8')).digest('base64') + "'";
 
@@ -759,9 +779,8 @@ function sealScriptCSP(html, appCode) {
   }
   if (!hashes.length) throw new Error('no inline scripts found to hash - CSP would be wrong');
 
-  /* The inline fallback runs the bundle verbatim, so its hash is the bundle's,
-     not the text/plain block's (which carries the escaped sentinel). */
-  hashes.push(sha(appCode));
+  /* The bundle is a file now (app.<hash>.js, allowed by 'self' and checked
+     by its integrity attribute), so only the two small inline scripts are pinned. */
 
   const cspPat = /(<meta http-equiv="Content-Security-Policy" content=")([\s\S]*?)(">)/;
   const found = html.match(cspPat);
@@ -817,7 +836,7 @@ function writePWA(html) {
      The files a visitor's browser asks for - the same list the host publishes,
      so the two cannot drift - minus the page itself (stored as the shell) and
      the worker (which the browser fetches around it). */
-  const ASSETS = PUBLISH.concat(I18N_FILES).filter(f => f !== 'index.html' && f !== 'sw.js').map(f => '/' + f);
+  const ASSETS = PUBLISH.concat(I18N_FILES, [APP_FILES.current]).filter(f => f && f !== 'index.html' && f !== 'sw.js').map(f => '/' + f);
 
   const sw = `/* AMV service worker - generated by build.mjs, do not edit. */
 const CACHE = '${CACHE}';
@@ -1145,6 +1164,24 @@ function solidPng(size) {
    and they stay at the root because check.mjs, the preflight and grep read
    them. Add to PUBLISH only when a visitor's browser would actually request
    the file. */
+/* THE APP'S CODE FILES ON THE HOST (see step 3 of rebuild). The current one,
+   and the previous APP_KEEP - 1 kept beside it, so a page somebody loaded
+   just before a deploy can still fetch the code it names. The list is
+   committed (app-files.json) so a fresh checkout builds exactly what is
+   committed: building the same bytes again changes nothing. */
+const APP_KEEP = 3;
+const APP_HISTORY = 'app-files.json';
+const APP_FILES = { current: null };
+function appFilesKept() {
+  let prev = [];
+  try { prev = JSON.parse(readFileSync(APP_HISTORY, 'utf8')).files || []; } catch (e) { prev = []; }
+  const cur = APP_FILES.current;
+  if (!cur) throw new Error('no app code file was built');
+  /* An older name stays only while its bytes are still there to serve. */
+  const list = [cur].concat(prev.filter(f => f !== cur && /^app\.[a-f0-9]{12}\.js$/.test(f) && existsSync(PUBLISH_DIR + '/' + f))).slice(0, APP_KEEP);
+  writeFileSync(APP_HISTORY, JSON.stringify({ note: 'The app code files the host keeps: the current one first. Written by build.mjs.', files: list }, null, 1) + '\n');
+  return list;
+}
 const PUBLISH_DIR = 'public';
 const PUBLISH = [
   'index.html',            // the app
@@ -1215,6 +1252,10 @@ function emitWellKnown() {
 }
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });
+  /* The current code file is copied like everything else; the older ones in
+     the kept list are left where the last builds put them. */
+  const appKept = appFilesKept();
+  writeFileSync(`${PUBLISH_DIR}/${APP_FILES.current}`, readFileSync(APP_FILES.current));
 
   for (const f of PUBLISH.concat(I18N_FILES)) {
     if (!existsSync(f)) throw new Error(`${f} is in PUBLISH but was not built`);
@@ -1244,7 +1285,7 @@ function emitPublishDir() {
      directly in the folder are removed, and only ones PUBLISH does not name -
      a directory is reported rather than deleted, because a build that can
      delete a tree is a build one typo away from deleting the wrong one. */
-  const keep = new Set(PUBLISH);
+  const keep = new Set(PUBLISH.concat(appKept));
   for (const name of readdirSync(PUBLISH_DIR)) {
     if (keep.has(name) || name === I18N_DIR || name === 'countries') continue;
     const path = `${PUBLISH_DIR}/${name}`;

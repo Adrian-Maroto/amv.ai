@@ -156,7 +156,7 @@ section('The card was removed from the screen, not half-removed');
 {
   /* A render path that still calls it would put it back the first time
      somebody hits whichever branch was missed. */
-  const src = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const src = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   ok(src.length > 0, 'the shipped bundle can be read to check this');
   const calls = (src.match(/_firstRunHTML\s*\(/g) || []).length;
   ok(calls <= 1, 'nothing renders the first-run card any more', calls);

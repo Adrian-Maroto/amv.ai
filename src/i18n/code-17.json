@@ -5489,5 +5489,43 @@
   "bn": "AMV এই মুহূর্তে এই ডিভাইসটি নিশ্চিত করতে পারেনি, তাই এটি যাচাই করতে হবে যে এটি আপনি। আমরা যে ৬-সংখ্যার কোড পাঠিয়েছি সেটি লিখুন:",
   "ta": "AMV இப்போது இந்தச் சாதனத்தை உறுதிப்படுத்த முடியவில்லை, எனவே இது நீங்கள்தான் என்று சரிபார்க்க வேண்டும். நாங்கள் இங்கு அனுப்பிய 6 இலக்கக் குறியீட்டை உள்ளிடவும்:",
   "ur": "AMV ابھی اس ڈیوائس کی تصدیق نہیں کر سکا، اس لیے اسے جانچنا ہوگا کہ یہ آپ ہیں۔ وہ 6 ہندسوں کا کوڈ درج کریں جو ہم نے یہاں بھیجا ہے:"
+ },
+ "AMV could not finish loading. Check your connection, then reload.": {
+  "es": "AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.",
+  "zh": "AMV 未能完成加载。请检查网络连接，然后重新加载。",
+  "hi": "AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।",
+  "ar": "تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.",
+  "pt": "O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.",
+  "fr": "AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.",
+  "de": "AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.",
+  "ja": "AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。",
+  "ru": "AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.",
+  "id": "AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.",
+  "bn": "AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।",
+  "ur": "AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔",
+  "tr": "AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.",
+  "vi": "AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.",
+  "it": "AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.",
+  "ko": "AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.",
+  "ta": "AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்."
+ },
+ "Reload": {
+  "es": "Volver a cargar",
+  "zh": "重新加载",
+  "hi": "दोबारा लोड करें",
+  "ar": "إعادة التحميل",
+  "pt": "Recarregar",
+  "fr": "Recharger",
+  "de": "Neu laden",
+  "ja": "再読み込み",
+  "ru": "Перезагрузить",
+  "id": "Muat ulang",
+  "bn": "আবার লোড করুন",
+  "ur": "دوبارہ لوڈ کریں",
+  "tr": "Yeniden yükle",
+  "vi": "Tải lại",
+  "it": "Ricarica",
+  "ko": "새로고침",
+  "ta": "மீண்டும் ஏற்று"
  }
 }

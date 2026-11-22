@@ -60,7 +60,7 @@ section('The control the Security pane names is on the Security pane');
 
 section('It is wired to the one implementation that really revokes');
 {
-  const src = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const src = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   ok(/_actSignOutEverywhere/.test(src), 'the real implementation is in the bundle');
   /* Two correct implementations is one that drifts. The handler delegates
      rather than repeating the call. */
@@ -140,7 +140,7 @@ section('Destructive actions do not use the browser’s own dialog');
 {
   /* Native confirm blocks the page, cannot be styled, is suppressible, and on a
      phone reads like something the site did not write. */
-  const src = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const src = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   const natives = (src.match(/if\(!confirm\(/g) || []).length;
   ok(natives === 0, 'no destructive action is guarded by native confirm()', natives);
 }

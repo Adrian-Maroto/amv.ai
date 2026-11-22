@@ -100,7 +100,7 @@ section('No route hands a provider token to a browser');
   ok(!/sealed/.test(list), 'the list route does not return the sealed blob');
   ok(!/token:/.test(list), 'nor a token field');
   ok(/lastUsed|lastJob/.test(list), 'it returns metadata, which is the useful part');
-  const clientSrc = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const clientSrc = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   ok(clientSrc.length > 0, 'the shipped bundle can be read');
   ok(!/connectToken|getConnToken/.test(clientSrc), 'and the client has no way to ask for one');
 }
@@ -239,7 +239,7 @@ section('The handshake cannot be replayed or hijacked');
 
 section('The two OAuth returns do not collide');
 {
-  const clientSrc = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const clientSrc = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   ok(/c_/.test(clientSrc) && /indexOf\("c_"\)|indexOf\('c_'\)/.test(clientSrc),
      'the client routes a connect return away from the sign-in handler');
   ok(/'c_' \+ _connRandom/.test(worker), 'because the server marks its own state');
@@ -301,7 +301,7 @@ section('The vault is actually drawn on, which it twice was not');
   const ctx = fn('_autoAccountContext');
   ok(/attended: false/.test(ctx), 'and asks as an unattended run, so the pause applies');
 
-  const clientSrc = await page.evaluate(() => (document.getElementById('amv-app-code') || {}).textContent || '');
+  const clientSrc = await page.evaluate(() => (async () => { const s = document.querySelector('script[data-amv-app]'); return s ? await (await fetch(s.src)).text() : ''; })());
   const ready = (clientSrc.match(/_cwUnattendedReady\s*\(/g) || []).length;
   ok(ready >= 2, 'the job routing consults whether a connection makes it unattended', ready);
   /* Minified: the property name survives and the argument is renamed, so the

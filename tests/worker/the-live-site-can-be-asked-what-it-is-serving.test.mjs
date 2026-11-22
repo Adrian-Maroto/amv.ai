@@ -52,8 +52,11 @@ section('The id is derived from what a visitor actually downloads');
      not match. */
   const page = readFileSync(R('public/index.html'), 'utf8');
   const cssIn = (page.match(/<!-- BUILD:CSS:START -->\s*<style>([\s\S]*?)<\/style>\s*<!-- BUILD:CSS:END -->/) || [, null])[1];
-  const jsIn = (page.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/) || [, null])[1];
-  ok(cssIn !== null && jsIn !== null, 'the page still carries its payload inline');
+  /* The code is the file the page names (Nov 22: served beside the page,
+     content-hashed, so a repeat visit reuses it). */
+  const codeName = (page.match(/<script src="\/(app\.[a-f0-9]{12}\.js)"[^>]*data-amv-app/) || [, null])[1];
+  const jsIn = codeName ? readFileSync(R('public/' + codeName), 'utf8') : null;
+  ok(cssIn !== null && jsIn !== null, 'the page carries its stylesheet and names its code file', codeName);
   if (cssIn !== null && jsIn !== null) {
     const recomputed = createHash('sha256')
       .update(Buffer.from(jsIn, 'utf8')).update(Buffer.from(cssIn, 'utf8'))

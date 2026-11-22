@@ -124,7 +124,7 @@ section('The first paint waits for the whole shell, not half a header');
   const at = target ? html.indexOf('id="' + target + '"') : -1;
   const last = Math.max(html.indexOf('id="nav-av"'), html.indexOf('id="abody"'));
   ok(at > last && last > 0, 'and that element comes after the whole header and body shell', { target, at, last });
-  ok(at > 0 && at < html.indexOf('<script id="amv-app-code"'), 'but before the bundle, so the paint never waits on the code', { target, at });
+  ok(at > 0 && at < html.indexOf('<script src="/app.'), 'but before the bundle, so the paint never waits on the code', { target, at });
 }
 
 section('The fallback is ready on a machine with no Arial');

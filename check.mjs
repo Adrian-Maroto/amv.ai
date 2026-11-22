@@ -32,6 +32,14 @@ import { unusedStyles, unbalancedSelectors } from './scripts/unused-styles.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
+/* The app's code is a file the page names (app.<hash>.js, build.mjs step 3),
+   not a block inside it. What a visitor downloads is the page plus that file. */
+function pageCode(html, dir = '') {
+  const m = String(html || '').match(/<script src="\/(app\.[a-f0-9]{12}\.js)"[^>]*data-amv-app/);
+  if (!m) return '';
+  const f = R(dir ? dir + '/' + m[1] : m[1]);
+  return existsSync(f) ? readFileSync(f, 'utf8') : '';
+}
 const G = '\x1b[32m', RED = '\x1b[31m', Y = '\x1b[33m', DIM = '\x1b[2m', B = '\x1b[1m', X = '\x1b[0m';
 
 // --fast skips the full test-suite step. Used by the gate's own self-test so it
@@ -274,7 +282,8 @@ step('Build is fresh (index.html reflects source)', () => {
       throw new Error('docs/CAPABILITIES.md is not what docs/capabilities.json renders. Edit the registry, never the page, then run node build.mjs.');
   }
   sh('node build.mjs');
-  const html = existsSync(R('index.html')) ? readFileSync(R('index.html'), 'utf8') : '';
+  const html0 = existsSync(R('index.html')) ? readFileSync(R('index.html'), 'utf8') : '';
+  const html = html0 + pageCode(html0);
   const app = existsSync(R('app.js')) ? readFileSync(R('app.js'), 'utf8') : '';
   // pick a few distinctive current-source markers; if app.js has them but the
   // built html doesn't, the build didn't actually pick up the latest source.
@@ -1061,7 +1070,8 @@ step('No translated string promises a feature AMV removed', () => {
    build refuses an entry that lacks any of them. */
 step('Every on-screen string in the code has a translation', () => {
   const es = JSON.parse(readFileSync(R('i18n/es.json'), 'utf8'));
-  const files = ['app.js', ...readdirSync(R('public')).filter(f => f.endsWith('.js')).map(f => 'public/' + f)];
+  /* app.<hash>.js is app.js minified (build.mjs step 3): read once, as app.js. */
+  const files = ['app.js', ...readdirSync(R('public')).filter(f => f.endsWith('.js') && !/^app\.[a-f0-9]{12}\.js$/.test(f)).map(f => 'public/' + f)];
   const CALL = /(?<![\w$.])T\(\s*(['"])((?:\\.|(?!\1)[^\\\n])*)\1\s*\)/g;
   const unescape = s => s.replace(/\\u\{([0-9a-fA-F]+)\}/g, (m, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
@@ -1493,8 +1503,13 @@ step('No failure is turned into an answer without being read', () => {
    plain. The ceiling is set a little above where the build lands today so a
    real regression fails here rather than on somebody's phone. */
 step('Page weight is under control', () => {
-  const buf = readFileSync(R('index.html'));
-  const wire = gzipSync(buf).length;
+  /* The page AND the code file it names: a first visit downloads both, each
+     compressed on its own, so the ceiling is on their sum (Nov 22). */
+  const page = readFileSync(R('index.html'));
+  const code = Buffer.from(pageCode(page.toString('utf8')), 'utf8');
+  if (!code.length) throw new Error('index.html names no app code file (app.<hash>.js), or the file it names is missing - run node build.mjs');
+  const buf = Buffer.concat([page, code]);
+  const wire = gzipSync(page).length + gzipSync(code).length;
   const KB = (n) => Math.round(n / 1024) + 'KB';
   /* 620 -> 628, 2026-09-25, deliberately. The build reached 620 with the
      audit's security fixes (connector identity, readiness, discovery,
@@ -1669,7 +1684,7 @@ step('Page weight is under control', () => {
      first (about 100 bytes back); what is left is the repairs themselves. */
   const CEILING = 592 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
-    throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
+    throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
 });
 
