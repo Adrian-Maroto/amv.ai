@@ -44,8 +44,13 @@ section('The advisories the exceptions were written for still pass');
 
 section('npm failing is not a clean report');
 {
-  const r = run({ error: { code: 'E500', summary: 'The audit endpoint returned an error' } }, 1);
+  /* On a laptop, which is what this case is: the suite itself may be running
+     in CI, where a skip is a failure (Build 17 audit B17-015, below). */
+  const laptop = { CI: '', GITHUB_ACTIONS: '', AMV_AUDIT_REQUIRED: '' };
+  const r = run({ error: { code: 'E500', summary: 'The audit endpoint returned an error' } }, 1, laptop);
   ok(r.status === 0 && /^SKIP/m.test(r.out) && !/OK\s+every advisory/.test(r.out), 'it says no audit was run, not that everything is assessed', r.out.slice(-300));
+  const ci = run({ error: { code: 'E500', summary: 'down' } }, 1, { CI: 'true', GITHUB_ACTIONS: '', AMV_AUDIT_REQUIRED: '' });
+  ok(ci.status === 3 && /^SKIP/m.test(ci.out), 'and where a release is built, a skip fails the build', ci.status);
   const req = run({ error: { code: 'E500', summary: 'down' } }, 1, { AMV_AUDIT_REQUIRED: '1' });
   ok(req.status !== 0, 'and where an audit is required, it fails', req.status);
 }
