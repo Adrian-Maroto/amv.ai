@@ -353,3 +353,19 @@ export function appModule(file) {
   if (!siblings.includes(file)) throw new Error('appModule: no such module: ' + file);
   return siblings.map(f => _rfs(_join(_APP, f), 'utf8')).join('');
 }
+/* THE CODE A VISITOR RECEIVES (Nov 22). The page no longer carries the
+   bundle: it names one minified file, `/app.<hash>.js`. These read the name
+   from the built page and the bytes from beside it, and throw rather than
+   return nothing, so an absence check over them can never pass by finding
+   an empty string. */
+export function shippedCodeName(root = _ROOT) {
+  const html = _rfs(_join(root, 'index.html'), 'utf8');
+  const m = html.match(/<script src="\/(app\.[a-f0-9]{12}\.js)"[^>]*data-amv-app/);
+  if (!m) throw new Error('shippedCodeName: the built page names no code file - run node build.mjs');
+  return m[1];
+}
+export function shippedCode(root = _ROOT) {
+  const t = _rfs(_join(root, shippedCodeName(root)), 'utf8');
+  if (t.length < 100000) throw new Error('shippedCode: ' + t.length + ' bytes is too small to be the bundle');
+  return t;
+}

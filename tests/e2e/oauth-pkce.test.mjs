@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { shippedCode, shippedCodeName } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ user: { name: 'O', email: 'o@x.com', ini: 'O' } });
@@ -139,13 +140,11 @@ section('The implicit flow is not the fallback, because it is not anywhere');
      READ FROM THE SHIPPED BLOCK, NOT FROM app.js. The readable bundle carries
      the comments explaining what was removed, and those comments name the flow
      - so a correct removal reads as a leak if you grep the copy with the prose
-     in it. index.html's generated block is what a visitor downloads: minified,
+     in it. the code file the page names is what a visitor downloads: minified,
      comments stripped. */
-  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-  const a = html.indexOf('<!-- BUILD:JS:START -->');
-  const b = html.indexOf('<!-- BUILD:JS:END -->');
-  ok(a > 0 && b > a, 'the generated block markers were found', { a, b });
-  const shipped = html.slice(a, b);
+  /* Since Nov 22 that is the code file the page names, not a block inside it. */
+  const shipped = shippedCode(ROOT);
+  ok(true, 'the code file the page names was read', shippedCodeName(ROOT));
   /* A NEGATIVE CONTROL. If the markers move, the slice above becomes a few
      characters and every absence below passes for the wrong reason. */
   ok(shipped.length > 100000, 'and it really is the bundle, not an empty slice', shipped.length);

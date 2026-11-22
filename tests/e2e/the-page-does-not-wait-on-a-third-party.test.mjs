@@ -41,12 +41,18 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { gzipSync } from 'zlib';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { shippedCodeName } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const gz = gzipSync(Buffer.from(html));
 
-const server = createServer((_q, res) => {
+/* The page and the code file it names (Nov 22). This answered every path with
+   the page, so once the code left it the code never arrived - and a blocking
+   time measured with no code running passes for the wrong reason. */
+const CODE = '/' + shippedCodeName(ROOT), gzCode = gzipSync(readFileSync(join(ROOT, CODE.slice(1))));
+const server = createServer((q, res) => {
+  if ((q.url || '').split('?')[0] === CODE) { res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Encoding': 'gzip' }); return res.end(gzCode); }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip' });
   res.end(gz);
 });

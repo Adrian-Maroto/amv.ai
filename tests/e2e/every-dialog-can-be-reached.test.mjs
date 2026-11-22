@@ -29,15 +29,18 @@ import { createServer } from 'http';
 import { readFileSync } from 'fs';
 import { armGeom } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { shippedCodeName } from '../lib/source.mjs';
 
 const HTML = readFileSync('index.html');
+/* The page and the code file it names; every other path is the page. */
+const CODE = '/' + shippedCodeName(), CODE_JS = readFileSync(CODE.slice(1));
 /* PORT 0 ASKS THE KERNEL FOR A FREE ONE.
    A fixed port is a suite that fails when anything else already holds it -
    another run, a leftover process, or simply the same gate started twice.
    That is not a product failure but it reads exactly like one, and a gate
    that goes red for reasons of its own is a gate people stop believing. */
 let PORT = 0;
-const server = createServer((_q, s) => { s.writeHead(200, { 'Content-Type': 'text/html' }); s.end(HTML); });
+const server = createServer((q, s) => { if ((q.url || '').split('?')[0] === CODE) { s.writeHead(200, { 'Content-Type': 'text/javascript' }); return s.end(CODE_JS); } s.writeHead(200, { 'Content-Type': 'text/html' }); s.end(HTML); });
 await new Promise(r => server.listen(0, r));
 PORT = server.address().port;
 

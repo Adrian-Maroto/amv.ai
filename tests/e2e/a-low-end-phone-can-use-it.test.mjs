@@ -35,6 +35,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { gzipSync } from 'zlib';
 import { ok, section, report } from '../lib/assert.mjs';
+import { shippedCodeName } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MEASURE = process.argv.includes('--measure');
@@ -50,7 +51,12 @@ const B = {
 };
 
 const gz = gzipSync(readFileSync(join(ROOT, 'index.html')));
-const server = createServer((_q, res) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip' }); res.end(gz); });
+/* The page and the code file it names, both compressed as a host sends them. */
+const CODE = '/' + shippedCodeName(ROOT), gzCode = gzipSync(readFileSync(join(ROOT, CODE.slice(1))));
+const server = createServer((q, res) => {
+  if ((q.url || '').split('?')[0] === CODE) { res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Encoding': 'gzip' }); return res.end(gzCode); }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip' }); res.end(gz);
+});
 await new Promise(r => server.listen(0, r));
 const PORT = server.address().port;
 const browser = await chromium.launch(LAUNCH);

@@ -39,13 +39,19 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { gzipSync } from 'zlib';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { shippedCodeName } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FCP_MAX = 3000;
 const TBT_MAX = 2000;
 
 const gz = gzipSync(readFileSync(join(ROOT, 'index.html')));
-const server = createServer((_q, res) => {
+/* The page and the code file it names (Nov 22). This answered every path with
+   the page, so once the code left it the code never arrived - and a blocking
+   time measured with no code running passes for the wrong reason. */
+const CODE = '/' + shippedCodeName(ROOT), gzCode = gzipSync(readFileSync(join(ROOT, CODE.slice(1))));
+const server = createServer((q, res) => {
+  if ((q.url || '').split('?')[0] === CODE) { res.writeHead(200, { 'Content-Type': 'text/javascript', 'Content-Encoding': 'gzip' }); return res.end(gzCode); }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip' });
   res.end(gz);
 });
@@ -99,9 +105,11 @@ section('The main thread is free enough to answer a tap');
        will not answer me". */
     return { tasks: long.length, worst: long.length ? Math.max(...long) : 0,
              tbt: long.reduce((a, d) => a + Math.max(0, d - 50), 0),
-             observed: typeof window.__long !== 'undefined' };
+             observed: typeof window.__long !== 'undefined',
+             started: typeof setTab === 'function' && typeof openAuth === 'function' };
   });
   ok(m.observed, 'long tasks were being watched for', m.observed);
+  ok(m.started, 'and the app itself ran - a time measured with no code running measures nothing', m.started);
   ok(m.tbt < TBT_MAX, `total blocking time under ${TBT_MAX}ms on a 4x slower CPU`, m.tbt + 'ms');
   await page.close();
 }

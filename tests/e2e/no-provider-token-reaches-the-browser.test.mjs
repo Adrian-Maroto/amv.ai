@@ -22,25 +22,20 @@
    below is a different door it would have to come through. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { shippedCode } from '../lib/source.mjs';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/* The JavaScript a visitor actually receives: the generated block of
-   index.html, which the build minifies, so comments are not in it. Every
+/* The JavaScript a visitor actually receives: the code file the page
+   names, which the build minifies, so comments are not in it. Every
    assertion below is about what can RUN, and a comment cannot. */
 function shipped(){
-  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-  const a = html.indexOf('<!-- BUILD:JS:START -->');
-  const b = html.indexOf('<!-- BUILD:JS:END -->');
-  if (a < 0 || b < 0) throw new Error('the generated block markers moved - this check cannot run');
-  const block = html.slice(a, b);
-  /* A negative control: if the slice were empty or the markers had moved, every
-     assertion below would pass by finding nothing. */
-  if (block.length < 100000) throw new Error('the generated block is too small to be the bundle: ' + block.length);
-  return block;
+  /* The minified code file the page names (Nov 22: the bundle is no longer
+     inside index.html). shippedCode throws when it is missing or too small. */
+  return shippedCode(ROOT);
 }
 const app = await bootApp({ tab: 'chat' });
 const { page, errors } = app;

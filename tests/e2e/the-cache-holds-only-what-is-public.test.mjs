@@ -19,7 +19,7 @@
 import { chromium } from 'playwright';
 import { serveApp, LAUNCH } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { pageScriptFiles } from '../lib/source.mjs';
+import { pageScriptFiles, shippedCodeName } from '../lib/source.mjs';
 
 const { url, server } = await serveApp({ apiBase: '' });
 const browser = await chromium.launch(LAUNCH);
@@ -84,6 +84,8 @@ try {
      build) - public data, fetched with the Integrations screen, which the
      idle prefetch above brings in. */
   allowed.add('/app-reach.json');
+  /* The page's own code file (Nov 22): public, named by its content. */
+  allowed.add('/' + shippedCodeName());
   ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
   ok(keys.includes('/'), 'the page is stored, under the shell key', now);
   ok(keys.includes('/manifest.webmanifest'), 'a published file is stored', now);

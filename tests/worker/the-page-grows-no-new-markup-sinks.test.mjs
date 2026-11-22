@@ -64,7 +64,9 @@ section('The files fetched on demand are held to the same account');
      on Nov 14 when the catalogue added three and this file stayed green.
      One total across those files, at today's count, and the same APIs absent. */
   const dir = join(ROOT, 'public');
-  const files = readdirSync(dir).filter(f => f.endsWith('.js')).sort();
+  /* Not the page's own code file (app.<hash>.js): it is app.js minified,
+     counted above already. */
+  const files = readdirSync(dir).filter(f => f.endsWith('.js') && !/^app\.[a-f0-9]{12}\.js$/.test(f)).sort();
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
