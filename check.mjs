@@ -28,6 +28,7 @@ import { tmpdir } from 'os';
 import { codeOnly } from './tests/lib/source.mjs';
 import { renderCapabilities } from './tools/capabilities-doc.mjs';
 import { silencedFailures, BASELINE as SILENCED_BASELINE } from './scripts/silenced-failures.mjs';
+import { unusedStyles } from './scripts/unused-styles.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
@@ -123,7 +124,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 21 : 25;
+const TOTAL = FAST ? 22 : 26;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -585,6 +586,17 @@ step('No class is applied without something to apply', () => {
 
    Three real defects from one regex, so it is a stage rather than an anecdote.
    It reads app.js because that is the whole client in one scope. */
+/* THE OTHER HALF OF THE STAGE ABOVE (Nov 22). That one fails a class applied
+   with no style; this one fails a style no class is applied to. Replaced
+   screens left 348 rules for 153 classes nothing could ever use, shipped to
+   every visitor. scripts/unused-styles.mjs says how a class is judged unused:
+   its name appears in no code the browser runs and no code builds it from a
+   prefix. Remove the rules, or name the class in its ALLOW list with why. */
+step('No style is written for a class nothing applies', () => {
+  const left = unusedStyles(ROOT);
+  if (left.length) throw new Error(left.length + ' class(es) styled in styles.css that no code applies - remove their rules, or add each to ALLOW in scripts/unused-styles.mjs with the reason:\n    ' + left.slice(0, 40).join(' '));
+});
+
 step('No client reads a field the server does not send', () => {
   /* THREE BUGS IN ONE ROUND HAD THIS SHAPE, and none of them threw.
 

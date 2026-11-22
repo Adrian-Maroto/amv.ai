@@ -29,7 +29,7 @@ B18-004/005/006/007 (queue, browser, cloud computer, workspaces bindings -
 `consumer_full` preflight fails on purpose until they exist),
 B18-015 (restore drill), B18-016/019/020 (live sign-in providers, Stripe
 sandbox, email domain), B18-017 (merchant verification - checkout stays
-person-operated, docs/BUYING.md), B18-018 (model evals need the model key),
+person-operated, docs/BUYING.md), B18-018 (the eval set now has 14 cases - four added here: an instruction hidden in a document, answering only from given text, never claiming a booking it did not make, never keeping a password; each grades a bad answer as failed. Running them needs the model key: docs/KEYS.md step 2),
 B18-021 (independent penetration test), B18-022/023 (load, on-call),
 B18-025 (visual QA on real devices), B18-027 (per-country capability ledger
 with live contract tests), B18-028 (checked live from outside by the

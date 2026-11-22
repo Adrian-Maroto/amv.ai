@@ -11,7 +11,7 @@ is in GO-LIVE.md section 2.0; this page is the order and the rotation.
 | # | Secret | Why first | Spend ceiling to set with it |
 |---|---|---|---|
 | 1 | `JWT_SECRET`, `PASSWORD_PEPPER` | Sign-in works and passwords are safe in a stolen copy | none |
-| 2 | `AMV_MODEL_KEY` | Chat, Crew and agents answer at all | `GLOBAL_DAILY_USD_CAP` (default $500 a day) and a monthly limit at the model supplier |
+| 2 | `AMV_MODEL_KEY` | Chat, Crew and agents answer at all. Then make an API key in AMV and run `AMV_API_KEY=amv_sk_... node tools/evals.mjs` (14 cases, a few cents): it must pass before anybody else is let in | `GLOBAL_DAILY_USD_CAP` (default $500 a day) and a monthly limit at the model supplier |
 | 3 | `EMAIL_API_KEY` + `RESET_EMAIL_FROM` on a verified domain | Sign-in codes and password resets | the email provider's own plan |
 | 4 | `ADMIN_TOKEN`, `ALERT_WEBHOOK` | You can see the console and hear the alarms | none |
 | 5 | `MAIL_CRED_KEY`, `CONNECT_KEY` | Connected accounts can be stored at all | none |

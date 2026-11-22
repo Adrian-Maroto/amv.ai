@@ -304,8 +304,8 @@ Companion docs (do not duplicate them here - read them):
   which was left on hand-picked numbers until a collision showed up as
   EADDRINUSE from inside a suite - so nothing binds a fixed one and two runs no
   longer collide.
-- `npm run check:fast` is the ITERATION loop: ~8 seconds, twenty-one stages
-  (syntax, worker loads, build fresh, committed credentials, stylesheet comments, unstyled classes,
+- `npm run check:fast` is the ITERATION loop: ~8 seconds, twenty-two stages
+  (syntax, worker loads, build fresh, committed credentials, stylesheet comments, unstyled classes, styles nothing uses,
   response shapes, window reads, secrets on the readiness screen, removed
   features in translations, untranslated strings, the capability record (docs/capabilities.json), dead guards, screens that replace page functions, stores nothing writes, swallowed money writes, failures turned into answers (`docs/silenced-failures.json`), page weight,
   deps, preflight). It
