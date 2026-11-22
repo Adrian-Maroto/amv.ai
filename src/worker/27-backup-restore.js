@@ -826,7 +826,9 @@ async function _restoreMerge(env, key, incoming) {
     /* A live record that will not parse may hold a block or a revocation
        nobody can see, so it is not written over. */
     if (!live || typeof live !== 'object') { audit(env, 'restore_live_unreadable', { key }); return { unknown: true }; }
-    try { from = JSON.parse(incoming); } catch (e) { return { value: incoming, held: false }; }
+    /* Nor is a backup value that does not parse written over a live one that
+       does (failure sweep, Nov 22): the live record may be the block. */
+    try { from = JSON.parse(incoming); } catch (e) { audit(env, 'restore_incoming_unreadable', { key }); return { unknown: true }; }
     if (!from || typeof from !== 'object') return { value: incoming, held: false };
 
     let held = false;

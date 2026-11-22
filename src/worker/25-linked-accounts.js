@@ -611,7 +611,8 @@ async function browserRun(request, env, ctx, emit, out){
 
        So the landing place is gated too, every step, whatever got it there. */
     const _landedSomewhereBlocked = async () => {
-      let here = ''; try { here = await page.url(); } catch(e){ return null; }
+      /* Where the page is, unread, is not "somewhere allowed" (failure sweep, Nov 22). */
+      let here = ''; try { here = await page.url(); } catch(e){ return { url: '', why: 'AMV could not tell where the page had gone.' }; }
       const g = _webHostAllowed(here);
       return g.ok ? null : { url: here, why: g.why };
     };

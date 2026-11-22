@@ -154,7 +154,9 @@ async function _creditModeOf(env, email){
    pack rather than ticking "keep going" for them (audit Oct 26 #15). */
 async function _creditModeChosen(env, email){
   try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return !!(p && CREDIT_MODES.indexOf(p.mode) >= 0); }
-  catch (e) { return true; }
+  /* Unknown is "not said yet": the question is asked again rather than
+     skipped (failure sweep, Nov 22). */
+  catch (e) { return false; }
 }
 /* POST /v1/credit/mode {mode} */
 async function creditSetMode(request, env){

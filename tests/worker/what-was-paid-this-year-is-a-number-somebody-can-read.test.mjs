@@ -93,6 +93,23 @@ section('It accumulates, and crosses the line where it should');
   ok(r.firstAt < r.lastAt, 'with the span of the year recorded', [r.firstAt, r.lastAt]);
 }
 
+section('A year that cannot be read is not a year with nothing paid (failure sweep, Nov 22)');
+{
+  store.clear();
+  await W._recordPaidForTax(env, 'r@x.com', 590, Date.UTC(YEAR, 1, 1));
+  const before = await W._payoutRisk(env, 'r@x.com', 5, { paidOut: 590 });
+  ok(before.paidThisYear === 590, 'read, it is the figure', before.paidThisYear);
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('payoutyear:')) throw new Error('storage down'); return realGet(k); };
+  const risk = await W._payoutRisk(env, 'r@x.com', 20, { paidOut: 590 });
+  env.AMV_KV.get = realGet;
+  ok(risk.tier === 'review' && risk.paidThisYear === null && /could not read what was paid/.test(risk.reasons.join(' ')),
+     'unread, the payout waits for a person - it is not counted as $0 and sent', risk);
+  store.set(`payoutyear:${YEAR}:r@x.com`, '{not json');
+  const corrupt = await W._payoutRisk(env, 'r@x.com', 20, { paidOut: 590 });
+  ok(corrupt.tier === 'review', 'and so does a year record that does not parse', corrupt.tier);
+}
+
 section('A new year starts at zero, which is the entire point of it');
 {
   store.clear();

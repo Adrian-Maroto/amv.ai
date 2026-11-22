@@ -27,6 +27,7 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { codeOnly } from './tests/lib/source.mjs';
 import { renderCapabilities } from './tools/capabilities-doc.mjs';
+import { silencedFailures, BASELINE as SILENCED_BASELINE } from './scripts/silenced-failures.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const R = (p) => join(ROOT, p);
@@ -122,7 +123,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 20 : 24;
+const TOTAL = FAST ? 21 : 25;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -1452,6 +1453,24 @@ step('No money or permission write is swallowed silently', () => {
   if (seen < 15) throw new Error('the scan found only ' + seen + ' guarded money or permission writes, which cannot be right - the scanner is broken, not the code.');
   if (bare.length) throw new Error(bare.length + ' money or permission write(s) are in an empty catch - report with _writeFailed(env, where, e), '
     + 'or say why it may be quiet with a /* best-effort: ... */ note:\n    ' + bare.join('\n    '));
+});
+
+/* A failure turned into an answer, counted (failure sweep, Nov 22). Nine of
+   the Build 17 audit's findings were one shape - a check that failed read as
+   a check that passed - and the sweep after it found four more in code no
+   audit had reached. Which ones are safe cannot be told by a pattern, so
+   each function's count is recorded as read, and a new one fails here until
+   somebody reads it (scripts/silenced-failures.mjs). */
+step('No failure is turned into an answer without being read', () => {
+  const now = silencedFailures(ROOT);
+  const base = JSON.parse(readFileSync(SILENCED_BASELINE, 'utf8')).sites || {};
+  const total = Object.values(now).reduce((a, b) => a + b, 0);
+  /* The negative control: a scanner that matches nothing passes everything. */
+  if (total < 100) throw new Error('the scan found only ' + total + ' silenced failures, which cannot be right - the scanner is broken, not the code.');
+  const grew = Object.entries(now).filter(([k, v]) => v > (base[k] || 0)).map(([k, v]) => k + ' (' + (base[k] || 0) + ' -> ' + v + ')');
+  if (grew.length) throw new Error(grew.length + ' function(s) gained a catch that returns a value or does nothing. Read each: one that turns a failure '
+    + 'into an answer that grants, sends, spends or skips a check is a defect; cleanup, logging and the strict answer are not. Then run '
+    + 'node scripts/silenced-failures.mjs --write:\n    ' + grew.join('\n    '));
 });
 
 /* ── 4b. Page weight ──────────────────────────────────────────────────────

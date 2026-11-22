@@ -119,16 +119,18 @@ async function _recordPaidForTax(env, email, amount, when) {
 }
 
 /* What has been paid to somebody this year, for the threshold checks. */
+/* A year's figure that could not be read throws (failure sweep, Nov 22): it
+   used to answer 0, so a storage fault read as "paid nothing this year" and a
+   payout past the reporting line could go out without the taxpayer details
+   that line requires. None paid is 0; unknown is the caller's to refuse. */
 async function _paidThisYear(env, email, when) {
-  try {
-    /* Read the way _withKV writes - straight from the namespace. DB.get would
-       take the same string as a D1 `kind` column, and these rows are not
-       written through DB, so the two would disagree on a D1 deployment. */
-    const raw = await env.AMV_KV.get(`payoutyear:${taxYearOf(when)}:${String(email || '').toLowerCase()}`);
-    if (!raw) return 0;
-    const r = JSON.parse(raw);
-    return +(r && r.paid) || 0;
-  } catch (e) { return 0; }
+  /* Read the way _withKV writes - straight from the namespace. DB.get would
+     take the same string as a D1 `kind` column, and these rows are not
+     written through DB, so the two would disagree on a D1 deployment. */
+  const raw = await env.AMV_KV.get(`payoutyear:${taxYearOf(when)}:${String(email || '').toLowerCase()}`);
+  if (!raw) return 0;
+  const r = JSON.parse(raw);
+  return +(r && r.paid) || 0;
 }
 
 async function _kycState(env, email) {
@@ -242,7 +244,15 @@ async function _payoutRisk(env, email, amount, wallet) {
      been reportable; somebody paid $700 in their first year is reportable and
      has not passed anything measured over a lifetime. Asked of the calendar
      year, because that is what a filing covers. */
-  const paidThisYear = await _paidThisYear(env, em);
+  let paidThisYear;
+  try { paidThisYear = await _paidThisYear(env, em); }
+  catch (e) {
+    /* Unknown is not $0: whether this payout crosses the reporting line
+       cannot be told, so a person decides. */
+    audit(env, 'payout_risk_error', { email: em, error: 'tax year unreadable: ' + String((e && e.message) || e).slice(0, 80) });
+    return { tier: 'review', score: 999, kyc, paidThisYear: null, yearAfter: null, taxYear: taxYearOf(), reportable: null,
+             reasons: ['AMV could not read what was paid to this seller this year, so whether this payout needs taxpayer details is unknown - a person should look at it'] };
+  }
   const yearAfter = +(paidThisYear + amount).toFixed(2);
   if (yearAfter >= TAX_REPORT_THRESHOLD_USD) {
     score += 30;

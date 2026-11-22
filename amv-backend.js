@@ -17295,7 +17295,8 @@ async function browserRun(request, env, ctx, emit, out){
 
        So the landing place is gated too, every step, whatever got it there. */
     const _landedSomewhereBlocked = async () => {
-      let here = ''; try { here = await page.url(); } catch(e){ return null; }
+      /* Where the page is, unread, is not "somewhere allowed" (failure sweep, Nov 22). */
+      let here = ''; try { here = await page.url(); } catch(e){ return { url: '', why: 'AMV could not tell where the page had gone.' }; }
       const g = _webHostAllowed(here);
       return g.ok ? null : { url: here, why: g.why };
     };
@@ -19056,7 +19057,9 @@ async function _restoreMerge(env, key, incoming) {
     /* A live record that will not parse may hold a block or a revocation
        nobody can see, so it is not written over. */
     if (!live || typeof live !== 'object') { audit(env, 'restore_live_unreadable', { key }); return { unknown: true }; }
-    try { from = JSON.parse(incoming); } catch (e) { return { value: incoming, held: false }; }
+    /* Nor is a backup value that does not parse written over a live one that
+       does (failure sweep, Nov 22): the live record may be the block. */
+    try { from = JSON.parse(incoming); } catch (e) { audit(env, 'restore_incoming_unreadable', { key }); return { unknown: true }; }
     if (!from || typeof from !== 'object') return { value: incoming, held: false };
 
     let held = false;
@@ -20226,7 +20229,13 @@ async function _serveRequest(request, env, ctx, rid) {
     const mounted = _mountRequest(request, env);
     if (mounted) request = mounted;
     /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
-    request = _cookiesFromAmvOnly(request, env);
+    /* A guard that could not be applied is a refusal, not a pass (failure
+       sweep, Nov 22): both of these used to hand back the request untouched
+       when they failed - cookies from a stranger's page kept, or a body with
+       no cap - so an error inside a defence switched the defence off. */
+    { const r = _cookiesFromAmvOnly(request, env);
+      if (!r) return _applyCors(request, env, json({ error: 'AMV could not read that request.', code: 'request_unreadable' }, 400));
+      request = r; }
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 
@@ -20244,7 +20253,9 @@ async function _serveRequest(request, env, ctx, rid) {
          with a hole in it by next month. */
       const tooBig = _bodyTooBig(request);
       if (tooBig) return _applyCors(request, env, tooBig);
-      request = _bodyCapped(request);
+      { const r = _bodyCapped(request);
+        if (!r) return _applyCors(request, env, json({ error: 'AMV could not read that request.', code: 'request_unreadable' }, 400));
+        request = r; }
 
       /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
 
@@ -20434,8 +20445,13 @@ export default {
          a hot request path off KV, and this runs once every five minutes. A
          stale answer here would be five more minutes of the exact spend the
          operator is trying to stop. */
+      /* A kill switch that cannot be read is treated as on, for this run
+         (failure sweep, Nov 22): off, an unreadable store ran every job in
+         the very outage somebody had pulled the switch for. The next run asks
+         again. */
       let killed = false;
-      try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){}
+      try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }
+      catch(e){ killed = true; try{ audit(env, 'kill_switch_unreadable', { error: String((e && e.message) || e).slice(0, 80) }); }catch(_){ /* logging: it never decides anything */ } }
       /* A RESTORE IS RUNNING (feature:writes off, Nov 3 audit DR-009): the
          cron writes too - jobs, sweeps, backups - and a write landing in the
          middle of a restore is exactly the mixed store the pause exists to
@@ -20720,7 +20736,7 @@ function _bodyCapped(request) {
   });
   let out;
   try { out = new Request(request, { body: request.body.pipeThrough(cap), duplex: 'half', cf: request.cf }); }
-  catch (e) { return request; }
+  catch (e) { return null; }
   /* The new request is a new object, and two things hang off the old one by
      identity: where it came in (the /api mount, held in _mountedAt) and the
      platform's facts about the caller (request.cf - their country, their time
@@ -30503,7 +30519,7 @@ function _cookiesFromAmvOnly(request, env) {
     const out = new Request(request, { headers: h });
     if (_mountedAt.has(request)) _mountedAt.set(out, _mountedAt.get(request));
     return out;
-  } catch (e) { return request; }
+  } catch (e) { return null; }
 }
 function _readRefreshCookie(request) {
   try {
@@ -33195,7 +33211,14 @@ async function _recordTxn(env, tx) {
     await env.AMV_KV.put('txn:e:' + _txnOrder(rec), body, body.length <= 1000 ? { metadata: rec } : undefined);
     if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
     return rec;
-  } catch (e) { return null; }
+  } catch (e) {
+    /* Money moved and its line was not written: said, never silent (failure
+       sweep, Nov 22). The provider's own record still has it; the owner's
+       figures are short by this line until it is reconciled. */
+    try { audit(env, 'txn_record_failed', { provider: tx && tx.provider, kind: tx && tx.kind, amount: tx && tx.amount, error: String((e && e.message) || e).slice(0, 120) }); } catch (_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'txn_record_failed', 'A payment was taken but its line in the transaction ledger could not be written. The payment provider still has it; reconcile before reading revenue figures.', 60); } catch (_) { /* logging: it never decides anything */ }
+    return null;
+  }
 }
 
 /* Newest first. `txn:log`, the single record from before the move, is still
@@ -33722,7 +33745,9 @@ async function _creditModeOf(env, email){
    pack rather than ticking "keep going" for them (audit Oct 26 #15). */
 async function _creditModeChosen(env, email){
   try { const p = await DB.get(env, 'creditpref', String(email || '').toLowerCase()); return !!(p && CREDIT_MODES.indexOf(p.mode) >= 0); }
-  catch (e) { return true; }
+  /* Unknown is "not said yet": the question is asked again rather than
+     skipped (failure sweep, Nov 22). */
+  catch (e) { return false; }
 }
 /* POST /v1/credit/mode {mode} */
 async function creditSetMode(request, env){
@@ -36467,16 +36492,18 @@ async function _recordPaidForTax(env, email, amount, when) {
 }
 
 /* What has been paid to somebody this year, for the threshold checks. */
+/* A year's figure that could not be read throws (failure sweep, Nov 22): it
+   used to answer 0, so a storage fault read as "paid nothing this year" and a
+   payout past the reporting line could go out without the taxpayer details
+   that line requires. None paid is 0; unknown is the caller's to refuse. */
 async function _paidThisYear(env, email, when) {
-  try {
-    /* Read the way _withKV writes - straight from the namespace. DB.get would
-       take the same string as a D1 `kind` column, and these rows are not
-       written through DB, so the two would disagree on a D1 deployment. */
-    const raw = await env.AMV_KV.get(`payoutyear:${taxYearOf(when)}:${String(email || '').toLowerCase()}`);
-    if (!raw) return 0;
-    const r = JSON.parse(raw);
-    return +(r && r.paid) || 0;
-  } catch (e) { return 0; }
+  /* Read the way _withKV writes - straight from the namespace. DB.get would
+     take the same string as a D1 `kind` column, and these rows are not
+     written through DB, so the two would disagree on a D1 deployment. */
+  const raw = await env.AMV_KV.get(`payoutyear:${taxYearOf(when)}:${String(email || '').toLowerCase()}`);
+  if (!raw) return 0;
+  const r = JSON.parse(raw);
+  return +(r && r.paid) || 0;
 }
 
 async function _kycState(env, email) {
@@ -36590,7 +36617,15 @@ async function _payoutRisk(env, email, amount, wallet) {
      been reportable; somebody paid $700 in their first year is reportable and
      has not passed anything measured over a lifetime. Asked of the calendar
      year, because that is what a filing covers. */
-  const paidThisYear = await _paidThisYear(env, em);
+  let paidThisYear;
+  try { paidThisYear = await _paidThisYear(env, em); }
+  catch (e) {
+    /* Unknown is not $0: whether this payout crosses the reporting line
+       cannot be told, so a person decides. */
+    audit(env, 'payout_risk_error', { email: em, error: 'tax year unreadable: ' + String((e && e.message) || e).slice(0, 80) });
+    return { tier: 'review', score: 999, kyc, paidThisYear: null, yearAfter: null, taxYear: taxYearOf(), reportable: null,
+             reasons: ['AMV could not read what was paid to this seller this year, so whether this payout needs taxpayer details is unknown - a person should look at it'] };
+  }
   const yearAfter = +(paidThisYear + amount).toFixed(2);
   if (yearAfter >= TAX_REPORT_THRESHOLD_USD) {
     score += 30;

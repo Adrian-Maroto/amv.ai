@@ -191,7 +191,14 @@ async function _recordTxn(env, tx) {
     await env.AMV_KV.put('txn:e:' + _txnOrder(rec), body, body.length <= 1000 ? { metadata: rec } : undefined);
     if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
     return rec;
-  } catch (e) { return null; }
+  } catch (e) {
+    /* Money moved and its line was not written: said, never silent (failure
+       sweep, Nov 22). The provider's own record still has it; the owner's
+       figures are short by this line until it is reconciled. */
+    try { audit(env, 'txn_record_failed', { provider: tx && tx.provider, kind: tx && tx.kind, amount: tx && tx.amount, error: String((e && e.message) || e).slice(0, 120) }); } catch (_) { /* logging: it never decides anything */ }
+    try { await alertOnce(env, 'txn_record_failed', 'A payment was taken but its line in the transaction ledger could not be written. The payment provider still has it; reconcile before reading revenue figures.', 60); } catch (_) { /* logging: it never decides anything */ }
+    return null;
+  }
 }
 
 /* Newest first. `txn:log`, the single record from before the move, is still

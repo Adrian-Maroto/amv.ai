@@ -402,7 +402,7 @@ function _cookiesFromAmvOnly(request, env) {
     const out = new Request(request, { headers: h });
     if (_mountedAt.has(request)) _mountedAt.set(out, _mountedAt.get(request));
     return out;
-  } catch (e) { return request; }
+  } catch (e) { return null; }
 }
 function _readRefreshCookie(request) {
   try {

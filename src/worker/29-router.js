@@ -10,7 +10,13 @@ async function _serveRequest(request, env, ctx, rid) {
     const mounted = _mountRequest(request, env);
     if (mounted) request = mounted;
     /* AMV's cookies count only when AMV's own page sent them (owner yes, Oct 26). */
-    request = _cookiesFromAmvOnly(request, env);
+    /* A guard that could not be applied is a refusal, not a pass (failure
+       sweep, Nov 22): both of these used to hand back the request untouched
+       when they failed - cookies from a stranger's page kept, or a body with
+       no cap - so an error inside a defence switched the defence off. */
+    { const r = _cookiesFromAmvOnly(request, env);
+      if (!r) return _applyCors(request, env, json({ error: 'AMV could not read that request.', code: 'request_unreadable' }, 400));
+      request = r; }
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 
@@ -28,7 +34,9 @@ async function _serveRequest(request, env, ctx, rid) {
          with a hole in it by next month. */
       const tooBig = _bodyTooBig(request);
       if (tooBig) return _applyCors(request, env, tooBig);
-      request = _bodyCapped(request);
+      { const r = _bodyCapped(request);
+        if (!r) return _applyCors(request, env, json({ error: 'AMV could not read that request.', code: 'request_unreadable' }, 400));
+        request = r; }
 
       /* A DEPLOYMENT THAT CANNOT FINISH THE JOB SHOULD NOT START IT.
 
@@ -218,8 +226,13 @@ export default {
          a hot request path off KV, and this runs once every five minutes. A
          stale answer here would be five more minutes of the exact spend the
          operator is trying to stop. */
+      /* A kill switch that cannot be read is treated as on, for this run
+         (failure sweep, Nov 22): off, an unreadable store ran every job in
+         the very outage somebody had pulled the switch for. The next run asks
+         again. */
       let killed = false;
-      try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){}
+      try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }
+      catch(e){ killed = true; try{ audit(env, 'kill_switch_unreadable', { error: String((e && e.message) || e).slice(0, 80) }); }catch(_){ /* logging: it never decides anything */ } }
       /* A RESTORE IS RUNNING (feature:writes off, Nov 3 audit DR-009): the
          cron writes too - jobs, sweeps, backups - and a write landing in the
          middle of a restore is exactly the mixed store the pause exists to
@@ -504,7 +517,7 @@ function _bodyCapped(request) {
   });
   let out;
   try { out = new Request(request, { body: request.body.pipeThrough(cap), duplex: 'half', cf: request.cf }); }
-  catch (e) { return request; }
+  catch (e) { return null; }
   /* The new request is a new object, and two things hang off the old one by
      identity: where it came in (the /api mount, held in _mountedAt) and the
      platform's facts about the caller (request.cf - their country, their time
