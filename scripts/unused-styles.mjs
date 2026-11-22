@@ -6,7 +6,7 @@
    page that could ever use them. A class counts as unused only when its name
    appears in none of the code a browser runs (app.js, the page shell, every
    published script and country file) and no code builds it from a prefix
-   (`'tk-'+name`, `"x s-'+status`, `${'cw-'}`), so a false alarm needs a class
+   (`'tk-'+name`, `"x s-'+status`, `${'cw-'}`) or a suffix (`cls+'-l'`), so a false alarm needs a class
    that is genuinely never written. check.mjs fails on any; remove the rules,
    or name the class in ALLOW with the reason.
 
@@ -33,7 +33,11 @@ export function unusedStyles(root = ROOT) {
      name onto - a quote or a template slot straight after `something-`. */
   const words = new Set(code.match(/[\w-]+/g) || []);
   const prefixes = new Set([...code.matchAll(/([\w-]*-)(?:['"]\s*\+|\$\{)/g)].map(m => m[1]));
+  /* And names built the other way round: a stem joined to a suffix,
+     `cls+'-l'` where cls is 'lab-bar' (the Build bar's two halves). */
+  const suffixes = new Set([...code.matchAll(/\+\s*['"`](-[\w-]+)/g)].map(m => m[1]));
   const built = (c) => {
+    for (const sfx of suffixes) if (c.length > sfx.length && c.endsWith(sfx) && words.has(c.slice(0, -sfx.length))) return true;
     const parts = c.split('-');
     for (let i = 1; i < parts.length; i++) {
       const pre = parts.slice(0, i).join('-') + '-';

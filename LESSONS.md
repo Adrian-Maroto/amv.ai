@@ -16162,3 +16162,13 @@ every resulting rule compared - 366 unused removed, 32 trimmed, 0 in-use rules
 changed or lost. The gate now fails any selector whose brackets do not
 close. Rule: a tool that rewrites CSS is proved by what the browser parses
 from its output, compared with what it parsed before.
+
+The second pass still removed rules in use: the Build bar names its halves
+`cls+'-l'` and `cls+'-r'`, and the check only knew names built from a prefix.
+The gate's suites caught it (three Build screens). The check now knows
+suffix-built names too, the removal was redone (331 rules, 27 trimmed), and
+it was proved twice: by the browser's parse, and by rendering 25 screens at
+1280 and 390 px, signed in and out, with the old and the new stylesheet and
+comparing every element's box and computed style - one difference, an
+animation caught at another moment. Rule: a static "unused" judgement is a
+hypothesis; the rendered page under both is the evidence.

@@ -458,7 +458,7 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 
 
 .int-ic{font-size:var(--ic-md);width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-md);background:rgba(255,255,255,.05);flex-shrink:0}
-.int-name{font-size:var(--t-base);font-weight:600;color:var(--tx)}
+.int-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:4px}.int-name{font-size:var(--t-base);font-weight:600;color:var(--tx)}
 
 .ho-card{border:1px solid var(--glass-bd);border-radius:var(--r-lg);background:var(--glass);padding:15px;margin-bottom:10px}
 .ho-h{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:var(--t-xs);color:var(--mu)}
@@ -1018,8 +1018,8 @@ input,textarea,select{font-family:var(--fn);}
 .agents{display:flex;flex-direction:column;gap:10px}
 .agent{border:1px solid var(--bd);border-radius:var(--r-md);overflow:hidden;opacity:.55;transition:opacity .2s}
 .agent.thinking,.agent.done{opacity:1}
-
-
+.agent-h{display:flex;align-items:center;gap:9px;padding:10px 12px;font-size:var(--t-base);background:var(--s2)}
+.agent.done .agent-h{border-left:2px solid var(--grn)}
 
 .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--bd);border-top-color:var(--accent-txt);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -1834,7 +1834,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 
 
-
+.uniq-t{font-size:var(--t-md);font-weight:600;color:var(--tx);letter-spacing:-.1px}
 
 
 
@@ -3272,7 +3272,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    Grounded recent-work cards, only shown when there's activity.
    ============================================================ *//* When rich, don't vertically center - let it flow from the top with room */
 
-
+.chome-recent-h{font-size:var(--t-sm);font-weight:600;letter-spacing:.02em;color:var(--mu);margin-bottom:11px;padding-left:2px}
 
 /* ============================================================
    ACCENT THEMES (#12)
@@ -3381,6 +3381,7 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 /* Small UI labels: subtle positive tracking reads cleaner at small sizes */
 .set-sub,
 .eyebrow,
+.chome-recent-h,
 .hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
@@ -3869,7 +3870,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 
 /* Jump back in: centered under the chips, matching the home's calm rhythm */
 .chome-recent{display:flex;flex-direction:column;align-items:center}
-
+.chome-recent-h{font-size:var(--t-xs);letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:600;text-align:center;margin:0 0 10px}
 
 /* Top-left brand: clean letter mark */
 .logo-mark.logo-letter{
@@ -3915,7 +3916,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   padding:11px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }
 .dev-shell.dev-blank .dev-bar{border-bottom:1px solid var(--bd);background:var(--bg);z-index:2}
-.dev-bar-l{display:flex;align-items:center;gap:7px}
+.dev-bar-l,.dev-bar-r{display:flex;align-items:center;gap:7px}
 .dev-badge{
   font-size:var(--t-xs);font-weight:700;letter-spacing:.05em;text-transform:uppercase;
   color:var(--accent-txt);background:var(--accent-soft);padding:4px 9px;border-radius:var(--r-sm);
@@ -3986,7 +3987,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:11px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }
-
+.lab-bar-l,.lab-bar-r{display:flex;align-items:center;gap:7px}
 .lab-lang-sel,#lab-model{
   padding:6px 26px 6px 11px;font-size:var(--t-sm);font-weight:500;
   background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);color:var(--tx);
@@ -4134,7 +4135,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:11px 16px;flex-shrink:0;border-bottom:1px solid var(--bd);
 }
-
+.lab-out-l{font-size:var(--t-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 .lab-out-body{
   flex:1;min-height:0;overflow:auto;padding:16px 18px;background:transparent!important;
   font-size:var(--t-base);line-height:1.7;color:var(--tx);border-radius:0!important;box-shadow:none!important;
@@ -4155,7 +4156,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 
 /* ── Context window meter ── */
 
-
+.ctx-l{font-size:var(--t-sm);font-weight:600;color:var(--mu);font-variant-numeric:tabular-nums}
 
 .ctx-bar{height:4px;border-radius:var(--r-2xs);background:var(--s4);overflow:hidden}
 .ctx-fill{height:100%;border-radius:var(--r-2xs);background:var(--accent-grad);transition:width .4s ease}
@@ -6017,9 +6018,9 @@ body.light .aa-date{color-scheme:light}
 /* Lab toolbar: on phones let the action bar wrap instead of overflowing */
 @media(max-width:640px){
   .lab-bar{flex-wrap:wrap!important;gap:8px!important;padding:10px 12px!important}
-  
-  
-  
+  .lab-bar-l,.lab-bar-r{flex-wrap:wrap;min-width:0}
+  .lab-bar-r{gap:6px}
+  .lab-bar-l .lab-lang-sel,.lab-bar-l #lab-model{max-width:44vw}
 }
 
 /* ============================================================
@@ -6861,10 +6862,12 @@ html,body{height:100%;height:100dvh}
    unreachable. The bar wraps now, and the groups shrink rather than push.
    ========================================================================== */
 .dev-bar{flex-wrap:wrap;row-gap:6px}
-.dev-bar-l{min-width:0;flex-wrap:wrap}
+.dev-bar-l,.dev-bar-r{min-width:0;flex-wrap:wrap}
 .dev-bar-l{flex:1 1 auto}
-
-
+.dev-bar-r{flex:0 1 auto;justify-content:flex-end}
+@media (max-width:420px){
+  .dev-bar-r{flex:1 1 100%;justify-content:flex-start}
+}
 
 /* ==========================================================================
    LAYER A44 - "What was wrong with it?"
@@ -8321,7 +8324,7 @@ body.light{ --on-accent:#ffffff; }
   line-height:1.15;margin:0;color:var(--tx);
 }
 
-
+.pghd-r{ flex:0 0 auto;display:flex;gap:var(--sp-2);align-items:center; }
 @media(max-width:700px){
   .pghd{ flex-direction:column;align-items:stretch;gap:var(--sp-2);
          margin-bottom:var(--sp-4);padding-bottom:var(--sp-3); }
@@ -8426,7 +8429,10 @@ body.light{ --on-accent:#ffffff; }
    you get code in, so they are the two that still mean something here.
 
    Nothing is removed. Every one of these returns the moment there is code. */
-
+.lab-shell.lab-blank .lab-bar-r #lab-run,
+.lab-shell.lab-blank .lab-bar-r #lab-debug,
+.lab-shell.lab-blank .lab-bar-r #lab-agents,
+.lab-shell.lab-blank .lab-bar-r #lab-deploy{ display:none; }
 
 .lab-entry-acts{ display:flex;flex-direction:column;align-items:center;gap:var(--sp-2); }
 .lab-go-row{ display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2); }
@@ -8462,11 +8468,11 @@ body.light{ --on-accent:#ffffff; }
 .build-mode:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
 .build-mode.on{ background:var(--s3);border-color:var(--accent-txt);color:var(--tx); }
 .build-mode-t{ font-size:var(--t-md);font-weight:600;color:inherit; }
-
-
+.build-mode-h{ font-size:var(--t-sm);color:var(--dim);line-height:1.45; }
+.build-mode.on .build-mode-h{ color:var(--mu); }
 @media(max-width:760px){
   .build-mode{ flex:1 1 100%;padding:var(--sp-2) var(--sp-3);min-height:44px;justify-content:center; }
-  
+  .build-mode-h{ display:none; }
   .build-modes{ margin-bottom:var(--sp-4); }
 }
 
@@ -10980,7 +10986,8 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    what a working surface looks like there is a different decision from
    rescuing one that does not fit. */
 @media(max-width:760px){
-  
+  .lab-shell.lab-blank .lab-bar-l > *:not(.dev-badge):not(.bld-home),
+  .lab-shell.lab-blank .lab-bar-r{ display:none; }
   .lab-shell.lab-blank .lab-bar{ padding-top:var(--sp-2); padding-bottom:var(--sp-2); }
 }
 
@@ -11234,7 +11241,8 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    and the way back stay, everything else waits until there is something to act
    on. */
 @media(max-width:760px){
-  .dev-shell.dev-blank .dev-bar-l > *:not(.dev-badge):not(.bld-home){ display:none; }
+  .dev-shell.dev-blank .dev-bar-l > *:not(.dev-badge):not(.bld-home),
+  .dev-shell.dev-blank .dev-bar-r{ display:none; }
 }
 
 /* ── LAYER A177 · two composer selects were cut off, and nothing could see it ─
@@ -11550,13 +11558,14 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   /* `.dev-bar-l,.dev-bar-r{flex-wrap:wrap}` is what actually put the badge and
      the picker on separate lines - the wrap is inside the left group, not on
      the bar. With the picker allowed to shrink there is nothing left to wrap. */
-  .dsn-wrap > .build-bar .dev-bar-l{ min-width:0; flex-wrap:nowrap; }
+  .dsn-wrap > .build-bar .dev-bar-l,
+  .dsn-wrap > .build-bar .dev-bar-r{ min-width:0; flex-wrap:nowrap; }
   /* The room goes to the picker, not to the empty space beside one 44px
      button: without this the right group grew to 192 and squeezed
      "Auto - picks for you" into 70px, which is the truncation the Dev composer
      took three attempts to get rid of. */
   .dsn-wrap > .build-bar .dev-bar-l{ flex:1 1 auto; }
-  
+  .dsn-wrap > .build-bar .dev-bar-r{ flex:0 0 auto; }
   .dsn-wrap > .build-bar #studio-model,
   .dsn-wrap > .build-bar .secmodel-sel{ flex:1 1 auto; }
 }
@@ -11633,7 +11642,9 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media(max-width:760px){
   /* The language and the engine come back: both are decisions about the run
      that the entry's own buttons are about to start. */
-  
+  .lab-shell.lab-blank .lab-bar-l > #lab-lang,
+  .lab-shell.lab-blank .lab-bar-l > #lab-model,
+  .lab-shell.lab-blank .lab-bar-l > .secmodel-sel{ display:block; }
   /* Split the row by what each label needs, not evenly. `max-width:44vw` caps
      both at 172px on a 390 screen, and "Auto - picks for you" needs 178 - so
      the engine picker was truncated by six pixels while "JavaScript" sat in
@@ -11646,23 +11657,23 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   /* And nowrap: with the cap gone they each took their natural width and wrapped
      onto a row apiece, which is two rows of chrome on the screen A168 exists to
      keep clear. One row, shared by need. */
-  
+  .lab-shell.lab-blank .lab-bar-l{ display:flex; gap:var(--sp-2); min-width:0; flex-wrap:nowrap; }
   /* The engine picker gets the room it needs and the language absorbs the rest.
      `flex:0 1 auto` on one and `1 1 auto` on the other is not enough on its
      own: a select's natural basis is its WIDEST OPTION, not its selected one,
      so the engine had the larger basis, shrank more in absolute terms, and
      ended up the narrow one - the reverse of what was asked for. A floor on
      the engine states it directly. */
-  
-  
+  .lab-shell.lab-blank .lab-bar-l .lab-lang-sel{ flex:0 1 auto; min-width:0; max-width:none; }
+  .lab-shell.lab-blank .lab-bar-l #lab-model{ flex:1 1 auto; min-width:190px; max-width:none; }
   /* And the badge goes, on all three, because the choice above it says it. */
   .lab-shell.lab-blank .dev-badge,
   .dev-shell.dev-blank .dev-badge,
   .dsn-wrap > .build-bar .dev-badge{ display:none; }
   /* Dev's blank bar keeps New, which is how you start again, and nothing else -
      A176 hid all of it including New. */
-  
-  
+  .dev-shell.dev-blank .dev-bar-r{ display:flex; }
+  .dev-shell.dev-blank .dev-bar-r > *:not(#dev-new){ display:none; }
 }
 /* DEV'S "DEBUG IN LAB", ON AN EMPTY PROJECT, AT EVERY WIDTH.
 
@@ -11671,7 +11682,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    cannot work. That is exactly what Lab hides Run, Auto-Debug, agents and
    deploy for on its own blank entry; Dev's equivalent was left visible.
    Hidden, not removed: it returns the moment there is a project. */
-
+.dev-shell.dev-blank .dev-bar-r #dev-tolab{ display:none; }
 
 /* THE LAST TWO OFF THE SPINE, MEASURED RATHER THAN EYEBALLED.
 
@@ -12384,7 +12395,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   display:flex; align-items:flex-start; justify-content:space-between;
   gap:var(--sp-4); flex-wrap:wrap;
 }
-
+.bill-sum-l{ display:flex; align-items:center; gap:var(--sp-4); min-width:0; }
 
 .bill-sum-n{
   display:flex; align-items:baseline; gap:var(--sp-3); flex-wrap:wrap;
@@ -14162,8 +14173,8 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   border-radius:var(--r-lg);
   background:color-mix(in srgb, var(--gold) 9%, transparent);
 }
-
-
+.cwp-need-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
+.cwp-need-p{ font-size:var(--t-sm); color:var(--tx); line-height:1.55; margin:0 0 var(--sp-3); opacity:.9; }
 
 .cwn-list{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-4) 0; text-align:left; }
 .cwn-row{
@@ -16581,10 +16592,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 /* LAYER A356 - The job panel reads in the order you act (Nov 10): what it
    does, what is missing (only that, one per line), when it runs - chosen
    here - and the action. The example is a disclosure, not the first block. */
-
-
-
-
+.cwp-need-l{list-style:none;margin:var(--sp-2) 0 var(--sp-3);padding:0;display:flex;flex-direction:column;gap:6px}
+.cwp-need-l li{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-2);padding:8px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-sm);font-size:var(--t-sm);color:var(--tx);min-width:0}
+.cwp-need-l li span{min-width:0;overflow-wrap:anywhere}
+.cwp-need-l em{flex:none;font-style:normal;font-size:var(--t-xs);color:var(--gold);font-weight:600}
 .cwp-when{display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
 .cwp-when .inp{width:auto;min-width:0;min-height:36px;padding:6px 10px;font-size:var(--t-sm)}
 .cwp-when .inp[hidden]{display:none}
