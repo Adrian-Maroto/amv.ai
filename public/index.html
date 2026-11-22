@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="d11fee3487fbe516">
+<meta name="amv-build" content="93407f408f9a1611">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10292,6 +10292,63 @@ body:not([data-accent]){--accent-txt:#84a3e0}
 :root{--grn:#5bb37f;--red:#e06464;--gold:#cfa851;--grn-txt:#5bb37f;--red-txt:#ec7a7a;--gold-txt:#cfa851}
 body.light{--grn:#2c7d4b;--red:#b94141;--gold:#9a7526}
 body.light .plnpop-elite{color:#fff!important}
+:root:not(#_a):not(#_b) .btn, :root:not(#_a):not(#_b) .bp, :root:not(#_a):not(#_b) .bs, :root:not(#_a):not(#_b) .bd2, :root:not(#_a):not(#_b) .cj-all, :root:not(#_a):not(#_b) .int-seemore, :root:not(#_a):not(#_b) .set-close,
+:root:not(#_a):not(#_b) .dev-upload-btn, :root:not(#_a):not(#_b) .mc-cmd-go {
+display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:8px;
+min-height:38px!important; padding:0 18px!important; border-radius:var(--r-pill)!important;
+font-family:var(--fn)!important; font-size:var(--t-base)!important; line-height:1.2!important;
+white-space:nowrap; text-decoration:none!important; cursor:pointer;
+transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease),box-shadow .15s var(--ease),opacity .15s var(--ease)!important;
+transform:none!important; box-shadow:none!important;
+}
+:root:not(#_a):not(#_b) .btn.mc-mini { min-height:32px!important; padding:0 14px!important; font-size:var(--t-sm)!important }
+:root:not(#_a):not(#_b) .mc-cmd-go, :root:not(#_a):not(#_b) .cj-run { min-height:44px!important; padding:0 22px!important }
+:root:not(#_a):not(#_b) .btn, :root:not(#_a):not(#_b) .bs, :root:not(#_a):not(#_b) .cj-all, :root:not(#_a):not(#_b) .int-seemore, :root:not(#_a):not(#_b) .set-close, :root:not(#_a):not(#_b) .dev-upload-btn {
+background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(--tx)!important; font-weight:500!important;
+}
+:root:not(#_a):not(#_b) .btn:hover, :root:not(#_a):not(#_b) .bs:hover, :root:not(#_a):not(#_b) .cj-all:hover, :root:not(#_a):not(#_b) .int-seemore:hover, :root:not(#_a):not(#_b) .set-close:hover, :root:not(#_a):not(#_b) .dev-upload-btn:hover {
+background:var(--s3)!important; border-color:var(--bdl)!important;
+}
+:root:not(#_a):not(#_b) .bp, :root:not(#_a):not(#_b) .btn.bp, :root:not(#_a):not(#_b) .mc-cmd-go, :root:not(#_a):not(#_b) .pbp {
+background:var(--accent-fill)!important; border:1px solid transparent!important; color:#fff!important; font-weight:600!important;
+}
+:root:not(#_a):not(#_b) .bp:hover, :root:not(#_a):not(#_b) .btn.bp:hover, :root:not(#_a):not(#_b) .mc-cmd-go:hover, :root:not(#_a):not(#_b) .pbp:hover { background:var(--accent-d)!important; filter:brightness(1.08) }
+:root:not(#_a):not(#_b) .bp:active, :root:not(#_a):not(#_b) .mc-cmd-go:active { filter:brightness(.95) }
+:root:not(#_a):not(#_b) .bp svg, :root:not(#_a):not(#_b) .mc-cmd-go svg { color:#fff; stroke:currentColor }
+:root:not(#_a):not(#_b) .bd2, :root:not(#_a):not(#_b) .btn.bd2 { background:transparent!important; border:1px solid color-mix(in srgb, var(--red) 55%, transparent)!important; color:var(--red-txt)!important; font-weight:500!important }
+:root:not(#_a):not(#_b) .bd2:hover, :root:not(#_a):not(#_b) .btn.bd2:hover { background:var(--red)!important; border-color:var(--red)!important; color:#fff!important }
+:root:not(#_a):not(#_b) .btn:focus-visible, :root:not(#_a):not(#_b) .bp:focus-visible, :root:not(#_a):not(#_b) .bs:focus-visible, :root:not(#_a):not(#_b) .bd2:focus-visible, :root:not(#_a):not(#_b) .mc-cmd-go:focus-visible,
+:root:not(#_a):not(#_b) .cj-chip:focus-visible, :root:not(#_a):not(#_b) .hc-chip:focus-visible, :root:not(#_a):not(#_b) .chome-chip:focus-visible, :root:not(#_a):not(#_b) .dev-chip:focus-visible {
+outline:2px solid var(--accent)!important; outline-offset:2px!important;
+}
+:root:not(#_a):not(#_b) .btn:disabled, :root:not(#_a):not(#_b) .btn[aria-disabled="true"], :root:not(#_a):not(#_b) .bp:disabled, :root:not(#_a):not(#_b) .bs:disabled, :root:not(#_a):not(#_b) .mc-cmd-go:disabled {
+opacity:.45!important; cursor:not-allowed!important; filter:none!important;
+}
+:root:not(#_a):not(#_b) .cj-chip, :root:not(#_a):not(#_b) .hc-chip, :root:not(#_a):not(#_b) .chome-chip, :root:not(#_a):not(#_b) .dev-chip, :root:not(#_a):not(#_b) .build-mode, :root:not(#_a):not(#_b) .team-cyc, :root:not(#_a):not(#_b) .temp-toggle, :root:not(#_a):not(#_b) .cj-country {
+min-height:32px!important; padding:0 14px!important; border-radius:var(--r-pill)!important;
+font-size:var(--t-sm)!important; font-weight:500!important; line-height:1.2!important;
+background:transparent!important; border:1px solid var(--bd)!important; color:var(--tx)!important;
+transition:background-color .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease)!important;
+}
+:root:not(#_a):not(#_b) .cj-chip:hover, :root:not(#_a):not(#_b) .hc-chip:hover, :root:not(#_a):not(#_b) .chome-chip:hover, :root:not(#_a):not(#_b) .dev-chip:hover, :root:not(#_a):not(#_b) .build-mode:hover, :root:not(#_a):not(#_b) .team-cyc:hover, :root:not(#_a):not(#_b) .temp-toggle:hover, :root:not(#_a):not(#_b) .cj-country:hover {
+background:var(--s2)!important; border-color:var(--bdl)!important;
+}
+:root:not(#_a):not(#_b) .cj-chip.on, :root:not(#_a):not(#_b) .hc-chip.on, :root:not(#_a):not(#_b) .build-mode.on, :root:not(#_a):not(#_b) .team-cyc.on, :root:not(#_a):not(#_b) .temp-toggle.on {
+background:var(--tx)!important; border-color:var(--tx)!important; color:var(--bg)!important;
+}
+:root:not(#_a):not(#_b) .cj-chip.on *, :root:not(#_a):not(#_b) .hc-chip.on * { color:inherit!important }
+:root:not(#_a):not(#_b) .vi-conn .int-act .btn.bp {
+background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(--tx)!important; font-weight:600!important;
+}
+:root:not(#_a):not(#_b) .vi-conn .int-act .btn.bp:hover { background:var(--s3)!important; border-color:var(--bdl)!important; filter:none }
+@media (pointer:coarse), (max-width:1100px) {
+:root:not(#_a):not(#_b) :is(.btn,.bp,.bs,.bd2,.cj-all,.int-seemore,.set-close,.dev-upload-btn,.mc-cmd-go,
+.cj-chip,.hc-chip,.chome-chip,.dev-chip,.build-mode,.team-cyc,.temp-toggle,.cj-country,#cw-where) { min-height:44px!important; min-width:44px }
+}
+@media (max-width:640px) {
+:root:not(#_a):not(#_b) :is(.btn,.bp,.bs,.bd2) { padding:0 14px!important }
+:root:not(#_a):not(#_b) .cc-actions .btn { flex:1 1 0; min-width:0; white-space:normal!important; text-align:center }
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
