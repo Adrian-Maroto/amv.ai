@@ -132,7 +132,11 @@ section('Crew, from Spain: Spain’s own jobs lead the list');
   await page.waitForTimeout(300);
   const r = await page.evaluate(() => {
     const list = _cjList();
-    const titles = list.slice(0, 60).map(j => j.title);
+    /* Since Nov 23 the everyday fifty lead every country's list (the owner:
+       "make them things people can do every day"), so the country's own
+       work starts after them - still on the first screens of a list of
+       thousands. */
+    const titles = list.slice(0, 120).map(j => j.title);
     return { head: (document.getElementById('cx-jobs-h') || {}).textContent || '', titles,
              made: (_cwMadeForJobs('ES') || []).length, firstIds: list.slice(0, 12).map(j => j.id),
              uni: _cwUniversalJobs().map(j => j.id), cls: window.__cls, src: (window.__src || []).slice(0, 6) };

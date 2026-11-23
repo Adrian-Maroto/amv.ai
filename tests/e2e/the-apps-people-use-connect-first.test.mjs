@@ -65,7 +65,10 @@ section('Every topic is the same shape, and there is no "everything else"');
   ok(r.sixThenMore === r.n, 'each shows what connects (up to nine), then one See the remaining where there are more', r.sixThenMore + ' of ' + r.n);
   ok(r.firstScreenNotify === 0, 'and no Notify me row on the first screen - it was 119 of 191', r.firstScreenNotify);
   const reachable = await page.evaluate(() => Object.fromEntries(_appCats().map(c => [c.t.replace(/&amp;/g, '&'), c.apps.some(a => a.how || Object.prototype.hasOwnProperty.call(AMV_APP_WEB, a.name))])));
-  ok(r.emptyTopics.length > 0 && r.emptyTopics.length < r.n / 2 && r.emptyTopics.every(t => reachable[t] === false), 'a topic where nothing connects or opens yet says so in one line', r.emptyTopics);
+  /* Since Nov 23 the services used worldwide (global-services.json) fill
+     every topic they reach, so a topic is empty only where neither an app
+     nor any service is there - and then it says so in one line. */
+  ok(r.emptyTopics.length < r.n / 2 && r.emptyTopics.every(t => reachable[t] === false), 'a topic where nothing connects or opens yet says so in one line', r.emptyTopics);
   ok(r.registryDoors === 0, 'and no second door into the open registry under a topic', r.registryDoors);
   ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');

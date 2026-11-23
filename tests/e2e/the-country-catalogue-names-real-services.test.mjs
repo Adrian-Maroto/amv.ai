@@ -94,7 +94,8 @@ section('Integrations: every entry, in its topic, through AMV’s browser');
       const b = document.querySelector('#int-catalog [data-app-more][aria-expanded="false"]'); if (!b) break;
       b.click(); await new Promise(r => setTimeout(r, 450));
     }
-    const rows = [...document.querySelectorAll('#int-catalog .cc-svc')];
+    /* The country's own rows; the worldwide ones (data-cc="global") have their own suite. */
+    const rows = [...document.querySelectorAll('#int-catalog .cc-svc:not([data-cc="global"])')];
     const topicOf = (k) => [...new Set(rows.filter(x => x.dataset.cc === k).map(x => (x.closest('[data-topic]') || {}).dataset?.topic))];
     return { n: rows.length, airline: topicOf('airline'), bank: topicOf('bank'),
              btns: [...new Set(rows.filter(x => x.dataset.cc !== 'bank').map(x => (x.querySelector('.int-act') || {}).textContent.trim()))],
@@ -135,7 +136,7 @@ section('Crew: the jobs, as ordinary Crew jobs');
 section('A country with no file shows nothing, not an empty section');
 {
   await page.evaluate(async () => { _cwSetCountry('XK'); setTab('integrations'); await new Promise(x => setTimeout(x, 900)); });
-  ok(await page.evaluate(() => document.querySelectorAll('#int-catalog .cc-svc').length === 0 && !document.querySelector('#int-catalog .int-cc:not([hidden])')), 'no rows and no empty section when there is no data');
+  ok(await page.evaluate(() => document.querySelectorAll('#int-catalog .cc-svc:not([data-cc="global"])').length === 0 && !document.querySelector('#int-catalog .int-cc:not([hidden])')), 'no country rows and no empty section when there is no data');
   ok(fetched.includes('XK'), 'though it was asked for', fetched);
 }
 

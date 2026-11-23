@@ -20,6 +20,7 @@ import { execSync } from 'child_process';
 import { pathToFileURL } from 'url';
 import { assetLinks } from './apps/android/assetlinks.mjs';
 import { renderCapabilities } from './tools/capabilities-doc.mjs';
+import { buildGlobalServices } from './scripts/global-services.mjs';
 import vm from 'vm';
 
 const args = process.argv.slice(2);
@@ -97,6 +98,7 @@ function assembleWorker() {
    provenance than a package registry, not worse. A suite checks the served
    copy is byte-identical to the file the bridge tests drive, because a
    shipped copy that has drifted from the tested one is worse than no copy. */
+let GLOBAL_REACH = {};
 const BRIDGE_SRC = 'bridge/amv-bridge.mjs';
 const BRIDGE_OUT = 'amv-bridge.mjs';
 function emitBridge() {
@@ -104,6 +106,9 @@ function emitBridge() {
   /* The cloud computer's image is built from cloud/ (cloud/Dockerfile copies
      this), so it always carries the bridge these suites test. */
   writeFileSync('cloud/amv-bridge.mjs', readFileSync(BRIDGE_SRC));
+  /* The worldwide services under each Integrations topic, packed from
+     data/global (scripts/global-services.mjs says what is left out and why). */
+  { const g = buildGlobalServices('.'); writeFileSync('global-services.json', g.services); GLOBAL_REACH = g.countries; }
   /* The readable list of what AMV can do, from the checked one. */
   writeFileSync('docs/CAPABILITIES.md', renderCapabilities(JSON.parse(readFileSync('docs/capabilities.json', 'utf8')), (f) => readFileSync(f, 'utf8')));
   /* The command-line tool, downloaded from Settings -> API keys - the page
@@ -1240,6 +1245,7 @@ const PUBLISH = [
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens
   'shopping.js',           // shopping in AMV's browser, fetched when the browser runs
   'app-reach.json',        // how much each app is used, per country - fetched with Integrations
+  'global-services.json',  // the services used worldwide, per Integrations topic - fetched with Integrations
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell
@@ -1300,6 +1306,15 @@ function emitPublishDir() {
   for (const f of ccFiles) writeFileSync(`${pubCC}/${f}`, readFileSync(`data/countries/${f}`));
   for (const f of readdirSync(pubCC)) if (!ccFiles.includes(f)) { unlinkSync(`${pubCC}/${f}`); console.warn(`  - removed ${pubCC}/${f} (no longer built)`); }
 
+  /* Visits per country to the worldwide services (scripts/global-services.mjs):
+     one small file per country, fetched with Integrations for the visitor's
+     own. Kept in step like the country files. */
+  const pubGR = `${PUBLISH_DIR}/global-reach`;
+  if (!existsSync(pubGR)) mkdirSync(pubGR, { recursive: true });
+  const grFiles = Object.keys(GLOBAL_REACH).map(cc => cc + '.json');
+  for (const cc of Object.keys(GLOBAL_REACH)) writeFileSync(`${pubGR}/${cc}.json`, GLOBAL_REACH[cc]);
+  for (const f of readdirSync(pubGR)) if (!grFiles.includes(f)) { unlinkSync(`${pubGR}/${f}`); console.warn(`  - removed ${pubGR}/${f} (no longer built)`); }
+
   /* The language packs: the one directory the build owns inside public/, kept
      exactly in step with i18n/ - a pack that is no longer built leaves. */
   const pubI18n = `${PUBLISH_DIR}/${I18N_DIR}`;
@@ -1314,7 +1329,7 @@ function emitPublishDir() {
      delete a tree is a build one typo away from deleting the wrong one. */
   const keep = new Set(PUBLISH.concat(appKept));
   for (const name of readdirSync(PUBLISH_DIR)) {
-    if (keep.has(name) || name === I18N_DIR || name === 'countries') continue;
+    if (keep.has(name) || name === I18N_DIR || name === 'countries' || name === 'global-reach') continue;
     const path = `${PUBLISH_DIR}/${name}`;
     if (statSync(path).isDirectory()) {
       console.warn(`  ! ${path} is a directory this build did not create - leaving it alone`);

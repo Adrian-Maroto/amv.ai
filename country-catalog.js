@@ -609,6 +609,14 @@ const CC_BLOCKED = {
   RU: /(^|\.)(facebook|instagram|twitter|x|linkedin)\.[a-z.]+$/,
   IN: /(^|\.)tiktok\.[a-z.]+$/,
 };
+/* An entry as the page accepts it, from any data file: a real Wikidata ID,
+   a plain one-line name and a bare host - the source is editable by anybody,
+   a name reaches an instruction and a site is where somebody signs in. */
+function _ccGood(e){
+  return !!e && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
+    && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n)
+    && typeof e.s === 'string' && e.s.length <= 80 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s);
+}
 /* One country's file, fetched once. */
 const _ccCache = {};
 async function ccLoad(cc){
@@ -629,10 +637,7 @@ async function ccLoad(cc){
          however popular it is elsewhere - China lists Google as an employer
          and a Hong Kong club whose site is facebook.com. */
       const blocked = CC_BLOCKED[cc];
-      const good = e => e && !(blocked && blocked.test(String(e.s || '')))
-        && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
-        && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n)
-        && typeof e.s === 'string' && e.s.length <= 80 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s);
+      const good = e => _ccGood(e) && !(blocked && blocked.test(String(e.s || '')));
       const kinds = {};
       for(const [k, list] of Object.entries(d.kinds)) if(CC_KINDS[k] && Array.isArray(list)){ const ok = list.filter(good); if(ok.length) kinds[k] = ok; }
       d.kinds = kinds;
@@ -918,25 +923,93 @@ const CC_KIND_TOPIC = {
 };
 const CC_EXTRA_TOPICS = { gov:'Government & paperwork', out:'Going out' };
 const _ccSvc = {};
+/* THE SERVICES USED IN EVERY COUNTRY (Nov 23). The owner: "integrations
+   should have a minimum of 200 per section - email, calendar, all these
+   sections - for all countries". A country's file holds what is filed under
+   that country; the email providers, messaging apps, file stores and the
+   rest that every country uses are filed under none. global-services.json
+   (built from data/global, scripts/global-services.mjs) holds those per
+   topic, most-covered first, and each topic lists them after the country's
+   own. Fetched once, checked entry by entry like the country files; a
+   failed fetch is tried again next time. */
+let _ccGlobalP = null;
+function ccGlobalLoad(){
+  if(_ccGlobalP) return _ccGlobalP;
+  _ccGlobalP = fetch('global-services.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null).then(d => {
+    if(!d || !d.topics || typeof d.topics !== 'object') throw new Error('no worldwide services');
+    const by = {};
+    for(const [t, list] of Object.entries(d.topics)){
+      if(!/^[a-z]{2,12}$/.test(t) || !Array.isArray(list)) continue;
+      const rows = [];
+      for(const x of list){ if(!Array.isArray(x)) continue; const e = { q: x[0], n: x[1], s: x[2] }; if(_ccGood(e)) rows.push({ kind: 'global', topic: t, e }); }
+      if(rows.length) by[t] = rows;
+    }
+    /* Visits, to order them where the visitor is: host -> its place in the
+       per-country codes, and the worldwide bucket. */
+    const r = d.reach;
+    if(r && Array.isArray(r.hosts) && typeof r.g === 'string' && r.g.length === r.hosts.length && /^[0-7]*$/.test(r.g)){
+      const at = Object.create(null); r.hosts.forEach((h, i) => { at[h] = i; });
+      _ccGlobalReach = { at, g: r.g, n: r.hosts.length };
+    }
+    return by;
+  }).catch(() => { _ccGlobalP = null; return null; });
+  return _ccGlobalP;
+}
+/* One country's visits to the worldwide services (global-reach/<CC>.json,
+   about 1KB): a character per measured host, 1 for the top 1,000 sites
+   visited from there to 7 for the top million, 0 for not in the list. */
+let _ccGlobalReach = null;
+const _ccGlobalHere = {};
+function ccGlobalHereLoad(cc){
+  if(!/^[A-Z]{2}$/.test(String(cc || ''))) return Promise.resolve(null);
+  if(_ccGlobalHere[cc]) return _ccGlobalHere[cc];
+  _ccGlobalHere[cc] = fetch('global-reach/' + cc + '.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null).then(d => {
+    if(!d || typeof d.codes !== 'string' || !/^[0-7]*$/.test(d.codes)) return null;
+    return d.codes;
+  }).catch(() => { delete _ccGlobalHere[cc]; return null; });
+  return _ccGlobalHere[cc];
+}
+/* Most visited from the visitor's country first, then most visited
+   worldwide, then the rest in the file's order (Wikipedia coverage). */
+function _ccGlobalOrder(rows, here){
+  const R = _ccGlobalReach; if(!R) return rows;
+  const okHere = typeof here === 'string' && here.length === R.n;
+  const key = (x) => { const i = R.at[x.e.s]; if(i == null) return 99; const h = okHere ? +here[i] : 0; if(h) return h; const w = +R.g[i]; return w ? 7 + w : 99; };
+  return rows.map((x, i) => [key(x), i, x]).sort((a, b) => (a[0] - b[0]) || (a[1] - b[1])).map(z => z[2]);
+}
+/* A service's one action. A bank is never opened in AMV's browser, where a
+   signed-in session could move money: Link is the read-only connection -
+   balances and transactions, never a payment. A worldwide money service
+   (a neobank, an exchange, a payment provider) has no read-only connection
+   here, so it opens in the person's own browser, where AMV acts on nothing. */
+function _ccAct(x){
+  if(x.kind === 'bank') return `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`;
+  if(x.kind === 'global' && x.topic === 'money') return `<a class="btn bs cc-use" href="https://${escH(x.e.s)}/" target="_blank" rel="noopener noreferrer">${escH(T('Open'))}</a>`;
+  return `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`;
+}
+function _ccIcon(x){ return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind] || ['\u2022'])[0]; }
 async function ccFillIntegrations(){
   const root = document.getElementById('int-catalog'); if(!root) return;
   const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
-  const d = await ccLoad(cc);
-  if(!root.isConnected || !d) return;
-  const list = ccServices(d);
-  if(!list.length) return;
-  list.forEach(x => { _ccSvc[x.e.q] = x; });
+  const [d, g, here] = await Promise.all([ccLoad(cc), ccGlobalLoad(), ccGlobalHereLoad(cc)]);
+  if(!root.isConnected) return;
+  const list = d ? ccServices(d) : [];
   const by = {};
   list.forEach(x => { const t = CC_KIND_TOPIC[x.kind] || 'home'; (by[t] = by[t] || []).push(x); });
-  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${x.kind}">
-      <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
+  /* After the country's own, the worldwide ones - each site once. */
+  if(g){
+    const have = new Set(list.map(x => x.e.s));
+    for(const [t, rows] of Object.entries(g)){
+      const add = _ccGlobalOrder(rows.filter(x => !have.has(x.e.s)), here);
+      if(add.length) by[t] = (by[t] || []).concat(add);
+    }
+  }
+  if(!Object.keys(by).length) return;
+  Object.values(by).forEach(rows => rows.forEach(x => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; }));
+  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
+      <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
-      <div class="int-act">${x.kind === 'bank'
-        /* A bank is never opened in AMV's browser, where a signed-in session
-           could move money. Link is the read-only connection - balances and
-           transactions, never a payment - and it says where it is available. */
-        ? `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`
-        : `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`}</div></div>`;
+      <div class="int-act">${_ccAct(x)}</div></div>`;
   for(const [topic, rows] of Object.entries(by)){
     let sec = root.querySelector('[data-topic="' + topic + '"]');
     if(!sec){
@@ -1015,18 +1088,26 @@ async function ccSearchServices(q){
       x.cc.push(cc); if(+e.r > 0) x.r = Math.min(x.r, +e.r);
     } } };
   await Promise.all(Array.from({ length: 8 }, one));
+  /* And the worldwide ones, after every country's: each site once. */
+  const g = await ccGlobalLoad();
+  if(g){
+    const hosts = new Set([...by.values()].map(x => x.e.s));
+    for(const rows of Object.values(g)) for(const x of rows){
+      if(hosts.has(x.e.s)) continue;
+      const h = (x.e.n + ' ' + x.e.s).toLowerCase(); if(!words.every(w => h.indexOf(w) >= 0)) continue;
+      hosts.add(x.e.s); by.set('global|' + x.e.q, { kind: 'global', topic: x.topic, e: x.e, cc: [], r: 1e9 });
+    }
+  }
   if(tok !== _ccSearchTok || !box.isConnected) return;
   const all = [...by.values()].sort((a, b) => (a.r - b.r) || (b.cc.length - a.cc.length) || (a.e.n < b.e.n ? -1 : 1));
-  all.forEach(x => { _ccSvc[x.e.q] = { kind: x.kind, e: x.e }; });
+  all.forEach(x => { _ccSvc[x.e.q] = { kind: x.kind, topic: x.topic, e: x.e }; });
   const flag = (cc) => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[2] : cc; };
   const where = (x) => x.cc.slice(0, 4).map(flag).join(' ') + (x.cc.length > 4 ? ' +' + (x.cc.length - 4) : '');
   const row = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
-      <div class="int-ic" aria-hidden="true">${(CC_KINDS[x.kind] || ['\u2022'])[0]}</div>
+      <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div>
-        <div class="int-desc" data-no-i18n>${escH(x.e.s)} <span class="cc-where" aria-label="${escH(x.cc.join(', '))}">${where(x)}</span></div></div>
-      <div class="int-act">${x.kind === 'bank'
-        ? `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`
-        : `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`}</div></div>`;
+        <div class="int-desc" data-no-i18n>${escH(x.e.s)}${x.cc.length ? ` <span class="cc-where" aria-label="${escH(x.cc.join(', '))}">${where(x)}</span>` : ''}</div></div>
+      <div class="int-act">${_ccAct(x)}</div></div>`;
   let n = 60;
   const paint = () => {
     if(!all.length){ box.innerHTML = '<div class="ss2"><h3>' + escH(T('Services in every country')) + '</h3><p class="int-none">' + escH(T('No country’s services match that.')) + '</p></div>'; return; }
@@ -1041,7 +1122,7 @@ async function ccSearchServices(q){
   paint();
 }
 function ccUseService(q){
-  const x = _ccSvc[q]; if(!x) return;
+  const x = _ccSvc[q]; if(!x || x.kind === 'bank' || (x.kind === 'global' && x.topic === 'money')) return;
   const text = 'Using AMV\u2019s browser, open ' + x.e.s + ' (' + x.e.n + '). I will sign in myself if it asks. Then help me [what you want to do there].';
   setTab('chat');
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;

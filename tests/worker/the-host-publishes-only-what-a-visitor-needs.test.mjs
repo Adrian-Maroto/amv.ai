@@ -100,6 +100,18 @@ ok(JSON.stringify(ccPub) === JSON.stringify(ccBuilt), `${DIR}/countries holds ex
 for (const f of ccBuilt) if (ccPub.includes(f))
   ok(readFileSync(R('data', 'countries', f)).equals(readFileSync(R(DIR, 'countries', f))), `${DIR}/countries/${f} is byte-identical to data/countries/${f}`);
 
+/* Visits per country to the worldwide services: one file per country,
+   exactly what the build derives from data/global-reach.json. */
+{
+  const { buildGlobalServices } = await import('../../scripts/global-services.mjs');
+  const g = buildGlobalServices(R('.'));
+  const grBuilt = Object.keys(g.countries).map(cc => cc + '.json').sort();
+  const grPub = existsSync(R(DIR, 'global-reach')) ? readdirSync(R(DIR, 'global-reach')).sort() : [];
+  ok(JSON.stringify(grPub) === JSON.stringify(grBuilt), `${DIR}/global-reach holds exactly the country files the build derives, and nothing else`, { built: grBuilt.length, published: grPub.length });
+  ok(grBuilt.every(f => grPub.includes(f) && readFileSync(R(DIR, 'global-reach', f), 'utf8') === g.countries[f.slice(0, 2)]), 'and each is what the build derives');
+  ok(readFileSync(R('global-services.json'), 'utf8') === g.services, 'global-services.json is what the build derives from data/global');
+}
+
 section('The app code files: the current build and the few before it');
 /* The page loads its code from a file named by its content (build.mjs, step
    3). The last few builds' files stay published, so a tab opened before a
@@ -121,7 +133,7 @@ ok(!!kept[0] && readFileSync(R(DIR, 'index.html'), 'utf8').includes('src="/' + k
 ok(!existsSync(R(DIR, 'app-files.json')), 'the list itself is not published');
 
 section('Nothing else is in it');
-const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR && n !== 'countries' && !codeFiles.includes(n));
+const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR && n !== 'countries' && n !== 'global-reach' && !codeFiles.includes(n));
 ok(extra.length === 0,
    `${DIR}/ holds only what a visitor needs`, extra);
 
