@@ -34,7 +34,7 @@ const REFUSED_CLASSES = new Set(['password manager', 'cryptocurrency exchange', 
 const NOT_FOR_LISTING = /(getchu|erolabs|dlsite|nutaku|fanza|missav|jable|supjav|javhd|javlibrary|porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
 /* Password managers and other AI products, whatever brought them in: a
    category ("Personal information managers") can, where a class cannot. */
-const PASSWORD_MANAGER = /\b(lastpass|1password|keeper|dashlane|nordpass|roboform|keeweb|keepass\w*|bitwarden|enpass|password)\b/i;
+const PASSWORD_MANAGER = /\b(lastpass|1password|keeper|dashlane|nordpass|roboform|keeweb|keepass\w*|bitwarden|enpass|passwork|password)\b/i;
 const AI_PRODUCT = /\b(AI|GPT|LLM|chatbots?|agentic)\b|humanity's last exam|rabbit r1/i;
 const REMOVED = /(^|\.)(temu\.com|shein\.com|binance\.com|mega\.nz|mega\.io|wps\.com|mail\.yandex\.[a-z.]+|mail\.ru|vk\.com|paytm\.com|rocket\.chat)$/;
 const VENDOR = /^(microsoft|google|apple|adobe|amazon|meta|ibm|oracle|sap|zoho|yahoo)\s+/;
