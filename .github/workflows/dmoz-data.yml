@@ -26,8 +26,18 @@ jobs:
       - name: Read the Open Directory dump
         timeout-minutes: 75
         run: |
+          URL="$(node scripts/dmoz-data.mjs --find | tail -1)"
+          echo "dump: $URL"
+          case "$URL" in
+            *.gz)  curl -fsSL "$URL" | gunzip > /tmp/content.rdf ;;
+            *.bz2) curl -fsSL "$URL" | bunzip2 > /tmp/content.rdf ;;
+            *.xz)  curl -fsSL "$URL" | unxz > /tmp/content.rdf ;;
+            *.zip) curl -fsSL -o /tmp/d.zip "$URL" && unzip -p /tmp/d.zip > /tmp/content.rdf ;;
+            *)     curl -fsSL -o /tmp/content.rdf "$URL" ;;
+          esac
+          ls -la /tmp/content.rdf
           TOPICS="$(grep -v '^#' data/dmoz/request.txt | tr '\n' ' ')"
-          node scripts/dmoz-data.mjs $TOPICS
+          DMOZ_FILE=/tmp/content.rdf node scripts/dmoz-data.mjs $TOPICS
       - name: Commit the data
         if: always()
         run: |

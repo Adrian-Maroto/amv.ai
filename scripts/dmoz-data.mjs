@@ -20,7 +20,7 @@
    Run where archive.org is reachable (the dmoz-data workflow does it):
      node scripts/dmoz-data.mjs [topic ...]
    Writes data/dmoz/<topic>.json: { topic, source, generated, items: [{ n, s, p }] } */
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, createReadStream } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createGunzip } from 'zlib';
@@ -49,26 +49,45 @@ export const DMOZ = {
 const NEVER = /^Top\/(World|Regional|Adult|Kids_and_Teens)\//;
 
 /* The final dump on archive.org: found by search, so a renamed item does not
-   break the run, and refused unless it really is the DMOZ content file. */
-async function dumpUrl() {
+   break the run. Every candidate is printed; the file must be the DMOZ
+   content file (content.rdf.u8, compressed any common way, over 50MB). */
+export async function findDump() {
   if (process.env.DMOZ_URL) return process.env.DMOZ_URL;
-  const s = await (await fetch('https://archive.org/advancedsearch.php?q=' + encodeURIComponent('dmoz AND (rdf OR "content.rdf")') + '&fl[]=identifier&rows=50&output=json', { headers: { 'User-Agent': UA } })).json();
-  for (const d of (s.response && s.response.docs) || []) {
-    const m = await (await fetch('https://archive.org/metadata/' + encodeURIComponent(d.identifier), { headers: { 'User-Agent': UA } })).json().catch(() => null);
-    const f = m && (m.files || []).find(x => /(^|\/)content\.rdf\.u8\.gz$/.test(x.name) && +x.size > 100e6);
-    if (f) { console.log('dump:', d.identifier, f.name, f.size); return 'https://archive.org/download/' + d.identifier + '/' + f.name.split('/').map(encodeURIComponent).join('/'); }
+  const seen = new Set(), found = [];
+  for (const q of ['dmoz', 'odp rdf', '"open directory project"', 'content.rdf.u8', 'dmoz rdf dump', 'curlie']) {
+    let s = null;
+    try { s = await (await fetch('https://archive.org/advancedsearch.php?q=' + encodeURIComponent(q) + '&fl[]=identifier&fl[]=title&rows=100&output=json', { headers: { 'User-Agent': UA } })).json(); } catch (e) { console.log('search failed:', q, e.message); continue; }
+    for (const d of (s.response && s.response.docs) || []) {
+      if (seen.has(d.identifier)) continue; seen.add(d.identifier);
+      let m = null; try { m = await (await fetch('https://archive.org/metadata/' + encodeURIComponent(d.identifier), { headers: { 'User-Agent': UA } })).json(); } catch (e) { continue; }
+      for (const f of (m && m.files) || []) if (/content\.rdf\.u8(\.gz|\.bz2|\.xz|\.zip)?$/i.test(f.name) || (/content.*\.rdf/i.test(f.name) && +f.size > 50e6)) {
+        console.log('candidate:', d.identifier, '|', f.name, '|', f.size, '|', d.title);
+        if (+f.size > 50e6) found.push({ id: d.identifier, name: f.name, size: +f.size, mtime: +f.mtime || 0 });
+      }
+    }
   }
-  throw new Error('no DMOZ content dump found on archive.org');
+  console.log('items searched:', seen.size);
+  if (!found.length) throw new Error('no DMOZ content dump found on archive.org');
+  found.sort((a, b) => (b.mtime - a.mtime) || (b.size - a.size));
+  const f = found[0];
+  return 'https://archive.org/download/' + f.id + '/' + f.name.split('/').map(encodeURIComponent).join('/');
 }
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const only = process.argv.slice(2).filter(t => DMOZ[t]);
   const topics = only.length ? only : Object.keys(DMOZ);
-  const url = await dumpUrl();
-  const r = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!r.ok) throw new Error('dump ' + r.status);
-  const lines = createInterface({ input: Readable.fromWeb(r.body).pipe(createGunzip()), crlfDelay: Infinity });
+  /* The workflow downloads and decompresses the dump (any format) and hands
+     over the plain file; without one, a .gz dump is streamed directly. */
+  let input;
+  if (process.env.DMOZ_FILE) input = createReadStream(process.env.DMOZ_FILE);
+  else {
+    const url = await findDump();
+    const r = await fetch(url, { headers: { 'User-Agent': UA } });
+    if (!r.ok) throw new Error('dump ' + r.status);
+    input = Readable.fromWeb(r.body).pipe(createGunzip());
+  }
+  const lines = createInterface({ input, crlfDelay: Infinity });
   const got = Object.fromEntries(topics.map(t => [t, new Map()]));
   let page = null, n = 0;
   const unent = (s) => s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;|&gt;/g, '');
@@ -103,4 +122,5 @@ async function main() {
     console.log('topic', t, items.length);
   }
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1); });
+if (process.argv[2] === '--find') findDump().then(u => { console.log(u); }).catch(e => { console.error(e.message); process.exit(1); });
+else if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1); });

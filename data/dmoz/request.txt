@@ -1,2 +1,3 @@
 # Topics to read from the Open Directory dump (empty = all). Changing this file runs the dmoz-data workflow.
-# run 1 - Nov 23
+# run 1 - Nov 23 (no dump found by that search)
+# run 2 - Nov 23: wider search, any compression
