@@ -826,7 +826,13 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
-  if($('srv-usage')){ try{ _paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} } }
+  /* The meters' painter lives in usage.js, fetched on demand - so it is
+     fetched here when Billing is opened first, rather than called bare and
+     missing on every visit that has not opened Usage yet. */
+  if($('srv-usage')){ _usageLoad().then(ok => {
+    if(!ok || typeof window._paintServerUsage !== 'function'){ const el = $('srv-usage'); if(el) el.innerHTML = '<div class="srv-off">' + escH(T('That could not be loaded. Check your connection and try again.')) + '</div>'; return; }
+    try{ window._paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} }
+  }); }
   /* AUTO-RENEW. The server writes the field at Stripe and answers with what
      the subscription became, so what lands back on the screen was read back
      rather than assumed. Nothing local is set on the way: a failed call leaves

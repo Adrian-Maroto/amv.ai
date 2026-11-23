@@ -18546,7 +18546,13 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
-  if($('srv-usage')){ try{ _paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} } }
+  /* The meters' painter lives in usage.js, fetched on demand - so it is
+     fetched here when Billing is opened first, rather than called bare and
+     missing on every visit that has not opened Usage yet. */
+  if($('srv-usage')){ _usageLoad().then(ok => {
+    if(!ok || typeof window._paintServerUsage !== 'function'){ const el = $('srv-usage'); if(el) el.innerHTML = '<div class="srv-off">' + escH(T('That could not be loaded. Check your connection and try again.')) + '</div>'; return; }
+    try{ window._paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} }
+  }); }
   /* AUTO-RENEW. The server writes the field at Stripe and answers with what
      the subscription became, so what lands back on the screen was read back
      rather than assumed. Nothing local is set on the way: a failed call leaves
@@ -19449,29 +19455,8 @@ function _customPlanSummary(price){
 function _stripePK(){ return loadStr('amv_stripe_pk')||''; }
 function _stripeLink(plan){ try{ const m=load('amv_pay_links')||{}; return m[plan]||''; }catch(e){ return ''; } }
 
-/* The owner's own Stripe payment link for a plan, opened in a new tab.
-
-   Was `onclick="window.open(S.sp,'_blank','noopener')"` - an inline handler,
-   and one that opened whatever string was in that setting without asking what
-   scheme it was. The setting is the operator's, so this is not the usual
-   untrusted-input case, but it is stored in localStorage and reaches
-   window.open: safeUrl costs nothing and a `javascript:` in a settings field
-   would otherwise be a live one.
-
-   A missing or rejected link says so instead of opening a blank tab, because
-   "nothing happened" on the button that takes somebody's money is the worst
-   possible way to find out a setting is wrong. */
-function _openPlanLink(which){
-  const raw = which==='elite' ? (S.se||'') : (S.sp||'');
-  const url = safeUrl(raw);
-  if(!url){
-    toast('That plan link is not set up yet. Add it in Settings and try again.','error',4500);
-    return;
-  }
-  try{ track('upgrade_checkout_started', { plan: which==='elite'?'elite':'pro' }); }catch(e){}
-  window.open(url,'_blank','noopener');
-}
-try{ window._openPlanLink=_openPlanLink; }catch(e){}
+/* _openPlanLink (the payment link in a new tab) is gone: since Nov 23 the
+   payment link is followed in this tab by _checkoutPage, through safeUrl. */
 
 /* THE ACCOUNT IS ASKED FOR BEFORE THE PAYMENT SHEET, NOT AFTER IT.
 

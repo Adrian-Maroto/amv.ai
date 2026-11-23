@@ -590,6 +590,25 @@
    "ko": "953d66b6034d",
    "ta": "1f566820c6cf"
   },
+  "Checkout could not open. Nothing was charged - please try again.": {
+   "es": "f083d4dcc9d2",
+   "zh": "cbc9725fa72f",
+   "hi": "8312fee14441",
+   "ar": "4a1fe009eaa2",
+   "pt": "92cf15b8ae04",
+   "fr": "dd5e4ff9f0c8",
+   "de": "0c3756ac8206",
+   "ja": "6362e6080a17",
+   "ru": "4e1b9a34e096",
+   "id": "03d5b62eadb6",
+   "bn": "0103df3e431b",
+   "ur": "b62ffed291d0",
+   "tr": "6f449bb50dd0",
+   "vi": "e3c1a301345d",
+   "it": "bcdc2453f252",
+   "ko": "daccf7fa9cfa",
+   "ta": "8d47fde584d3"
+  },
   "Confirm with a passkey": {
    "es": "40feed4b2f88",
    "zh": "dfa0eff7df5f",
@@ -1463,6 +1482,25 @@
    "it": "c9d44bec3fe8",
    "ko": "436fdae60d94",
    "ta": "11d641217c7d"
+  },
+  "Payments are not connected here yet, so nothing can be charged and your plan has not changed.": {
+   "es": "43e73cca1074",
+   "zh": "feef40e52b51",
+   "hi": "440018de9a1a",
+   "ar": "890eacf73f4d",
+   "pt": "7ce15092ac94",
+   "fr": "161346771594",
+   "de": "91e93bc7842f",
+   "ja": "79ff76f781c5",
+   "ru": "29d110ca9034",
+   "id": "6e42f0676d7d",
+   "bn": "6a9ff4e6aad9",
+   "ur": "3fc1a6d2a54d",
+   "tr": "c994381f2e56",
+   "vi": "ba03bd2f1cbb",
+   "it": "98570331339b",
+   "ko": "f828c7421217",
+   "ta": "57b0cf05c32e"
   },
   "Plan & billing": {
    "es": "f4e1597e0d87",
