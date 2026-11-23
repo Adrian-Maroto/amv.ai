@@ -30,28 +30,31 @@ const show = (plan) => page.evaluate(async (plan) => {
   await new Promise(r => setTimeout(r, 420));
   const vc = document.getElementById('vc');
   return {
-    headings: [...vc.querySelectorAll('h2,h3')].map(e => e.textContent.trim()),
+    headings: [...vc.querySelectorAll('h2,h3,h4')].map(e => e.textContent.trim()),
+    cancel: !!vc.querySelector('#bill-cancel'),
     text: (vc.innerText || ''),
-    change: ((vc.querySelector('.bill-change') || {}).textContent || '').trim(),
+    change: ((vc.querySelector('.bill-plans') || {}).textContent || '').trim(),
     hash: location.hash,
   };
 }, plan);
 
 section('The sections, in the order every billing screen people know uses');
 {
-  /* Plan (with the way to change it beside it), then how you pay, then what
-     you have been charged, then leaving. */
+  /* Since Nov 23 (the owner: "your plan, your usage, your payment, and then
+     all the way down See plans"): the plan, Usage, then Payment - with
+     invoices and leaving inside it - and See plans at the foot. */
   const r = await show('pro');
-  const want = ['Payment', 'Invoices', 'Cancellation'];
+  const want = ['Usage', 'Payment', 'Invoices'];
   const idx = want.map(h => r.headings.indexOf(h));
-  ok(idx.every(i => i >= 0), 'all three sections are on the page', r.headings);
-  ok(idx[0] < idx[1] && idx[1] < idx[2], 'payment, then invoices, then cancellation', r.headings);
+  ok(idx.every(i => i >= 0), 'usage, payment and its invoices are on the page', r.headings);
+  ok(idx[0] < idx[1] && idx[1] < idx[2], 'usage, then payment, then invoices', r.headings);
+  ok(r.cancel, 'and cancelling is there, inside Payment', r.cancel);
   ok(r.headings[0] === 'Billing', 'under one heading', r.headings[0]);
-  ok(r.change === 'Change plan', 'and the plan carries its own Change plan control', r.change);
+  ok(r.change === 'See plans', 'and See plans at the foot of the page', r.change);
 
   const free = await show('free');
-  ok(free.change === 'Upgrade plan', 'on Free it is the way up instead', free.change);
-  ok(!free.headings.includes('Cancellation'), 'and there is nothing to cancel', free.headings);
+  ok(free.change === 'See plans', 'on Free too', free.change);
+  ok(!free.cancel, 'and there is nothing to cancel', free.headings);
   ok(/25 messages every 5 hours/.test(free.text) && !/messages a month/.test(free.text), 'Free still says what it allows - the window that binds, not an unreachable month', free.text.slice(0, 200));
 }
 
@@ -60,7 +63,7 @@ section('Change plan opens the plans, where each plan says what it includes');
   const r = await page.evaluate(async () => {
     _setPlan('free'); setTab('billing');
     await new Promise(r => setTimeout(r, 300));
-    document.querySelector('.bill-change').click();
+    document.querySelector('.bill-plans').click();
     await new Promise(r => setTimeout(r, 400));
     const card = k => document.querySelector('#vc .pl2-card[data-plan="' + k + '"]');
     return { tab: S.tab,

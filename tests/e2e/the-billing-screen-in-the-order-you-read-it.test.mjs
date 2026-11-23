@@ -97,9 +97,11 @@ section('The billing pane reads in the order somebody uses it');
     /* Nov 10, owner: subscriptions should read like the ones people know -
        plan, how you pay, invoices, cancel. What has been used follows the
        subscription instead of standing between somebody and their card. */
-    ok(current < change, `[${plan}] the plan you are on comes first`, hs);
-    ok(change < usage,   `[${plan}] then how you pay, before what you have used`, hs);
-    ok(usage < secure,   `[${plan}] and the payment-security line is after all of it`, hs);
+    /* Nov 23, owner: "billing - your plan, your usage, your payment, and
+       then all the way down See plans". */
+    ok(current < usage, `[${plan}] the plan you are on comes first`, hs);
+    ok(usage < change,  `[${plan}] then what you have used, then how you pay`, hs);
+    ok(change < secure, `[${plan}] and the payment-security line is after all of it`, hs);
     ok(secure === hs.length - 1,
        `[${plan}] in fact it is last, so it is available without being in the way`, hs.slice(-3));
   }
@@ -126,7 +128,7 @@ section('Upgrading opens the plans screen, on the plan that was picked');
     saveStr('amv_plan', 'pro');
     S.tab = 'settings'; S.settingsPane = 'billing'; renderSettingsView();
     /* Change plan opens the plans; the Elite card there opens Elite's page. */
-    const ch = document.querySelector('#set-pane .bill-change');
+    const ch = document.querySelector('#set-pane .bill-plans');
     if (!ch) return { missing: true };
     ch.click();
     await new Promise(r => setTimeout(r, 300));

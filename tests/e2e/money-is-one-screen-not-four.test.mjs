@@ -148,7 +148,7 @@ section('The numbers are for the plan you are on');
     saveStr('amv_plan', plan); setTab('billing'); await new Promise(r => setTimeout(r, 650));
     /* The figures block on a paid plan; on Free the plan's own list ("What
        your plan does") is where the figure is. */
-    const el = document.querySelector('.bill-facts') || document.getElementById('vc');
+    const el = document.querySelector('.bill-use .bill-facts') || document.getElementById('vc');
     return ((el || {}).innerText || '').replace(/\s+/g, ' ').split(/UPGRADE YOUR PLAN/i)[0];
   }, p);
   const free = await bill('free'), ultra = await bill('ultra');
@@ -192,7 +192,7 @@ section('Billing quotes the same plan in the same unit');
       const card = document.querySelector('.pl2 .pl2-card[data-plan="' + plan + '"]');
       const spend = card ? card.innerText.split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
       setTab('billing'); await new Promise(r => setTimeout(r, 650));
-      const bill = (document.querySelector('.bill-facts') || {}).innerText || '';
+      const bill = (document.querySelector('.bill-use .bill-facts') || {}).innerText || '';
       out[plan] = { spend, bill: bill.replace(/\s+/g, ' ') };
     }
     saveStr('amv_plan', 'free');

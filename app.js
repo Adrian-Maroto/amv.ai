@@ -18228,6 +18228,48 @@ function renderBillingView(targetEl){
   const upTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]>PLAN_RANK[plan]);
   const downTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]<PLAN_RANK[plan]);
 
+  /* YOUR USAGE, ITS OWN CARD (Nov 23). The owner: "billing - your plan, your
+     usage, your payment, and then See plans". The figures the plan allows,
+     how much of this window is used and when it resets, extra usage - and a
+     way to the full Usage screen, which used to be embedded here whole and
+     made this page 2,400 pixels long. */
+  let _us = null; try{ _us = AMVUsage.status(); }catch(e){}
+  const usagePct = _us ? Math.max(0, Math.min(100, +_us.pct || 0)) : null;
+  let usageReset = ''; try{ usageReset = AMVUsage.resetLabel(); }catch(e){}
+  const usageRows = plan==='free'
+    ? _bfact(T('Messages'), escH(_msg5hLabel('free')) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours, within a daily allowance')
+    : ((plan!=='custom'
+            /* The same figures as the plan cards: the window that binds a
+               burst, and the month as an allowance - never the 100,000-a-month
+               anti-abuse ceiling, which the token and cost allowance runs out
+               long before. That allowance is what a month actually is, so it
+               is not called secondary. */
+            ? _bfact(T('Messages'), escH(_msg5hLabel(plan)) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours')
+              + (_planMsgNum(PLAN_TOP_WEEK, plan)
+                  ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
+                  : '')
+              + (P.allowance ? _bfact('Monthly allowance', escH(P.allowance) + ' tokens, renewing on your billing date - Usage shows what is left') : '')
+            : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):'')))
+      /* Extra usage: the balance is the server's, filled in once it answers,
+         and the button opens the packs. */
+      + _bfact(T('Extra usage'), '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">'+escH(T('Add'))+'</button>')
+      + (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')
+      + (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'');
+  /* Where the server counts, its own meters are the usage - this month, the
+     five-hour window, today and top engines, each with when it resets. */
+  let srvOwned = false; try{ srvOwned = _usageServerOwned(); }catch(e){}
+  const usageCard = '<div class="ss2 bill-use" id="set-sec-usage"><h3>' + escH(T('Usage')) + '</h3>'
+    + (srvOwned ? '<div id="srv-usage" class="bill-srv"></div>' : '')
+    + (!srvOwned && usagePct !== null
+        ? '<div class="bill-meter" role="img" aria-label="' + escH(T('{0}% used this window').replace('{0}', usagePct)) + '">'
+            + '<div class="bill-meter-bar"><span style="width:' + usagePct + '%"></span></div>'
+            + '<div class="bill-meter-t">' + escH(T('{0}% used this window').replace('{0}', usagePct)) + (usageReset ? ' \u00b7 ' + escH(T('resets in {0}').replace('{0}', usageReset)) : '') + '</div>'
+          + '</div>'
+        : '')
+    + '<dl class="bill-facts">' + usageRows + '</dl>'
+    + '<button type="button" class="bill-link" data-stab="usage">' + escH(T('See your usage')) + '</button>'
+  + '</div>';
+
   vc.innerHTML=
     '<div class="sv fi"><div class="vi vi-bill">'+
       /* ONE HEADING. It had an eyebrow, a title and a two-line paragraph - three
@@ -18277,7 +18319,6 @@ function renderBillingView(targetEl){
           (plan==='free'?'':'<div class="bill-sum-p">$'+P.price+' <span>/ month</span></div>')+
           /* The way to another plan sits beside the one you are on, as it does
              in every billing screen people already know. */
-          '<button type="button" class="btn '+(plan==='free'?'bp':'bs')+' bill-change" data-stab="plans">'+escH(plan==='free'?T('Upgrade plan'):T('Change plan'))+'</button>'+
         '</div>'+
         '<div class="bill-sum-sub">'+
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
@@ -18305,18 +18346,7 @@ function renderBillingView(targetEl){
              The token allowance is still real and still the secondary cap, so
              it stays; it is just no longer the headline, and it is no longer
              the only thing here. */
-          (plan!=='custom'
-            /* The same figures as the plan cards: the window that binds a
-               burst, and the month as an allowance - never the 100,000-a-month
-               anti-abuse ceiling, which the token and cost allowance runs out
-               long before. That allowance is what a month actually is, so it
-               is not called secondary. */
-            ? _bfact('Usage', escH(_msg5hLabel(plan)) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours')
-              + (_planMsgNum(PLAN_TOP_WEEK, plan)
-                  ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
-                  : '')
-              + (P.allowance ? _bfact('Monthly allowance', escH(P.allowance) + ' tokens, renewing on your billing date - Usage shows what is left') : '')
-            : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
+
           /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
 
              These two printed "Not recorded on this device" and "Open Manage
@@ -18332,11 +18362,6 @@ function renderBillingView(targetEl){
              the status line above when it is known, and the processor's own
              portal is one button away and is the authority on both. */
           (sinceDate?_bfact('Started', escH(fmt(sinceDate))):'')+
-          /* Extra usage: the balance is the server's, filled in once it answers,
-             and the button opens the packs. */
-          _bfact(T('Extra usage'), '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">'+escH(T('Add'))+'</button>')+
-          (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
-          (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
         /* AUTO-RENEW, ANSWERED AND CHANGEABLE IN ONE PLACE.
 
@@ -18394,10 +18419,9 @@ function renderBillingView(targetEl){
            for - the same fact, twice, taking two blocks of space. What a free
            account needs here is what Free allows - the figures the server
            enforces - with the way up beside it, in Upgrade plan. */
-        '<dl class="bill-facts">'+
-          _bfact('Usage', escH(_msg5hLabel('free')) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours, within a daily allowance')+
-        '</dl>')+
+        '')+
       '</div>'+
+      usageCard+
       /* WHERE USAGE AND SPENDING GO.
 
          In Settings this pane is followed by two appended sections - the
@@ -18439,17 +18463,18 @@ function renderBillingView(targetEl){
           '<button class="btn bp" id="portal-open-btn">'+escH(T('Manage billing'))+'</button>'+
           (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
         '</div>':'')+
-      '</div>'+
 
       /* NOTHING HERE IS INVENTED. _invoiceTableHTML is the processor's list or
          an honest sentence saying there is none; it is not a table this file
          fills in. */
-      '<div class="ss2 bill-tx"><h3>'+escH(T('Invoices'))+'</h3>'+
+      /* Invoices and leaving are part of how you pay (Nov 23: "your plan,
+         your usage, your payment") - inside the Payment card, not two more
+         sections of their own. */
+        '<div class="bill-tx"><h4 class="bill-sub">'+escH(T('Invoices'))+'</h4>'+
         '<div id="bill-invoices">'+(plan==='free'
           ? _invoiceTableHTML(plan,P,sinceDate)
           : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
-      '</div>'+
-      _billingTxnsHTML()+
+        '</div>'+
       (plan!=='free'?
       /* Cancelling is one line at the foot of the page, not a panel of its own
          with a red-outlined button in it. A product that frames leaving as a
@@ -18458,11 +18483,15 @@ function renderBillingView(targetEl){
          it takes one click. It still says exactly what happens, and it still
          goes through the processor, which is the only thing that can really end
          a subscription. */
-      '<div class="ss2 bill-leave"><h3>'+escH(T('Cancellation'))+'</h3>'+
+        '<div class="bill-leave">'+
         '<button class="bill-cancel-link" id="bill-cancel">'+escH(T('Cancel subscription'))+'</button>'+
         '<p class="bill-leave-s">'+escH(T('You keep {0} until the end of the period you have already paid for, and nothing you have made is deleted.').replace('{0}', () => P.name))+'</p>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
-      '</div>':'')+
+        '</div>':'')+
+      '</div>'+
+      _billingTxnsHTML()+
+      /* And then, at the foot: the plans. */
+      '<button type="button" class="btn bp bill-plans" data-stab="plans">'+escH(T('See plans'))+'</button>'+
       /* FOUR EMOJI REASSURANCE CARDS, REMOVED FROM THE SETTINGS SCREEN.
 
          "PCI-DSS Level 1", "256-bit TLS" and two more, each with an emoji for
@@ -18485,7 +18514,7 @@ function renderBillingView(targetEl){
          subscription now reads the way the ones people know read - plan,
          payment, invoices, cancel - and what has been used follows it. The one-line
          note about the card stays last. */
-      (inSettings?'<div id="bill-usage-slot"></div>':'')+
+
       '<p class="bill-sec-line">Card details are held by our payment processor, never by AMV. '+
         'We keep the last four digits so you can tell which card is on file.</p>'+
       (isAdmin()?(
@@ -18517,6 +18546,7 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
+  if($('srv-usage')){ try{ _paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} } }
   /* AUTO-RENEW. The server writes the field at Stripe and answers with what
      the subscription became, so what lands back on the screen was read back
      rather than assumed. Nothing local is set on the way: a failed call leaves
@@ -30203,7 +30233,7 @@ const USER_SET_SECTIONS=[
      it - and a suite renders every pane and fails on a word it does not show,
      so search never sends anybody to a section that is not about it. */
   {id:'account',label:'Account',find:['name','photo','profile','instructions','email','notifications','email me when amv is done','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment','invoices'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'billing',label:'Plan & billing',find:['plan','usage','plans','payment','invoices'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
   {id:'family',label:'Family',find:['family','invitation'],icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',find:['connectors','skills','api keys','presets'],icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
   {id:'privacy',label:'Privacy',find:['export','delete','memory','clear chats','password','security','account activity','web search','analytics','location','sign out'],icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
@@ -33904,9 +33934,47 @@ function _appScroller(el){
   while(e && e !== document.body){ const o = getComputedStyle(e).overflowY; if(/(auto|scroll)/.test(o) && e.scrollHeight > e.clientHeight) return e; e = e.parentElement; }
   return document.scrollingElement || document.documentElement;
 }
+/* OPEN ONE TOPIC IN PLACE (Nov 23, "Integrations still has some lag").
+   See the remaining drew the WHOLE page again - every topic, hundreds of
+   cards laid out from scratch - to open one. Now only the pressed topic is
+   rebuilt: its section from the same catalogue markup, its own buttons, its
+   own country services; nothing else on the page is touched, so nothing
+   else moves. The whole-page path stays for anything this cannot do. */
+function _appToggleInPlace(id, sec){
+  if(S.tab !== 'integrations' || !sec || !sec.parentNode || typeof window.ccFillTopicNow !== 'function') return false;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = _integrationsCatalogHTML();
+  const fresh = tpl.content.querySelector('.ss2[data-topic="' + String(id).replace(/["\\]/g, '') + '"]');
+  if(!fresh) return false;
+  /* The same order as the whole page: drawn, wired, then the country's
+     services added - which wire the button they add themselves. */
+  sec.replaceWith(fresh);
+  try{ _wireIntegrationCatalog(fresh); }catch(e){}
+  /* Not loaded yet, or the country has no file of its own: the same async
+     fill the whole page uses, which still adds the worldwide services. */
+  let now = false; try{ now = window.ccFillTopicNow(fresh, id); }catch(e){}
+  if(!now){ try{ _ccReady().then(ok => { if(ok && window.ccFillIntegrations) window.ccFillIntegrations(); }); }catch(e){} }
+  return true;
+}
 function _appToggle(id){
   const sel = '.ss2[data-topic="' + String(id).replace(/["\\]/g, '') + '"]';
   const sec = document.querySelector(sel), sc = sec ? _appScroller(sec) : null;
+  if(sec){
+    const top0 = sec.getBoundingClientRect().top;
+    /* The browser keeps whatever is in view in place when content is
+       added above it - on a phone that is the NEXT topic, so opening this
+       one scrolled 30,000px down with it. Off for this one change. */
+    if(sc){ sc.style.overflowAnchor = 'none'; requestAnimationFrame(() => requestAnimationFrame(() => { try{ sc.style.overflowAnchor = ''; }catch(e){} })); }
+    if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
+    if(_appToggleInPlace(id, sec)){
+      /* Only content below the heading changed; closing a long topic can
+         still pull the page up, so the heading is put back once. */
+      const now = document.querySelector(sel);
+      if(now && sc){ const d = now.getBoundingClientRect().top - top0; if(Math.abs(d) > 1) sc.scrollTop += d; }
+      return;
+    }
+    if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);   // undo, the page path toggles
+  }
   const top = sec ? sec.getBoundingClientRect().top : 0, keep = sc ? sc.scrollTop : 0;
   if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
   /* The view's own restore (12a-view-router-help.js) would put the old

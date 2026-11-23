@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="2f028d52c2bbf7a0">
+<meta name="amv-build" content="378d4a552258df26">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10434,6 +10434,40 @@ display:grid;place-items:center;border-radius:var(--r-lg)!important;background:v
 .dev-shell .dev-input-v2 .dvi-plus{width:44px!important;height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important}
 @media (max-width:560px){.pghd.build-head h2{font-size:calc(var(--t-xl) * 1.15 * var(--fs-s,1))!important}}
 .cj-more-w,.cj-more,.int-more,.int-seemore{overflow-anchor:none}
+.int2-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.int2-top .int2-h{margin:0}
+.int-country{display:inline-flex;align-items:center;gap:var(--sp-2);min-height:40px;padding:0 var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-pill);
+background:var(--s1);color:var(--tx);font:500 var(--t-base)/1 var(--fn);cursor:pointer}
+.int-country:hover{background:var(--s2)}
+.int-country:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (pointer:coarse){.int-country{min-height:44px}}
+#int-catalog .int-card{content-visibility:auto;contain-intrinsic-size:auto 76px}
+:is(#vc,#set-modal) .vi-bill{max-width:720px!important}
+:is(#vc,#set-modal) .vi-bill .bill-h{font-size:calc(var(--t-xl) * var(--fs-s,1))!important;font-weight:600!important;margin:0 0 var(--sp-4)!important;letter-spacing:-.01em}
+:is(#vc,#set-modal) .vi-bill > .ss2{border:1px solid var(--bd)!important;border-radius:var(--r-xl)!important;background:var(--s1)!important;
+padding:var(--sp-5)!important;margin:0 0 var(--sp-3)!important}
+:is(#vc,#set-modal) .vi-bill > .ss2 > h3{font-size:var(--t-sm)!important;font-weight:600!important;text-transform:uppercase;letter-spacing:.06em;color:var(--mu)!important;margin:0 0 var(--sp-3)!important;padding:0!important;border:0!important}
+:is(#vc,#set-modal) .vi-bill .bill-sum-top{margin:0!important}
+:is(#vc,#set-modal) .vi-bill .bill-sum-sub{margin-top:var(--sp-2)!important}
+:is(#vc,#set-modal) .vi-bill .bill-facts{margin:var(--sp-3) 0 0!important;gap:var(--sp-3) var(--sp-5)!important}
+:is(#vc,#set-modal) .vi-bill .bill-sum .bill-facts{border-top:1px solid var(--bd);padding-top:var(--sp-3)}
+.bill-meter{margin:0 0 var(--sp-3)}
+.bill-meter-bar{height:8px;border-radius:var(--r-pill);background:var(--s3);overflow:hidden}
+.bill-meter-bar span{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+.bill-meter-t{margin-top:var(--sp-2);font-size:var(--t-sm);color:var(--mu)}
+.bill-link{margin-top:var(--sp-3);padding:0;border:0;background:none;color:var(--accent);font:500 var(--t-base)/1.4 var(--fn);cursor:pointer;min-height:32px}
+.bill-link:hover{text-decoration:underline}
+.bill-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
+:is(#vc,#set-modal) .vi-bill .bill-sub{font-size:var(--t-sm);font-weight:600;color:var(--mu);margin:var(--sp-4) 0 var(--sp-2);padding-top:var(--sp-4);border-top:1px solid var(--bd)}
+:is(#vc,#set-modal) .vi-bill .bill-pm .bill-tx,:is(#vc,#set-modal) .vi-bill .bill-pm .bill-leave{margin:0;padding:0;border:0;background:none}
+:is(#vc,#set-modal) .vi-bill .bill-pm .bill-leave{margin-top:var(--sp-4);padding-top:var(--sp-4);border-top:1px solid var(--bd)}
+:is(#vc,#set-modal) .vi-bill .bill-pm-none{margin:0 0 var(--sp-3)!important}
+:is(#vc,#set-modal) .vi-bill .bill-plans{display:flex;width:100%;justify-content:center;min-height:48px;margin:var(--sp-2) 0 var(--sp-4);font-size:var(--t-md)}
+:is(#vc,#set-modal) .vi-bill .bill-sec-line{margin:0!important;font-size:var(--t-xs)!important;color:var(--dim)!important;text-align:center}
+:is(#vc,#set-modal) .vi-bill .bill-use .bill-facts{border-top:0!important;padding-top:0!important}
+:is(#vc,#set-modal) .vi-bill .bill-facts > .bill-fact:first-child{padding-top:0!important}
+:is(#vc,#set-modal) .vi-bill .bill-sum{padding-bottom:var(--sp-5)!important}
+:is(#vc,#set-modal) .vi-bill .bill-sec-line{max-width:none!important;margin:0 auto!important}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -10685,7 +10719,7 @@ display:grid;place-items:center;border-radius:var(--r-lg)!important;background:v
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.39f0f3e17cf4.js" defer integrity="sha384-+bXkcLfjUsLeWXzue55qUwXijRcmMkIzLjVdA+mh2d9mHX+Bk99Wb4K6u7jDTLCx" data-amv-app></script>
+<script src="/app.96e25ccc8b76.js" defer integrity="sha384-xxYYMdsaagc5DjoMYYjRtmhNaGEypVbxJHjCOmd3l56Qt2EKaIKDNOFnAoJ7Lo+4" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

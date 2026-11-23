@@ -1040,6 +1040,18 @@ function _ccIcon(x){ if(x.kind === 'crew' || x.f) return (CC_KINDS[CC_FACT_KIND[
 /* Drawn in the same frame as the screen when everything is already here
    (fetched while the app was idle): no topic grows after it appears. Says
    whether it drew; the screen falls back to ccFillIntegrations otherwise. */
+/* One topic's country services, into its section - for See the remaining,
+   which opens one topic in place instead of drawing the page again. */
+function ccFillTopicNow(sec, topic){
+  const cc = (typeof _cwCountryGuess === 'function') ? String(_cwCountryGuess() || '').toUpperCase() : '';
+  const d = _ccDone[cc]; if(!d || !_ccGlobalDone || !sec) return false;
+  const here = _ccHereDone[cc] || null;
+  const by = (_ccByMemo && _ccByMemo.d === d && _ccByMemo.g === _ccGlobalDone && _ccByMemo.here === here) ? _ccByMemo.by
+    : (_ccByMemo = { d, g: _ccGlobalDone, here, by: _ccFillBy(d, _ccGlobalDone, here) }).by;
+  if(by[topic] && sec.parentNode) _ccFillDraw(sec.parentNode, { [topic]: by[topic] });
+  return true;
+}
+try{ window.ccFillTopicNow = ccFillTopicNow; }catch(e){}
 function ccFillIntegrationsNow(){
   const root = document.getElementById('int-catalog'); if(!root) return false;
   const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
@@ -1061,7 +1073,18 @@ async function ccFillIntegrations(){
   const [g, here] = await gp;
   if(g && root.isConnected) _ccFillWith(root, d, g, here);
 }
+/* Built once per country and reused (Nov 23, "Integrations still has some
+   lag"): every See the remaining and every repaint used to rebuild and sort
+   the country's whole list - thousands of rows across the topics - to draw
+   nine of each. */
+let _ccByMemo = null;
 function _ccFillWith(root, d, g, here){
+  const by = (_ccByMemo && _ccByMemo.d === d && _ccByMemo.g === g && _ccByMemo.here === here) ? _ccByMemo.by
+    : (_ccByMemo = { d, g, here, by: _ccFillBy(d, g, here) }).by;
+  if(!Object.keys(by).length) return;
+  _ccFillDraw(root, by);
+}
+function _ccFillBy(d, g, here){
   const list = d ? ccServices(d) : [];
   const by = {};
   list.forEach(x => { const t = CC_KIND_TOPIC[x.kind] || 'home'; (by[t] = by[t] || []).push(x); });
@@ -1094,9 +1117,12 @@ function _ccFillWith(root, d, g, here){
       if(add.length) by[t] = (by[t] || []).concat(add);
     }
   }
-  if(!Object.keys(by).length) return;
-  Object.values(by).forEach(rows => rows.forEach(x => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; }));
-  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
+  return by;
+}
+function _ccFillDraw(root, by){
+  /* A row is registered when it is drawn - its Use / Link reads it there. */
+  const svcRow = (x) => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; return _ccSvcRowHTML(x); };
+  const _ccSvcRowHTML = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
       <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;

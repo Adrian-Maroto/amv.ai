@@ -367,7 +367,7 @@ section('A paying customer can reach their own billing');
     saveStr('amv_plan', 'pro');
     S.tab = 'billing'; setTab('billing');
     const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
-    const change = vc.querySelector('.bill-change[data-stab="plans"]');
+    const change = vc.querySelector('.bill-plans[data-stab="plans"]');
     const out = {
       manage: !!document.getElementById('portal-open-btn'),
       cancelText: /cancel/i.test(vc.textContent),
@@ -378,7 +378,7 @@ section('A paying customer can reach their own billing');
     out.swaps = [...document.querySelectorAll('#vc [data-dact="openUpgrade"]')].map(b => b.dataset.darg);
     return out;
   });
-  ok(paid.change, 'Billing has a Change plan control beside the plan', paid);
+  ok(paid.change, 'Billing has its See plans control', paid);
   ok(paid.manage, 'the button that opens billing exists, not just its handler');
   ok(paid.cancelText, 'and says cancelling is possible, which people look for before they buy');
   ok(paid.swaps.includes('elite') && paid.swaps.includes('ultra'),
@@ -420,13 +420,13 @@ section('A paying customer can reach their own billing');
     saveStr('amv_plan', 'free'); S.plan = 'free';
     S.tab = 'billing'; setTab('billing');
     const out = { manage: !!document.getElementById('portal-open-btn'),
-                  upgrade: !!document.querySelector('.bill-change[data-stab="plans"]') };
+                  upgrade: !!document.querySelector('.bill-plans[data-stab="plans"]') };
     S.tab = 'plans'; setTab('plans');
     out.swaps = [...document.querySelectorAll('#vc [data-dact="openUpgrade"]')].map(b => b.dataset.darg);
     S.tab = 'billing'; setTab('billing');
     return out;
   });
-  ok(free.upgrade, 'Billing offers the way up beside the plan', free);
+  ok(free.upgrade, 'Billing offers the way up, at its foot', free);
   ok(!free.manage, 'a free account is not offered billing it does not have');
   ok(!(await page.evaluate(() => !!document.getElementById('bill-cancel'))),
      'nor a cancel button for a subscription it does not have');

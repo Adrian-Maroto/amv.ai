@@ -50,8 +50,8 @@ const read = () => page.evaluate(async () => {
   await new Promise(s => setTimeout(s, 700));
   const root = document.getElementById('set-modal') || vc;
   const bill = {
-    heads: [...root.querySelectorAll('.vi-bill h3')].map(h => h.textContent.trim()),
-    change: (root.querySelector('.bill-change') || {}).textContent || '',
+    heads: [...root.querySelectorAll('.vi-bill h3, .vi-bill h4')].map(h => h.textContent.trim()),
+    change: (root.querySelector('.bill-plans') || {}).textContent || '',
   };
   try { closeSettings(); } catch (e) {}
   _setPlan('free');
@@ -124,8 +124,8 @@ section('In Spanish, the money screens are Spanish');
   ok(r.plans.per === '/ mes' && /dólares/.test(r.plans.fine), 'the price unit and the fine print', [r.plans.per, r.plans.fine]);
   ok(/^Mejora tu plan para usar AMV Apex$/.test(r.modal && r.modal.title), 'the upgrade window', r.modal);
   ok(r.modal.btns.includes('Obtener Elite'), 'and its buttons', r.modal.btns);
-  ok(['Pago', 'Facturas', 'Cancelación'].every(h => r.bill.heads.includes(h)), 'Billing’s sections', r.bill.heads);
-  ok(r.bill.change === 'Cambiar plan', 'and its plan button', r.bill.change);
+  ok(['Uso', 'Pago', 'Facturas'].every(h => r.bill.heads.includes(h)), 'Billing’s sections', r.bill.heads);
+  ok(r.bill.change === 'Ver planes', 'and its See plans button', r.bill.change);
   ok(!/\{plan\}|\{model\}/.test(JSON.stringify(r)), 'no {placeholder} reaches the screen');
   const cards = await page.evaluate(async () => {
     setTab('plans'); await new Promise(x => setTimeout(x, 400));

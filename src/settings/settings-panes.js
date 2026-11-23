@@ -219,10 +219,8 @@ function _renderSetPaneInner(only, into){
   // Billing renders its full content INSIDE the settings pane (stays in Settings).
   if(sp==='billing'){
     if(typeof renderBillingView==='function'){ renderBillingView(pane); }
-    /* Into the slot the billing view leaves for them, so the pane reads
-       plan -> usage -> what you could move to -> how payments are protected. */
-    const slot=$('bill-usage-slot');
-    if(!only) _setAppendSection(pane, 'usage', slot);
+    /* The whole Usage screen used to be appended here; billing has its own
+       short Usage card now with a way to the full screen (Nov 23). */
     /* Spending was appended here and is its own section now - see SET_SECTIONS.
        Appending it as well would put the same three limit fields on two
        screens, and the one that is not the real one is the one somebody edits

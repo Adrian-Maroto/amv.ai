@@ -213,7 +213,7 @@ section('Back goes back to where they actually came from');
 
   const change = await page.evaluate(async () => {
     setTab('billing'); await new Promise(r => setTimeout(r, 400));
-    const b = document.querySelector('#vc .bill-change');
+    const b = document.querySelector('#vc .bill-plans');
     if (b) b.click();
     await new Promise(r => setTimeout(r, 400));
     return { found: !!b, tab: S.tab };

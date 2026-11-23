@@ -546,6 +546,24 @@ function _appReachKey(a, cc){
 try{ window._appReachKey = _appReachKey; window._appReachLoad = _appReachLoad; }catch(e){}
 try{ _appReachLoad(); }catch(e){}
 
+/* THE COUNTRY, ON INTEGRATIONS TOO (Nov 23). The owner: "you should be able
+   to change your country, just as you do it in Crew ... if I change it in
+   Crew it should match Integrations". One saved country (amv_cw_country,
+   _cwCountryGuess) and one picker (ccPickCountry, country-catalog.js), so
+   changing it in either place changes both. */
+function _intCountryBtnHTML(){
+  let row = null; try{ row = _cwCountryRow(_cwCountryGuess()); }catch(e){}
+  return '<button class="cj-country int-country" id="int-where" type="button" data-dact="intCountry" aria-label="' + escH(T('Change country')) + '">'
+    + (row ? '<span aria-hidden="true">' + row[2] + '</span> ' + escH(T(row[1])) : escH(T('Choose your country')))
+    + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>';
+}
+function intCountry(){
+  const fail = () => { try{ toast(T('The country list could not be loaded. Check your connection and try again.'), 'error', 5000); }catch(e){} };
+  _ccReady().then(ok => { if(ok && window.ccPickCountry) window.ccPickCountry(() => { try{ if(S.tab === 'integrations' || S.tab === 'apps') renderIntegrationsView(); }catch(e){} }); else fail(); }).catch(fail);
+}
+try{ window.intCountry = intCountry; }catch(e){}
+const _intHeadHTML = () => '<div class="int2-top"><h2 class="int2-h">' + escH(T('Integrations')) + '</h2>' + _intCountryBtnHTML() + '</div>';
+
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   if(!_appReach && !_appReachWaited){
@@ -559,7 +577,7 @@ function renderIntegrationsView(){
        nightly) stood there long enough to read as a dead button. No search
        box here: one typed into now would be replaced under the cursor. */
     vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn" aria-busy="true">'
-      + '<h2 class="int2-h">' + escH(T('Integrations')) + '</h2>'
+      + _intHeadHTML()
       + '<p class="vsub int2-sub">' + escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.')) + ' ' + escH(T('Check the address before you sign in.')) + '</p>'
       + '<div class="int-wait" role="status" aria-label="' + escH(T('Loading…')) + '">' + '<div class="skel"></div>'.repeat(6) + '</div></div></div>';
     return;
@@ -598,7 +616,7 @@ function renderIntegrationsView(){
          buttons; what matters now, and what somebody deciding whether to hand
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
-      '<h2 class="int2-h">'+escH(T('Integrations'))+'</h2>'+
+      _intHeadHTML()+
       /* Counted, not claimed: the number is the length of the list below. */
       /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
          usage data or survey stands behind that ranking - the list is curated.

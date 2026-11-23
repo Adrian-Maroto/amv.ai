@@ -823,9 +823,47 @@ function _appScroller(el){
   while(e && e !== document.body){ const o = getComputedStyle(e).overflowY; if(/(auto|scroll)/.test(o) && e.scrollHeight > e.clientHeight) return e; e = e.parentElement; }
   return document.scrollingElement || document.documentElement;
 }
+/* OPEN ONE TOPIC IN PLACE (Nov 23, "Integrations still has some lag").
+   See the remaining drew the WHOLE page again - every topic, hundreds of
+   cards laid out from scratch - to open one. Now only the pressed topic is
+   rebuilt: its section from the same catalogue markup, its own buttons, its
+   own country services; nothing else on the page is touched, so nothing
+   else moves. The whole-page path stays for anything this cannot do. */
+function _appToggleInPlace(id, sec){
+  if(S.tab !== 'integrations' || !sec || !sec.parentNode || typeof window.ccFillTopicNow !== 'function') return false;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = _integrationsCatalogHTML();
+  const fresh = tpl.content.querySelector('.ss2[data-topic="' + String(id).replace(/["\\]/g, '') + '"]');
+  if(!fresh) return false;
+  /* The same order as the whole page: drawn, wired, then the country's
+     services added - which wire the button they add themselves. */
+  sec.replaceWith(fresh);
+  try{ _wireIntegrationCatalog(fresh); }catch(e){}
+  /* Not loaded yet, or the country has no file of its own: the same async
+     fill the whole page uses, which still adds the worldwide services. */
+  let now = false; try{ now = window.ccFillTopicNow(fresh, id); }catch(e){}
+  if(!now){ try{ _ccReady().then(ok => { if(ok && window.ccFillIntegrations) window.ccFillIntegrations(); }); }catch(e){} }
+  return true;
+}
 function _appToggle(id){
   const sel = '.ss2[data-topic="' + String(id).replace(/["\\]/g, '') + '"]';
   const sec = document.querySelector(sel), sc = sec ? _appScroller(sec) : null;
+  if(sec){
+    const top0 = sec.getBoundingClientRect().top;
+    /* The browser keeps whatever is in view in place when content is
+       added above it - on a phone that is the NEXT topic, so opening this
+       one scrolled 30,000px down with it. Off for this one change. */
+    if(sc){ sc.style.overflowAnchor = 'none'; requestAnimationFrame(() => requestAnimationFrame(() => { try{ sc.style.overflowAnchor = ''; }catch(e){} })); }
+    if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
+    if(_appToggleInPlace(id, sec)){
+      /* Only content below the heading changed; closing a long topic can
+         still pull the page up, so the heading is put back once. */
+      const now = document.querySelector(sel);
+      if(now && sc){ const d = now.getBoundingClientRect().top - top0; if(Math.abs(d) > 1) sc.scrollTop += d; }
+      return;
+    }
+    if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);   // undo, the page path toggles
+  }
   const top = sec ? sec.getBoundingClientRect().top : 0, keep = sc ? sc.scrollTop : 0;
   if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
   /* The view's own restore (12a-view-router-help.js) would put the old
