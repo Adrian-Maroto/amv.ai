@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.8%.
+Functions 139/139 (100.0%), code 91.7%.
 
 
 ### Company sign-in and SCIM
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 86.8% |
-| `39-resumable-streams.js` | 17/17 | 94.7% |
+| `39-resumable-streams.js` | 17/17 | 94.6% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
