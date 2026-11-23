@@ -50,7 +50,7 @@ export const TOPICS = {
   design:    ['graphics software', 'raster graphics editor', 'vector graphics editor', 'video editing software', 'photo sharing website', 'stock photography'],
   video:     ['video on demand service', 'streaming service', 'video hosting service', 'over-the-top media service', 'live streaming platform'],
   music:     ['music streaming service', 'podcast hosting service', 'internet radio', 'audio streaming service'],
-  social:    ['social networking service', 'microblogging service', 'online community', 'image sharing website', 'dating website'],
+  social:    ['social networking service', 'microblogging service', 'online community', 'image sharing website'],
   shop:      ['online marketplace', 'e-commerce platform', 'price comparison service', 'online auction website', 'comparison shopping website'],
   travel:    ['online travel agency', 'travel website', 'flight search engine', 'hotel booking website', 'vacation rental website'],
   maps:      ['web mapping service', 'ridesharing company', 'navigation software', 'vehicle for hire company', 'bicycle-sharing system'],
@@ -107,6 +107,17 @@ const GENERIC = new Set(['Q7397', 'Q35127', 'Q166142', 'Q620615', 'Q4830453', 'Q
   'Q193424', 'Q189210', 'Q658255', 'Q431289', 'Q167037', 'Q43229', 'Q4182287', 'Q1668024', 'Q7094076', 'Q1371849', 'Q5633421', 'Q1331793',
   'Q2085381', 'Q17155032', 'Q1639024', 'Q3220391', 'Q506240', 'Q1107679', 'Q21980538', 'Q19967801', 'Q15265344', 'Q3966', 'Q1640628']);
 const MAX_CLASS = 25000;
+/* A class found from the apps must name a KIND OF SERVICE. Run 2 took every
+   class two apps shared and got towns (an app called Cary), restaurant
+   chains, television stations and "technology company". So its English label
+   must say software, service, app, site, platform and the like, and must not
+   say a place, a company or a broad catch-all. */
+export const SERVICE_WORD = /\b(software|service|services|app|apps|application|client|platform|website|site|provider|system|manager|marketplace|exchange|engine|editor|aggregator|messaging|messenger|streaming|hosting|registrar|delivery|wallet|payment|neobank|store|database|warehouse|directory|podcast|podcatcher|radio|forge|repository|tracker|tool|environment|game|ordering|agency|network)\b/i;
+export const NOT_A_KIND = /\b(town|city|village|county|municipality|borough|company|corporation|firm|enterprise|conglomerate|station|channel|character|product|community|project|organi[sz]ation|business|chain|restaurant|person|film|series|discipline|developer|framework|technology|privately|dot-com|super-app|mobile software|software as a service|computing platform|search engine|review site|content management system|commercial bank|television)\b/i;
+/* Never listed, whatever class brings them: adult sites and piracy. Resolved
+   by label like every class; an item that is one, or has one as its genre or
+   main subject, is left out. */
+const NEVER = ['pornographic website', 'pornography', 'adult website', 'webcam model', 'BitTorrent tracker', 'BitTorrent index', 'torrent website', 'warez', 'shadow library', 'escort agency', 'online dating service', 'dating website', 'adult entertainment'];
 export function seedNames(root = ROOT) {
   const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
   const m = src.match(/const AMV_APP_CATS = (\[[\s\S]*?\n\]);/);
@@ -129,6 +140,7 @@ async function seedClasses(names) {
   for (const b of got) {
     const c = qid(b.c.value), label = b.label.value;
     if (GENERIC.has(c)) { console.log('  seed class', c, label, 'skipped: generic'); continue; }
+    if (!SERVICE_WORD.test(label) || NOT_A_KIND.test(label)) { console.log('  seed class', c, label, 'skipped: not a kind of service'); continue; }
     let size = Infinity;
     try { const r = await sparql(`SELECT (COUNT(?x) AS ?k) WHERE { ?x wdt:P31 wd:${c} }`, 2, 45000); size = +r[0].k.value; } catch (e) {}
     if (!(size <= MAX_CLASS)) { console.log('  seed class', c, label, 'skipped:', size === Infinity ? 'too big to count' : size + ' members'); continue; }
@@ -143,6 +155,9 @@ async function seedClasses(names) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const SEEDS = seedNames();
+  const never = [];
+  for (const l of NEVER) { const q = await classOf(l); console.log('never', ('"' + l + '"').padEnd(30), q ? 'is ' + q : 'not found'); if (q) never.push('wd:' + q); }
+  const NOPE = never.length ? `FILTER NOT EXISTS { VALUES ?bad { ${never.join(' ')} } ?i (wdt:P31|wdt:P136|wdt:P921|wdt:P31/wdt:P279) ?bad }` : '';
   const only = process.argv.slice(2);
   const LANGS = 'en,mul,es,fr,de,pt,it,nl,sv,pl,ru,uk,tr,ar,fa,he,hi,bn,ur,id,ms,vi,th,ja,ko,zh';
   const END = Date.now() + (+process.env.BUDGET_MIN || 120) * 60000;
@@ -157,6 +172,7 @@ async function main() {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {
         ?i wdt:P31/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended } FILTER NOT EXISTS { ?i wdt:P2669 ?discontinued }
+        ${NOPE}
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
       }`;
       let got = [];
@@ -175,9 +191,11 @@ async function main() {
     /* One per site: the same service filed under two classes, or two items for one site, is listed once. */
     const hosts = new Set(), list = [];
     for (const e of [...rows.values()].sort((a, b) => b.w - a.w)) { if (hosts.has(e.s)) continue; hosts.add(e.s); list.push(e); if (list.length >= KEEP) break; }
-    let old = []; try { old = JSON.parse(readFileSync(join(OUT, topic + '.json'), 'utf8')).items || []; } catch (e) {}
-    /* A topic that came back thinner than last time (a timeout) keeps the last list. */
-    const items = list.length >= old.length * 0.8 ? list : old;
+    let old = [], oldClasses = ''; try { const o = JSON.parse(readFileSync(join(OUT, topic + '.json'), 'utf8')); old = o.items || []; oldClasses = (o.classes || []).join('|'); } catch (e) {}
+    /* A topic that came back thinner than last time from the SAME classes (a
+       timeout) keeps the last list; new classes are a new list. */
+    const same = oldClasses === classes.map(([q, l]) => q + ' ' + l).join('|');
+    const items = !same || list.length >= old.length * 0.8 ? list : old;
     writeFileSync(join(OUT, topic + '.json'), JSON.stringify({ topic, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', classes: classes.map(([q, l]) => q + ' ' + l), generated: new Date().toISOString().slice(0, 10), items }));
     console.log('topic', topic, items.length, items === old ? '(kept the last run: this one had ' + list.length + ')' : '');
   }

@@ -24,10 +24,14 @@
    ones the report does not reach - Wikipedia sitelinks. */
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { TOPICS, SERVICE_WORD, NOT_A_KIND } from './global-data.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
 const REFUSED_CLASSES = new Set(['password manager', 'cryptocurrency exchange', 'chatbot']);
+/* Adult sites and piracy, whatever class brought them (the Wikidata run
+   leaves them out by class too; this is the second line). */
+const NOT_FOR_LISTING = /(porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
 const REMOVED = /(^|\.)(temu\.com|shein\.com|binance\.com|mega\.nz|mega\.io|wps\.com|mail\.yandex\.[a-z.]+|mail\.ru|vk\.com|paytm\.com|rocket\.chat)$/;
 const VENDOR = /^(microsoft|google|apple|adobe|amazon|meta|ibm|oracle|sap|zoho|yahoo)\s+/;
 const GENERIC_WORDS = new Set(['mail', 'email', 'calendar', 'drive', 'docs', 'cloud', 'app', 'online', 'web', 'the', 'and', 'for']);
@@ -85,20 +89,31 @@ export function buildGlobalServices(root) {
   for (const list of Object.values(got)) for (const e of list) if (e && e.s && !nameOf.has(e.s)) nameOf.set(e.s, e.n);
   const trusted = (h) => at.has(h) && ownSite(nameOf.get(h) || '', h);
   const bucket = (h) => { if (!trusted(h)) return 99; const b = +R.g[at.get(h)]; return b || 50; };
+  /* A class the topic NAMES (global-data.mjs TOPICS) is the topic's own; one
+     found from its apps is accepted only if it names a kind of service. And a
+     service is placed first by a named class: every topic's named entries
+     are taken before any topic's found ones, so a video service brought into
+     Music by a found class stays under Video. */
+  const named = (t, c) => (TOPICS[t] || []).includes(c);
+  const kindOk = (t, c) => named(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
-  for (const t of order) {
-    const out = [];
+  const outs = Object.fromEntries(order.map(t => [t, []]));
+  for (const pass of [1, 2]) for (const t of order) {
+    const out = outs[t];
     for (const e of (got[t] || []).slice().sort((a, b) => (bucket(a.s) - bucket(b.s)) || ((b.w || 0) - (a.w || 0)))) {
+      if (!e || (pass === 1) !== named(t, e.c) || !kindOk(t, e.c)) continue;
+      if (NOT_FOR_LISTING.test(String(e.s) + ' ' + String(e.n))) continue;
       if (!e || !/^Q\d{1,12}$/.test(e.q) || typeof e.n !== 'string' || e.n.length < 2 || e.n.length > 90) continue;
       if (/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || e.n.split(/\s+/).length > 6) continue;
       if (typeof e.s !== 'string' || e.s.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
       if (REFUSED_HOSTS.test(e.s) || REMOVED.test(e.s) || REFUSED_CLASSES.has(e.c)) continue;
       if (seenQ.has(e.q) || seenHost.has(e.s) || sameAsApp(e.n, appSets)) continue;
       seenQ.add(e.q); seenHost.add(e.s);
-      out.push([e.q, e.n, e.s]);
+      out.push({ k: bucket(e.s), w: e.w || 0, r: [e.q, e.n, e.s] });
     }
-    if (out.length) topics[t] = out;
   }
+  /* Each topic in one order across both passes: visits, then coverage. */
+  for (const t of order) { const out = outs[t].sort((a, b) => (a.k - b.k) || (b.w - a.w)).map(x => x.r); if (out.length) topics[t] = out; }
   /* The visits that order each country's view: one character per host
      shown (its bucket there, 0 for not measured), only for hosts that are
      the service's own and measured somewhere. */
