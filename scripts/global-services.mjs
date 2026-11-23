@@ -187,6 +187,9 @@ export function buildGlobalServices(root) {
      country and named like the service, or a worldwide service people there
      visit. A lookup's first answer is not evidence. */
   const visited = visitsFrom(root);
+  const RB = [1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+  const hostAt = new Map(((R && R.hosts) || []).map((h, i) => [h, i]));
+  const crewRank = (cc, host) => { const c = R && R.c && R.c[cc], i = hostAt.get(host); const k = c && i !== undefined ? +c[i] : 0; return k > 0 ? RB[k - 1] : 0; };
   if (existsSync(crewDir)) for (const f of readdirSync(crewDir).filter(f => /^[A-Z]{2}\.json$/.test(f))) {
     let d = null; try { d = JSON.parse(readFileSync(join(crewDir, f), 'utf8')); } catch (e) { continue; }
     const cc = f.slice(0, 2), rows = [], hostSeen = new Set();
@@ -197,7 +200,10 @@ export function buildGlobalServices(root) {
       if (name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
       if (REFUSED_HOSTS.test(e.s) || REMOVED.test(e.s) || NOT_FOR_LISTING.test(e.s + ' ' + name) || PASSWORD_MANAGER.test(name + ' ' + e.s) || AI_PRODUCT.test(name)) continue;
       if (hostSeen.has(e.s) || sameAsApp(name, appSets)) continue;
-      hostSeen.add(e.s); rows.push([e.q, name, e.s, topic, e.f]);
+      /* Its visits from the country, as the rank bucket the country's own
+         services carry (r: 1000 = among the top thousand sites there), so
+         the page orders Crew's services among them by the same measure. */
+      hostSeen.add(e.s); rows.push([e.q, name, e.s, topic, e.f, crewRank(cc, e.s)]);
     }
     if (rows.length) crew[cc] = rows;
   }

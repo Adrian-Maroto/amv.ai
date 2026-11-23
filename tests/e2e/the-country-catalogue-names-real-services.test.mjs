@@ -111,8 +111,9 @@ section('Integrations: every entry, in its topic, through AMV’s browser');
       const b = document.querySelector('#int-catalog [data-app-more][aria-expanded="false"]'); if (!b) break;
       b.click(); await new Promise(r => setTimeout(r, 450));
     }
-    /* The country's own rows; the worldwide ones (data-cc="global") have their own suite. */
-    const rows = [...document.querySelectorAll('#int-catalog .cc-svc:not([data-cc="global"])')];
+    /* The country's own rows; the worldwide ones (data-cc="global") and the
+       services Crew's jobs name (data-crew) have suites of their own. */
+    const rows = [...document.querySelectorAll('#int-catalog .cc-svc:not([data-cc="global"]):not([data-crew])')];
     const topicOf = (k) => [...new Set(rows.filter(x => x.dataset.cc === k).map(x => (x.closest('[data-topic]') || {}).dataset?.topic))];
     return { n: rows.length, airline: topicOf('airline'), bank: topicOf('bank'),
              btns: [...new Set(rows.filter(x => x.dataset.cc !== 'bank').map(x => (x.querySelector('.int-act') || {}).textContent.trim()))],

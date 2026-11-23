@@ -1004,6 +1004,7 @@ function ccGlobalHereLoad(cc){
     for(const x of Array.isArray(d.crew) ? d.crew : []){
       if(!Array.isArray(x) || !/^[a-z]{2,12}$/.test(String(x[3])) || !/^[a-z]{2,8}$/.test(String(x[4]))) continue;
       const e = { q: x[0], n: x[1], s: x[2] }; if(!_ccGood(e)) continue;
+      if(Number.isInteger(x[5]) && x[5] > 0 && x[5] <= 1000000) e.r = x[5];
       const f = x[4], topic = x[3];
       crew.push({ kind: (f === 'banks' || f === 'cards') ? 'bank' : (topic === 'money' ? 'global' : 'crew'), topic, f, e });
     }
@@ -1070,12 +1071,21 @@ function _ccFillWith(root, d, g, here){
   const crewRows = (here && here.crew) || [];
   if(crewRows.length){
     const hosts = new Set(list.map(x => x.e.s)), names = new Set(list.map(x => norm(x.e.n)));
+    /* "Sabadell" is the catalogue's "Sabadell Bank" on another of its
+       sites: a name already inside a listed name is that service. */
+    const within = (n) => { const w = ' ' + norm(n) + ' '; for(const m of names) if((' ' + m + ' ').includes(w)) return true; return false; };
     for(const x of crewRows){
-      if(hosts.has(x.e.s) || names.has(norm(x.e.n))) continue;
+      if(hosts.has(x.e.s) || names.has(norm(x.e.n)) || within(x.e.n)) continue;
       hosts.add(x.e.s); names.add(norm(x.e.n)); list.push(x);
       const t = x.topic; (by[t] = by[t] || []).push(x);
     }
   }
+  /* Crew's services among the country's own by the same measure - visits
+     from the country (r) - so Santander, BBVA and CaixaBank are not drawn
+     after every bank that happened to be in the catalogue first. A stable
+     sort: rows with the same rank keep the order they had. */
+  const rank = x => (+x.e.r > 0 ? +x.e.r : 1e9);
+  if(crewRows.length) for(const t of Object.keys(by)) by[t] = by[t].map((x, i) => [x, i]).sort((a, b) => (rank(a[0]) - rank(b[0])) || (a[1] - b[1])).map(a => a[0]);
   /* After the country's own, the worldwide ones - each site once. */
   if(g){
     const have = new Set(list.map(x => x.e.s));
@@ -1086,7 +1096,7 @@ function _ccFillWith(root, d, g, here){
   }
   if(!Object.keys(by).length) return;
   Object.values(by).forEach(rows => rows.forEach(x => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; }));
-  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
+  const svcRow = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
       <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;
