@@ -23,9 +23,8 @@
    data/global-reach.json from scripts/global-reach.mjs), then - for the
    ones the report does not reach - Wikipedia sitelinks. */
 import { readFileSync, readdirSync, existsSync } from 'fs';
-import { createHash } from 'crypto';
 import { join } from 'path';
-import { TOPICS, FIELDS, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
+import { TOPICS, FIELDS, WP_CATEGORIES, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
@@ -93,24 +92,12 @@ export function buildGlobalServices(root) {
     got[d.topic] = d.items;
     if (d.generated > generated) generated = d.generated;
   }
-  /* The Open Directory's sites for the thin topics (scripts/dmoz-data.mjs):
-     shown only where the Chrome UX Report measures the site - categorised by
-     people, kept by use. Their id is the site's, since they have no
-     Wikidata ID. */
-  const dmoz = {};
-  const ddir = join(root, 'data', 'dmoz');
-  if (existsSync(ddir)) for (const f of readdirSync(ddir).filter(f => /^[a-z]+\.json$/.test(f))) {
-    try { const d = JSON.parse(readFileSync(join(ddir, f), 'utf8')); if (d && typeof d.topic === 'string' && Array.isArray(d.items)) dmoz[d.topic] = d.items; } catch (e) {}
-  }
   let R = null;
   try { R = JSON.parse(readFileSync(join(root, 'data', 'global-reach.json'), 'utf8')); } catch (e) {}
   const at = new Map(); if (R && Array.isArray(R.hosts)) R.hosts.forEach((h, i) => at.set(h, i));
   const nameOf = new Map();
   for (const list of Object.values(got)) for (const e of list) if (e && e.s && !nameOf.has(e.s)) nameOf.set(e.s, e.n);
-  const dmozHost = new Set(Object.values(dmoz).flat().map(e => e && e.s).filter(Boolean));
-  /* A directory entry's address IS the site an editor looked at, so its
-     visits are its own; a Wikidata entry's site must be its own (ownSite). */
-  const trusted = (h) => at.has(h) && (dmozHost.has(h) || ownSite(nameOf.get(h) || '', h));
+  const trusted = (h) => at.has(h) && ownSite(nameOf.get(h) || '', h);
   const bucket = (h) => { if (!trusted(h)) return 99; const b = +R.g[at.get(h)]; return b || 50; };
   /* A class the topic NAMES (global-data.mjs TOPICS) is the topic's own; one
      found from its apps is accepted only if it names a kind of service. And a
@@ -123,7 +110,8 @@ export function buildGlobalServices(root) {
   const elsewhere = (t, c) => !TOPIC_WORDS[t]?.test(c) && Object.entries(TOPIC_WORDS).some(([u, re]) => u !== t && re.test(c));
   /* A field the topic names (FIELDS: an industry, use or genre) is its own too,
      taken after the classes. */
-  const field = (t, c) => /^field /.test(String(c || '')) && (FIELDS[t] || []).includes(String(c).slice(6));
+  const field = (t, c) => (/^field /.test(String(c || '')) && (FIELDS[t] || []).includes(String(c).slice(6)))
+    || (/^category /.test(String(c || '')) && (WP_CATEGORIES[t] || []).includes(String(c).slice(9)));
   const kindOk = (t, c) => named(t, c) || field(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
   const outs = Object.fromEntries(order.map(t => [t, []]));
@@ -141,14 +129,6 @@ export function buildGlobalServices(root) {
       seenQ.add(e.q); seenHost.add(e.s);
       out.push({ k: bucket(e.s), w: e.w || 0, r: [e.q, e.n, e.s] });
     }
-  }
-  for (const t of order) for (const e of dmoz[t] || []) {
-    if (!e || typeof e.n !== 'string' || typeof e.s !== 'string' || !at.has(e.s) || !(+R.g[at.get(e.s)] || Object.values(R.c || {}).some(c => +c[at.get(e.s)]))) continue;
-    if (e.n.length < 2 || e.n.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
-    if (REFUSED_HOSTS.test(e.s) || REMOVED.test(e.s) || NOT_FOR_LISTING.test(e.s + ' ' + e.n)) continue;
-    if (seenHost.has(e.s) || sameAsApp(e.n, appSets)) continue;
-    seenHost.add(e.s);
-    outs[t].push({ k: (+R.g[at.get(e.s)] || 50), w: 0, r: ['D' + createHash('sha1').update(e.s).digest('hex').slice(0, 10), e.n, e.s] });
   }
   /* Each topic in one order across both passes: visits, then coverage. */
   /* At most PER_TOPIC each, the most visited kept: what a person scrolls

@@ -115,6 +115,25 @@ export const FIELDS = {
   games:     ['video game industry', 'online game', 'esports', 'video game distribution', 'cloud gaming', 'browser game', 'mobile game'],
 };
 
+/* THE THIRD WAY IN: WIKIPEDIA'S OWN CATEGORIES (run 7, Nov 23). For the
+   topics classes and fields still leave thin, the English Wikipedia
+   categories editors keep for exactly these things ("Help desk software",
+   "Human resource management software", "Software testing tools"...), read
+   through the query service's MediaWiki API (wikibase:mwapi) with one level of
+   subcategories, each article's item and official website as before. A
+   category that does not exist returns nothing and is logged. */
+export const WP_CATEGORIES = {
+  email:    ['Webmail', 'Email clients', 'Email hosting', 'Free email services', 'Email service providers', 'Internet email'],
+  calendar: ['Calendaring software', 'Time-tracking software', 'Personal information managers', 'Scheduling software', 'Online calendars', 'Event management software'],
+  food:     ['Online food ordering', 'Online food delivery', 'Food delivery companies', 'Online grocers', 'Recipe websites', 'Meal kits', 'Restaurant guides'],
+  support:  ['Help desk software', 'Customer relationship management software', 'Call centre companies', 'Business process outsourcing companies', 'Live chat software', 'Customer service software'],
+  auto:     ['Workflow applications', 'Workflow technology', 'Business process management', 'Robotic process automation', 'Low-code development platforms', 'Automation software', 'Data integration'],
+  monitor:  ['Network management', 'System monitors', 'Network analyzers', 'Free network management software', 'Application performance management', 'Log file analysis software', 'Network monitoring'],
+  legal:    ['Legal software', 'Legal research', 'Legal databases', 'Online law databases', 'Legal websites', 'Electronic signature', 'Digital signature schemes'],
+  hr:       ['Human resource management software', 'Payroll', 'Employment websites', 'Human resource management', 'Human resource management companies', 'Employment agencies', 'Recruitment software', 'Applicant tracking systems'],
+  testing:  ['Software testing tools', 'Unit testing frameworks', 'Load testing tools', 'Graphical user interface testing', 'Web application security scanners', 'Static program analysis tools', 'Software testing'],
+};
+
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function sparql(q, tries = 4, ms = 90000) {
@@ -237,6 +256,14 @@ async function main() {
     const fields = [];
     for (const l of FIELDS[topic] || []) { const q = await fieldOf(l); console.log('topic', topic.padEnd(10), ('field "' + l + '"').padEnd(46), q ? 'is ' + q : 'NOT FOUND - not used'); if (q) fields.push([q, l]); }
     const asks = classes.map(([q, l]) => [`?i wdt:P31/wdt:P279?/wdt:P279? wd:${q}`, l]).concat(fields.map(([q, l]) => [`?i wdt:P452|wdt:P366|wdt:P136 wd:${q} . FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 }`, 'field ' + l]));
+    /* Wikipedia categories: the category and one level of its subcategories. */
+    const mw = (title, ns) => `SERVICE wikibase:mwapi { bd:serviceParam wikibase:endpoint "en.wikipedia.org"; wikibase:api "Generator"; mwapi:generator "categorymembers"; mwapi:gcmtitle "${esc(title)}"; mwapi:gcmlimit "max"; mwapi:gcmnamespace "${ns}". ${ns === 14 ? '?t wikibase:apiOutput mwapi:title.' : '?i wikibase:apiOutputItem mwapi:item.'} }`;
+    for (const cat of WP_CATEGORIES[topic] || []) {
+      const titles = ['Category:' + cat];
+      try { const sub = await sparql(`SELECT ?t WHERE { ${mw('Category:' + cat, 14)} }`, 2, 60000); for (const b of sub.slice(0, 20)) titles.push(b.t.value); } catch (e) { console.log('topic', topic, 'category', cat, 'subcategories failed:', e.message); }
+      console.log('topic', topic.padEnd(10), ('category "' + cat + '"').padEnd(46), (titles.length - 1) + ' subcategories');
+      for (const t of titles) asks.push([`${mw(t, 0)} FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 }`, 'category ' + cat]);
+    }
     for (const [match, label] of asks) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {
         ${match} . ?i wdt:P856 ?site ; wikibase:sitelinks ?n .
@@ -263,9 +290,9 @@ async function main() {
     let old = [], oldClasses = ''; try { const o = JSON.parse(readFileSync(join(OUT, topic + '.json'), 'utf8')); old = o.items || []; oldClasses = (o.classes || []).join('|'); } catch (e) {}
     /* A topic that came back thinner than last time from the SAME classes (a
        timeout) keeps the last list; new classes are a new list. */
-    const same = oldClasses === classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l)).join('|');
+    const same = oldClasses === classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l), (WP_CATEGORIES[topic] || []).map(c => 'category ' + c)).join('|');
     const items = !same || list.length >= old.length * 0.8 ? list : old;
-    writeFileSync(join(OUT, topic + '.json'), JSON.stringify({ topic, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', classes: classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l)), generated: new Date().toISOString().slice(0, 10), items }));
+    writeFileSync(join(OUT, topic + '.json'), JSON.stringify({ topic, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', classes: classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l), (WP_CATEGORIES[topic] || []).map(c => 'category ' + c)), generated: new Date().toISOString().slice(0, 10), items }));
     console.log('topic', topic, items.length, items === old ? '(kept the last run: this one had ' + list.length + ')' : '');
   }
 }

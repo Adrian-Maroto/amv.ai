@@ -1,3 +1,12 @@
 # Topics to build (empty line list = all). Changing this file runs the global-data workflow.
-# run 1-5 - Nov 23 (see git log)
-# run 6 - Nov 23: every topic also by industry, use and genre (FIELDS); 800 kept per topic
+# run 1-6 - Nov 23 (see git log)
+# run 7 - Nov 23: the thin topics again, with Wikipedia categories (WP_CATEGORIES)
+email
+calendar
+food
+support
+auto
+monitor
+legal
+hr
+testing
