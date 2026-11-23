@@ -32,6 +32,10 @@ const REFUSED_CLASSES = new Set(['password manager', 'cryptocurrency exchange', 
 /* Adult sites and piracy, whatever class brought them (the Wikidata run
    leaves them out by class too; this is the second line). */
 const NOT_FOR_LISTING = /(getchu|erolabs|dlsite|nutaku|fanza|missav|jable|supjav|javhd|javlibrary|porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
+/* Password managers and other AI products, whatever brought them in: a
+   category ("Personal information managers") can, where a class cannot. */
+const PASSWORD_MANAGER = /\b(lastpass|1password|keeper|dashlane|nordpass|roboform|keeweb|keepass\w*|bitwarden|enpass|password)\b/i;
+const AI_PRODUCT = /\b(AI|GPT|LLM|chatbots?|agentic)\b|humanity's last exam|rabbit r1/i;
 const REMOVED = /(^|\.)(temu\.com|shein\.com|binance\.com|mega\.nz|mega\.io|wps\.com|mail\.yandex\.[a-z.]+|mail\.ru|vk\.com|paytm\.com|rocket\.chat)$/;
 const VENDOR = /^(microsoft|google|apple|adobe|amazon|meta|ibm|oracle|sap|zoho|yahoo)\s+/;
 const GENERIC_WORDS = new Set(['mail', 'email', 'calendar', 'drive', 'docs', 'cloud', 'app', 'online', 'web', 'the', 'and', 'for']);
@@ -46,7 +50,10 @@ const TOPIC_DROP = { games: ['digital distribution platform'], data: ['online da
   /* Fields too broad to mean the topic (run 6, read by eye): "marketing" and
      "market research" are polling firms and TV stations, "talent management"
      is entertainment agencies, "automation" is industrial robot makers. */
-  marketing: ['field marketing', 'field market research'], hr: ['field talent management'], auto: ['field automation'] };
+  marketing: ['field marketing', 'field market research'], hr: ['field talent management'],
+  /* Run 7, read by eye: "Automation software" is build tools and CAD,
+     "Business process outsourcing companies" is IT consultancies. */
+  auto: ['field automation', 'category Automation software'], support: ['category Business process outsourcing companies'] };
 export function appNames(root) {
   const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
   const m = src.match(/const AMV_APP_CATS = (\[[\s\S]*?\n\]);/);
@@ -120,7 +127,7 @@ export function buildGlobalServices(root) {
     for (const e of (got[t] || []).slice().sort((a, b) => (bucket(a.s) - bucket(b.s)) || ((b.w || 0) - (a.w || 0)))) {
       if (!e || (pass === 1) !== named(t, e.c) || !kindOk(t, e.c) || (TOPIC_DROP[t] || []).includes(e.c)) continue;
       if (pass === 2 && !field(t, e.c) && elsewhere(t, String(e.c || ''))) continue;
-      if (NOT_FOR_LISTING.test(String(e.s) + ' ' + String(e.n))) continue;
+      if (NOT_FOR_LISTING.test(String(e.s) + ' ' + String(e.n)) || PASSWORD_MANAGER.test(String(e.n) + ' ' + String(e.s)) || AI_PRODUCT.test(String(e.n))) continue;
       if (!e || !/^Q\d{1,12}$/.test(e.q) || typeof e.n !== 'string' || e.n.length < 2 || e.n.length > 90) continue;
       if (/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || e.n.split(/\s+/).length > 6) continue;
       if (typeof e.s !== 'string' || e.s.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
