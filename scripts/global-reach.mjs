@@ -34,6 +34,12 @@ const BUCKETS = [1000, 5000, 10000, 50000, 100000, 500000, 1000000];
 const hosts = new Set();
 for (const f of readdirSync(join(ROOT, 'data', 'global')).filter(f => /^[a-z]+\.json$/.test(f)))
   for (const e of JSON.parse(readFileSync(join(ROOT, 'data', 'global', f), 'utf8')).items || []) hosts.add(e.s);
+/* And every site the crew-services lookup found: a match from outside the
+   country is believed only when people there visit it (crew-services.mjs,
+   trustedMatch). */
+if (existsSync(join(ROOT, 'data', 'crew-services')))
+  for (const f of readdirSync(join(ROOT, 'data', 'crew-services')).filter(f => /^[A-Z]{2}\.json$/.test(f)))
+    for (const e of JSON.parse(readFileSync(join(ROOT, 'data', 'crew-services', f), 'utf8')).items || []) if (typeof e.s === 'string') hosts.add(e.s);
 
 async function load(path) {
   const now = new Date();

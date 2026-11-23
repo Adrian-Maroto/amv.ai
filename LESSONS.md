@@ -16275,3 +16275,20 @@ fewer controls on screen. Rule: when a visual change fails a suite, read the
 assertion as the decision it records before rewriting it - a test only gets
 "updated" when the thing it holds was what was asked to change (chip totals
 and the clamp length here, which were).
+
+## 667
+**Nov 23 - a search always answers, so an answer is not a match.**
+The lookup for the services Crew names took each name's first search result,
+preferring one in the country. Every one of 2,331 names "resolved" - which
+was the warning, not the success: Kenya's KRA came back as Krakow,
+Pakistan's FBR as Fortnite Battle Royale, Optus as Perth Stadium, Orange as
+the town of Orange, Argentina's Jumbo as the Dutch jumbo.com. Nothing failed
+a format check; each was a real item with a real site. A match is now
+believed only when it is the thing named (label or own domain, not a venue,
+team, town or index) and either in the country or a worldwide service
+visited from it, and the believed share is reported as a measured gap
+(docs/CREW-SERVICES.md) rather than claimed. Rule: a lookup with no "not
+found" outcome has no way to be wrong out loud - give it one, and pick the
+best candidate that passes, never the first that exists. Also: the e2e
+server never served `global-reach/`, so no browser suite had ever seen a
+country's Crew services; it serves what the host publishes now.

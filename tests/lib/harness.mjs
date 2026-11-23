@@ -126,8 +126,11 @@ export async function serveApp(opts = {}) {
     const rel = decodeURIComponent((req.url || '/').split('?')[0]).replace(/^\/+/, '');
     const ext = rel.slice(rel.lastIndexOf('.'));
     if (rel && TYPES[ext] && !rel.includes('..')) {
-      /* The country files are published under public/ only (build.mjs), as the host serves them. */
-      const abs = rel.startsWith('countries/') ? join(dirname(APP), 'public', rel) : join(dirname(APP), rel);
+      /* The country files and each country's visit codes are published under
+         public/ only (build.mjs), as the host serves them. global-reach/ used
+         to fall through to the page here, so no e2e suite ever saw a
+         country's Crew services in Integrations. */
+      const abs = /^(countries|global-reach)\//.test(rel) ? join(dirname(APP), 'public', rel) : join(dirname(APP), rel);
       if (existsSync(abs)) {
         res.writeHead(200, { 'Content-Type': TYPES[ext] });
         res.end(readFileSync(abs));

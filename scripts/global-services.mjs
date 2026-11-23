@@ -25,7 +25,7 @@
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { TOPICS, FIELDS, WP_CATEGORIES, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
-import { FACT_TOPIC } from './crew-services.mjs';
+import { FACT_TOPIC, trustedMatch, visitsFrom } from './crew-services.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
@@ -183,11 +183,15 @@ export function buildGlobalServices(root) {
      unless an app already is that service. Checked like everything else. */
   const crewDir = join(root, 'data', 'crew-services');
   const crew = {};
+  /* Only a match that is believed (crew-services.mjs, trustedMatch): in the
+     country and named like the service, or a worldwide service people there
+     visit. A lookup's first answer is not evidence. */
+  const visited = visitsFrom(root);
   if (existsSync(crewDir)) for (const f of readdirSync(crewDir).filter(f => /^[A-Z]{2}\.json$/.test(f))) {
     let d = null; try { d = JSON.parse(readFileSync(join(crewDir, f), 'utf8')); } catch (e) { continue; }
     const cc = f.slice(0, 2), rows = [], hostSeen = new Set();
     for (const e of (d && d.items) || []) {
-      const topic = FACT_TOPIC[e && e.f]; if (!topic) continue;
+      const topic = FACT_TOPIC[e && e.f]; if (!topic || !trustedMatch(cc, e, visited)) continue;
       if (!/^Q\d{1,12}$/.test(e.q) || typeof e.s !== 'string' || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
       const name = String(e.name || e.n || '').replace(/\s+/g, ' ').trim();
       if (name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
