@@ -2,3 +2,4 @@
 # run 1 - Nov 23
 # run 2 - Nov 23: classes found from the apps each topic already lists
 # run 3 - Nov 23: found classes must name a kind of service; adult sites and piracy left out
+# run 4 - Nov 23: more class names per topic (run 3 log: 40 not found), two subclass levels

@@ -37,38 +37,38 @@ const KEEP = 400;
 
 /* topic (the id in AMV_APP_CATS) -> the English labels of its classes. */
 export const TOPICS = {
-  email:     ['webmail', 'email service', 'email service provider', 'email client', 'email hosting service'],
-  calendar:  ['calendaring software', 'scheduling software', 'appointment scheduling software', 'personal information manager', 'time-tracking software'],
-  messaging: ['instant messaging client', 'instant messaging service', 'messaging app', 'VoIP software', 'videoconferencing software', 'web conferencing'],
-  files:     ['file hosting service', 'cloud storage service', 'online office suite', 'file sharing', 'document management system'],
-  money:     ['online bank', 'neobank', 'payment service provider', 'mobile payment system', 'cryptocurrency exchange', 'online payment system', 'personal finance software'],
-  dev:       ['integrated development environment', 'source code hosting facility', 'continuous integration software', 'bug tracking system', 'version control system'],
-  school:    ['learning management system', 'massive open online course provider', 'educational website', 'language learning software', 'online learning platform'],
-  jobs:      ['employment website', 'job board', 'freelance marketplace', 'professional network service'],
-  home:      ['smart home platform', 'home automation software', 'real estate website', 'classified advertising website'],
-  work:      ['project management software', 'collaborative software', 'note-taking software', 'task management software', 'wiki software'],
-  design:    ['graphics software', 'raster graphics editor', 'vector graphics editor', 'video editing software', 'photo sharing website', 'stock photography'],
-  video:     ['video on demand service', 'streaming service', 'video hosting service', 'over-the-top media service', 'live streaming platform'],
-  music:     ['music streaming service', 'podcast hosting service', 'internet radio', 'audio streaming service'],
-  social:    ['social networking service', 'microblogging service', 'online community', 'image sharing website'],
-  shop:      ['online marketplace', 'e-commerce platform', 'price comparison service', 'online auction website', 'comparison shopping website'],
-  travel:    ['online travel agency', 'travel website', 'flight search engine', 'hotel booking website', 'vacation rental website'],
-  maps:      ['web mapping service', 'ridesharing company', 'navigation software', 'vehicle for hire company', 'bicycle-sharing system'],
-  food:      ['online food ordering service', 'food delivery service', 'recipe website', 'meal kit company'],
-  health:    ['fitness app', 'telehealth service', 'health information website', 'mobile health application', 'meditation app'],
-  news:      ['news aggregator', 'news website', 'news agency', 'online magazine', 'blog platform'],
-  biz:       ['customer relationship management software', 'enterprise resource planning software', 'accounting software', 'invoicing software', 'point of sale system'],
-  marketing: ['email marketing software', 'marketing automation software', 'search engine optimization software', 'advertising network', 'social media management software'],
-  support:   ['help desk software', 'customer service software', 'live chat software', 'issue tracking system'],
-  auto:      ['workflow automation software', 'robotic process automation software', 'integration platform as a service', 'business process management software'],
-  data:      ['business intelligence software', 'database management system', 'data warehouse', 'web analytics software', 'spreadsheet software'],
-  cloud:     ['cloud computing provider', 'web hosting service', 'content delivery network', 'platform as a service', 'domain name registrar'],
-  monitor:   ['application performance management software', 'network monitoring software', 'log management software', 'website monitoring service'],
-  security:  ['password manager', 'antivirus software', 'virtual private network service', 'identity management software', 'two-factor authentication software'],
-  legal:     ['electronic signature software', 'legal software', 'contract management software', 'legal information website'],
-  hr:        ['human resource management system', 'payroll software', 'applicant tracking system', 'employee scheduling software'],
-  testing:   ['software testing tool', 'test automation software', 'web testing software', 'load testing software'],
-  games:     ['digital distribution platform', 'online game', 'video game store', 'cloud gaming service', 'massively multiplayer online game'],
+  email:     ['webmail', 'email client', 'email hosting service', 'mailbox provider', 'email service', 'email provider', 'email address provider', 'disposable email address service'],
+  calendar:  ['appointment scheduling software', 'personal information manager', 'calendar software', 'calendaring software', 'calendar application', 'scheduling software', 'time tracking software', 'time-tracking software', 'calendar app'],
+  messaging: ['instant messaging client', 'messaging app', 'VoIP software', 'video-conferencing software', 'instant messaging service', 'videoconferencing service', 'chat application', 'team chat software', 'encrypted messaging app'],
+  files:     ['document management system', 'presentation software', 'file-hosting service', 'file hosting service', 'cloud storage service', 'cloud storage', 'online storage service', 'office suite', 'word processor', 'file synchronization software', 'PDF software'],
+  money:     ['neobank', 'payment service provider', 'payment system', 'e-commerce payment system', 'mobile payment', 'mobile payment system', 'digital wallet', 'online banking', 'money transfer service', 'remittance service', 'personal finance software', 'budgeting software', 'buy now, pay later'],
+  dev:       ['integrated development environment', 'continuous integration software', 'bug tracking system', 'version control system', 'issue tracking system', 'forge', 'repository hosting service', 'code reviewing software', 'software repository', 'source code editor', 'package manager', 'online integrated development environment'],
+  school:    ['learning management system', 'massive open online course provider', 'educational website', 'online learning platform', 'educational software', 'language learning application', 'language learning app', 'online tutoring service', 'flashcard software', 'student information system'],
+  jobs:      ['employment website', 'freelance marketplace', 'job search engine', 'job board', 'recruitment website', 'professional networking service', 'job website', 'gig economy platform'],
+  home:      ['classified advertising website', 'real estate portal', 'property portal', 'real estate website', 'online real estate marketplace', 'smart home platform', 'home automation software', 'home automation system', 'smart home hub'],
+  work:      ['project management software', 'collaborative software', 'note-taking software', 'wiki software', 'to-do list manager', 'productivity software', 'task management software', 'mind mapping software', 'whiteboard software', 'outliner'],
+  design:    ['graphics software', 'raster graphics editor', 'vector graphics editor', 'video editing software', '3D computer graphics software', 'computer-aided design software', 'photo editing software', 'digital painting software', 'image hosting service', 'stock photography website', 'font foundry', 'prototyping tool', 'user interface design software'],
+  video:     ['streaming service', 'over-the-top media service', 'video streaming service', 'online video platform', 'video sharing website', 'video-sharing platform', 'video on demand service', 'live streaming service', 'livestreaming platform', 'streaming television service'],
+  music:     ['music streaming service', 'podcast hosting service', 'internet radio', 'audio streaming service', 'podcast directory', 'podcatcher', 'music recognition app', 'lyrics website', 'audiobook service'],
+  social:    ['social networking service', 'online community', 'user-generated content platform', 'microblogging service', 'microblog', 'image sharing website', 'social media platform', 'forum software', 'internet forum', 'question-and-answer website'],
+  shop:      ['online marketplace', 'e-commerce platform', 'comparison shopping website', 'very large online platform', 'online auction', 'online auction website', 'price comparison website', 'deal website', 'cashback website', 'online shopping platform'],
+  travel:    ['online travel agency', 'travel website', 'hotel booking website', 'metasearch engine', 'travel metasearch engine', 'flight search engine', 'vacation rental website', 'vacation rental platform', 'travel search engine'],
+  maps:      ['ridesharing company', 'bicycle-sharing system', 'online taxi service', 'internet map service', 'web mapping service', 'navigation software', 'navigation app', 'route planner', 'journey planner', 'carsharing', 'scooter-sharing system', 'public transport app'],
+  food:      ['online food ordering service', 'food delivery', 'delivery app', 'online food ordering', 'food delivery company', 'recipe website', 'cooking website', 'online grocery store', 'grocery delivery service', 'meal kit', 'restaurant review website', 'table reservation service'],
+  health:    ['fitness app', 'telemedicine', 'telemedicine platform', 'telehealth', 'health app', 'mobile health application', 'meditation app', 'meditation application', 'period tracker', 'online pharmacy', 'medical website', 'health website', 'calorie counter', 'activity tracker'],
+  news:      ['news aggregator', 'news website', 'news agency', 'online magazine', 'publishing platform', 'blog hosting service', 'blogging platform', 'newsletter platform'],
+  biz:       ['customer relationship management software', 'accounting software', 'online survey service', 'enterprise resource planning software', 'ERP software', 'enterprise resource planning', 'point of sale', 'point-of-sale software', 'invoicing software', 'business software', 'e-invoicing', 'form builder'],
+  marketing: ['advertising network', 'email marketing service', 'email marketing software', 'marketing software', 'marketing automation software', 'search engine optimization software', 'online advertising platform', 'advertising platform', 'affiliate network', 'social media management software', 'customer engagement platform', 'web analytics service', 'link shortener', 'URL shortening service'],
+  support:   ['help desk software', 'issue tracking system', 'help desk', 'customer service software', 'customer support software', 'live chat software', 'live chat', 'ticketing system', 'knowledge base software', 'customer feedback software'],
+  auto:      ['workflow automation software', 'workflow management system', 'business process automation', 'business process management software', 'integration platform as a service', 'integration platform', 'robotic process automation', 'automation software', 'low-code development platform', 'no-code development platform', 'web scraping software'],
+  data:      ['business intelligence software', 'database management system', 'data warehouse', 'web analytics software', 'spreadsheet', 'spreadsheet software', 'data visualization software', 'analytics software', 'statistical software', 'online database'],
+  cloud:     ['web hosting service', 'content delivery network', 'platform as a service', 'domain name registrar', 'cloud computing service', 'cloud service provider', 'infrastructure as a service', 'cloud computing provider', 'serverless computing platform', 'website builder'],
+  monitor:   ['network monitoring software', 'network monitoring', 'system monitor', 'application performance management', 'application performance monitoring', 'log management software', 'observability platform', 'monitoring software', 'website monitoring service', 'uptime monitoring service', 'status page'],
+  security:  ['password manager', 'antivirus software', 'virtual private network service', 'VPN service', 'firewall software', 'identity management software', 'identity provider', 'authenticator', 'two-factor authentication software', 'single sign-on'],
+  legal:     ['electronic signature software', 'electronic signature service', 'digital signature software', 'legal software', 'legal database', 'legal research database', 'contract management software', 'contract lifecycle management', 'legal information website', 'online legal services'],
+  hr:        ['human resource management system', 'applicant tracking system', 'payroll software', 'payroll service', 'human resources software', 'employee scheduling software', 'recruitment software', 'employer of record', 'performance management software', 'learning experience platform'],
+  testing:   ['software testing tool', 'test automation software', 'test automation framework', 'unit testing framework', 'load testing tool', 'automated testing tool', 'web testing software', 'cross-browser testing tool', 'fuzzing tool', 'test management tool'],
+  games:     ['video game distribution platform', 'online game', 'cloud gaming service', 'online chess playing site', 'video game store', 'massively multiplayer online role-playing game', 'browser game', 'mobile game', 'free-to-play video game', 'game server hosting', 'game launcher'],
 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -170,7 +170,7 @@ async function main() {
     const rows = new Map();
     for (const [klass, label] of classes) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {
-        ?i wdt:P31/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
+        ?i wdt:P31/wdt:P279?/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended } FILTER NOT EXISTS { ?i wdt:P2669 ?discontinued }
         ${NOPE}
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }

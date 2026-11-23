@@ -31,12 +31,24 @@ const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai
 const REFUSED_CLASSES = new Set(['password manager', 'cryptocurrency exchange', 'chatbot']);
 /* Adult sites and piracy, whatever class brought them (the Wikidata run
    leaves them out by class too; this is the second line). */
-const NOT_FOR_LISTING = /(porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
+const NOT_FOR_LISTING = /(missav|jable|supjav|javhd|javlibrary|porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
 const REMOVED = /(^|\.)(temu\.com|shein\.com|binance\.com|mega\.nz|mega\.io|wps\.com|mail\.yandex\.[a-z.]+|mail\.ru|vk\.com|paytm\.com|rocket\.chat)$/;
 const VENDOR = /^(microsoft|google|apple|adobe|amazon|meta|ibm|oracle|sap|zoho|yahoo)\s+/;
 const GENERIC_WORDS = new Set(['mail', 'email', 'calendar', 'drive', 'docs', 'cloud', 'app', 'online', 'web', 'the', 'and', 'for']);
 const words = (s) => String(s).toLowerCase().replace(/&amp;/g, '&').replace(VENDOR, '').replace(/\.(com|net|org|io|app)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
 
+/* Classes too broad for a topic: "digital distribution platform" is every
+   app store, e-book shop and journal site, not games. */
+const TOPIC_DROP = { games: ['digital distribution platform'] };
+const TOPIC_WORDS = {
+  food: /\b(food|meal|recipe|restaurant|grocer)/i,
+  maps: /\b(map|mapping|navigation|ride|taxi|bicycle|vehicle|transit)/i,
+  music: /\b(music|podcast|radio|audio)/i,
+  video: /\b(video|film|movie|television|over-the-top)/i,
+  games: /\b(game|gaming|chess)/i,
+  money: /\b(bank|payment|wallet|money)/i,
+  email: /\b(e-?mail|mailbox|webmail)/i,
+};
 export function appNames(root) {
   const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
   const m = src.match(/const AMV_APP_CATS = (\[[\s\S]*?\n\]);/);
@@ -94,14 +106,18 @@ export function buildGlobalServices(root) {
      service is placed first by a named class: every topic's named entries
      are taken before any topic's found ones, so a video service brought into
      Music by a found class stays under Video. */
-  const named = (t, c) => (TOPICS[t] || []).includes(c);
+  const named = (t, c) => (TOPICS[t] || []).includes(c) && !(TOPIC_DROP[t] || []).includes(c);
+  /* A found class whose name says another topic (food delivery found from a
+     ride app's classes) belongs to that topic, not to the one that found it. */
+  const elsewhere = (t, c) => !TOPIC_WORDS[t]?.test(c) && Object.entries(TOPIC_WORDS).some(([u, re]) => u !== t && re.test(c));
   const kindOk = (t, c) => named(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
   const outs = Object.fromEntries(order.map(t => [t, []]));
   for (const pass of [1, 2]) for (const t of order) {
     const out = outs[t];
     for (const e of (got[t] || []).slice().sort((a, b) => (bucket(a.s) - bucket(b.s)) || ((b.w || 0) - (a.w || 0)))) {
-      if (!e || (pass === 1) !== named(t, e.c) || !kindOk(t, e.c)) continue;
+      if (!e || (pass === 1) !== named(t, e.c) || !kindOk(t, e.c) || (TOPIC_DROP[t] || []).includes(e.c)) continue;
+      if (pass === 2 && elsewhere(t, String(e.c || ''))) continue;
       if (NOT_FOR_LISTING.test(String(e.s) + ' ' + String(e.n))) continue;
       if (!e || !/^Q\d{1,12}$/.test(e.q) || typeof e.n !== 'string' || e.n.length < 2 || e.n.length > 90) continue;
       if (/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || e.n.split(/\s+/).length > 6) continue;
