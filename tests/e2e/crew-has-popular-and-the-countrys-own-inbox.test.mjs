@@ -25,7 +25,9 @@ section('Popular comes right after All, and is the first fifty');
   const chips = await page.evaluate(() => [...document.querySelectorAll('#cj-cats .cj-chip')].map(c => c.dataset.darg));
   ok(chips[0] === 'all' && chips[1] === 'popular', 'All, then Popular', chips.slice(0, 3));
   const r = await page.evaluate(() => {
-    const ranked = _cjList(true).slice(0, 50).map(j => j.id);
+    /* Since Nov 23 Popular IS the researched everyday fifty (crew-data.js
+       popular, docs/RESEARCH.md), in their order. */
+    const ranked = _cwPopularJobs('US').slice(0, 50).map(j => j.id);
     cjCat('popular');
     const cards = [...document.querySelectorAll('#cj-grid .cj-card-b')].map(b => b.dataset.darg);
     return { ranked, cards: cards.slice(0, 24), n: _cjFiltered().length };
