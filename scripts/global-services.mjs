@@ -123,7 +123,11 @@ export function buildGlobalServices(root) {
       /* and a subcategory whose own name says another kind of thing is not
          the topic's: CAD, graphics, video games, statistics, networking... */
       && !SUBCAT_ELSEWHERE.test(String(c).split(' > ')[1] || ''));
-  const kindOk = (t, c) => named(t, c) || field(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
+  /* A field or category entry is judged by its own rule only - "category X >
+     Computer-aided design software" says "software", which must not let it in
+     by the class rule. */
+  const kindOk = (t, c) => /^(field|category) /.test(String(c || '')) ? field(t, c)
+    : (named(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || ''))));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
   const outs = Object.fromEntries(order.map(t => [t, []]));
   for (const pass of [1, 2]) for (const t of order) {
