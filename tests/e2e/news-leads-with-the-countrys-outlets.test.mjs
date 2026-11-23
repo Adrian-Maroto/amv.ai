@@ -56,6 +56,28 @@ section('The reading apps are still there, behind See the remaining');
   ok(r.btn && r.hidden > 0, 'the apps move behind the button, not off the page', r);
 }
 
+section('The international outlets are in every country');
+{
+  /* Owner, Nov 23: "the Wall Street Journal, the New York Times, those types,
+     for every country as well". worldNews (scripts/global-services.mjs). */
+  const want = ['nytimes.com', 'wsj.com', 'washingtonpost.com', 'cnn.com', 'foxnews.com', 'bbc.com', 'reuters.com', 'ap.org', 'afp.com', 'ft.com', 'aljazeera.com', 'theguardian.com'];
+  const r = await page.evaluate(async (want) => {
+    await ccGlobalLoad();
+    const out = {};
+    for (const [cc] of CW_WORLD_COUNTRIES) {
+      const d = await ccLoad(cc).catch(() => null); if (!d) continue;
+      const by = _ccFillBy(d, _ccGlobalDone, await ccGlobalHereLoad(cc));
+      const hosts = new Set((by.news || []).map(x => x.e.s));
+      const miss = want.filter(h => !hosts.has(h));
+      if (miss.length) out[cc] = miss;
+      const sites = (by.news || []).map(x => x.e.s);
+      if (new Set(sites).size !== sites.length) out[cc + ' twice'] = sites.filter((s, i) => sites.indexOf(s) !== i);
+    }
+    return { out, n: CW_WORLD_COUNTRIES.length };
+  }, want);
+  ok(Object.keys(r.out).length === 0, 'every country lists them all, each once', r.out);
+}
+
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
 await app.close();
 report();

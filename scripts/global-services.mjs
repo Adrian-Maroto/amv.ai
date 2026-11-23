@@ -87,6 +87,46 @@ export function ownSite(name, host) {
   const first = labels.length > 2 && /^(www|app|web|my|mail|go|en|m)$/.test(labels[0]) ? labels[1] : labels[0];
   return first.length >= 3 && words(name).join('').includes(first);
 }
+/* An outlet counts as international when it is documented in 50 or more
+   Wikipedia language editions AND its site is listed in 20 or more countries'
+   data - which is where visits from that country put it (Chrome UX Report,
+   scripts/country-popular.mjs). Either alone is not enough: Wikipedia covers
+   Charlie Hebdo and the Chicago Tribune widely, and a country's own large
+   papers are visited everywhere its diaspora reads. And the wire agencies -
+   the news agencies in 60 or more editions (Reuters, the AP, AFP, RFE/RL) -
+   whose sites are seldom visited because their news reaches people through
+   everybody else. Entertainment and games press is news of another kind and
+   stays where people look for it. */
+const WORLD_NEWS_KINDS = ['newspaper', 'newssite', 'tv', 'radio'];
+const WORLD_NEWS_BROADCAST = /news|cnn|bbc|fox|nbc|cbs|abc|sky|jazeera|euronews|msnbc|france 24|deutsche welle/i;
+const NOT_NEWS_PRESS = new Set(['variety.com', 'ign.com', 'hollywoodreporter.com', 'gamespot.com', 'gallicaintramuros.bnf.fr']);
+export function worldNews(root) {
+  const cand = new Map(), xs = new Map();
+  const put = (e, agency) => {
+    if (!e || typeof e.s !== 'string' || !/^Q\d{1,12}$/.test(String(e.q)) || NOT_NEWS_PRESS.has(e.s)) return;
+    const c = cand.get(e.s), w = +e.w || 0;
+    /* The better documented name wins: "Reuters" over "reuters.com". */
+    if (!c) cand.set(e.s, { q: e.q, n: e.n, w, agency: !!agency });
+    else { if (w > c.w) { c.w = w; c.q = e.q; c.n = e.n; } if (agency) c.agency = true; }
+  };
+  const cdir = join(root, 'data', 'countries');
+  for (const f of existsSync(cdir) ? readdirSync(cdir).filter(f => /^[A-Z]{2}\.json$/.test(f)) : []) {
+    let d = null; try { d = JSON.parse(readFileSync(join(cdir, f), 'utf8')); } catch (e) { continue; }
+    const seen = new Set();
+    for (const k of WORLD_NEWS_KINDS) for (const e of ((d && d.kinds) || {})[k] || []) {
+      if ((k === 'tv' || k === 'radio') && !WORLD_NEWS_BROADCAST.test(String(e.n) + ' ' + String(e.s))) continue;
+      if (!seen.has(e.s)) { seen.add(e.s); xs.set(e.s, (xs.get(e.s) || 0) + 1); }
+      put(e, false);
+    }
+  }
+  try { for (const e of JSON.parse(readFileSync(join(root, 'data', 'global', 'news.json'), 'utf8')).items || [])
+    if (e.c === 'news agency' || cand.has(e.s)) put(e, e.c === 'news agency'); } catch (e) {}
+  return [...cand.entries()]
+    .filter(([h, c]) => (c.w >= 50 && (xs.get(h) || 0) >= 20) || (c.agency && c.w >= 60))
+    .sort((a, b) => b[1].w - a[1].w)
+    .map(([h, c]) => [c.q, c.n, h]);
+}
+
 export function buildGlobalServices(root) {
   const dir = join(root, 'data', 'global');
   const cats = appNames(root);
@@ -156,6 +196,20 @@ export function buildGlobalServices(root) {
   /* At most PER_TOPIC each, the most visited kept: what a person scrolls
      through, and what every visitor downloads. */
   for (const t of order) { const out = outs[t].sort((a, b) => (a.k - b.k) || (b.w - a.w)).slice(0, PER_TOPIC).map(x => x.r); if (out.length) topics[t] = out; }
+  /* THE INTERNATIONAL NEWS OUTLETS, IN EVERY COUNTRY (Nov 23). The owner:
+     "the Wall Street Journal, the New York Times, those types, for every
+     country as well". The news topic above is built from classes that hold
+     news websites and agencies, so the papers and broadcasters read across
+     borders were missing from it, and a country only had them where its own
+     visit data happened to add them. These are measured, not picked: */
+  let worldHosts = [];
+  if (topics.news) {
+    const world = worldNews(root);
+    worldHosts = world.map(r => r[2]);
+    const have = new Set(topics.news.map(r => r[2]));
+    for (const r of world) if (!nameOf.has(r[2])) nameOf.set(r[2], r[1]);
+    topics.news = world.filter(r => !have.has(r[2])).concat(topics.news);
+  }
   /* The visits that order each country's view: one character per host
      shown (its bucket there, 0 for not measured), only for hosts that are
      the service's own and measured somewhere. */
@@ -212,5 +266,8 @@ export function buildGlobalServices(root) {
     if (!/^[A-Z]{2}$/.test(cc)) continue;
     countries[cc] = JSON.stringify({ month: R ? R.month : '', codes: R && R.c && R.c[cc] ? pick(R.c[cc]) : '', crew: crew[cc] || [] });
   }
-  return { services: JSON.stringify({ source: 'Wikidata (data/global); ordered by Chrome UX Report visits, then Wikipedia sitelinks', generated, entries, topics: ids, reach }), countries, topics };
+  /* Which of the news entries are the international outlets (worldNews), so
+     the page can lead with them and not with a blogging platform. */
+  const worldPos = worldHosts.map(h => pos.get(h)).filter(i => Number.isInteger(i));
+  return { services: JSON.stringify({ source: 'Wikidata (data/global); ordered by Chrome UX Report visits, then Wikipedia sitelinks', generated, entries, topics: ids, reach, worldNews: worldPos }), countries, topics };
 }

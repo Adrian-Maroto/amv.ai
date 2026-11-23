@@ -991,6 +991,8 @@ function ccGlobalLoad(){
     /* Visits, one character per entry, to order them where the visitor is. */
     const r = d.reach;
     if(r && typeof r.g === 'string' && r.g.length === d.entries.length && /^[0-7]*$/.test(r.g)) _ccGlobalReach = { g: r.g, n: d.entries.length };
+    /* The international news outlets (scripts/global-services.mjs, worldNews). */
+    _ccWorldNews = new Set((Array.isArray(d.worldNews) ? d.worldNews : []).map(i => Number.isInteger(i) && ok[i] ? ok[i].s : '').filter(Boolean));
     _ccGlobalDone = by;
     return by;
   }).catch(() => { _ccGlobalP = null; return null; });
@@ -999,7 +1001,7 @@ function ccGlobalLoad(){
 /* One country's visits to the worldwide services (global-reach/<CC>.json,
    about 1KB): a character per measured host, 1 for the top 1,000 sites
    visited from there to 7 for the top million, 0 for not in the list. */
-let _ccGlobalReach = null, _ccGlobalDone = null;
+let _ccGlobalReach = null, _ccGlobalDone = null, _ccWorldNews = new Set();
 const _ccGlobalHere = {}, _ccHereDone = {};
 function ccGlobalHereLoad(cc){
   if(!/^[A-Z]{2}$/.test(String(cc || ''))) return Promise.resolve(null);
@@ -1121,7 +1123,10 @@ function _ccFillBy(d, g, here){
   if(g){
     const have = new Set(list.map(x => x.e.s));
     for(const [t, rows] of Object.entries(g)){
-      const add = _ccGlobalOrder(rows.filter(x => !have.has(x.e.s)), here);
+      /* News asks only of itself: Reuters filed in a country as a company, or
+         the AP as a nonprofit, is still news, and belongs in News too. */
+      const seen = t === 'news' ? new Set((by.news || []).map(x => x.e.s)) : have;
+      const add = _ccGlobalOrder(rows.filter(x => !seen.has(x.e.s)), here);
       if(add.length) by[t] = (by[t] || []).concat(add);
     }
   }
@@ -1131,6 +1136,9 @@ function _ccFillBy(d, g, here){
     const named = {}; for(const x of (g && g.news) || []) named[x.e.s] = x.e.n;
     by.news = by.news.map(x => (named[x.e.s] && /^[\w.-]+\.[a-z]{2,}$/i.test(x.e.n) && x.e.n.toLowerCase() === x.e.s.toLowerCase())
       ? Object.assign({}, x, { e: Object.assign({}, x.e, { n: named[x.e.s] }) }) : x);
+    /* One row per site: a country file can hold the same paper twice (once
+       by its name, once by its address), and the address gets the name above. */
+    const one = new Set(); by.news = by.news.filter(x => !one.has(x.e.s) && one.add(x.e.s));
     by.news = _ccNewsOrder(by.news, here, d && d.cc);
   }
   return by;
@@ -1143,7 +1151,8 @@ function _ccFillBy(d, g, here){
    banks and wrong for news: it sank the New York Times and CNN under a
    city paper. And publishers, shopping channels and reading apps were
    mixed in. So News is: the outlets (newspapers, news sites, broadcasters,
-   the worldwide news services) by visits from the country (Chrome UX
+   the international outlets and wire agencies - worldNews in
+   scripts/global-services.mjs) by visits from the country (Chrome UX
    Report), then by how widely each is documented (Wikipedia sitelinks);
    everything else after. Drawn ahead of the reading apps (_ccFillDraw). */
 const CC_REACH_BUCKET = [0, 1000, 5000, 10000, 50000, 100000, 500000, 1000000];
@@ -1166,7 +1175,7 @@ function _ccNewsOrder(rows, here, cc){
      hold streaming services, sport and children's channels (Prime Video,
      ESPN, Nickelodeon), which belong after the news, not among it. */
   const NEWSY = /news|nieuws|notici|notíci|nachricht|notizie|haber|actualit|info|24|cnn|bbc|fox|nbc|cbs|abc|sky|jazeera|aaj tak|ndtv|tass|ntv|euronews|ms now|msnbc/i;
-  const outlet = (x) => !!(x.kind === 'newspaper' || x.kind === 'newssite' || x.f === 'news' || x.kind === 'global'
+  const outlet = (x) => !!(x.kind === 'newspaper' || x.kind === 'newssite' || x.f === 'news' || (x.kind === 'global' && _ccWorldNews.has(x.e.s))
     || ((x.kind === 'tv' || x.kind === 'radio') && NEWSY.test(String(x.e.n) + ' ' + String(x.e.s))));
   return rows.map((x, i) => [x, i, outlet(x) ? 0 : 1, visits(x), home(x)])
     .sort((a, b) => (a[2] - b[2]) || (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1]))
