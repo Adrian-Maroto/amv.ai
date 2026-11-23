@@ -25,6 +25,7 @@
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { TOPICS, FIELDS, WP_CATEGORIES, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
+import { FACT_TOPIC } from './crew-services.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
@@ -173,7 +174,33 @@ export function buildGlobalServices(root) {
   const reach = R ? { month: R.month, g: pick(R.g) } : null;
   /* Each country's codes in a file of its own (global-reach/<CC>.json,
      a few KB), so a visitor fetches their own country's and no other. */
+  /* EVERY SERVICE CREW NAMES THERE (Nov 23, the owner: "backed up by Crew
+     jobs as well - you might need something for Crew, some integration, and
+     I want it to also be in Integrations"). data/crew-services/<CC>.json
+     (scripts/crew-services.mjs) holds each service COUNTRY_FACTS names for
+     Crew's jobs, with its site; each goes in that country's file as
+     [id, name, site, topic, fact], under the topic its fact belongs to,
+     unless an app already is that service. Checked like everything else. */
+  const crewDir = join(root, 'data', 'crew-services');
+  const crew = {};
+  if (existsSync(crewDir)) for (const f of readdirSync(crewDir).filter(f => /^[A-Z]{2}\.json$/.test(f))) {
+    let d = null; try { d = JSON.parse(readFileSync(join(crewDir, f), 'utf8')); } catch (e) { continue; }
+    const cc = f.slice(0, 2), rows = [], hostSeen = new Set();
+    for (const e of (d && d.items) || []) {
+      const topic = FACT_TOPIC[e && e.f]; if (!topic) continue;
+      if (!/^Q\d{1,12}$/.test(e.q) || typeof e.s !== 'string' || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
+      const name = String(e.name || e.n || '').replace(/\s+/g, ' ').trim();
+      if (name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
+      if (REFUSED_HOSTS.test(e.s) || REMOVED.test(e.s) || NOT_FOR_LISTING.test(e.s + ' ' + name) || PASSWORD_MANAGER.test(name + ' ' + e.s) || AI_PRODUCT.test(name)) continue;
+      if (hostSeen.has(e.s) || sameAsApp(name, appSets)) continue;
+      hostSeen.add(e.s); rows.push([e.q, name, e.s, topic, e.f]);
+    }
+    if (rows.length) crew[cc] = rows;
+  }
   const countries = {};
-  if (reach) for (const [cc, codes] of Object.entries(R.c || {})) if (/^[A-Z]{2}$/.test(cc)) countries[cc] = JSON.stringify({ month: R.month, codes: pick(codes) });
+  for (const cc of new Set(Object.keys((R && R.c) || {}).concat(Object.keys(crew)))) {
+    if (!/^[A-Z]{2}$/.test(cc)) continue;
+    countries[cc] = JSON.stringify({ month: R ? R.month : '', codes: R && R.c && R.c[cc] ? pick(R.c[cc]) : '', crew: crew[cc] || [] });
+  }
   return { services: JSON.stringify({ source: 'Wikidata (data/global); ordered by Chrome UX Report visits, then Wikipedia sitelinks', generated, entries, topics: ids, reach }), countries, topics };
 }

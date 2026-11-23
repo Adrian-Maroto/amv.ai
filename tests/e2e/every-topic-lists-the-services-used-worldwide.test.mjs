@@ -70,7 +70,11 @@ const FIX = { source: 'test', generated: '2026-11-23',
   topics: { email: [0, 1, 2, 3], money: [4] },
   reach: { month: '2026-10', g: '00000' } };
 /* Visits from the visitor's country: Dos is in the top 5,000 there, Uno is not measured. */
-const HERE = { month: '2026-10', codes: '02000' };
+const HERE = { month: '2026-10', codes: '02000',
+  /* The services Crew's jobs there name (data/crew-services): a bank, a
+     payment app and a job site, plus one bad entry. */
+  crew: [['Q921', 'Bank Uno', 'bankuno.example.org', 'money', 'banks'], ['Q922', 'PayFast', 'payfast.example.org', 'money', 'pay'],
+         ['Q923', 'JobsNow', 'jobsnow.example.org', 'jobs', 'jobs'], ['Q924', 'Bad <b>', 'bad2.example.org', 'jobs', 'jobs']] };
 const app = await bootApp({ tab: 'chat', blockServiceWorkers: true });
 const { page } = app;
 let served = 0, failFirst = true;
@@ -122,13 +126,29 @@ section('A worldwide money service never opens in AMV’s browser');
 {
   await page.evaluate(async () => { setTab('integrations'); await new Promise(x => setTimeout(x, 900)); const b = document.querySelector('#int-catalog [data-topic="money"] [data-app-more][aria-expanded="false"]'); if (b) b.click(); await new Promise(x => setTimeout(x, 600)); });
   const r = await page.evaluate(() => {
-    const c = document.querySelector('#int-catalog [data-topic="money"] .cc-svc[data-cc="global"]');
+    const c = [...document.querySelectorAll('#int-catalog [data-topic="money"] .cc-svc[data-cc="global"]')].find(x => (x.querySelector('.int-name') || {}).textContent === 'Neo Bank Test');
     const a = c && c.querySelector('.int-act a');
     const before = S.tab; ccUseService('Q911'); const after = S.tab;
     return { href: a ? a.getAttribute('href') : '', target: a ? a.target : '', rel: a ? a.rel : '', dact: c ? !!c.querySelector('[data-dact="ccUseService"]') : true, before, after };
   });
   ok(r.href === 'https://neobank.example.org/' && r.target === '_blank' && /noopener/.test(r.rel), 'it opens in the person’s own browser', r);
   ok(!r.dact && r.after === r.before, 'and nothing sends it to AMV’s browser, even called directly', r);
+}
+
+section('Every service Crew names there is in its topic, with the right action');
+{
+  await page.evaluate(async () => { setTab('chat'); setTab('integrations'); await new Promise(x => setTimeout(x, 1200));
+    for (const t of ['money', 'jobs']) { const b = document.querySelector('#int-catalog [data-topic="' + t + '"] [data-app-more][aria-expanded="false"]'); if (b) { b.click(); await new Promise(x => setTimeout(x, 500)); } } });
+  const r = await page.evaluate(() => {
+    const card = (t, n) => [...document.querySelectorAll('#int-catalog [data-topic="' + t + '"] .cc-svc')].find(c => (c.querySelector('.int-name') || {}).textContent === n);
+    const act = (c) => c ? (c.querySelector('[data-dact]') || {}).dataset?.dact || (c.querySelector('a') ? 'open:' + c.querySelector('a').getAttribute('href') : '') : 'missing';
+    return { bank: act(card('money', 'Bank Uno')), pay: act(card('money', 'PayFast')), job: act(card('jobs', 'JobsNow')),
+      bad: /Bad <b>|bad2\.example/.test(document.getElementById('int-catalog').innerHTML) };
+  });
+  ok(r.bank === 'openBankLink', 'a bank Crew names is in Money, with Link - never opened in AMV\u2019s browser', r.bank);
+  ok(r.pay === 'open:https://payfast.example.org/', 'a payment app Crew names opens in the person\u2019s own browser', r.pay);
+  ok(r.job === 'ccUseService', 'a job site Crew names is in Jobs, with Use', r.job);
+  ok(!r.bad, 'and an entry that is not a plain name never reaches the page');
 }
 
 section('Search finds them');

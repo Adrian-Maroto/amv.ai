@@ -87,18 +87,18 @@ async function main() {
   const END = Date.now() + (+process.env.BUDGET_MIN || 100) * 60000;
   for (const cc of only.length ? only : Object.keys(facts)) {
     if (Date.now() > END) { console.log(cc, 'not asked: out of time'); continue; }
-    const items = [], seen = new Set();
+    const items = [], missing = [], seen = new Set();
     for (const [f, v] of Object.entries(facts[cc])) {
       if (!FACT_TOPIC[f]) continue;
       for (const name of namesIn(v)) {
         const key = name.toLowerCase(); if (seen.has(key)) continue; seen.add(key);
         const r = await resolve(name, cc);
-        if (!r) { console.log(cc, f, JSON.stringify(name), 'NOT FOUND'); continue; }
+        if (!r) { console.log(cc, f, JSON.stringify(name), 'NOT FOUND'); missing.push(f + ': ' + name); continue; }
         items.push({ f, name, q: r.q, n: r.n, s: r.s, here: r.here });
         await sleep(250);
       }
     }
-    writeFileSync(join(OUT, cc + '.json'), JSON.stringify({ cc, generated: new Date().toISOString().slice(0, 10), items }));
+    writeFileSync(join(OUT, cc + '.json'), JSON.stringify({ cc, generated: new Date().toISOString().slice(0, 10), items, missing }));
     console.log(cc, items.length, 'resolved');
   }
 }

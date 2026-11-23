@@ -998,8 +998,18 @@ function ccGlobalHereLoad(cc){
   if(_ccGlobalHere[cc]) return _ccGlobalHere[cc];
   _ccGlobalHere[cc] = fetch('global-reach/' + cc + '.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null).then(d => {
     if(!d || typeof d.codes !== 'string' || !/^[0-7]*$/.test(d.codes)) return null;
-    _ccHereDone[cc] = d.codes;
-    return d.codes;
+    /* And the services Crew's jobs there name (scripts/global-services.mjs):
+       [id, name, site, topic, fact], each checked like any other entry. */
+    const crew = [];
+    for(const x of Array.isArray(d.crew) ? d.crew : []){
+      if(!Array.isArray(x) || !/^[a-z]{2,12}$/.test(String(x[3])) || !/^[a-z]{2,8}$/.test(String(x[4]))) continue;
+      const e = { q: x[0], n: x[1], s: x[2] }; if(!_ccGood(e)) continue;
+      const f = x[4], topic = x[3];
+      crew.push({ kind: (f === 'banks' || f === 'cards') ? 'bank' : (topic === 'money' ? 'global' : 'crew'), topic, f, e });
+    }
+    const here = { codes: d.codes, crew };
+    _ccHereDone[cc] = here;
+    return here;
   }).catch(() => { delete _ccGlobalHere[cc]; return null; });
   return _ccGlobalHere[cc];
 }
@@ -1007,8 +1017,9 @@ function ccGlobalHereLoad(cc){
    worldwide, then the rest in the file's order (Wikipedia coverage). */
 function _ccGlobalOrder(rows, here){
   const R = _ccGlobalReach; if(!R) return rows;
-  const okHere = typeof here === 'string' && here.length === R.n;
-  const key = (x) => { const i = x.i; if(i == null) return 99; const h = okHere ? +here[i] : 0; if(h) return h; const w = +R.g[i]; return w ? 7 + w : 99; };
+  const codes = here && here.codes;
+  const okHere = typeof codes === 'string' && codes.length === R.n;
+  const key = (x) => { const i = x.i; if(i == null) return 99; const h = okHere ? +codes[i] : 0; if(h) return h; const w = +R.g[i]; return w ? 7 + w : 99; };
   return rows.map((x, i) => [key(x), i, x]).sort((a, b) => (a[0] - b[0]) || (a[1] - b[1])).map(z => z[2]);
 }
 /* A service's one action. A bank is never opened in AMV's browser, where a
@@ -1021,7 +1032,10 @@ function _ccAct(x){
   if(x.kind === 'global' && x.topic === 'money') return `<a class="btn bs cc-use" href="https://${escH(x.e.s)}/" target="_blank" rel="noopener noreferrer">${escH(T('Open'))}</a>`;
   return `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`;
 }
-function _ccIcon(x){ return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind] || ['\u2022'])[0]; }
+/* A Crew-named service's icon is its fact's kind of thing. */
+const CC_FACT_KIND = { banks: 'bank', cards: 'bank', pay: 'bank', jobs: 'employer', shop: 'retail', groc: 'supermarket', food: 'restaurant',
+  rail: 'rail', prop: 'utility', telco: 'telecom', post: 'agency', news: 'newssite', health: 'hospital', gov: 'agency', tax: 'agency', id: 'agency', car: 'agency', uni: 'university' };
+function _ccIcon(x){ if(x.kind === 'crew' || x.f) return (CC_KINDS[CC_FACT_KIND[x.f]] || ['\u2022'])[0]; return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind] || ['\u2022'])[0]; }
 /* Drawn in the same frame as the screen when everything is already here
    (fetched while the app was idle): no topic grows after it appears. Says
    whether it drew; the screen falls back to ccFillIntegrations otherwise. */
@@ -1050,6 +1064,18 @@ function _ccFillWith(root, d, g, here){
   const list = d ? ccServices(d) : [];
   const by = {};
   list.forEach(x => { const t = CC_KIND_TOPIC[x.kind] || 'home'; (by[t] = by[t] || []).push(x); });
+  /* Then the services Crew's jobs here name, so whatever a job needs can be
+     connected or used from here - each site and name once. */
+  const norm = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9\u00c0-\uffff]+/g, ' ').trim();
+  const crewRows = (here && here.crew) || [];
+  if(crewRows.length){
+    const hosts = new Set(list.map(x => x.e.s)), names = new Set(list.map(x => norm(x.e.n)));
+    for(const x of crewRows){
+      if(hosts.has(x.e.s) || names.has(norm(x.e.n))) continue;
+      hosts.add(x.e.s); names.add(norm(x.e.n)); list.push(x);
+      const t = x.topic; (by[t] = by[t] || []).push(x);
+    }
+  }
   /* After the country's own, the worldwide ones - each site once. */
   if(g){
     const have = new Set(list.map(x => x.e.s));
