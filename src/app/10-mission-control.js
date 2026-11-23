@@ -104,6 +104,7 @@ function _cwDefaultJobs(){
 }
 function _cwMadeForList(){ const c = _cwCatalog(); return c ? c.madeFor : []; }
 function _cwMadeMoreList(){ const c = _cwCatalog(); return c ? c.madeMore : []; }
+function _cwPopularList(){ const c = _cwCatalog(); return c && Array.isArray(c.popular) ? c.popular : []; }
 /* A job written as "each evening" or "every evening" opens at 18:00, not the
    8:00 every other job opens at (Build 17 audit B17-033). Read from the
    English template, before it is translated - the one text every language

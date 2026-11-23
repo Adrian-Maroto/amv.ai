@@ -313,6 +313,8 @@ function _cwFindJob(id){
   try{ for(const l of Object.values(window._ccCrewJobs || {})){ const k = (l || []).find(x => x.id === id); if(k) return k; } }catch(e){}
   /* A country's own inbox and calendar jobs (crew-view.js, _cjInboxCal). */
   try{ const m = window._cjInboxCalById; if(m && m[id]) return m[id]; }catch(e){}
+  /* The everyday fifty (Nov 23), for the country in the id or none. */
+  try{ const sid = String(id), pcc = (sid.slice(0, 3) === 'cc_' && sid.slice(5, 8) === '_p_') ? sid.slice(3, 5).toUpperCase() : ''; const k = (_cwPopularJobs(pcc) || []).find(x => x.id === id); if(k) return k; }catch(e){}
   /* A row the directory of every job has drawn (crew-view.js, _cjdRows). */
   try{ const m = window._cjdMade; if(m && m[id]) return m[id]; }catch(e){}
   return null;

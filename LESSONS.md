@@ -16235,3 +16235,14 @@ the build kept "the last three" code files by build, so three local builds
 pushed out the file the live page names; it now keeps the file main's page
 names and the last commit's first. Rule: anything per-account must be read
 per-account at the moment of use, not cached from the moment of load.
+
+## 664
+**Nov 23 - popular was "the country's first fifty jobs" by score, and the score
+rewarded what a country is distinct for - so the top fifty filled with
+one-time guides (tenant rights, how to register) that nobody opens twice.
+The owner wanted what people do every day. Popular is now its own
+researched list of fifty recurring jobs, in every country, with the
+national blocks applied and the gap filled only by recurring jobs
+(`popular-is-fifty-everyday-jobs`; removing the block filter fails it in
+China and India). Rule: "most popular" is a measure of repeat use, not of
+how specific a thing is to a place - rank by what people come back to.

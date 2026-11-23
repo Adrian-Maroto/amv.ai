@@ -1408,6 +1408,9 @@ function _cjList(noOnFirst){
   const safe = (f) => { try{ return f() || []; }catch(e){ return []; } };
   const home = safe(() => (_cwJobs() || []).concat(_cwUniversalJobs() || []));
   if(!_cjRankOnly) home.filter(j => j.on).forEach(push);
+  /* The everyday fifty lead (Nov 23): what people do every day, before
+     anything one-off or only for some. */
+  safe(() => _cwPopularJobs(cc)).forEach(push);
   safe(() => _cwTopTen(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
@@ -1438,7 +1441,17 @@ function _cjList(noOnFirst){
 let _cjRankOnly = false, _cjRankCache = null, _cjRankKey = '';
 function _cjRanked(){ _cjRankOnly = true; try{ return _cjList(); } finally { _cjRankOnly = false; } }
 const CJ_POPULAR_N = 50;
-function _cjPopular(){ return _cjRanked().slice(0, CJ_POPULAR_N); }
+/* Popular IS the everyday fifty (Nov 23, the owner: "things people can do
+   every day ... others are lame"). Where the catalogue has fewer, the ranked
+   list fills the rest - recurring jobs only, never a one-off explainer. */
+const CJ_ONE_OFF = /rights|rules|explained|new laws|elections|moving to|first employee|parental leave|check-ups|entitled|hiring your first|visa|entry rules|tenant|rent\b|parking/i;
+function _cjPopular(){
+  const out = [], seen = new Set();
+  const add = (j) => { if(j && j.id && !seen.has(j.id) && out.length < CJ_POPULAR_N){ seen.add(j.id); out.push(j); } };
+  try{ (_cwPopularJobs(_cwCountryGuess()) || []).forEach(add); }catch(e){}
+  _cjRanked().filter(j => j && ['hourly', 'daily', 'weekly'].indexOf(String(j.every || 'daily')) >= 0 && !CJ_ONE_OFF.test(String(j.title || ''))).forEach(add);
+  return out;
+}
 function _cjMatch(j, words){
   if(!words.length) return true;
   const hay = (j._cjHay || (j._cjHay = [j.title, j.desc, j.cat, _cjCat(j), j.needs, j.site].filter(Boolean).join(' ').toLowerCase()));

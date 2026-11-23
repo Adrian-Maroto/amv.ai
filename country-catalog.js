@@ -605,8 +605,9 @@ const CC_CREW = {
    blocks (China's on Google, Meta, X, Wikipedia and the main foreign news;
    Russia's on Meta, X and LinkedIn). Matched on the service's own address. */
 const CC_BLOCKED = {
-  CN: /(^|\.)(google|youtube|gmail|blogspot|facebook|instagram|whatsapp|twitter|x|wikipedia|telegram|line|dropbox|nytimes|bbc|reuters|bloomberg|wsj)\.[a-z.]+$|(^|\.)[a-z]+\.google$/,
+  CN: /(^|\.)(google|youtube|gmail|blogspot|facebook|instagram|whatsapp|twitter|x|wikipedia|telegram|line|dropbox|nytimes|bbc|reuters|bloomberg|wsj|tiktok|reddit)\.[a-z.]+$|(^|\.)[a-z]+\.google$/,
   RU: /(^|\.)(facebook|instagram|twitter|x|linkedin)\.[a-z.]+$/,
+  IN: /(^|\.)tiktok\.[a-z.]+$/,
 };
 /* One country's file, fetched once. */
 const _ccCache = {};

@@ -20750,6 +20750,7 @@ function _cwDefaultJobs(){
 }
 function _cwMadeForList(){ const c = _cwCatalog(); return c ? c.madeFor : []; }
 function _cwMadeMoreList(){ const c = _cwCatalog(); return c ? c.madeMore : []; }
+function _cwPopularList(){ const c = _cwCatalog(); return c && Array.isArray(c.popular) ? c.popular : []; }
 /* A job written as "each evening" or "every evening" opens at 18:00, not the
    8:00 every other job opens at (Build 17 audit B17-033). Read from the
    English template, before it is translated - the one text every language
@@ -21945,6 +21946,37 @@ function _cwMadeMore(cc){
   }));
 }
 
+/* THE EVERYDAY FIFTY (Nov 23): crew-data.js `popular`, the jobs people run
+   every day - in every country, in the research order written beside the
+   data (docs/RESEARCH.md). The country's name goes in where the text has
+   one, and its own sites (AMV's server facts) are handed to the run when
+   known - never invented when not. Without a country the text stays
+   general rather than saying "in your country". */
+function _cwPopularJobs(cc){
+  const list = _cwPopularList(); if(!list.length) return [];
+  const row = cc ? _cwCountryRow(cc) : null, C = row ? row[1] : '';
+  const f = (cc && _cwFacts[cc]) || {};
+  const plain = (s) => String(s || '').replace(/ (?:in|for|at the stores people in) \{C\}/g, '').replace(/\{C\}/g, '').replace(/\s{2,}/g, ' ').trim();
+  /* Where a service is blocked nationwide (the same list as country-
+     catalog.js CC_BLOCKED), its job is not offered there: TikTok and
+     Reddit in mainland China, TikTok in India (banned June 2020). */
+  const blocked = { CN: ['yt_posts', 'ig_posts', 'tiktok_posts', 'x_posts', 'linkedin_company', 'reddit_hot'], IN: ['tiktok_posts'], RU: ['ig_posts', 'x_posts', 'linkedin_company'] }[cc] || [];
+  return list.filter(m => blocked.indexOf(m[1]) < 0).map(m => {
+    const k = m[0] && f[m[0]] ? m[0] : '';
+    const fill = (s) => C ? _cwFill(s, f, k, C) : plain(s);
+    const hour = +m[11];
+    return {
+      id: (cc ? 'cc_' + cc.toLowerCase() + '_p_' : 'p_') + m[1], popular: true, country: cc || '', countryName: C,
+      cat: m[2], icon: m[3], every: m[4], ...(m[4] !== 'hourly' && Number.isInteger(hour) ? { hour } : {}), on: false,
+      needs: m[10] || 'Web research',
+      title: fill(m[5]), desc: fill(m[6]),
+      asks: m[7] ? { q: fill(m[7]), ph: m[8] } : null,
+      prompt: fill(m[9]) + (k ? ' Start with the sources people there use: ' + String(f[k]) + '.' : '')
+        + (C ? ' The user is in ' + C + '.' : '') + ' Only real, current information with sources; never invent listings, prices or dates.',
+    };
+  });
+}
+try{ window._cwPopularJobs = _cwPopularJobs; }catch(e){}
 /* ── WHAT IS MOST USED WHERE YOU ARE: THE ORDER OF THE HUNDRED ──────────────
 
    Asked for: "the top 5 most popular and the other 100 below it also have to
@@ -23466,6 +23498,8 @@ function _cwFindJob(id){
   try{ for(const l of Object.values(window._ccCrewJobs || {})){ const k = (l || []).find(x => x.id === id); if(k) return k; } }catch(e){}
   /* A country's own inbox and calendar jobs (crew-view.js, _cjInboxCal). */
   try{ const m = window._cjInboxCalById; if(m && m[id]) return m[id]; }catch(e){}
+  /* The everyday fifty (Nov 23), for the country in the id or none. */
+  try{ const sid = String(id), pcc = (sid.slice(0, 3) === 'cc_' && sid.slice(5, 8) === '_p_') ? sid.slice(3, 5).toUpperCase() : ''; const k = (_cwPopularJobs(pcc) || []).find(x => x.id === id); if(k) return k; }catch(e){}
   /* A row the directory of every job has drawn (crew-view.js, _cjdRows). */
   try{ const m = window._cjdMade; if(m && m[id]) return m[id]; }catch(e){}
   return null;
