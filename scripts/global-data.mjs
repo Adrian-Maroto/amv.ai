@@ -95,8 +95,54 @@ async function classOf(label) {
   } catch (e) { return null; }
 }
 
+/* CLASSES FOUND FROM THE APPS ALREADY LISTED (run 2, Nov 23). Run 1 named
+   classes by guessed labels and a third of them do not exist ("email
+   service", "calendaring software", "legal software"), so twelve topics came
+   back thin and three empty. Each topic now also asks Wikidata what its own
+   apps ARE: the names in AMV_APP_CATS (src/app/13c-app-catalog.js) are
+   looked up by English label, and every class that at least two of them are
+   an instance of is used - unless it is a generic class (software, website,
+   company...) or too big to be a kind of service. */
+const GENERIC = new Set(['Q7397', 'Q35127', 'Q166142', 'Q620615', 'Q4830453', 'Q783794', 'Q891723', 'Q6881511', 'Q1058914', 'Q218616', 'Q341',
+  'Q193424', 'Q189210', 'Q658255', 'Q431289', 'Q167037', 'Q43229', 'Q4182287', 'Q1668024', 'Q7094076', 'Q1371849', 'Q5633421', 'Q1331793',
+  'Q2085381', 'Q17155032', 'Q1639024', 'Q3220391', 'Q506240', 'Q1107679', 'Q21980538', 'Q19967801', 'Q15265344', 'Q3966', 'Q1640628']);
+const MAX_CLASS = 25000;
+export function seedNames(root = ROOT) {
+  const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
+  const m = src.match(/const AMV_APP_CATS = (\[[\s\S]*?\n\]);/);
+  if (!m) return {};
+  const cats = (0, eval)(m[1]);
+  const out = {};
+  for (const c of cats) out[c.id] = c.apps.map(s => String(s).split('|')[0].replace(/&amp;/g, '&').trim()).filter(n => n.length >= 2 && n.length <= 60 && !/["\\]/.test(n));
+  return out;
+}
+async function seedClasses(names) {
+  if (names.length < 2) return [];
+  const vals = names.map(n => '"' + esc(n) + '"@en').join(' ');
+  let got = [];
+  try {
+    got = await sparql(`SELECT ?c (SAMPLE(?cl) AS ?label) (COUNT(DISTINCT ?i) AS ?k) WHERE {
+      VALUES ?name { ${vals} } ?i rdfs:label ?name ; wdt:P856 ?site ; wdt:P31 ?c . ?c rdfs:label ?cl . FILTER(LANG(?cl) = "en")
+    } GROUP BY ?c HAVING (COUNT(DISTINCT ?i) >= 2) ORDER BY DESC(?k) LIMIT 20`, 3, 90000);
+  } catch (e) { console.log('  seed lookup failed:', e.message); return []; }
+  const out = [];
+  for (const b of got) {
+    const c = qid(b.c.value), label = b.label.value;
+    if (GENERIC.has(c)) { console.log('  seed class', c, label, 'skipped: generic'); continue; }
+    let size = Infinity;
+    try { const r = await sparql(`SELECT (COUNT(?x) AS ?k) WHERE { ?x wdt:P31 wd:${c} }`, 2, 45000); size = +r[0].k.value; } catch (e) {}
+    if (!(size <= MAX_CLASS)) { console.log('  seed class', c, label, 'skipped:', size === Infinity ? 'too big to count' : size + ' members'); continue; }
+    console.log('  seed class', c, label, 'used:', b.k.value, 'of its apps,', size, 'members');
+    out.push([c, label]);
+    if (out.length >= 8) break;
+    await sleep(300);
+  }
+  return out;
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
+  const SEEDS = seedNames();
   const only = process.argv.slice(2);
   const LANGS = 'en,mul,es,fr,de,pt,it,nl,sv,pl,ru,uk,tr,ar,fa,he,hi,bn,ur,id,ms,vi,th,ja,ko,zh';
   const END = Date.now() + (+process.env.BUDGET_MIN || 120) * 60000;
@@ -105,6 +151,7 @@ async function main() {
     if (Date.now() > END) { console.log('topic', topic, 'not asked: out of time'); continue; }
     const classes = [];
     for (const l of labels) { const q = await classOf(l); console.log('topic', topic.padEnd(10), ('"' + l + '"').padEnd(46), q ? 'is ' + q : 'NOT FOUND - not used'); if (q) classes.push([q, l]); }
+    for (const [q, l] of await seedClasses(SEEDS[topic] || [])) if (!classes.some(([c]) => c === q)) classes.push([q, l]);
     const rows = new Map();
     for (const [klass, label] of classes) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {
