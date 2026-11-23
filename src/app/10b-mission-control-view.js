@@ -201,7 +201,13 @@ function _cwLockedCard(j){
 function _cwUseRows(j){
   const rows = [];
   const add = (n, optional) => {
-    if(n === 'Web research' || n === 'Web automation' || n === 'Nothing') return;
+    if(n === 'Nothing') return;
+    /* The web is a connection too, and the one every research job has: it is
+       listed, already there, so no job reads as connecting to nothing. */
+    if(n === 'Web research' || n === 'Web automation'){
+      if(!rows.some(r => r.web)) rows.push({ name: n, met: true, optional: false, web: true, label: n });
+      return;
+    }
     const c = CW_NEEDS_CHECK[n];
     let met = false; try{ met = c ? !!c.has() : false; }catch(e){}
     if(rows.some(r => r.name === n)) return;
@@ -327,8 +333,10 @@ function _cwFindJob(id){
 function _cwMethod(j){
   const needs = _cwNeedsList(j);
   if(needs.indexOf('Web automation') >= 0) return T('It works on websites in AMV’s browser on your computer, where you are signed in. It asks you before paying for anything.');
-  if(_cwUseRows(j).some(u => !u.optional)) return T('It works through the accounts below, with only the access you give.');
-  if(needs.indexOf('Web research') >= 0) return T('It searches the web and sends you what it finds. No account is needed.');
+  if(_cwUseRows(j).some(u => !u.optional && !u.web)) return T('It works through the accounts below, with only the access you give.');
+  if(needs.indexOf('Web research') >= 0) return _cwUseRows(j).some(u => u.optional)
+    ? T('It searches the web and sends you what it finds. Connect an account below and it works from yours too.')
+    : T('It searches the web and sends you what it finds. No account is needed.');
   return T('It writes you the result. No account is needed.');
 }
 function cwPeek(id){
@@ -349,12 +357,16 @@ function cwPeek(id){
   }catch(e){ return ''; } })();
   const ic = (n) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${_CW_USE_IC[n] || (/bank|card/i.test(n) ? _CW_USE_IC.Bank : /mail/i.test(n) ? _CW_USE_IC.Email : /calendar/i.test(n) ? _CW_USE_IC.Calendar : '') || '<circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/>'}</svg>`;
   let firstGo = true;
+  /* The words a person uses for each: the school account, not "Classroom". */
+  const USE_NAME = { 'Classroom':'School account', 'Bank connection':'Bank account', 'Web research':'The web', 'Web automation':'AMV’s browser' };
   const useRow = (u) => {
+    if(u.web) return `<li class="cwp-u met cwp-u-web"><span class="cwp-u-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+      <span class="cwp-u-t"><b>${escH(T(USE_NAME[u.name] || u.name))}</b></span><span class="cwp-u-ok">${escH(T('Built in'))}</span></li>`;
     const btn = u.met ? `<span class="cwp-u-ok">${escH(T('Connected'))}</span>`
       : `<button class="btn ${u.optional ? 'bs' : 'bp'} cwp-u-go"${!u.optional && firstGo ? ' id="cwp-need-go"' : ''} data-cwp-connect="${escH(u.name)}">${escH(T('Connect'))}</button>`;
     if(!u.met && !u.optional) firstGo = false;
     return `<li class="cwp-u${u.met ? ' met' : ''}"><span class="cwp-u-ic">${ic(u.name)}</span>
-      <span class="cwp-u-t"><b>${escH(T(u.name))}</b>${u.optional ? `<small>${escH(/bank/i.test(u.name) ? T('Optional - makes the figures real charges, not estimates') : T('Optional'))}</small>` : ''}</span>${btn}</li>`;
+      <span class="cwp-u-t"><b>${escH(T(USE_NAME[u.name] || u.name))}</b>${u.optional ? `<small>${escH(/bank/i.test(u.name) && j.id === 'money_leaks' ? T('Optional - makes the figures real charges, not estimates') : T('Optional - makes it about your own account'))}</small>` : ''}</span>${btn}</li>`;
   };
   /* WHEN - always editable. */
   const sc = _cwJobWhen(j) || { cad:'daily', hour:8, minute:0 };

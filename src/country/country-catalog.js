@@ -832,6 +832,13 @@ const _ccJobId = (kind, e, i, cc) => 'ccj-' + kind + '-' + e.q + '-' + i + (CC_C
 /* "Every evening" opens at 18:00 (Build 17 audit B17-033). This file is
    fetched on its own, so it does not lean on the page's helper. */
 function _ccEvening(s){ return /^(Each|Every) evening\b|\btonight\b/i.test(String(s || '')); }
+/* The account that makes a catalogue job about the person (see CW_CONNECTS
+   in 10a-job-needs.js): optional, beside the web it always works from. */
+const CC_KIND_CONNECTS = { bank:'Bank connection', insurer:'Email', university:'Classroom, Email', college:'Classroom, Email',
+  school:'Classroom, Email', library:'Email', telecom:'Email', isp:'Email', utility:'Email', airline:'Calendar', airport:'Calendar',
+  rail:'Calendar', bus:'Calendar', hotel:'Calendar', hospital:'Calendar', agency:'Email, Calendar', ministry:'Email, Calendar',
+  embassy:'Email, Calendar', employer:'Email', theatre:'Calendar', stadium:'Calendar', festival:'Calendar', sportsclub:'Calendar',
+  museum:'Calendar', ecommerce:'Email', retail:'Email' };
 function ccCrewJob(kind, e, i, cc){
   const t = CC_CREW[kind][i], prompt = _ccFill(t[1], e, true, cc);
   return {
@@ -839,6 +846,7 @@ function ccCrewJob(kind, e, i, cc){
     id: _ccJobId(kind, e, i, cc), icon: (CC_KINDS[kind] || ['\u2022'])[0], title: _ccTitle(t[0], e, cc),
     desc: prompt.replace(/\[([^\]]*)\]/g, '$1'), prompt, every: t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}),
     needs: 'Web research', cat: (CC_KINDS[kind] || ['', ''])[1], kind: 'research', ccKind: kind, site: e.s, src: e.q,
+    ...(CC_KIND_CONNECTS[kind] ? { boost: CC_KIND_CONNECTS[kind] } : {}),
   };
 }
 

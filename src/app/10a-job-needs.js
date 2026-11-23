@@ -641,6 +641,7 @@ function _cwMadeForJobs(cc){
   return _cwMadeForList().filter(m => f[m.k]).map(m => ({
     id: 'cc_' + cc.toLowerCase() + '_' + m.id, made: true, country: cc, countryName: C,
     cat: m.cat, icon: m.icon, every: m.every, on: false, needs: 'Web research',
+    ...(CW_CONNECTS[m.k] ? { boost: CW_CONNECTS[m.k] } : {}),
     title: m.t(f), desc: m.d(f, C), where: String(f[m.k]),
     asks: { q: m.ask[0], ph: m.ask[1] },
     /* The same closing rule as every other country job: a made-for job is
@@ -829,6 +830,37 @@ function _cwRemitHere(isReceiver, C, f, job){
     prompt: 'Compare the main ways to receive the amount named from the country named into ' + _cwThe(C) + ': money-transfer apps, banks and agents, and how it can arrive (bank account, mobile wallet, cash pickup). For each: the fee the sender pays, the exchange rate against the mid-market rate, the amount that arrives in ' + (cur || 'local currency') + ', and how long it takes. Name the cheapest and the fastest, with links. Only current published rates. The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
   });
 }
+/* WHAT EACH COUNTRY JOB CONNECTS TO (Nov 23). The owner: "for these things
+   like family it should be connect to your school account, your billing
+   account ... everything has some sort of connection, either the web or this
+   account". Every one of these jobs works from the web, and says so; the
+   account that makes it about YOU is offered beside it - school fees with the
+   school account and the school's emails, a bill check with the mailbox the
+   bills arrive in, a deadline with the calendar. Optional (`boost`), never a
+   requirement: a job that runs from the web is not told it is broken because
+   a mailbox is not linked, and it keeps running with AMV closed. */
+const CW_CONNECTS = {
+  schoolterms:'Classroom, Calendar', schoolfees:'Classroom, Email', kids:'Calendar', childcare:'Email', checkups:'Calendar',
+  parental:'Email', eldercare:'Calendar',
+  papers:'Classroom, Calendar', results:'Classroom, Email', grants:'Email', housing:'Email', drivingtest:'Calendar',
+  abroad:'Email', training:'Calendar', studydeadlines:'Classroom, Calendar', exams:'Classroom, Calendar', uni:'Classroom, Email',
+  fees:'Email, Bank connection', budget:'Email, Bank connection', refund:'Email, Bank connection', deductions:'Email, Bank connection',
+  savings:'Bank connection', cards:'Email, Bank connection', ccrates:'Bank connection', pension:'Email', mortgage:'Email, Bank connection',
+  switch:'Bank connection', limits:'Bank connection', remit:'Bank connection', banks:'Bank connection',
+  returns:'Email', energy:'Email', broadband:'Email', phoneplan:'Email', carinsurance:'Email', homeinsurance:'Email',
+  localtax:'Email, Calendar', pricerises:'Email', bundles:'Email', transit:'Email', roaming:'Email', benefits:'Email',
+  tax:'Email, Calendar', telco:'Email', selfemployed:'Email, Calendar', value:'Email',
+  salary:'Email', interview:'Calendar', cv:'Email', hiring:'Email', internships:'Email', govjobs:'Email', freelance:'Email',
+  jobfairs:'Calendar', jobs:'Email',
+  appts:'Calendar', travel:'Email', visa:'Email', flights:'Calendar', getaway:'Calendar', hotels:'Calendar', flightshome:'Calendar',
+  events:'Calendar', concerts:'Calendar', weekend:'Calendar', free:'Calendar', holidays:'Calendar', calendar:'Calendar',
+  commute:'Calendar', traffic:'Calendar', delays:'Calendar', disruption:'Calendar', strikes:'Calendar', rail:'Calendar',
+  rents:'Email', rentrights:'Email', moving:'Email, Calendar', fines:'Email', wedding:'Calendar', id:'Email, Calendar',
+  car:'Email', prop:'Email', gov:'Email, Calendar', health:'Calendar',
+  waits:'Calendar', insurance:'Email', clinics:'Calendar', gym:'Calendar', races:'Calendar', mind:'Calendar',
+  tenders:'Email', bizlicence:'Email, Calendar', smbtax:'Email, Calendar', bizgrants:'Email', firsthire:'Email',
+};
+try{ window.CW_CONNECTS = CW_CONNECTS; }catch(e){}
 function _cwMadeMore(cc){
   const f = _cwFacts[cc], row = _cwCountryRow(cc);
   if(!f || !row) return [];
@@ -839,6 +871,7 @@ function _cwMadeMore(cc){
   return _cwMadeMoreList().filter(m => _cwRowFor(m, f, cc)).map(m => _cwRemitHere(m[1] === 'remit' && receives, C, f, {
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
     cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], ...(_cwEveningTpl(m[6]) ? { hour: 18 } : {}), on: false, needs: 'Web research',
+    ...(CW_CONNECTS[m[1]] ? { boost: CW_CONNECTS[m[1]] } : {}),
     title: cyc(_cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C)), desc: cyc(_cwFill(m[6], f, key(m), C)), where: key(m) ? String(f[key(m)]) : C,
     asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
     prompt: cyc(_cwFill(m[9], f, key(m), C)) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
