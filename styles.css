@@ -17929,3 +17929,5 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
   .dsn-opts .secmodel-sel{max-width:none}
 }
 @media (max-width:560px){.lab-compose .lab-entry-acts .lab-go{white-space:nowrap;padding:0 var(--sp-3)!important;font-size:var(--t-sm)!important}}
+.cc-pushed{display:none!important}
+.cc-dup{display:none!important}

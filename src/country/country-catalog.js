@@ -1117,8 +1117,54 @@ function _ccFillBy(d, g, here){
       if(add.length) by[t] = (by[t] || []).concat(add);
     }
   }
+  if(by.news){
+    /* A few outlets are filed in the country data under their address
+       ("reuters.com"); the worldwide table has the name. */
+    const named = {}; for(const x of (g && g.news) || []) named[x.e.s] = x.e.n;
+    by.news = by.news.map(x => (named[x.e.s] && /^[\w.-]+\.[a-z]{2,}$/i.test(x.e.n) && x.e.n.toLowerCase() === x.e.s.toLowerCase())
+      ? Object.assign({}, x, { e: Object.assign({}, x.e, { n: named[x.e.s] }) }) : x);
+    by.news = _ccNewsOrder(by.news, here, d && d.cc);
+  }
   return by;
 }
+/* NEWS: THE OUTLETS PEOPLE THERE READ, FIRST (Nov 23). The owner: "News
+   should have all the popular news sources - for the US AP, Reuters, the
+   Wall Street Journal, the New York Times, CNN, Fox News - in every
+   country". Two things kept them down. The general rule puts a country's
+   own services before ones listed in many countries, which is right for
+   banks and wrong for news: it sank the New York Times and CNN under a
+   city paper. And publishers, shopping channels and reading apps were
+   mixed in. So News is: the outlets (newspapers, news sites, broadcasters,
+   the worldwide news services) by visits from the country (Chrome UX
+   Report), then by how widely each is documented (Wikipedia sitelinks);
+   everything else after. Drawn ahead of the reading apps (_ccFillDraw). */
+const CC_REACH_BUCKET = [0, 1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+function _ccNewsOrder(rows, here, cc){
+  /* Inside one visit bucket (the report says only "among the top 1,000"),
+     an outlet on the country's own internet domain - .de, .co.uk, .com.mx -
+     before one on another country's: in Germany Bild and Die Zeit before the
+     BBC. The .com of most American outlets is nobody's, so it decides
+     nothing there and prominence does. */
+  const tld = /^[A-Z]{2}$/.test(String(cc || '')) ? (cc === 'GB' ? 'uk' : String(cc).toLowerCase()) : '';
+  const home = (x) => (tld && String(x.e.s || '').toLowerCase().endsWith('.' + tld)) ? 0 : 1;
+  const R = _ccGlobalReach, codes = here && here.codes;
+  const okHere = !!(R && typeof codes === 'string' && codes.length === R.n);
+  const visits = (x) => {
+    if(+x.e.r > 0) return +x.e.r;
+    if(x.kind === 'global' && okHere && x.i != null){ const h = +codes[x.i]; if(h) return CC_REACH_BUCKET[h] || 1e9; }
+    return 1e9;
+  };
+  /* A broadcaster counts when it is a news one: the TV and radio lists also
+     hold streaming services, sport and children's channels (Prime Video,
+     ESPN, Nickelodeon), which belong after the news, not among it. */
+  const NEWSY = /news|nieuws|notici|notíci|nachricht|notizie|haber|actualit|info|24|cnn|bbc|fox|nbc|cbs|abc|sky|jazeera|aaj tak|ndtv|tass|ntv|euronews|ms now|msnbc/i;
+  const outlet = (x) => !!(x.kind === 'newspaper' || x.kind === 'newssite' || x.f === 'news' || x.kind === 'global'
+    || ((x.kind === 'tv' || x.kind === 'radio') && NEWSY.test(String(x.e.n) + ' ' + String(x.e.s))));
+  return rows.map((x, i) => [x, i, outlet(x) ? 0 : 1, visits(x), home(x)])
+    .sort((a, b) => (a[2] - b[2]) || (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1]))
+    .map(z => z[0]);
+}
+try{ window._ccNewsOrder = _ccNewsOrder; }catch(e){}
 function _ccFillDraw(root, by){
   /* A row is registered when it is drawn - its Use / Link reads it there. */
   const svcRow = (x) => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; return _ccSvcRowHTML(x); };
@@ -1126,7 +1172,7 @@ function _ccFillDraw(root, by){
       <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;
-  for(const [topic, rows] of Object.entries(by)){
+  for(let [topic, rows] of Object.entries(by)){
     let sec = root.querySelector('[data-topic="' + topic + '"]');
     if(!sec){
       if(!CC_EXTRA_TOPICS[topic]) continue;
@@ -1150,9 +1196,38 @@ function _ccFillDraw(root, by){
     /* The rows of an earlier fill go first, then the topic's own cards are
        counted - counted before, a second fill found its own nine and drew none. */
     list.querySelectorAll('.cc-svc').forEach(n => n.remove());
-    const shown = list.querySelectorAll('.int-card').length;
-    const fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
-    list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
+    list.querySelectorAll('.cc-pushed').forEach(n => n.classList.remove('cc-pushed'));
+    /* A service the topic already has as an app (The New York Times app and
+       nytimes.com) is listed once, as the app. */
+    /* News leads with the outlets: they go before the reading apps, and on a
+       closed topic they take the first screen, the apps moving behind See
+       the remaining. Every other topic keeps its apps first. */
+    const lead = topic === 'news';
+    const nm = (t) => String(t || '').trim().toLowerCase();
+    list.querySelectorAll('.cc-dup').forEach(n => n.classList.remove('cc-dup'));
+    if(lead){
+      /* Where the outlet is listed, its app card (same name) is not shown
+         twice - the outlet keeps its place in the visit order. */
+      const names = new Set(rows.map(x => nm(x.e.n)));
+      list.querySelectorAll('.int-card:not(.cc-svc)').forEach(c => { const n = c.querySelector('.int-name'); if(n && names.has(nm(n.textContent))) c.classList.add('cc-dup'); });
+    } else {
+      const appNames = new Set([...list.querySelectorAll('.int-card .int-name')].map(n => nm(n.textContent)));
+      if(appNames.size) rows = rows.filter(x => !appNames.has(nm(x.e.n)));
+    }
+    const shown = list.querySelectorAll('.int-card:not(.cc-dup)').length;
+    let fill, pushed = 0;
+    if(lead){
+      fill = open ? rows.length : Math.min(rows.length, CC_INT_SHOWN);
+      list.insertAdjacentHTML('afterbegin', rows.slice(0, fill).map(svcRow).join(''));
+      if(!open){
+        const apps = [...list.querySelectorAll('.int-card:not(.cc-svc):not(.cc-dup)')], room = Math.max(0, CC_INT_SHOWN - fill);
+        apps.slice(room).forEach(n => n.classList.add('cc-pushed'));
+        pushed = Math.max(0, apps.length - room);
+      }
+    } else {
+      fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
+      list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
+    }
     const topicName = ((sec.querySelector('h3') || {}).textContent || '').trim();
     if(open){
       if(!btn && rows.length > CC_INT_SHOWN){
@@ -1164,7 +1239,7 @@ function _ccFillDraw(root, by){
       }
       continue;
     }
-    const rest = (btn ? (+btn.dataset.rest || 0) : 0) + Math.max(0, rows.length - fill);
+    const rest = (btn ? (+btn.dataset.rest || 0) : 0) + Math.max(0, rows.length - fill) + pushed;
     if(btn){
       if(rest > 0){
         const svg = btn.querySelector('svg');
