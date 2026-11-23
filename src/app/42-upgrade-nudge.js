@@ -112,6 +112,9 @@ function openUpgradeNudge(){
     const c = cycle();
     document.removeEventListener('keydown', esc, true);
     try{ track('upgrade_nudge_clicked', { plan: o.plan, cycle: c }); }catch(e){}
+    /* Checkout is a page now, not a sheet that replaced this one - so this
+       card closes first rather than staying over it. */
+    close();
     openCheckout(o.plan, undefined, c);
   });
   try{ $('upn-go').focus({ preventScroll: true }); }catch(e){}

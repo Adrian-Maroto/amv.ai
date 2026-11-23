@@ -85,19 +85,25 @@ section('Signed in, nothing changes');
   const app = await bootApp({});
   await app.connect();
   const r = await app.page.evaluate(async () => {
+    window.__went = [];
+    window._payGo = (u) => { window.__went.push(String(u)); };
+    AMV_API.stripeCheckout = async () => 'https://checkout.stripe.com/c/pay_test';
     openUpgrade('elite');
     await new Promise(r => setTimeout(r, 320));
     document.getElementById('upg-pay').click();
     await new Promise(r => setTimeout(r, 420));
-    return { sheet: !!document.querySelector('.pay-modal'),
+    return { went: window.__went, sheet: !!document.querySelector('.pay-modal'),
              authOpen: !!document.getElementById('auth-submit') };
   });
-  ok(r.sheet === true, 'an account holder still gets the payment sheet', r);
+  /* Checkout is a page now (owner, Nov 23), so "nothing changes" is: the
+     account holder goes straight to it. */
+  ok(r.went[0] === 'https://checkout.stripe.com/c/pay_test' && r.sheet === false,
+     'an account holder goes straight to the checkout page', r);
   ok(r.authOpen === false, 'and is not asked to sign up again', r);
   await app.close();
 }
 
-section('With no backend the sheet is not walled off');
+section('With no backend nothing is walled off');
 {
   const app = await bootApp({ user: null });
   const r = await app.page.evaluate(async () => {
@@ -106,12 +112,12 @@ section('With no backend the sheet is not walled off');
     document.getElementById('upg-pay').click();
     await new Promise(r => setTimeout(r, 420));
     return { live: !!(window.AMV_API && AMV_API.live),
-             sheet: !!document.querySelector('.pay-modal'),
+             note: (document.getElementById('upg-note') || {}).textContent || '',
              authOpen: !!document.getElementById('auth-submit') };
   });
   ok(r.live === false, 'this case is the one with no server to ask', r);
-  ok(r.sheet === true,
-     'the sheet still opens, because its own panels say nothing can be charged', r);
+  ok(/nothing can be charged/.test(r.note),
+     'the page says plainly that nothing can be charged here', r);
   ok(r.authOpen === false,
      'no account is demanded for a payment nothing is going to take', r);
   await app.close();

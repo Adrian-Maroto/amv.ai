@@ -151,8 +151,8 @@ section('Upgrading opens the plans screen, on the plan that was picked');
       feats: document.querySelectorAll('.upg-feats .plnfl li').length,
       ctaText: cta ? cta.textContent.trim() : '',
       ctaVisible: vis(cta),
-      ctaAfterFeats: (cta && feats)
-        ? cta.getBoundingClientRect().top > feats.getBoundingClientRect().top : false,
+      ctaFirstScreen: !!cta && cta.getBoundingClientRect().bottom <= innerHeight,
+      ctaWithPrice: !!(cta && cta.closest('.upg-sum') && cta.closest('.upg-sum').querySelector('.upg-price')),
       back: vis(document.getElementById('upg-back')),
     };
   });
@@ -171,13 +171,14 @@ section('Upgrading opens the plans screen, on the plan that was picked');
      that makes the decision, not somewhere you have to hunt - and it is
      stronger here, because a page cannot be scrolled past or marked on the
      wrong copy. What it must carry: the plan's name, what you get, and one
-     button, placed AFTER the argument rather than above it. */
+     button. Since Nov 23 the button sits with the price, on the first screen,
+     and the list follows (owner: the button was below the fold). */
   ok(r.tab === 'upgrade', 'clicking it opens that plan\u2019s own page', r.tab);
   ok(r.onPage && /Elite/.test(r.title), 'for the plan that was picked', r.title);
   ok(r.feats >= 5, 'with what you actually get on it', String(r.feats));
   ok(/payment|checkout/i.test(r.ctaText) && r.ctaVisible,
      'and one control that goes to payment', r.ctaText);
-  ok(r.ctaAfterFeats, 'placed after the argument, not above it', r);
+  ok(r.ctaFirstScreen && r.ctaWithPrice, 'beside the price, on the first screen', r);
   ok(r.back, 'and a way back to Billing', r.back);
   await page.emulateMedia({ reducedMotion: null });
 }

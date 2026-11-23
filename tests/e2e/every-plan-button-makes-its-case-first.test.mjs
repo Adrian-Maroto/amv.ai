@@ -62,7 +62,7 @@ section('The page it opens argues the whole case');
     return {
       tab: S.tab,
       name: (vc.querySelector('.upg-t') || {}).textContent,
-      onNow: (vc.querySelector('.upg-eyebrow') || {}).textContent,
+      onNow: ((vc.querySelector('.upg-pick.now') || {}).textContent || ''),
       own: [...vc.querySelectorAll('.upg-feats .plnfl li')].map(e => e.textContent.trim()),
       groups: [...vc.querySelectorAll('.upg-inh-h')].map(e => e.textContent.trim()),
       inherited: [...vc.querySelectorAll('.upg-inh .plnfl li')].map(e => e.textContent.trim()),

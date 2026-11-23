@@ -19574,8 +19574,65 @@ function openCheckout(plan, customPrice, cycle){
     return;
   }
   const p=PLANS[plan]; if(!p) return;
-  openPaymentSheet(plan, cycle);
+  _checkoutPage(plan, cycle);
 }
+
+/* CHECKOUT IS A PAGE, NOT A BOX (owner, Nov 23: "it should automatically
+   proceed to checkout in an actual screen, not a little pop-up").
+
+   Proceed to checkout now leaves for the processor's own hosted checkout in
+   THIS tab - the full-screen page where the card, Apple Pay, Google Pay and
+   the local methods are entered, and which returns to ?paid=PLAN when it
+   succeeds. The same tab, because a new one is what a browser blocks after an
+   await and what loses people between two windows.
+
+   The order is the one the pricing buttons always used: the operator's own
+   payment link for a monthly purchase when one is set (it is one monthly price
+   object, so never for a yearly one), else a checkout session the server
+   creates with the cycle, else a plain statement ON THE PAGE that nothing can
+   be charged here. Nothing is said to have happened that did not. */
+function _payGo(url){ location.assign(url); }
+let _checkoutBusy = false;
+async function _checkoutPage(plan, cycle){
+  cycle = _payCycle(cycle);
+  if(_checkoutBusy) return;
+  /* Somebody pressing a plan's button anywhere else lands on its page, so
+     whatever is said next is said beside that plan's button. */
+  try{ if(typeof S !== 'undefined' && (S.tab !== 'upgrade' || _upgradeFor !== plan)) openUpgrade(plan); }catch(e){}
+  if(_upgradeCycle !== cycle && cycle === 'year'){ _upgradeCycle = 'year'; try{ renderUpgradeView(); }catch(e){} }
+  const btn = $('upg-pay');
+  const label = (b) => {
+    if(!btn || !btn.isConnected) return;
+    btn.disabled = b; btn.setAttribute('aria-busy', b ? 'true' : 'false');
+    btn.textContent = T(b ? 'Opening secure checkout…' : 'Proceed to checkout');
+  };
+  /* Busy only while the server is being asked; once the page is told to leave
+     the button stays saying so, and comes back if the page did not leave (a
+     blocked navigation, or Back from the processor's page). */
+  const busy = (b) => { _checkoutBusy = b; label(b); };
+  const leaving = (url) => { _checkoutBusy = false; label(true); _payGo(url); setTimeout(() => label(false), 4000); };
+  _upgNote('');
+  const link = cycle === 'year' ? '' : safeUrl(plan === 'elite' ? (S.se || '') : plan === 'pro' ? (S.sp || '') : '');
+  if(link){ leaving(link); return; }
+  if(!(window.AMV_API && AMV_API.live)){
+    _upgNote(T('Payments are not connected here yet, so nothing can be charged and your plan has not changed.'), 'err');
+    return;
+  }
+  busy(true);
+  try{
+    const url = safeUrl(await AMV_API.stripeCheckout(plan, (S.user && S.user.email) || '', undefined, cycle));
+    if(!url) throw new Error('no checkout url');
+    leaving(url);
+  }catch(e){
+    busy(false);
+    if(e && (e.code === 'needs_service' || e.code === 'not_configured')){
+      _upgNote(T('Payments are not connected here yet, so nothing can be charged and your plan has not changed.'), 'err');
+    } else {
+      _upgNote(T('Checkout could not open. Nothing was charged - please try again.'), 'err');
+    }
+  }
+}
+try{ window._checkoutPage = _checkoutPage; window._payGo = _payGo; }catch(e){}
 
 /* THE CHARGE IS IN DOLLARS AND NOBODY WAS TOLD.
 
@@ -20547,19 +20604,21 @@ function renderUpgradeView(){
      without leaving the page. It renders from PLANS and `_planPitch`, the same
      source the cards and the detail use, so a plan cannot appear here saying
      one thing and below saying another. */
+  /* A SEGMENTED CHOOSER, NOT FOUR BOXES (owner, Nov 23: "looks blocky").
+     One control across the top of the column; the current plan says
+     "Current" where its price would be, which is what the eyebrow line
+     above the name used to say - "You are on Free" over "Elite" read as one
+     phrase, "Free Elite". */
   const ladder = ['free', 'pro', 'elite', 'ultra'].map((k) => {
     const P2 = PLANS[k]; if (!P2) return '';
     const isNow = k === now, isPick = k === key;
     return '<button type="button" class="upg-pick' + (isPick ? ' on' : '') + (isNow ? ' now' : '') + '"'
       + ' data-upg-pick="' + escH(k) + '" aria-pressed="' + (isPick ? 'true' : 'false') + '">'
       + '<span class="upg-pick-n">' + escH(P2.name) + '</span>'
-      /* Not the plan's own name a second time. "Free / Free" is what the
-         first version rendered, because the price slot fell back to the
-         word - and a row reading its own title twice is the kind of thing
-         that makes a screen feel unfinished. */
-      + '<span class="upg-pick-p">' + (P2.price ? '$' + P2.price + '<i>/mo</i>'
-          : '<i>' + escH(T('No card')) + '</i>') + '</span>'
-      + (isNow ? '<span class="upg-pick-tag">' + escH(T('Your plan')) + '</span>' : '')
+      + (isNow
+          ? '<span class="upg-pick-p upg-pick-tag">' + escH(T('Your plan')) + '</span>'
+          : '<span class="upg-pick-p">' + (P2.price ? '$' + P2.price + '<i>/mo</i>'
+              : '<i>' + escH(T('No card')) + '</i>') + '</span>')
     + '</button>';
   }).join('');
 
@@ -20571,44 +20630,46 @@ function renderUpgradeView(){
 
       + '<div class="upg-ladder" role="group" aria-label="' + escH(T('Choose a plan')) + '">' + ladder + '</div>'
 
-      + '<div class="upg-head">'
-        + '<span class="upg-eyebrow">' + escH(T('You are on {plan}').replace('{plan}', () => nowName)) + '</span>'
-        + '<h1 class="upg-t">' + escH(P.name) + '</h1>'
-        + '<p class="upg-anchor">' + pitch.anchor + '</p>'
-        + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
-          + '<span class="upg-per">/' + escH(T('month')) + '</span></div>'
-        /* MONTHLY OR YEARLY, AND NO NUMBER INVENTED FOR THE SECOND ONE.
-
-           AMV does not compute a yearly amount: the yearly price is a second
-           price object the operator created in Stripe, and whatever discount it
-           carries is theirs. So this offers the CHOICE and lets checkout state
-           the figure - which is also the only way the page and the charge
-           cannot drift apart.
-
-           Drawn only where it works. `_yearlyAvailable` is answered by public
-           config listing the plans that have a yearly price, so a deployment
-           selling monthly only shows nothing here rather than a cheaper-looking
-           option that is refused at the till. */
-        + (_yearlyAvailable(key)
-            ? '<div class="upg-cycle" role="group" aria-label="' + escH(T('How often you are billed')) + '">'
-              + '<button type="button" class="upg-cyc on" data-cyc="month" aria-pressed="true">' + escH(T('Monthly')) + '</button>'
-              + '<button type="button" class="upg-cyc" data-cyc="year" aria-pressed="false">' + escH(T('Yearly')) + '</button>'
-              + '<span class="upg-cyc-n">' + escH(T('The yearly price is shown at checkout')) + '</span>'
-            + '</div>'
-            : '')
-        + '<p class="upg-per-note">' + escH(T('Cancel anytime. Changes are prorated, so you only pay the difference.')) + '</p>'
-      + '</div>'
-
-      + (typeof _planFeatsHTML === 'function'
-          ? '<div class="upg-feats">' + _planFeatsHTML(key) + '</div>' : '')
-
-      + _upgInheritedHTML(key)
+      /* THE DECISION AND THE BUTTON IN ONE PLACE. The button used to sit under
+         the whole feature list, below the fold on every screen; a checkout
+         summary keeps the price and the way to pay it together, and the list
+         below is there for whoever wants to read it first. */
+      + '<section class="upg-sum" aria-labelledby="upg-t">'
+        + '<div class="upg-head">'
+          + '<h1 class="upg-t" id="upg-t">' + escH(P.name) + '</h1>'
+          + '<p class="upg-anchor">' + pitch.anchor + '</p>'
+          + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
+            + '<span class="upg-per">/' + escH(T('month')) + '</span></div>'
+          /* MONTHLY OR YEARLY, AND NO NUMBER INVENTED FOR THE SECOND ONE.
+             The yearly price is a second price object the operator created in
+             Stripe, so this offers the CHOICE and lets checkout state the
+             figure. Drawn only where public config lists a yearly price. */
+          + (_yearlyAvailable(key)
+              ? '<div class="upg-cycle" role="group" aria-label="' + escH(T('How often you are billed')) + '">'
+                + '<button type="button" class="upg-cyc' + (_upgradeCycle === 'year' ? '' : ' on') + '" data-cyc="month" aria-pressed="' + (_upgradeCycle === 'year' ? 'false' : 'true') + '">' + escH(T('Monthly')) + '</button>'
+                + '<button type="button" class="upg-cyc' + (_upgradeCycle === 'year' ? ' on' : '') + '" data-cyc="year" aria-pressed="' + (_upgradeCycle === 'year' ? 'true' : 'false') + '">' + escH(T('Yearly')) + '</button>'
+                + '<span class="upg-cyc-n">' + escH(T('The yearly price is shown at checkout')) + '</span>'
+              + '</div>'
+              : '')
+        + '</div>'
+        + '<div class="upg-go">'
+          + '<button class="btn bp upg-cta" id="upg-pay" type="button" data-darg="' + escH(key) + '">'
+            + escH(T('Proceed to checkout')) + '</button>'
+          /* Where a refusal is said - on the page, beside the button that was
+             pressed, not in a toast that is gone before it is read. */
+          + '<div class="upg-note" id="upg-note" role="status" aria-live="polite"></div>'
+          + '<p class="upg-reassure">'
+            + escH(T('Cancel anytime. Changes are prorated, so you only pay the difference.')) + ' '
+            + escH(T('Card details go straight to our payment processor - AMV never sees them.'))
+          + '</p>'
+          + '<button type="button" class="upg-other" id="upg-other">' + escH(T('Other ways to pay')) + '</button>'
+        + '</div>'
+      + '</section>'
 
       + ((P.allowance || jobs)
           ? '<div class="upg-figs">'
-            /* Messages, like Spending and Billing. This was the last screen
-               still quoting the plan in tokens, and it is the one somebody
-               reads immediately before paying. */
+            /* Messages, like Spending and Billing - the screen read immediately
+               before paying does not quote the plan in tokens. */
             + '<div class="upg-fig"><b>' + escH(_msg5hLabel(key)) + '</b><span>'
                 + escH(T('messages every 5 hours')) + '</span></div>'
             + (_planMsgNum(PLAN_TOP_WEEK, key)
@@ -20618,21 +20679,16 @@ function renderUpgradeView(){
                 + escH(T('scheduled jobs running for you')) + '</span></div>' : '')
           + '</div>' : '')
 
-      + '<div class="upg-go">'
-        + '<button class="btn bp upg-cta" id="upg-pay" data-darg="' + escH(key) + '">'
-          + escH(T('Proceed to checkout')) + '</button>'
-        + '<p class="upg-reassure">'
-          + (pitch.reassure ? pitch.reassure + ' &middot; ' : '')
-          + escH(T('Card details go straight to our payment processor - AMV never sees them.'))
-        + '</p>'
-      + '</div>'
+      + (typeof _planFeatsHTML === 'function'
+          ? '<div class="upg-feats"><h2 class="upg-feats-h">' + escH(T('What you get')) + '</h2>' + _planFeatsHTML(key) + '</div>' : '')
+
+      + _upgInheritedHTML(key)
     + '</div></div>';
 
   on($('upg-back'), 'click', closeUpgrade);
   /* Switching plan redraws this page rather than navigating: it is the same
-     decision, not a new one, and a round trip through the tab dispatcher would
-     lose which screen to go back to. Free is not a thing to buy, so it opens
-     the plan grid instead of a checkout for nothing. */
+     decision, not a new one. Free is not a thing to buy, so it opens the plan
+     grid instead of a checkout for nothing. */
   vc.querySelectorAll('[data-upg-pick]').forEach(b => on(b, 'click', () => {
     const k = b.dataset.upgPick;
     if (k === 'free') { try { setTab('spend'); } catch (e) {} return; }
@@ -20641,8 +20697,7 @@ function renderUpgradeView(){
     renderUpgradeView();
   }));
   /* The chosen cycle lives on the page, not in storage: it is a decision about
-     the purchase being made right now, and carrying it into the next visit
-     would quietly change what somebody is buying. */
+     the purchase being made right now. */
   vc.querySelectorAll('[data-cyc]').forEach(b => on(b, 'click', () => {
     _upgradeCycle = b.dataset.cyc === 'year' ? 'year' : 'month';
     vc.querySelectorAll('[data-cyc]').forEach(x => {
@@ -20650,28 +20705,26 @@ function renderUpgradeView(){
       x.classList.toggle('on', on_);
       x.setAttribute('aria-pressed', on_ ? 'true' : 'false');
     });
+    _upgNote('');
   }));
-  /* The existing checkout, not a second one. Whatever the pricing page does to
-     start a payment is what this button does - a parallel path to money is a
-     parallel path to getting money wrong. */
+  /* The one checkout path there is - openCheckout - so the account question,
+     the per-seat plan and the cycle are decided where they always were. */
   on($('upg-pay'), 'click', () => {
-    /* EXACTLY WHAT THE PRICING BUTTON DOES, including the direct-link case:
-       when a plan has its own payment link configured, that link is the path,
-       and `openCheckout` is the path when it does not. Reproducing the choice
-       here rather than calling one of them unconditionally is the difference
-       between this button working and this button working most of the time. */
-    try{
-      /* A configured payment link is ONE price object - the monthly one. It
-         cannot be told to bill by the year, so when somebody has asked for
-         yearly it is not the path, and the server-side checkout that reads the
-         cycle is. Taking the link anyway would charge a month against a button
-         that said Yearly. */
-      const direct = ((key === 'pro' && S.sp) || (key === 'elite' && S.se)) && _upgradeCycle !== 'year';
-      if(direct && typeof _openPlanLink === 'function') return _openPlanLink(key);
-      if(typeof openCheckout === 'function') return openCheckout(key, undefined, _upgradeCycle);
-    }catch(e){}
+    try{ if(typeof openCheckout === 'function') return openCheckout(key, undefined, _upgradeCycle); }catch(e){}
     try{ setTab('plans'); }catch(e){}
   });
+  /* PayPal, and the card form on this page, still live in the payment sheet;
+     it is the second way, offered under the first rather than instead of it. */
+  on($('upg-other'), 'click', () => {
+    if(_needsAccountToPay(key)) return openCheckout(key, undefined, _upgradeCycle);
+    try{ openPaymentSheet(key, _upgradeCycle); }catch(e){}
+  });
+}
+/* The line under the checkout button. Empty clears it. */
+function _upgNote(text, kind){
+  const n = $('upg-note'); if(!n) return;
+  n.className = 'upg-note' + (text ? ' on' + (kind === 'err' ? ' err' : '') : '');
+  n.textContent = text || '';
 }
 try{ window.renderUpgradeView = renderUpgradeView; }catch(e){}
 /* ============================================================
@@ -49929,6 +49982,9 @@ function openUpgradeNudge(){
     const c = cycle();
     document.removeEventListener('keydown', esc, true);
     try{ track('upgrade_nudge_clicked', { plan: o.plan, cycle: c }); }catch(e){}
+    /* Checkout is a page now, not a sheet that replaced this one - so this
+       card closes first rather than staying over it. */
+    close();
     openCheckout(o.plan, undefined, c);
   });
   try{ $('upn-go').focus({ preventScroll: true }); }catch(e){}

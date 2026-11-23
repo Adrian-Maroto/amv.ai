@@ -151,7 +151,10 @@ async function buys(opts) {
       if (!y) return { noToggle: true };
       y.click();
     }
-    document.getElementById('upg-pay').click();
+    /* Proceed to checkout leaves for the processor's page now (see the
+       section below); the sheet is "Other ways to pay", and it is the sheet
+       whose cycle handling is measured here. */
+    document.getElementById('upg-other').click();
     await new Promise(r => setTimeout(r, 120));
 
     const tabs = [...document.querySelectorAll('.pay-tab')].map(t => t.dataset.pt);
@@ -168,7 +171,7 @@ async function buys(opts) {
 section('Choosing Yearly is what the server is asked for');
 {
   const r = await buys({ plan: 'pro', cycle: 'year' });
-  ok(!r.noToggle && r.sheet, 'pressing Proceed to payment opens the sheet', r);
+  ok(!r.noToggle && r.sheet, 'Other ways to pay opens the sheet', r);
   const sent = r.calls.find(c => c.cycle !== undefined);
   ok(!!sent, 'a checkout session is requested', r.calls);
   ok(sent && sent.cycle === 'year',
@@ -223,6 +226,54 @@ section('PayPal is not offered for a year it cannot bill');
      'and says why, rather than presenting a button that would bill a month', direct);
 }
 
+section('Proceed to checkout goes to the checkout page itself, by the cycle chosen');
+{
+  /* CHECKOUT IS A PAGE, NOT A BOX (owner, Nov 23). The button asks the server
+     for a session with the cycle and sends THIS tab to it - no sheet between. */
+  const r = await page.evaluate(async () => {
+    window.__ck = []; window.__went = [];
+    const realGo = window._payGo;
+    window._payGo = (u) => { window.__went.push(String(u)); };
+    AMV_API.stripeCheckout = async (plan, email, seats, cycle) => {
+      window.__ck.push({ plan, cycle });
+      return 'https://checkout.stripe.com/c/pay_test';
+    };
+    /* `live` is a getter over `base`, so the backend is switched off there. */
+    const base = AMV_API.base;
+    const out = {};
+    /* The sections above leave the sheet open; it is not what is measured. */
+    try { closePaySheet(); } catch (e) {}
+    for (const c of ['year', 'month']) {
+      window.__ck = []; window.__went = [];
+      openUpgrade('pro', 'billing');
+      if (c === 'year') document.querySelector('.upg-cyc[data-cyc="year"]').click();
+      document.getElementById('upg-pay').click();
+      await new Promise(r => setTimeout(r, 160));
+      out[c] = { calls: window.__ck.slice(), went: window.__went.slice(),
+                 sheet: !!document.querySelector('.pay-modal'),
+                 label: document.getElementById('upg-pay').textContent };
+    }
+    /* And with nothing to take the money, it says so on the page. */
+    AMV_API.base = ''; window.__went = [];
+    openUpgrade('pro', 'billing');
+    document.getElementById('upg-pay').click();
+    await new Promise(r => setTimeout(r, 120));
+    out.off = { went: window.__went.slice(), sheet: !!document.querySelector('.pay-modal'),
+                note: (document.getElementById('upg-note') || {}).textContent || '' };
+    AMV_API.base = base; window._payGo = realGo;
+    out.wasLive = !!base;
+    return out;
+  });
+  ok(r.year.calls.length === 1 && r.year.calls[0].cycle === 'year', 'a yearly purchase asks the server for the year', r.year.calls);
+  ok(r.month.calls.length === 1 && r.month.calls[0].cycle === 'month', 'a monthly one for the month', r.month.calls);
+  ok(r.year.went[0] === 'https://checkout.stripe.com/c/pay_test' && r.month.went[0] === 'https://checkout.stripe.com/c/pay_test',
+     'and the tab goes to the checkout page', r);
+  ok(!r.year.sheet && !r.month.sheet, 'with no pop-up in between', r);
+  ok(/Opening secure checkout/.test(r.year.label), 'the button says what is happening while it does', r.year.label);
+  ok(r.off.went.length === 0 && !r.off.sheet && /nothing can be charged/.test(r.off.note),
+     'with no processor connected it goes nowhere and says so beside the button', r.off);
+}
+
 section('A fixed-price payment link is not the path for a yearly purchase');
 {
   /* THE ONE THAT IS REACHABLE ON A LIVE DEPLOYMENT.
@@ -244,14 +295,17 @@ section('A fixed-price payment link is not the path for a yearly purchase');
     window._openExternalPay = () => {};
     const realOpen = window.open;
     window.open = (u) => { window.__opened.push(String(u)); return null; };
+    /* The link is followed in this tab now, so it is measured at _payGo. */
+    const realGo = window._payGo;
+    window._payGo = (u) => { window.__opened.push(String(u)); };
     AMV_API.stripeCheckout = async (plan, email, seats, cycle) => {
       window.__ck.push({ plan, cycle });
       return 'https://checkout.stripe.com/c/pay_test';
     };
     S.sp = 'https://buy.stripe.com/test_monthly';
 
-    /* The link path opens a window and stops; the server path opens the sheet
-       and asks on the next press. Doing both is what tells them apart. */
+    /* The link path goes to the link; the server path asks the server for a
+       session first. */
     const press = async () => {
       document.getElementById('upg-pay').click();
       await new Promise(r => setTimeout(r, 160));
@@ -270,7 +324,7 @@ section('A fixed-price payment link is not the path for a yearly purchase');
     await press();
     const month = { opened: window.__opened.slice(), calls: window.__ck.slice() };
 
-    window.open = realOpen; S.sp = '';
+    window.open = realOpen; window._payGo = realGo; S.sp = '';
     return { year, month };
   });
   ok(!r.year.opened.some(u => /buy\.stripe\.com/.test(u)),
