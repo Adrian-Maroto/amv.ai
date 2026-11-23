@@ -17817,3 +17817,4 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
 :is(#vc,#set-modal) .vi-bill .bill-facts > .bill-fact:first-child{padding-top:0!important}
 :is(#vc,#set-modal) .vi-bill .bill-sum{padding-bottom:var(--sp-5)!important}
 :is(#vc,#set-modal) .vi-bill .bill-sec-line{max-width:none!important;margin:0 auto!important}
+:is(#vc,#set-modal) .vi-bill .bill-srv{margin:0 0 var(--sp-3)}
