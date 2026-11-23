@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="6444dced8736fa7b">
+<meta name="amv-build" content="dba1353d65229c90">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10356,9 +10356,9 @@ background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(
 #app .cj .cj-card{border-radius:var(--r-xl)}
 #app .cj .cj-card-b{grid-template-columns:48px 1fr;column-gap:var(--sp-4);row-gap:var(--sp-2);padding:var(--sp-5);padding-inline-end:84px;min-height:136px}
 #app .cj .cj-card:not(:has(.cj-tg)) .cj-card-b{padding-inline-end:var(--sp-5)}
-#app .cj .cj-card-ic{width:48px;height:48px;border-radius:var(--r-lg);font-size:24px}
+#app .cj .cj-card-ic{width:48px;height:48px;border-radius:var(--r-lg);font-size:var(--ic-md)}
 #app .cj .cj-card-t{font-size:var(--t-lg);line-height:1.3;-webkit-line-clamp:2}
-#app .cj .cj-card-d{font-size:var(--t-base);line-height:1.55;-webkit-line-clamp:3}
+#app .cj .cj-card-d{font-size:var(--t-base);line-height:1.55;-webkit-line-clamp:3;min-height:calc(3em * 1.55)}
 #app .cj .cj-card-w{margin-top:var(--sp-2);font-size:var(--t-sm);color:var(--mu);font-weight:500}
 #app .cj .cj-card .cj-tg{top:var(--sp-5);right:auto;inset-inline-end:var(--sp-5)}
 #app .cj .cc-measure{margin:0;font-size:var(--t-sm);color:var(--dim);line-height:1.5}
@@ -10371,7 +10371,7 @@ background:var(--s2)!important; border:1px solid var(--bd)!important; color:var(
 #app .cj .cj-tools .cj-country{min-width:0;justify-content:space-between;overflow:hidden}
 #app .cj .cj-card-b{padding:var(--sp-4);padding-inline-end:76px;min-height:0;grid-template-columns:44px 1fr}
 #app .cj .cj-card:not(:has(.cj-tg)) .cj-card-b{padding-inline-end:var(--sp-4)}
-#app .cj .cj-card-ic{width:44px;height:44px;font-size:22px}
+#app .cj .cj-card-ic{width:44px;height:44px;font-size:var(--ic-md)}
 #app .cj .cj-card .cj-tg{top:var(--sp-4);right:auto;inset-inline-end:var(--sp-4)}
 :root:not(#_a):not(#_b) #app .mc-cmd-go.cj-run{padding:0!important;width:48px;min-width:48px;justify-content:center}
 #app .mc-cmd-go.cj-run svg{flex:none;width:20px;height:20px}
@@ -10409,7 +10409,7 @@ background:transparent;color:var(--mu);font:500 var(--t-base)/1 var(--fn);cursor
 border-radius:var(--r-xl)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:var(--tx)}
 .dsn-starts .dsn-tile:hover{background:var(--s2)!important;border-color:var(--bdl)!important;transform:none!important}
 .dsn-starts .dsn-tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.dsn-starts .dsn-tile-ic,.dsn-starts .dsn-tile.feat .dsn-tile-ic{width:44px!important;height:44px!important;font-size:var(--t-xl)!important;flex:0 0 auto;
+.dsn-starts .dsn-tile-ic,.dsn-starts .dsn-tile.feat .dsn-tile-ic{width:44px!important;height:44px!important;font-size:var(--ic-md)!important;flex:0 0 auto;
 display:grid;place-items:center;border-radius:var(--r-lg)!important;background:var(--s2)}
 .dsn-starts .dsn-tile-body{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dsn-starts .dsn-tile-t,.dsn-starts .dsn-tile.feat .dsn-tile-t{font-size:var(--t-md)!important;font-weight:600;color:var(--tx)}
@@ -10419,7 +10419,7 @@ display:grid;place-items:center;border-radius:var(--r-lg)!important;background:v
 @media (max-width:560px){
 .dev-starts{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:var(--sp-2)!important}
 .dev-starts .dsn-tile{min-height:56px;padding:var(--sp-2) var(--sp-3)!important;gap:var(--sp-2)!important}
-.dev-starts .dsn-tile-ic{width:32px!important;height:32px!important;font-size:var(--t-md)!important;border-radius:var(--r-md)!important}
+.dev-starts .dsn-tile-ic{width:32px!important;height:32px!important;font-size:var(--ic-sm)!important;border-radius:var(--r-md)!important}
 .dev-starts .dsn-tile-t{font-size:var(--t-base)!important}
 .dev-starts .dsn-tile-d{display:none}
 }

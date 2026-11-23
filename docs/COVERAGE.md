@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-23 from 423 suites.
+2026-11-23 from 424 suites (1 exited non-zero: every-service-crew-names-is-in-integrations.test.mjs).
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.7%.
+Functions 139/139 (100.0%), code 91.8%.
 
 
 ### Company sign-in and SCIM
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.4% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |

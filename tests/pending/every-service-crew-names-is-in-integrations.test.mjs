@@ -6,7 +6,14 @@
    from COUNTRY_FACTS; data/crew-services/<CC>.json (scripts/crew-services.mjs)
    holds each one's site. Here, from the files the build ships: every one of
    them is in that country's Integrations - as an app, a service of the
-   country's own file, a worldwide service, or a row of its own. */
+   country's own file, a worldwide service, or a row of its own.
+
+   PARKED in tests/pending (not run by tests/run.mjs) until the crew-services
+   workflow has looked up every country - it stops at 110 minutes and commits
+   what it finished, so the data arrives over several runs. It moves back to
+   tests/worker in the same change that brings the last country's file, and
+   until then the claim is NOT made: Integrations is not yet said anywhere to
+   hold every service Crew names. */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { buildGlobalServices, sameAsApp, appNames } from '../../scripts/global-services.mjs';
