@@ -127,7 +127,9 @@ section('See all opens the rest of its own topic');
     b.click();
     await new Promise(res => setTimeout(res, 300));
     const cat = AMV_APP_CATS.find(c => c.id === 'email');
-    return { before, after: sec().querySelectorAll('.int-card').length, total: cat.apps.length,
+    /* The apps; the services used worldwide follow them (.cc-svc, Nov 23) and
+       have their own suite. */
+    return { before, after: sec().querySelectorAll('.int-card:not(.cc-svc)').length, total: cat.apps.length,
              names: [...sec().querySelectorAll('.int-name')].map(e => e.textContent),
              label: (sec().querySelector('[data-app-more]') || {}).textContent || '' };
   });

@@ -168,7 +168,9 @@ section('A country with nothing written for it says so rather than inventing');
     const out = { local: _cwLocalJobs('MN').length, n: list.length,
       /* The country's own Inbox & calendar jobs (its mailboxes, its public
          holidays - crew-view.js _cjInboxCal, docs/RESEARCH.md) are real too. */
-      odd: list.filter(j => !uni.has(j.id) && !j.ccKind && !(window._cjInboxCalById || {})[j.id] && !(_cwJobs() || []).some(x => x.id === j.id)).map(j => j.id).slice(0, 3),
+      /* And the everyday fifty (Popular, Nov 23): the same in every country,
+         naming the country's own sites only where the server knows them. */
+      odd: list.filter(j => !uni.has(j.id) && !j.ccKind && !j.popular && !(window._cjInboxCalById || {})[j.id] && !(_cwJobs() || []).some(x => x.id === j.id)).map(j => j.id).slice(0, 3),
       head: document.getElementById('cx-jobs-h').textContent,
       note: (document.getElementById('cj-note') || {}).hidden };
     _cwSetCountry(was); _cjRepaint();

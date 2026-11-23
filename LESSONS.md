@@ -16246,3 +16246,20 @@ national blocks applied and the gap filled only by recurring jobs
 (`popular-is-fifty-everyday-jobs`; removing the block filter fails it in
 China and India). Rule: "most popular" is a measure of repeat use, not of
 how specific a thing is to a place - rank by what people come back to.
+
+## 665
+**Nov 23 - a class found by name is found by every meaning of the name.**
+To reach 200 services per Integrations topic, the data run took every
+Wikidata class that two of a topic's own apps belonged to. Apps are matched
+by name, and names collide: an app called Cary is a town, Lever and Remote
+are companies, Subway is a restaurant chain - so Email filled with New
+England towns, HR with fast food and Messaging with TV stations, and adult
+and piracy sites rode in on "online community". None of it failed a check,
+because every entry was a real item with a real website. A found class must
+now name a kind of service and no other topic, adult and piracy sites are
+refused by class and again by site, and the lists were read by eye before
+anything shipped (`every-topic-lists-the-services-used-worldwide`). Rule:
+data widened automatically is read by a person before it reaches one -
+"valid" and "right" are different checks. Also: leading Crew's All list
+with the everyday fifty pushed every country's own work out of sight (nine
+suites said so); Popular is where they lead, All stays country-first.

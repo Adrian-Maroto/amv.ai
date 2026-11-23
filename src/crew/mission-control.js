@@ -1408,9 +1408,6 @@ function _cjList(noOnFirst){
   const safe = (f) => { try{ return f() || []; }catch(e){ return []; } };
   const home = safe(() => (_cwJobs() || []).concat(_cwUniversalJobs() || []));
   if(!_cjRankOnly) home.filter(j => j.on).forEach(push);
-  /* The everyday fifty lead (Nov 23): what people do every day, before
-     anything one-off or only for some. */
-  safe(() => _cwPopularJobs(cc)).forEach(push);
   safe(() => _cwTopTen(cc)).forEach(push);
   safe(() => _cwMadeForJobs(cc)).forEach(push);
   safe(() => _cwLocalJobs(cc)).forEach(push);
@@ -1429,6 +1426,10 @@ function _cjList(noOnFirst){
   const ownHol = out.some(j => /^cc_[a-z]{2}_holidays$/.test(j.id || ''));
   safe(() => _cjInboxCal(cc)).filter(j => !(ownHol && /_holidays$/.test(j.id))).forEach(push);
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
+  /* The everyday fifty (Nov 23) are Popular's own list; here they are in All
+     so a search finds them, after the country's own work - which leads All
+     on purpose (the-top-ten-is-what-people-there-use). */
+  safe(() => _cwPopularJobs(cc)).forEach(push);
   cat.forEach(push);
   if(_cjRankOnly){ _cjRankCache = out; _cjRankKey = ckey; } else { _cjCache = out; _cjCacheKey = ckey; }
   return out;
