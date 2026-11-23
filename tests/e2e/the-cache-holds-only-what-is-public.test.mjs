@@ -84,6 +84,9 @@ try {
      build) - public data, fetched with the Integrations screen, which the
      idle prefetch above brings in. */
   allowed.add('/app-reach.json');
+  /* And the services used worldwide per Integrations topic (global-services.json,
+     built from data/global) - public data the idle prefetch reads (Nov 23). */
+  allowed.add('/global-services.json');
   /* The page's own code file (Nov 22): public, named by its content. */
   allowed.add('/' + shippedCodeName());
   ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
