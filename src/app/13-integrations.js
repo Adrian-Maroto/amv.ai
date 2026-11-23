@@ -813,9 +813,45 @@ const APP_ROWS_SHOWN = 9;
    list that snaps shut when a mailbox finishes connecting is a list you lose
    your place in. */
 const _appOpen = new Set();
+/* SEE THE REMAINING KEEPS YOUR PLACE (Nov 23). The owner: pressing it "sends
+   me all the way" - the page is drawn again from the top, so the scroll
+   position went back to 0 and the topic you opened was somewhere else. The
+   topic's heading is now where it was on the screen before and after: the
+   rest of its services appear under it, and nothing else moves. */
+function _appScroller(el){
+  let e = el && el.parentElement;
+  while(e && e !== document.body){ const o = getComputedStyle(e).overflowY; if(/(auto|scroll)/.test(o) && e.scrollHeight > e.clientHeight) return e; e = e.parentElement; }
+  return document.scrollingElement || document.documentElement;
+}
 function _appToggle(id){
+  const sel = '.ss2[data-topic="' + String(id).replace(/["\\]/g, '') + '"]';
+  const sec = document.querySelector(sel), sc = sec ? _appScroller(sec) : null;
+  const top = sec ? sec.getBoundingClientRect().top : 0, keep = sc ? sc.scrollTop : 0;
   if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
+  /* The view's own restore (12a-view-router-help.js) would put the old
+     offset back after this one; the place is kept here instead. */
+  if(sc){ try{ _vcForgetScroll(); }catch(e){} }
   _paintIntegrations();
+  if(!sc) return;
+  /* The view may be drawn into a new scrolling box, and the country's
+     services are filled into the open topics ABOVE this one a moment later -
+     so the heading is put back now and again as they land, for a short
+     while, and never once somebody has scrolled on their own. */
+  let mine = null;
+  const hold = () => {
+    try{
+      const now = document.querySelector(sel); if(!now) return;
+      const box = _appScroller(now);
+      if(mine !== null && Math.abs(box.scrollTop - mine) > 2) return;   // they scrolled
+      if(mine === null) box.scrollTop = keep;
+      const d = now.getBoundingClientRect().top - top;
+      if(Math.abs(d) > 1) box.scrollTop += d;
+      mine = box.scrollTop;
+    }catch(e){}
+  };
+  hold();
+  requestAnimationFrame(hold);
+  [60, 160, 320, 600].forEach(t => setTimeout(hold, t));
 }
 /* A letter, rather than anybody's logo: a directory of five hundred brand
    marks is five hundred trademarks, and none of them would say anything the

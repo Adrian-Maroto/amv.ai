@@ -17765,3 +17765,10 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
 /* The add button beside Settings is the same 44px as Settings and send. */
 .dev-shell .dev-input-v2 .dvi-plus{width:44px!important;height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important}
 @media (max-width:560px){.pghd.build-head h2{font-size:calc(var(--t-xl) * 1.15 * var(--fs-s,1))!important}}
+
+/* ========== LAYER A393 (Nov 23): a "more" button is never the scroll anchor ==========
+   When rows are added above a button the browser was keeping in place, it
+   scrolled the page down with the button - pressing Show more landed you at
+   the END of what it showed. With the buttons out of anchor selection, what
+   you were looking at stays put and the new rows appear under it. */
+.cj-more-w,.cj-more,.int-more,.int-seemore{overflow-anchor:none}
