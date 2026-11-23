@@ -721,6 +721,40 @@ function ccTasks(d){
   return _ccByPopPass(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
     return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; });
 }
+/* TASKS' POPULAR: WHAT PEOPLE DO EVERY DAY (Nov 23). The owner, of Popular:
+   "make them things people can do every day ... this applies to all
+   countries". The fifty most visited services in the country, of the kinds
+   people use day to day (news, their bank, phone and internet, shopping,
+   food, travel, bills, sport, work) - each once, with the task they would
+   actually do there, never an agency's forms or an embassy's contact page.
+   One per brand: a chain's hotels or a league's clubs share the brand's
+   visits, so only its first is listed. */
+const CC_EVERYDAY = { newspaper: 0, newssite: 0, tv: 0, radio: 0, bank: 4, telecom: 0, isp: 0, supermarket: 0, retail: 2,
+  ecommerce: 2, restaurant: 1, airline: 0, rail: 0, bus: 0, hotel: 0, airport: 1, utility: 0, sportsclub: 0,
+  insurer: 0, software: 1, mall: 0, theatre: 0, stadium: 0 };
+function _ccBrand(host){
+  const l = String(host).split('.');
+  const shared = /^(bank|gov|nic|ac|co|com|org|net|edu|gob|go|or|ne)$/;
+  return (l.length >= 3 && shared.test(l[l.length - 2]) ? l.slice(-3) : l.slice(-2)).join('.');
+}
+function ccTasksPopular(d, all){
+  const byId = new Map((all || []).map(t => [t.id, t]));
+  const out = [], brands = new Set();
+  /* The report gives bands (top 1,000, 5,000...), not exact counts, so
+     within a band the better-known service goes first (Wikipedia editions,
+     w) - CNN and McDonald's before a regional chain in the same band. */
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9);
+  const ranked = _ccByPop(d).map((x, k) => [x, k]).sort((a, b) => (R(a[0]) - R(b[0])) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1])).map(z => z[0]);
+  for(const x of ranked){
+    if(!(x.kind in CC_EVERYDAY) || !CC_TASKS[x.kind]) continue;
+    const b = _ccBrand(x.e.s); if(brands.has(b)) continue;
+    const i = Math.min(CC_EVERYDAY[x.kind], CC_TASKS[x.kind].length - 1);
+    const t = byId.get('cc-' + x.kind + '-' + x.e.q + '-' + i); if(!t) continue;
+    brands.add(b); out.push(t);
+    if(out.length >= 50) break;
+  }
+  return out;
+}
 function ccJobs(d){
   return _ccByPopPass(d, CC_CREW, (kind, e, i) => { const t = CC_CREW[kind][i];
     return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}) }; });
@@ -1137,6 +1171,7 @@ function ccUseService(q){
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }
+try{ window.ccTasksPopular = ccTasksPopular; }catch(e){}
 try{ window.ccSearchServices = ccSearchServices; window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════════

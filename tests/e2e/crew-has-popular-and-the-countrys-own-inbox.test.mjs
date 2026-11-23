@@ -79,10 +79,17 @@ section('Tasks: Popular after All, the country\'s first fifty, and no total sent
     for (let i = 0; i < 5 && document.getElementById('tk-more'); i++){ document.getElementById('tk-more').click(); await new Promise(r => setTimeout(r, 40)); }
     const all = [...document.querySelectorAll('#tk2-body .tk-row')].map(b => b.dataset.darg);
     const sub = document.getElementById('tk2-sub');
-    return { chips: chips.slice(0, 3), first: rows.slice(0, 5), n: all.length, want: _tkList.slice(0, 50).map(t => t.id), line: sub.hidden ? '' : sub.textContent };
+    /* Since Nov 23 Popular is the everyday fifty (ccTasksPopular): the
+       most visited services of the everyday kinds, each brand once. */
+    const kinds = new Set(_tkPop.map(t => t.kind)), brands = _tkPop.map(t => t.e.s.split('.').slice(-2).join('.'));
+    return { chips: chips.slice(0, 3), first: rows.slice(0, 5), n: all.length, want: _tkPop.slice(0, 50).map(t => t.id), line: sub.hidden ? '' : sub.textContent,
+      odd: [...kinds].filter(k => /^(agency|ministry|embassy|union|research|publisher|pharma|nonprofit|museum|park|university|college|library|hospital|employer)$/.test(k)),
+      twice: brands.filter((b, i) => brands.indexOf(b) !== i) };
   });
   ok(r.chips[0] === 'all' && r.chips[1] === 'popular', 'All, then Popular', r.chips);
-  ok(r.n === 50 && r.first.every((id, i) => id === r.want[i]), 'fifty, in the list\'s most-visited order', { n: r.n, first: r.first.slice(0, 2) });
+  ok(r.n === 50 && r.first.every((id, i) => id === r.want[i]), 'fifty, in the everyday list\'s most-visited order', { n: r.n, first: r.first.slice(0, 2) });
+  ok(r.odd.length === 0, 'none of them an agency\'s forms, an embassy, a museum or an application to apply once', r.odd);
+  ok(r.twice.length === 0, 'and each brand once', r.twice.slice(0, 3));
   ok(!/\d{1,3}(,\d{3})+|\d{4,}/.test(r.line), 'and no "5,000 tasks naming real services there"', r.line);
   await page.evaluate(() => setTab('crew'));
   await page.waitForTimeout(800);

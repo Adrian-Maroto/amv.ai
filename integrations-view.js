@@ -393,7 +393,7 @@ function _tkListHTML(){
   const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + t.e.n + ' ' + t.e.s + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
   /* A search or a category: one list, the first rows and Show more. */
   if(words.length || _tkC !== 'all'){
-    const rows = (_tkC === 'popular' ? _tkList.slice(0, TK_POPULAR_N) : _tkList).filter(t => (_tkC === 'all' || _tkC === 'popular' || _tkCatOf(t) === _tkC) && hit(t));
+    const rows = (_tkC === 'popular' ? (_tkPop.length ? _tkPop : _tkList.slice(0, TK_POPULAR_N)) : _tkList).filter(t => (_tkC === 'all' || _tkC === 'popular' || _tkCatOf(t) === _tkC) && hit(t));
     if(!rows.length) return `<div class="cj-empty">${escH(T('No ready-made task for that. Ask AMV in your own words instead.'))} <button class="cj-link" id="tk-none-go">${escH(T('Ask in chat'))} →</button></div>`;
     const note = _tkC === 'popular' ? (() => { try{ return window.ccPopularNote(String(_tkCc).split('|')[0]); }catch(e){ return ''; } })() : '';
     return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="tk2-list">${rows.slice(0, _tkN).map(_tkRow).join('')}</div>`
@@ -407,17 +407,18 @@ function _tkListHTML(){
       ${by[c].length > 6 ? `<button class="cj-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
     </section>`).join('');
 }
-/* POPULAR: THE COUNTRY'S FIFTY (Nov 17, the owner). The list is already most
-   visited from that country first (Chrome UX Report, then the country's own
-   before the world's - ccTasks / _ccByPop, docs/RESEARCH.md), so Popular is its
-   head: the same measure, not a second opinion. */
+/* POPULAR: THE COUNTRY'S FIFTY (Nov 17, the owner). Most visited from that
+   country first (Chrome UX Report - _ccByPop, docs/RESEARCH.md); since Nov 23
+   only the everyday kinds, each brand once, with its everyday task
+   (ccTasksPopular). */
 const TK_POPULAR_N = 50;
+let _tkPop = [];
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
   /* All and Popular are there from the first paint, without a count until
      there is one, so the row never grows under the list and moves it. */
   const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}${_tkList.length ? `<span>${c.toLocaleString()}</span>` : ''}</button>`;
-  return chip('all', T('All'), _tkList.length) + chip('popular', T('Popular'), Math.min(TK_POPULAR_N, _tkList.length))
+  return chip('all', T('All'), _tkList.length) + chip('popular', T('Popular'), _tkPop.length || Math.min(TK_POPULAR_N, _tkList.length))
     + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
 /* The categories in the order their first task appears - the list is the
@@ -446,7 +447,7 @@ function renderTasksView(){
      country's tasks again in the new one. */
   let lang = ''; try{ lang = typeof _lang === 'function' ? _lang() : ''; }catch(e){}
   const cc = cc0, key = cc0 + '|' + lang;
-  if(key !== _tkCc){ _tkList = []; _tkCc = key; _tkAnswered = ''; }
+  if(key !== _tkCc){ _tkList = []; _tkPop = []; _tkCc = key; _tkAnswered = ''; }
   const head = row ? _cwSayPlace('For {country}', row[1], _cwThe(row[1])) : T('Tasks');
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">
@@ -481,6 +482,7 @@ async function _tkLoad(cc, key){
     list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
     if(key !== _tkCc) return;
     _tkList = list; _tkAnswered = key;
+    _tkPop = (d && window.ccTasksPopular) ? window.ccTasksPopular(d, list) : [];
     const sub = $('tk2-sub');
     /* No grand total (the owner: "don't write 5000"): the line is only for
        the two things worth saying - still loading, or nothing here. */
