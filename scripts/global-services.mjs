@@ -45,7 +45,7 @@ const words = (s) => String(s).toLowerCase().replace(/&amp;/g, '&').replace(VEND
    app store, e-book shop and journal site, not games; "online database" is
    every reference site (the Internet Archive, film and lyrics databases), not
    data tools; "podcast directory" two levels down reaches film databases. */
-const PER_TOPIC = 450;
+const PER_TOPIC = 300;
 const TOPIC_DROP = { games: ['digital distribution platform'], data: ['online database', 'spreadsheet'], music: ['podcast directory'],
   /* Fields too broad to mean the topic (run 6, read by eye): "marketing" and
      "market research" are polling firms and TV stations, "talent management"
@@ -132,8 +132,14 @@ export function buildGlobalServices(root) {
       if (/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || e.n.split(/\s+/).length > 6) continue;
       if (typeof e.s !== 'string' || e.s.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s)) continue;
       if (REFUSED_HOSTS.test(e.s) || REMOVED.test(e.s) || REFUSED_CLASSES.has(e.c)) continue;
-      if (seenQ.has(e.q) || seenHost.has(e.s) || sameAsApp(e.n, appSets)) continue;
-      seenQ.add(e.q); seenHost.add(e.s);
+      /* Once per topic. A service a topic's OWN class, field or category
+         finds is listed there even when another topic lists it too - a CRM
+         is Business and Support - while one a topic only found by a shared
+         name was already turned away above (elsewhere, TOPIC_DROP). */
+      const key = t + '|';
+      if (seenQ.has(key + e.q) || seenHost.has(key + e.s) || sameAsApp(e.n, appSets)) continue;
+      if (t !== 'legal' && /\b(Government of|Ministry of|Department of)\b/.test(e.n)) continue;
+      seenQ.add(key + e.q); seenHost.add(key + e.s);
       out.push({ k: bucket(e.s), w: e.w || 0, r: [e.q, e.n, e.s] });
     }
   }
@@ -144,12 +150,22 @@ export function buildGlobalServices(root) {
   /* The visits that order each country's view: one character per host
      shown (its bucket there, 0 for not measured), only for hosts that are
      the service's own and measured somewhere. */
-  const hosts = Object.values(topics).flat().map(x => x[2]).filter(trusted).sort();
-  const pick = (codes) => hosts.map(h => codes[at.get(h)] || '0').join('');
-  const reach = R && hosts.length ? { month: R.month, hosts, g: pick(R.g) } : null;
+  /* ONE TABLE, POINTED INTO. A service in two topics is written once:
+     `entries` holds [id, name, site] and each topic is a list of positions
+     in it. Visits are one character per entry, in the same order - 0 where
+     the report does not measure the site or it is not the service's own -
+     worldwide here and per country in global-reach/<CC>.json. */
+  const entries = [], pos = new Map();
+  const ids = {};
+  for (const [t, rows] of Object.entries(topics)) ids[t] = rows.map(r => {
+    if (!pos.has(r[2])) { pos.set(r[2], entries.length); entries.push(r); }
+    return pos.get(r[2]);
+  });
+  const pick = (codes) => entries.map(r => (trusted(r[2]) && codes[at.get(r[2])]) || '0').join('');
+  const reach = R ? { month: R.month, g: pick(R.g) } : null;
   /* Each country's codes in a file of its own (global-reach/<CC>.json,
-     about 1KB), so a visitor fetches their own country's and no other. */
+     a few KB), so a visitor fetches their own country's and no other. */
   const countries = {};
   if (reach) for (const [cc, codes] of Object.entries(R.c || {})) if (/^[A-Z]{2}$/.test(cc)) countries[cc] = JSON.stringify({ month: R.month, codes: pick(codes) });
-  return { services: JSON.stringify({ source: 'Wikidata (data/global); ordered by Chrome UX Report visits, then Wikipedia sitelinks', generated, topics, reach }), countries };
+  return { services: JSON.stringify({ source: 'Wikidata (data/global); ordered by Chrome UX Report visits, then Wikipedia sitelinks', generated, entries, topics: ids, reach }), countries, topics };
 }

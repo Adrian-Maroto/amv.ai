@@ -20,5 +20,5 @@ console.log('  ' + counts.map(([t, n]) => t + ' ' + n).join(', '));
 for (const [t, n] of counts) ok(n >= 200, t + ' holds 200 or more in every country', n);
 
 section('And the order is measured');
-ok(!!(g.reach && g.reach.month && Array.isArray(g.reach.hosts) && g.reach.hosts.length > 1000), 'visits (Chrome UX Report) order them, with the month stated', g.reach && g.reach.month);
+ok(!!(g.reach && g.reach.month && g.reach.g.length === g.entries.length && (g.reach.g.match(/[1-7]/g) || []).length > 1000), 'visits (Chrome UX Report) order them, with the month stated', g.reach && g.reach.month);
 report(); done();

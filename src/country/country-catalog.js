@@ -936,21 +936,19 @@ let _ccGlobalP = null;
 function ccGlobalLoad(){
   if(_ccGlobalP) return _ccGlobalP;
   _ccGlobalP = fetch('global-services.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null).then(d => {
-    if(!d || !d.topics || typeof d.topics !== 'object') throw new Error('no worldwide services');
+    if(!d || !Array.isArray(d.entries) || !d.topics || typeof d.topics !== 'object') throw new Error('no worldwide services');
+    /* One table of [id, name, site]; each topic lists positions in it. */
+    const ok = d.entries.map(x => Array.isArray(x) && _ccGood({ q: x[0], n: x[1], s: x[2] }) ? { q: x[0], n: x[1], s: x[2] } : null);
     const by = {};
     for(const [t, list] of Object.entries(d.topics)){
       if(!/^[a-z]{2,12}$/.test(t) || !Array.isArray(list)) continue;
       const rows = [];
-      for(const x of list){ if(!Array.isArray(x)) continue; const e = { q: x[0], n: x[1], s: x[2] }; if(_ccGood(e)) rows.push({ kind: 'global', topic: t, e }); }
+      for(const i of list){ const e = Number.isInteger(i) ? ok[i] : null; if(e) rows.push({ kind: 'global', topic: t, e, i }); }
       if(rows.length) by[t] = rows;
     }
-    /* Visits, to order them where the visitor is: host -> its place in the
-       per-country codes, and the worldwide bucket. */
+    /* Visits, one character per entry, to order them where the visitor is. */
     const r = d.reach;
-    if(r && Array.isArray(r.hosts) && typeof r.g === 'string' && r.g.length === r.hosts.length && /^[0-7]*$/.test(r.g)){
-      const at = Object.create(null); r.hosts.forEach((h, i) => { at[h] = i; });
-      _ccGlobalReach = { at, g: r.g, n: r.hosts.length };
-    }
+    if(r && typeof r.g === 'string' && r.g.length === d.entries.length && /^[0-7]*$/.test(r.g)) _ccGlobalReach = { g: r.g, n: d.entries.length };
     return by;
   }).catch(() => { _ccGlobalP = null; return null; });
   return _ccGlobalP;
@@ -974,7 +972,7 @@ function ccGlobalHereLoad(cc){
 function _ccGlobalOrder(rows, here){
   const R = _ccGlobalReach; if(!R) return rows;
   const okHere = typeof here === 'string' && here.length === R.n;
-  const key = (x) => { const i = R.at[x.e.s]; if(i == null) return 99; const h = okHere ? +here[i] : 0; if(h) return h; const w = +R.g[i]; return w ? 7 + w : 99; };
+  const key = (x) => { const i = x.i; if(i == null) return 99; const h = okHere ? +here[i] : 0; if(h) return h; const w = +R.g[i]; return w ? 7 + w : 99; };
   return rows.map((x, i) => [key(x), i, x]).sort((a, b) => (a[0] - b[0]) || (a[1] - b[1])).map(z => z[2]);
 }
 /* A service's one action. A bank is never opened in AMV's browser, where a

@@ -39,14 +39,17 @@ section('The build leaves out what the catalogue refuses');
   ];
   writeFileSync(join(dir, 'data', 'global', 'email.json'), JSON.stringify({ topic: 'email', generated: '2026-11-23', items }));
   writeFileSync(join(dir, 'data', 'global', 'files.json'), JSON.stringify({ topic: 'files', generated: '2026-11-23', items: [{ q: 'Q7', n: 'Mozilla Thunderbird', s: 'thunderbird.net', w: 65, c: 'document management system' }, { q: 'Q8', n: 'Seafile', s: 'seafile.com', w: 12, c: 'document management system' }] }));
-  const d = JSON.parse(buildGlobalServices(dir).services);
+  const d = { topics: buildGlobalServices(dir).topics };
   const names = (t) => (d.topics[t] || []).map(x => x[1]);
   ok(JSON.stringify(names('email')) === JSON.stringify(['Mozilla Thunderbird', 'Tuta']), 'email keeps what is new, most-covered first', names('email'));
   ok(!names('email').includes('Gmail') && !names('email').includes('Microsoft Outlook'), 'an app already listed is not listed again (Gmail; Microsoft Outlook is "Outlook and Hotmail")');
   ok(!names('email').includes('Some Vault'), 'a password manager is left out');
   ok(!names('email').includes('A Chat Model'), 'another AI product is left out, by its site');
   ok(!names('email').includes('Bad <b>'), 'a name that is not plain is left out');
-  ok(JSON.stringify(names('files')) === JSON.stringify(['Seafile']), 'a service filed under two topics is kept under the first only', names('files'));
+  /* Found by each topic's own class, it is listed in each (a CRM is Business
+     and Support), once per topic. */
+  ok(JSON.stringify(names('files')) === JSON.stringify(['Mozilla Thunderbird', 'Seafile']), 'a service each topic finds by its own class is listed in each', names('files'));
+  ok(names('email').filter(n => n === 'Mozilla Thunderbird').length === 1, 'and once within a topic');
   ok(sameAsApp('Outlook.com', [['outlook', 'and', 'hotmail']]) && !sameAsApp('Proton Mail', [['mail', 'worldwide']]), 'matching an app is by its own words, not by a shared generic one');
 }
 
@@ -57,15 +60,17 @@ console.log('  worldwide services per topic:', JSON.stringify(counts));
 ok(Object.keys(counts).length >= 25, 'most topics have worldwide services', Object.keys(counts).length);
 ok(JSON.stringify(real) === JSON.stringify(JSON.parse(readFileSync(join(ROOT, 'public', 'global-services.json'), 'utf8'))), 'the published copy is the built one');
 const AI = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|perplexity\.ai|midjourney\.com)$/;
-ok(!Object.values(real.topics).flat().some(x => AI.test(x[2])), 'no other AI product in the real lists');
+ok(!real.entries.some(x => AI.test(x[2])), 'no other AI product in the real lists');
+ok(Object.values(real.topics).flat().every(i => Number.isInteger(i) && i >= 0 && i < real.entries.length), 'each topic points into the one table');
+ok(real.reach && real.reach.g.length === real.entries.length, 'and the visits are one per entry');
 
 /* The page, with a small file of our own and one bad entry. */
-const FIX = { source: 'test', generated: '2026-11-23', topics: {
-  email: [['Q901', 'Mailbox Uno', 'uno-mail.example.org'], ['Q902', 'Mailbox Dos', 'dos-mail.example.org'], ['Q903', 'Bad <img src=x onerror=alert(1)>', 'bad.example.org'], ['Q904', 'Mailbox Tres', 'https://tres.example.org']],
-  money: [['Q911', 'Neo Bank Test', 'neobank.example.org']],
-}, reach: { month: '2026-10', hosts: ['dos-mail.example.org', 'uno-mail.example.org'], g: '00' } };
+const FIX = { source: 'test', generated: '2026-11-23',
+  entries: [['Q901', 'Mailbox Uno', 'uno-mail.example.org'], ['Q902', 'Mailbox Dos', 'dos-mail.example.org'], ['Q903', 'Bad <img src=x onerror=alert(1)>', 'bad.example.org'], ['Q904', 'Mailbox Tres', 'https://tres.example.org'], ['Q911', 'Neo Bank Test', 'neobank.example.org']],
+  topics: { email: [0, 1, 2, 3], money: [4] },
+  reach: { month: '2026-10', g: '00000' } };
 /* Visits from the visitor's country: Dos is in the top 5,000 there, Uno is not measured. */
-const HERE = { month: '2026-10', codes: '20' };
+const HERE = { month: '2026-10', codes: '02000' };
 const app = await bootApp({ tab: 'chat', blockServiceWorkers: true });
 const { page } = app;
 let served = 0, failFirst = true;
