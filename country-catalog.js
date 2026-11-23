@@ -941,7 +941,10 @@ function ccGlobalLoad(){
     for(const [t, list] of Object.entries(d.topics)){
       if(!/^[a-z]{2,12}$/.test(t) || !Array.isArray(list)) continue;
       const rows = [];
-      for(const x of list){ if(!Array.isArray(x)) continue; const e = { q: x[0], n: x[1], s: x[2] }; if(_ccGood(e)) rows.push({ kind: 'global', topic: t, e }); }
+      /* A directory entry (D + the site's hash) has no Wikidata ID; it is
+         checked the same way otherwise. */
+      for(const x of list){ if(!Array.isArray(x)) continue; const e = { q: x[0], n: x[1], s: x[2] };
+        if(_ccGood(e) || (/^D[0-9a-f]{10}$/.test(String(e.q)) && _ccGood({ q: 'Q1', n: e.n, s: e.s }))) rows.push({ kind: 'global', topic: t, e }); }
       if(rows.length) by[t] = rows;
     }
     /* Visits, to order them where the visitor is: host -> its place in the
