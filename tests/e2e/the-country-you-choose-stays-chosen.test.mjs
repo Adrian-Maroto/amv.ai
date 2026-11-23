@@ -124,8 +124,9 @@ section('Choosing a country makes the list that country’s');
   ok(r.drawn.slice(0, 5).every(id => /^(cc|top|ev)_jp_/.test(id) || (_cwLocalJobs('JP') || []).some(j => j.id === id)), 'Japan’s own lead it', r.drawn.slice(0, 5));
   ok(r.saved === 'JP', 'and choosing it kept it - saved on this device', r.saved);
   /* A category narrows the list in place, and All puts it back. */
-  const chip = await page.evaluate(async () => { const c = [...document.querySelectorAll('#cj-cats .cj-chip')].find(c => c.dataset.darg !== 'all');
-    const want = +((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, ''); c.click(); await new Promise(r => setTimeout(r, 60));
+  const chip = await page.evaluate(async () => { const c = [...document.querySelectorAll('#cj-cats .cj-chip')].find(c => c.dataset.darg !== 'all' && c.dataset.darg !== 'popular');
+    /* No totals on the chips since Nov 23: what a category holds is its jobs in the list. */
+    const want = _cjList().filter(j => _cjCat(j) === c.dataset.darg).length; c.click(); await new Promise(r => setTimeout(r, 60));
     while (document.querySelector('#cj-grid .cj-more')) { document.querySelector('#cj-grid .cj-more').click(); await new Promise(r => setTimeout(r, 20)); }
     const got = document.querySelectorAll('#cj-grid .cj-card').length;
     document.querySelector('#cj-cats .cj-chip[data-darg="all"]').click(); await new Promise(r => setTimeout(r, 60));

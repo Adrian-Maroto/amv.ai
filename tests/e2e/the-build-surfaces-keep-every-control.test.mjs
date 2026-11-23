@@ -111,6 +111,9 @@ section('Every state of every Build surface is opened');
   await walk(() => { setTab('studio'); }, '#vc', 500, 'studio hero');
   await walk(() => { setTab('studio'); _studioNewArtifact('Test design', 'page', 'a brief'); _studioShowCanvas('a brief'); }, '#vc', 500, 'studio canvas');
   await walk(() => { _DEV.log = []; _DEV.project = {}; setTab('dev'); }, '#vc', 500, 'dev blank');
+  /* Since Nov 23 the composer's three choices sit behind its Settings button:
+     one press away, which is what "reachable" means here. */
+  await walk(() => { const b = document.getElementById('dev-opts'); if (b) b.click(); }, '#vc', 300, 'dev settings open');
   await walk(() => { _DEV.log = [{ role: 'sys', text: 'built' }]; _devSetFile('index.html', '<h1>hi</h1>', 'html'); setTab('dev'); renderCodeView(); }, '#vc', 500, 'dev working');
   await walk(() => { _LAB.code = ''; setTab('lab'); }, '#vc', 500, 'lab entry');
   await walk(() => { _LAB.code = 'console.log(1)'; renderLabView(); }, '#vc', 500, 'lab loaded');

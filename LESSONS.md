@@ -16263,3 +16263,15 @@ data widened automatically is read by a person before it reaches one -
 "valid" and "right" are different checks. Also: leading Crew's All list
 with the everyday fifty pushed every country's own work out of sight (nine
 suites said so); Popular is where they lead, All stays country-first.
+
+## 666
+**Nov 23 - a redesign is not licence to re-decide what an earlier request settled.**
+Making Crew roomier, the first draft also made it OPEN on Popular, which is
+a different decision wearing a layout's clothes: the owner had asked for each
+country's top ten to lead Crew, and lesson 665 - written the same day - said
+All stays country-first. Six suites failed and two of them were that
+request, not stale assertions. Reverted; the redesign is size, spacing and
+fewer controls on screen. Rule: when a visual change fails a suite, read the
+assertion as the decision it records before rewriting it - a test only gets
+"updated" when the thing it holds was what was asked to change (chip totals
+and the clamp length here, which were).

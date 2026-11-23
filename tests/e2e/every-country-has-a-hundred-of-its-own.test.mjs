@@ -79,6 +79,9 @@ async function catalogue(page, cc) {
   await page.waitForFunction((cc) => typeof _cjList === 'function' && _cwLocalState[cc] === 'ok'
       && (_cwMadeMore(cc) || []).length >= 100 && !!document.querySelector('#cj-grid .cj-card-b'), cc, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
+  /* Crew opens on Popular since Nov 23; the country's whole list is All. */
+  await page.evaluate(() => { if (_cjC !== 'all') cjCat('all'); });
+  await page.waitForTimeout(150);
   return page.evaluate(() => {
     const list = _cjList();
     return {
@@ -130,13 +133,15 @@ section('When the country’s data arrives late, the list and its chips are redr
     const list = _cjList();
     const want = { all: list.length };
     list.forEach(j => { const c = _cjCat(j); want[c] = (want[c] || 0) + 1; });
+    /* The chips carry no totals since Nov 23 (the owner asked for no big
+       numbers); what each one holds is what pressing it shows. */
     const got = {};
-    document.querySelectorAll('#cj-cats .cj-chip').forEach(c => { got[c.dataset.darg] = Number(((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, '')); });
+    document.querySelectorAll('#cj-cats .cj-chip').forEach(c => { const k = c.dataset.darg; got[k] = k === 'all' ? list.length : k === 'popular' ? want[k] : list.filter(j => _cjCat(j) === k).length; });
     return { want, got, own: list.filter(j => /^cc_es_/.test(j.id)).length, cls: window.__cls, src: window.__clsSrc };
   });
   ok(r.own >= 100, 'Spain’s own arrived in the list', r.own);
   const wrong = Object.keys(r.want).filter(k => r.got[k] !== r.want[k]);
-  ok(wrong.length === 0, 'every chip counts the list under it, and every category has its chip', wrong.map(k => k + ': ' + r.got[k] + ' vs ' + r.want[k]));
+  ok(wrong.length === 0, 'every category has its chip', wrong.map(k => k + ': ' + r.got[k] + ' vs ' + r.want[k]));
   ok(r.cls < 0.001, 'and nothing on the screen moved', { cls: +r.cls.toFixed(4), moved: r.src });
   await ctx.close();
 }
@@ -147,11 +152,12 @@ section('A category opens whole, through Show more');
   await catalogue(page, 'ES');
   const chip = await page.evaluate(() => {
     const c = [...document.querySelectorAll('#cj-cats .cj-chip')].filter(c => c.dataset.darg !== 'all')
-      .map(c => ({ cat: c.dataset.darg, n: Number(((c.querySelector('span') || {}).textContent || '').replace(/[^\d]/g, '')), h: Math.round(c.getBoundingClientRect().height) }))
+      .filter(c => c.dataset.darg !== 'popular')
+      .map(c => ({ cat: c.dataset.darg, n: _cjList().filter(j => _cjCat(j) === c.dataset.darg).length, h: Math.round(c.getBoundingClientRect().height) }))
       .sort((a, b) => b.n - a.n)[0];
     return c;
   });
-  ok(chip && chip.n > 24, 'a category says how many it holds', chip);
+  ok(chip && chip.n > 24, 'a category holds more than one screen', chip);
   ok(chip && chip.h >= 32, 'and its chip is big enough to press', chip && chip.h);
   await page.click('#cj-cats .cj-chip[data-darg="' + chip.cat + '"]');
   for (let i = 0; i < 400 && await page.$('#cj-grid .cj-more'); i++) { await page.click('#cj-grid .cj-more'); await page.waitForTimeout(30); }

@@ -49,13 +49,14 @@ await page.evaluate(() => {
 
 /* Crew is one list since Nov 15: "Jobs for <country>", the country as a
    button beside it, and the country's own work leading the list. */
-const catalogue = () => page.evaluate(() => ({
+/* Crew opens on Popular since Nov 23; the country's own work leads All. */
+const catalogue = () => page.evaluate(() => { try{ if (_cjC !== 'all') cjCat('all'); }catch(e){} }).then(() => page.evaluate(() => ({
   head: ((document.getElementById('cx-jobs-h') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
   top: [...document.querySelectorAll('#cj-grid .cj-card-t')].slice(0, 8).map(e => e.textContent.trim()),
   all: (typeof _cjList === 'function' ? _cjList() : []).map(j => j.title),
   dropdown: !!document.getElementById('cw-country'),
   numbers: [...document.querySelectorAll('#cj-grid .cj-card')].filter(c => /\b\d+ (starts|people|uses)\b/.test(c.textContent)).length,
-}));
+})));
 
 const CW_N = await page.evaluate(() => CW_WORLD_COUNTRIES.length);
 

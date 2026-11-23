@@ -42,7 +42,9 @@ section('Crew');
   await page.waitForTimeout(1200);
   await page.evaluate(() => cjCat('popular'));
   const n = await note();
-  ok(/^Jobs picked for Spain come first/.test(n || '') && /Chrome UX Report, October 2026/.test(n || ''), 'Popular says the picked jobs lead and the rest is visits', n);
+  /* Since Nov 23 Crew's Popular is the researched everyday fifty, and it
+     names the research. */
+  ok(/^Everyday jobs, in order of how many people use each kind of service/.test(n || '') && /GWI/.test(n || '') && /Pew/.test(n || ''), 'Popular says it is the everyday jobs and names the research', n);
   const counted = await page.evaluate(() => ccPopularNote('ES', 'counted'));
   ok(/switch on most in AMV/.test(counted), 'and where the server has counted switch-ons there, it says that too', counted);
   await page.evaluate(() => cjCat('all'));

@@ -1460,8 +1460,10 @@ function _cjMatch(j, words){
 }
 function _cjFiltered(){
   const words = _cjQ.toLowerCase().split(/\s+/).filter(Boolean);
-  if(_cjC === 'popular') return _cjPopular().filter(j => _cjMatch(j, words));
-  return _cjList().filter(j => (_cjC === 'all' || _cjCat(j) === _cjC) && _cjMatch(j, words));
+  /* A search from Popular searches every job, so typing never hides a job
+     because of which chip happened to be on. */
+  if(_cjC === 'popular' && !words.length) return _cjPopular();
+  return _cjList().filter(j => (_cjC === 'all' || _cjC === 'popular' || _cjCat(j) === _cjC) && _cjMatch(j, words));
 }
 /* A card: icon, title, one line of what it does, when it runs. */
 /* How often, and the time only once one is set: a job that is not on yet has
@@ -1498,8 +1500,10 @@ function _cjGridHTML(){
   }
   const shown = list.slice(0, _cjN);
   /* Popular says what it is ranked by (Build 16 audit D16-07). */
-  const note = _cjC === 'popular' ? (() => { try{ const cc = _cwCountryGuess(); const m = _cwMeta[cc];
-    return window.ccPopularNote(cc, (m && m.ranked && m.ranked.enough) ? 'counted' : 'crew'); }catch(e){ return ''; } })() : '';
+  /* Popular says what it is ranked by (Build 16 audit D16-07). Since Nov 23
+     it is the researched everyday fifty (crew-data.js popular), so that is
+     what it says; a search from it is a search of every job. */
+  const note = (_cjC === 'popular' && !_cjQ) ? T('Everyday jobs, in order of how many people use each kind of service (GWI, Pew Research Center and the Reuters Institute, 2023-2025).') : '';
   return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
     + (list.length > shown.length ? `<div class="cj-more-w"><button class="btn bs cj-more" data-dact="cjMore">${escH(T('Show more'))} <span class="cj-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
 }
@@ -1529,9 +1533,11 @@ function _cjChipsHTML(){
   }catch(e){}
   const all = _cjList();
   const n = {}; all.forEach(j => { const c = _cjCat(j); n[c] = (n[c] || 0) + 1; });
-  const chip = (k, label, c) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}<span>${c.toLocaleString()}</span></button>`;
-  return chip('all', T('All'), all.length) + chip('popular', T('Popular'), Math.min(CJ_POPULAR_N, all.length))
-    + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
+  /* No counts on the chips: "All 23,102" told nobody anything they could
+     act on, and the owner asked for no big totals. */
+  const chip = (k, label) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}</button>`;
+  return chip('all', T('All')) + chip('popular', T('Popular'))
+    + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c))).join('');
 }
 /* The categories in the order their first job appears in the list - the list
    is most used first, so the categories are too. */

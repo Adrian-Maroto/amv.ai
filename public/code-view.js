@@ -8,8 +8,14 @@
    src/app/11b-code-workspace.js, beside a stand-in renderCodeView that this
    file's real one replaces when it loads. A classic script, like the page.
    ═════════════════════════════════════════════════ */
-function _devChip(prompt,label){
-  return '<button class="dev-chip" data-dq="'+escH(prompt)+'">'+escH(label)+'</button>';
+/* A starting point is a card, the same .dsn-tile Design's are (Nov 23: the
+   owner found the pills too small to read and hit). The prompt it fills is
+   unchanged; the card adds a line saying what it makes. */
+function _devChip(prompt,label,ic,desc){
+  return '<button class="dsn-tile dev-start" type="button" data-dq="'+escH(prompt)+'">'
+    + '<span class="dsn-tile-ic" aria-hidden="true">'+ic+'</span> '
+    + '<span class="dsn-tile-body"><span class="dsn-tile-t">'+escH(label)+'</span> <span class="dsn-tile-d">'+escH(desc)+'</span></span>'
+    + '</button>';
 }
 
 function renderCodeView(){
@@ -28,11 +34,11 @@ function renderCodeView(){
       ${_buildBarHTML('code', true, blank)}
 
       <div id="dev-hero" class="dev-hero">
-        <div class="dev-hero-chips" id="dev-hero-chips">
-          ${_devChip('A landing page for a coffee brand - hero, pricing, and a signup form','Landing page')}
-          ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app')}
-          ${_devChip('A snake game I can play with the arrow keys','Snake game')}
-          ${_devChip('A dashboard with a revenue chart and summary cards','Dashboard')}
+        <div class="dsn-starts dev-starts" id="dev-hero-chips">
+          ${_devChip('A landing page for a coffee brand - hero, pricing, and a signup form','Landing page','\uD83D\uDDA5\uFE0F','Hero, pricing and a signup form')}
+          ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app','\u2705','Add, complete and delete, saved as you go')}
+          ${_devChip('A snake game I can play with the arrow keys','Snake game','\uD83D\uDC0D','Play it with the arrow keys')}
+          ${_devChip('A dashboard with a revenue chart and summary cards','Dashboard','\uD83D\uDCCA','A revenue chart and summary cards')}
         </div>
         <div class="dev-hero-upload">
           <button class="dev-upload-btn" id="dev-hero-add">
@@ -95,6 +101,13 @@ function renderCodeView(){
   on(ta,'paste',()=>{ setTimeout(()=>_devOfferPaste(ta.value), 0); });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
+  /* Settings folds the three choices (changes, engine, effort) into one
+     control: three dropdowns in a row read as a form before anything is typed. */
+  on($('dev-opts'),'click',function(){
+    const bar=this.closest('.dvi-bar'); if(!bar) return;
+    const open=bar.classList.toggle('opts-open');
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
   /* Whichever turn is running. The agent's stop lands between steps; the
      in-browser one lands between continuations. Both say so on the busy line
      rather than appearing to do nothing until the current piece of work is

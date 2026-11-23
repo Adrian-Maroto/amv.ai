@@ -67,7 +67,7 @@ section('Cards side by side say when they run on the same line');
   });
   ok(r.rows > 2, 'there are rows of cards', r.rows);
   ok(r.bad === 0, 'and in each, when it runs sits on the same line', r);
-  ok(r.clamp === '2', 'because the line of what it does is clamped, not because these happen to be short', r.clamp);
+  ok(r.clamp === '3', 'because the line of what it does is clamped (three lines since Nov 23), not because these happen to be short', r.clamp);
 }
 
 section('A price in dollars says it is in dollars');
