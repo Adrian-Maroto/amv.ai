@@ -48,7 +48,9 @@ async function open(from, hash, width = 1280) {
     try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {}
     window.__cls = 0; window.__src = [];
     try { new PerformanceObserver(l => { for (const e of l.getEntries()) { window.__cls += e.value;
-      window.__src.push((e.sources || []).map(x => x.node && (x.node.id || x.node.className)).join(' ').slice(0, 80)); } }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
+      /* What moved, by name: a bare text node used to report as "", so a
+         failure said nothing about its cause. */
+      window.__src.push((e.sources || []).map(x => { const n = x.node; if (!n) return '?'; if (n.nodeType === 3) { const p = n.parentElement && n.parentElement.closest('[id],[class]'); return 'text "' + n.textContent.trim().slice(0, 20) + '" in ' + (p ? (p.id || p.className) : '?'); } return n.id || n.className; }).join(' | ').slice(0, 160)); } }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
   });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
