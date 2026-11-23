@@ -24,7 +24,7 @@
    ones the report does not reach - Wikipedia sitelinks. */
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { TOPICS, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
+import { TOPICS, FIELDS, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
@@ -41,6 +41,7 @@ const words = (s) => String(s).toLowerCase().replace(/&amp;/g, '&').replace(VEND
    app store, e-book shop and journal site, not games; "online database" is
    every reference site (the Internet Archive, film and lyrics databases), not
    data tools; "podcast directory" two levels down reaches film databases. */
+const PER_TOPIC = 450;
 const TOPIC_DROP = { games: ['digital distribution platform'], data: ['online database', 'spreadsheet'], music: ['podcast directory'] };
 export function appNames(root) {
   const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
@@ -103,14 +104,17 @@ export function buildGlobalServices(root) {
   /* A found class whose name says another topic (food delivery found from a
      ride app's classes) belongs to that topic, not to the one that found it. */
   const elsewhere = (t, c) => !TOPIC_WORDS[t]?.test(c) && Object.entries(TOPIC_WORDS).some(([u, re]) => u !== t && re.test(c));
-  const kindOk = (t, c) => named(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
+  /* A field the topic names (FIELDS: an industry, use or genre) is its own too,
+     taken after the classes. */
+  const field = (t, c) => /^field /.test(String(c || '')) && (FIELDS[t] || []).includes(String(c).slice(6));
+  const kindOk = (t, c) => named(t, c) || field(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
   const outs = Object.fromEntries(order.map(t => [t, []]));
   for (const pass of [1, 2]) for (const t of order) {
     const out = outs[t];
     for (const e of (got[t] || []).slice().sort((a, b) => (bucket(a.s) - bucket(b.s)) || ((b.w || 0) - (a.w || 0)))) {
       if (!e || (pass === 1) !== named(t, e.c) || !kindOk(t, e.c) || (TOPIC_DROP[t] || []).includes(e.c)) continue;
-      if (pass === 2 && elsewhere(t, String(e.c || ''))) continue;
+      if (pass === 2 && !field(t, e.c) && elsewhere(t, String(e.c || ''))) continue;
       if (NOT_FOR_LISTING.test(String(e.s) + ' ' + String(e.n))) continue;
       if (!e || !/^Q\d{1,12}$/.test(e.q) || typeof e.n !== 'string' || e.n.length < 2 || e.n.length > 90) continue;
       if (/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n) || e.n.split(/\s+/).length > 6) continue;
@@ -122,7 +126,9 @@ export function buildGlobalServices(root) {
     }
   }
   /* Each topic in one order across both passes: visits, then coverage. */
-  for (const t of order) { const out = outs[t].sort((a, b) => (a.k - b.k) || (b.w - a.w)).map(x => x.r); if (out.length) topics[t] = out; }
+  /* At most PER_TOPIC each, the most visited kept: what a person scrolls
+     through, and what every visitor downloads. */
+  for (const t of order) { const out = outs[t].sort((a, b) => (a.k - b.k) || (b.w - a.w)).slice(0, PER_TOPIC).map(x => x.r); if (out.length) topics[t] = out; }
   /* The visits that order each country's view: one character per host
      shown (its bucket there, 0 for not measured), only for hosts that are
      the service's own and measured somewhere. */

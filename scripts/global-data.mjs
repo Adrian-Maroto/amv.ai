@@ -33,7 +33,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'data', 'global');
 const EP = 'https://query.wikidata.org/sparql';
 const UA = 'AMV-global-data/1.0 (public-data builder; contact via the project repository)';
-const KEEP = 400;
+const KEEP = 800;
 
 /* topic (the id in AMV_APP_CATS) -> the English labels of its classes. */
 export const TOPICS = {
@@ -70,6 +70,51 @@ export const TOPICS = {
   testing:   ['software testing tool', 'test automation software', 'test automation framework', 'unit testing framework', 'load testing tool', 'automated testing tool', 'web testing software', 'cross-browser testing tool', 'fuzzing tool', 'test management tool'],
   games:     ['video game distribution platform', 'online game', 'cloud gaming service', 'online chess playing site', 'video game store', 'massively multiplayer online role-playing game', 'browser game', 'mobile game', 'free-to-play video game', 'game server hosting', 'game launcher'],
 };
+
+/* THE SECOND WAY IN: WHAT A SERVICE IS FOR (run 6, Nov 23). The owner: "200
+   for all sections, all countries". Classes alone give few calendar, HR,
+   marketing, support, legal, testing, monitoring and automation services,
+   because Wikidata files most of those as a company with an INDUSTRY (P452),
+   or a product with a USE (P366) or GENRE (P136) - Gusto is a company whose
+   industry is payroll, not an instance of "payroll software". So each topic
+   also names fields; an item with an official website whose industry, use
+   or genre is one of them is a candidate too, and is ordered by visits like
+   the rest. Each field is resolved by its exact English label, like classes. */
+export const FIELDS = {
+  email:     ['email', 'webmail', 'email hosting service', 'email encryption'],
+  calendar:  ['calendar', 'scheduling', 'time management', 'time tracking', 'appointment scheduling', 'event management', 'personal information management'],
+  messaging: ['instant messaging', 'videotelephony', 'voice over IP', 'web conferencing', 'online chat', 'team communication'],
+  files:     ['file hosting service', 'cloud storage', 'file sharing', 'data storage', 'document management', 'office suite', 'PDF', 'backup'],
+  money:     ['financial technology', 'mobile payment', 'online banking', 'payment processing', 'personal finance', 'money transfer', 'digital wallet', 'budgeting'],
+  dev:       ['software development', 'software engineering', 'DevOps', 'version control', 'continuous integration', 'web development', 'programming tool'],
+  school:    ['educational technology', 'e-learning', 'online learning', 'language learning', 'online tutoring', 'distance education'],
+  jobs:      ['recruitment', 'employment', 'job search', 'online job board', 'freelancing', 'gig economy'],
+  home:      ['real estate', 'home automation', 'smart home', 'property management', 'home improvement', 'moving company'],
+  work:      ['project management', 'productivity', 'collaboration', 'note-taking', 'task management', 'knowledge management', 'business productivity software'],
+  design:    ['graphic design', 'computer graphics', 'photo editing', 'video editing', '3D modeling', 'computer-aided design', 'web design', 'stock photography'],
+  video:     ['video on demand', 'streaming media', 'video hosting', 'live streaming', 'internet television'],
+  music:     ['music streaming', 'podcast', 'internet radio', 'audiobook', 'digital music'],
+  social:    ['social media', 'social networking', 'online community', 'microblogging', 'internet forum'],
+  shop:      ['e-commerce', 'online shopping', 'online marketplace', 'price comparison', 'online auction', 'retail'],
+  travel:    ['online travel agency', 'travel', 'hotel reservation', 'airline reservations system', 'vacation rental', 'tourism'],
+  maps:      ['ridesharing', 'navigation', 'web mapping', 'vehicle for hire', 'bicycle-sharing', 'carsharing', 'micromobility', 'public transport'],
+  food:      ['food delivery', 'online food ordering', 'meal kit', 'online grocer', 'recipe', 'fast food restaurant', 'restaurant reservation', 'grocery delivery'],
+  health:    ['telemedicine', 'digital health', 'mobile health', 'physical fitness', 'pharmacy', 'online pharmacy', 'mental health', 'meditation', 'nutrition', 'health informatics', 'health insurance'],
+  news:      ['news', 'journalism', 'news aggregator', 'online newspaper', 'newsletter'],
+  biz:       ['enterprise software', 'accounting', 'customer relationship management', 'enterprise resource planning', 'point of sale', 'invoice', 'business software', 'e-invoicing'],
+  marketing: ['marketing', 'digital marketing', 'online advertising', 'advertising', 'email marketing', 'search engine optimization', 'affiliate marketing', 'social media marketing', 'marketing automation', 'market research', 'influencer marketing', 'content marketing'],
+  support:   ['customer service', 'help desk', 'customer support', 'customer relationship management', 'call centre', 'customer experience', 'customer engagement', 'live chat'],
+  auto:      ['business process automation', 'workflow', 'workflow management', 'robotic process automation', 'automation', 'low-code development platform', 'no-code development platform', 'integration platform as a service', 'web scraping', 'business process management'],
+  data:      ['data analysis', 'business intelligence', 'big data', 'analytics', 'database', 'data science', 'data visualization', 'web analytics', 'data management'],
+  cloud:     ['cloud computing', 'web hosting service', 'domain name registrar', 'data center', 'content delivery network', 'serverless computing', 'website builder'],
+  monitor:   ['network monitoring', 'system monitoring', 'application performance management', 'observability', 'log management', 'website monitoring', 'IT infrastructure management', 'IT operations', 'incident management', 'site reliability engineering'],
+  security:  ['computer security', 'cybersecurity', 'information security', 'antivirus software', 'virtual private network', 'identity management', 'endpoint security', 'network security', 'cloud security', 'authentication'],
+  legal:     ['legal technology', 'electronic signature', 'digital signature', 'contract management', 'legal research', 'online legal services', 'intellectual property', 'trademark', 'compliance', 'regulatory compliance'],
+  hr:        ['human resources', 'human resource management', 'payroll', 'recruitment', 'employment agency', 'staffing', 'talent management', 'employee benefits', 'professional employer organization', 'workforce management'],
+  testing:   ['software testing', 'quality assurance', 'test automation', 'unit testing', 'performance testing', 'web testing', 'usability testing', 'penetration test', 'bug bounty program'],
+  games:     ['video game industry', 'online game', 'esports', 'video game distribution', 'cloud gaming', 'browser game', 'mobile game'],
+};
+
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function sparql(q, tries = 4, ms = 90000) {
@@ -164,6 +209,15 @@ async function seedClasses(names, topic) {
   return out;
 }
 
+/* A field by its exact English label: the item with that label that most
+   things name as their industry, use or genre. */
+async function fieldOf(label) {
+  try {
+    const c = await sparql(`SELECT ?c (COUNT(?x) AS ?k) WHERE { ?c rdfs:label "${esc(label)}"@en . ?x wdt:P452|wdt:P366|wdt:P136 ?c } GROUP BY ?c ORDER BY DESC(?k) LIMIT 1`, 3, 60000);
+    return c[0] && +c[0].k.value >= 3 ? qid(c[0].c.value) : null;
+  } catch (e) { return null; }
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const SEEDS = seedNames();
@@ -180,9 +234,12 @@ async function main() {
     for (const l of labels) { const q = await classOf(l); console.log('topic', topic.padEnd(10), ('"' + l + '"').padEnd(46), q ? 'is ' + q : 'NOT FOUND - not used'); if (q) classes.push([q, l]); }
     for (const [q, l] of await seedClasses(SEEDS[topic] || [], topic)) if (!classes.some(([c]) => c === q)) classes.push([q, l]);
     const rows = new Map();
-    for (const [klass, label] of classes) {
+    const fields = [];
+    for (const l of FIELDS[topic] || []) { const q = await fieldOf(l); console.log('topic', topic.padEnd(10), ('field "' + l + '"').padEnd(46), q ? 'is ' + q : 'NOT FOUND - not used'); if (q) fields.push([q, l]); }
+    const asks = classes.map(([q, l]) => [`?i wdt:P31/wdt:P279?/wdt:P279? wd:${q}`, l]).concat(fields.map(([q, l]) => [`?i wdt:P452|wdt:P366|wdt:P136 wd:${q} . FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 }`, 'field ' + l]));
+    for (const [match, label] of asks) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {
-        ?i wdt:P31/wdt:P279?/wdt:P279? wd:${klass} ; wdt:P856 ?site ; wikibase:sitelinks ?n .
+        ${match} . ?i wdt:P856 ?site ; wikibase:sitelinks ?n .
         FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended } FILTER NOT EXISTS { ?i wdt:P2669 ?discontinued }
         ${NOPE}
         SERVICE wikibase:label { bd:serviceParam wikibase:language "${LANGS}". }
@@ -206,9 +263,9 @@ async function main() {
     let old = [], oldClasses = ''; try { const o = JSON.parse(readFileSync(join(OUT, topic + '.json'), 'utf8')); old = o.items || []; oldClasses = (o.classes || []).join('|'); } catch (e) {}
     /* A topic that came back thinner than last time from the SAME classes (a
        timeout) keeps the last list; new classes are a new list. */
-    const same = oldClasses === classes.map(([q, l]) => q + ' ' + l).join('|');
+    const same = oldClasses === classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l)).join('|');
     const items = !same || list.length >= old.length * 0.8 ? list : old;
-    writeFileSync(join(OUT, topic + '.json'), JSON.stringify({ topic, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', classes: classes.map(([q, l]) => q + ' ' + l), generated: new Date().toISOString().slice(0, 10), items }));
+    writeFileSync(join(OUT, topic + '.json'), JSON.stringify({ topic, source: 'Wikidata (query.wikidata.org), ranked by Wikipedia sitelinks', classes: classes.map(([q, l]) => q + ' ' + l).concat(fields.map(([q, l]) => q + ' field ' + l)), generated: new Date().toISOString().slice(0, 10), items }));
     console.log('topic', topic, items.length, items === old ? '(kept the last run: this one had ' + list.length + ')' : '');
   }
 }
