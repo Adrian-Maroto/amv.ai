@@ -1,0 +1,2 @@
+# Topics to read from the Open Directory dump (empty = all). Changing this file runs the dmoz-data workflow.
+# run 1 - Nov 23
