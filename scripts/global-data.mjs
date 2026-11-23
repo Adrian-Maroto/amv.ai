@@ -49,7 +49,7 @@ export const TOPICS = {
   work:      ['project management software', 'collaborative software', 'note-taking software', 'wiki software', 'to-do list manager', 'productivity software', 'task management software', 'mind mapping software', 'whiteboard software', 'outliner'],
   design:    ['graphics software', 'raster graphics editor', 'vector graphics editor', 'video editing software', '3D computer graphics software', 'computer-aided design software', 'photo editing software', 'digital painting software', 'image hosting service', 'stock photography website', 'font foundry', 'prototyping tool', 'user interface design software'],
   video:     ['streaming service', 'over-the-top media service', 'video streaming service', 'online video platform', 'video sharing website', 'video-sharing platform', 'video on demand service', 'live streaming service', 'livestreaming platform', 'streaming television service'],
-  music:     ['music streaming service', 'podcast hosting service', 'internet radio', 'audio streaming service', 'podcast directory', 'podcatcher', 'music recognition app', 'lyrics website', 'audiobook service'],
+  music:     ['music streaming service', 'podcast hosting service', 'internet radio', 'audio streaming service', 'podcatcher', 'music recognition app', 'lyrics website', 'audiobook service'],
   social:    ['social networking service', 'online community', 'user-generated content platform', 'microblogging service', 'microblog', 'image sharing website', 'social media platform', 'forum software', 'internet forum', 'question-and-answer website'],
   shop:      ['online marketplace', 'e-commerce platform', 'comparison shopping website', 'very large online platform', 'online auction', 'online auction website', 'price comparison website', 'deal website', 'cashback website', 'online shopping platform'],
   travel:    ['online travel agency', 'travel website', 'hotel booking website', 'metasearch engine', 'travel metasearch engine', 'flight search engine', 'vacation rental website', 'vacation rental platform', 'travel search engine'],
@@ -61,7 +61,7 @@ export const TOPICS = {
   marketing: ['advertising network', 'email marketing service', 'email marketing software', 'marketing software', 'marketing automation software', 'search engine optimization software', 'online advertising platform', 'advertising platform', 'affiliate network', 'social media management software', 'customer engagement platform', 'web analytics service', 'link shortener', 'URL shortening service'],
   support:   ['help desk software', 'issue tracking system', 'help desk', 'customer service software', 'customer support software', 'live chat software', 'live chat', 'ticketing system', 'knowledge base software', 'customer feedback software'],
   auto:      ['workflow automation software', 'workflow management system', 'business process automation', 'business process management software', 'integration platform as a service', 'integration platform', 'robotic process automation', 'automation software', 'low-code development platform', 'no-code development platform', 'web scraping software'],
-  data:      ['business intelligence software', 'database management system', 'data warehouse', 'web analytics software', 'spreadsheet', 'spreadsheet software', 'data visualization software', 'analytics software', 'statistical software', 'online database'],
+  data:      ['business intelligence software', 'database management system', 'data warehouse', 'web analytics software', 'spreadsheet software', 'data visualization software', 'analytics software', 'statistical software'],
   cloud:     ['web hosting service', 'content delivery network', 'platform as a service', 'domain name registrar', 'cloud computing service', 'cloud service provider', 'infrastructure as a service', 'cloud computing provider', 'serverless computing platform', 'website builder'],
   monitor:   ['network monitoring software', 'network monitoring', 'system monitor', 'application performance management', 'application performance monitoring', 'log management software', 'observability platform', 'monitoring software', 'website monitoring service', 'uptime monitoring service', 'status page'],
   security:  ['password manager', 'antivirus software', 'virtual private network service', 'VPN service', 'firewall software', 'identity management software', 'identity provider', 'authenticator', 'two-factor authentication software', 'single sign-on'],
@@ -106,6 +106,17 @@ async function classOf(label) {
 const GENERIC = new Set(['Q7397', 'Q35127', 'Q166142', 'Q620615', 'Q4830453', 'Q783794', 'Q891723', 'Q6881511', 'Q1058914', 'Q218616', 'Q341',
   'Q193424', 'Q189210', 'Q658255', 'Q431289', 'Q167037', 'Q43229', 'Q4182287', 'Q1668024', 'Q7094076', 'Q1371849', 'Q5633421', 'Q1331793',
   'Q2085381', 'Q17155032', 'Q1639024', 'Q3220391', 'Q506240', 'Q1107679', 'Q21980538', 'Q19967801', 'Q15265344', 'Q3966', 'Q1640628']);
+/* Words that say which topic a class belongs to; a class found from one
+   topic's apps that names another is left to that one. */
+export const TOPIC_WORDS = {
+  food: /\b(food|meal|recipe|restaurant|grocer)/i,
+  maps: /\b(map|mapping|navigation|ride|taxi|bicycle|vehicle|transit)/i,
+  music: /\b(music|podcast|radio|audio)/i,
+  video: /\b(video|film|movie|television|over-the-top)/i,
+  games: /\b(game|gaming|chess)/i,
+  money: /\b(bank|payment|wallet|money)/i,
+  email: /\b(e-?mail|mailbox|webmail)/i,
+};
 const MAX_CLASS = 25000;
 /* A class found from the apps must name a KIND OF SERVICE. Run 2 took every
    class two apps shared and got towns (an app called Cary), restaurant
@@ -127,7 +138,7 @@ export function seedNames(root = ROOT) {
   for (const c of cats) out[c.id] = c.apps.map(s => String(s).split('|')[0].replace(/&amp;/g, '&').trim()).filter(n => n.length >= 2 && n.length <= 60 && !/["\\]/.test(n));
   return out;
 }
-async function seedClasses(names) {
+async function seedClasses(names, topic) {
   if (names.length < 2) return [];
   const vals = names.map(n => '"' + esc(n) + '"@en').join(' ');
   let got = [];
@@ -141,6 +152,7 @@ async function seedClasses(names) {
     const c = qid(b.c.value), label = b.label.value;
     if (GENERIC.has(c)) { console.log('  seed class', c, label, 'skipped: generic'); continue; }
     if (!SERVICE_WORD.test(label) || NOT_A_KIND.test(label)) { console.log('  seed class', c, label, 'skipped: not a kind of service'); continue; }
+    if (!TOPIC_WORDS[topic]?.test(label) && Object.entries(TOPIC_WORDS).some(([u, re]) => u !== topic && re.test(label))) { console.log('  seed class', c, label, 'skipped: another topic\'s'); continue; }
     let size = Infinity;
     try { const r = await sparql(`SELECT (COUNT(?x) AS ?k) WHERE { ?x wdt:P31 wd:${c} }`, 2, 45000); size = +r[0].k.value; } catch (e) {}
     if (!(size <= MAX_CLASS)) { console.log('  seed class', c, label, 'skipped:', size === Infinity ? 'too big to count' : size + ' members'); continue; }
@@ -166,7 +178,7 @@ async function main() {
     if (Date.now() > END) { console.log('topic', topic, 'not asked: out of time'); continue; }
     const classes = [];
     for (const l of labels) { const q = await classOf(l); console.log('topic', topic.padEnd(10), ('"' + l + '"').padEnd(46), q ? 'is ' + q : 'NOT FOUND - not used'); if (q) classes.push([q, l]); }
-    for (const [q, l] of await seedClasses(SEEDS[topic] || [])) if (!classes.some(([c]) => c === q)) classes.push([q, l]);
+    for (const [q, l] of await seedClasses(SEEDS[topic] || [], topic)) if (!classes.some(([c]) => c === q)) classes.push([q, l]);
     const rows = new Map();
     for (const [klass, label] of classes) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {

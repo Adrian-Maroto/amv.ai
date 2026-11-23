@@ -1,5 +1,5 @@
 # Topics to build (empty line list = all). Changing this file runs the global-data workflow.
-# run 1 - Nov 23
-# run 2 - Nov 23: classes found from the apps each topic already lists
-# run 3 - Nov 23: found classes must name a kind of service; adult sites and piracy left out
-# run 4 - Nov 23: more class names per topic (run 3 log: 40 not found), two subclass levels
+# run 1-4 - Nov 23 (see git log)
+# run 5 - Nov 23: music and data again, without the classes that belong elsewhere
+music
+data

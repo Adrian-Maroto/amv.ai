@@ -24,31 +24,24 @@
    ones the report does not reach - Wikipedia sitelinks. */
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { TOPICS, SERVICE_WORD, NOT_A_KIND } from './global-data.mjs';
+import { TOPICS, SERVICE_WORD, NOT_A_KIND, TOPIC_WORDS } from './global-data.mjs';
 
 /* By site, not by name: a crypto exchange shares its name with one of these. */
 const REFUSED_HOSTS = /(^|\.)(openai\.com|chatgpt\.com|anthropic\.com|claude\.ai|gemini\.google\.com|notebook\.google|notebooklm\.google|copilot\.microsoft\.com|perplexity\.ai|midjourney\.com|mistral\.ai|deepseek\.com|x\.ai|grok\.com|character\.ai|runwayml\.com|stability\.ai|leonardo\.ai|ideogram\.ai|synthesia\.io|pika\.art)$/;
 const REFUSED_CLASSES = new Set(['password manager', 'cryptocurrency exchange', 'chatbot']);
 /* Adult sites and piracy, whatever class brought them (the Wikidata run
    leaves them out by class too; this is the second line). */
-const NOT_FOR_LISTING = /(missav|jable|supjav|javhd|javlibrary|porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
+const NOT_FOR_LISTING = /(getchu|erolabs|dlsite|nutaku|fanza|missav|jable|supjav|javhd|javlibrary|porn|xxx|xnxx|xhamster|hentai|onlyfans|fansly|stripchat|camsoda|chaturbate|cam4|livejasmin|bongacams|myfreecams|clips4sale|fetlife|ashleymadison|escort|torrent|1337x|piratebay|fitgirl|rarbg|warez|libgen|z-library|sci-hub|scihub|\bmym\b)/i;
 const REMOVED = /(^|\.)(temu\.com|shein\.com|binance\.com|mega\.nz|mega\.io|wps\.com|mail\.yandex\.[a-z.]+|mail\.ru|vk\.com|paytm\.com|rocket\.chat)$/;
 const VENDOR = /^(microsoft|google|apple|adobe|amazon|meta|ibm|oracle|sap|zoho|yahoo)\s+/;
 const GENERIC_WORDS = new Set(['mail', 'email', 'calendar', 'drive', 'docs', 'cloud', 'app', 'online', 'web', 'the', 'and', 'for']);
 const words = (s) => String(s).toLowerCase().replace(/&amp;/g, '&').replace(VENDOR, '').replace(/\.(com|net|org|io|app)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
 
 /* Classes too broad for a topic: "digital distribution platform" is every
-   app store, e-book shop and journal site, not games. */
-const TOPIC_DROP = { games: ['digital distribution platform'] };
-const TOPIC_WORDS = {
-  food: /\b(food|meal|recipe|restaurant|grocer)/i,
-  maps: /\b(map|mapping|navigation|ride|taxi|bicycle|vehicle|transit)/i,
-  music: /\b(music|podcast|radio|audio)/i,
-  video: /\b(video|film|movie|television|over-the-top)/i,
-  games: /\b(game|gaming|chess)/i,
-  money: /\b(bank|payment|wallet|money)/i,
-  email: /\b(e-?mail|mailbox|webmail)/i,
-};
+   app store, e-book shop and journal site, not games; "online database" is
+   every reference site (the Internet Archive, film and lyrics databases), not
+   data tools; "podcast directory" two levels down reaches film databases. */
+const TOPIC_DROP = { games: ['digital distribution platform'], data: ['online database', 'spreadsheet'], music: ['podcast directory'] };
 export function appNames(root) {
   const src = readFileSync(join(root, 'src', 'app', '13c-app-catalog.js'), 'utf8');
   const m = src.match(/const AMV_APP_CATS = (\[[\s\S]*?\n\]);/);
