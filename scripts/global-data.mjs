@@ -262,7 +262,10 @@ async function main() {
       const titles = ['Category:' + cat];
       try { const sub = await sparql(`SELECT ?t WHERE { ${mw('Category:' + cat, 14)} }`, 2, 60000); for (const b of sub.slice(0, 20)) titles.push(b.t.value); } catch (e) { console.log('topic', topic, 'category', cat, 'subcategories failed:', e.message); }
       console.log('topic', topic.padEnd(10), ('category "' + cat + '"').padEnd(46), (titles.length - 1) + ' subcategories');
-      for (const t of titles) asks.push([`${mw(t, 0)} FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 }`, 'category ' + cat]);
+      /* A subcategory's members carry its name too ("category Workflow
+         applications > Computer-aided design software"), so the build can
+         refuse a subcategory that belongs to another topic. */
+      for (const t of titles) asks.push([`${mw(t, 0)} FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 }`, 'category ' + cat + (t === 'Category:' + cat ? '' : ' > ' + t.replace(/^Category:/, ''))]);
     }
     for (const [match, label] of asks) {
       const q = `SELECT ?i ?site ?n ?iLabel WHERE {

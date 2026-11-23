@@ -1,5 +1,12 @@
 # Topics to build (empty line list = all). Changing this file runs the global-data workflow.
-# run 1-7 - Nov 23 (see git log)
-# run 8 - Nov 23: support and automation with their own categories (remote support, surveys, ETL, job scheduling)
+# run 1-8 - Nov 23 (see git log)
+# run 9 - Nov 23: the category topics again, each entry naming the subcategory it came from
+email
+calendar
+food
 support
 auto
+monitor
+legal
+hr
+testing

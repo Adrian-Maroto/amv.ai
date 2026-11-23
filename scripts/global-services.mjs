@@ -46,6 +46,7 @@ const words = (s) => String(s).toLowerCase().replace(/&amp;/g, '&').replace(VEND
    every reference site (the Internet Archive, film and lyrics databases), not
    data tools; "podcast directory" two levels down reaches film databases. */
 const PER_TOPIC = 300;
+const SUBCAT_ELSEWHERE = /computer-aided|\bCAD\b|CAM software|3D|graphics|modeling|engineering|simulation|video game|statistical|statistics|scientific|bioinformatics|computer algebra|typesetting|diagram|network(ing)? (analy|protocol)|packet|programming language|compilers?|build automation|operating system|music|audio|photo|image/i;
 const TOPIC_DROP = { games: ['digital distribution platform'], data: ['online database', 'spreadsheet'], music: ['podcast directory'],
   /* Fields too broad to mean the topic (run 6, read by eye): "marketing" and
      "market research" are polling firms and TV stations, "talent management"
@@ -118,7 +119,10 @@ export function buildGlobalServices(root) {
   /* A field the topic names (FIELDS: an industry, use or genre) is its own too,
      taken after the classes. */
   const field = (t, c) => (/^field /.test(String(c || '')) && (FIELDS[t] || []).includes(String(c).slice(6)))
-    || (/^category /.test(String(c || '')) && (WP_CATEGORIES[t] || []).includes(String(c).slice(9)));
+    || (/^category /.test(String(c || '')) && (WP_CATEGORIES[t] || []).includes(String(c).slice(9).split(' > ')[0])
+      /* and a subcategory whose own name says another kind of thing is not
+         the topic's: CAD, graphics, video games, statistics, networking... */
+      && !SUBCAT_ELSEWHERE.test(String(c).split(' > ')[1] || ''));
   const kindOk = (t, c) => named(t, c) || field(t, c) || (SERVICE_WORD.test(String(c || '')) && !NOT_A_KIND.test(String(c || '')));
   const seenQ = new Set(), seenHost = new Set(), topics = {};
   const outs = Object.fromEntries(order.map(t => [t, []]));
