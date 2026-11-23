@@ -69,7 +69,13 @@ export function namesIn(v) {
    Walmart is walmart.co.cr, Canada's Costco costco.ca), amazon.com is the US
    store, and jumbo.com is the Dutch supermarket, not Cencosud's Jumbo in
    Argentina, Chile or the Dominican Republic. */
-const ONE_COUNTRY_SITE = { 'walmart.com': 'US', 'costco.com': 'US', 'amazon.com': 'US', 'jumbo.com': 'NL' };
+const ONE_COUNTRY_SITE = { 'walmart.com': 'US', 'costco.com': 'US', 'amazon.com': 'US', 'jumbo.com': 'NL',
+  /* The Herald of Glasgow, not Zimbabwe's Herald, which the ZW facts mean. */
+  'heraldscotland.com': 'GB' };
+/* A bank, card or payment service is never a government site: "Hong Kong"
+   left over from a bank's name matched the territory's portal. */
+const MONEY_FACT = new Set(['banks', 'cards', 'pay']);
+const GOV_HOST = /(^|\.)gov(\.[a-z]{2})?$|(^|\.)gov\.|(^|\.)gob\.|(^|\.)gouv\./;
 /* Sites the second lookup matched by name that are a different thing - each
    read, each named: sas.com is the software company (not Armenia's SAS
    supermarkets), inaturalist.org runs the Seek nature app (not Seek the job
@@ -171,7 +177,16 @@ export function trustedMatch(cc, e, visited) {
   if (!nameFits(e.name, e.n, e.s, cc)) return false;
   if (e.here) return true;
   if (ONE_COUNTRY_SITE[e.s] && ONE_COUNTRY_SITE[e.s] !== cc) return false;
-  return !!plainName(e.name) && plainName(e.name) === plainName(e.n) && !!visited.worldwide(e.s) && !!visited(cc, e.s);
+  if (MONEY_FACT.has(e.f) && GOV_HOST.test(e.s)) return false;
+  const same = !!plainName(e.name) && plainName(e.name) === plainName(e.n);
+  if (same && !!visited.worldwide(e.s) && !!visited(cc, e.s)) return true;
+  /* Nov 23: or one people in the country actually visit - among the 10,000
+     sites most visited from there in the Chrome UX Report - under exactly the
+     name the job uses. That is Bayut and Naukrigulf in the Emirates,
+     DigiLocker in India, Hong Kong's departments (Wikidata files them under
+     China), Aramex, DHL and DPD where they deliver. Read by eye, 71 of them,
+     before this rule was written; the wrong ones are refused above by name. */
+  return same && !!(visited.top && visited.top(cc, e.s, 3));
 }
 export function visitsFrom(root = ROOT) {
   let R = null; try { R = JSON.parse(readFileSync(join(root, 'data', 'global-reach.json'), 'utf8')); } catch (e) {}
@@ -181,6 +196,9 @@ export function visitsFrom(root = ROOT) {
     for (const e of JSON.parse(readFileSync(join(root, 'data', 'global', f), 'utf8')).items || []) world.add(e.s); } catch (e) {}
   const fn = (cc, host) => { const c = R && R.c && R.c[cc]; const i = at.get(host); return !!(c && i !== undefined && c[i] && c[i] !== '0'); };
   fn.worldwide = (host) => world.has(host);
+  /* Visited from `cc` within the first `max` buckets (1: top 1,000, 2: 5,000,
+     3: 10,000), as the Chrome UX Report measured that host. */
+  fn.top = (cc, host, max) => { const c = R && R.c && R.c[cc]; const i = at.get(host); const k = c && i !== undefined ? +c[i] : 0; return k >= 1 && k <= max; };
   return fn;
 }
 

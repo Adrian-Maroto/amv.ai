@@ -68,6 +68,6 @@ section('How much of what Crew names a person can find in Integrations');
   const c = crewCoverage(ROOT, built);
   console.log(`  ${c.found} of ${c.named} services Crew names are findable in their country’s Integrations (${(100 * c.found / c.named).toFixed(1)}%)`);
   /* A floor, raised as lookups land - never lowered to make a run pass. */
-  ok(c.found / c.named >= 0.72, 'at least the measured share is findable', (100 * c.found / c.named).toFixed(1) + '%');
+  ok(c.found / c.named >= 0.73, 'at least the measured share is findable', (100 * c.found / c.named).toFixed(1) + '%');
 }
 report(); done();
