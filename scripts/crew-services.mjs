@@ -220,13 +220,40 @@ async function candidates(name, cc, lang) {
    domain): in the country first, then the best covered. A search's first
    answer is not taken just for being first - that is how KRA became Krakow.
    null when none fits: the name is reported missing, not guessed. */
+/* A Wikipedia search for the name AND the country - "KRA Kenya" finds the
+   Kenya Revenue Authority, "Sreality Czech Republic" finds Sreality - in
+   English and the country's language. Used only when the name search found
+   nothing that passes; its answers pass the same checks. */
+async function wikiCandidates(name, cc, lang) {
+  let place = cc; try { place = new Intl.DisplayNames([lang], { type: 'region' }).of(cc) || cc; } catch (e) {}
+  const q = `SELECT ?i ?site ?n ?iLabel ?inCountry WHERE {
+    SERVICE wikibase:mwapi { bd:serviceParam wikibase:api "Generator"; wikibase:endpoint "${esc(lang)}.wikipedia.org"; mwapi:generator "search"; mwapi:gsrsearch "${esc(name + ' ' + place)}"; mwapi:gsrlimit "6". ?i wikibase:apiOutputItem mwapi:item. }
+    ?i wdt:P856 ?site ; wikibase:sitelinks ?n .
+    FILTER NOT EXISTS { ?i wdt:P31 wd:Q5 } FILTER NOT EXISTS { ?i wdt:P576 ?gone }
+    OPTIONAL { ?c wdt:P297 "${esc(cc)}" . { ?i wdt:P17 ?c } UNION { ?i wdt:P159/wdt:P17 ?c } BIND(true AS ?inCountry) }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "${esc(lang)},en,mul". }
+  }`;
+  const rows = [];
+  for (const b of await sparql(q)) {
+    let host = ''; try { const u = new URL(b.site.value); if (!/^https?:$/.test(u.protocol)) continue; host = u.hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(host)) continue;
+    rows.push({ q: qid(b.i.value), n: (b.iLabel && b.iLabel.value) || name, s: host, w: +b.n.value, here: !!b.inCountry });
+  }
+  return rows;
+}
 async function resolve(name, cc) {
   const lang = localLang(cc);
+  const pick = (rows) => { const fit = rows.filter(r => !foreignSite(cc, r.s) && !NOT_THE_SERVICE.has(r.s) && nameFits(name, r.n, r.s, cc));
+    fit.sort((a, b) => (b.here - a.here) || (b.w - a.w)); return fit[0] || null; };
   const rows = await candidates(name, cc, 'en');
   if (lang !== 'en') { await sleep(250); rows.push(...await candidates(name, cc, lang)); }
-  const fit = rows.filter(r => !foreignSite(cc, r.s) && nameFits(name, r.n, r.s, cc));
-  fit.sort((a, b) => (b.here - a.here) || (b.w - a.w));
-  return fit[0] || null;
+  const first = pick(rows); if (first) return first;
+  await sleep(250);
+  const wiki = await wikiCandidates(name, cc, 'en');
+  if (lang !== 'en') { await sleep(250); try { wiki.push(...await wikiCandidates(name, cc, lang)); } catch (e) {} }
+  /* Only what is in the country: a full-text search finds articles that
+     merely mention the name, so an outside answer is not taken from it. */
+  return pick(wiki.filter(r => r.here));
 }
 
 /* `--again`: keep every match already believed and look up only the rest. */

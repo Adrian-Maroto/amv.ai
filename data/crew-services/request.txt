@@ -1,3 +1,4 @@
 # Countries to resolve (empty = all). Changing this file runs the crew-services workflow.
 # --again keeps every believed match and looks up only the rest, best fitting candidate first.
-# Run 2 done Nov 23 (2,091 of 2,902 findable).
+# Run 3 (Nov 23): adds a Wikipedia search for name + country when the name search finds nothing that passes.
+--again
