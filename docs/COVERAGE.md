@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-22 from 422 suites.
+2026-11-23 from 422 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -145,7 +145,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `77a-agent-signins.js` | 25/25 | 88.2% |
 | `78-teach-replay.js` | 5/5 | 87.0% |
 | `79-meaning.js` | 3/3 | 98.1% |
-| `80-switches.js` | 10/10 | 92.7% |
+| `80-switches.js` | 10/10 | 90.9% |
 | `81-web-push.js` | 15/15 | 94.7% |
 | `82-tasks.js` | 4/4 | 94.4% |
 | `83-support.js` | 4/4 | 84.6% |
