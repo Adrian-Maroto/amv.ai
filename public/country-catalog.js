@@ -1184,7 +1184,10 @@ function ccUseService(q){
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }
-try{ window.ccTasksPopular = ccTasksPopular; window.ccGlobalLoad = ccGlobalLoad; window.ccGlobalHereLoad = ccGlobalHereLoad; window.ccFillIntegrationsNow = ccFillIntegrationsNow; }catch(e){}
+try{ window.ccTasksPopular = ccTasksPopular; window.ccGlobalLoad = ccGlobalLoad; window.ccGlobalHereLoad = ccGlobalHereLoad; window.ccFillIntegrationsNow = ccFillIntegrationsNow;
+  /* A country's file when it is already here, else null - for screens that
+     can draw it in the frame they open. */
+  window.ccLoadedNow = (cc) => _ccDone[String(cc || '').toUpperCase()] || null; }catch(e){}
 try{ window.ccSearchServices = ccSearchServices; window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════════

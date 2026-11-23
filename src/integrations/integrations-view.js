@@ -447,7 +447,11 @@ function renderTasksView(){
      country's tasks again in the new one. */
   let lang = ''; try{ lang = typeof _lang === 'function' ? _lang() : ''; }catch(e){}
   const cc = cc0, key = cc0 + '|' + lang;
-  if(key !== _tkCc){ _tkList = []; _tkPop = []; _tkCc = key; _tkAnswered = ''; }
+  if(key !== _tkCc){ _tkList = []; _tkPop = []; _tkCc = key; _tkAnswered = '';
+    /* The country's file already here (read while the app was idle): the
+       list is built now and drawn with the screen, not after a Loading line. */
+    try{ const d = cc && window.ccLoadedNow ? window.ccLoadedNow(cc) : null;
+      if(d){ const list = window.ccTasks(d); list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; }); _tkList = list; _tkAnswered = key; _tkPop = window.ccTasksPopular ? window.ccTasksPopular(d, list) : []; } }catch(e){} }
   const head = row ? _cwSayPlace('For {country}', row[1], _cwThe(row[1])) : T('Tasks');
   vc.innerHTML = `<div class="sv fi"><div class="cj tk2">
     <div class="tk2-top">

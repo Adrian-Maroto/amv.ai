@@ -31,5 +31,16 @@ ok(r.legal.length === 1 && r.legal[0] !== 'none', 'Legal is drawn once, with its
 ok(r.email.length === 1 && r.email[0] !== 'none', 'and so is Email', r.email);
 ok(+r.legal[0].split('/')[1] > 150, 'and its count already holds the worldwide services', r.legal[0]);
 
+section('Tasks too: its list in the frame it opens, no Loading line first');
+{
+  await p.evaluate(() => setTab('chat'));
+  const seen = await p.evaluate(async () => {
+    const out = new Set(); setTab('tasks');
+    for (let i = 0; i < 30; i++) { out.add(document.querySelectorAll('#tk2-body .tk-row').length + ':' + !!document.querySelector('#tk2-body .tk2-wait')); await new Promise(r => requestAnimationFrame(r)); }
+    return [...out];
+  });
+  ok(seen.length === 1 && /^[1-9]\d*:false$/.test(seen[0]), 'one frame, already the list', seen);
+}
+
 await app.close();
 report(); done();
