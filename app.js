@@ -25796,19 +25796,21 @@ function renderDesignView(){
     ${_buildBarHTML('design', false, !((_STUDIO.artifacts||[]).length))}
 
     <section class="dsn-hero">
-      <div class="dsn-input-wrap">
-        <textarea id="dsn-prompt" rows="1" placeholder="A site for my small business - what we offer, opening hours, how to find us&hellip;"></textarea>
-        <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </button>
+      ${/* ONE COMPOSER, LIKE BUILD AN APP'S (owner, Nov 23: "blocky").
+            The engine picker, Design DNA and the send button live in the box
+            you type into; the DNA's colours are its swatch, not a bar and two
+            more lines of explanation under it. */ ''}
+      <div class="dsn-input-wrap dsn-compose">
+        <textarea id="dsn-prompt" rows="3" placeholder="A site for my small business - what we offer, opening hours, how to find us&hellip;"></textarea>
+        <div class="dsn-compose-row">
+          <button class="dna-btn" type="button" data-dact="openDNA" title="${escH(T('Your reusable style guide - set it once and everything AMV designs follows it. Optional.'))}"><span class="dna-sw" aria-hidden="true">${_DNA.colors.slice(0,4).map(c2=>`<i style="background:${escH(c2.hex)}"></i>`).join('')}</span>Design DNA</button>
+          <span class="dsn-opts" id="dsn-opts"></span>
+          <button class="dsn-go" type="button" data-dact="designGo" aria-label="Generate design">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="dsn-hint">Press generate, or pick a starting point below · every design stays editable, so keep chatting and AMV reshapes it</div>
-      <div style="margin-top:22px;display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap">
-        <button class="dna-btn" data-dact="openDNA"><span class="dna-dot"></span>Design DNA</button>
-        <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
-      </div>
-      <p class="dsn-dna-explain">Your reusable style guide - set it once and everything AMV designs follows it. Optional.</p>
-      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+      <div class="dsn-hint">${escH(T('Every design stays editable - keep chatting and AMV reshapes it.'))}</div>
     </section>
 
     <section class="dsn-starts">
@@ -25839,6 +25841,9 @@ function renderDesignView(){
   </div></div>`;
   _wireBuildModes(vc);
   _wireBuildRecents(vc);
+  /* The engine picker is a decision about this message, so on the start screen
+     it sits in the composer; the bar keeps it on the canvas. */
+  try{ const sel=$('studio-model'), slot=$('dsn-opts'); if(sel && slot) slot.appendChild(sel); }catch(e){}
   /* The two controls Studio never had. Both do exactly what their Dev and Lab
      twins do, against the section this surface actually sends. */
   on($('studio-model'),'change',function(){
@@ -37656,40 +37661,31 @@ function renderLabView(){
           was no way out of a session you had just started. */ ''}
     ${_buildBarHTML('lab', true, labBlank)}
 
-    <!-- ENTRY STATE: paste on the left, upload on the right -->
+    <!-- ENTRY STATE: one composer, like Build an app's (owner, Nov 23: "blocky").
+         The code goes in the box, files come in through + or by dropping them
+         anywhere on the page, and the two actions people came for sit in the
+         box's own row. The six look-overs follow as quiet chips. -->
     <div class="lab-entry" id="lab-entry">
-      <div class="lab-entry-grid">
-        <div class="lab-entry-card">
-          <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Paste your code</div>
-          <textarea id="lab-paste" placeholder="Paste here\u2026"></textarea>
-        </div>
-        <div class="lab-entry-card">
-          <div class="lab-entry-h"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Or upload files</div>
-          <div class="lab-drop" id="lab-drop">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <b>Drop files here</b>
-            <span>or click to browse \u00b7 .js .py .ts .html and more</span>
-            <span class="lab-drop-size">Any size \u00b7 10,000+ lines is fine</span>
-          </div>
-        </div>
-      </div>
-      <!-- Two actions people came for, then six analyses. AMV-D033. -->
-      <div class="lab-entry-do">
-        <span class="lab-entry-lbl">What should AMV do with it?</span>
-        <div class="lab-entry-acts" id="lab-entry-acts">
-          <div class="lab-go-row lab-go-primary">
+      <div class="lab-entry-grid lab-compose">
+        <textarea id="lab-paste" spellcheck="false" placeholder="${escH(T('Paste your code here, or drop files anywhere on this page…'))}"></textarea>
+        <div class="lab-compose-row">
+          <button type="button" class="lab-drop dvi-plus" id="lab-drop" aria-label="${escH(T('Upload files'))}" title="${escH(T('Upload files'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <span class="lab-compose-opts" id="lab-entry-opts"></span>
+          <div class="lab-entry-acts" id="lab-entry-acts">
             <button class="lab-go lab-go-p" data-go="run"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>Run it</button>
             <button class="lab-go lab-go-a" data-go="debug"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>Find &amp; fix the bugs</button>
           </div>
-          <span class="lab-go-sub">Or have it look the code over</span>
-          <div class="lab-go-row">
-            <button class="lab-go" data-go="bugs">Find bugs</button>
-            <button class="lab-go" data-go="security">Security scan</button>
-            <button class="lab-go" data-go="smells">Code smells</button>
-            <button class="lab-go" data-go="refactor">Refactor</button>
-            <button class="lab-go" data-go="tests">Write tests</button>
-            <button class="lab-go" data-go="stacktrace">Explain an error</button>
-          </div>
+        </div>
+      </div>
+      <div class="lab-entry-do">
+        <span class="lab-go-sub">Or have it look the code over</span>
+        <div class="lab-go-row">
+          <button class="lab-go" data-go="bugs">Find bugs</button>
+          <button class="lab-go" data-go="security">Security scan</button>
+          <button class="lab-go" data-go="smells">Code smells</button>
+          <button class="lab-go" data-go="refactor">Refactor</button>
+          <button class="lab-go" data-go="tests">Write tests</button>
+          <button class="lab-go" data-go="stacktrace">Explain an error</button>
         </div>
       </div>
       <input type="file" id="lab-files" multiple style="display:none">
@@ -37753,7 +37749,25 @@ function renderLabView(){
 
      The textarea is passed in because it is fresher than `_LAB.code` while
      somebody is typing. */
-  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', _labIsHome(codeEl.value)); };
+  /* On the start screen the language and engine pickers sit in the composer,
+     beside the code they are about; once there is work they go back to the
+     toolbar over the editor. Moved, not copied, so there is one of each and
+     every handler already bound to them still holds. */
+  const placeOpts=()=>{
+    try{
+      const home = !!(labShell && labShell.classList.contains('lab-blank'));
+      const slot = $('lab-entry-opts'), barL = vc.querySelector('.lab-bar-l');
+      const lang = $('lab-lang'), model = $('lab-model');
+      if(!slot || !barL || !lang || !model) return;
+      if(home){ if(lang.parentNode !== slot){ slot.appendChild(lang); slot.appendChild(model); } }
+      else if(lang.parentNode !== barL){
+        const badge = barL.querySelector('.dev-badge');
+        if(badge){ badge.after(lang); lang.after(model); } else { barL.prepend(model); barL.prepend(lang); }
+      }
+    }catch(e){}
+  };
+  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', _labIsHome(codeEl.value)); placeOpts(); };
+  placeOpts();
 
   // Load code in and leave the entry state.
   const labLoad=(code, name)=>{
@@ -37878,7 +37892,9 @@ function renderLabView(){
   if(drop){
     on(drop,'dragover',e=>{ e.preventDefault(); drop.classList.add('on'); });
     on(drop,'dragleave',()=>drop.classList.remove('on'));
-    on(drop,'drop',async e=>{ e.preventDefault(); drop.classList.remove('on'); await labIngest(e.dataTransfer.files); });
+    /* stopPropagation: the page's own drop handler below would read the same
+       files a second time. */
+    on(drop,'drop',async e=>{ e.preventDefault(); e.stopPropagation(); drop.classList.remove('on'); await labIngest(e.dataTransfer.files); });
   }
   if(labShell){
     on(labShell,'dragover',e=>{ e.preventDefault(); labShell.classList.add('lab-dropping'); });
@@ -37889,12 +37905,14 @@ function renderLabView(){
   /* ONE-CLICK: the entry buttons take whatever is loaded (or pasted) and just
      do it.
 
-     This selects DESCENDANTS of #lab-entry-acts, which is why AMV-D033 split
+     Since Nov 23 the two main actions sit in the composer's row and the six
+     look-overs under it, so this selects every [data-go] in #lab-entry.
+     Before that it selected DESCENDANTS of #lab-entry-acts, which is why AMV-D033 split
      that row into two groups INSIDE the existing container rather than moving
      the id onto one of them. Had the id moved, all eight buttons would have
      stopped responding and nothing would have said so - the markup would look
      right and every click would do nothing. */
-  vc.querySelectorAll('#lab-entry-acts [data-go]').forEach(btn=>on(btn,'click',async()=>{
+  vc.querySelectorAll('#lab-entry [data-go]').forEach(btn=>on(btn,'click',async()=>{
     // pull in anything sitting in the paste box first
     if(pasteBox && pasteBox.value.trim()){ labLoad(pasteBox.value); pasteBox.value=''; }
     const code=String(codeEl.value||'').trim();

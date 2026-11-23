@@ -46,12 +46,16 @@ section('Lab entry scrolls as one page on a phone');
     return {
       innerScroll: entry.scrollHeight - entry.clientHeight,
       moved: Math.round(shell.scrollTop),
+      /* Since Nov 23 the entry is one composer and fits a 390x844 phone with
+         room to spare, so there may be nothing to scroll; the claim is the
+         actions are reachable, and fitting is the strongest way to be. */
+      fits: shell.scrollHeight <= shell.clientHeight + 1,
       actsBottom: Math.round(r.bottom),
       viewport: window.innerHeight,
     };
   });
   ok(m.innerScroll <= 1, 'the entry is not a scroller inside a scroller', JSON.stringify(m));
-  ok(m.moved > 0, 'a wheel over the page actually scrolls the page', JSON.stringify(m));
+  ok(m.moved > 0 || m.fits, 'a wheel over the page actually scrolls the page (or there is nothing to scroll)', JSON.stringify(m));
   ok(m.actsBottom <= m.viewport, 'and scrolling it reaches the actions', JSON.stringify(m));
 }
 

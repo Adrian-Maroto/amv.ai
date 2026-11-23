@@ -1682,7 +1682,12 @@ step('Page weight is under control', () => {
      plans goes to Plans and back, and the feedback and Read aloud buttons say
      their state. The model-facing wording added with them was shortened
      first (about 100 bytes back); what is left is the repairs themselves. */
-  const CEILING = 592 * 1024;   // gzipped, which is what actually crosses the network
+  /* 592 -> 594, 2026-11-23, UP on purpose: the owner's redesigns of the
+     upgrade page (one column, checkout as a page - LAYER A396) and of Design
+     it and Work on code (one composer each - A397), with their translations'
+     keys. The rules the old screens used were taken out first (~1.6KB raw
+     back); what is left is the new layout itself. */
+  const CEILING = 594 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

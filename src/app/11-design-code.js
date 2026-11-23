@@ -650,19 +650,21 @@ function renderDesignView(){
     ${_buildBarHTML('design', false, !((_STUDIO.artifacts||[]).length))}
 
     <section class="dsn-hero">
-      <div class="dsn-input-wrap">
-        <textarea id="dsn-prompt" rows="1" placeholder="A site for my small business - what we offer, opening hours, how to find us&hellip;"></textarea>
-        <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </button>
+      ${/* ONE COMPOSER, LIKE BUILD AN APP'S (owner, Nov 23: "blocky").
+            The engine picker, Design DNA and the send button live in the box
+            you type into; the DNA's colours are its swatch, not a bar and two
+            more lines of explanation under it. */ ''}
+      <div class="dsn-input-wrap dsn-compose">
+        <textarea id="dsn-prompt" rows="3" placeholder="A site for my small business - what we offer, opening hours, how to find us&hellip;"></textarea>
+        <div class="dsn-compose-row">
+          <button class="dna-btn" type="button" data-dact="openDNA" title="${escH(T('Your reusable style guide - set it once and everything AMV designs follows it. Optional.'))}"><span class="dna-sw" aria-hidden="true">${_DNA.colors.slice(0,4).map(c2=>`<i style="background:${escH(c2.hex)}"></i>`).join('')}</span>Design DNA</button>
+          <span class="dsn-opts" id="dsn-opts"></span>
+          <button class="dsn-go" type="button" data-dact="designGo" aria-label="Generate design">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="dsn-hint">Press generate, or pick a starting point below · every design stays editable, so keep chatting and AMV reshapes it</div>
-      <div style="margin-top:22px;display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap">
-        <button class="dna-btn" data-dact="openDNA"><span class="dna-dot"></span>Design DNA</button>
-        <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
-      </div>
-      <p class="dsn-dna-explain">Your reusable style guide - set it once and everything AMV designs follows it. Optional.</p>
-      <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
+      <div class="dsn-hint">${escH(T('Every design stays editable - keep chatting and AMV reshapes it.'))}</div>
     </section>
 
     <section class="dsn-starts">
@@ -693,6 +695,9 @@ function renderDesignView(){
   </div></div>`;
   _wireBuildModes(vc);
   _wireBuildRecents(vc);
+  /* The engine picker is a decision about this message, so on the start screen
+     it sits in the composer; the bar keeps it on the canvas. */
+  try{ const sel=$('studio-model'), slot=$('dsn-opts'); if(sel && slot) slot.appendChild(sel); }catch(e){}
   /* The two controls Studio never had. Both do exactly what their Dev and Lab
      twins do, against the section this surface actually sends. */
   on($('studio-model'),'change',function(){

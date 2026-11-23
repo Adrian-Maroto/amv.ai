@@ -1235,7 +1235,7 @@ input,textarea,select{font-family:var(--fn);}
 .dna-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:var(--r-lg);border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:var(--fn);font-size:var(--t-base);font-weight:550;cursor:pointer;transition:background-color .18s,border-color .18s,color .18s,box-shadow .18s,transform .18s,opacity .18s,filter .18s}
 .dna-btn:hover{border-color:var(--accent-txt);background:var(--s2)}
 .dna-btn .dna-dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
-.dna-active-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:var(--r-pill);background:var(--accent-soft);border:1px solid transparent;color:var(--accent-txt);font-size:var(--t-sm);font-weight:600}
+
 .dna-ov{position:fixed;inset:0;z-index:9500;background:rgba(8,8,10,.78);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow-y:auto}
 .dna-modal{width:min(1080px,98vw);background:var(--s1);border:1px solid var(--bdl);border-radius:var(--r-3xl);overflow:hidden;box-shadow:0 40px 100px -20px rgba(0,0,0,.7);display:flex;flex-direction:column;max-height:92vh}
 .dna-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 24px;border-bottom:1px solid var(--bd);flex-shrink:0}
@@ -1454,7 +1454,7 @@ input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textar
 }
 .dna-pill.on{background:var(--accent)!important;color:var(--on-accent)!important;border-color:var(--accent-txt)!important}
 .cw-badge{background:var(--accent)!important;border-radius:var(--r-pill)!important}
-.dna-active-chip{background:var(--surface)!important;color:var(--mu)!important;border:1px solid var(--hair)!important;border-radius:var(--rad-sm)!important}
+
 .dna-btn{background:none!important;border:1px solid var(--hair-strong)!important;border-radius:var(--rad-sm)!important}
 .dna-btn:hover{background:var(--surface)!important;border-color:var(--accent-txt)!important}
 
@@ -1789,7 +1789,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .pay-lock{font-size:var(--t-sm)}
 
 /* ---- DNA intro / explainer ---- */
-.dsn-dna-explain{font-size:var(--t-sm);color:var(--mu);line-height:1.6;max-width:520px;margin:12px 0 0;text-align:left}
+
 .dna-intro{flex:1;overflow-y:auto;display:flex;align-items:center;justify-content:center;padding:30px}
 .dna-intro-inner{max-width:480px;text-align:center}
 .dna-intro-badge{width:54px;height:54px;border-radius:var(--r-2xl);background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:var(--t-2xl);margin:0 auto 16px}
@@ -4295,15 +4295,9 @@ body.light .t-num{color:#b5451b}
 .lab-entry p{font-size:var(--t-base);color:var(--mu);margin:0 0 22px;line-height:1.6}
 .lab-entry-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;max-width:800px}
 @media(max-width:760px){.lab-entry-grid{grid-template-columns:1fr}}
-.lab-entry-card{
-  display:flex;flex-direction:column;text-align:left;
-  background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-xl);padding:14px;
-}
-.lab-entry-h{
-  display:flex;align-items:center;gap:7px;
-  font-size:var(--t-sm);font-weight:600;color:var(--mu);margin-bottom:10px;
-}
-.lab-entry-h svg{color:var(--accent-txt)}
+
+
+
 #lab-paste{
   flex:1;min-height:150px;resize:vertical;
   background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-md);
@@ -4325,7 +4319,7 @@ body.light .t-num{color:#b5451b}
 
 /* The "then just pick one" action row */
 .lab-entry-do{margin-top:22px;width:100%;max-width:800px}
-.lab-entry-lbl{display:block;font-size:var(--t-sm);color:var(--dim);margin-bottom:10px}
+
 .lab-entry-acts{display:flex;flex-wrap:wrap;justify-content:center;gap:7px}
 .lab-go{
   display:inline-flex;align-items:center;gap:6px;
@@ -5971,7 +5965,7 @@ body.light .aa-date{color-scheme:light}
    ============================================================ */
 .dsn-hero{text-align:center!important;align-items:center!important}
 
-.dsn-dna-explain{text-align:center}
+
 .dsn-input-wrap{margin-left:auto!important;margin-right:auto!important;max-width:720px!important;align-items:flex-end}
 .dsn-input-wrap textarea{font-size:var(--t-lg)!important;min-height:66px!important;padding:15px 0!important;line-height:1.5}
 .dsn-hint{text-align:center}
@@ -8424,7 +8418,7 @@ body.light{ --on-accent:#ffffff; }
 
 .lab-entry-acts{ display:flex;flex-direction:column;align-items:center;gap:var(--sp-2); }
 .lab-go-row{ display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2); }
-.lab-go-primary{ margin-bottom:var(--sp-1); }
+
 .lab-go-sub{
   font-size:var(--t-sm);color:var(--dim);
   letter-spacing:.04em;text-transform:uppercase;margin-top:var(--sp-2);
@@ -11328,13 +11322,8 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    Quieter than the line above it, because it answers a worry rather than
    telling you what to do, and it inherits the hover colour with everything
    else in the zone so the card still reads as one surface. */
-.lab-drop-size{
-  font-size:var(--t-xs);
-  color:var(--dim);
-  margin-top:2px;
-}
-.lab-drop:hover .lab-drop-size,
-.lab-drop.on .lab-drop-size{ color:inherit; opacity:.85; }
+
+
 
 /* ── LAYER A181 · one entry column, instead of three that agree on nothing ───
    A171, A173 and A175 each gave one entry screen a single measure and a single
@@ -11472,7 +11461,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .dsn-hero{ text-align:left!important; align-items:flex-start!important; padding:var(--sp-6) 0 var(--sp-2)!important; }
 .dsn-input-wrap{ margin-left:0!important; margin-right:auto!important; max-width:660px!important; }
 .dsn-hint{ text-align:left; }
-.dsn-dna-explain{ text-align:left; }
+
 
 /* THE BODY OF ALL THREE, ON THE SAME SPINE AS THE HEAD.
 
@@ -12685,7 +12674,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .dsn-wrap > *{ margin-top:var(--sp-5); }
 .dsn-hero > div[style*="margin-top:22px"]{ margin-top:var(--sp-4)!important; }
 .dsn-hero > div[style*="margin-top:12px"]{ margin-top:var(--sp-2)!important; height:14px!important; }
-.dsn-dna-explain{ margin-top:var(--sp-2); margin-bottom:0; }
+
 /* The featured starting point stops spanning both columns. That span cost a
    whole extra row - three rows for four tiles - and it is the last thing
    standing between this entry and fitting. The emphasis it carried was never
@@ -13191,10 +13180,7 @@ p.bill-leave-s{
 .upg-back:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; border-radius:var(--r-sm); }
 
 .upg-head{ text-align:center; }
-.upg-eyebrow{
-  display:inline-block; font-size:var(--t-xs); font-weight:600;
-  letter-spacing:.08em; text-transform:uppercase; color:var(--mu);
-}
+
 .upg-t{
   margin:var(--sp-3) 0 0;
   font-family:var(--fdisplay);
@@ -13215,7 +13201,7 @@ p.bill-leave-s{
 }
 .upg-cur{ font-size:.5em; vertical-align:super; margin-right:2px; color:var(--mu); }
 .upg-per{ font-family:var(--fn); font-size:var(--t-md); font-weight:500; color:var(--mu); letter-spacing:0; }
-.upg-per-note{ margin:var(--sp-3) 0 0; font-size:var(--t-sm); color:var(--mu); }
+
 
 /* The list is the argument, so it is set at reading size rather than as fine
    print, and every line clears 4.5:1 - a benefit nobody can read is not one. */
@@ -17758,9 +17744,9 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
 
 /* Work on code: room under the bar, and its actions as easy to hit as the rest. */
 .lab-shell.lab-blank > .lab-entry{margin-top:var(--sp-4)!important}
-.lab-entry-lbl{font-size:var(--t-base)!important}
+
 .lab-entry-acts .lab-go{min-height:44px!important;padding:0 var(--sp-4)!important;font-size:var(--t-base)!important;border-radius:var(--r-pill)!important}
-.lab-entry-acts .lab-go-primary .lab-go{padding:0 var(--sp-5)!important}
+
 .lab-entry-acts .lab-go-row{gap:var(--sp-2)!important}
 /* The add button beside Settings is the same 44px as Settings and send. */
 .dev-shell .dev-input-v2 .dvi-plus{width:44px!important;height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important}
@@ -17792,8 +17778,11 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
    cards of the same shape, close together, and one full-width button. */
 :is(#vc,#set-modal) .vi-bill{max-width:720px!important}
 :is(#vc,#set-modal) .vi-bill .bill-h{font-size:calc(var(--t-xl) * var(--fs-s,1))!important;font-weight:600!important;margin:0 0 var(--sp-4)!important;letter-spacing:-.01em}
-:is(#vc,#set-modal) .vi-bill > .ss2{border:1px solid var(--bd)!important;border-radius:var(--r-xl)!important;background:var(--s1)!important;
-  padding:var(--sp-5)!important;margin:0 0 var(--sp-3)!important}
+/* One surface, sections divided by a hairline - not a stack of boxes, which
+   is what the owner asked for before (every-fault-that-was-reported 7). */
+:is(#vc,#set-modal) .vi-bill > .ss2{border:0!important;border-top:1px solid var(--bd)!important;border-radius:0!important;background:transparent!important;
+  padding:var(--sp-4) 0!important;margin:0!important}
+:is(#vc,#set-modal) .vi-bill > .ss2:first-of-type{border-top:0!important;padding-top:0!important}
 :is(#vc,#set-modal) .vi-bill > .ss2 > h3{font-size:var(--t-sm)!important;font-weight:600!important;text-transform:uppercase;letter-spacing:.06em;color:var(--mu)!important;margin:0 0 var(--sp-3)!important;padding:0!important;border:0!important}
 :is(#vc,#set-modal) .vi-bill .bill-sum-top{margin:0!important}
 :is(#vc,#set-modal) .vi-bill .bill-sum-sub{margin-top:var(--sp-2)!important}
@@ -17814,8 +17803,8 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
 :is(#vc,#set-modal) .vi-bill .bill-sec-line{margin:0!important;font-size:var(--t-xs)!important;color:var(--dim)!important;text-align:center}
 
 :is(#vc,#set-modal) .vi-bill .bill-use .bill-facts{border-top:0!important;padding-top:0!important}
-:is(#vc,#set-modal) .vi-bill .bill-facts > .bill-fact:first-child{padding-top:0!important}
-:is(#vc,#set-modal) .vi-bill .bill-sum{padding-bottom:var(--sp-5)!important}
+:is(#vc,#set-modal) .vi-bill .bill-facts > .bill-fact:nth-child(-n+2){padding-top:0!important}
+:is(#vc,#set-modal) .vi-bill .bill-sum{padding-bottom:var(--sp-4)!important}
 :is(#vc,#set-modal) .vi-bill .bill-sec-line{max-width:none!important;margin:0 auto!important}
 :is(#vc,#set-modal) .vi-bill .bill-srv{margin:0 0 var(--sp-3)}
 
@@ -17864,3 +17853,79 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
   .upg .upg-pick-n{font-size:var(--t-xs)!important}
   .upg .upg-feats{padding:var(--sp-4)}
 }
+
+/* ========== LAYER A397 (Nov 23): Design it and Work on code, one composer each ==========
+   Owner: "the designer and the work on code look horrible ... blocky". Both
+   now open like Build an app: one box to type or paste into, the choices that
+   belong to the message inside its bottom row, the send action at the end of
+   that row, and the starting points under it. Work on code had two boxed cards
+   side by side and a toolbar with a rule over them; Design had a dropdown on a
+   rule, a style guide button, a chip, a sentence and a colour bar. */
+
+/* --- Design it --- */
+.dsn-wrap > .dev-bar.build-bar-fresh:not(:has(.sec-usage-note:not(:empty))){display:none!important}
+.dsn-hero{width:100%}
+.dsn-hero .dsn-compose{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:var(--sp-3)!important;
+  padding:var(--sp-4)!important;background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:var(--r-2xl)!important;box-shadow:none!important}
+.dsn-hero .dsn-compose:focus-within{border-color:var(--bdl)!important}
+.dsn-hero .dsn-compose textarea{width:100%!important;min-height:88px!important;margin:0!important;padding:var(--sp-1) var(--sp-1)!important;border:0!important;background:transparent!important;
+  resize:none;font:400 var(--t-md)/1.55 var(--fn)!important;color:var(--tx);outline:none}
+.dsn-compose-row{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.dsn-compose-row .dna-btn{min-height:44px;padding:0 var(--sp-4)!important;border:1px solid var(--bd)!important;border-radius:var(--r-pill)!important;
+  background:transparent!important;color:var(--mu)!important;font-size:var(--t-base)!important;font-weight:500!important;gap:var(--sp-2)!important;flex:0 0 auto}
+.dsn-compose-row .dna-btn:hover{color:var(--tx)!important;background:var(--s2)!important}
+.dna-sw{display:inline-flex}
+.dna-sw i{width:12px;height:12px;border-radius:50%;border:2px solid var(--s1);margin-inline-start:-4px}
+.dna-sw i:first-child{margin-inline-start:0}
+.dsn-opts{display:flex;align-items:center;min-width:0;flex:0 1 auto}
+.dsn-opts .secmodel-sel{min-height:44px;max-width:220px;border-radius:var(--r-pill)!important}
+.dsn-compose-row .dsn-go{position:static!important;margin-inline-start:auto!important;flex:0 0 44px;width:44px!important;height:44px!important;border-radius:var(--r-lg)!important;transform:none!important}
+.dsn-hero .dsn-hint{margin:var(--sp-3) 0 0!important;text-align:center;font-size:var(--t-sm)!important;color:var(--mu)!important}
+.dsn-hero + .dsn-starts{margin-top:var(--sp-5)!important}
+
+/* --- Work on code --- */
+.lab-shell.lab-blank .lab-bar:not(:has(.sec-usage-note:not(:empty))){display:none!important}
+.lab-shell.lab-blank > .lab-entry{justify-content:flex-start!important;padding-top:0!important;margin-top:0!important}
+.lab-entry-grid.lab-compose{display:flex!important;flex-direction:column!important;gap:var(--sp-3)!important;max-width:none!important;
+  padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-2xl);text-align:start}
+.lab-compose:focus-within{border-color:var(--bdl)}
+.lab-compose #lab-paste{min-height:120px!important;max-height:40vh;padding:var(--sp-1)!important;border:0!important;background:transparent!important;box-shadow:none!important;resize:none;
+  font-size:var(--t-base)!important}
+.lab-compose #lab-paste:focus{box-shadow:none!important}
+.lab-compose-row{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;min-width:0}
+.lab-compose .lab-drop.dvi-plus{flex:0 0 44px;width:44px;height:44px;min-height:44px!important;padding:0;display:grid;place-items:center;
+  border:1px solid var(--bd)!important;border-style:solid!important;border-radius:var(--r-pill)!important;background:transparent;color:var(--mu)}
+.lab-compose .lab-drop.dvi-plus:hover,.lab-compose .lab-drop.dvi-plus.on{color:var(--tx);background:var(--s2)}
+.lab-compose-opts{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+.lab-compose-opts select{min-height:44px;max-width:180px;border-radius:var(--r-pill)!important}
+.lab-compose .lab-entry-acts{display:flex!important;gap:var(--sp-2)!important;margin-inline-start:auto;flex-wrap:nowrap!important;justify-content:flex-end!important}
+.lab-compose .lab-entry-acts .lab-go{min-height:44px!important;padding:0 var(--sp-4)!important;border-radius:var(--r-pill)!important;font-size:var(--t-base)!important;box-shadow:none!important}
+.lab-shell.lab-blank .lab-entry-do{margin-top:var(--sp-5)!important;max-width:none!important;text-align:center}
+.lab-entry-do .lab-go-sub{display:block;margin:0 0 var(--sp-3);font-size:var(--t-sm)!important;font-weight:500!important;text-transform:none!important;letter-spacing:0!important;color:var(--mu)!important}
+.lab-entry-do .lab-go-row{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2)!important}
+.lab-entry-do .lab-go{min-height:44px!important;padding:0 var(--sp-4)!important;border:1px solid var(--bd)!important;border-radius:var(--r-pill)!important;
+  background:transparent!important;color:var(--mu)!important;font-size:var(--t-sm)!important;font-weight:500!important;box-shadow:none!important}
+.lab-entry-do .lab-go:hover{color:var(--tx)!important;background:var(--s2)!important}
+@media (max-width:560px){
+  .dsn-opts .secmodel-sel{max-width:150px}
+  .lab-compose .lab-entry-acts{margin-inline-start:0;width:100%}
+  .lab-compose .lab-entry-acts .lab-go{flex:1 1 0;justify-content:center}
+  .lab-compose-opts{flex:1 1 0}
+  .lab-compose-opts select{flex:1 1 0;max-width:none;min-width:0}
+}
+/* A397, measured: the entry takes the same 660px measure as the other two,
+   the two actions stay side by side, and on a phone nothing in the row runs
+   under the send button. */
+.lab-shell.lab-blank > .lab-entry > .lab-compose,.lab-shell.lab-blank > .lab-entry > .lab-entry-do{width:100%;max-width:660px!important;margin-inline:auto}
+.lab-compose .lab-entry-acts{flex-direction:row!important;align-items:center!important}
+.lab-compose .lab-entry-acts .lab-go{width:auto!important}
+.dsn-hero .dsn-hint{text-align:center!important;width:100%}
+.dsn-compose-row .dna-btn{padding:0 var(--sp-3)!important}
+.dsn-opts{flex:0 1 auto;min-width:0}
+.dsn-opts .secmodel-sel{min-width:0;width:100%}
+@media (max-width:560px){
+  .dsn-compose-row .dna-btn{font-size:var(--t-sm)!important}
+  .dsn-opts{flex:1 1 0}
+  .dsn-opts .secmodel-sel{max-width:none}
+}
+@media (max-width:560px){.lab-compose .lab-entry-acts .lab-go{white-space:nowrap;padding:0 var(--sp-3)!important;font-size:var(--t-sm)!important}}

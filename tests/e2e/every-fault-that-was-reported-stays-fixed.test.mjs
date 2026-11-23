@@ -143,10 +143,11 @@ section('2. Lab is one scroll, and its actions are reachable on a phone');
   await page.waitForTimeout(200);
   const reach = await page.evaluate(() => {
     const a = document.getElementById('lab-entry-acts').getBoundingClientRect();
+    const sh = document.getElementById('lab-shell');
     return { bottom: Math.round(a.bottom), h: window.innerHeight,
-             moved: Math.round(document.getElementById('lab-shell').scrollTop) };
+             moved: Math.round(sh.scrollTop), fits: sh.scrollHeight <= sh.clientHeight + 1 };
   });
-  ok(reach.moved > 0, 'a wheel scrolls the page itself', JSON.stringify(reach));
+  ok(reach.moved > 0 || reach.fits, 'a wheel scrolls the page itself (or it all fits)', JSON.stringify(reach));
   ok(reach.bottom <= reach.h, 'and the actions come into view', JSON.stringify(reach));
   await page.setViewportSize({ width: 1280, height: 900 });
 }
