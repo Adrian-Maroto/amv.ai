@@ -91,6 +91,9 @@ section('Drawn twice, the same rows');
   await page.waitForFunction(() => document.querySelector('#int-catalog .cc-svc'), null, { timeout: 15000 });
   const r = await page.evaluate(async () => {
     const count = () => document.querySelectorAll('#int-catalog .cc-svc').length;
+    /* One whole fill first: the country's rows draw at once and the
+       worldwide ones join when their file arrives. */
+    await ccFillIntegrations();
     const a = count(); await ccFillIntegrations(); const b = count(); await ccFillIntegrations();
     return { a, b, c: count() };
   });
