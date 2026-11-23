@@ -38,7 +38,7 @@ section('The build leaves out what the catalogue refuses');
     { q: 'Q7', n: 'Mozilla Thunderbird', s: 'thunderbird.net', w: 65, c: 'email client' },
   ];
   writeFileSync(join(dir, 'data', 'global', 'email.json'), JSON.stringify({ topic: 'email', generated: '2026-11-23', items }));
-  writeFileSync(join(dir, 'data', 'global', 'files.json'), JSON.stringify({ topic: 'files', generated: '2026-11-23', items: [{ q: 'Q7', n: 'Mozilla Thunderbird', s: 'thunderbird.net', w: 65, c: 'x' }, { q: 'Q8', n: 'Seafile', s: 'seafile.com', w: 12, c: 'x' }] }));
+  writeFileSync(join(dir, 'data', 'global', 'files.json'), JSON.stringify({ topic: 'files', generated: '2026-11-23', items: [{ q: 'Q7', n: 'Mozilla Thunderbird', s: 'thunderbird.net', w: 65, c: 'document management system' }, { q: 'Q8', n: 'Seafile', s: 'seafile.com', w: 12, c: 'document management system' }] }));
   const d = JSON.parse(buildGlobalServices(dir).services);
   const names = (t) => (d.topics[t] || []).map(x => x[1]);
   ok(JSON.stringify(names('email')) === JSON.stringify(['Mozilla Thunderbird', 'Tuta']), 'email keeps what is new, most-covered first', names('email'));

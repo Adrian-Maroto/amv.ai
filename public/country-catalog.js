@@ -1031,9 +1031,11 @@ async function ccFillIntegrations(){
        topic of only the country's services opens and closes like the rest. */
     const open = btn ? btn.getAttribute('aria-expanded') === 'true'
       : (() => { try{ return _appOpen.has(topic); }catch(e){ return false; } })();
+    /* The rows of an earlier fill go first, then the topic's own cards are
+       counted - counted before, a second fill found its own nine and drew none. */
+    list.querySelectorAll('.cc-svc').forEach(n => n.remove());
     const shown = list.querySelectorAll('.int-card').length;
     const fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
-    list.querySelectorAll('.cc-svc').forEach(n => n.remove());
     list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
     const topicName = ((sec.querySelector('h3') || {}).textContent || '').trim();
     if(open){
