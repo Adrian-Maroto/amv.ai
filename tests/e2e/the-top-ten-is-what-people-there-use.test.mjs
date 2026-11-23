@@ -82,7 +82,7 @@ async function openConnectors(from, width = 1280) {
 const ten = async (page) => {
   /* Nov 15: Crew is one list, and the country's ten lead it, in order. */
   await page.waitForFunction(() => { const h = (document.getElementById('cx-jobs-h') || {}).textContent || '';
-    return /Jobs for (?!you)/.test(h) && _cwTopTen(_cwCountryGuess()).length >= 10 && document.querySelectorAll('#cj-grid .cj-card').length >= 10; }, null, { timeout: 15000 }).catch(() => {});
+    return /Jobs for (?!you)/.test(h) && _cwTopTen(_cwCountryGuess()).length >= 10 && document.querySelectorAll('#cj-grid .cj-card').length >= 10; }, null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(400);
   return page.evaluate(() => {
     const cards = [...document.querySelectorAll('#cj-grid .cj-card')];

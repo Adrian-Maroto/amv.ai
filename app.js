@@ -20731,11 +20731,15 @@ function _crewPrefetch(){
     /* The country's catalogue too, built once while nobody is waiting, so
        Crew and Tasks open on their real lists (Nov 22: they drew a small
        list first and changed a moment later). */
-    _ccReady().then(ok => { if(!ok) return; const cc = _cwCountryGuess(); if(cc){ try{ window.ccLoad(cc); }catch(e){} try{ window.ccCrewLoad(cc); }catch(e){} }
+    _ccReady().then(ok => { if(!ok) return; const cc = _cwCountryGuess(); const first = [];
+      if(cc){ try{ first.push(window.ccLoad(cc)); }catch(e){} try{ first.push(window.ccCrewLoad(cc)); }catch(e){} }
       /* And the services used worldwide with the visits from here, so
          Integrations draws its topics once instead of growing a moment
-         after it opens (Nov 23). */
-      try{ if(window.ccGlobalLoad) window.ccGlobalLoad(); if(cc && window.ccGlobalHereLoad) window.ccGlobalHereLoad(cc); }catch(e){} }).catch(() => {});
+         after it opens (Nov 23) - AFTER the country's own files, which
+         Crew and Tasks need first: the larger file must not compete with
+         them on a slow connection. */
+      Promise.all(first.map(p => Promise.resolve(p).catch(() => null))).then(() => {
+        try{ if(window.ccGlobalLoad) window.ccGlobalLoad(); if(cc && window.ccGlobalHereLoad) window.ccGlobalHereLoad(cc); }catch(e){} }); }).catch(() => {});
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
     /* Spending's pane too: it was fetched on the first open, so the screen
        opened on "Loading…" and filled in a moment later (the owner: "spending
