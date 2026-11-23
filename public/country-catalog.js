@@ -991,8 +991,17 @@ function _ccIcon(x){ return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind
 async function ccFillIntegrations(){
   const root = document.getElementById('int-catalog'); if(!root) return;
   const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
-  const [d, g, here] = await Promise.all([ccLoad(cc), ccGlobalLoad(), ccGlobalHereLoad(cc)]);
+  /* The country's own rows are drawn as soon as its file arrives; the
+     worldwide ones (a larger file) are added when theirs does, so a slow
+     phone sees the country's banks and services without waiting for it. */
+  const gp = Promise.all([ccGlobalLoad(), ccGlobalHereLoad(cc)]);
+  const d = await ccLoad(cc);
   if(!root.isConnected) return;
+  _ccFillWith(root, d, null, null);
+  const [g, here] = await gp;
+  if(g && root.isConnected) _ccFillWith(root, d, g, here);
+}
+function _ccFillWith(root, d, g, here){
   const list = d ? ccServices(d) : [];
   const by = {};
   list.forEach(x => { const t = CC_KIND_TOPIC[x.kind] || 'home'; (by[t] = by[t] || []).push(x); });
