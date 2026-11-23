@@ -281,7 +281,7 @@ jobs:
     # which would change fonts, the browser and the sandbox under every suite
     # overnight. Move this deliberately, with a full gate on the new image.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     # The same three guards as the Worker job, for the same reasons.
     if: >
       github.event.workflow_run.conclusion == 'success'
@@ -308,10 +308,13 @@ jobs:
           echo "This commit built: $want"
           echo "Asking $SITE what it is serving."
 
-          # Fifteen minutes. A static host queues, builds and swaps over on its
-          # own schedule, and being slower than CI is normal, not broken.
+          # Twenty-five minutes. A static host queues, builds and swaps over on
+          # its own schedule, and being slower than CI is normal, not broken.
+          # Fifteen was too short: on Nov 23 the host served 6873b9a about
+          # half an hour after the push, the check had given up at fifteen
+          # minutes, and the next run of the same commit passed.
           got=""
-          for i in $(seq 1 45); do
+          for i in $(seq 1 75); do
             body="$(curl -fsS --max-time 20 "$SITE/" || true)"
             got="$(printf '%s' "$body" \
                    | grep -o 'name="amv-build" content="[a-f0-9]*"' \
@@ -331,9 +334,9 @@ jobs:
             echo "- \`$SITE\` is serving: \`${got:-nothing readable}\`"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$got" ]; then
-            echo "::error::$SITE served no build id after 15 minutes. Either the host is not publishing, or it is not publishing the public/ folder."
+            echo "::error::$SITE served no build id after 25 minutes. Either the host is not publishing, or it is not publishing the public/ folder."
           else
-            echo "::error::$SITE is still serving build $got, not $want, after 15 minutes. The host has not picked up this commit."
+            echo "::error::$SITE is still serving build $got, not $want, after 25 minutes. The host has not picked up this commit."
           fi
           exit 1
 
