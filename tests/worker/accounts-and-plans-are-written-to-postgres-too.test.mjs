@@ -20,6 +20,7 @@ import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirS
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { freePort } from '../lib/free-port.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -33,11 +34,11 @@ if (!BIN) { report('accounts-and-plans-are-written-to-postgres-too'); process.ex
 const asRoot = process.getuid && process.getuid() === 0;
 const dir = mkdtempSync(join('/tmp', 'amv-pgdw-'));
 chmodSync(dir, 0o777);
-const PORT = 41000 + Math.floor(Math.random() * 8000);
+const PORT = await freePort();
 const sh = (cmd) => asRoot ? execSync(`su postgres -c ${JSON.stringify(cmd)}`, { stdio: 'pipe' }) : execSync(cmd, { stdio: 'pipe' });
 const user = asRoot ? 'postgres' : (process.env.USER || 'runner');
 sh(`${BIN}/initdb -D ${dir}/data -A trust -U ${user} >/dev/null`);
-const start = () => sh(`${BIN}/pg_ctl -D ${dir}/data -o "-k ${dir} -p ${PORT} -c listen_addresses=127.0.0.1" -l ${dir}/log -w start >/dev/null`);
+const start = () => { try { return sh(`${BIN}/pg_ctl -D ${dir}/data -o "-k ${dir} -p ${PORT} -c listen_addresses=127.0.0.1" -l ${dir}/log -w start >/dev/null`); } catch (e) { try { console.error(readFileSync(dir + '/log', 'utf8').slice(-2000)); } catch (x) {} throw e; } };
 const stop = () => sh(`${BIN}/pg_ctl -D ${dir}/data -m fast -w stop >/dev/null`);
 start();
 process.on('exit', () => { try { stop(); } catch (e) {} try { rmSync(dir, { recursive: true, force: true }); } catch (e) {} });

@@ -20,6 +20,7 @@ import { existsSync, mkdtempSync, chmodSync, readFileSync, writeFileSync, mkdirS
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { freePort } from '../lib/free-port.mjs';
 import { withAuthOps } from '../lib/auth-object.mjs';
 
 const NAME = 'what-was-there-before-is-copied-and-checked';
@@ -34,7 +35,7 @@ if (!BIN) { report(NAME); process.exitCode = 1; done(); process.exit(1); }
 const asRoot = process.getuid && process.getuid() === 0;
 const dir = mkdtempSync(join('/tmp', 'amv-pgbf-'));
 chmodSync(dir, 0o777);
-const PORT = 41000 + Math.floor(Math.random() * 8000);
+const PORT = await freePort();
 const sh = (cmd) => asRoot ? execSync(`su postgres -c ${JSON.stringify(cmd)}`, { stdio: 'pipe' }) : execSync(cmd, { stdio: 'pipe' });
 const user = asRoot ? 'postgres' : (process.env.USER || 'runner');
 sh(`${BIN}/initdb -D ${dir}/data -A trust -U ${user} >/dev/null`);
