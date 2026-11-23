@@ -55,6 +55,10 @@ section('The checks refuse the wrong answers the first lookup gave');
   ok(no('FR', { f: 'telco', name: 'Orange', n: 'Orange', s: 'ville-orange.fr', here: true }), 'Orange is not the town of Orange');
   ok(no('AR', { f: 'groc', name: 'Jumbo', n: 'Jumbo', s: 'jumbo.com', here: false }), 'Argentina’s Jumbo is not the Dutch jumbo.com');
   ok(no('KZ', { f: 'banks', name: 'Halyk', n: 'Halyk Bank of Kazakhstan', s: 'procreditbank.ge', here: true }), 'and a Kazakh bank is never on a Georgian domain');
+  ok(no('IT', { f: 'telco', name: 'Vodafone', n: 'Vodafone Automotive', s: 'automotive.vodafone.com', here: true }), 'Italy’s Vodafone is not Vodafone Automotive');
+  ok(no('GB', { f: 'health', name: 'NHS', n: 'NHS Wales', s: 'nhs.wales', here: true }), 'England’s NHS is not NHS Wales');
+  ok(no('AU', { f: 'jobs', name: 'Seek', n: 'Seek', s: 'inaturalist.org', here: false }), 'Seek the job site is not the Seek nature app');
+  ok(!no('ZA', { f: 'shop', name: 'Takealot', n: 'Takealot.com', s: 'takealot.com', here: true }), 'while Takealot.com is Takealot');
   ok(!no('AU', { f: 'banks', name: 'CommBank', n: 'Commonwealth Bank', s: 'commbank.com.au', here: true }), 'while CommBank on commbank.com.au is believed');
   ok(nameFits('Yonhap', 'Yonhap News Agency', 'yna.co.kr', 'KR'), 'and so is Yonhap as Yonhap News Agency');
 }
@@ -64,6 +68,6 @@ section('How much of what Crew names a person can find in Integrations');
   const c = crewCoverage(ROOT, built);
   console.log(`  ${c.found} of ${c.named} services Crew names are findable in their country’s Integrations (${(100 * c.found / c.named).toFixed(1)}%)`);
   /* A floor, raised as lookups land - never lowered to make a run pass. */
-  ok(c.found / c.named >= 0.69, 'at least the measured share is findable', (100 * c.found / c.named).toFixed(1) + '%');
+  ok(c.found / c.named >= 0.72, 'at least the measured share is findable', (100 * c.found / c.named).toFixed(1) + '%');
 }
 report(); done();

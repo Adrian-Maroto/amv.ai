@@ -70,13 +70,24 @@ export function namesIn(v) {
    store, and jumbo.com is the Dutch supermarket, not Cencosud's Jumbo in
    Argentina, Chile or the Dominican Republic. */
 const ONE_COUNTRY_SITE = { 'walmart.com': 'US', 'costco.com': 'US', 'amazon.com': 'US', 'jumbo.com': 'NL' };
+/* Sites the second lookup matched by name that are a different thing - each
+   read, each named: sas.com is the software company (not Armenia's SAS
+   supermarkets), inaturalist.org runs the Seek nature app (not Seek the job
+   site), bondinho.com.br is Sugarloaf Mountain's cable car (not Pão de Açúcar
+   the grocer), elster-elbe.de is a local site (not ELSTER, Germany's tax
+   portal), ams.com is a chip maker (not Austria's AMS job service),
+   maccabi.org is a sports union (not the Maccabi health fund),
+   ooredoosubscription.online is not Ooredoo's own site, erstebank.me is
+   Erste's bank in Montenegro (not Austria's), and an archive copy is not a
+   service. */
+const NOT_THE_SERVICE = new Set(['sas.com', 'web.archive.org', 'inaturalist.org', 'bondinho.com.br', 'elster-elbe.de', 'ams.com', 'maccabi.org', 'ooredoosubscription.online', 'erstebank.me']);
 const _GENERIC_TLD = new Set(['io', 'co', 'tv', 'me', 'eu', 'fm', 'gg', 'ly', 'to', 'cc']);
 export function foreignSite(cc, site) {
   const tld = String(site || '').split('.').pop();
   if (tld.length !== 2 || _GENERIC_TLD.has(tld)) return false;
   return tld !== (cc === 'GB' ? 'uk' : cc.toLowerCase());
 }
-const _SUFFIX = /\b(the|group|plc|ltd|limited|inc|ag|sa|s a|nv|bv|ab|asa|as|oy|oyj|gmbh|spa|corporation|corp|company|co|holdings?)\b/g;
+const _SUFFIX = /\b(the|group|plc|ltd|limited|inc|ag|kg|sa|s a|nv|bv|ab|asa|as|oy|oyj|gmbh|spa|corporation|corp|company|co|holdings?)\b/g;
 export const plainName = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ').replace(_SUFFIX, ' ').replace(/\s+/g, ' ').trim();
 /* THE MATCH HAS TO BE THE THING NAMED. A sponsor's name is on stadiums,
@@ -88,12 +99,14 @@ export const plainName = (x) => String(x || '').normalize('NFD').replace(/[\u030
    nothing that is a venue, a team or an award is a service. */
 const _VENUE = /\b(arena|stadium|stadion|parque|park|field|boxen|f ?c|s ?c|k ?c|b ?c|h ?c|club|team|games|awards?|cup|league|open|handball|basketball|football|volleyball|festival|tournament)\b/;
 const _VENUE_END = /\b(centre|center|dome|hall)$/;
+const _GOV_SITE = /(^|\.)(gov|gob|gouv|gv|go|gub|govt|government|admin|bund)\.|\.gov$|\.gouv\.|\.gob\.|\.gub\.uy$/;
 const _COMMON = new Set(['bank', 'banco', 'banca', 'national', 'post', 'posts', 'group', 'the', 'and', 'of', 'de', 'la', 'el', 'do', 'da', 'news', 'online', 'mobile', 'telecom', 'service', 'services', 'department', 'office', 'state', 'new', 'first', 'general', 'central']);
 /* What may follow a one-word name in its label: "Yonhap News Agency",
    "Raiffeisen Bank International", "Korek Telecom" - not "Boubyan Takaful"
    (an insurer) or "Pekao Financial Services" (a subsidiary). */
 const _REST = new Set(['news', 'agency', 'bank', 'banking', 'banka', 'group', 'grupe', 'grupo', 'gruppe', 'international', 'telecom', 'telecommunications',
-  'market', 'express', 'logistics', 'uab', 'plc', 'ltd', 'sa', 'ag', 'company', 'corporation', 'holding', 'holdings', 'mobile', 'post', 'railway', 'railways']);
+  'market', 'express', 'logistics', 'uab', 'plc', 'ltd', 'sa', 'ag', 'company', 'corporation', 'holding', 'holdings', 'mobile', 'post', 'railway', 'railways',
+  'communications', 'telekom', 'banka', 'bankas', 'pank', 'banco', 'store', 'stores', 'supermarket', 'supermarkets']);
 const _SLD = new Set(['com', 'co', 'gov', 'gob', 'org', 'net', 'ac', 'edu', 'go', 'or', 'ne', 'gv', 'gouv', 'bank', 'nic', 'gub']);
 const _SITE_TAIL = /^(|group|bank|banka|pank|app|online|global|hq|official|tv|news|pay|mobile|grupo|gruppe|eg|ag|de|es|fr|uk|us|in)$/;
 function siteLabel(site) {
@@ -112,27 +125,40 @@ function siteIs(word, site) {
    sites, Reforma (the paper) is not Reforma Municipality, and Hang Seng and
    Nikkei are not their stock indexes. */
 const _PLACE_SITE = /(^|\.)(city|ville|comune|gemeinde|municipio|mairie|town|destination[a-z]*)[.-]|\.lg\.jp$|^destination|spork[uü]l[uü]b[uü]|sports?club|footballclub/;
-const _NOT_A_SERVICE = /\b(municipality|province|county|district|prefecture|index|indexes|series)\b|\b\d{2,4}$/;
+const _NOT_A_SERVICE = /\b(municipality|municipio|province|county|district|prefecture|index|indexes|series|port of)\b|\b\d{2,4}$/;
 /* "Receita Federal do Brasil", "National Tax Service of South Korea": the
    country's own name may follow, in its usual languages. */
 const _OF = new Set(['of', 'do', 'da', 'de', 'du', 'del', 'the', 'republic']);
 function countryWords(cc) {
   const out = new Set();
   if (!cc) return out;
-  for (const l of ['en', 'es', 'pt', 'fr', 'de', 'it']) { try { plainName(new Intl.DisplayNames([l], { type: 'region' }).of(cc)).split(' ').forEach(w => w && out.add(w)); } catch (e) {} }
+  for (const l of ['en', 'es', 'pt', 'fr', 'de', 'it', localLang(cc)]) { try { plainName(new Intl.DisplayNames([l], { type: 'region' }).of(cc)).split(' ').forEach(w => w && out.add(w)); } catch (e) {} }
   return out;
 }
 export function nameFits(name, label, site, cc) {
   const here = countryWords(cc);
-  const restOk = (rest) => rest.split(' ').every(w => _REST.has(w) || _OF.has(w) || here.has(w));
+  /* ...and a domain ending, for labels like "bayt.com" or "Takealot.com". */
+  const restOk = (rest) => rest.split(' ').every(w => _REST.has(w) || _OF.has(w) || here.has(w) || /^(com|net|org|info|me|[a-z]{2})$/.test(w));
   const a = plainName(name), b = plainName(label);
   if (!a || !b || /^q\d+$/.test(b) || _VENUE.test(b)) return false;
   if (_PLACE_SITE.test(String(site || '').toLowerCase()) || (_NOT_A_SERVICE.test(b) && !_NOT_A_SERVICE.test(a))) return false;
   const tail = b.match(_VENUE_END); if (tail && !a.includes(tail[1])) return false;
+  /* A team's site is not the company's (movistarteam.com). */
+  if (/(team|stadium|arena)[.-]|(team|stadium|arena)$/.test(siteLabel(site))) return false;
   if (a === b) return true;
-  if (!a.includes(' ')) return siteIs(a, site)
-    || (b.startsWith(a + ' ') && restOk(b.slice(a.length + 1)));
-  if (siteIs(a, site) || (b.startsWith(a + ' ') && restOk(b.slice(a.length + 1)))) return true;
+  /* A label that EXTENDS the name with words of its own, where the site says
+     the same words, is a different arm: "Vodafone Automotive" on
+     automotive.vodafone.com, "NHS Wales" on nhs.wales, "Tuổi Trẻ Cười" (the
+     humour title) on cuoi.tuoitre.vn - while "Kotak Mahindra Bank" on
+     kotak.bank.in is the bank. */
+  if (b.startsWith(a + ' ')) {
+    const rest = b.slice(a.length + 1);
+    if (restOk(rest)) return true;
+    const host = String(site || '').toLowerCase();
+    if (rest.split(' ').some(w => w.length >= 3 && !_REST.has(w) && host.includes(w))) return false;
+  }
+  if (!a.includes(' ')) return siteIs(a, site);
+  if (siteIs(a, site)) return true;
   const words = (x) => x.split(' ').filter(w => w.length >= 3 && !_COMMON.has(w));
   const wa = words(a), wb = new Set(words(b));
   return wa.length > 0 && wa.every(w => wb.has(w)) && wa.some(w => siteLabel(site).includes(w));
@@ -140,7 +166,7 @@ export function nameFits(name, label, site, cc) {
 /* visited(cc, host) -> true when the Chrome UX Report lists the host among
    the sites visited from that country. */
 export function trustedMatch(cc, e, visited) {
-  if (!e || typeof e.s !== 'string') return false;
+  if (!e || typeof e.s !== 'string' || NOT_THE_SERVICE.has(e.s)) return false;
   if (foreignSite(cc, e.s)) return false;
   if (!nameFits(e.name, e.n, e.s, cc)) return false;
   if (e.here) return true;
