@@ -81,6 +81,11 @@ await page.route('**/global-services.json', r => {
 });
 await page.route('**/countries/*.json', r => r.fulfill({ status: 404, body: '' }));
 await page.route('**/global-reach/*.json', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(HERE) }));
+/* The app reads the worldwide services while idle (Nov 23), before these
+   routes existed: start from nothing, so this file is the one read. */
+await page.waitForFunction(() => typeof window.ccGlobalLoad === 'function', null, { timeout: 20000 }).catch(() => {});
+await page.evaluate(() => { try{ _ccGlobalP = null; _ccGlobalDone = null; _ccGlobalReach = null; for (const k of Object.keys(_ccGlobalHere)) delete _ccGlobalHere[k]; for (const k of Object.keys(_ccHereDone)) delete _ccHereDone[k]; }catch(e){} });
+served = 0; failFirst = true;
 await page.evaluate(() => { _cwSetCountry('XK'); });
 
 section('A failed fetch is tried again');

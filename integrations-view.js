@@ -650,7 +650,9 @@ function renderIntegrationsView(){
          same registry, and the search box at the top reaches all of it. */
     '</div></div>';
   _wireIntegrationCatalog(vc);
-  _ccReady().then(ok=>{ if(ok) window.ccFillIntegrations(); });
+  /* In this frame when the services are already here; otherwise as they come. */
+  let drawn = false; try{ drawn = !!(window.ccFillIntegrationsNow && window.ccFillIntegrationsNow()); }catch(e){}
+  if(!drawn) _ccReady().then(ok=>{ if(ok) window.ccFillIntegrations(); });
   try{
     const d=vc.querySelector('details.conn-machine');
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });

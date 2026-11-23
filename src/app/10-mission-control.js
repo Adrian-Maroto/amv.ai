@@ -85,7 +85,11 @@ function _crewPrefetch(){
     /* The country's catalogue too, built once while nobody is waiting, so
        Crew and Tasks open on their real lists (Nov 22: they drew a small
        list first and changed a moment later). */
-    _ccReady().then(ok => { if(!ok) return; const cc = _cwCountryGuess(); if(cc){ try{ window.ccLoad(cc); }catch(e){} try{ window.ccCrewLoad(cc); }catch(e){} } }).catch(() => {});
+    _ccReady().then(ok => { if(!ok) return; const cc = _cwCountryGuess(); if(cc){ try{ window.ccLoad(cc); }catch(e){} try{ window.ccCrewLoad(cc); }catch(e){} }
+      /* And the services used worldwide with the visits from here, so
+         Integrations draws its topics once instead of growing a moment
+         after it opens (Nov 23). */
+      try{ if(window.ccGlobalLoad) window.ccGlobalLoad(); if(cc && window.ccGlobalHereLoad) window.ccGlobalHereLoad(cc); }catch(e){} }).catch(() => {});
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
     /* Spending's pane too: it was fetched on the first open, so the screen
        opened on "Loading…" and filled in a moment later (the owner: "spending

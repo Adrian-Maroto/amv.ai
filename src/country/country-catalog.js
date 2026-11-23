@@ -983,6 +983,7 @@ function ccGlobalLoad(){
     /* Visits, one character per entry, to order them where the visitor is. */
     const r = d.reach;
     if(r && typeof r.g === 'string' && r.g.length === d.entries.length && /^[0-7]*$/.test(r.g)) _ccGlobalReach = { g: r.g, n: d.entries.length };
+    _ccGlobalDone = by;
     return by;
   }).catch(() => { _ccGlobalP = null; return null; });
   return _ccGlobalP;
@@ -990,13 +991,14 @@ function ccGlobalLoad(){
 /* One country's visits to the worldwide services (global-reach/<CC>.json,
    about 1KB): a character per measured host, 1 for the top 1,000 sites
    visited from there to 7 for the top million, 0 for not in the list. */
-let _ccGlobalReach = null;
-const _ccGlobalHere = {};
+let _ccGlobalReach = null, _ccGlobalDone = null;
+const _ccGlobalHere = {}, _ccHereDone = {};
 function ccGlobalHereLoad(cc){
   if(!/^[A-Z]{2}$/.test(String(cc || ''))) return Promise.resolve(null);
   if(_ccGlobalHere[cc]) return _ccGlobalHere[cc];
   _ccGlobalHere[cc] = fetch('global-reach/' + cc + '.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null).then(d => {
     if(!d || typeof d.codes !== 'string' || !/^[0-7]*$/.test(d.codes)) return null;
+    _ccHereDone[cc] = d.codes;
     return d.codes;
   }).catch(() => { delete _ccGlobalHere[cc]; return null; });
   return _ccGlobalHere[cc];
@@ -1020,6 +1022,17 @@ function _ccAct(x){
   return `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`;
 }
 function _ccIcon(x){ return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind] || ['\u2022'])[0]; }
+/* Drawn in the same frame as the screen when everything is already here
+   (fetched while the app was idle): no topic grows after it appears. Says
+   whether it drew; the screen falls back to ccFillIntegrations otherwise. */
+function ccFillIntegrationsNow(){
+  const root = document.getElementById('int-catalog'); if(!root) return false;
+  const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
+  const d = _ccDone[String(cc || '').toUpperCase()];
+  if(!d || !_ccGlobalDone) return false;
+  _ccFillWith(root, d, _ccGlobalDone, _ccHereDone[String(cc || '').toUpperCase()] || null);
+  return true;
+}
 async function ccFillIntegrations(){
   const root = document.getElementById('int-catalog'); if(!root) return;
   const cc = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
@@ -1171,7 +1184,7 @@ function ccUseService(q){
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }
-try{ window.ccTasksPopular = ccTasksPopular; }catch(e){}
+try{ window.ccTasksPopular = ccTasksPopular; window.ccGlobalLoad = ccGlobalLoad; window.ccGlobalHereLoad = ccGlobalHereLoad; window.ccFillIntegrationsNow = ccFillIntegrationsNow; }catch(e){}
 try{ window.ccSearchServices = ccSearchServices; window.ccFillIntegrations = ccFillIntegrations; window.ccUseService = ccUseService; window.ccCrewLoad = ccCrewLoad; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════════
