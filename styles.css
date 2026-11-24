@@ -18139,7 +18139,7 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 .cv-plan{ position:absolute; top:var(--sp-3); left:var(--sp-4); z-index:2; display:inline-flex; align-items:center; gap:6px;
   font-size:var(--t-sm); color:var(--mu); }
 .cv-plan[hidden]{ display:none; }
-.cv-plan-up{ background:var(--accent-soft); color:var(--accent); border:0; border-radius:var(--r-pill); padding:5px 11px; min-height:28px;
+.cv-plan-up{ background:var(--accent-soft); color:var(--accent-txt); border:0; border-radius:var(--r-pill); padding:5px 11px; min-height:28px;
   font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
 .cv-plan-up:hover{ filter:brightness(1.1); }
 .cv-plan-up:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }

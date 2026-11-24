@@ -10470,7 +10470,8 @@ function renderChatView() {
   vc.innerHTML=
     '<div id="cv">'+
       /* "You're on Free · Upgrade", top left of the chat (owner, Nov 24). */
-      '<div class="cv-plan" id="cv-plan" hidden></div>'+
+      '<div class="cv-plan" id="cv-plan" hidden><span>'+escH(T('Free plan'))+'</span><span aria-hidden="true">\u00b7</span>'+
+        '<button type="button" class="cv-plan-up" data-stab="plans">'+escH(T('Upgrade'))+'</button></div>'+
       '<div id="cm" data-no-i18n></div>'+
       '<div id="cia">'+
         '<div id="cib">'+
@@ -12604,8 +12605,6 @@ function _cvPlanPaint(){
   const el = $('cv-plan'); if(!el) return;
   const free = !!S.user && (loadStr('amv_plan') || 'free') === 'free';
   el.hidden = !free;
-  el.innerHTML = free ? '<span>' + escH(T('Free plan')) + '</span><span aria-hidden="true">\u00b7</span>'
-    + '<button type="button" class="cv-plan-up" data-stab="plans">' + escH(T('Upgrade')) + '</button>' : '';
 }
 /* Sidebar usage meter - shows how much of the current window is used, so a user
    sees their limit approaching (and can upgrade before hitting the wall). */

@@ -73,8 +73,12 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 219], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 219 (Nov 24): three, moved here from the page with Handoff's
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 220], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 220 (Nov 24): one, the notification list (notifications.js) -
+     one panel.innerHTML whose every value goes through escH: the kind's own
+     fixed sentence through T(), and the result snippet, the sender's address,
+     the handoff's title and the security event's label, each escaped.
+     innerHTML 219 (Nov 24): three, moved here from the page with Handoff's
      screen (the page's ceiling fell by the same three). Two were already
      there - the screen and the "Pull in your work" picker, every value
      through escH - and one is new: the attached-work card (_hoShowPulled),
