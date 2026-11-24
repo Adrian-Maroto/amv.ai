@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="7a7268d0335ab7eb">
+<meta name="amv-build" content="7492509157e6ef70">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10676,6 +10676,14 @@ font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
 font-size:var(--t-base); font-weight:500; pointer-events:none; }
 #sb .sb-tool:hover .sb-tool-tip{ transform:none; }
 }
+body.light{
+--bg:#faf9f6;
+--s1:#ffffff;
+--panel:#ffffff;
+}
+body.light #sb{ background:#f3f2ee!important; }
+body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#f3f2ee!important; }
+body.light #anav{ background:var(--bg); }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

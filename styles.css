@@ -18137,3 +18137,24 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
     font-size:var(--t-base); font-weight:500; pointer-events:none; }
   #sb .sb-tool:hover .sb-tool-tip{ transform:none; }
 }
+
+/* ═══ LAYER A408 - light mode on a near-white page (owner, Nov 24: "light
+   mode looks off") ═══
+   The light page was #ebe9e4 - a grey-beige under white cards, so every screen
+   read as a grey sheet with paper stuck on it. The leading chat apps put the
+   conversation on a near-white page and set the sidebar a step darker: Claude's
+   light canvas is a warm cream near #faf9f5 (third-party design-system
+   write-ups, Nov 2026 - shadcn.io/design/claude, kombai.com), and ChatGPT's
+   Light appearance is "a light background with darker text" (OpenAI help,
+   article 11958281). So: a warm near-white page, the sidebar one step darker,
+   cards and the composer white, and the greys below unchanged - the contrast
+   suite measured them against these surfaces and they only gain from a
+   lighter page. */
+body.light{
+  --bg:#faf9f6;
+  --s1:#ffffff;
+  --panel:#ffffff;
+}
+body.light #sb{ background:#f3f2ee!important; }
+body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#f3f2ee!important; }
+body.light #anav{ background:var(--bg); }
