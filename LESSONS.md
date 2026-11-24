@@ -16329,3 +16329,14 @@ price, a window or a guarantee is checked against the constant the server
 enforces (`every-refund-promise-matches-the-policy` reads `REFUND_DAYS` from
 the Worker), and a condition the policy has may not be dropped to make the
 sentence shorter - say something unconditional and true instead.
+
+## 671
+**Nov 24 - test the link, not the function behind it.**
+The landing footer's Privacy Policy, Terms of Service and Cookie Policy all
+opened the Terms, so the Privacy Policy was unreachable from the page that
+asks people to sign up. Every suite about the policies called `openTerms()` /
+`openPrivacy()` directly and passed, because the documents were right - it
+was the wiring between the words a visitor clicks and the function that ran
+that was wrong. Rule: a suite about something a person opens presses the
+control they press (`each-footer-link-opens-its-own-document`), and checks
+that what opened is what the control said.

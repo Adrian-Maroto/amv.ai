@@ -763,9 +763,12 @@ function setupLanding(){
   on($('cta-btn'),'click',()=>openAuth('signup'));
   on($('hero-go'),'click',()=>openAuth('signup'));
   on($('hero-inp'),'keydown',e=>{if(e.key==='Enter')openAuth('signup');});
-  on($('fp-btn'),'click',openTerms);
+  /* Each footer link opens the document it names. All three opened the
+     Terms, so the Privacy Policy could not be reached from the landing page.
+     Cookies are explained in the Privacy Policy's own section on them. */
+  on($('fp-btn'),'click',openPrivacy);
   on($('ft-btn'),'click',openTerms);
-  on($('fc-btn'),'click',openTerms);
+  on($('fc-btn'),'click',openPrivacy);
   // Fill landing pricing
   /* The landing page is where most pricing decisions actually get made, so
      Teams belongs here too - it was only on a tab you have to sign in to
