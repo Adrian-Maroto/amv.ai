@@ -27,7 +27,7 @@ function renderCodeView(){
   const blank = _devIsHome();
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
-      ${_buildEntryHeadHTML('dev','What should we build?')}
+      ${_buildEntryHeadHTML('dev','What should we create?')}
       ${/* Always rendered, hidden by the class. `_devRenderLog()` drops
             `dev-blank` when the first reply lands, so a button gated on the
             render-time value was absent for the whole session that followed. */ ''}

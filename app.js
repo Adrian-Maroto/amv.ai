@@ -25864,7 +25864,7 @@ function renderDesignView(){
     ['component','Component','A single button, card or form']
   ];
   vc.innerHTML = `<div class="sv fi bld-sv"><div class="dsn-wrap">
-    ${_buildEntryHeadHTML('studio','What should we make?')}
+    ${_buildEntryHeadHTML('studio','What should we design?')}
     ${_buildBarHTML('design', false, !((_STUDIO.artifacts||[]).length))}
 
     <section class="dsn-hero">
@@ -37727,7 +37727,7 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = _labIsHome();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
-    ${_buildEntryHeadHTML('lab','What code should we work on?')}
+    ${_buildEntryHeadHTML('lab','What should we revise?')}
     ${/* ALWAYS RENDERED, HIDDEN BY THE CLASS - the same correction A211 made
           for the recents block. Passing `!labBlank` decided at RENDER time
           whether there is a way back, and this shell flips `lab-blank` at

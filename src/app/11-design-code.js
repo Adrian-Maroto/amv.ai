@@ -647,7 +647,7 @@ function renderDesignView(){
     ['component','Component','A single button, card or form']
   ];
   vc.innerHTML = `<div class="sv fi bld-sv"><div class="dsn-wrap">
-    ${_buildEntryHeadHTML('studio','What should we make?')}
+    ${_buildEntryHeadHTML('studio','What should we design?')}
     ${_buildBarHTML('design', false, !((_STUDIO.artifacts||[]).length))}
 
     <section class="dsn-hero">
