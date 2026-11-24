@@ -144,7 +144,25 @@ function _lifeHTML(L, n){
 function _paintServerUsage(){
   const host = document.getElementById('srv-usage');
   if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
-  _srvUsageRefresh(true).then(d=>{
+  /* THE LAST ANSWER FIRST, THEN THE NEW ONE IN PLACE (owner, Nov 24: Billing
+     "shows something and then quickly changes it to something else"). The card
+     opened empty and grew into its meters a moment later. The tab already
+     holds the last answer it read (_srvUsage, kept per account); that is
+     drawn now, and the fresh one replaces it only if it differs. */
+  let shown = '';
+  const paint = (d) => {
+    const key = JSON.stringify(d || null);
+    if(key === shown || !host.isConnected) return;
+    shown = key;
+    draw(d);
+  };
+  try{ if(typeof _srvUsage !== 'undefined' && _srvUsage && _srvUsage.day && _srvUsage.month
+         && _srvUsageWho === ((S && S.user && S.user.email) || '')) paint(_srvUsage); }catch(e){}
+  _srvUsageRefresh(true).then(d => { if(d || !shown) paint(d); }).catch(()=>{
+    if(shown) return;
+    host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
+  });
+  function draw(d){
     if(!d || !d.day || !d.month){
       host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Your real allowance is unavailable right now. The figures below are this device\u2019s own tally.</div>';
       return;
@@ -188,9 +206,7 @@ function _paintServerUsage(){
     if(go) on(go,'click',()=>{ S.settingsPane='invite'; S.tab='settings'; setTab('settings'); });
     const tm = host.querySelector('[data-sp-team]');
     if(tm) on(tm,'click',()=>{ S.tab='team'; setTab('team'); });
-  }).catch(()=>{
-    host.innerHTML = '<h3>Your plan allowance</h3><div class="srv-off">Could not reach the server, so your real allowance is not shown. The figures below are this device\u2019s own tally.</div>';
-  });
+  }
 }
 try{ window._paintServerUsage=_paintServerUsage; }catch(e){}
 try{ window._usageContentHTML=_usageContentHTML; window._lifeHTML=_lifeHTML; window._whereHTML=_whereHTML; }catch(e){}

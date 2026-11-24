@@ -18223,6 +18223,8 @@ function _billingTxnsHTML(){
 window._billingTxnsHTML=_billingTxnsHTML;
 
 
+/* The extra-usage balance this tab last read, per account (see below). */
+let _billCreditLast=null;
 function renderBillingView(targetEl){
   // If billing is being shown inside Settings, render into the settings pane
   // so re-renders (after payment, plan change, etc.) stay in place.
@@ -18437,10 +18439,6 @@ function renderBillingView(targetEl){
               + escH(rn.autoRenew===false ? T('Turn auto-renew back on') : T('Turn off auto-renew')) + '</button>'
           + '</div>'
           : '')+
-        /* REFUNDS: filled from the server's answer (_billRefundFill), which
-           decides whether this charge can come back in one press. Hidden until
-           it answers, and stays hidden when there is nothing to refund. */
-        '<div class="bill-rf" id="bill-refund" hidden></div>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
            and had done nothing for as long as the button did not: a paying
@@ -18516,6 +18514,15 @@ function renderBillingView(targetEl){
           ? _invoiceTableHTML(plan,P,sinceDate)
           : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
         '</div>'+
+      /* REFUNDS: filled from the server's answer (_billRefundFill), which
+         decides whether this charge can come back in one press. Hidden until
+         it answers, and stays hidden when there is nothing to refund.
+         In the Payment card, beside invoices and cancelling, where money going
+         back belongs - and where arriving a moment late moves nothing above
+         it. It sat under the plan, and its arrival pushed the whole Usage card
+         down 170px a third of a second after the page had appeared (owner,
+         Nov 24: "it shows something and then quickly changes"). */
+      (plan!=='free'?'<div class="bill-rf" id="bill-refund" hidden></div>':'')+
       (plan!=='free'?
       /* Cancelling is one line at the foot of the page, not a panel of its own
          with a red-outlined button in it. A product that frames leaving as a
@@ -18590,7 +18597,13 @@ function renderBillingView(targetEl){
   /* The meters' painter lives in usage.js, fetched on demand - so it is
      fetched here when Billing is opened first, rather than called bare and
      missing on every visit that has not opened Usage yet. */
-  if($('srv-usage')){ _usageLoad().then(ok => {
+  /* The meters paint from the last answer at once when usage.js is already
+     here (it is after the first visit), and refresh in place - so the card
+     does not appear in one shape and change to another (owner, Nov 24). */
+  if($('srv-usage') && typeof window._paintServerUsage === 'function'){
+    try{ window._paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} }
+  }
+  else if($('srv-usage')){ _usageLoad().then(ok => {
     if(!ok || typeof window._paintServerUsage !== 'function'){ const el = $('srv-usage'); if(el) el.innerHTML = '<div class="srv-off">' + escH(T('That could not be loaded. Check your connection and try again.')) + '</div>'; return; }
     try{ window._paintServerUsage(); }catch(e){ try{ console.error('AMV: usage meters could not be drawn', e); }catch(_){} }
   }); }
@@ -18599,10 +18612,15 @@ function renderBillingView(targetEl){
      rather than assumed. Nothing local is set on the way: a failed call leaves
      the screen saying exactly what it said before, which is the truth. */
   if($('bill-credit') && window.AMV_API && AMV_API.live){
-    AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
-      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance')
+    /* The last balance this tab read, shown at once and refreshed in place,
+       instead of an ellipsis that becomes a sentence a moment later. */
+    const credTxt=d=>'$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance')
         +(d.mode==='ask'?' \u00b7 '+T('asks first'):d.mode==='stop'?' \u00b7 '+T('set never to be used'):'');
-    }).catch(()=>{ const el=$('bill-credit'); if(el) el.textContent=T('Could not load the balance.'); });
+    if(_billCreditLast && _billCreditLast.who===email) $('bill-credit').textContent=credTxt(_billCreditLast.d);
+    AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
+      if(d&&d.ok) _billCreditLast={ who:email, d };
+      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent=credTxt(d);
+    }).catch(()=>{ const el=$('bill-credit'); if(el && !(_billCreditLast && _billCreditLast.who===email)) el.textContent=T('Could not load the balance.'); });
   } else if($('bill-credit')){
     $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
     /* A button that can only fail is not offered. */
