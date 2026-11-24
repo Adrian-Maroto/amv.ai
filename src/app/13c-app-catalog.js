@@ -164,7 +164,7 @@ const AMV_APP_CATS = [
     'Remind||School messages.', 'Duolingo||Learn a language.', 'Khan Academy||Free lessons and practice.', 'Coursera||Online courses.',
     'Udemy||Online courses.', 'edX||University courses online.', 'Quizlet||Flashcards and study sets.', 'Anki||Spaced-repetition flashcards.',
     'Zotero||Research references.', 'Mendeley||Papers and references.', 'Google Scholar||Search academic papers.',
-    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step maths.',
+    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step math.',
   ]},
   { id:'jobs', t:'Jobs &amp; careers', q:'jobs', apps:[
     'Job boards worldwide|jobs|StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
@@ -191,7 +191,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
     'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
-    'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organising.',
+    'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organizing.',
     'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow|r:webflow|Build websites visually.',
     'Wix|r:wix|Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
     'Dribbble||Design inspiration.', 'Unsplash||Free photos.', 'Picsart||Photo and video editing.', 'VSCO||Photo editing.',
@@ -199,7 +199,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'video', t:'Video &amp; streaming', q:'media', apps:[
     'CapCut||Video editing.', 'YouTube|g|Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
-    'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
+    'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and color.',
     'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
     'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
     'Crunchyroll||Anime.', 'Plex||Your media library.', 'OBS Studio||Recording and streaming.',
@@ -214,7 +214,7 @@ const AMV_APP_CATS = [
   { id:'social', t:'Social networks', q:'social', apps:[
     'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
     'Reddit|p:reddit|Communities and discussion.', 'Pinterest|p:pinterest|Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
-    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
+    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'Nextdoor||Your neighborhood.', 'BeReal||One photo a day.',
   ]},
   { id:'shop', t:'Shopping', q:'ecommerce', apps:[
     'Amazon||Shopping.', 'eBay||Buy and sell.',
@@ -293,7 +293,7 @@ const AMV_APP_CATS = [
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},
   { id:'security', t:'Security', q:'security', apps:[
-    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organisations.',
+    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organizations.',
     'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.',
   ]},
   { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[

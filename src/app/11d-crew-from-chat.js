@@ -745,7 +745,7 @@ function _ctxRenderMeter(hostId, kind){
     host.innerHTML =
       '<div class="ctx-note-line ctx-degraded">'+
         'Older messages in this chat are not being sent - AMV needs its engine connected '+
-        'to summarise them. Everything you can see is still here.'+
+        'to summarize them. Everything you can see is still here.'+
       '</div>';
     return;
   }
@@ -757,7 +757,7 @@ function _ctxRenderMeter(hostId, kind){
   /* Summarised, and nothing is wrong. One quiet line, no number, no button:
      the chat is working exactly as intended and there is nothing to decide. */
   host.innerHTML =
-    '<div class="ctx-note-line">Earlier messages are summarised so this chat can keep going.</div>';
+    '<div class="ctx-note-line">Earlier messages are summarized so this chat can keep going.</div>';
 }
 
 // Compress the current context, start fresh, and resume seamlessly.

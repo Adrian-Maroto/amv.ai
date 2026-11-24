@@ -201,7 +201,7 @@ try{ window.openFeedback=openFeedback; }catch(e){}
 const CHANGELOG=[
   { v:'2.5', date:'2026-10-04', title:'Settings, Team and staying in touch', items:[
     'Settings opens in the middle of the screen, over your work, with search that finds a setting by what it does',
-    'Team is one plan for organisations: a price per person, monthly or yearly, with roles and one bill',
+    'Team is one plan for organizations: a price per person, monthly or yearly, with roles and one bill',
     'Email me when AMV is done - for long answers and builds you walk away from',
     'More room for your chats: the account menu is the avatar at the top right, and the status line only appears when something is wrong',
     'Crew opens noticeably faster on phones' ] },

@@ -144,7 +144,7 @@ async function connectAccountTool(input){
   if(mbox){
     return {
       text:'FOUND: ' + mbox.name + ' is a mailbox AMV connects by app password. A button to set it up is shown. Nothing is connected until they finish that setup - do not say it is.' + signIn,
-      render:_cxCard(mbox.name, 'Mail, read and summarised - connected with an app password from ' + mbox.name + '.',
+      render:_cxCard(mbox.name, 'Mail, read and summarized - connected with an app password from ' + mbox.name + '.',
         [{ code:'mailp:' + mbox.id, label:'Set up ' + String(mbox.name).replace(/\s*\(.*\)\s*$/, '') }],
         'The setup shows exactly where ' + String(mbox.name).replace(/\s*\(.*\)\s*$/, '') + ' gives you that password.')
     };

@@ -546,7 +546,7 @@ const AMV_POLICY = [
   { re:/\bfake (review|rating|testimonial)|review bomb|astroturf|(?:post|write|leave) .{0,40}review .{0,30}(?:never|didn'?t|did not|have not|haven'?t) (?:use|used|buy|bought|visit|visited|go|went|been|try|tried|stay|stayed|order|ordered|eat|ate)|review .{0,30}(?:somewhere|something|a place) (?:i|we) (?:never|didn'?t)/i,
     why:'Posting a review for something you did not actually experience is review fraud (and illegal in many places). I can post an honest review of a real experience.' },
   { re:/\b(mass|bulk) (dm|message|email)|spam|blast .*(unsolicited)|scrape .*emails? .*(sell|list)/i,
-    why:'Mass unsolicited messaging breaks platform rules and anti-spam law. I can send personalised messages to people you actually have a reason to contact.' },
+    why:'Mass unsolicited messaging breaks platform rules and anti-spam law. I can send personalized messages to people you actually have a reason to contact.' },
   { re:/\b(hack|brute[- ]?force|bypass (login|captcha|2fa|paywall)|credential stuff|steal .*(password|account|card))/i,
     why:'That is unauthorised access. I will not do it.' },
   { re:/\bimpersonat|pretend to be (?!me\b)|catfish|fake (identity|profile|id)\b/i,

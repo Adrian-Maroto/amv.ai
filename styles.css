@@ -18100,3 +18100,6 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-x{flex:0 0 auto;width:44px;height:44px;border:0;border-radius:var(--r-pill);background:none;color:var(--mu);font-size:var(--t-lg);cursor:pointer}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-x:hover{background:var(--s3);color:var(--tx)}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page #ho-work:empty{display:none}
+
+/* ========== LAYER A405 (Nov 24): Crew says its jobs are examples ========== */
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .cj-examples{margin:calc(-1 * var(--sp-2)) 0 var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5}

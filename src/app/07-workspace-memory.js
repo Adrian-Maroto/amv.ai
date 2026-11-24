@@ -838,10 +838,10 @@ const MKT_POLICY_SECTIONS = [
   ]},
   { h:'Your obligations as a seller', items:[
     'Describe honestly - buyers must receive exactly what you advertised.',
-    'You own the rights to everything you list, or have a licence to resell it.',
+    'You own the rights to everything you list, or have a license to resell it.',
     'No impersonating other people, brands, or AMV staff.',
     'Listings are AMV-only and can\u2019t reference or require other AI products.',
-    'Respond to buyers and honour refunds where the deliverable was misrepresented.',
+    'Respond to buyers and honor refunds where the deliverable was misrepresented.',
     'Keep your listing current - remove it if it stops working.',
   ]},
   { h:'How enforcement works', items:[

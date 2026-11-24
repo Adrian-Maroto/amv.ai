@@ -503,7 +503,7 @@ const CW_EVERYDAY_UNIVERSAL = [
     desc:'Every bill sitting in your mail with a date on it, in one list, before the date rather than after it.' },
   { id:'ev_renewals', icon:'🪪', needs:'Email',
     title:'Renewals and expiry dates',
-    desc:'Reads the renewal notices in your mail for passport, licence, insurance, visa, registration and tenancy - the things that cost a great deal of trouble when they lapse and give no warning when they do.' },
+    desc:'Reads the renewal notices in your mail for passport, license, insurance, visa, registration and tenancy - the things that cost a great deal of trouble when they lapse and give no warning when they do.' },
   { id:'ev_trials', icon:'⏳', needs:'Email',
     title:'Free trials about to charge',
     desc:'Finds the trial-ending emails in your mail and tells you before one becomes a payment, while there is still time to decide.' },
@@ -1386,7 +1386,7 @@ async function _cwLoadLocal(code){
     /* The real endpoint always returns the country list. Anything without it
        did not come from the catalogue, so it is not an answer about what
        exists - it is an absence of one. */
-    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalog');
     const same = !!shown && JSON.stringify(d) === shown;
     _cwApplyLocal(cc, d);
     try{ store('amv_cw_local', { cc, at: Date.now(), d }); }catch(e){}
@@ -1404,7 +1404,7 @@ async function _cwLoadLocal(code){
 }
 /* One country's answer, put where every Crew section reads it. */
 function _cwApplyLocal(cc, d){
-    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalog');
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};

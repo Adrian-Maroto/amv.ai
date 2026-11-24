@@ -197,7 +197,7 @@ function renderTeamView(){
     '</div>';
   })();
   const teamLanding=(lead)=>'<div class="sv fi"><div class="vi team-land">'+
-    '<span class="eyebrow">For organisations</span>'+
+    '<span class="eyebrow">For organizations</span>'+
     '<h2>AMV for your team</h2>'+
     '<p class="vsub">'+lead+'</p>'+
     /* Side by side on a wide screen: the offer, and how it works, read together

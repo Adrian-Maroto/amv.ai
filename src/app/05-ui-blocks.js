@@ -2590,7 +2590,7 @@ const _HOME_CREW = {
   health:'Remind me when it is time to book my next checkup',
 };
 const _HOME_BUILD = ['Build a budget tracker I can use on my phone', 'Build a one-page site for my small business',
-  'Build a habit tracker with a streak for each day', 'Build a quiz to practise for my next exam'];
+  'Build a habit tracker with a streak for each day', 'Build a quiz to practice for my next exam'];
 function _homeTitleIsWords(t){
   const w = String(t).split(/\s+/).filter(Boolean);
   if(/[^\x00-\x7f]/.test(t)) return String(t).trim().length >= 2;     /* another script: trust it */

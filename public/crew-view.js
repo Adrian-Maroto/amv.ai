@@ -1601,8 +1601,9 @@ function _cjJobsHTML(){
     <div class="cj-jobs-top">
       <h2 id="cx-jobs-h">${escH(_cwJobsForHead())}</h2>
 
-      <div class="cj-tools">${_cjCountryBtnHTML()}<button class="cj-all" data-dact="cjDirectory">${escH(T('See all jobs'))}</button></div>
+      <div class="cj-tools">${_cjCountryBtnHTML()}<button class="cj-all" data-dact="cjDirectory">${escH(T('Browse more examples'))}</button></div>
     </div>
+    <p class="cj-examples">${escH(T('Examples to start from - not every job AMV can do. Type anything in the box above and press Run.'))}</p>
     <div class="cj-find"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="cx-q" type="search" autocomplete="off" value="${escH(_cjQ)}" placeholder="${escH(T('Search jobs'))}" aria-label="${escH(T('Search jobs'))}"></div>
     <p class="cj-note" id="cj-note" role="status"${note ? '' : ' hidden'}>${escH(note)}</p>

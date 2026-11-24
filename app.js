@@ -11049,7 +11049,7 @@ const _HOME_CREW = {
   health:'Remind me when it is time to book my next checkup',
 };
 const _HOME_BUILD = ['Build a budget tracker I can use on my phone', 'Build a one-page site for my small business',
-  'Build a habit tracker with a streak for each day', 'Build a quiz to practise for my next exam'];
+  'Build a habit tracker with a streak for each day', 'Build a quiz to practice for my next exam'];
 function _homeTitleIsWords(t){
   const w = String(t).split(/\s+/).filter(Boolean);
   if(/[^\x00-\x7f]/.test(t)) return String(t).trim().length >= 2;     /* another script: trust it */
@@ -13432,7 +13432,7 @@ async function _readOoxml(buf, name){
   }
   const kind = /wordprocessingml/.test(ct) ? 'docx' : /spreadsheetml/.test(ct) ? 'xlsx' : /presentationml/.test(ct) ? 'pptx'
     : /^word\//i.test(main) ? 'docx' : /^xl\//i.test(main) ? 'xlsx' : /^ppt\//i.test(main) ? 'pptx' : '';
-  if(!kind) throw new _FrRefusal('unknown', 'an Office file AMV doesn’t recognise');
+  if(!kind) throw new _FrRefusal('unknown', 'an Office file AMV doesn’t recognize');
   const r = kind === 'docx' ? await _readDocx(z, main) : kind === 'xlsx' ? await _readXlsx(z, main) : await _readPptx(z, main);
   if(r.text.length > _FR_TEXT_MAX) throw new _FrRefusal('too_long');
   return Object.assign({ format: kind }, r);
@@ -14714,7 +14714,7 @@ function renderTeamView(){
     '</div>';
   })();
   const teamLanding=(lead)=>'<div class="sv fi"><div class="vi team-land">'+
-    '<span class="eyebrow">For organisations</span>'+
+    '<span class="eyebrow">For organizations</span>'+
     '<h2>AMV for your team</h2>'+
     '<p class="vsub">'+lead+'</p>'+
     /* Side by side on a wide screen: the offer, and how it works, read together
@@ -16547,10 +16547,10 @@ const MKT_POLICY_SECTIONS = [
   ]},
   { h:'Your obligations as a seller', items:[
     'Describe honestly - buyers must receive exactly what you advertised.',
-    'You own the rights to everything you list, or have a licence to resell it.',
+    'You own the rights to everything you list, or have a license to resell it.',
     'No impersonating other people, brands, or AMV staff.',
     'Listings are AMV-only and can\u2019t reference or require other AI products.',
-    'Respond to buyers and honour refunds where the deliverable was misrepresented.',
+    'Respond to buyers and honor refunds where the deliverable was misrepresented.',
     'Keep your listing current - remove it if it stops working.',
   ]},
   { h:'How enforcement works', items:[
@@ -17972,7 +17972,7 @@ const AMVFraud = {
     if(protectedCtx.some(s=>s.code==='geo_mismatch'))
       legit.push('A different sign-in region is normal for travel, immigration, international families, study, work, or ordinary VPN use. It is never evidence of fraud on its own.');
     if(sig.refund_request||sig.chargeback||sig.refund_velocity)
-      legit.push('The refund or dispute may be completely valid - the product failed, was not as described, or a charge was not recognised. Requesting money back is a right, not an admission.');
+      legit.push('The refund or dispute may be completely valid - the product failed, was not as described, or a charge was not recognized. Requesting money back is a right, not an admission.');
     if(sig.new_account_high_value)
       legit.push('New customers routinely make a first large purchase. Account age alone means nothing.');
     if(sig.multi_account_device)
@@ -17989,7 +17989,7 @@ const AMVFraud = {
     if(sig.multi_account_device||sig.promo_multi)
       minEv.push('A second independent link between the accounts (a shared payment instrument or coordinated timing), not the shared device or code alone.');
     if(sig.auth_fail_burst)
-      minEv.push('Re-authentication by the real account owner and confirmation the device is recognised.');
+      minEv.push('Re-authentication by the real account owner and confirmation the device is recognized.');
     if(sig.otp_fail_burst)
       minEv.push('Direct contact with the verified account owner on a known channel.');
     if(sig.new_account_high_value)
@@ -17997,7 +17997,7 @@ const AMVFraud = {
     if(sig.purchase_velocity)
       minEv.push('Server-side rate and device signals showing whether the pattern is human-plausible or scripted.');
     if(sig.listing_prohibited||sig.listing_guarantee)
-      minEv.push('A manual review of the listing content and proof of the seller\'s ownership or licence.');
+      minEv.push('A manual review of the listing content and proof of the seller\'s ownership or license.');
     if(!minEv.length) minEv.push('At least one more independent signal before any enforcement.');
 
     const en=ev.entities||{};
@@ -21765,7 +21765,7 @@ const CW_EVERYDAY_UNIVERSAL = [
     desc:'Every bill sitting in your mail with a date on it, in one list, before the date rather than after it.' },
   { id:'ev_renewals', icon:'🪪', needs:'Email',
     title:'Renewals and expiry dates',
-    desc:'Reads the renewal notices in your mail for passport, licence, insurance, visa, registration and tenancy - the things that cost a great deal of trouble when they lapse and give no warning when they do.' },
+    desc:'Reads the renewal notices in your mail for passport, license, insurance, visa, registration and tenancy - the things that cost a great deal of trouble when they lapse and give no warning when they do.' },
   { id:'ev_trials', icon:'⏳', needs:'Email',
     title:'Free trials about to charge',
     desc:'Finds the trial-ending emails in your mail and tells you before one becomes a payment, while there is still time to decide.' },
@@ -22648,7 +22648,7 @@ async function _cwLoadLocal(code){
     /* The real endpoint always returns the country list. Anything without it
        did not come from the catalogue, so it is not an answer about what
        exists - it is an absence of one. */
-    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalog');
     const same = !!shown && JSON.stringify(d) === shown;
     _cwApplyLocal(cc, d);
     try{ store('amv_cw_local', { cc, at: Date.now(), d }); }catch(e){}
@@ -22666,7 +22666,7 @@ async function _cwLoadLocal(code){
 }
 /* One country's answer, put where every Crew section reads it. */
 function _cwApplyLocal(cc, d){
-    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalog');
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
@@ -27570,7 +27570,7 @@ const AMV_TOOLS = [
      when something matched. */
   {
     name:'crew_watch',
-    description:'Set up a background job that WATCHES something and acts only WHEN a match appears. source "mail" (default): "when my landlord emails, summarise what she wants", "when an invoice arrives, pull out the amount and due date" - give at least one of from / subject / words. source "calendar": "when a new meeting with the board is added, prepare a brief" - give words. source "page": a public web page - "tell me when tickets go on sale at <url>", "when the price page stops saying sold out" - give url and appears and/or disappears. source "hook": another service (a shop, a payment provider, a form, their own code) sends a request to an address AMV gives the job - "when my shop gets an order, summarise it"; words optional. source "github": one repository through their GitHub connection - "when someone opens a pull request on acme/site, review what it changes" - give repo, and events and words if they say which. Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing costs nothing and posts nothing. Its first look only records what is already there. Not for a regular digest of everything (use crew_add), not for pages behind a sign-in, and not for something to do now.',
+    description:'Set up a background job that WATCHES something and acts only WHEN a match appears. source "mail" (default): "when my landlord emails, summarize what she wants", "when an invoice arrives, pull out the amount and due date" - give at least one of from / subject / words. source "calendar": "when a new meeting with the board is added, prepare a brief" - give words. source "page": a public web page - "tell me when tickets go on sale at <url>", "when the price page stops saying sold out" - give url and appears and/or disappears. source "hook": another service (a shop, a payment provider, a form, their own code) sends a request to an address AMV gives the job - "when my shop gets an order, summarize it"; words optional. source "github": one repository through their GitHub connection - "when someone opens a pull request on acme/site, review what it changes" - give repo, and events and words if they say which. Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing costs nothing and posts nothing. Its first look only records what is already there. Not for a regular digest of everything (use crew_add), not for pages behind a sign-in, and not for something to do now.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'What to do when it matches, as an instruction. It sees the matching emails\' sender, subject and preview, the new events, or the page as it now reads.'},
       source:{type:'string', enum:['mail','calendar','page','hook','github'], description:'What to watch. Default mail.'},
@@ -29278,7 +29278,7 @@ function _ctxRenderMeter(hostId, kind){
     host.innerHTML =
       '<div class="ctx-note-line ctx-degraded">'+
         'Older messages in this chat are not being sent - AMV needs its engine connected '+
-        'to summarise them. Everything you can see is still here.'+
+        'to summarize them. Everything you can see is still here.'+
       '</div>';
     return;
   }
@@ -29290,7 +29290,7 @@ function _ctxRenderMeter(hostId, kind){
   /* Summarised, and nothing is wrong. One quiet line, no number, no button:
      the chat is working exactly as intended and there is nothing to decide. */
   host.innerHTML =
-    '<div class="ctx-note-line">Earlier messages are summarised so this chat can keep going.</div>';
+    '<div class="ctx-note-line">Earlier messages are summarized so this chat can keep going.</div>';
 }
 
 // Compress the current context, start fresh, and resume seamlessly.
@@ -31819,7 +31819,7 @@ try{ window.openFeedback=openFeedback; }catch(e){}
 const CHANGELOG=[
   { v:'2.5', date:'2026-10-04', title:'Settings, Team and staying in touch', items:[
     'Settings opens in the middle of the screen, over your work, with search that finds a setting by what it does',
-    'Team is one plan for organisations: a price per person, monthly or yearly, with roles and one bill',
+    'Team is one plan for organizations: a price per person, monthly or yearly, with roles and one bill',
     'Email me when AMV is done - for long answers and builds you walk away from',
     'More room for your chats: the account menu is the avatar at the top right, and the status line only appears when something is wrong',
     'Crew opens noticeably faster on phones' ] },
@@ -33367,7 +33367,7 @@ function taskRequirementMessage(analysis){
   if(analysis.missing.length){
     analysis.missing.forEach(m=>{
       out+='\uD83D\uDD0C This task needs the **'+m.api+'** to '+m.label+', which isn\u2019t connected yet. '+
-           'Connect **'+m.integration+'** in Integrations (it authorises via '+m.auth+'), then I can run this automatically.\n\n';
+           'Connect **'+m.integration+'** in Integrations (it authorizes via '+m.auth+'), then I can run this automatically.\n\n';
     });
   }
   return out.trim();
@@ -34221,7 +34221,9 @@ try{ window.connReload=connReload; }catch(e){}
 
 /* In the language the screen is in (amvAgo, 01-core.js). */
 function _connAgo(ts){ return amvAgo(ts, 'long'); }
-/* Capability keys are for the wire. These are for people. */
+/* Capability keys are for the wire. These are for people - and each one is
+   read after the word "Can", so each starts with what it lets AMV do (owner,
+   Nov 24: "can do your channels" does not make sense). */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',
   'calendar.read':'read your calendar', 'calendar.write':'add and change events',
@@ -34239,11 +34241,11 @@ const _CONN_SCOPE_WORDS = {
   'spotify.read':'see what you play, your playlists and your library', 'spotify.write':'control playback and change your playlists',
   'dropbox.read':'read your files', 'dropbox.write':'add and change files',
   'hubspot.read':'read contacts, companies and deals', 'hubspot.write':'add and change contacts and deals',
-  'asana.all':'everything your Asana account can do', 'zoom.all':'your meetings, as allowed in AMV\u2019s Zoom app',
-  'box.all':'everything your Box account can do', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
+  'asana.all':'read and change your Asana tasks and projects', 'zoom.all':'see and schedule your meetings',
+  'box.all':'read and change your Box files', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
   'reddit.read':'read Reddit as you, with your subscriptions and history', 'reddit.write':'post, edit and vote as you',
   'pinterest.read':'read your boards and pins', 'pinterest.write':'create boards and pins',
-  'calendly.all':'your event types, bookings and availability',
+  'calendly.all':'see your event types, bookings and availability',
 };
 function _connScopeWords(list){
   return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);
@@ -35924,7 +35926,7 @@ const AMV_APP_CATS = [
     'Remind||School messages.', 'Duolingo||Learn a language.', 'Khan Academy||Free lessons and practice.', 'Coursera||Online courses.',
     'Udemy||Online courses.', 'edX||University courses online.', 'Quizlet||Flashcards and study sets.', 'Anki||Spaced-repetition flashcards.',
     'Zotero||Research references.', 'Mendeley||Papers and references.', 'Google Scholar||Search academic papers.',
-    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step maths.',
+    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step math.',
   ]},
   { id:'jobs', t:'Jobs &amp; careers', q:'jobs', apps:[
     'Job boards worldwide|jobs|StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
@@ -35951,7 +35953,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
     'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
-    'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organising.',
+    'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organizing.',
     'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow|r:webflow|Build websites visually.',
     'Wix|r:wix|Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
     'Dribbble||Design inspiration.', 'Unsplash||Free photos.', 'Picsart||Photo and video editing.', 'VSCO||Photo editing.',
@@ -35959,7 +35961,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'video', t:'Video &amp; streaming', q:'media', apps:[
     'CapCut||Video editing.', 'YouTube|g|Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
-    'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
+    'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and color.',
     'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
     'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
     'Crunchyroll||Anime.', 'Plex||Your media library.', 'OBS Studio||Recording and streaming.',
@@ -35974,7 +35976,7 @@ const AMV_APP_CATS = [
   { id:'social', t:'Social networks', q:'social', apps:[
     'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
     'Reddit|p:reddit|Communities and discussion.', 'Pinterest|p:pinterest|Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
-    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
+    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'Nextdoor||Your neighborhood.', 'BeReal||One photo a day.',
   ]},
   { id:'shop', t:'Shopping', q:'ecommerce', apps:[
     'Amazon||Shopping.', 'eBay||Buy and sell.',
@@ -36053,7 +36055,7 @@ const AMV_APP_CATS = [
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},
   { id:'security', t:'Security', q:'security', apps:[
-    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organisations.',
+    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organizations.',
     'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.',
   ]},
   { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[
@@ -36236,7 +36238,7 @@ async function connectAccountTool(input){
   if(mbox){
     return {
       text:'FOUND: ' + mbox.name + ' is a mailbox AMV connects by app password. A button to set it up is shown. Nothing is connected until they finish that setup - do not say it is.' + signIn,
-      render:_cxCard(mbox.name, 'Mail, read and summarised - connected with an app password from ' + mbox.name + '.',
+      render:_cxCard(mbox.name, 'Mail, read and summarized - connected with an app password from ' + mbox.name + '.',
         [{ code:'mailp:' + mbox.id, label:'Set up ' + String(mbox.name).replace(/\s*\(.*\)\s*$/, '') }],
         'The setup shows exactly where ' + String(mbox.name).replace(/\s*\(.*\)\s*$/, '') + ' gives you that password.')
     };
@@ -37390,7 +37392,7 @@ async function analyzeCodeLarge(code, lang, kind, onProgress){
   const merged = parts.join('\n\n').slice(0, 120000);
   return await aiComplete(
     'Merge these per-section findings into ONE clean report for the whole file. Deduplicate repeated issues, keep the exact line numbers, and order by severity (most serious first). Do not invent anything that is not in the findings.\n\n' + merged,
-    'You merge multiple code-analysis reports into a single precise, well-organised report.',
+    'You merge multiple code-analysis reports into a single precise, well-organized report.',
     { model: _sectionModel('debug'), max_tokens: 14000 }
   );
 }
@@ -40900,7 +40902,7 @@ const AMV_POLICY = [
   { re:/\bfake (review|rating|testimonial)|review bomb|astroturf|(?:post|write|leave) .{0,40}review .{0,30}(?:never|didn'?t|did not|have not|haven'?t) (?:use|used|buy|bought|visit|visited|go|went|been|try|tried|stay|stayed|order|ordered|eat|ate)|review .{0,30}(?:somewhere|something|a place) (?:i|we) (?:never|didn'?t)/i,
     why:'Posting a review for something you did not actually experience is review fraud (and illegal in many places). I can post an honest review of a real experience.' },
   { re:/\b(mass|bulk) (dm|message|email)|spam|blast .*(unsolicited)|scrape .*emails? .*(sell|list)/i,
-    why:'Mass unsolicited messaging breaks platform rules and anti-spam law. I can send personalised messages to people you actually have a reason to contact.' },
+    why:'Mass unsolicited messaging breaks platform rules and anti-spam law. I can send personalized messages to people you actually have a reason to contact.' },
   { re:/\b(hack|brute[- ]?force|bypass (login|captcha|2fa|paywall)|credential stuff|steal .*(password|account|card))/i,
     why:'That is unauthorised access. I will not do it.' },
   { re:/\bimpersonat|pretend to be (?!me\b)|catfish|fake (identity|profile|id)\b/i,
@@ -49222,7 +49224,7 @@ try{ _projLoad(); }catch(e){}
    What the action could cost if it is wrong. Independent of who asked. */
 const AMV_RISK = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5'];
 const AMV_RISK_MEANING = {
-  R0: 'read, organise, categorise or summarise',
+  R0: 'read, organize, categorize or summarize',
   R1: 'a reversible private action - a draft, a label, a task, a note',
   R2: 'an external communication or a scheduling change',
   R3: 'a purchase, booking, cancellation or meaningful account change',

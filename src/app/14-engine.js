@@ -1049,7 +1049,7 @@ async function analyzeCodeLarge(code, lang, kind, onProgress){
   const merged = parts.join('\n\n').slice(0, 120000);
   return await aiComplete(
     'Merge these per-section findings into ONE clean report for the whole file. Deduplicate repeated issues, keep the exact line numbers, and order by severity (most serious first). Do not invent anything that is not in the findings.\n\n' + merged,
-    'You merge multiple code-analysis reports into a single precise, well-organised report.',
+    'You merge multiple code-analysis reports into a single precise, well-organized report.',
     { model: _sectionModel('debug'), max_tokens: 14000 }
   );
 }

@@ -29,7 +29,7 @@
    What the action could cost if it is wrong. Independent of who asked. */
 const AMV_RISK = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5'];
 const AMV_RISK_MEANING = {
-  R0: 'read, organise, categorise or summarise',
+  R0: 'read, organize, categorize or summarize',
   R1: 'a reversible private action - a draft, a label, a task, a note',
   R2: 'an external communication or a scheduling change',
   R3: 'a purchase, booking, cancellation or meaningful account change',

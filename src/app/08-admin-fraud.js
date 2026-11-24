@@ -193,7 +193,7 @@ const AMVFraud = {
     if(protectedCtx.some(s=>s.code==='geo_mismatch'))
       legit.push('A different sign-in region is normal for travel, immigration, international families, study, work, or ordinary VPN use. It is never evidence of fraud on its own.');
     if(sig.refund_request||sig.chargeback||sig.refund_velocity)
-      legit.push('The refund or dispute may be completely valid - the product failed, was not as described, or a charge was not recognised. Requesting money back is a right, not an admission.');
+      legit.push('The refund or dispute may be completely valid - the product failed, was not as described, or a charge was not recognized. Requesting money back is a right, not an admission.');
     if(sig.new_account_high_value)
       legit.push('New customers routinely make a first large purchase. Account age alone means nothing.');
     if(sig.multi_account_device)
@@ -210,7 +210,7 @@ const AMVFraud = {
     if(sig.multi_account_device||sig.promo_multi)
       minEv.push('A second independent link between the accounts (a shared payment instrument or coordinated timing), not the shared device or code alone.');
     if(sig.auth_fail_burst)
-      minEv.push('Re-authentication by the real account owner and confirmation the device is recognised.');
+      minEv.push('Re-authentication by the real account owner and confirmation the device is recognized.');
     if(sig.otp_fail_burst)
       minEv.push('Direct contact with the verified account owner on a known channel.');
     if(sig.new_account_high_value)
@@ -218,7 +218,7 @@ const AMVFraud = {
     if(sig.purchase_velocity)
       minEv.push('Server-side rate and device signals showing whether the pattern is human-plausible or scripted.');
     if(sig.listing_prohibited||sig.listing_guarantee)
-      minEv.push('A manual review of the listing content and proof of the seller\'s ownership or licence.');
+      minEv.push('A manual review of the listing content and proof of the seller\'s ownership or license.');
     if(!minEv.length) minEv.push('At least one more independent signal before any enforcement.');
 
     const en=ev.entities||{};

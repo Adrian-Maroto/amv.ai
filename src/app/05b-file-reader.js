@@ -528,7 +528,7 @@ async function _readOoxml(buf, name){
   }
   const kind = /wordprocessingml/.test(ct) ? 'docx' : /spreadsheetml/.test(ct) ? 'xlsx' : /presentationml/.test(ct) ? 'pptx'
     : /^word\//i.test(main) ? 'docx' : /^xl\//i.test(main) ? 'xlsx' : /^ppt\//i.test(main) ? 'pptx' : '';
-  if(!kind) throw new _FrRefusal('unknown', 'an Office file AMV doesn’t recognise');
+  if(!kind) throw new _FrRefusal('unknown', 'an Office file AMV doesn’t recognize');
   const r = kind === 'docx' ? await _readDocx(z, main) : kind === 'xlsx' ? await _readXlsx(z, main) : await _readPptx(z, main);
   if(r.text.length > _FR_TEXT_MAX) throw new _FrRefusal('too_long');
   return Object.assign({ format: kind }, r);

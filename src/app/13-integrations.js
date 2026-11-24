@@ -381,7 +381,7 @@ function taskRequirementMessage(analysis){
   if(analysis.missing.length){
     analysis.missing.forEach(m=>{
       out+='\uD83D\uDD0C This task needs the **'+m.api+'** to '+m.label+', which isn\u2019t connected yet. '+
-           'Connect **'+m.integration+'** in Integrations (it authorises via '+m.auth+'), then I can run this automatically.\n\n';
+           'Connect **'+m.integration+'** in Integrations (it authorizes via '+m.auth+'), then I can run this automatically.\n\n';
     });
   }
   return out.trim();
@@ -1235,7 +1235,9 @@ try{ window.connReload=connReload; }catch(e){}
 
 /* In the language the screen is in (amvAgo, 01-core.js). */
 function _connAgo(ts){ return amvAgo(ts, 'long'); }
-/* Capability keys are for the wire. These are for people. */
+/* Capability keys are for the wire. These are for people - and each one is
+   read after the word "Can", so each starts with what it lets AMV do (owner,
+   Nov 24: "can do your channels" does not make sense). */
 const _CONN_SCOPE_WORDS = {
   'mail.read':'read your mail', 'mail.send':'send mail as you',
   'calendar.read':'read your calendar', 'calendar.write':'add and change events',
@@ -1253,11 +1255,11 @@ const _CONN_SCOPE_WORDS = {
   'spotify.read':'see what you play, your playlists and your library', 'spotify.write':'control playback and change your playlists',
   'dropbox.read':'read your files', 'dropbox.write':'add and change files',
   'hubspot.read':'read contacts, companies and deals', 'hubspot.write':'add and change contacts and deals',
-  'asana.all':'everything your Asana account can do', 'zoom.all':'your meetings, as allowed in AMV\u2019s Zoom app',
-  'box.all':'everything your Box account can do', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
+  'asana.all':'read and change your Asana tasks and projects', 'zoom.all':'see and schedule your meetings',
+  'box.all':'read and change your Box files', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
   'reddit.read':'read Reddit as you, with your subscriptions and history', 'reddit.write':'post, edit and vote as you',
   'pinterest.read':'read your boards and pins', 'pinterest.write':'create boards and pins',
-  'calendly.all':'your event types, bookings and availability',
+  'calendly.all':'see your event types, bookings and availability',
 };
 function _connScopeWords(list){
   return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);

@@ -1956,25 +1956,6 @@
   "ko": "{n} 수하물·요금 변경",
   "ta": "{n} பயணப்பொதி மற்றும் கட்டண மாற்றங்கள்"
  },
- "{n} news for travellers": {
-  "es": "Noticias de {n} para viajeros",
-  "zh": "{n} 旅客资讯",
-  "hi": "यात्रियों के लिए {n} की ख़बरें",
-  "ar": "أخبار {n} للمسافرين",
-  "pt": "Notícias da {n} para viajantes",
-  "fr": "Actualités de {n} pour les voyageurs",
-  "de": "{n}-News für Reisende",
-  "ja": "{n}の旅行者向けニュース",
-  "ru": "Новости {n} для путешественников",
-  "id": "Berita {n} untuk pelancong",
-  "bn": "যাত্রীদের জন্য {n}-এর খবর",
-  "ur": "مسافروں کے لیے {n} کی خبریں",
-  "tr": "Yolcular için {n} haberleri",
-  "vi": "Tin {n} dành cho du khách",
-  "it": "Notizie di {n} per chi viaggia",
-  "ko": "{n} 여행객 소식",
-  "ta": "பயணிகளுக்கான {n} செய்திகள்"
- },
  "{n} fare and ticket changes": {
   "es": "Cambios de tarifas y billetes de {n}",
   "zh": "{n} 票价与票务变更",
@@ -2487,5 +2468,24 @@
   "it": "Continua a seguire",
   "ko": "계속 지켜보기",
   "ta": "இதைத் தொடர்ந்து கவனி"
+ },
+ "{n} news for travelers": {
+  "es": "Noticias de {n} para viajeros",
+  "zh": "{n} 旅客资讯",
+  "hi": "यात्रियों के लिए {n} की ख़बरें",
+  "ar": "أخبار {n} للمسافرين",
+  "pt": "Notícias da {n} para viajantes",
+  "fr": "Actualités de {n} pour les voyageurs",
+  "de": "{n}-News für Reisende",
+  "ja": "{n}の旅行者向けニュース",
+  "ru": "Новости {n} для путешественников",
+  "id": "Berita {n} untuk pelancong",
+  "bn": "যাত্রীদের জন্য {n}-এর খবর",
+  "ur": "مسافروں کے لیے {n} کی خبریں",
+  "tr": "Yolcular için {n} haberleri",
+  "vi": "Tin {n} dành cho du khách",
+  "it": "Notizie di {n} per chi viaggia",
+  "ko": "{n} 여행객 소식",
+  "ta": "பயணிகளுக்கான {n} செய்திகள்"
  }
 }

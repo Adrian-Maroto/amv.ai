@@ -402,7 +402,7 @@ function _tkListHTML(){
   /* Everything: under each category, the first few and See all. */
   const by = {}; _tkList.forEach(t => { const c = _tkCatOf(t); (by[c] = by[c] || []).push(t); });
   return _tkCats().filter(c => by[c]).map(c => `<section class="tk2-cat">
-      <div class="tk2-cat-h"><h2>${escH(T(c))}</h2><span>${by[c].length.toLocaleString()}</span></div>
+      <div class="tk2-cat-h"><h2>${escH(T(c))}</h2><span>${escH(T('{0} examples').replace('{0}', by[c].length.toLocaleString()))}</span></div>
       <div class="tk2-list">${by[c].slice(0, 6).map(_tkRow).join('')}</div>
       ${by[c].length > 6 ? `<button class="cj-link tk2-all" data-tkcat="${escH(c)}">${escH(T('See all {0}').replace('{0}', by[c].length.toLocaleString()))}</button>` : ''}
     </section>`).join('');
@@ -415,9 +415,10 @@ const TK_POPULAR_N = 50;
 let _tkPop = [];
 function _tkChipsHTML(){
   const n = {}; _tkList.forEach(t => { const c = _tkCatOf(t); n[c] = (n[c] || 0) + 1; });
-  /* All and Popular are there from the first paint, without a count until
-     there is one, so the row never grows under the list and moves it. */
-  const chip = (k, label, c) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}${_tkList.length ? `<span>${c.toLocaleString()}</span>` : ''}</button>`;
+  /* No counts on the chips (owner, Nov 24): "Travel 273" read as "AMV can do
+     273 travel things", when these are examples and AMV does far more - the
+     same reason Crew's chips carry none. */
+  const chip = (k, label) => `<button class="cj-chip${_tkC === k ? ' on' : ''}" data-tkcat="${escH(k)}" aria-pressed="${_tkC === k}">${escH(label)}</button>`;
   return chip('all', T('All'), _tkList.length) + chip('popular', T('Popular'), _tkPop.length || Math.min(TK_POPULAR_N, _tkList.length))
     + _tkCats().filter(c => n[c]).map(c => chip(c, T(c), n[c])).join('');
 }
@@ -457,7 +458,7 @@ function renderTasksView(){
     <div class="tk2-top">
       <div class="tk2-h"><h1>${escH(head)}</h1>
         <p class="tk2-sub" id="tk2-sub" hidden></p>
-        ${row ? `<p class="tk2-go">${escH(T('Pick one to open it in chat, ready for you to send.'))}</p>` : ''}</div>
+        ${row ? `<p class="tk2-go">${escH(T('Examples to start from - AMV can do far more than what is listed here. Ask for anything in chat.'))} ${escH(T('Pick one to open it in chat, ready for you to send.'))}</p>` : ''}</div>
       <button class="cj-country" data-dact="tkCountry">${row ? `<span aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}` : escH(T('Choose your country'))}</button>
     </div>
     ${_autoServerHTML()}
