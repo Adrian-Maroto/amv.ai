@@ -13,7 +13,7 @@
    unchanged; the card adds a line saying what it makes. */
 function _devChip(prompt,label,ic,desc){
   return '<button class="dsn-tile dev-start" type="button" data-dq="'+escH(prompt)+'">'
-    + '<span class="dsn-tile-ic" aria-hidden="true">'+ic+'</span> '
+    + '<span class="dsn-tile-ic" aria-hidden="true">'+_lineIcon(ic)+'</span> '
     + '<span class="dsn-tile-body"><span class="dsn-tile-t">'+escH(label)+'</span> <span class="dsn-tile-d">'+escH(desc)+'</span></span>'
     + '</button>';
 }
@@ -35,10 +35,10 @@ function renderCodeView(){
 
       <div id="dev-hero" class="dev-hero">
         <div class="dsn-starts dev-starts" id="dev-hero-chips">
-          ${_devChip('A landing page for a coffee brand - hero, pricing, and a signup form','Landing page','\uD83D\uDDA5\uFE0F','Hero, pricing and a signup form')}
-          ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app','\u2705','Add, complete and delete, saved as you go')}
-          ${_devChip('A snake game I can play with the arrow keys','Snake game','\uD83D\uDC0D','Play it with the arrow keys')}
-          ${_devChip('A dashboard with a revenue chart and summary cards','Dashboard','\uD83D\uDCCA','A revenue chart and summary cards')}
+          ${_devChip('A landing page for a coffee brand - hero, pricing, and a signup form','Landing page','monitor','Hero, pricing and a signup form')}
+          ${_devChip('A to-do app with add, complete, delete, and saved state','To-do app','check','Add, complete and delete, saved as you go')}
+          ${_devChip('A snake game I can play with the arrow keys','Snake game','game','Play it with the arrow keys')}
+          ${_devChip('A dashboard with a revenue chart and summary cards','Dashboard','chart','A revenue chart and summary cards')}
         </div>
         <div class="dev-hero-upload">
           <button class="dev-upload-btn" id="dev-hero-add">

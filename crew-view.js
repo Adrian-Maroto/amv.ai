@@ -1485,7 +1485,7 @@ function _cjCard(j){
   const wait = j.on && (() => { try{ return _cwNeedsMissing(j).length > 0; }catch(e){ return false; } })();
   return `<div class="cj-card${j.on ? ' on' : ''}${wait ? ' blocked' : ''}">
     <button class="cj-card-b" data-dact="cwPeek" data-darg="${escH(j.id)}">
-      <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <span class="cj-card-ic" aria-hidden="true">${_lineIcon(j.cat)}</span>
       <span class="cj-card-t"${j.ccKind ? ' data-no-i18n' : ''}>${escH(_cjSay(j, j.title))}</span>
       <span class="cj-card-d"${j.ccKind ? ' data-no-i18n' : ''}>${escH(_cjSay(j, j.desc || ''))}</span>
       <span class="cj-card-w">${wait ? `<span class="cj-wait">${escH(T('Waiting to be connected'))}</span>` : j.on ? `<span class="cj-on">${escH(T('On'))}</span>` : ''}${escH(when)}</span>
@@ -1925,7 +1925,7 @@ function _cjdPaint(){
   box.innerHTML = shown.length
     ? shown.map(j => { const c = _cwCountryRow(j.country);
         return `<button class="cxd-row" data-dact="cwPeek" data-darg="${escH(j.id)}">
-          <span class="cj-card-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+          <span class="cj-card-ic" aria-hidden="true">${_lineIcon(j.cat)}</span>
           <span class="cxd-b"><span class="cxd-t" data-no-i18n>${escH(j.title)}</span>
             <span class="cxd-s">${c ? `<span aria-hidden="true">${c[2]}</span> ${escH(T(c[1]))} · ` : ''}${escH(T(_cjCat(j)))} · ${escH(_cjEvery(j))}</span></span></button>`; }).join('')
       + (total > shown.length ? `<div class="cj-more-w"><button class="btn bs" id="cxd-more">${escH(T('Show more'))} <span class="cj-n">${(total - shown.length).toLocaleString()}</span></button></div>` : '')

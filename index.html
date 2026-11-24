@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="442af899a269275c">
+<meta name="amv-build" content="3174cf4d01ecdb93">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10548,6 +10548,34 @@ column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!import
 #int-catalog .int-card .int-desc{grid-area:desc;margin:0!important}
 #int-catalog .int-card > .int-act{grid-area:act;margin:0!important;align-self:center}
 }
+#vc .sv .vi > .eyebrow{display:none!important}
+#vc .sv .vi > h2:first-of-type,
+#vc .spv .spv-t,
+#vc .vi-conn .int2-h,
+#vc .tk2-h h1,
+#vc #cx-ask-h{
+font-family:var(--fdisplay)!important;font-size:var(--t-2xl)!important;font-weight:600!important;
+letter-spacing:-.01em!important;line-height:1.2!important;margin:0!important;color:var(--tx)!important}
+#vc .sv .vi > h2:first-of-type + .vsub,
+#vc .spv .spv-sub,
+#vc .tk2-h .tk2-sub,#vc .tk2-h .tk2-go,
+#vc .cj-ask-hd .cj-promise{font-size:var(--t-md)!important;color:var(--mu)!important;line-height:1.55!important;max-width:64ch;margin-top:var(--sp-2)!important}
+@media (min-width:769px){#vc > .sv > .vi.spv{padding-left:0!important;padding-right:0!important}}
+#vc .spv .spv-head{padding-top:var(--sp-6)!important}
+#vc > .sv > .vi.vi-conn{padding-left:var(--sp-5)!important;padding-right:var(--sp-5)!important;padding-top:var(--sp-6)!important}
+#vc .spv .set-title{font-family:var(--fdisplay)!important;font-size:var(--t-xl)!important;font-weight:600!important;letter-spacing:-.01em!important;line-height:1.25!important}
+#sb .sbdiv{width:auto!important;margin:9px 10px!important}
+#app .cj-card-ic .line-ic,#app .cj-p-ic .line-ic,#app .cw-job-ic .line-ic,#app .dsn-tile-ic .line-ic{color:var(--tx);opacity:.8;width:20px;height:20px}
+#app .dev-starts .dsn-tile-ic .line-ic{width:18px;height:18px}
+#app .cj-card:hover .cj-card-ic .line-ic,#app .dsn-tile:hover .dsn-tile-ic .line-ic{opacity:1}
+#app .tk2 .tk-ic{background:transparent!important;padding:0}
+#app .tk2 .tk-ic .int-mono{width:100%;height:100%;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-family:var(--fdisplay);font-weight:700;font-size:var(--t-md);
+background:hsl(var(--mono-h,220) 45% 50% / .16);color:hsl(var(--mono-h,220) 60% 84%)}
+body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .14);color:hsl(var(--mono-h,220) 65% 24%)}
+.empty-state.es-aura::before,.empty-state.es-aura::after{display:none!important;content:none!important}
+.empty-state .es-icon{box-shadow:none!important;background:var(--s2)!important;border:1px solid var(--bd)!important;backdrop-filter:none!important}
+.empty-state .es-icon svg{color:var(--mu)!important}
+.empty-state .es-title{font-family:var(--fn)!important;font-weight:600!important;font-size:var(--t-lg)!important;letter-spacing:0!important}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -10777,10 +10805,10 @@ column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!import
       <div class="sbfoot">
         <div class="sb-tools" id="sb-tools">
           <button class="sb-tool" data-tab="tasks" title="Tasks" aria-label="Tasks"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="sb-tool-tip">Tasks</span></button>
-          <button class="sb-tool" data-tab="spend" title="Spending" aria-label="Spending"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span class="sb-tool-tip">Spending</span></button>
+          <button class="sb-tool" data-tab="spend" title="Spending" aria-label="Spending"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg><span class="sb-tool-tip">Spending</span></button>
           <button class="sb-tool" data-tab="memory" title="Memory" aria-label="Memory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg><span class="sb-tool-tip">Memory</span></button>
           <button class="sb-tool" data-tab="team" id="nav-team" hidden title="Team" aria-label="Team"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="sb-tool-tip">Team</span></button>
-          <button class="sb-tool" data-tab="integrations" title="Integrations" aria-label="Integrations"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4v7a4 4 0 0 1-4 4H6"/></svg><span class="sb-tool-tip">Integrations</span></button>
+          <button class="sb-tool" data-tab="integrations" title="Integrations" aria-label="Integrations"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span class="sb-tool-tip">Integrations</span></button>
         </div>
         <!-- Shown only when something is wrong: degraded or offline. -->
         <button class="sb-status" id="sb-status" title="System status" hidden>
@@ -10799,7 +10827,7 @@ column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!import
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.b44f4fb1e53b.js" defer integrity="sha384-aH0hTPOll0+Z1/QCUdtKB1VUuv/wtuBBJ4VbHnK08BAsJJYLA/5EmbH1/Hd4p+Hf" data-amv-app></script>
+<script src="/app.73eac80e07bc.js" defer integrity="sha384-KiGZ/RKluyDp4s0hwVDSfBHsIXYi67N95b/u6hzWqun+wweP9fz1F1UWvWnSgL8I" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

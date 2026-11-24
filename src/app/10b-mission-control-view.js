@@ -123,7 +123,7 @@ function _cwJobCard(j){
      a card was the toggle, which meant the only way to find out what a job
      did was to switch it on. */
   return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
-    <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
+    <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
     <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
@@ -143,7 +143,7 @@ function _cwJobCard(j){
 function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard(j); }
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
-    <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
+    <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
     <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
@@ -402,7 +402,7 @@ function cwPeek(id){
 
   r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp cj-p" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
     <header class="cj-p-h">
-      <span class="cj-p-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+      <span class="cj-p-ic" aria-hidden="true">${_lineIcon(j.cat)}</span>
       <div class="cj-p-ht"><h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
         <span class="cj-p-st${j.on ? ' on' : ''}" id="cwp-status">${escH(status)}</span></div>
       <button class="cwp-x" id="cwp-close" aria-label="${escH(T('Close'))}">✕</button>

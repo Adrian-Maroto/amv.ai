@@ -17943,3 +17943,58 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
   #int-catalog .int-card .int-desc{grid-area:desc;margin:0!important}
   #int-catalog .int-card > .int-act{grid-area:act;margin:0!important;align-self:center}
 }
+
+/* ========== LAYER A399 (Nov 24): one page header on every section ==========
+   The owner: "all sections need to look aesthetic, clean, not vibe coded".
+   Measured at 1440: eight section pages, four left edges (294, 318, 415,
+   431px), three title treatments (26px/600, 26px/500, 20px/600) and an
+   uppercase eyebrow over three of them only. Every page now opens the same
+   way - one title in the display face at --t-2xl/600, the muted line under
+   it, no eyebrow - and starts on one of two columns: the reading column
+   (.vi) or the catalogue column (Crew, Tasks, Integrations). */
+#vc .sv .vi > .eyebrow{display:none!important}
+#vc .sv .vi > h2:first-of-type,
+#vc .spv .spv-t,
+#vc .vi-conn .int2-h,
+#vc .tk2-h h1,
+#vc #cx-ask-h{
+  font-family:var(--fdisplay)!important;font-size:var(--t-2xl)!important;font-weight:600!important;
+  letter-spacing:-.01em!important;line-height:1.2!important;margin:0!important;color:var(--tx)!important}
+#vc .sv .vi > h2:first-of-type + .vsub,
+#vc .spv .spv-sub,
+#vc .tk2-h .tk2-sub,#vc .tk2-h .tk2-go,
+#vc .cj-ask-hd .cj-promise{font-size:var(--t-md)!important;color:var(--mu)!important;line-height:1.55!important;max-width:64ch;margin-top:var(--sp-2)!important}
+/* The reading column: Spending's header carried its own inset. */
+@media (min-width:769px){#vc > .sv > .vi.spv{padding-left:0!important;padding-right:0!important}}
+#vc .spv .spv-head{padding-top:var(--sp-6)!important}
+/* The catalogue column: Integrations sat 24px wider and 24px higher than
+   Crew and Tasks beside it in the sidebar. */
+#vc > .sv > .vi.vi-conn{padding-left:var(--sp-5)!important;padding-right:var(--sp-5)!important;padding-top:var(--sp-6)!important}
+/* A heading inside a page is smaller than the page's own title. Spending
+   reuses the Settings pane title for its second block, which drew it larger
+   than "Spending" above it. Now the size Crew uses for "Jobs for ...". */
+#vc .spv .set-title{font-family:var(--fdisplay)!important;font-size:var(--t-xl)!important;font-weight:600!important;letter-spacing:-.01em!important;line-height:1.25!important}
+/* The rule under Agents was 60% wide (an early layer), so it stopped short
+   of everything else in the sidebar and read as a glitch. It spans the same
+   width as the rows above it now. */
+#sb .sbdiv{width:auto!important;margin:9px 10px!important}
+
+/* ========== LAYER A400 (Nov 24): one icon set on every card ==========
+   Category icons (_lineIcon) in the same line style as the sidebar replace
+   the emoji on Crew, Build and Design cards; a task or a country service is
+   shown by its initial, tinted as Integrations shows an app. */
+#app .cj-card-ic .line-ic,#app .cj-p-ic .line-ic,#app .cw-job-ic .line-ic,#app .dsn-tile-ic .line-ic{color:var(--tx);opacity:.8;width:20px;height:20px}
+#app .dev-starts .dsn-tile-ic .line-ic{width:18px;height:18px}
+#app .cj-card:hover .cj-card-ic .line-ic,#app .dsn-tile:hover .dsn-tile-ic .line-ic{opacity:1}
+#app .tk2 .tk-ic{background:transparent!important;padding:0}
+#app .tk2 .tk-ic .int-mono{width:100%;height:100%;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-family:var(--fdisplay);font-weight:700;font-size:var(--t-md);
+  background:hsl(var(--mono-h,220) 45% 50% / .16);color:hsl(var(--mono-h,220) 60% 84%)}
+body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .14);color:hsl(var(--mono-h,220) 65% 24%)}
+/* Empty states (every "Nothing here yet") lose their halo: a radial glow
+   behind the icon and a drop shadow under it, decoration the design rules
+   name as generic. A plain tile in the card's own border, the same on every
+   screen that has nothing to show yet. */
+.empty-state.es-aura::before,.empty-state.es-aura::after{display:none!important;content:none!important}
+.empty-state .es-icon{box-shadow:none!important;background:var(--s2)!important;border:1px solid var(--bd)!important;backdrop-filter:none!important}
+.empty-state .es-icon svg{color:var(--mu)!important}
+.empty-state .es-title{font-family:var(--fn)!important;font-weight:600!important;font-size:var(--t-lg)!important;letter-spacing:0!important}

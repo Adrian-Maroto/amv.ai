@@ -1046,7 +1046,6 @@ function _ccAct(x){
 /* A Crew-named service's icon is its fact's kind of thing. */
 const CC_FACT_KIND = { banks: 'bank', cards: 'bank', pay: 'bank', jobs: 'employer', shop: 'retail', groc: 'supermarket', food: 'restaurant',
   rail: 'rail', prop: 'utility', telco: 'telecom', post: 'agency', news: 'newssite', health: 'hospital', gov: 'agency', tax: 'agency', id: 'agency', car: 'agency', uni: 'university' };
-function _ccIcon(x){ if(x.kind === 'crew' || x.f) return (CC_KINDS[CC_FACT_KIND[x.f]] || ['\u2022'])[0]; return x.kind === 'global' ? '\u{1F310}' : (CC_KINDS[x.kind] || ['\u2022'])[0]; }
 /* Drawn in the same frame as the screen when everything is already here
    (fetched while the app was idle): no topic grows after it appears. Says
    whether it drew; the screen falls back to ccFillIntegrations otherwise. */
@@ -1186,7 +1185,7 @@ function _ccFillDraw(root, by){
   /* A row is registered when it is drawn - its Use / Link reads it there. */
   const svcRow = (x) => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; return _ccSvcRowHTML(x); };
   const _ccSvcRowHTML = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
-      <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
+      <div class="int-ic" aria-hidden="true">${_appMarkHTML(x.e.n)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;
   for(let [topic, rows] of Object.entries(by)){
@@ -1314,7 +1313,7 @@ async function ccSearchServices(q){
   const flag = (cc) => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[2] : cc; };
   const where = (x) => x.cc.slice(0, 4).map(flag).join(' ') + (x.cc.length > 4 ? ' +' + (x.cc.length - 4) : '');
   const row = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
-      <div class="int-ic" aria-hidden="true">${_ccIcon(x)}</div>
+      <div class="int-ic" aria-hidden="true">${_appMarkHTML(x.e.n)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div>
         <div class="int-desc" data-no-i18n>${escH(x.e.s)}${x.cc.length ? ` <span class="cc-where" aria-label="${escH(x.cc.join(', '))}">${where(x)}</span>` : ''}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;

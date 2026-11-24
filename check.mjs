@@ -1687,7 +1687,12 @@ step('Page weight is under control', () => {
      it and Work on code (one composer each - A397), with their translations'
      keys. The rules the old screens used were taken out first (~1.6KB raw
      back); what is left is the new layout itself. */
-  const CEILING = 594 * 1024;   // gzipped, which is what actually crosses the network
+  /* 594 -> 596, 2026-11-24, UP on purpose: the owner's design pass ("not vibe
+     coded") - one line-icon set (_lineIcon, 22 icons) in place of about two
+     hundred emoji on Crew, Build and Design cards, and one page header on
+     every section (LAYER A399/A400). Nothing it replaced was in the page: the
+     emoji live in the data files fetched on demand. */
+  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

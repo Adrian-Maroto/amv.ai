@@ -640,10 +640,10 @@ function renderDesignView(){
     }
   }catch(e){}
   const starts=[
-    ['\uD83D\uDDA5\uFE0F','Landing page','A hero, features and a call-to-action'],
-    ['\uD83D\uDCF1','App screen','A clean mobile or web UI mockup'],
-    ['\uD83C\uDFA8','Poster / graphic','Social post, banner or flyer'],
-    ['\uD83E\uDDE9','Component','A single button, card or form']
+    ['monitor','Landing page','A hero, features and a call-to-action'],
+    ['phone','App screen','A clean mobile or web UI mockup'],
+    ['palette','Poster / graphic','Social post, banner or flyer'],
+    ['component','Component','A single button, card or form']
   ];
   vc.innerHTML = `<div class="sv fi bld-sv"><div class="dsn-wrap">
     ${_buildEntryHeadHTML('studio','What should we make?')}
@@ -669,7 +669,7 @@ function renderDesignView(){
 
     <section class="dsn-starts">
       ${starts.map(([ic,t,d],n)=>`<button class="dsn-tile${n===0?' feat':''}" data-dact="designStart" data-darg="${escH(t)}">
-        <span class="dsn-tile-ic">${ic}</span>
+        <span class="dsn-tile-ic" aria-hidden="true">${_lineIcon(ic)}</span>
         <span class="dsn-tile-body"><span class="dsn-tile-t">${t}</span><span class="dsn-tile-d">${escH(d)}</span></span>
       </button>`).join('')}
     </section>
