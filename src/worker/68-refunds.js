@@ -78,6 +78,64 @@ async function _refundUsedShare(env, user){
   return used / ceiling;
 }
 
+/* THE ONCE-A-YEAR LIMIT OUTLIVES THE ACCOUNT (owner, Nov 24: "do anything
+   you recommend").
+
+   `refundauto` is keyed by the email and erased with the account, so deleting
+   the account and signing up again - or simply using a new email - reset the
+   limit: subscribe, use under 20%, refund, repeat. So an automatic refund also
+   leaves two marks that are NOT erased: a one-way hash of the email and of the
+   card's fingerprint (Stripe's id for the physical card, the same across every
+   customer it is used on). The card is the mark that matters; a new email
+   does not get past it.
+
+   Nothing that names anybody is kept: each mark is an HMAC under the server's
+   secret, so it can answer "was this card refunded automatically in the last
+   year?" and nothing else, and it expires by itself after the year it exists
+   for. The Privacy Policy says so (section 2). A card fingerprint that cannot
+   be read leaves the email mark to decide - never an open door, never a
+   refusal on its own. */
+const REFUND_SEEN_TTL_S = 366 * 86400;
+async function _refundMarkId(env, what){
+  if (!env.JWT_SECRET || !what) return '';
+  const key = await _hmacKey(env.JWT_SECRET);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('refundseen:' + what)));
+  return Array.from(mac.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/* Stripe's fingerprint of the card behind this charge, or '' (not a card, or
+   Stripe could not say). */
+async function _refundCardPrint(env, inv){
+  try {
+    const url = inv.charge
+      ? 'https://api.stripe.com/v1/charges/' + encodeURIComponent(inv.charge)
+      : 'https://api.stripe.com/v1/payment_intents/' + encodeURIComponent(inv.pi) + '?expand[]=latest_charge';
+    const r = await fetchDeadline(url, { headers: _stripeAuth(env) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return '';
+    const ch = inv.charge ? d : (d.latest_charge && typeof d.latest_charge === 'object' ? d.latest_charge : {});
+    const fp = ch && ch.payment_method_details && ch.payment_method_details.card && ch.payment_method_details.card.fingerprint;
+    return typeof fp === 'string' && /^[A-Za-z0-9]{8,64}$/.test(fp) ? fp : '';
+  } catch (e) {
+    audit(env, 'refund_card_print_unreadable', { invoice: inv.id });
+    return '';
+  }
+}
+/* The marks this charge would leave, and whether either is already there. */
+async function _refundMarks(env, email, inv){
+  const ids = [];
+  const e = await _refundMarkId(env, 'e:' + String(email || '').toLowerCase());
+  if (e) ids.push(e);
+  const fp = await _refundCardPrint(env, inv);
+  const c = fp ? await _refundMarkId(env, 'c:' + fp) : '';
+  if (c) ids.push(c);
+  let seen = false;
+  for (const id of ids) {
+    const m = await DB.get(env, 'refundseen', id);
+    if (m && m.at && Date.now() - m.at < REFUND_AUTO_EVERY_MS) { seen = true; break; }
+  }
+  return { ids, seen, card: !!c };
+}
+
 /* Everything the screen needs to say, and the server needs to decide. */
 async function _refundState(env, user){
   if (!env.STRIPE_SECRET_KEY)
@@ -100,8 +158,15 @@ async function _refundState(env, user){
   if (age > REFUND_DAYS * 86400000) why.push('over_14_days');
   if (share >= REFUND_LIGHT_USE) why.push('used_20_percent');
   if (last && last.at && Date.now() - last.at < REFUND_AUTO_EVERY_MS) why.push('refunded_this_year');
+  /* Asked only when nothing else has ruled it out: it costs a Stripe read. */
+  let marks = null;
+  if (!why.length) {
+    marks = await _refundMarks(env, user.email, inv);
+    if (marks.seen) why.push('refunded_this_year');
+  }
   return {
     inv,
+    marks,
     state: {
       ok: true,
       auto: why.length === 0,
@@ -214,6 +279,12 @@ async function billingRefund(request, env){
     }
     await DB.put(env, 'refunddone', s.inv.id, { at: Date.now(), email: user.email, refund: r.refund.id, why: 'auto' });
     await DB.put(env, 'refundauto', user.email, { at: Date.now(), invoice: s.inv.id });
+    /* The marks that survive the account (above). A failure to write one is
+       loud, not silent: the refund has happened and the limit is weaker. */
+    for (const id of ((s.marks && s.marks.ids) || [])) {
+      try { await DB.put(env, 'refundseen', id, { at: Date.now() }, { expirationTtl: REFUND_SEEN_TTL_S }); }
+      catch (e) { audit(env, 'refund_mark_failed', { invoice: s.inv.id }); }
+    }
     const atStripe = await _refundEndPlan(env, user.email, s.inv.subId, 'auto');
     audit(env, 'refund_auto', { email: user.email, invoice: s.inv.id, refund: r.refund.id, amount: r.refund.amount, currency: r.refund.currency, status: r.refund.status });
     await _userEvent(env, request, user.email, 'refund_auto', { amount: r.refund.amount, currency: r.refund.currency });

@@ -24,7 +24,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'refunds.harness.mjs');
 writeFileSync(harness, src + `
-export { billingRefund, billingRefundState, adminRefunds, adminRefundDecide, DB, counter, _periodKeyOf, _monthlyCeilingUSD };
+export { billingRefund, billingRefundState, adminRefunds, adminRefundDecide, DB, counter, _periodKeyOf, _monthlyCeilingUSD, _refundMarkId };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -43,7 +43,7 @@ let USER = { email: EMAIL, plan: 'pro', billingRenewedAt: Date.now() - 2 * DAY }
 W.__setRequireUser(async () => USER);
 
 /* The stand-in Stripe. */
-let calls = [], invoice = null, refundReply = null, refundRead = null, subRead = null, delReply = null;
+let cardPrint = 'fpCARDone1234', calls = [], invoice = null, refundReply = null, refundRead = null, subRead = null, delReply = null;
 const keep = globalThis.fetch;
 globalThis.fetch = async (u, o) => {
   const url = String(u), method = (o && o.method) || 'GET';
@@ -52,6 +52,7 @@ globalThis.fetch = async (u, o) => {
     calls.push({ url, method, body: String((o && o.body) || ''), idem: h['Idempotency-Key'] || '' });
     const send = (j, st = 200) => new Response(JSON.stringify(j), { status: st });
     if (/\/v1\/invoices\?/.test(url)) return send({ data: invoice ? [invoice] : [] });
+    if (/\/v1\/charges\/ch_/.test(url)) return send({ id: 'ch_1', payment_method_details: cardPrint ? { card: { fingerprint: cardPrint } } : {} });
     if (/\/v1\/refunds$/.test(url) && method === 'POST') return refundReply ? send(refundReply.json, refundReply.status || 200) : send({ id: 're_1', status: 'succeeded', amount: 1500 });
     if (/\/v1\/refunds\/re_/.test(url)) return send(refundRead || { id: 're_1', status: 'succeeded', amount: 1500 });
     if (/\/v1\/subscriptions\//.test(url) && method === 'GET') return send(subRead || { id: 'sub_1', status: 'active', customer: 'cus_me' });
@@ -124,6 +125,44 @@ section('Each limit is the server’s, whatever the page shows');
   await seed({ invoice: { customer: 'cus_someone_else' } });
   s = await get();
   ok(s.ok === false && s.code === 'forbidden', 'a charge that belongs to another customer is never refunded', s);
+}
+
+section('The once-a-year limit outlives the account, and names nobody');
+{
+  /* Deleting the account erases refundauto (it is keyed by the email), so
+     before this: refund, delete, sign up again, refund again - or the same
+     with a new email. The marks an automatic refund leaves are not erased. */
+  cardPrint = 'fpCARDone1234';
+  await seed({ usedShare: 0.05 });
+  const r = await post({ mode: 'auto' });
+  ok(r.status === 200 && r.d.ok, 'the first automatic refund goes through', r);
+  const marks = [...store.keys()].filter(k => k.startsWith('refundseen:'));
+  ok(marks.length === 2, 'it leaves two marks: the email and the card', marks);
+  const kept = marks.map(k => [k, store.get(k)]);
+  const dump = JSON.stringify(kept);
+  ok(!dump.includes(EMAIL) && !dump.includes('fpCARDone1234'), 'neither names the email or the card', dump.slice(0, 160));
+
+  /* The account is deleted (everything keyed by it goes) and they come back. */
+  const again = async (keep) => {
+    await seed({ usedShare: 0.05, invoice: { id: 'in_2', charge: 'ch_2' } });
+    for (const [k, v] of keep) store.set(k, v);
+    return get();
+  };
+  let s = await again(kept);
+  ok(!s.auto && s.why.includes('refunded_this_year'), 'the same email after deleting the account: no second automatic refund', s.why);
+
+  const cardId = 'refundseen:' + await W._refundMarkId(env, 'c:fpCARDone1234');
+  ok(kept.some(([k]) => k === cardId), 'one mark is the card', cardId);
+  s = await again(kept.filter(([k]) => k === cardId));
+  ok(!s.auto && s.why.includes('refunded_this_year'), 'the same card under any email: no second automatic refund', s.why);
+
+  cardPrint = 'fpCARDtwo5678';
+  s = await again(kept.filter(([k]) => k === cardId));
+  ok(s.auto === true, 'a different card and email is not held to someone else’s refund', s);
+  cardPrint = 'fpCARDone1234';
+
+  const er = src.match(/'refundopen', 'refundlast', 'refundauto',[^\n]*/);
+  ok(er && !/refundseen/.test(er[0]) && /'refundseen:'/.test(src), 'the marks are backed up and not on the erasure list', er && er[0]);
 }
 
 section('A refund Stripe does not complete ends nothing');

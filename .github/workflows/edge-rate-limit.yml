@@ -1,0 +1,47 @@
+name: edge-rate-limit
+
+# ONE ADDRESS CANNOT FLOOD AMV (scripts/edge-rate-limit.mjs says why and how).
+#
+# Run by hand, from Actions > edge-rate-limit > Run workflow. It changes one
+# thing on the Cloudflare zone - AMV's own rate limiting rule - keeps every
+# other rule there, and says it worked only after reading the rule back.
+# The CLOUDFLARE_API_TOKEN the deploy uses needs two more permissions for it:
+# Zone > Zone > Read and Zone > Zone WAF > Edit. Without them the run says so
+# and changes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Requests one address may send in 10 seconds'
+        default: '150'
+      expression:
+        description: 'Which requests count (Cloudflare rule expression)'
+        default: '(http.request.uri.path wildcard "/*")'
+      dry:
+        description: 'Dry run: read and report, change nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set the edge rule and read it back
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+          LIMIT: ${{ inputs.limit }}
+          EXPRESSION: ${{ inputs.expression }}
+          DRY: ${{ inputs.dry && '1' || '0' }}
+        run: |
+          host="${SITE#https://}"; host="${host%%/*}"
+          export ZONE="$host"
+          node scripts/edge-rate-limit.mjs

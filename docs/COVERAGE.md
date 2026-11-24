@@ -2,14 +2,14 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-24 from 426 suites.
+2026-11-24 from 427 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
 this is branch coverage in bytes. Browser suites (tests/e2e) are not counted here: they drive
 the Worker too, so these numbers are a floor.
 
-**Whole Worker:** functions 1309/1309 (100.0%), code 92.8%.
+**Whole Worker:** functions 1309/1309 (100.0%), code 92.9%.
 
 ## The trust areas
 
@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.8%.
+Functions 139/139 (100.0%), code 91.7%.
 
 
 ### Company sign-in and SCIM
@@ -85,11 +85,11 @@ Functions 52/52 (100.0%), code 93.3%.
 | `22-subscribe.js` | 4/4 | 89.7% |
 | `23-consent.js` | 1/1 | 95.7% |
 | `24-bank-data.js` | 18/18 | 83.2% |
-| `25-linked-accounts.js` | 22/22 | 76.5% |
+| `25-linked-accounts.js` | 22/22 | 76.6% |
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.6% |
+| `28-password-reset.js` | 7/7 | 92.7% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.3% |
@@ -100,8 +100,8 @@ Functions 52/52 (100.0%), code 93.3%.
 | `35-batches.js` | 19/19 | 92.0% |
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
-| `38-connector-logos.js` | 10/10 | 87.0% |
-| `39-resumable-streams.js` | 17/17 | 94.7% |
+| `38-connector-logos.js` | 10/10 | 96.1% |
+| `39-resumable-streams.js` | 17/17 | 94.6% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |

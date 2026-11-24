@@ -974,6 +974,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "refundseen": {
+   "class": "financial",
+   "holds": "one-way HMAC codes of the email and the card fingerprint behind an automatic refund, so the once-a-year limit survives deleting the account; nothing that names anybody",
+   "kept": "12 months, then expires by itself; not erased with the account",
+   "backup": true,
+   "authority": "kv"
+  },
   "buyhold": {
    "class": "financial",
    "holds": "an amount held against a person's spending limits for one purchase, and how it was settled",

@@ -32164,7 +32164,7 @@ function renderCk(){
 
    A constant, bumped by hand when the text below materially changes - which is
    the only thing an effective date can honestly mean. */
-const LEGAL_EFFECTIVE = '2026-08-05';
+const LEGAL_EFFECTIVE = '2026-11-24';
 function _legalEffective(){
   try{ return new Date(LEGAL_EFFECTIVE + 'T00:00:00').toLocaleDateString(undefined,
         { year:'numeric', month:'long', day:'numeric' }); }
@@ -32248,7 +32248,7 @@ function openPrivacy(){
           'For the current list of the specific companies in each category, contact us at '+contact+'.'+
         '<h4>4. What we do NOT do</h4>We do not sell or rent your data, do not show third-party ads, and do not use your private chats to train models.'+
         '<h4>5. Your rights</h4>You can access, export, or delete your data. Deleting your account removes your account record, content, and automations from our storage. To exercise these rights, use the controls in Settings or contact us at '+contact+'.'+
-        '<h4>6. Data retention</h4>We keep your data while your account is active. Usage counters expire automatically. When you delete your account, your data is removed from active storage; residual copies in routine backups age out on their normal cycle.'+
+        '<h4>6. Data retention</h4>We keep your data while your account is active. Usage counters expire automatically. When you delete your account, your data is removed from active storage; residual copies in routine backups age out on their normal cycle. One exception: when a charge is refunded automatically, we keep a one-way code made from your email and one made from the card used (not the card number) for 12 months, even if the account is deleted, only so the once-a-year automatic refund applies once per person and card. The codes cannot be turned back into your email or card, and they expire on their own.'+
         '<h4>7. Cookies &amp; local storage</h4>We use essential storage to keep you signed in and remember your preferences, and optional analytics only if you consent. You can change this any time in Settings.'+
         '<h4>8. Children</h4>AMV.AI is not directed to children under 13 (or the minimum age in your region), and we do not knowingly collect their data.'+
         '<h4>9. Changes &amp; contact</h4>We may update this policy; material changes will be noted with a new effective date. Questions: '+contact+'.'+

@@ -1,8 +1,8 @@
 {
  "note": "The app code files the host keeps: the current one first. Written by build.mjs.",
  "files": [
+  "app.e5c9e356adde.js",
   "app.953700cc0854.js",
-  "app.78fea5b5f63f.js",
-  "app.3c9756cdbeed.js"
+  "app.78fea5b5f63f.js"
  ]
 }

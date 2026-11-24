@@ -79,7 +79,7 @@ const BACKUP_PREFIXES = [
      charges were already refunded and who had their one automatic refund this
      year - the permissive direction - and lose the requests people are
      waiting on an answer to. */
-  'refundreq:', 'refundopen:', 'refundlast:', 'refunddone:', 'refundauto:',
+  'refundreq:', 'refundopen:', 'refundlast:', 'refunddone:', 'refundauto:', 'refundseen:',
   /* Purchases AMV made for somebody (69-buying.js): the holds on their limits
      and their receipts. A restore without the holds would free money still
      booked against a purchase that may have happened. */
