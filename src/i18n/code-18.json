@@ -3020,23 +3020,23 @@
   "ur": "ہم کیا تخلیق کریں؟",
   "ta": "நாம் எதை உருவாக்குவோம்?"
  },
- "What should we revise?": {
-  "es": "¿Qué revisamos?",
-  "zh": "我们要修改什么?",
-  "hi": "हम क्या सुधारें?",
-  "ar": "ماذا نراجع؟",
-  "pt": "O que vamos revisar?",
-  "fr": "Que révisons-nous ?",
-  "de": "Was sollen wir überarbeiten?",
-  "ja": "何を修正しましょう?",
-  "ru": "Что доработаем?",
-  "ko": "무엇을 수정할까요?",
-  "it": "Cosa rivediamo?",
-  "tr": "Neyi düzeltelim?",
-  "vi": "Chúng ta sửa gì?",
-  "id": "Apa yang akan kita revisi?",
-  "bn": "আমরা কী সংশোধন করব?",
-  "ur": "ہم کیا بہتر کریں؟",
-  "ta": "நாம் எதைத் திருத்துவோம்?"
+ "What code should we revise?": {
+  "es": "¿Qué código revisamos?",
+  "zh": "我们要修改哪段代码?",
+  "hi": "हम कौन-सा कोड सुधारें?",
+  "ar": "ما الكود الذي نراجعه؟",
+  "pt": "Que código vamos revisar?",
+  "fr": "Quel code révisons-nous ?",
+  "de": "Welchen Code sollen wir überarbeiten?",
+  "ja": "どのコードを修正しましょう?",
+  "ru": "Какой код доработаем?",
+  "ko": "어떤 코드를 수정할까요?",
+  "it": "Quale codice rivediamo?",
+  "tr": "Hangi kodu düzeltelim?",
+  "vi": "Chúng ta sửa đoạn mã nào?",
+  "id": "Kode apa yang akan kita revisi?",
+  "bn": "আমরা কোন কোড সংশোধন করব?",
+  "ur": "ہم کون سا کوڈ بہتر کریں؟",
+  "ta": "நாம் எந்தக் குறியீட்டைத் திருத்துவோம்?"
  }
 }
