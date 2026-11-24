@@ -349,7 +349,7 @@ function openPrivacy(){
           '<b>Content:</b> the chats, projects, memory, and automations you create. '+
           '<b>Usage:</b> counts and timestamps of requests, for limits, billing, and abuse prevention. '+
           '<b>Payment:</b> handled entirely by our payment processor - we never see or store your full card number.'+
-        '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (KV / D1) in encrypted transit and at rest. Passwords are never stored in plain text - they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
+        '<h4>2. How we store it</h4>Your account and content are stored on Cloudflare\u2019s infrastructure (its key-value store, file storage and Durable Objects), encrypted in transit and at rest. Passwords are never stored in plain text - they are salted and hashed with PBKDF2-SHA256 at current OWASP-recommended strength. Access tokens are short-lived and can be revoked.'+
         /* CATEGORIES, not the vendor's name. AMV is branded as AMV throughout,
            and naming the model provider in copy every visitor can open is the
            one place that leaked. GDPR Art. 13(1)(e) asks for "the recipients or
@@ -360,9 +360,9 @@ function openPrivacy(){
         '<h4>3. Who we share it with</h4>We do <b>not</b> sell your data. We share the minimum necessary with the providers that make the service work: '+
           'our <b>AI model provider</b> (processes your prompts to generate AI responses), '+
           '<b>Stripe</b> (payments), '+
-          '<b>Resend</b> (transactional email such as password resets), and '+
-          '<b>Twilio</b> (only if you enable text messaging). '+
-          'If you sign in with Google, Google authenticates you. Each provider handles data under its own privacy terms. '+
+          '<b>Resend</b> (transactional email such as password resets), '+
+          '<b>Twilio</b> (only if you enable text messaging), and an <b>analytics provider</b> only if you accept analytics. '+
+          'If you sign in with Google, Google authenticates you. When you connect an account - for example Google, Microsoft, Slack, GitHub, or your bank through Plaid - AMV exchanges data with that service only to do what you ask, and you can disconnect it in Settings at any time. Each provider handles data under its own privacy terms. '+
           'For the current list of the specific companies in each category, contact us at '+contact+'.'+
         '<h4>4. What we do NOT do</h4>We do not sell or rent your data, do not show third-party ads, and do not use your private chats to train models.'+
         '<h4>5. Your rights</h4>You can access, export, or delete your data. Deleting your account removes your account record, content, and automations from our storage. To exercise these rights, use the controls in Settings or contact us at '+contact+'.'+
