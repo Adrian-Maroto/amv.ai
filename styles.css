@@ -17931,3 +17931,18 @@ body.light:not(#_a):not(#_b) :is(.cj-chip,.hc-chip,.build-mode,.team-cyc,.temp-t
 @media (max-width:560px){.lab-compose .lab-entry-acts .lab-go{white-space:nowrap;padding:0 var(--sp-3)!important;font-size:var(--t-sm)!important}}
 .cc-pushed{display:none!important}
 .cc-dup{display:none!important}
+
+/* ========== LAYER A398 (Nov 24): an Integrations row on a phone is one line plus its description ==========
+   The button sat on its own line under the text, so every row was ~125px and
+   a topic of nine filled two screens. Now the name and its button share the
+   first line and the description runs under both - the same row, half the
+   height. Phone only: wider screens already sit the button beside the text. */
+@media (max-width:560px){
+  #int-catalog .int-card{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"ic top act" "ic desc desc";
+    column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!important}
+  #int-catalog .int-card > .int-body{display:contents!important}
+  #int-catalog .int-card > .int-ic{grid-area:ic;align-self:start}
+  #int-catalog .int-card .int-top{grid-area:top;min-width:0}
+  #int-catalog .int-card .int-desc{grid-area:desc;margin:0!important}
+  #int-catalog .int-card > .int-act{grid-area:act;margin:0!important;align-self:center}
+}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="4d4ac1aaab6d22fd">
+<meta name="amv-build" content="ca2ee6da92a37dbb">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10542,6 +10542,15 @@ background:transparent!important;color:var(--mu)!important;font-size:var(--t-sm)
 @media (max-width:560px){.lab-compose .lab-entry-acts .lab-go{white-space:nowrap;padding:0 var(--sp-3)!important;font-size:var(--t-sm)!important}}
 .cc-pushed{display:none!important}
 .cc-dup{display:none!important}
+@media (max-width:560px){
+#int-catalog .int-card{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"ic top act" "ic desc desc";
+column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!important}
+#int-catalog .int-card > .int-body{display:contents!important}
+#int-catalog .int-card > .int-ic{grid-area:ic;align-self:start}
+#int-catalog .int-card .int-top{grid-area:top;min-width:0}
+#int-catalog .int-card .int-desc{grid-area:desc;margin:0!important}
+#int-catalog .int-card > .int-act{grid-area:act;margin:0!important;align-self:center}
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
