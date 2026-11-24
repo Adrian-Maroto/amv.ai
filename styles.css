@@ -18105,3 +18105,4 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 /* Help: the questions sat in an invisible card padded 28px, so the search
    and every question started 28px right of the page's own title. */
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-help > .ss2{padding:0!important;box-shadow:none!important;border:0!important;background:none!important}
+@media (max-width:560px){:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ss2{padding:var(--sp-4)!important;border-radius:16px!important}}
