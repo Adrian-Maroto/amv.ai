@@ -128,19 +128,17 @@ These are already coded to activate the moment you configure them:
 - For marketplace payouts: keep withdrawal holds on and require identity
   verification before releasing funds (money-laundering / wash-trade control).
 - Optionally add a disposable-email domain blocklist at signup.
-- **Narrow what the static host publishes.** ⚠️ CONFIRMED OPEN, and it is one
-  field. The site is one file at the root of this repository, so if the host's
-  publish directory is the repository, everything in it is readable at your
-  domain - and opening `https://<your domain>/amv-backend.js` returned the
-  Worker. No credentials: those live in the Worker's environment and are never
-  written to a file here. What is exposed is every route, every limit, and this
-  register of what is defended and, by omission, what is not.
-  **The fix:** set the host's publish directory to `public`. The build writes
-  that folder and it holds only index.html, sw.js, manifest.webmanifest, the
-  two icons and amv-bridge.mjs - nothing else, checked on every run by
-  `tests/worker/the-host-publishes-only-what-a-visitor-needs`. Confirm with a
-  private window: `https://<your domain>/amv-backend.js` should 404.
-  `node preflight.mjs` warns until it is settled.
+- **Narrow what the static host publishes.** ✅ SETTLED. The host's publish
+  directory is `public`, which the build writes with only what a visitor's
+  browser requests; `/amv-backend.js` answers 404 (owner-confirmed).
+  `tests/worker/the-host-publishes-only-what-a-visitor-needs` keeps the folder
+  honest on every run.
+- **One address cannot flood AMV.** ✅ Set Nov 24, 2026 in the Cloudflare
+  dashboard (amv.homes > Security > WAF > Rate limiting rules, "AMV flood
+  guard"): more than 150 requests in 10 seconds from one IP is blocked for 10
+  seconds, at the edge, before the Worker counts the request against the free
+  plan's daily allowance. It stops one machine; a distributed flood needs
+  Workers Paid. Kept out of the deploy token on purpose (GO-LIVE.md).
 
 _This register is intentionally conservative: where a defense is server-side it
 is marked 🛡️ so you know it needs your live keys to be enforced end-to-end._
