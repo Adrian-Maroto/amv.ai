@@ -16292,3 +16292,28 @@ found" outcome has no way to be wrong out loud - give it one, and pick the
 best candidate that passes, never the first that exists. Also: the e2e
 server never served `global-reach/`, so no browser suite had ever seen a
 country's Crew services; it serves what the host publishes now.
+
+## 668
+**Nov 24 - a test that reads its own index cannot see the thing being taken.**
+The new two-account suite first checked that Bob revoking Alice's share link
+left the link in Alice's list. With the owner check removed on purpose, Bob
+deleted the link itself and the suite still passed: the list is Alice's own
+index, written only by Alice, and it went on naming a link that no longer
+opened. It now asks the public page for the link. The same run found the
+audit log writing "share_revoked" for a stranger's refused attempt. Rule:
+check the object, not a record of it kept elsewhere - and break the guard to
+see the check fail before trusting it (LESSONS 467). An audit line must say
+what happened, not what was asked.
+
+## 669
+**Nov 24 - "measured" needs a source the build can reach, or it is a hope.**
+The owner asked for News ordered by what people read. The source that
+measures readership per country (the Digital News Report) is on a host this
+build environment cannot reach, and routing around the block through CI was
+refused - rightly: an environment's network rule is the owner's decision,
+not a step to engineer past. What shipped instead is ordered by signals
+that ARE here and dated (Chrome UX Report visits, Wikipedia editions,
+countries listing the site), and docs/RESEARCH.md records the readership
+order as a gap with the exact setting that closes it. Rule: when the right
+source is out of reach, ship the best measured one, say which it is, and
+name what the owner can switch on - never present a proxy as the thing.
