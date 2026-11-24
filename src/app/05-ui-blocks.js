@@ -2010,6 +2010,8 @@ function renderChatView() {
   const mdl=MODELS[S.model]||MODELS.core;
   vc.innerHTML=
     '<div id="cv">'+
+      /* "You're on Free · Upgrade", top left of the chat (owner, Nov 24). */
+      '<div class="cv-plan" id="cv-plan" hidden></div>'+
       '<div id="cm" data-no-i18n></div>'+
       '<div id="cia">'+
         '<div id="cib">'+
@@ -2052,6 +2054,7 @@ function renderChatView() {
       '<div id="chome-chips" class="chome-chips"></div>'+
     '</div>';
 
+  _cvPlanPaint();
   renderChatMsgs();
   bindChatEvents();
   // If the user is out of usage, the lock persists across tab switches/reloads:
@@ -4133,6 +4136,17 @@ function updateSbUser(){
   }
   renderHist();
   _renderSbUsage();
+  _notifPaint();
+  _cvPlanPaint();
+}
+/* Only for somebody signed in on the free plan - a paying account has nothing
+   to be told, and a signed-out one has Sign up at the top instead. */
+function _cvPlanPaint(){
+  const el = $('cv-plan'); if(!el) return;
+  const free = !!S.user && (loadStr('amv_plan') || 'free') === 'free';
+  el.hidden = !free;
+  el.innerHTML = free ? '<span>' + escH(T('Free plan')) + '</span><span aria-hidden="true">\u00b7</span>'
+    + '<button type="button" class="cv-plan-up" data-stab="plans">' + escH(T('Upgrade')) + '</button>' : '';
 }
 /* Sidebar usage meter - shows how much of the current window is used, so a user
    sees their limit approaching (and can upgrade before hitting the wall). */

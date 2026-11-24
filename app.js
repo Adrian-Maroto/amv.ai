@@ -10469,6 +10469,8 @@ function renderChatView() {
   const mdl=MODELS[S.model]||MODELS.core;
   vc.innerHTML=
     '<div id="cv">'+
+      /* "You're on Free · Upgrade", top left of the chat (owner, Nov 24). */
+      '<div class="cv-plan" id="cv-plan" hidden></div>'+
       '<div id="cm" data-no-i18n></div>'+
       '<div id="cia">'+
         '<div id="cib">'+
@@ -10511,6 +10513,7 @@ function renderChatView() {
       '<div id="chome-chips" class="chome-chips"></div>'+
     '</div>';
 
+  _cvPlanPaint();
   renderChatMsgs();
   bindChatEvents();
   // If the user is out of usage, the lock persists across tab switches/reloads:
@@ -12592,6 +12595,17 @@ function updateSbUser(){
   }
   renderHist();
   _renderSbUsage();
+  _notifPaint();
+  _cvPlanPaint();
+}
+/* Only for somebody signed in on the free plan - a paying account has nothing
+   to be told, and a signed-out one has Sign up at the top instead. */
+function _cvPlanPaint(){
+  const el = $('cv-plan'); if(!el) return;
+  const free = !!S.user && (loadStr('amv_plan') || 'free') === 'free';
+  el.hidden = !free;
+  el.innerHTML = free ? '<span>' + escH(T('Free plan')) + '</span><span aria-hidden="true">\u00b7</span>'
+    + '<button type="button" class="cv-plan-up" data-stab="plans">' + escH(T('Upgrade')) + '</button>' : '';
 }
 /* Sidebar usage meter - shows how much of the current window is used, so a user
    sees their limit approaching (and can upgrade before hitting the wall). */
@@ -18782,6 +18796,8 @@ function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
   const prev=loadStr('amv_plan')||'free';
   saveStr('amv_plan',plan);
+  /* The "Free plan · Upgrade" line on the chat screen follows the plan. */
+  try{ _cvPlanPaint(); }catch(e){ console.error('AMV: the plan line could not be drawn', e); }
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
   if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }
@@ -20894,6 +20910,9 @@ function _crewPrefetch(){
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
     /* Handoff's screen too, so it opens on itself, not on "Loading" (Nov 24). */
     try{ _hoView(); }catch(e){ try{ console.error('AMV: Handoff could not be fetched ahead', e); }catch(_){} }
+    /* The notification list too, so the number on the bell is right before
+       anybody presses it - only for somebody signed in, who has one. */
+    if(S.user) try{ _notifView(); }catch(e){ try{ console.error('AMV: notifications could not be fetched ahead', e); }catch(_){} }
     /* Spending's pane too: it was fetched on the first open, so the screen
        opened on "Loading…" and filled in a moment later (the owner: "spending
        has lag"). */
@@ -38620,10 +38639,9 @@ async function _autoRefresh(){
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
+    /* No toast for results that arrived: the bell counts them and keeps them
+       until they are read, which a six-second toast never could. */
     const unread = _AUTO_RESULTS.filter(r=>!r.read);
-    if(unread.length && typeof toast==='function'){
-      toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
-    }
     _autoBadge(unread.length);
     /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
        redraw never once fired and freshly-arrived results sat behind a badge on a
@@ -38642,12 +38660,15 @@ try{ window._autoLoadState = () => ({ loaded:_AUTO_LOADED, error:_AUTO_LOAD_ERR 
 function _autoBadge(n){
   try{
     const nav=document.querySelector('[data-tab="automation"], [data-tab="tasks"]');
-    if(!nav) return;
-    let b=nav.querySelector('.auto-badge');
-    if(!n){ if(b) b.remove(); return; }
-    if(!b){ b=document.createElement('span'); b.className='auto-badge'; nav.appendChild(b); }
-    b.textContent = n>9 ? '9+' : String(n);
+    let b=nav && nav.querySelector('.auto-badge');
+    if(nav && !n){ if(b) b.remove(); }
+    else if(nav){
+      if(!b){ b=document.createElement('span'); b.className='auto-badge'; nav.appendChild(b); }
+      b.textContent = n>9 ? '9+' : String(n);
+    }
   }catch(e){}
+  /* The bell counts the same results. */
+  try{ _notifPaint(); }catch(e){ console.error('AMV: the notification count could not be drawn', e); }
 }
 async function _autoAction(id, action){
   try{
@@ -43896,6 +43917,38 @@ function _wireAwayCard(root){
   }));
 }
 try{ window._awayCardHTML=_awayCardHTML; window._wireAwayCard=_wireAwayCard; window._awayUnread=_awayUnread; }catch(e){}
+/* ============================================================
+   NOTIFICATIONS - the bell in the top bar (owner, Nov 24: "anything that
+   happened ... you're all caught up, unread, mark all as read").
+
+   It invents nothing. Every row is something the server or this tab already
+   holds: a Crew job's result, work somebody handed to you, an approval a job
+   is waiting on, a security event on the account. The list lives in
+   notifications.js (src/notify/), fetched ahead at idle and on the first press
+   - what stays in the page is the bell, its number and the way to open it.
+   ============================================================ */
+function _notifView(){ return _lazyLoad('notifications.js', () => typeof window._notifOpenNow === 'function'); }
+/* How many are unread. Crew results carry the server's own read flag; the
+   rest are counted by the file once it has read them (_NOTIF_OTHER). */
+var _NOTIF_OTHER = 0;
+function _notifCount(){
+  let n = 0;
+  try{ n += (Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []).filter(r => r && !r.read).length; }catch(e){}
+  return n + (+_NOTIF_OTHER || 0);
+}
+function _notifPaint(){
+  const b = $('notif-btn'); if(!b) return;
+  const n = _notifCount(), dot = b.querySelector('.notif-n');
+  b.hidden = !S.user;
+  b.setAttribute('aria-label', n ? T('Notifications ({0} unread)').replace('{0}', n) : T('Notifications'));
+  if(dot){ dot.hidden = !n; dot.textContent = n > 9 ? '9+' : String(n); }
+}
+function notifToggle(){
+  _notifView().then(ok => {
+    if(ok){ window._notifOpenNow(); return; }
+    toast(T('That could not be loaded. Check your connection and try again.'), 'error');
+  }).catch(e => { try{ console.error('AMV: notifications could not be opened', e); }catch(_){} });
+}
 /* ============================================================
    AMV-099  THE FIRST SCREEN.
 

@@ -163,7 +163,7 @@ section('The chat surface stops telling people their chat is full');
     return out;
   });
   ok(r.quiet === '', 'an ordinary chat says nothing at all about its length', r.quiet);
-  ok(/summarised so this chat can keep going/i.test(r.summarised),
+  ok(/summarized so this chat can keep going/i.test(r.summarised),
      'a compacted one says so in one quiet line', r.summarised);
   ok(!/\d+% full|full\b/i.test(r.summarised),
      'with no percentage and no "full"', r.summarised);

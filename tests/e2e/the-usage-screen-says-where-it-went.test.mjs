@@ -130,7 +130,10 @@ section('The Usage screen shows where it went');
   const want = { chat: count(l => l && l.surface === 'chat'), crew: count(l => l && l.surface === 'crew'),
                  outside: count(l => l && !l.project) };
   await page.evaluate(() => { S.settingsPane = 'usage'; setTab('settings'); });
-  await page.waitForFunction(() => /This month/.test((document.getElementById('srv-usage') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  /* The section arrives with the server's answer, after the meters (which
+     paint at once from the answer the tab already holds): wait for it, not for
+     the meters - under load the read came between the two. */
+  await page.waitForFunction(() => /Where it went this month/.test((document.getElementById('srv-usage') || {}).textContent || ''), null, { timeout: 15000 }).catch(() => {});
   const t = await page.evaluate(() => { const d = document.querySelector('#srv-usage details.srv-more'); if (d) d.open = true; return (document.getElementById('srv-usage') || {}).innerText || ''; });
   ok(/Where it went this month/.test(t), 'there is a section for it', t.slice(0, 400));
   const sec = t.slice(t.indexOf('Where it went this month'));

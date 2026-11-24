@@ -97,6 +97,9 @@ function _crewPrefetch(){
     _lazyLoad('settings-panes.js', () => typeof window._renderSetPaneInner === 'function');
     /* Handoff's screen too, so it opens on itself, not on "Loading" (Nov 24). */
     try{ _hoView(); }catch(e){ try{ console.error('AMV: Handoff could not be fetched ahead', e); }catch(_){} }
+    /* The notification list too, so the number on the bell is right before
+       anybody presses it - only for somebody signed in, who has one. */
+    if(S.user) try{ _notifView(); }catch(e){ try{ console.error('AMV: notifications could not be fetched ahead', e); }catch(_){} }
     /* Spending's pane too: it was fetched on the first open, so the screen
        opened on "Loading…" and filled in a moment later (the owner: "spending
        has lag"). */

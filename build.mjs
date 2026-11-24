@@ -169,6 +169,8 @@ function emitSandbox() {
   writeFileSync('integrations-view.js', readFileSync('src/integrations/integrations-view.js'));
   /* Handoff's screen (sending, inbox, handed-over work), fetched when drawn. */
   writeFileSync('handoff-view.js', readFileSync('src/handoff/handoff-view.js'));
+  /* The notification list behind the bell, fetched ahead at idle when signed in. */
+  writeFileSync('notifications.js', readFileSync('src/notify/notifications.js'));
   /* The country catalogue (Tasks, Crew jobs and services by country), fetched
      with Crew or Tasks/Integrations - out of the page, for its weight. */
   writeFileSync('country-catalog.js', readFileSync('src/country/country-catalog.js'));
@@ -1243,6 +1245,7 @@ const PUBLISH = [
   'code-view.js',          // the code workspace's screen, fetched when it is drawn
   'integrations-view.js',  // Tasks, Integrations and Automation, fetched when drawn
   'handoff-view.js',       // Handoff's screen and handed-over work, fetched when drawn
+  'notifications.js',      // the list behind the bell, fetched ahead at idle when signed in
   'country-catalog.js',    // the country catalogue, fetched with Crew, Tasks and Integrations
   'geo-countries.json',    // country outlines, fetched only when somebody presses Use my location
   'settings-panes.js',     // what each Settings pane draws, fetched when Settings opens

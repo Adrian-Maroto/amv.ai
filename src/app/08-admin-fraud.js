@@ -1003,6 +1003,8 @@ function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
   const prev=loadStr('amv_plan')||'free';
   saveStr('amv_plan',plan);
+  /* The "Free plan · Upgrade" line on the chat screen follows the plan. */
+  try{ _cvPlanPaint(); }catch(e){ console.error('AMV: the plan line could not be drawn', e); }
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
   if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }

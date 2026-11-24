@@ -18103,3 +18103,43 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 
 /* ========== LAYER A405 (Nov 24): Crew says its jobs are examples ========== */
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .cj-examples{margin:calc(-1 * var(--sp-2)) 0 var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+
+/* ═══ LAYER A406 - the notifications bell and its list (Nov 24) ═══ */
+.notif-btn{ position:relative; margin-left:var(--sp-1); }
+.notif-btn .notif-n{ position:absolute; top:2px; right:1px; min-width:15px; height:15px; padding:0 4px; border-radius:var(--r-pill);
+  background:var(--red); color:#fff; font:600 10px/15px var(--fn); text-align:center; box-shadow:0 0 0 2px var(--bg); }
+.ntf-panel{ position:fixed; z-index:900; top:calc(var(--nav-h, 56px) + 6px); left:12px; width:min(380px, calc(100vw - 24px));
+  max-height:min(560px, calc(100vh - var(--nav-h, 56px) - 24px)); overflow:auto; overscroll-behavior:contain;
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg); box-shadow:var(--sh-lg); padding:var(--sp-2) 0; }
+.ntf-h{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); padding:var(--sp-2) var(--sp-4) var(--sp-3); }
+.ntf-h h2{ margin:0; font:600 var(--t-lg)/1.2 var(--fn); color:var(--tx); }
+.ntf-all{ background:none; border:0; padding:6px 4px; min-height:32px; color:var(--accent); font:500 var(--t-sm)/1 var(--fn); cursor:pointer; border-radius:var(--r-sm); }
+.ntf-all:hover:not(:disabled){ text-decoration:underline; }
+.ntf-all:disabled{ color:var(--dim); cursor:default; }
+.ntf-all:focus-visible, .ntf-row:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+.ntf-list{ list-style:none; margin:0; padding:0; }
+.ntf-row{ display:flex; align-items:flex-start; gap:var(--sp-3); width:100%; text-align:left; background:none; border:0; cursor:pointer;
+  padding:var(--sp-3) var(--sp-4); color:var(--tx); font:inherit; }
+.ntf-row:hover{ background:var(--s2); }
+.ntf-ic{ flex:none; width:30px; height:30px; border-radius:var(--r-pill); display:grid; place-items:center; background:var(--s3); color:var(--mu); }
+.ntf-ic.security{ color:var(--gold); } .ntf-ic.approval{ color:var(--accent); }
+.ntf-tx{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.ntf-t{ font:500 var(--t-base)/1.35 var(--fn); }
+.ntf-row:not(.unread) .ntf-t{ color:var(--mu); font-weight:400; }
+.ntf-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.ntf-w{ font-size:var(--t-xs); color:var(--dim); }
+.ntf-dot{ flex:none; width:8px; height:8px; margin-top:7px; border-radius:50%; background:var(--accent); }
+.ntf-caught{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:var(--sp-1); padding:var(--sp-5) var(--sp-5) var(--sp-4); color:var(--mu); font-size:var(--t-sm); }
+.ntf-caught svg{ width:28px; height:28px; color:var(--grn); margin-bottom:var(--sp-1); }
+.ntf-caught b{ color:var(--tx); font:600 var(--t-md)/1.3 var(--fn); }
+.ntf-empty{ padding:var(--sp-5); text-align:center; color:var(--mu); font-size:var(--t-sm); }
+.ntf-warn{ margin:0 var(--sp-4) var(--sp-2); padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm); background:var(--s2); color:var(--gold); font-size:var(--t-sm); }
+@media (max-width:640px){ .ntf-panel{ left:8px; right:8px; width:auto; } }
+/* The plan line, top left of the chat screen (Nov 24). */
+.cv-plan{ position:absolute; top:var(--sp-3); left:var(--sp-4); z-index:2; display:inline-flex; align-items:center; gap:6px;
+  font-size:var(--t-sm); color:var(--mu); }
+.cv-plan[hidden]{ display:none; }
+.cv-plan-up{ background:var(--accent-soft); color:var(--accent); border:0; border-radius:var(--r-pill); padding:5px 11px; min-height:28px;
+  font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
+.cv-plan-up:hover{ filter:brightness(1.1); }
+.cv-plan-up:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }

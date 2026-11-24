@@ -2277,10 +2277,9 @@ async function _autoRefresh(){
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
+    /* No toast for results that arrived: the bell counts them and keeps them
+       until they are read, which a six-second toast never could. */
     const unread = _AUTO_RESULTS.filter(r=>!r.read);
-    if(unread.length && typeof toast==='function'){
-      toast(unread.length + ' automation result' + (unread.length>1?'s':'') + ' ready while you were away.','success',6000);
-    }
     _autoBadge(unread.length);
     /* The Tasks tab is 'tasks'; there has never been an 'automation' tab, so this
        redraw never once fired and freshly-arrived results sat behind a badge on a
@@ -2299,12 +2298,15 @@ try{ window._autoLoadState = () => ({ loaded:_AUTO_LOADED, error:_AUTO_LOAD_ERR 
 function _autoBadge(n){
   try{
     const nav=document.querySelector('[data-tab="automation"], [data-tab="tasks"]');
-    if(!nav) return;
-    let b=nav.querySelector('.auto-badge');
-    if(!n){ if(b) b.remove(); return; }
-    if(!b){ b=document.createElement('span'); b.className='auto-badge'; nav.appendChild(b); }
-    b.textContent = n>9 ? '9+' : String(n);
+    let b=nav && nav.querySelector('.auto-badge');
+    if(nav && !n){ if(b) b.remove(); }
+    else if(nav){
+      if(!b){ b=document.createElement('span'); b.className='auto-badge'; nav.appendChild(b); }
+      b.textContent = n>9 ? '9+' : String(n);
+    }
   }catch(e){}
+  /* The bell counts the same results. */
+  try{ _notifPaint(); }catch(e){ console.error('AMV: the notification count could not be drawn', e); }
 }
 async function _autoAction(id, action){
   try{
