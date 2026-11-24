@@ -29501,7 +29501,7 @@ function renderHandoffView(){
               ? `<button class="btn bs" data-dact="hoResend" data-darg="${h.id}">Send again</button>` : '')}
       </div>
     </div>`;
-  vc.innerHTML=`<div class="sv fi"><div class="vi">
+  vc.innerHTML=`<div class="sv fi"><div class="vi ho-page">
       <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
       <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.</p>

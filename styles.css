@@ -18085,3 +18085,23 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
    main view's 52px/44px padding - so it sat 44px in and 52px down from
    every other pane's title. Inside Settings the pane already pads it. */
 #set-modal #set-pane > .sv{padding:0!important}
+
+/* ========== LAYER A402 (Nov 24): Handoff reads as one calm form ==========
+   The same standard as Build (A401): the three steps were a bordered strip
+   of bordered pills, the form sat under an uppercase card header and
+   labels in 11px capitals, and the work went in a monospace box. Now the
+   steps are one quiet line, sections and labels are sentence case at a
+   readable size, and the fields are the composer's surface and radius. */
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-flow{border:0!important;background:none!important;padding:0!important;margin:0!important;gap:10px!important;box-shadow:none!important;flex-wrap:wrap}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-flow-step{border:0!important;background:none!important;padding:0!important;color:var(--mu)!important;font-size:var(--t-md)!important;font-weight:500!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-flow-arrow{color:var(--dim,var(--mu))!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ss2{background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:20px!important;padding:var(--sp-6)!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ss2 > h3{font-family:var(--fn)!important;font-size:var(--t-lg)!important;font-weight:600!important;text-transform:none!important;letter-spacing:0!important;color:var(--tx)!important;margin:0 0 var(--sp-4)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .lbl{font-size:var(--t-sm)!important;font-weight:500!important;text-transform:none!important;letter-spacing:0!important;color:var(--tx)!important;margin-bottom:6px!important;display:block}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page :is(#ho-title,#ho-ctx,#ho-to){background:var(--s2)!important;border:1px solid transparent!important;border-radius:12px!important;min-height:44px;
+  padding:12px 14px!important;font-family:var(--fn)!important;font-size:var(--t-md)!important;color:var(--tx)!important;transition:border-color .15s var(--ease)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page :is(#ho-title,#ho-ctx,#ho-to):focus{border-color:color-mix(in srgb,var(--accent) 55%,var(--bdl))!important;outline:none}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page #ho-ctx{min-height:180px!important;line-height:1.55}
+/* Help: the questions sat in an invisible card padded 28px, so the search
+   and every question started 28px right of the page's own title. */
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-help > .ss2{padding:0!important;box-shadow:none!important;border:0!important;background:none!important}
