@@ -18138,23 +18138,44 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
   #sb .sb-tool:hover .sb-tool-tip{ transform:none; }
 }
 
-/* ═══ LAYER A408 - light mode on a near-white page (owner, Nov 24: "light
-   mode looks off") ═══
-   The light page was #ebe9e4 - a grey-beige under white cards, so every screen
-   read as a grey sheet with paper stuck on it. The leading chat apps put the
-   conversation on a near-white page and set the sidebar a step darker: Claude's
-   light canvas is a warm cream near #faf9f5 (third-party design-system
-   write-ups, Nov 2026 - shadcn.io/design/claude, kombai.com), and ChatGPT's
-   Light appearance is "a light background with darker text" (OpenAI help,
-   article 11958281). So: a warm near-white page, the sidebar one step darker,
-   cards and the composer white, and the greys below unchanged - the contrast
-   suite measured them against these surfaces and they only gain from a
-   lighter page. */
+/* ═══ LAYER A408 - a cleaner light page (owner, Nov 24: "light mode looks
+   off") ═══
+   The light page was #ebe9e4, a grey-beige under white cards, so every screen
+   read as a grey sheet with paper stuck on it. The leading chat apps set the
+   conversation on a light, nearly white page with the sidebar a step darker
+   and the cards white. The owner also asked for a background that is not a
+   page of snow (an-accent-nobody-can-read holds it under 0.90 luminance), so
+   the page is lifted to #f2f1ed (0.88, was 0.82) rather than to white, the
+   sidebar sits a step below it, and cards and the composer are white. The
+   greys and accents are unchanged; the contrast suite measures them on these
+   surfaces. */
 body.light{
-  --bg:#faf9f6;
+  --bg:#f2f1ed;
   --s1:#ffffff;
   --panel:#ffffff;
 }
-body.light #sb{ background:#f3f2ee!important; }
-body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#f3f2ee!important; }
+body.light #sb{ background:#e9e7e2!important; }
+body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#e9e7e2!important; }
 body.light #anav{ background:var(--bg); }
+
+/* ═══ LAYER A409 - photos as photos (owner, Nov 24: "show the photos clean") ═══
+   On the box, a row of square thumbnails with a remove on each; in a sent
+   message, the same photos above the words. */
+#ab2.att-photos{ padding:var(--sp-2) var(--sp-3) 0; }
+.att-ph-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.att-ph{ position:relative; width:64px; height:64px; border-radius:var(--r-md); overflow:hidden; background:var(--s2); border:1px solid var(--bd); }
+.att-ph img{ width:100%; height:100%; object-fit:cover; display:block; }
+#ab2.att-photos #ac{ background:none; padding:0; }
+#ac .att-ph .att-ph-x{ position:absolute; top:3px; right:3px; width:22px; height:22px; border-radius:var(--r-pill); border:0; cursor:pointer;
+  background:rgba(0,0,0,.62); color:#fff; font-size:14px; line-height:22px; padding:0; display:grid; place-items:center; }
+#ac .att-ph .att-ph-x:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+#ac .att-ph-all{ align-self:flex-start; margin-left:var(--sp-1); min-width:28px; min-height:28px; }
+/* A sent message with photos: the photos on their own, right-aligned, and the
+   words in the usual bubble under them. */
+:root:not(#_a):not(#_b) #cm .mb.u:has(> .msg-ph-row){ background:none!important; border:0!important; box-shadow:none!important; padding:0!important; }
+.msg-ph-row{ display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; margin:0 0 var(--sp-2) auto; max-width:420px; }
+.msg-ph{ width:96px; height:96px; object-fit:cover; border-radius:var(--r-md); border:1px solid var(--bd); display:block; }
+.msg-ph-row:has(.msg-ph:only-child) .msg-ph{ width:auto; height:auto; max-width:260px; max-height:260px; }
+.msg-ph-txt{ display:block; width:fit-content; margin-left:auto; max-width:100%; padding:11px 16px; border-radius:18px 18px 6px 18px;
+  background:var(--s2); border:1px solid var(--bd); color:var(--tx); white-space:normal; }
+@media (max-width:640px){ .att-ph{ width:56px; height:56px; } .msg-ph{ width:76px; height:76px; } }

@@ -34,9 +34,11 @@ const libSettles = async (n) => { for (let i = 0; i < 40; i++) { const l = await
 const sentText = () => page.evaluate(() => { const m = window.__sent; if (!m) return ''; return typeof m.c === 'string' ? m.c : JSON.stringify(m.c); });
 const upload = async (files) => { await page.setInputFiles('#fi', files); await page.waitForSelector('#ab2', { state: 'visible', timeout: 5000 }); };
 const send = (t) => page.evaluate(async (text) => { window.__sent = null; document.getElementById('mta').value = text; await sendMsg(); }, t);
+/* Your files is in the profile menu (Nov 24: the chat box's "+" holds only
+   Upload and Research). */
 const openLibrary = async () => {
-  await page.click('#att-btn');
-  await page.click('.ctxm [data-att="library"]');
+  await page.click('#nav-av');
+  await page.click('#pm-files');
   await page.waitForSelector('#lib-body .shelf-row, #lib-body .shelf-empty:not(:empty)', { timeout: 5000 });
   await page.waitForFunction(() => !/Loading/.test(document.getElementById('lib-body').textContent));
 };
@@ -63,8 +65,8 @@ section('In a new chat, the paperclip attaches it again - the same text is sent'
   await page.evaluate(() => newChat());
   await page.click('#att-btn');
   const items = await page.evaluate(() => [...document.querySelectorAll('.ctxm [data-att]')].map(b => b.textContent));
-  /* The "+" also holds Research now (A377); the files come first. */
-  ok(/Upload/.test(items[0]) && /Your files/.test(items[1]) && items.length <= 3, 'the + offers upload and your files first', items);
+  /* The "+" holds Upload and Research (Nov 24); Your files is in the profile menu. */
+  ok(/Upload/.test(items[0]) && items.length <= 2, 'the + offers upload first', items);
   await page.keyboard.press('Escape');
   ok(await page.evaluate(() => !document.querySelector('.ctxm')), 'and Escape closes that menu');
   await openLibrary();

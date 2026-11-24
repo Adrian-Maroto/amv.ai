@@ -846,9 +846,19 @@ async function sendMsg(_opts) {
 
   let display=txt, apiContent=txt;
   if(att) {
-    if(att.kind==='img') {
+    if(att.kind==='imgs') {
+      /* Several photos in one message: each its own picture for the engine,
+         in the order they were chosen, and one line for the chat. */
       const msgs2=getMsgs();
-      msgs2.push({r:'u',c:[{type:'image',source:{type:'base64',media_type:att.mime,data:att.b64}},{type:'text',text:txt||'Analyze this image in detail.'}],d:(txt?txt+' ':'')+'[Image: '+att.name+']'});
+      const n=att.items.length;
+      msgs2.push({r:'u',c:att.items.map(p=>({type:'image',source:{type:'base64',media_type:p.mime,data:p.b64}})).concat([{type:'text',text:txt||'Look at these photos together and tell me what matters.'}]),
+        d:(txt?txt+' ':'')+'['+T('{0} photos').replace('{0}',n)+']', dtxt:txt});
+      const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
+      setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
+      await _callAI(msgs2); return;
+    } else if(att.kind==='img') {
+      const msgs2=getMsgs();
+      msgs2.push({r:'u',c:[{type:'image',source:{type:'base64',media_type:att.mime,data:att.b64}},{type:'text',text:txt||'Analyze this image in detail.'}],d:(txt?txt+' ':'')+'[Image: '+att.name+']', dtxt:txt});
       const cv=getCurConv(); if(cv&&cv.title==='New Conversation'&&txt) cv.title=txt.slice(0,44)+(txt.length>44?'…':'');
       setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
       await _callAI(msgs2); return;
@@ -3093,7 +3103,7 @@ function renderChatMsgs() {
         content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
       }
     } else {
-      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
+      content=isU?((ph=>ph?ph+((t=>t?'<div class="msg-ph-txt">'+escH(t).replace(/\n/g,'<br>')+'</div>':'')(typeof m.dtxt==='string'?m.dtxt:rawText)):escH(rawText).replace(/\n/g,'<br>'))(_msgPhotosHTML(m))):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
         (m._more && !m._interrupted && i===msgs.length-1?'<div class="ai-cut"><span>'+escH(m._more==='allowance' ? T('This answer was kept short because today’s usage is almost used up.') : m._more==='pause_turn' ? T('AMV paused partway through this one.') : T('This answer reached the most AMV writes in one reply.'))+'</span>'+(m._more==='allowance' ? '<button class="ai-snag-retry" data-action="quota-upgrade" type="button">'+escH(T('See plans'))+'</button>' : '<button class="ai-snag-retry" data-action="continue-ai" type="button">'+escH(T('Continue'))+'</button>')+'</div>':'')+
@@ -3560,11 +3570,54 @@ async function _voiceModeSend(text){
 try{ window.speakMessage=speakMessage; window.toggleVoiceMode=toggleVoiceMode; }catch(e){}
 
 
+/* PHOTOS, UP TO TWENTY (owner, Nov 24: "show the photos clean ... no more than 20").
+   Photos chosen together - or added to photos already on the box - travel in
+   one message as separate pictures. More than PHOTO_MAX is refused whole, with
+   the reason, rather than quietly keeping the first twenty: the person chose
+   those, and a silent cut would answer about a set they never sent.
+   One request carries about 7.5MB of files, so when the set is heavier than
+   PHOTO_WIRE_CHARS each is redrawn smaller (a long edge of 1280, then 1024,
+   then 768) until it fits - every photo still reaches the engine. */
+const PHOTO_MAX = 20;
+const PHOTO_WIRE_CHARS = 6500000;
+const _isPhotoFile = f => /^image\//.test(String(f && f.type || '')) && !/svg/.test(String(f.type))
+  || /\.(jpe?g|png|gif|webp|heic|heif|avif|bmp|tiff?)$/i.test(String(f && f.name || ''));
+function _photosOn(){ return !S.att ? [] : S.att.kind === 'img' ? [S.att] : S.att.kind === 'imgs' ? S.att.items.slice() : []; }
+async function _photosFit(items){
+  const total = () => items.reduce((n, p) => n + String(p.b64 || '').length, 0);
+  for(const side of [1280, 1024, 768]){
+    if(total() <= PHOTO_WIRE_CHARS) break;
+    for(let i = 0; i < items.length; i++){
+      const b = await _frShrinkB64(items[i].b64, items[i].mime, side);
+      if(b && b.length < items[i].b64.length) items[i] = Object.assign({}, items[i], { b64: b, mime: 'image/jpeg' });
+    }
+  }
+  return total() <= PHOTO_WIRE_CHARS;
+}
+async function _attachPhotos(files){
+  const have = _photosOn();
+  if(have.length + files.length > PHOTO_MAX){
+    toast(T('You can attach up to 20 photos to one message. Choose 20 or fewer.'), 'error', 8000);
+    return;
+  }
+  const read = await Promise.all(files.map(f => amvReadFile(f)));
+  read.filter(r => r.kind === 'refused').forEach((r, i) => setTimeout(() => toast(r.reason, 'error', 9000), i * 400));
+  const items = have.concat(read.filter(r => r.kind === 'img'));
+  if(!items.length) return;
+  if(!(await _photosFit(items))){
+    toast(T('These photos are too large to send together. Try fewer at a time.'), 'error', 8000);
+    return;
+  }
+  S.att = items.length === 1 ? items[0] : { kind: 'imgs', name: T('{0} photos').replace('{0}', items.length), items };
+  showAttChip();
+}
 function handleFiles(files){
   // Global file limit applies to chat too.
   if(typeof _ctxFileGuard==='function' && !_ctxFileGuard('chat', files&&files.length||1)) return;
   try{ for(const f of (files||[])) _ctxFileTrack('chat', f.name); }catch(e){}
   if(!files||!files.length) return;
+  const list = Array.from(files);
+  if(list.every(_isPhotoFile) && (list.length > 1 || _photosOn().length)){ _attachPhotos(list); return; }
   if(files.length===1){ handleFile(files[0]); return; }
   /* Several at once. Text and Office files are read and combined into one
      attachment. A message carries one picture or one PDF, so those are not
@@ -3611,7 +3664,20 @@ function showAttChip(){
   const icons={img:'🖼',pdf:'📄',text:'📎'};
   const sz=S.att.size||S.att.summary?(' ('+[S.att.format?T(_FR_LABEL[S.att.format]):'', S.att.summary||'', S.att.size?fmtSize(S.att.size):''].filter(Boolean).join(' · ')+')'):'';
   const fmtIcon=S.att.format?({docx:'📝',xlsx:'📊',pptx:'📽️'})[S.att.format]:'';
-  ac.innerHTML='<span>'+(fmtIcon||icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  /* Photos are shown as photos: a row of thumbnails, each with its own remove. */
+  const photos=_photosOn();
+  ab2.classList.toggle('att-photos', !!photos.length);
+  ac.innerHTML=photos.length
+    ? '<div class="att-ph-row" role="list" aria-label="'+escH(T('{0} photos').replace('{0}',photos.length))+'">'+photos.map((p,i)=>
+        '<div class="att-ph" role="listitem"><img src="'+escH(_photoUrl(p))+'" alt="'+escH(p.name||'')+'">'+
+        '<button type="button" class="att-ph-x" data-ph="'+i+'" aria-label="'+escH(T('Remove {0}').replace('{0}',p.name||T('photo')))+'">×</button></div>').join('')+'</div>'
+    : '<span>'+(fmtIcon||icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  ac.querySelectorAll('[data-ph]').forEach(b=>b.addEventListener('click',()=>{
+    const rest=_photosOn(); rest.splice(+b.getAttribute('data-ph'),1);
+    if(!rest.length){ S.att=null; ab2.style.display='none'; ab2.classList.remove('att-photos'); return; }
+    S.att = rest.length===1 ? rest[0] : { kind:'imgs', name:T('{0} photos').replace('{0}',rest.length), items:rest };
+    showAttChip();
+  }));
 
   /* THE SPREADSHEET EDITOR HAD NO DOOR.
 
@@ -3649,9 +3715,34 @@ function showAttChip(){
   const btn=document.createElement('button');
   btn.textContent='×'; btn.setAttribute('aria-label', T('Remove attachment'));
   btn.style.cssText='background:none;border:none;color:var(--mu);cursor:pointer;font-size:var(--t-base);line-height:1;margin-left:4px';
-  btn.onclick=()=>{S.att=null;ab2.style.display='none';};
-  ac.appendChild(btn);
+  btn.onclick=()=>{S.att=null;ab2.style.display='none';ab2.classList.remove('att-photos');};
+  if(photos.length>1){ btn.setAttribute('aria-label', T('Remove all photos')); btn.className='att-ph-all'; }
+  if(photos.length!==1) ac.appendChild(btn);
   ab2.style.display='flex';
+}
+/* A photo's picture, as an object URL made once per photo: a data: URL of a
+   few hundred kilobytes, written into the page on every redraw of the chat,
+   is what would make a twenty-photo message slow to type under. */
+const _PH_URLS = new WeakMap();
+function _photoUrl(p){
+  if(!p || typeof p !== 'object') return '';
+  let u = _PH_URLS.get(p); if(u) return u;
+  if(!/^image\/(jpeg|png|gif|webp)$/.test(String(p.mime || p.media_type || ''))) return '';
+  try{
+    const bin = atob(String(p.b64 || p.data || ''));
+    const bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    u = URL.createObjectURL(new Blob([bytes], { type: p.mime || p.media_type }));
+  }catch(e){ return ''; }
+  _PH_URLS.set(p, u); return u;
+}
+/* The photos a sent message carried, as thumbnails above its words - while
+   this tab holds them (saved chats keep the words, not the pictures). */
+function _msgPhotosHTML(m){
+  if(!m || !Array.isArray(m.c)) return '';
+  const ph = m.c.filter(b => b && b.type === 'image' && b.source && b.source.type === 'base64').map(b => b.source);
+  if(!ph.length) return '';
+  return '<div class="msg-ph-row">' + ph.map(src => { const u = _photoUrl(src); return u ? '<img class="msg-ph" src="' + escH(u) + '" alt="">' : ''; }).join('') + '</div>';
 }
 function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).toFixed(1)+'KB'; return (b/(1024*1024)).toFixed(1)+'MB'; }
 
@@ -4065,6 +4156,11 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-settings">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
       'Settings</button>'+
+    /* Your files: what was attached before, kept in the account. It was in the
+       chat box's "+", which now holds only Upload and Research (Nov 24). */
+    '<button class="prof-item" id="pm-files">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
+      escH(T('Your files'))+'</button>'+
     /* Team sits beside Settings: seats, invites and roles are the other thing
        you set up for an account, and it had no door left once the rail lost
        its Team tab. */
@@ -4105,6 +4201,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-team')?.addEventListener('click',()=>{ close(); setTab('team'); });
+  document.getElementById('pm-files')?.addEventListener('click',()=>{ close(); openFileLibrary(); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });

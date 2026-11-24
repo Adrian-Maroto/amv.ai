@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="7492509157e6ef70">
+<meta name="amv-build" content="647732c577533d6e">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10677,13 +10677,29 @@ font-size:var(--t-base); font-weight:500; pointer-events:none; }
 #sb .sb-tool:hover .sb-tool-tip{ transform:none; }
 }
 body.light{
---bg:#faf9f6;
+--bg:#f2f1ed;
 --s1:#ffffff;
 --panel:#ffffff;
 }
-body.light #sb{ background:#f3f2ee!important; }
-body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#f3f2ee!important; }
+body.light #sb{ background:#e9e7e2!important; }
+body.light #sb .sb-srch, body.light #sb .sbfoot{ background:#e9e7e2!important; }
 body.light #anav{ background:var(--bg); }
+#ab2.att-photos{ padding:var(--sp-2) var(--sp-3) 0; }
+.att-ph-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.att-ph{ position:relative; width:64px; height:64px; border-radius:var(--r-md); overflow:hidden; background:var(--s2); border:1px solid var(--bd); }
+.att-ph img{ width:100%; height:100%; object-fit:cover; display:block; }
+#ab2.att-photos #ac{ background:none; padding:0; }
+#ac .att-ph .att-ph-x{ position:absolute; top:3px; right:3px; width:22px; height:22px; border-radius:var(--r-pill); border:0; cursor:pointer;
+background:rgba(0,0,0,.62); color:#fff; font-size:14px; line-height:22px; padding:0; display:grid; place-items:center; }
+#ac .att-ph .att-ph-x:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+#ac .att-ph-all{ align-self:flex-start; margin-left:var(--sp-1); min-width:28px; min-height:28px; }
+:root:not(#_a):not(#_b) #cm .mb.u:has(> .msg-ph-row){ background:none!important; border:0!important; box-shadow:none!important; padding:0!important; }
+.msg-ph-row{ display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; margin:0 0 var(--sp-2) auto; max-width:420px; }
+.msg-ph{ width:96px; height:96px; object-fit:cover; border-radius:var(--r-md); border:1px solid var(--bd); display:block; }
+.msg-ph-row:has(.msg-ph:only-child) .msg-ph{ width:auto; height:auto; max-width:260px; max-height:260px; }
+.msg-ph-txt{ display:block; width:fit-content; margin-left:auto; max-width:100%; padding:11px 16px; border-radius:18px 18px 6px 18px;
+background:var(--s2); border:1px solid var(--bd); color:var(--tx); white-space:normal; }
+@media (max-width:640px){ .att-ph{ width:56px; height:56px; } .msg-ph{ width:76px; height:76px; } }
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -10944,7 +10960,7 @@ body.light #anav{ background:var(--bg); }
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.6d098c17a612.js" defer integrity="sha384-xCV09KLRrXyHhfK/KQM6PZ4/kjOMtSFX25nCcJYu/CATXp7ZtiOOR3OR2vfAKfiX" data-amv-app></script>
+<script src="/app.2d751e47d75b.js" defer integrity="sha384-W36fv/Ur/a5V6lF4ys6IZi7FuXUotYOBHgwdi2c6+zEJG7zUe9kAdc9LpAZDMKjd" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

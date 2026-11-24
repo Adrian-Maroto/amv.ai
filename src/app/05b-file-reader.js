@@ -603,6 +603,27 @@ async function _frReencodeImage(file){
     return url.indexOf('data:image/jpeg;base64,') === 0 ? url.split(',')[1] : null;
   }catch(e){ return null; }
 }
+/* A photo already read, redrawn smaller - for when several together would not
+   fit one request (see _photosFit in the chat). From its own bytes, so nothing
+   is read from the device twice. */
+async function _frShrinkB64(b64, mime, side){
+  if(typeof createImageBitmap !== 'function') return null;
+  try{
+    const bin = atob(String(b64 || ''));
+    const bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const bmp = await createImageBitmap(new Blob([bytes], { type: mime || 'image/jpeg' }));
+    const scale = Math.min(1, side / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(bmp.width * scale)); cv.height = Math.max(1, Math.round(bmp.height * scale));
+    const g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+    g.drawImage(bmp, 0, 0, cv.width, cv.height);
+    try{ bmp.close(); }catch(e){}
+    const url = cv.toDataURL('image/jpeg', 0.82);
+    return url.indexOf('data:image/jpeg;base64,') === 0 ? url.split(',')[1] : null;
+  }catch(e){ return null; }
+}
 /* Whether a picture the engine can take needs redrawing first: too heavy, or
    larger than the engine reads. Measured, not guessed from the file size - a
    small PNG can be 8,000 pixels wide. */
