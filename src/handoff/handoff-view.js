@@ -61,8 +61,8 @@ function renderHandoffView(){
       <div class="ho-ctx">${escH(h.context||'').slice(0,180)}${(h.context||'').length>180?'…':''}</div>
       <div class="ho-act">
         ${dir==='in'
-          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${escH(h.id)}">${h.item?escH(_HO_OPEN[h.item.kind]||'Open'):'Open & continue'}</button><button class="btn bs" data-dact="hoDone" data-darg="${escH(h.id)}">Mark done</button>`
-          : (h.item?`<button class="btn bs" data-dact="hoOpen" data-darg="${escH(h.id)}">${escH(_HO_OPEN[h.item.kind]||'Open')}</button>`:'')+
+          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${escH(h.id)}">${h.item?escH(T(_HO_OPEN[h.item.kind]||'Open')):'Open & continue'}</button><button class="btn bs" data-dact="hoDone" data-darg="${escH(h.id)}">Mark done</button>`
+          : (h.item?`<button class="btn bs" data-dact="hoOpen" data-darg="${escH(h.id)}">${escH(T(_HO_OPEN[h.item.kind]||'Open'))}</button>`:'')+
             `<span class="ho-status ho-status-${escH(h.status||'waiting')}">${escH(_HO_STATUS[h.status]||_HO_STATUS.waiting)}</span>`+
             (_HO_UNSENT.indexOf(h.status)>=0
               ? `<button class="btn bs" data-dact="hoResend" data-darg="${escH(h.id)}">Send again</button>` : '')}
@@ -79,12 +79,12 @@ function renderHandoffView(){
         <div style="display:flex;flex-direction:column;gap:12px">
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">What are you handing off?</label>
             <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
-          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">The work</label>
+          <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">${escH(T('The work'))}</label>
             <div id="ho-work">${S._hoPulled?_hoWorkCardHTML(S._hoPulled, '', true):''}</div>
-            <textarea id="ho-ctx" placeholder="Notes for them - or paste the draft, code, data or thread" style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
+            <textarea id="ho-ctx" placeholder="${escH(T('Notes for them - or paste the draft, code, data or thread'))}" style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
               <button class="btn bs" data-dact="_hoPickChat" style="font-size:var(--t-sm)">Pull in your work…</button>
-              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">a conversation, a design, a project or some code - it goes across as itself, and opens in AMV for them</span></div>
+              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">${escH(T('a conversation, a design, a project or some code - it goes across as itself, and opens in AMV for them'))}</span></div>
             <!-- INSTRUCTIONS BELONG WHERE THEY SURVIVE TYPING.
                  This guidance used to BE the placeholder - 209 characters of it,
                  of which a phone showed 25. A placeholder is the worst place for
@@ -219,7 +219,7 @@ function _hoPullSession(id){
   S._hoPulled={ kind:rec.kind, ref:rec.id, title:rec.title||'Untitled' };
   _hoShowPulled();
   if($('ho-title') && !$('ho-title').value) $('ho-title').value=rec.title||'Continue this work';
-  toast('Attached \u201c'+(rec.title||'your work')+'\u201d','success');
+  toast(T('Attached “{0}”').replace('{0}', rec.title||'your work'),'success');
 }
 try{ window._hoPullSession=_hoPullSession; window._hoSessText=_hoSessText; }catch(e){}
 function _hoPullConv(convId){
@@ -227,7 +227,7 @@ function _hoPullConv(convId){
   S._hoPulled={ kind:'chat', ref:convId, title:conv.title||'Chat' };
   _hoShowPulled();
   if($('ho-title') && !$('ho-title').value) $('ho-title').value=conv.title||'Continue this conversation';
-  toast('Attached \u201c'+(conv.title||'chat')+'\u201d','success');
+  toast(T('Attached “{0}”').replace('{0}', conv.title||'chat'),'success');
 }
 function _hoShowPulled(){
   const w=$('ho-work'); if(!w) return;
@@ -387,9 +387,9 @@ function _hoWorkCardHTML(item, hid, removable){
     : _lineIcon(_HO_ICON[k]||'default');
   return '<div class="ho-work">'+
     '<span class="ho-work-ic" aria-hidden="true">'+ic+'</span>'+
-    '<span class="ho-work-b"><span class="ho-work-k">'+escH(_HO_KIND[k]||'Work')+'</span>'+
+    '<span class="ho-work-b"><span class="ho-work-k">'+escH(T(_HO_KIND[k]||'Work'))+'</span>'+
     '<span class="ho-work-t">'+escH((item && item.title) || 'Untitled')+'</span></span>'+
-    (removable ? '<button type="button" class="ho-work-x" data-dact="hoUnpull" aria-label="Remove the attached work">×</button>' : '')+
+    (removable ? '<button type="button" class="ho-work-x" data-dact="hoUnpull" aria-label="'+escH(T('Remove the attached work'))+'">×</button>' : '')+
   '</div>';
 }
 /* The local record a piece of work is: a chat in S.convs, or a design,
@@ -467,10 +467,10 @@ function _hoApply(kind, rec, item){
   const dirty = ho.sig && ho.sig !== _hoSig(kind, rec);
   if(dirty){
     /* Both changed it: theirs becomes this one, yours is kept beside it. */
-    const copy = { id:'sess_' + Date.now().toString(36) + _rid(3), kind, title:(rec.title || 'Untitled') + ' (your version)',
+    const copy = { id:'sess_' + Date.now().toString(36) + _rid(3), kind, title:T('{0} (your version)').replace('{0}', rec.title || 'Untitled'),
                    updated:Date.now(), state: rec.state };
     try{ _SESSIONS.push(copy); }catch(e){}
-    toast('They saved a newer version, so that is the one here now. Yours is kept as “' + copy.title + '”.', 'info', 8000);
+    toast(T('They saved a newer version, so that is the one here now. Yours is kept as “{0}”.').replace('{0}', copy.title), 'info', 8000);
   }
   rec.state = (item.data && item.data.state) || rec.state;
   rec.updated = Date.now();
@@ -492,9 +492,9 @@ async function _hoOpenItem(hid){
   let item = null;
   if(window.AMV_API && AMV_API.live){
     try{ item = await AMV_API.handoffItem(hid); }
-    catch(e){ if(!found){ toast((e && e.message) || 'That work could not be opened.', 'error', 6000); return; } }
+    catch(e){ if(!found){ toast((e && e.message) || T('That work could not be opened.'), 'error', 6000); return; } }
   } else if(!found){
-    toast('Opening handed-over work needs AMV’s server, and this copy is not connected to one.', 'info', 6000); return;
+    toast(T('Opening handed-over work needs AMV’s server, and this copy is not connected to one.'), 'info', 6000); return;
   }
   const me = (S.user && S.user.email) || '';
   if(!found && item){
@@ -515,7 +515,7 @@ async function _hoOpenItem(hid){
     found = { kind:item.kind, rec };
   } else if(found && item){
     const r = _hoApply(found.kind, found.rec, item);
-    if(r.changed){ _hoSave(found.kind); if(_hoWho(item)) toast('Updated with ' + _hoWho(item) + '’s latest work', 'success'); }
+    if(r.changed){ _hoSave(found.kind); if(_hoWho(item)) toast(T('Updated with {0}’s latest work').replace('{0}', _hoWho(item)), 'success'); }
     if(r.ahead) _hoPushSoon(true);
   }
   if(!found) return;
@@ -535,7 +535,7 @@ async function _hoPullIntoNow(localId){
   let item; try{ item = await AMV_API.handoffItem(rec.ho.id); }catch(e){ return; }
   if(!(+item.v > +(rec.ho.v || 0))) return;
   const r = _hoApply(kind, rec, item);
-  if(r.changed){ _hoSave(kind); _hoShowIfOpen(kind, rec); if(_hoWho(item)) toast('Updated with ' + _hoWho(item) + '’s latest work', 'success'); }
+  if(r.changed){ _hoSave(kind); _hoShowIfOpen(kind, rec); if(_hoWho(item)) toast(T('Updated with {0}’s latest work').replace('{0}', _hoWho(item)), 'success'); }
   if(r.ahead) _hoPushSoon(true);
 }
 window._hoPullIntoNow = _hoPullIntoNow;

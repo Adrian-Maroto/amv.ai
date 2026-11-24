@@ -242,8 +242,12 @@ async function handoffCreate(request, env){
   /* The shared copy is written FIRST: an inbox line pointing at work that was
      never stored is a link to nothing. If this fails, nothing was delivered. */
   if(work){
-    await DB.put(env, 'hoitem', id, { id, from: user.email, to: toEmail, kind: work.kind,
-      title: entry.item.title, v: 1, by: user.email, at: Date.now(), data: work.data });
+    /* Under the lock like every other writer of the record, though the id is
+       new here: one rule for a record two people write is the rule. */
+    await _withKind(env, 'hoitem', id, (fresh) => {
+      Object.assign(fresh, { id, from: user.email, to: toEmail, kind: work.kind,
+        title: entry.item.title, v: 1, by: user.email, at: Date.now(), data: work.data });
+    }, {});
   }
   /* AMV-033: THE RECIPIENT'S INBOX HAS AS MANY WRITERS AS IT HAS SENDERS.
 

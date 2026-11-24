@@ -91,6 +91,7 @@ const CLASSIFIED = {
   waitlistAdd:       'signed in, the address written is the account\'s own whatever the body says; a guest has no account to be, names an address under a per-IP limit, and the entry holds only that address and the app',
   fraudRecord:       'a rate-limited self-report into a global index, stamped with who wrote it',
   handoffAct:        'a bounded status on the sender\'s copy of a handoff in the caller\'s own inbox',
+  handoffItemPut:    'the shared copy of handed-over work, keyed by its handoff; written only by the two people on it (_hoParty, checked again inside the lock), only on top of the version the writer saw, and never changing its kind',
   teamCreate:        'the team is keyed by an id generated here',
   teamInvite:        'the invite is keyed by its own token',
   teamJoin:          'the team the invite names',

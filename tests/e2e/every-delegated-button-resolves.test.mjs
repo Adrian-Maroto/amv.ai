@@ -31,6 +31,11 @@ const names = [...new Set([...shipped.matchAll(/data-dact=["']([a-zA-Z0-9_$-]+)[
 
 const app = await bootApp({ tab: 'chat', user: { name: 'T', email: 't@x.com', ini: 'T' } });
 const { page, errors } = app;
+/* Handoff's buttons are drawn by its own screen (handoff-view.js, fetched
+   when Handoff is drawn and ahead of time when the page is idle); the page's
+   stylesheet names one of them. Loaded here, as opening Handoff would, so the
+   check does not depend on how fast the idle fetch ran. */
+await page.evaluate(() => _hoView());
 
 section('There is something to check');
 {

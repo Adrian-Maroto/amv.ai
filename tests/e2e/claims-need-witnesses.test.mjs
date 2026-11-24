@@ -27,7 +27,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* With Mission Control's screen, which ships beside the page (crew-view.js). */
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'crew-view.js'), 'utf8');
+const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'crew-view.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'handoff-view.js'), 'utf8');
 const lines = bundle.split('\n');
 
 /* A call whose failure is discarded. Not every one is wrong - only one followed

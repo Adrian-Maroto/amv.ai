@@ -31,7 +31,10 @@ const CEILING = {
      value through escH. */
   /* 409 (Nov 15): openBankLink (22-finance.js) draws the bank dialog's frame
      - fixed markup and T() strings through escH, nothing from a person. */
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 409],
+  /* 406 (Nov 24): DOWN three - Handoff's screen moved out of the page into
+     handoff-view.js (counted with the fetched files below, which rose by the
+     same three). */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 406],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],
@@ -70,8 +73,13 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 216], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 216 (Nov 21, Build 16 audit D16-02 and D16-08): four. The
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 219], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 219 (Nov 24): three, moved here from the page with Handoff's
+     screen (the page's ceiling fell by the same three). Two were already
+     there - the screen and the "Pull in your work" picker, every value
+     through escH - and one is new: the attached-work card (_hoShowPulled),
+     drawn by _hoWorkCardHTML from escH(T()) and escH of the work's title.
+     innerHTML 216 (Nov 21, Build 16 audit D16-02 and D16-08): four. The
      receipts list's loading, empty and could-not-load states (spending.js),
      each one fixed sentence through escH(T()); and Settings → Connectors'
      line where the accounts would be (settings-panes.js): an empty <p>, then
