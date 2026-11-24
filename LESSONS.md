@@ -16317,3 +16317,15 @@ countries listing the site), and docs/RESEARCH.md records the readership
 order as a gap with the exact setting that closes it. Rule: when the right
 source is out of reach, ship the best measured one, say which it is, and
 name what the owner can switch on - never present a proxy as the thing.
+
+## 670
+**Nov 24 - a promise about money is a number, so tie it to the number.**
+The landing page's trust badges said "30-day money-back guarantee" while the
+refund policy the server runs is 14 days, on light use, once a year. Every
+suite about refunds tested the server and the Billing screen; none read the
+marketing page, because it is "just copy". It is the first thing a buyer
+reads and the line they would quote back. Rule: any sentence that states a
+price, a window or a guarantee is checked against the constant the server
+enforces (`every-refund-promise-matches-the-policy` reads `REFUND_DAYS` from
+the Worker), and a condition the policy has may not be dropped to make the
+sentence shorter - say something unconditional and true instead.
