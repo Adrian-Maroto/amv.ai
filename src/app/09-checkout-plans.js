@@ -1508,15 +1508,21 @@ function renderUpgradeView(){
   }));
   /* The one checkout path there is - openCheckout - so the account question,
      the per-seat plan and the cycle are decided where they always were. */
+  /* A failure to open is SAID beside the button. It was swallowed: the press
+     did nothing (or moved the person to Plans with no word why), which reads
+     as a broken pay button on the one screen that must never look broken. */
+  const cannotOpen = () => _upgNote(T('Checkout could not open. Nothing was charged - please try again.'), 'err');
   on($('upg-pay'), 'click', () => {
-    try{ if(typeof openCheckout === 'function') return openCheckout(key, undefined, _upgradeCycle); }catch(e){}
-    try{ setTab('plans'); }catch(e){}
+    if(typeof openCheckout !== 'function'){ try{ setTab('plans'); }catch(e){} return; }
+    try{ return openCheckout(key, undefined, _upgradeCycle); }catch(e){ cannotOpen(); }
   });
   /* PayPal, and the card form on this page, still live in the payment sheet;
      it is the second way, offered under the first rather than instead of it. */
   on($('upg-other'), 'click', () => {
-    if(_needsAccountToPay(key)) return openCheckout(key, undefined, _upgradeCycle);
-    try{ openPaymentSheet(key, _upgradeCycle); }catch(e){}
+    try{
+      if(_needsAccountToPay(key)) return openCheckout(key, undefined, _upgradeCycle);
+      openPaymentSheet(key, _upgradeCycle);
+    }catch(e){ cannotOpen(); }
   });
 }
 /* The line under the checkout button. Empty clears it. */

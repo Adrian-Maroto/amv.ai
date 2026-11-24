@@ -1278,7 +1278,7 @@ async function connAdd(provider){
   if(!pick || !pick.length) return;
   try{
     const r = await AMV_API.connectStart(provider, pick, _connReturnTo());
-    if(r && r.url){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = r.url; return; }
+    if(r && safeUrl(r.url)){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = safeUrl(r.url); return; }
     toast('That connection could not be started.','error',5000);
   }catch(e){
     /* The sign-in ended while the permissions were being chosen: ask for it,

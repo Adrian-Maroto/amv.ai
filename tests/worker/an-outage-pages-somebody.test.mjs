@@ -127,6 +127,22 @@ section('And the same anonymous visitor retrying does not');
   ok(paged.length === 0, 'one address is one person', paged.length);
 }
 
+section('Invented ids from one address are not a crowd');
+{
+  /* `uid` is whatever the sender wrote - this route is public. Counting it
+     let one script invent five "people" and page the owner about an outage
+     that is not happening, and the same count ranks which faults the index
+     keeps, so it could also push real ones out. */
+  const env = mkEnv();
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 20; i++) await report1(env, 'made-up-' + i, '4.4.4.5');
+  });
+  ok(paged.length === 0, 'twenty invented ids from one address page nobody', paged.length);
+  const idx = await W.DB.get(env, 'errors', 'index');
+  const g = Object.values(idx.groups)[0];
+  ok(g.burst.length === 1, 'and count as one person for ranking', g.burst.length);
+}
+
 section('It pages once, not once per event');
 {
   /* A real outage produces thousands of these a minute. */

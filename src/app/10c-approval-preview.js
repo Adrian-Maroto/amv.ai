@@ -136,17 +136,17 @@ function apvPreview(id){
   r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-modal="true" aria-label="Preview and approve">
     <header class="pvw-top">
       <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
-      <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
+      <div class="pvw-top-mid"><span class="pvw-top-ic">${escH(a.icon||'✉️')}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
       <div class="pvw-top-r">${a.timeline&&a.timeline.length?`<button class="pvw-quiet" data-apvhist="1">View history</button>`:''}<span class="pvw-mode ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Auto-approve off'}</span></div>
     </header>
     <div id="pvw-mount">${_apvSkeleton()}</div>
     <footer class="pvw-foot">
       <div class="pvw-foot-line"><span class="pvw-foot-ic">●</span>${escH(act.line)}</div>
       <div class="pvw-foot-act">
-        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${a.id}">Ask AMV to revise</button>
-        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
-        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
-        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${a.id}">${escH(act.btn)}</button>
+        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${escH(a.id)}">Ask AMV to revise</button>
+        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${escH(a.id)}">Edit</button>
+        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${escH(a.id)}">Reject</button>
+        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${escH(a.id)}">${escH(act.btn)}</button>
       </div>
       <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
     </footer>
@@ -318,10 +318,10 @@ function apvEdit(id){
       <label class="ape-f"><span>When to send</span><input id="ape-when" type="text" value="${escH(when)}" placeholder='e.g. “now” or “Tomorrow 9:00 AM”'></label>
     </div>
     <footer class="ape-foot">
-      <button class="btn ape-del" data-dact="_apvEditDelete" data-darg="${a.id}">Delete</button>
+      <button class="btn ape-del" data-dact="_apvEditDelete" data-darg="${escH(a.id)}">Delete</button>
       <div class="ape-foot-r">
-        <button class="btn ape-save" data-dact="_apvEditSave" data-darg="${a.id}">Save changes</button>
-        <button class="btn pvw-approve" data-dact="_apvEditSend" data-darg="${a.id}">Save &amp; send</button>
+        <button class="btn ape-save" data-dact="_apvEditSave" data-darg="${escH(a.id)}">Save changes</button>
+        <button class="btn pvw-approve" data-dact="_apvEditSend" data-darg="${escH(a.id)}">Save &amp; send</button>
       </div>
     </footer>
   </div></div>`;

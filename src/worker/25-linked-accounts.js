@@ -1019,13 +1019,16 @@ async function errorsReport(request, env, ctx){
 
     /* IS THIS HAPPENING TO EVERYBODY, RIGHT NOW?
 
-       A rolling window of who has hit this exact fingerprint recently. The
-       identifier is the same one-way hash used above - or the caller's address
-       when there is no account, because the people a broken landing page or a
-       broken checkout fails are frequently not signed in, and leaving them out
-       would make the worst outage the quietest one. Neither is stored in a
-       form that names anybody, and the window is bounded. */
-    const whoRaw = raw.uid ? String(raw.uid) : ('ip:' + eip);
+       A rolling window of who has hit this exact fingerprint recently, kept
+       as one-way hashes and bounded. Counted by the caller's ADDRESS, never
+       by `uid`: this route is public and `uid` is whatever the sender wrote,
+       so counting it let one sender invent five "people" per request - a
+       false "failing for everybody" page on demand, and a high reach that
+       pushes real faults out of the index below, which ranks by this list.
+       The address is the one thing here the sender does not choose. People
+       sharing an address count once, which undercounts a real outage a
+       little; five addresses is still reached in minutes when one is real. */
+    const whoRaw = 'ip:' + eip;
     const who = await _errHash(whoRaw);
     g.burst = Array.isArray(g.burst) ? g.burst : [];
     g.burst = g.burst.filter(b => now0 - b.t < ERR_BURST_MS);

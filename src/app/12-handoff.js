@@ -56,16 +56,16 @@ function renderHandoffView(){
       <div class="ho-h">
         <span class="ho-dir ${dir}">${dir==='in'?'Incoming':'Sent'}</span>
         <span class="ho-to">${dir==='in'?('from '+escH(h.from||'someone')):('to '+escH(h.to))}</span>
-        <span class="ho-when">${h.when||''}</span>
+        <span class="ho-when">${escH(h.when||'')}</span>
       </div>
       <div class="ho-t">${escH(h.title)}</div>
       <div class="ho-ctx">${escH(h.context||'').slice(0,180)}${(h.context||'').length>180?'…':''}</div>
       <div class="ho-act">
         ${dir==='in'
-          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${h.id}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${h.id}">Mark done</button>`
+          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${escH(h.id)}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${escH(h.id)}">Mark done</button>`
           : `<span class="ho-status ho-status-${escH(h.status||'waiting')}">${escH(_HO_STATUS[h.status]||_HO_STATUS.waiting)}</span>`+
             (_HO_UNSENT.indexOf(h.status)>=0
-              ? `<button class="btn bs" data-dact="hoResend" data-darg="${h.id}">Send again</button>` : '')}
+              ? `<button class="btn bs" data-dact="hoResend" data-darg="${escH(h.id)}">Send again</button>` : '')}
       </div>
     </div>`;
   vc.innerHTML=`<div class="sv fi"><div class="vi ho-page">

@@ -113,6 +113,34 @@ section('And the plan is quoted in messages, on the screen before the payment');
      'not tokens, which every other money screen has stopped saying', r.figs);
 }
 
+section('A pay button that cannot open says so, beside it');
+{
+  /* Both buttons swallowed a failure to open: the press did nothing, on the
+     one screen that must never look broken. Each is made to fail here and
+     the line under the button is read. */
+  const r = await page.evaluate(async () => {
+    const out = {};
+    const keep = { oc: window.openCheckout, ps: window.openPaymentSheet };
+    window.openCheckout = () => { throw new Error('checkout broke'); };
+    window.openPaymentSheet = () => { throw new Error('sheet broke'); };
+    try {
+      for (const id of ['upg-pay', 'upg-other']) {
+        saveStr('amv_plan', 'free'); openUpgrade('pro', 'spend');
+        await new Promise(res => setTimeout(res, 500));
+        const b = document.getElementById(id);
+        if (!b) { out[id] = 'missing'; continue; }
+        b.click();
+        await new Promise(res => setTimeout(res, 150));
+        const n = document.getElementById('upg-note');
+        out[id] = n && n.classList.contains('err') ? n.textContent : '(nothing said)';
+      }
+    } finally { window.openCheckout = keep.oc; window.openPaymentSheet = keep.ps; }
+    return out;
+  });
+  ok(/could not open/i.test(r['upg-pay'] || ''), 'the main button says checkout could not open', r['upg-pay']);
+  ok(/could not open/i.test(r['upg-other'] || ''), 'and so does the other way to pay', r['upg-other']);
+}
+
 ok(errors.length === 0, 'and none of it raised an error', errors);
 await app.close();
 process.exit(report() === 0 ? (done(), 0) : 1);

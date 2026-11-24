@@ -16340,3 +16340,16 @@ was the wiring between the words a visitor clicks and the function that ran
 that was wrong. Rule: a suite about something a person opens presses the
 control they press (`each-footer-link-opens-its-own-document`), and checks
 that what opened is what the control said.
+
+## 672
+**Nov 24 - on a public route, count only what the sender cannot choose.**
+The error sink pages the owner when five DIFFERENT people hit one fault, and
+keeps the faults that reached the most people when it has to drop some. It
+counted people by `uid` - a value the browser sends on a route anyone can
+call. One script inventing five ids per request could page the owner about an
+outage that was not happening, and push real faults out of the index; the
+comment above the ranking said one sender counts once, and it did not. Now the
+count is by address, the one thing there the sender does not pick
+(`an-outage-pages-somebody`, "invented ids from one address"). Rule: on an
+unauthenticated route, anything used to count, rank or decide "how many
+people" comes from the connection, never from the body.

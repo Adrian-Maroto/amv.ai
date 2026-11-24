@@ -17729,13 +17729,16 @@ async function errorsReport(request, env, ctx){
 
     /* IS THIS HAPPENING TO EVERYBODY, RIGHT NOW?
 
-       A rolling window of who has hit this exact fingerprint recently. The
-       identifier is the same one-way hash used above - or the caller's address
-       when there is no account, because the people a broken landing page or a
-       broken checkout fails are frequently not signed in, and leaving them out
-       would make the worst outage the quietest one. Neither is stored in a
-       form that names anybody, and the window is bounded. */
-    const whoRaw = raw.uid ? String(raw.uid) : ('ip:' + eip);
+       A rolling window of who has hit this exact fingerprint recently, kept
+       as one-way hashes and bounded. Counted by the caller's ADDRESS, never
+       by `uid`: this route is public and `uid` is whatever the sender wrote,
+       so counting it let one sender invent five "people" per request - a
+       false "failing for everybody" page on demand, and a high reach that
+       pushes real faults out of the index below, which ranks by this list.
+       The address is the one thing here the sender does not choose. People
+       sharing an address count once, which undercounts a real outage a
+       little; five addresses is still reached in minutes when one is real. */
+    const whoRaw = 'ip:' + eip;
     const who = await _errHash(whoRaw);
     g.burst = Array.isArray(g.burst) ? g.burst : [];
     g.burst = g.burst.filter(b => now0 - b.t < ERR_BURST_MS);
@@ -28546,7 +28549,7 @@ async function connectorLogo(request, env) {
       if (!hit.byteLength) return new Response('no logo', { status: 404 });
       const t = (await env.AMV_KV.get(CLOGO_CACHE_KEY + ':t')) || 'image/png';
       return new Response(hit, { status: 200,
-        headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800' } });
+        headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
     }
   } catch (e) {}
 
@@ -28557,7 +28560,10 @@ async function connectorLogo(request, env) {
       const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (CLOGO_TYPES.indexOf(ct) >= 0) {
         const buf = await r.arrayBuffer();
-        if (buf.byteLength && buf.byteLength <= CLOGO_MAX_BYTES) { body = buf; type = ct; }
+        /* Served as what its BYTES are, as /v1/site-icon does: a label is
+           the sender's claim, and a page labelled image/png is not a logo. */
+        const sniffed = buf.byteLength ? _siteIconSniff(new Uint8Array(buf)) : null;
+        if (sniffed && CLOGO_TYPES.indexOf(sniffed) >= 0 && buf.byteLength <= CLOGO_MAX_BYTES) { body = buf; type = sniffed; }
       }
     }
   } catch (e) { /* a miss is a 404 below, which the page already handles */ }
@@ -28573,7 +28579,7 @@ async function connectorLogo(request, env) {
 
   if (!body) return new Response('no logo', { status: 404 });
   return new Response(body, { status: 200,
-    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800' } });
+    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
 }
 
 async function connectorDirectory(request, env) {

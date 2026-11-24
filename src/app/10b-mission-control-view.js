@@ -124,7 +124,7 @@ function _cwJobCard(j){
      did was to switch it on. */
   return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
@@ -135,7 +135,7 @@ function _cwJobCard(j){
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing \u2192':'See what it does \u2192'}</span>
     </button>
     ${note}
-    <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
+    <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
   </div>`;
 }
 /* Which of the two a catalogue card should be is a fact about the account, not
@@ -144,7 +144,7 @@ function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}

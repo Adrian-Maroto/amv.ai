@@ -82,7 +82,7 @@ async function connectorLogo(request, env) {
       if (!hit.byteLength) return new Response('no logo', { status: 404 });
       const t = (await env.AMV_KV.get(CLOGO_CACHE_KEY + ':t')) || 'image/png';
       return new Response(hit, { status: 200,
-        headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800' } });
+        headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
     }
   } catch (e) {}
 
@@ -93,7 +93,10 @@ async function connectorLogo(request, env) {
       const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
       if (CLOGO_TYPES.indexOf(ct) >= 0) {
         const buf = await r.arrayBuffer();
-        if (buf.byteLength && buf.byteLength <= CLOGO_MAX_BYTES) { body = buf; type = ct; }
+        /* Served as what its BYTES are, as /v1/site-icon does: a label is
+           the sender's claim, and a page labelled image/png is not a logo. */
+        const sniffed = buf.byteLength ? _siteIconSniff(new Uint8Array(buf)) : null;
+        if (sniffed && CLOGO_TYPES.indexOf(sniffed) >= 0 && buf.byteLength <= CLOGO_MAX_BYTES) { body = buf; type = sniffed; }
       }
     }
   } catch (e) { /* a miss is a 404 below, which the page already handles */ }
@@ -109,7 +112,7 @@ async function connectorLogo(request, env) {
 
   if (!body) return new Response('no logo', { status: 404 });
   return new Response(body, { status: 200,
-    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800' } });
+    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" } });
 }
 
 async function connectorDirectory(request, env) {

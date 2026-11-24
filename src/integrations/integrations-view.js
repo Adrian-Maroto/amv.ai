@@ -381,7 +381,7 @@ function launchTask(key){
 let _tkQ = '', _tkC = 'all', _tkN = 60, _tkList = [], _tkCc = '';
 function _tkCatOf(t){ try{ return _cjCat({ ccKind: t.kind }); }catch(e){ return 'Home & life'; } }
 function _tkRow(t){
-  return `<button class="tk-row tk2-row" data-cc="${t.kind}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${_appMarkHTML((t.e && t.e.n) || t.title)}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
+  return `<button class="tk-row tk2-row" data-cc="${escH(t.kind)}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${_appMarkHTML((t.e && t.e.n) || t.title)}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
 }
 /* Which country's list has been answered (even with nothing), so the body
    says Loading only while it is - in the list's own place, where the rows

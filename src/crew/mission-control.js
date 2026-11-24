@@ -120,7 +120,7 @@ function _mcActiveCard(t){
   return `<div class="mc-card"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||t.type||'Task')}</span><span class="mc-pill ${running?'run':'wait'}">${running?'Running':'Queued'}</span></div>${bar}<div class="mc-card-sub">${running?'AMV is working on this now.':'Waiting to start.'}</div></div>`;
 }
 function _mcFailCard(t){
-  return `<div class="mc-card fail"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill err">Needs you</span></div><div class="mc-card-sub">${escH(t.error||'This task could not complete.')}</div><div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcRetry" data-darg="${t.id}">Retry</button></div></div>`;
+  return `<div class="mc-card fail"><div class="mc-card-top"><span class="mc-card-t">${escH(t.title||'Task')}</span><span class="mc-pill err">Needs you</span></div><div class="mc-card-sub">${escH(t.error||'This task could not complete.')}</div><div class="mc-card-act"><button class="btn mc-mini" data-dact="_mcRetry" data-darg="${escH(t.id)}">Retry</button></div></div>`;
 }
 function _mcRetry(id){
   const t=((typeof _bgQueue!=='undefined'&&_bgQueue.tasks)||[]).find(x=>x.id===id); if(!t){ renderCrewView(); return; }
@@ -160,9 +160,9 @@ function _mcSchedRow(t, st){
       <div class="mc-sched-mode-row">${mode}${waitChip}${heldChip}</div>
     </div>
     <div class="mc-sched-acts">
-      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
-      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
-      <button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${t.id}">Cancel</button>
+      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${escH(t.id)}">${auto?'Make me approve first':'Make autonomous'}</button>
+      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${escH(t.id)}">Edit</button>
+      <button class="btn mc-mini ghost" data-dact="_mcCancelSched" data-darg="${escH(t.id)}">Cancel</button>
     </div>
   </div>`;
 }
@@ -271,7 +271,7 @@ function _mcCeilingHTML(){
       ${MC_LEVELS.map(l=>`
         <button class="mc-lv-opt${cur===l.id?' on':''}" role="radio" aria-checked="${cur===l.id?'true':'false'}"
                 tabindex="${cur===l.id?'0':'-1'}"
-                data-dact="mcSetCeiling" data-darg="${l.id}">
+                data-dact="mcSetCeiling" data-darg="${escH(l.id)}">
           <span class="mc-lv-dot" aria-hidden="true"></span>
           <span class="mc-lv-b">
             <span class="mc-lv-t">${escH(l.label)}</span>
@@ -1128,7 +1128,7 @@ function _mcAutonSchedRow(j){
       <div class="mc-sched-meta">${escH(j.desc||T('Runs in the background'))} · ${escH(_cwUsesLine(j, j.needs||''))}</div>
       <div class="mc-sched-mode-row"><span class="mc-sched-mode">${escH(T('Runs while AMV is open'))}</span></div>
     </div>
-    <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">${escH(T('Turn off'))}</button></div>
+    <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${escH(j.id)}">${escH(T('Turn off'))}</button></div>
   </div>`;
 }
 /* A rotation rewraps the example. One listener for the page, finding the box
@@ -2088,10 +2088,10 @@ function renderCrewView(){
         <span class="apv-term ${lapse.expired?'lapsed':''}">${escH(lapse.text)}</span>
       </div>
       <div class="apv-act">
-        <button class="btn apv-preview" data-dact="apvPreview" data-darg="${a.id}">Preview</button>
-        <button class="btn apv-ghost" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
-        <button class="btn apv-ghost apv-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
-        <button class="btn apv-approve" data-dact="apvQuickApprove" data-darg="${a.id}">${escH(act.btn)}</button>
+        <button class="btn apv-preview" data-dact="apvPreview" data-darg="${escH(a.id)}">Preview</button>
+        <button class="btn apv-ghost" data-dact="apvEdit" data-darg="${escH(a.id)}">Edit</button>
+        <button class="btn apv-ghost apv-reject" data-dact="apvReject" data-darg="${escH(a.id)}">Reject</button>
+        <button class="btn apv-approve" data-dact="apvQuickApprove" data-darg="${escH(a.id)}">${escH(act.btn)}</button>
       </div>
     </div>`;
   };

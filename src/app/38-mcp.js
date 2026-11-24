@@ -721,7 +721,7 @@ async function rmcpConnect(slug){
   }
   try{
     const r = await AMV_API.remoteStart(slug, _connReturnTo());
-    if(r && r.url){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = r.url; return; }
+    if(r && safeUrl(r.url)){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = safeUrl(r.url); return; }
     toast('That connection could not be started.', 'error', 6000);
   }catch(e){
     toast(String((e && e.message) || 'That connection could not be started.'), 'error', 8000);

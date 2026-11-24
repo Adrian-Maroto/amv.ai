@@ -20735,15 +20735,21 @@ function renderUpgradeView(){
   }));
   /* The one checkout path there is - openCheckout - so the account question,
      the per-seat plan and the cycle are decided where they always were. */
+  /* A failure to open is SAID beside the button. It was swallowed: the press
+     did nothing (or moved the person to Plans with no word why), which reads
+     as a broken pay button on the one screen that must never look broken. */
+  const cannotOpen = () => _upgNote(T('Checkout could not open. Nothing was charged - please try again.'), 'err');
   on($('upg-pay'), 'click', () => {
-    try{ if(typeof openCheckout === 'function') return openCheckout(key, undefined, _upgradeCycle); }catch(e){}
-    try{ setTab('plans'); }catch(e){}
+    if(typeof openCheckout !== 'function'){ try{ setTab('plans'); }catch(e){} return; }
+    try{ return openCheckout(key, undefined, _upgradeCycle); }catch(e){ cannotOpen(); }
   });
   /* PayPal, and the card form on this page, still live in the payment sheet;
      it is the second way, offered under the first rather than instead of it. */
   on($('upg-other'), 'click', () => {
-    if(_needsAccountToPay(key)) return openCheckout(key, undefined, _upgradeCycle);
-    try{ openPaymentSheet(key, _upgradeCycle); }catch(e){}
+    try{
+      if(_needsAccountToPay(key)) return openCheckout(key, undefined, _upgradeCycle);
+      openPaymentSheet(key, _upgradeCycle);
+    }catch(e){ cannotOpen(); }
   });
 }
 /* The line under the checkout button. Empty clears it. */
@@ -23459,7 +23465,7 @@ function _cwJobCard(j){
      did was to switch it on. */
   return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
@@ -23470,7 +23476,7 @@ function _cwJobCard(j){
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing \u2192':'See what it does \u2192'}</span>
     </button>
     ${note}
-    <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
+    <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
   </div>`;
 }
 /* Which of the two a catalogue card should be is a fact about the account, not
@@ -23479,7 +23485,7 @@ function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
@@ -24884,17 +24890,17 @@ function apvPreview(id){
   r.innerHTML=`<div class="ov pvw-ov" id="pvw-bg"><div class="pvw" role="dialog" aria-modal="true" aria-label="Preview and approve">
     <header class="pvw-top">
       <button class="pvw-back" data-dact="apvClose" aria-label="Back">← <span>Back</span></button>
-      <div class="pvw-top-mid"><span class="pvw-top-ic">${a.icon||'✉️'}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
+      <div class="pvw-top-mid"><span class="pvw-top-ic">${escH(a.icon||'✉️')}</span><span class="pvw-top-t">${escH(a.title)}</span>${a.project?`<span class="pvw-chip">${escH(a.project)}</span>`:''}</div>
       <div class="pvw-top-r">${a.timeline&&a.timeline.length?`<button class="pvw-quiet" data-apvhist="1">View history</button>`:''}<span class="pvw-mode ${a.autoApprove?'auto':'wait'}">${a.autoApprove?'Auto-approve on':'Auto-approve off'}</span></div>
     </header>
     <div id="pvw-mount">${_apvSkeleton()}</div>
     <footer class="pvw-foot">
       <div class="pvw-foot-line"><span class="pvw-foot-ic">●</span>${escH(act.line)}</div>
       <div class="pvw-foot-act">
-        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${a.id}">Ask AMV to revise</button>
-        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${a.id}">Edit</button>
-        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${a.id}">Reject</button>
-        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${a.id}">${escH(act.btn)}</button>
+        <button class="btn pvw-revise" data-dact="apvRevise" data-darg="${escH(a.id)}">Ask AMV to revise</button>
+        <button class="btn pvw-edit" data-dact="apvEdit" data-darg="${escH(a.id)}">Edit</button>
+        <button class="btn pvw-reject" data-dact="apvReject" data-darg="${escH(a.id)}">Reject</button>
+        <button class="btn pvw-approve" data-dact="apvApprove" data-darg="${escH(a.id)}">${escH(act.btn)}</button>
       </div>
       <button class="pvw-more" data-apvmore="1" aria-label="More actions">⋯</button>
     </footer>
@@ -25066,10 +25072,10 @@ function apvEdit(id){
       <label class="ape-f"><span>When to send</span><input id="ape-when" type="text" value="${escH(when)}" placeholder='e.g. “now” or “Tomorrow 9:00 AM”'></label>
     </div>
     <footer class="ape-foot">
-      <button class="btn ape-del" data-dact="_apvEditDelete" data-darg="${a.id}">Delete</button>
+      <button class="btn ape-del" data-dact="_apvEditDelete" data-darg="${escH(a.id)}">Delete</button>
       <div class="ape-foot-r">
-        <button class="btn ape-save" data-dact="_apvEditSave" data-darg="${a.id}">Save changes</button>
-        <button class="btn pvw-approve" data-dact="_apvEditSend" data-darg="${a.id}">Save &amp; send</button>
+        <button class="btn ape-save" data-dact="_apvEditSave" data-darg="${escH(a.id)}">Save changes</button>
+        <button class="btn pvw-approve" data-dact="_apvEditSend" data-darg="${escH(a.id)}">Save &amp; send</button>
       </div>
     </footer>
   </div></div>`;
@@ -29489,16 +29495,16 @@ function renderHandoffView(){
       <div class="ho-h">
         <span class="ho-dir ${dir}">${dir==='in'?'Incoming':'Sent'}</span>
         <span class="ho-to">${dir==='in'?('from '+escH(h.from||'someone')):('to '+escH(h.to))}</span>
-        <span class="ho-when">${h.when||''}</span>
+        <span class="ho-when">${escH(h.when||'')}</span>
       </div>
       <div class="ho-t">${escH(h.title)}</div>
       <div class="ho-ctx">${escH(h.context||'').slice(0,180)}${(h.context||'').length>180?'…':''}</div>
       <div class="ho-act">
         ${dir==='in'
-          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${h.id}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${h.id}">Mark done</button>`
+          ? `<button class="btn bp" data-dact="hoOpen" data-darg="${escH(h.id)}">Open & continue</button><button class="btn bs" data-dact="hoDone" data-darg="${escH(h.id)}">Mark done</button>`
           : `<span class="ho-status ho-status-${escH(h.status||'waiting')}">${escH(_HO_STATUS[h.status]||_HO_STATUS.waiting)}</span>`+
             (_HO_UNSENT.indexOf(h.status)>=0
-              ? `<button class="btn bs" data-dact="hoResend" data-darg="${h.id}">Send again</button>` : '')}
+              ? `<button class="btn bs" data-dact="hoResend" data-darg="${escH(h.id)}">Send again</button>` : '')}
       </div>
     </div>`;
   vc.innerHTML=`<div class="sv fi"><div class="vi ho-page">
@@ -34522,7 +34528,7 @@ async function connAdd(provider){
   if(!pick || !pick.length) return;
   try{
     const r = await AMV_API.connectStart(provider, pick, _connReturnTo());
-    if(r && r.url){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = r.url; return; }
+    if(r && safeUrl(r.url)){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = safeUrl(r.url); return; }
     toast('That connection could not be started.','error',5000);
   }catch(e){
     /* The sign-in ended while the permissions were being chosen: ask for it,
@@ -40087,9 +40093,9 @@ function _schedEdit(id){
       </select></label>
     </div>
     <footer class="ape-foot">
-      <button class="btn ape-del" data-dact="_schedEditDelete" data-darg="${t.id}">Delete</button>
+      <button class="btn ape-del" data-dact="_schedEditDelete" data-darg="${escH(t.id)}">Delete</button>
       <div class="ape-foot-r">
-        <button class="btn pvw-approve ape-save" data-dact="_schedEditSave" data-darg="${t.id}">Save</button>
+        <button class="btn pvw-approve ape-save" data-dact="_schedEditSave" data-darg="${escH(t.id)}">Save</button>
       </div>
     </footer>
   </div></div>`;
@@ -40172,10 +40178,10 @@ function _smRow(t){
       ${t.localOnly?'<span class="smr-local">Runs while AMV is open</span>':''}
     </div>
     <div class="smr-act">
-      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
-      <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${t.id}">${t.paused?'Resume':'Pause'}</button>
-      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
-      <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${t.id}">Cancel</button>
+      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${escH(t.id)}">Edit</button>
+      <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${escH(t.id)}">${t.paused?'Resume':'Pause'}</button>
+      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${escH(t.id)}">${auto?'Make me approve first':'Make autonomous'}</button>
+      <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${escH(t.id)}">Cancel</button>
     </div>
   </div>`;
 }
@@ -48937,7 +48943,7 @@ async function rmcpConnect(slug){
   }
   try{
     const r = await AMV_API.remoteStart(slug, _connReturnTo());
-    if(r && r.url){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = r.url; return; }
+    if(r && safeUrl(r.url)){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = safeUrl(r.url); return; }
     toast('That connection could not be started.', 'error', 6000);
   }catch(e){
     toast(String((e && e.message) || 'That connection could not be started.'), 'error', 8000);

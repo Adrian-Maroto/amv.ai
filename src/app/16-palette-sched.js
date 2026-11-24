@@ -761,9 +761,9 @@ function _schedEdit(id){
       </select></label>
     </div>
     <footer class="ape-foot">
-      <button class="btn ape-del" data-dact="_schedEditDelete" data-darg="${t.id}">Delete</button>
+      <button class="btn ape-del" data-dact="_schedEditDelete" data-darg="${escH(t.id)}">Delete</button>
       <div class="ape-foot-r">
-        <button class="btn pvw-approve ape-save" data-dact="_schedEditSave" data-darg="${t.id}">Save</button>
+        <button class="btn pvw-approve ape-save" data-dact="_schedEditSave" data-darg="${escH(t.id)}">Save</button>
       </div>
     </footer>
   </div></div>`;
@@ -846,10 +846,10 @@ function _smRow(t){
       ${t.localOnly?'<span class="smr-local">Runs while AMV is open</span>':''}
     </div>
     <div class="smr-act">
-      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${t.id}">Edit</button>
-      <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${t.id}">${t.paused?'Resume':'Pause'}</button>
-      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
-      <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${t.id}">Cancel</button>
+      <button class="btn mc-mini ghost" data-dact="_schedEdit" data-darg="${escH(t.id)}">Edit</button>
+      <button class="btn mc-mini ghost" data-dact="_schedTogglePause" data-darg="${escH(t.id)}">${t.paused?'Resume':'Pause'}</button>
+      <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${escH(t.id)}">${auto?'Make me approve first':'Make autonomous'}</button>
+      <button class="btn mc-mini ghost smr-cancel" data-dact="_schedCancel" data-darg="${escH(t.id)}">Cancel</button>
     </div>
   </div>`;
 }
