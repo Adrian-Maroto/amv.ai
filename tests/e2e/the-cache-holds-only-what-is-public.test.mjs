@@ -151,24 +151,31 @@ try {
      first profile does not work - the live registration is reused and activate
      never runs again, which is how the first draft of this section failed. */
   const ctx2 = await browser.newContext();
-  await ctx2.addInitScript(() => {
-    if (sessionStorage.getItem('seeded')) return;
-    sessionStorage.setItem('seeded', '1');
-    window.__seeded = (async () => {
-      await (await caches.open('another-app-offline-data')).put('/theirs', new Response('keep me'));
-      await (await caches.open('amv-oldbuild1')).put('/', new Response('an AMV build from before'));
-    })();
-  });
+  /* Seeded on a page of the same origin that registers no worker, and only
+     then is the app opened. Seeding from an init script on the app itself
+     raced the worker's own install: on a loaded machine the old cache could
+     be written AFTER activate had already cleaned up, which failed this
+     check for a reason that was the test's, not the worker's. */
   const p2 = await ctx2.newPage();
+  await p2.goto(new URL('preview.html', url).href, { waitUntil: 'load' });
+  await p2.evaluate(async () => {
+    await (await caches.open('another-app-offline-data')).put('/theirs', new Response('keep me'));
+    await (await caches.open('amv-oldbuild1')).put('/', new Response('an AMV build from before'));
+  });
   await p2.goto(url, { waitUntil: 'load' });
   const r = await p2.evaluate(async () => {
-    await window.__seeded;
     for (let i = 0; i < 150; i++) {
       if (navigator.serviceWorker.controller) break;
       await new Promise(res => setTimeout(res, 100));
     }
-    await new Promise(res => setTimeout(res, 300));
-    return await caches.keys();
+    /* Activate deletes asynchronously; give it a deadline, not one fixed
+       pause. A worker that never retires the cache still fails here. */
+    let keys = await caches.keys();
+    for (let i = 0; i < 50 && keys.includes('amv-oldbuild1'); i++) {
+      await new Promise(res => setTimeout(res, 200));
+      keys = await caches.keys();
+    }
+    return keys;
   });
   ok(r.includes('another-app-offline-data'), 'another application’s cache on the same origin survives', r);
   ok(!r.includes('amv-oldbuild1'), 'an old AMV cache is retired', r);
