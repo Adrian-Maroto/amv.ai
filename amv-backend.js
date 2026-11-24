@@ -2554,7 +2554,18 @@ function _pgAfter(env, kind, id, obj, ik){
      changes nothing. Not obtainable means unordered, as before - the proof
      still keeps Postgres from answering for a row nobody compared. */
   const revP = _pgRevNext(env, kind, chainKey);
-  const run = before.catch(() => {}).then(async () => _pgMirror(env, kind, String(id || '').toLowerCase(), obj, null, await revP));
+  /* AFTER THE ACCOUNT ROW IT HANGS FROM. An entitlement, a key list or a team
+     is written as rows that point at the account's row, so its mirror cannot
+     land before that one has. Signing up and then being given a plan a moment
+     later sent the two mirrors on separate chains, and the entitlement's
+     sometimes reached Postgres first, failed with no_account_row and paged the
+     owner that writes were failing (seen in CI on Nov 24). Nothing was served
+     wrongly - the proof kept Postgres from answering - but a false alarm at
+     scale is an alarm somebody learns to ignore. So a record's mirror also
+     waits for any mirror of the same account still in flight here. */
+  const acctKey = 'acct:' + String(id || '').toLowerCase();
+  const acctBefore = (kind !== 'acct' && _pgChains.get(acctKey)) || Promise.resolve();
+  const run = Promise.all([before.catch(() => {}), acctBefore.catch(() => {})]).then(async () => _pgMirror(env, kind, String(id || '').toLowerCase(), obj, null, await revP));
   _pgChains.set(chainKey, run);
   run.catch(() => {}).finally(() => { if (_pgChains.get(chainKey) === run) _pgChains.delete(chainKey); });
   const p = run

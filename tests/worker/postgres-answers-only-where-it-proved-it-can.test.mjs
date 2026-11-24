@@ -49,7 +49,7 @@ execFileSync(PSQL, ['-h', '127.0.0.1', '-p', String(PORT), '-U', user, '-d', 'po
 
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'pgread.' + process.pid + '.harness.mjs');
-writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _planOf };\n');
+writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + '\nexport { DB, _pgSettle, _planOf, _pgChains };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const quiet = console.log; const audits = [];
@@ -309,6 +309,23 @@ section('API keys are never answered from Postgres');
   store.set('apikeys:in@example.com', JSON.stringify({ items: [{ id: 'k1', hash: 'h1', prefix: 'amv_sk_ab', name: 'mine', created: 1 }] }));
   const k = await W.DB.get(env, 'apikeys', 'in@example.com');
   ok(k.items[0].prefix === 'amv_sk_ab', 'KV answers them, with every field');
+}
+
+section('A plan written a moment after sign-up waits for the account row it hangs from');
+{
+  /* The race main's CI hit: the account's mirror and the plan's mirror ran on
+     separate chains, the plan's landed first and failed with no_account_row.
+     Forced here instead of hoped for - the account's mirror is held for 400ms,
+     so a plan mirror that does not wait for it fails every time. */
+  W._pgChains.set('acct:race@example.com', new Promise(r => setTimeout(r, 400)));
+  const n0 = audits.length;
+  await post('/auth/signup', { email: 'race@example.com', name: 'Rae', password: PW });
+  await W.DB.put(env, 'ent', 'race@example.com', Object.assign({}, ENT, { plan: 'elite' }));
+  await settle();
+  const fails = audits.slice(n0).filter(a => a.event === 'pg_mirror_failed');
+  ok(fails.length === 0, 'the plan\'s mirror waited for the account row instead of failing', fails);
+  ok(q("select e.plan from entitlements e join accounts a on a.id=e.account_id where a.email='race@example.com'") === 'elite',
+     'and Postgres holds the plan that was written', q("select count(*) from accounts where email='race@example.com'"));
 }
 
 report();
