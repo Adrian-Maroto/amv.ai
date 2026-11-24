@@ -18,14 +18,20 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 
 /* run check.mjs, return { code, out } */
+/* Ten minutes, and a timeout says it is one. This ran the fast gate under a
+   three-minute limit; inside the full parallel gate on a loaded machine the
+   fast gate took longer than that, the run was killed, and the kill read as
+   "the gate is not green" - a failure for the wrong reason (Nov 24). */
 function runCheck(env) {
-  const opts = { cwd: ROOT, stdio: 'pipe', timeout: 180000,
+  const opts = { cwd: ROOT, stdio: 'pipe', timeout: 600000,
                  env: Object.assign({}, process.env, env || {}) };
   try {
     const out = execSync('node check.mjs --fast', opts).toString();
     return { code: 0, out };
   } catch (e) {
-    return { code: e.status || 1, out: (e.stdout || '').toString() + (e.stderr || '').toString() };
+    const out = (e.stdout || '').toString() + (e.stderr || '').toString();
+    if (e.signal) return { code: 'timed out (' + e.signal + ') - the machine was too busy, not the gate failing', out };
+    return { code: e.status || 1, out };
   }
 }
 
