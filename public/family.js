@@ -33,15 +33,18 @@ function _famParentHTML(st){
   const p = st && st.parentOf;
   if(!p){
     return '<div class="ss2"><h3>Your family</h3>'+
-      '<p class="fam-p">Add someone and you pay for their AMV, and you decide what it may spend on their '+
-      'account, whether they can buy anything, and whether they can take money out. They keep their own '+
-      'sign-in and their own conversations.</p>'+
+      /* Said as it is: joining a family sets limits on an account; it does not
+         move the account onto the parent's plan (nothing in billing does that),
+         so the pane must not say "you pay for their AMV" (Nov 24). */
+      '<p class="fam-p">Add someone to decide what AMV may spend on their account, whether they can buy '+
+      'anything, and whether they can take money out. They keep their own sign-in, their own plan and '+
+      'their own conversations.</p>'+
       '<p class="fam-p fam-quiet">Nobody is in your family yet.</p></div>';
   }
   const kids = p.members || [];
   return '<div class="ss2"><h3>Your family</h3>'+
-    '<p class="fam-p">You pay for these accounts and you set what each of them may spend. '+
-    'They keep their own sign-in and their own conversations.</p>'+
+    '<p class="fam-p">You set what each of these accounts may spend. '+
+    'They keep their own sign-in, their own plan and their own conversations.</p>'+
     '<div class="fam-seen">'+
       '<div class="fam-seen-col fam-can"><div class="fam-seen-h">You can see</div>'+
         '<ul><li>How much of each limit they have used</li><li>Which limits you have set</li></ul></div>'+

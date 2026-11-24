@@ -3798,5 +3798,43 @@
   "bn": "এই ছবিগুলো একসাথে পাঠানোর জন্য খুব বড়। একবারে কম পাঠিয়ে দেখুন।",
   "ur": "یہ تصاویر ایک ساتھ بھیجنے کے لیے بہت بڑی ہیں۔ ایک وقت میں کم بھیجیں۔",
   "ta": "இந்தப் புகைப்படங்கள் ஒன்றாக அனுப்ப மிகப் பெரியவை. ஒரே நேரத்தில் குறைவாக அனுப்பவும்."
+ },
+ "Add someone to decide what AMV may spend on their account, whether they can buy anything, and whether they can take money out. They keep their own sign-in, their own plan and their own conversations.": {
+  "es": "Añade a alguien para decidir cuánto puede gastar AMV en su cuenta, si puede comprar algo y si puede sacar dinero. Mantiene su propio acceso, su propio plan y sus propias conversaciones.",
+  "zh": "添加一个人，即可决定 AMV 在其账户上可以花费多少、对方能否购买东西以及能否提取资金。对方保留自己的登录、自己的方案和自己的对话。",
+  "hi": "किसी को जोड़ें और तय करें कि AMV उनके खाते पर कितना खर्च कर सकता है, वे कुछ खरीद सकते हैं या नहीं, और पैसे निकाल सकते हैं या नहीं। उनका अपना साइन-इन, अपना प्लान और अपनी बातचीत बनी रहती है।",
+  "ar": "أضف شخصًا لتحدد ما يمكن أن ينفقه AMV على حسابه، وهل يمكنه شراء أي شيء، وهل يمكنه سحب الأموال. يحتفظ بتسجيل دخوله وخطته ومحادثاته الخاصة.",
+  "pt": "Adicione alguém para decidir quanto o AMV pode gastar na conta dessa pessoa, se ela pode comprar algo e se pode sacar dinheiro. Ela mantém o próprio acesso, o próprio plano e as próprias conversas.",
+  "fr": "Ajoutez quelqu’un pour décider de ce qu’AMV peut dépenser sur son compte, s’il peut acheter quelque chose et s’il peut retirer de l’argent. Il garde sa propre connexion, son propre forfait et ses propres conversations.",
+  "de": "Fügen Sie jemanden hinzu, um festzulegen, was AMV auf dessen Konto ausgeben darf, ob die Person etwas kaufen und ob sie Geld auszahlen darf. Sie behält ihre eigene Anmeldung, ihren eigenen Tarif und ihre eigenen Unterhaltungen.",
+  "ja": "メンバーを追加すると、そのアカウントで AMV が使える金額、購入の可否、出金の可否を決められます。本人のサインイン、プラン、会話はそのままです。",
+  "ru": "Добавьте человека, чтобы решать, сколько AMV может тратить на его аккаунте, может ли он что-то покупать и выводить деньги. У него остаются свой вход, свой тариф и свои разговоры.",
+  "ko": "구성원을 추가하면 AMV가 그 계정에서 쓸 수 있는 금액, 구매 가능 여부, 출금 가능 여부를 정할 수 있습니다. 본인의 로그인, 요금제, 대화는 그대로 유지됩니다.",
+  "it": "Aggiungi qualcuno per decidere quanto AMV può spendere sul suo account, se può comprare qualcosa e se può prelevare denaro. Mantiene il proprio accesso, il proprio piano e le proprie conversazioni.",
+  "tr": "Birini ekleyerek AMV'nin onun hesabında ne kadar harcayabileceğine, bir şey satın alıp alamayacağına ve para çekip çekemeyeceğine karar verin. Kendi oturumu, kendi planı ve kendi sohbetleri kendisinde kalır.",
+  "vi": "Thêm một người để quyết định AMV được chi bao nhiêu trên tài khoản của họ, họ có được mua gì không và có được rút tiền không. Họ vẫn giữ đăng nhập, gói và các cuộc trò chuyện của riêng mình.",
+  "id": "Tambahkan seseorang untuk menentukan berapa yang boleh dibelanjakan AMV di akunnya, apakah ia boleh membeli sesuatu, dan apakah ia boleh menarik uang. Ia tetap memiliki proses masuk, paket, dan percakapannya sendiri.",
+  "bn": "কাউকে যোগ করে ঠিক করুন AMV তাদের অ্যাকাউন্টে কত খরচ করতে পারবে, তারা কিছু কিনতে পারবে কি না এবং টাকা তুলতে পারবে কি না। তাদের নিজের সাইন-ইন, নিজের প্ল্যান ও নিজের কথোপকথন থাকে।",
+  "ur": "کسی کو شامل کریں تاکہ طے کر سکیں کہ AMV ان کے اکاؤنٹ پر کتنا خرچ کر سکتا ہے، کیا وہ کچھ خرید سکتے ہیں اور کیا رقم نکال سکتے ہیں۔ ان کا اپنا سائن اِن، اپنا پلان اور اپنی گفتگو برقرار رہتی ہے۔",
+  "ta": "ஒருவரைச் சேர்த்து, அவரது கணக்கில் AMV எவ்வளவு செலவிடலாம், அவர் எதையாவது வாங்கலாமா, பணத்தை எடுக்கலாமா என்பதை முடிவு செய்யுங்கள். அவரது உள்நுழைவு, திட்டம், உரையாடல்கள் அவருடையதாகவே இருக்கும்."
+ },
+ "You set what each of these accounts may spend. They keep their own sign-in, their own plan and their own conversations.": {
+  "es": "Tú decides cuánto puede gastar cada una de estas cuentas. Mantienen su propio acceso, su propio plan y sus propias conversaciones.",
+  "zh": "你来设定每个账户可以花费多少。他们保留自己的登录、自己的方案和自己的对话。",
+  "hi": "आप तय करते हैं कि इनमें से हर खाता कितना खर्च कर सकता है। उनका अपना साइन-इन, अपना प्लान और अपनी बातचीत बनी रहती है।",
+  "ar": "أنت تحدد ما يمكن لكل حساب من هذه الحسابات إنفاقه. يحتفظ أصحابها بتسجيل دخولهم وخططهم ومحادثاتهم الخاصة.",
+  "pt": "Você define quanto cada uma destas contas pode gastar. Elas mantêm o próprio acesso, o próprio plano e as próprias conversas.",
+  "fr": "Vous fixez ce que chacun de ces comptes peut dépenser. Ils gardent leur propre connexion, leur propre forfait et leurs propres conversations.",
+  "de": "Sie legen fest, was jedes dieser Konten ausgeben darf. Die Personen behalten ihre eigene Anmeldung, ihren eigenen Tarif und ihre eigenen Unterhaltungen.",
+  "ja": "各アカウントが使える金額はあなたが決めます。本人のサインイン、プラン、会話はそのままです。",
+  "ru": "Вы решаете, сколько может тратить каждый из этих аккаунтов. У них остаются свой вход, свой тариф и свои разговоры.",
+  "ko": "각 계정이 쓸 수 있는 금액은 내가 정합니다. 본인의 로그인, 요금제, 대화는 그대로 유지됩니다.",
+  "it": "Decidi tu quanto può spendere ciascuno di questi account. Mantengono il proprio accesso, il proprio piano e le proprie conversazioni.",
+  "tr": "Bu hesapların her birinin ne kadar harcayabileceğini siz belirlersiniz. Kendi oturumları, kendi planları ve kendi sohbetleri kendilerinde kalır.",
+  "vi": "Bạn đặt mức chi tiêu cho từng tài khoản này. Họ vẫn giữ đăng nhập, gói và các cuộc trò chuyện của riêng mình.",
+  "id": "Anda menentukan berapa yang boleh dibelanjakan setiap akun ini. Mereka tetap memiliki proses masuk, paket, dan percakapan sendiri.",
+  "bn": "এই অ্যাকাউন্টগুলোর প্রত্যেকটি কত খরচ করতে পারবে তা আপনি ঠিক করেন। তাদের নিজের সাইন-ইন, নিজের প্ল্যান ও নিজের কথোপকথন থাকে।",
+  "ur": "آپ طے کرتے ہیں کہ ان میں سے ہر اکاؤنٹ کتنا خرچ کر سکتا ہے۔ ان کا اپنا سائن اِن، اپنا پلان اور اپنی گفتگو برقرار رہتی ہے۔",
+  "ta": "இந்தக் கணக்குகள் ஒவ்வொன்றும் எவ்வளவு செலவிடலாம் என்பதை நீங்கள் அமைக்கிறீர்கள். அவர்களின் உள்நுழைவு, திட்டம், உரையாடல்கள் அவர்களுடையதாகவே இருக்கும்."
  }
 }

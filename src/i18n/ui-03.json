@@ -550,25 +550,6 @@
   "ko": "파일 또는 폴더 추가",
   "ta": "கோப்புகள் அல்லது கோப்புறையைச் சேர்"
  },
- "Add someone and you pay for their AMV, and you decide what it may spend on their account, whether they can buy anything, and whether they can take money out. They keep their own sign-in and their own conversations.": {
-  "es": "Si añades a alguien, pagas su AMV y decides cuánto puede gastar en su cuenta, si puede comprar algo y si puede sacar dinero. Mantiene su propio acceso y sus propias conversaciones.",
-  "zh": "添加某人后,由你支付其 AMV 费用,并决定其账户可花多少钱、能否购物、能否提现。对方保留自己的登录和对话。",
-  "hi": "किसी को जोड़ने पर आप उनके AMV का भुगतान करते हैं, और तय करते हैं कि उनके खाते पर कितना खर्च हो सकता है, वे कुछ खरीद सकते हैं या नहीं, और पैसे निकाल सकते हैं या नहीं। उनका साइन-इन और बातचीत उनकी अपनी रहती है।",
-  "ar": "عند إضافة شخص تدفع أنت تكلفة AMV الخاص به، وتقرر ما يمكن إنفاقه من حسابه، وهل يمكنه الشراء، وهل يمكنه سحب المال. يحتفظ بتسجيل دخوله ومحادثاته الخاصة.",
-  "pt": "Ao adicionar alguém, você paga a AMV dessa pessoa e decide quanto ela pode gastar na conta, se pode comprar algo e se pode sacar dinheiro. Ela mantém o próprio login e as próprias conversas.",
-  "fr": "Si vous ajoutez quelqu’un, vous payez son AMV et décidez ce qu’il peut dépenser sur son compte, s’il peut acheter quoi que ce soit et s’il peut retirer de l’argent. Il garde sa propre connexion et ses propres conversations.",
-  "de": "Wenn Sie jemanden hinzufügen, zahlen Sie dessen AMV und entscheiden, was auf dem Konto ausgegeben werden darf, ob etwas gekauft und ob Geld abgehoben werden kann. Anmeldung und Unterhaltungen bleiben die eigenen.",
-  "ja": "誰かを追加すると、その人のAMVの料金はあなたが払い、アカウントで使える金額、購入の可否、出金の可否を決められます。サインインと会話はその人自身のものです。",
-  "ru": "Добавив человека, вы оплачиваете его AMV и решаете, сколько можно тратить с его аккаунта, может ли он что-то покупать и выводить деньги. У него остаются свой вход и свои разговоры.",
-  "id": "Jika menambahkan seseorang, Anda membayar AMV-nya dan menentukan berapa yang boleh dibelanjakan di akunnya, apakah ia boleh membeli, dan apakah ia boleh menarik uang. Ia tetap punya login dan percakapannya sendiri.",
-  "bn": "কাউকে যোগ করলে তার AMV-এর খরচ আপনি দেন, আর ঠিক করেন তার অ্যাকাউন্টে কত খরচ হতে পারে, সে কিছু কিনতে পারবে কিনা, টাকা তুলতে পারবে কিনা। তার সাইন-ইন ও কথোপকথন তার নিজেরই থাকে।",
-  "ur": "کسی کو شامل کرنے پر آپ اس کے AMV کی ادائیگی کرتے ہیں، اور طے کرتے ہیں کہ اس کے اکاؤنٹ پر کتنا خرچ ہو سکتا ہے، وہ کچھ خرید سکتا ہے یا نہیں، اور رقم نکال سکتا ہے یا نہیں۔ اس کا سائن ان اور گفتگو اس کی اپنی رہتی ہے۔",
-  "tr": "Birini eklerseniz AMV’sinin ücretini siz ödersiniz; hesabında ne harcanabileceğine, bir şey satın alıp alamayacağına ve para çekip çekemeyeceğine siz karar verirsiniz. Kendi girişini ve sohbetlerini korur.",
-  "vi": "Khi thêm ai đó, bạn trả phí AMV cho họ và quyết định tài khoản của họ được chi bao nhiêu, có được mua gì không, có được rút tiền không. Họ vẫn giữ đăng nhập và cuộc trò chuyện riêng.",
-  "it": "Se aggiungi qualcuno, paghi il suo AMV e decidi quanto può spendere sul suo account, se può comprare qualcosa e se può prelevare denaro. Mantiene il proprio accesso e le proprie conversazioni.",
-  "ko": "누군가를 추가하면 그 사람의 AMV 요금을 내가 내고, 그 계정에서 쓸 수 있는 금액, 구매 가능 여부, 출금 가능 여부를 정합니다. 로그인과 대화는 그 사람의 것으로 유지됩니다.",
-  "ta": "ஒருவரைச் சேர்த்தால் அவரின் AMV-க்கு நீங்கள் செலுத்துவீர்கள்; அவர் கணக்கில் எவ்வளவு செலவழிக்கலாம், எதையாவது வாங்கலாமா, பணம் எடுக்கலாமா என்பதை நீங்கள் முடிவு செய்வீர்கள். அவருடைய உள்நுழைவும் உரையாடல்களும் அவருடையவையே."
- },
  "Add someone to your family": {
   "es": "Añade a alguien a tu familia",
   "zh": "把某人加入你的家庭",
