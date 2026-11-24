@@ -86,6 +86,11 @@ const post = async (path, body, tok) => {
 };
 const PW = 'a long enough passphrase here';
 const settle = () => W._pgSettle();
+/* What the comparison said about itself. These two checks passed every time
+   locally and failed once in CI, and a bare `false` could not say whether a
+   connection failed, the copies differed or a fence moved the epoch - so a
+   failure carries the trail. */
+const pgTrail = () => audits.filter(a => /pg_|pgproof|atomic_unavailable/.test(JSON.stringify(a))).slice(-6);
 
 /* Two accounts, written to both stores while nobody reads from Postgres. */
 await post('/auth/signup', { email: 'in@example.com', name: 'Ina', password: PW });
@@ -117,7 +122,7 @@ section('Unproved, KV answers; the comparison writes the proof; then Postgres an
   const fresh = await import(harness + '?t=' + Date.now() + 'p');
   await fresh.DB.get(env, 'acct', 'in@example.com'); await fresh.DB.get(env, 'ent', 'in@example.com');
   await fresh._pgSettle();
-  ok(!!proof('pgok:acct:in@example.com') && !!proof('pgok:ent:in@example.com'), 'once both copies agree, each record gets its proof');
+  ok(!!proof('pgok:acct:in@example.com') && !!proof('pgok:ent:in@example.com'), 'once both copies agree, each record gets its proof', pgTrail());
   /* Proof that Postgres is the one answering: the KV copy is taken away
      behind its back, and the proved row still answers. */
   const kvAcct = store.get('acct:in@example.com');
@@ -145,7 +150,7 @@ section('A row changed behind the proof is not served, and loses its proof');
   q("update entitlements set plan = 'pro' where account_id = (select id from accounts where email='in@example.com')");
   const again = await import(harness + '?t=' + Date.now() + 'r');
   await again.DB.get(env, 'ent', 'in@example.com'); await again._pgSettle();
-  ok(!!proof('pgok:ent:in@example.com'), 'then it is proved again');
+  ok(!!proof('pgok:ent:in@example.com'), 'then it is proved again', pgTrail());
 }
 
 section('A write reaches Postgres before the request goes on, is read back, and is proved');
