@@ -18030,10 +18030,10 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose .dna-btn:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-plus:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .dvi-plus:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-p:hover{background:var(--s3)!important}
 /* ONE send: round, the accent, the same in every mode. */
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-go,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dev-send,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 #dev-send{
-  width:44px!important;height:44px!important;min-height:44px!important;border-radius:50%!important;background:var(--accent)!important;background-image:none!important;
+  width:44px!important;height:44px!important;min-height:44px!important;border-radius:50%!important;background:var(--accent-fill)!important;background-image:none!important;
   color:#fff!important;border:0!important;box-shadow:none!important}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-go:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dev-send:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 #dev-send:hover{background:var(--accent-d)!important}
-:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-a{height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important;background:var(--accent)!important;background-image:none!important;color:#fff!important;border:0!important;font-size:var(--t-sm)!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-a{height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important;background:var(--accent-fill)!important;background-image:none!important;color:#fff!important;border:0!important;font-size:var(--t-sm)!important;box-shadow:none!important}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-hint{font-size:var(--t-sm)!important;color:var(--dim,var(--mu))!important;margin-top:var(--sp-3)!important;text-align:center}
 
 /* Starters: light chips, the same in all three modes. */
