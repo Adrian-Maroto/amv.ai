@@ -18081,3 +18081,7 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
    as they always did - this layer's display must not bring them back. */
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) :is(.lab-shell:not(.lab-blank) > .build-head,.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-head,.lab-shell:not(.lab-blank) > .build-modes,.lab-shell:not(.lab-blank) > .build-mode-note,
   .dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes,.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-mode-note){display:none!important}
+/* Billing in Settings is drawn by the page view, whose wrapper carries the
+   main view's 52px/44px padding - so it sat 44px in and 52px down from
+   every other pane's title. Inside Settings the pane already pads it. */
+#set-modal #set-pane > .sv{padding:0!important}
