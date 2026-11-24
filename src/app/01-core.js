@@ -1571,6 +1571,12 @@ const AMV_API = {
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },
+  /* The shared copy of handed-over work (26-crew-sync.js). A save answers
+     { ok, v }, or { stale:true, item } when the other person saved first. */
+  async handoffItem(id){ const r=await this._fetch('/api/handoff/item',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.item) throw new Error(d.message||'That work could not be opened.'); return d.item; },
+  async handoffItemSave(id,base,data){ const r=await this._fetch('/api/handoff/item/save',{method:'POST',body:JSON.stringify({id,base,data})}); const d=await r.json().catch(()=>({}));
+    if(r.status===409&&d.item) return { stale:true, item:d.item };
+    if(!r.ok||!d.ok) throw new Error(d.message||d.error||'That could not be saved.'); return d; },
 
   // ---- PAYMENTS (secure backend) ----
   /* ASKED ONCE, NOT WALLED OUT.

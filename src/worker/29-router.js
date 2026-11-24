@@ -1117,6 +1117,8 @@ async function _route(request, env, ctx) {
     case '/api/approvals/edit':  return crewApprovalEdit(request, env);
     case '/api/handoff':         return request.method === 'POST' ? handoffCreate(request, env) : handoffList(request, env);
     case '/api/handoff/act':     return handoffAct(request, env);
+    case '/api/handoff/item':    return handoffItemGet(request, env);
+    case '/api/handoff/item/save': return handoffItemPut(request, env);
     case '/team/create':     return teamCreate(request, env);
     case '/team/get':        return teamGet(request, env);
     case '/team/invite':     return teamInvite(request, env);

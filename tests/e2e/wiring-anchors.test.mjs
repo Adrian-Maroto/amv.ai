@@ -293,40 +293,43 @@ section('Handoff can hand over the work, not just a chat about it');
      'each labelled by what it is');
 
   /* The content itself has to travel, or this is the same retyping with extra
-     steps. */
+     steps. Since Nov 24 it travels AS ITSELF (handed-over-work-opens-as-itself):
+     pulling attaches the work as a card, and what goes to the server is the
+     real design, project or code - read here from what would be sent. */
   const design = await page.evaluate(async () => {
     document.querySelector('[data-hosess="s1"]').click();
     await new Promise(r => setTimeout(r, 80));
-    return { ctx: document.getElementById('ho-ctx').value, title: document.getElementById('ho-title').value };
+    const d = _hoWorkData(S._hoPulled);
+    return { card: (document.querySelector('#ho-work .ho-work') || {}).textContent || '', ctx: document.getElementById('ho-ctx').value,
+             data: JSON.stringify(d), title: document.getElementById('ho-title').value };
   });
-  ok(/Warm, minimal/.test(design.ctx), 'a design brings its brief');
-  ok(/Beans/.test(design.ctx), 'and its actual markup');
+  ok(/Design/.test(design.card) && /Coffee poster/.test(design.card), 'a design is attached as a card', design.card);
+  ok(design.ctx === '', 'not pasted into the notes as text', design.ctx);
+  ok(/Warm, minimal/.test(design.data), 'and brings its brief');
+  ok(/Beans/.test(design.data), 'and its actual markup');
   ok(design.title === 'Coffee poster', 'and names itself so the handoff is not "Untitled"', design.title);
 
   const dev = await page.evaluate(async () => {
-    document.getElementById('ho-ctx').value = '';
     _hoPullSession('s2');
     await new Promise(r => setTimeout(r, 60));
-    return document.getElementById('ho-ctx').value;
+    return JSON.stringify(_hoWorkData(S._hoPulled));
   });
-  ok(/app\.js/.test(dev), 'a project brings its file list');
+  ok(/app\.js/.test(dev), 'a project brings its files');
   ok(/const x=1/.test(dev), 'and the contents of those files');
   ok(/build a todo app/.test(dev), 'and what was asked for in the first place');
 
   const lab = await page.evaluate(async () => {
-    document.getElementById('ho-ctx').value = '';
     _hoPullSession('s3');
     await new Promise(r => setTimeout(r, 60));
-    return document.getElementById('ho-ctx').value;
+    return JSON.stringify(_hoWorkData(S._hoPulled));
   });
   ok(/print\(1\)/.test(lab), 'code comes across as code');
   ok(/python/.test(lab), 'saying what language it is');
 
-  /* A session is not a conversation. Arming the "continue on that same chat"
-     path would send whoever opens it to a chat that has nothing to do with the
-     design they were handed. */
-  const armed = await page.evaluate(() => S._hoPulledConv);
-  ok(!armed, 'and pulling one does not point the handoff at an unrelated chat', armed);
+  /* A session is not a conversation: what is attached says what it is, so
+     whoever opens it lands in the right tool, not in an unrelated chat. */
+  const kind = await page.evaluate(() => S._hoPulled && S._hoPulled.kind);
+  ok(kind === 'lab', 'and pulling one attaches it as what it is, not as a chat', kind);
 }
 
 ok(errors.length === 0, 'and none of it logged an error', errors.slice(0, 3));

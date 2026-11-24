@@ -1025,6 +1025,18 @@ async function accountExport(request, env) {
     if (holds.length) records.buyhold = holds;
   }
 
+  /* The work they handed over or were handed: the shared copy of each one
+     their handoff record points at, so the export holds what erasure removes. */
+  if (records.handoff) {
+    const items = [];
+    for (const h of [].concat(records.handoff.incoming || [], records.handoff.sent || [])) {
+      const hid = h && h.id; if (!/^h[a-z0-9]{8,40}$/.test(String(hid || ''))) continue;
+      try { const it = await DB.get(env, 'hoitem', hid); if (it && (it.from === email || it.to === email)) items.push(it); }
+      catch (e) { noteFailure('hoitem', e); }
+    }
+    if (items.length) records.hoitem = items;
+  }
+
   /* An agent's own key for its saved sign-ins (77a, AGENT-010) is a credential,
      not data: the agents go out with their settings, the keys stay. */
   if (records.agents && Array.isArray(records.agents.list)) {
@@ -1512,6 +1524,18 @@ async function _eraseAccount(env, email, opt) {
     audit(env, 'erase_library_failed', { email, error: String((e && e.message) || e).slice(0, 120) });
     _eraseFailed('your files');
   }
+
+  /* The work they handed over or were handed (hoitem, 26-crew-sync.js): a
+     shared copy between two people, keyed by the handoff - found through their
+     own handoff record before that record goes. Either person leaving ends
+     the shared copy; each keeps what is already on their own device. */
+  try {
+    const ho = (await DB.get(env, 'handoff', email)) || {};
+    for (const h of [].concat(ho.incoming || [], ho.sent || [])) {
+      const hid = h && h.id; if (!/^h[a-z0-9]{8,40}$/.test(String(hid || ''))) continue;
+      try { await DB.del(env, 'hoitem', hid); } catch { _eraseFailed('handed-over work'); }
+    }
+  } catch { _eraseFailed('handed-over work'); }
 
   /* Their batches: the requests they sent, the answers, and the queue entry -
      found through the index before the index itself goes. */

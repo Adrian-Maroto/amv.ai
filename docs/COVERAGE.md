@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-24 from 428 suites.
+2026-11-24 from 427 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -89,7 +89,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.6% |
+| `28-password-reset.js` | 7/7 | 92.7% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.3% |
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 96.1% |
-| `39-resumable-streams.js` | 17/17 | 94.6% |
+| `39-resumable-streams.js` | 17/17 | 94.7% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |

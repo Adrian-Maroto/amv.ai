@@ -32,7 +32,7 @@
 import { bootApp } from '../lib/harness.mjs';
 import { ok, eq, section, report, done } from '../lib/assert.mjs';
 
-const ORDER = ['tasks', 'spend', 'memory', 'team', 'integrations'];   // Marketplace retired (Nov 10)
+const ORDER = ['tasks', 'integrations', 'memory', 'spend', 'team'];   // owner, Nov 24: Tasks, Integrations, Memory, Spending (Marketplace retired Nov 10)
 const MIN_TOUCH = 44;
 
 function railShape() {

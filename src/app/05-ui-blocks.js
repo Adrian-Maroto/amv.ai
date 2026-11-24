@@ -2044,8 +2044,9 @@ function renderChatView() {
             '</div>'+
           '</div>'+
         '</div>'+
-        '<p class="input-hint">'+escH(T('Enter to send • Shift+Enter for new line • Drag & drop files'))+'</p>'+
-        '<p class="amv-disclaimer">AMV is an AI and can make mistakes. Check important answers.</p>'+
+        /* The keyboard hint is gone (owner, Nov 24: "too compact, too smushed").
+           What stays under the box is the one line that must be there. */
+        '<p class="amv-disclaimer">'+escH(T('AMV is an AI and can make mistakes. Check important answers.'))+'</p>'+
         '<div id="ctx-chat"></div>'+
       '</div>'+
       '<div id="chome-chips" class="chome-chips"></div>'+
@@ -2917,7 +2918,10 @@ function renderChatMsgs() {
   const ini=S.user?.ini||'?';
 
   if(!msgs.length) {
-    const fname=S.user?.name?.split(' ')[0]||'';
+    /* "What should AMV call you?" is the name it greets you by (owner, Nov 24:
+       changing it "is not updating"). It used the account name, so the one
+       place the setting is plainly visible ignored it. */
+    const fname=(loadStr('amv_nickname')||'').trim()||S.user?.name?.split(' ')[0]||'';
     const title = _homeGreetHTML(fname);
     cm.classList.add('cm-empty');
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
@@ -3856,6 +3860,8 @@ function _histHasRows(){
   return _recentConvs().length>0 || (Array.isArray(_SESSIONS) && _SESSIONS.length>0);
 }
 function renderHist(){
+  /* Handed-over work saves back after each change (12-handoff.js). */
+  try{ _hoSchedulePush(); }catch(e){ try{ console.error('AMV: handed-over work could not be saved back', e); }catch(_){} }
   const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
   const search=($('hist-search')?.value||'').toLowerCase().trim();
@@ -4199,7 +4205,7 @@ function renderDashboard(){
   vc.innerHTML=
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
-        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">'+_greetHTML(S.user?.name?.split(' ')[0]||'')+'</h2>'+
+        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">'+_greetHTML((loadStr('amv_nickname')||'').trim()||S.user?.name?.split(' ')[0]||'')+'</h2>'+
         '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+

@@ -67,7 +67,7 @@ const BACKUP_PREFIXES = [
   'erased:',   // which accounts were erased (a hash): a rebuilt store must still refuse to bring them back
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
   'game:', 'gameown:',
-  'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
+  'handoff:', 'hoitem:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
   /* Added after a check compared this list against every durable record kind
      and found these unbacked - each one silently unrecoverable from a restore. */
   'mktsnap:',   // what a buyer PAID for, snapshotted so a seller edit cannot revoke it

@@ -1345,7 +1345,7 @@ step('No screen loaded later replaces a function the page already has', () => {
      The view stubs are the one deliberate case: the page defines
      render<X>View to fetch its screen, and the screen's own render<X>View
      replaces the stub on purpose. */
-  const ALLOWED = new Set(['renderCodeView', 'renderCrewView', 'renderTasksView', 'renderIntegrationsView', 'renderAutomationView']);
+  const ALLOWED = new Set(['renderCodeView', 'renderCrewView', 'renderTasksView', 'renderIntegrationsView', 'renderAutomationView', 'renderHandoffView']);
   const top = (t) => new Set([...codeOnly(t, { blankStrings: true }).matchAll(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]));
   const page = top(readFileSync(R('app.js'), 'utf8'));
   const build = readFileSync(R('build.mjs'), 'utf8');

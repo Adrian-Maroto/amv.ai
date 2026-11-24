@@ -302,6 +302,13 @@
    "backup": true,
    "authority": "kv"
   },
+  "hoitem": {
+   "class": "content",
+   "holds": "the chat, design, project or code handed from one person to another, shared by exactly those two, with a version number",
+   "kept": "until either person deletes their account",
+   "backup": true,
+   "authority": "kv"
+  },
   "hookdel": {
    "class": "operational",
    "holds": "a webhook delivery seen",

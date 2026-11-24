@@ -251,6 +251,8 @@ function _resetToolState(kind){
 try{ window._TOOL_DEFAULTS=_TOOL_DEFAULTS; window._TOOL_KEEP=_TOOL_KEEP; }catch(e){}
 function _sessResume(id){
   const rec=_SESSIONS.find(s=>s.id===id); if(!rec) return;
+  /* Handed-over work: bring in what the other person did since (12-handoff.js). */
+  if(rec.ho){ try{ _hoPullInto(id); }catch(e){ try{ console.error('AMV: handed-over work could not be refreshed', e); }catch(_){} } }
   const k=rec.kind, st=rec.state||{};
   // If we're currently in a different workspace tool, save & reset it first so
   // its work isn't lost when we jump away to resume this session.
@@ -2539,7 +2541,9 @@ function openFreshChat(){
   newChat();
 }
 try{ window.openFreshChat=openFreshChat; }catch(e){}
-function loadConv(id){ _leaveTempChats(id); S.cur=id; _rememberTabChat(); setTab('chat'); renderHist(); }
+function loadConv(id){ _leaveTempChats(id); S.cur=id; _rememberTabChat(); setTab('chat'); renderHist();
+  /* Handed-over work: bring in what the other person added since. */
+  try{ _hoPullInto(id); }catch(e){ try{ console.error('AMV: handed-over work could not be refreshed', e); }catch(_){} } }
 /* WHICH CHAT AMV OPENS ON.
 
    Opening AMV starts a new chat, the way the chat products people already use

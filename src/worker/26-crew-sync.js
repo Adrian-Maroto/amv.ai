@@ -224,13 +224,27 @@ async function handoffCreate(request, env){
   // Cross-user write - guard against spamming another user's inbox.
   const blocked = await guardAction(env, `handoff:${user.email}`, 10, 100, 'handoffs');
   if(blocked) return blocked;
-  const { title, context, to } = await request.json().catch(()=>({}));
+  const { title, context, to, item } = await request.json().catch(()=>({}));
   if(!title || !to) return json({ error:'title and recipient required' }, 400);
   const toEmail = String(to).toLowerCase().trim();
+  /* The work itself, when there is one (see HANDOFF CARRIES THE WORK below).
+     Checked before anything is written, so a refused item delivers nothing. */
+  let work = null;
+  if(item != null){
+    work = _hoItemCheck(item && item.kind, item && item.data);
+    if(work.error) return json({ error: work.error, message: work.message }, work.status || 400);
+  }
   const id = 'h' + Date.now().toString(36) + _randId(10);
   const entry = { id, from_email: user.email, to_email: toEmail,
                   title: String(title).slice(0,300), context: String(context||'').slice(0,5000),
-                  status: 'pending', at: Date.now() };
+                  status: 'pending', at: Date.now(),
+                  ...(work ? { item: { kind: work.kind, title: String((item && item.title) || title).slice(0,300) } } : {}) };
+  /* The shared copy is written FIRST: an inbox line pointing at work that was
+     never stored is a link to nothing. If this fails, nothing was delivered. */
+  if(work){
+    await DB.put(env, 'hoitem', id, { id, from: user.email, to: toEmail, kind: work.kind,
+      title: entry.item.title, v: 1, by: user.email, at: Date.now(), data: work.data });
+  }
   /* AMV-033: THE RECIPIENT'S INBOX HAS AS MANY WRITERS AS IT HAS SENDERS.
 
      The lock roster excused this handler because it "writes the SENDER's own
@@ -273,6 +287,96 @@ async function handoffCreate(request, env){
   return json({ ok:true, id, recorded,
     ...(recorded ? {} : { warning: 'It was delivered, but AMV could not add it to your own sent list. '
                                  + 'Do not send it again - they have it.' }) });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HANDOFF CARRIES THE WORK ITSELF (owner, Nov 24: "when you pull in your last
+   work it doesn't just pull in text ... when you click it it goes on the chat
+   ... if the original person refreshes, it updates with their old work and
+   with the new work the other person made").
+
+   It used to paste a text rendering of the chat or design into the notes, and
+   the recipient started a NEW chat from that text: the work stopped being
+   work at the moment it was handed over, and nothing came back.
+
+   Now a handoff can carry one item - a chat, a design, a project or code -
+   stored once on the server as `hoitem:<handoff id>`, readable and writable
+   by exactly two people: who sent it and who it was sent to. Each side opens
+   it as the real thing in AMV; each save is a numbered version, written only
+   if it builds on the version the writer last saw (`base`), so two people
+   saving at once cannot silently erase each other - the later one is told,
+   with the current copy, and merges (a chat by message, see 12-handoff.js).
+
+   Why this shape: AMV's work lives on each person's device and syncs to their
+   own account. A shared copy with versioned writes, read on open and on
+   refresh, gives both sides the real thing and each other's changes without
+   live-editing infrastructure - and every write can be read back. */
+const HOITEM_KINDS = ['chat', 'studio', 'dev', 'lab'];
+const HOITEM_MAX_BYTES = 900000;
+const HOID_RE = /^h[a-z0-9]{8,40}$/;
+
+/* The item's kind and data, checked: { kind, data } or { error, message }. */
+function _hoItemCheck(kind, data){
+  if(HOITEM_KINDS.indexOf(kind) < 0) return { error:'bad_item', message:'That kind of work cannot be handed over.' };
+  if(!data || typeof data !== 'object' || Array.isArray(data)) return { error:'bad_item', message:'There was no work to hand over.' };
+  let clean;
+  if(kind === 'chat'){
+    if(!Array.isArray(data.msgs) || !data.msgs.length) return { error:'bad_item', message:'That chat has no messages.' };
+    clean = { msgs: data.msgs.slice(-400).filter(m => m && typeof m === 'object' && (m.r === 'u' || m.r === 'a'))
+      .map(m => ({ id: String(m.id || '').slice(0, 40), r: m.r, c: m.c, ...(m.d != null ? { d: m.d } : {}), ...(m.by ? { by: String(m.by).slice(0, 254) } : {}) })) };
+    if(!clean.msgs.length) return { error:'bad_item', message:'That chat has no messages.' };
+  } else {
+    if(!data.state || typeof data.state !== 'object') return { error:'bad_item', message:'There was no work to hand over.' };
+    clean = { state: data.state };
+  }
+  let bytes = 0;
+  try { bytes = new TextEncoder().encode(JSON.stringify(clean)).length; } catch (e) { return { error:'bad_item', message:'That work could not be read.' }; }
+  if(bytes > HOITEM_MAX_BYTES) return { error:'too_large', status: 413,
+    message:'That work is too large to hand over (' + Math.round(bytes / 1024) + 'KB; the limit is ' + Math.round(HOITEM_MAX_BYTES / 1024) + 'KB). Hand over a smaller part, or paste what matters into the notes.' };
+  return { kind, data: clean };
+}
+const _hoParty = (rec, email) => !!rec && (rec.from === email || rec.to === email);
+
+/* POST /api/handoff/item { id } - the shared copy, to its two people only. */
+async function handoffItemGet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'hoitemget:' + user.email, 120, 2000, 'handoff reads');
+  if(blocked) return blocked;
+  const { id } = await request.json().catch(() => ({}));
+  if(!HOID_RE.test(String(id || ''))) return json({ error:'not_found' }, 404);
+  const rec = await DB.get(env, 'hoitem', String(id));
+  /* Not yours and not there are the same answer. */
+  if(!_hoParty(rec, user.email)) return json({ error:'not_found' }, 404);
+  return json({ ok:true, item: { id: rec.id, kind: rec.kind, title: rec.title, v: rec.v, by: rec.by, at: rec.at,
+    from: rec.from, to: rec.to, data: rec.data } });
+}
+
+/* POST /api/handoff/item/save { id, base, data } - a new version, only on top
+   of the one the writer saw. 409 with the current copy when it moved on. */
+async function handoffItemPut(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'hoitemput:' + user.email, 60, 1000, 'handoff saves');
+  if(blocked) return blocked;
+  const { id, base, data } = await request.json().catch(() => ({}));
+  if(!HOID_RE.test(String(id || ''))) return json({ error:'not_found' }, 404);
+  const pre = await DB.get(env, 'hoitem', String(id));
+  if(!_hoParty(pre, user.email)) return json({ error:'not_found' }, 404);
+  const work = _hoItemCheck(pre.kind, data);
+  if(work.error) return json({ error: work.error, message: work.message }, work.status || 400);
+  let outcome = 'gone', current = null, v = 0;
+  await _withKind(env, 'hoitem', String(id), (fresh) => {
+    if(!_hoParty(fresh, user.email)) { outcome = 'gone'; return; }
+    if(+fresh.v !== +base) { outcome = 'stale'; current = fresh; return; }
+    fresh.v = (+fresh.v || 1) + 1; fresh.data = work.data; fresh.by = user.email; fresh.at = Date.now();
+    outcome = 'ok'; v = fresh.v;
+  }, null);
+  if(outcome === 'gone') return json({ error:'not_found' }, 404);
+  if(outcome === 'stale') return json({ error:'stale', message:'Someone saved a newer version first.',
+    item: { id: current.id, kind: current.kind, title: current.title, v: current.v, by: current.by, at: current.at, data: current.data } }, 409);
+  audit(env, 'handoff_item_saved', { id, by: user.email, v });
+  return json({ ok:true, v });
 }
 
 async function handoffAct(request, env){

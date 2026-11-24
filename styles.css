@@ -2410,7 +2410,6 @@ body.light .ob{background:linear-gradient(180deg,#ffffff,#f7f8fa)!important}
 #snd{border-radius:var(--r-lg)!important;background:var(--accent)!important;transition:transform .16s var(--ds-spring),box-shadow .2s!important}
 #snd:hover{transform:translateY(-1px) scale(1.04);box-shadow:var(--ds-glowa)}
 #snd:active{transform:scale(.94)}
-.input-hint{opacity:.55;letter-spacing:.01em}
 
 /* ---- empty states with personality ---- */
 .empty-state{border-radius:var(--r-3xl)!important;border:1px solid var(--ds-hair)!important;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.006))!important;padding:48px 28px!important}
@@ -3709,7 +3708,6 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 /* Roomier composer on the home screen so it feels open, not crammed */
 #cv.cv-home #cib{min-height:118px;border-radius:var(--r-2xl);padding:16px 16px 10px}
 #cv.cv-home #mta{min-height:46px;font-size:var(--t-prose)}
-#cv.cv-home .input-hint{opacity:0;pointer-events:none}   /* hide the hint on home */
 
 @media(max-width:640px){
   #cv.cv-home .chome-title{font-size:var(--t-2xl);gap:10px}
@@ -10643,34 +10641,8 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    answer. Under the backdrop is where the comment always meant it to be. */
 .offline-bar{ z-index:8900; }
 
-/* ── LAYER A161 · keyboard help on a device with no keyboard ─────────────────
-
-   `.input-hint` reads "Enter to send • Shift+Enter for new line • Drag & drop
-   files". On a phone all three are false, not merely unhelpful:
-
-     · Enter inserts a newline on a touch keyboard. The send button sends.
-       So the first clause tells somebody the wrong thing about the control
-       they are looking at.
-     · There is no Shift key to hold.
-     · There is nothing to drag, and no second window to drag it from.
-
-   And it is not free: measured at 390x844 it wraps to two lines directly
-   above the composer, on the screen with the least room, pushing the thing
-   people came to use further down.
-
-   Matched on the INPUT, not on width. A narrow browser window on a laptop
-   still has a keyboard and all three sentences are true there; a large
-   tablet has none of them. `hover:none` plus `pointer:coarse` is the pair
-   that actually means "a finger, and no hardware keyboard attached", which
-   is the condition these words depend on.
-
-   Hidden rather than reworded because the phone already answers all three
-   without help: the send button is visible and labelled, the newline is what
-   the keyboard's own return key does, and the paperclip next to it is how
-   files get attached. */
-@media (hover: none) and (pointer: coarse){
-  .input-hint{ display:none; }
-}
+/* ── LAYER A161 (removed Nov 24): the keyboard hint under the composer is gone
+   everywhere, at the owner's request; only the disclaimer stays. ── */
 
 /* ── LAYER A162 · the plan chooser recommended nothing ───────────────────────
 
@@ -18114,3 +18086,17 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
    nothing below them moves when they arrive. */
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-bill .bill-h{margin:0 0 var(--sp-6)!important}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-bill #srv-usage:empty{min-height:360px}
+
+/* ========== LAYER A404 (Nov 24): handed-over work is a card, not pasted text ==========
+   The chat, design, project or code that goes with a handoff shows as one
+   quiet card - its kind, its title - in the form and on both people's
+   handoff, the way a shared file shows in a message. */
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);margin:var(--sp-2) 0;border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s2);max-width:520px}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-ic{flex:0 0 auto;display:grid;place-items:center;width:36px;height:36px;border-radius:var(--r-sm);background:var(--s3);color:var(--mu)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-ic svg{width:18px;height:18px}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-b{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-k{font-size:var(--t-xs);color:var(--mu)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-t{font-size:var(--t-md);color:var(--tx);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-x{flex:0 0 auto;width:44px;height:44px;border:0;border-radius:var(--r-pill);background:none;color:var(--mu);font-size:var(--t-lg);cursor:pointer}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page .ho-work-x:hover{background:var(--s3);color:var(--tx)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .ho-page #ho-work:empty{display:none}

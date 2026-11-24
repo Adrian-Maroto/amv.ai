@@ -279,7 +279,9 @@ function _syncSessionList(){
        old build reads something rather than nothing. */
     return list.map(s=>({
       id:s.id, kind:s.kind, tool:s.kind, title:s.title, updated:s.updated,
-      created:s.created, state: s.state || null
+      created:s.created, state: s.state || null,
+      /* The link to handed-over work, so it survives on the next device. */
+      ...(s.ho ? { ho: s.ho } : {})
     }));
   }catch(e){ return []; }
 }
