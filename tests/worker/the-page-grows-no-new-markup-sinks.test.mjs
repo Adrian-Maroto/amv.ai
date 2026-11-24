@@ -73,8 +73,13 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 220], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 220 (Nov 24): one, the notification list (notifications.js) -
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 223], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 223 (Nov 24): three, the code workspace's Problems and Next
+     steps (code-view.js) - the empty state, the problem list and the
+     suggestions. Every value through escH: fixed sentences through T(), each
+     problem's text (relayed from the sandboxed preview as a string, never
+     markup) and each suggestion the engine returned.
+     innerHTML 220 (Nov 24): one, the notification list (notifications.js) -
      one panel.innerHTML whose every value goes through escH: the kind's own
      fixed sentence through T(), and the result snippet, the sender's address,
      the handoff's title and the security event's label, each escaped.

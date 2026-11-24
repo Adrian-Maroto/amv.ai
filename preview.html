@@ -72,6 +72,19 @@
     if (!d || d.__amv !== 'preview' || done) return;
     done = true;
     var html = d.html == null ? '' : String(d.html);
+    /* WHAT WENT WRONG IN THE PAGE, TOLD TO AMV (Nov 24: the code workspace's
+       Problems tab). document.write replaces this document, so the listener has
+       to arrive inside the page it writes: a few lines placed first (after the
+       doctype, so the page keeps its standards mode) that pass each uncaught
+       error, failed promise and console.error to the parent as text. Text only,
+       at most fifty, each cut to 600 characters - and the parent accepts them
+       from this frame alone. */
+    var relay = '<script>(function(){var n=0;function s(m){if(n++>=50)return;try{parent.postMessage({__amv:"preview-error",m:String(m).slice(0,600)},"*")}catch(e){}}' +
+      'addEventListener("error",function(e){s((e.message||"Error")+(e.lineno?" (line "+e.lineno+")":""))});' +
+      'addEventListener("unhandledrejection",function(e){var r=e.reason;s("Unhandled promise rejection: "+((r&&r.message)||r))});' +
+      'var ce=console.error;console.error=function(){try{s([].map.call(arguments,function(a){return (a&&a.message)||String(a)}).join(" "))}catch(_){}return ce.apply(console,arguments)}})();<\/script>';
+    var dt = /^\s*<!doctype[^>]*>/i.exec(html);
+    html = dt ? html.slice(0, dt[0].length) + relay + html.slice(dt[0].length) : relay + html;
     try {
       document.open();
       document.write(html);

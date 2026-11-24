@@ -27060,6 +27060,8 @@ function _previewMount(host, html, cls){
      assigning it afterwards is too late in some browsers. */
   f.sandbox='allow-scripts';
   host.appendChild(f);
+  /* A new page starts with no problems of its own (code-view.js). */
+  try{ if(cls==='dev-prev-frame' && window._devProblemsReset) window._devProblemsReset(); }catch(e){ console.error('AMV: the problems list could not be reset', e); }
   return _previewSend(f, html);
 }
 /* SOME PREVIEWS ARE BUILT AS HTML STRINGS, NOT AS ELEMENTS.

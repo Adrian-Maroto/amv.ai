@@ -18179,3 +18179,22 @@ body.light #anav{ background:var(--bg); }
 .msg-ph-txt{ display:block; width:fit-content; margin-left:auto; max-width:100%; padding:11px 16px; border-radius:18px 18px 6px 18px;
   background:var(--s2); border:1px solid var(--bd); color:var(--tx); white-space:normal; }
 @media (max-width:640px){ .att-ph{ width:56px; height:56px; } .msg-ph{ width:76px; height:76px; } }
+
+/* ═══ LAYER A410 - the code workspace's Problems and Next steps (Nov 24) ═══ */
+.dev-side-body{ flex:1; min-height:0; overflow:auto; padding:var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-3); }
+.dev-side-body[hidden]{ display:none!important; }
+.dev-side-h{ font:600 var(--t-md)/1.3 var(--fn); color:var(--tx); }
+.dev-side-empty{ color:var(--mu); font-size:var(--t-sm); line-height:1.6; max-width:52ch; }
+.dev-side-note{ color:var(--dim); font-size:var(--t-xs); }
+.dev-prob-list, .dev-next-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--sp-2); }
+.dev-prob{ display:grid; grid-template-columns:1fr auto; gap:var(--sp-2) var(--sp-3); align-items:start; padding:var(--sp-3);
+  border:1px solid var(--bd); border-left:3px solid var(--red); border-radius:var(--r-md); background:var(--s1); }
+.dev-prob-m{ font:var(--t-sm)/1.5 var(--mn); color:var(--tx); white-space:pre-wrap; word-break:break-word; }
+.dev-prob-n{ grid-column:1; color:var(--mu); font-size:var(--t-xs); }
+.dev-prob-fix{ grid-column:2; grid-row:1; white-space:nowrap; }
+.dev-next{ width:100%; text-align:left; padding:var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s1);
+  color:var(--tx); font:var(--t-base)/1.45 var(--fn); cursor:pointer; }
+.dev-next:hover{ background:var(--s2); }
+.dev-next:focus-visible, .dev-prob-fix:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.dev-next-ask{ align-self:flex-start; }
+.rb-tab.rb-tab-warn{ color:var(--red-txt); }

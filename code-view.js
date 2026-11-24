@@ -73,12 +73,18 @@ function renderCodeView(){
     <div class="dev-preview">
       ${_resultBarHTML({ id:'dev-rb', statusId:'dev-prev-s',
         tabs:[{id:'dev-tab-prev',key:'preview',label:'Preview'},
-              {id:'dev-tab-code',key:'code',label:'Code'}],
+              {id:'dev-tab-code',key:'code',label:'Code'},
+              /* What is wrong in the running app, and what to do next (owner,
+                 Nov 24: "preview, bugs, suggestions on the right"). */
+              {id:'dev-tab-prob',key:'problems',label:'Problems'},
+              {id:'dev-tab-next',key:'next',label:'Next steps'}],
         actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           <button class="dev-openext" id="dev-github" title="Push this project to GitHub"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
           <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` })}
       <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">Your live result appears here.</div></div>
+      <div id="dev-prob-body" class="dev-side-body" hidden></div>
+      <div id="dev-next-body" class="dev-side-body" hidden></div>
       <div id="dev-code-body" class="dev-code-body" style="display:none"><div class="dev-code-layout"><div class="dev-tree" id="dev-tree"></div><div class="dev-code-main" id="dev-code-main"><div class="lab-placeholder">The code appears here as AMV writes it.</div></div></div></div>
     </div>
   </div>`;
@@ -138,9 +144,14 @@ function renderCodeView(){
   // Code/Preview toggle (Terminal removed - Dev is a build-and-preview surface)
   /* Selection state and aria live in _wireResultTabs now, so this only does the
      part that is Dev's: which body is on screen. */
-  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body');
+  const showPV=(pv)=>{ const pb=$('dev-prev-body'),cb=$('dev-code-body'),prb=$('dev-prob-body'),nb=$('dev-next-body');
     if(cb) cb.style.display = pv==='code' ? 'block' : 'none';
-    if(pb) pb.style.display = pv==='code' ? 'none' : 'flex';
+    /* The preview stays mounted behind Problems and Next steps, so the app
+       keeps running - and keeps reporting - while somebody reads them. */
+    if(pb) pb.style.display = (pv==='code'||pv==='problems'||pv==='next') ? 'none' : 'flex';
+    if(prb){ prb.hidden = pv!=='problems'; if(pv==='problems') _devRenderProblems(); }
+    if(nb){ nb.hidden = pv!=='next'; if(pv==='next') _devRenderNext(); }
+    if(pv==='problems'||pv==='next') return;
     /* Switching TO the preview is somebody asking to see it, which is the
        moment it has to be there - not the moment a run happens to end.
 
@@ -316,6 +327,105 @@ function renderCodeView(){
 /* Open the current live preview in a real new browser tab. Uses a Blob URL
    (never a custom protocol, so it can't blank the page). Falls back to a
    helpful toast if there's nothing built yet or the tab is blocked. */
+/* ── PROBLEMS: what went wrong in the running preview ─────────────────────
+   preview.html passes each uncaught error, failed promise and console.error
+   of the page it shows; they are accepted here only from the frame in the
+   preview pane, kept as text (never markup), and cleared when a new page is
+   mounted. "Fix this" sends the error to AMV as the next message - through
+   the same send as typing it, so it queues behind a turn that is running. */
+function _devProblemsReset(){ _DEV.problems = []; _devProblemsBadge(); if(!$('dev-prob-body')?.hidden) _devRenderProblems(); }
+function _devProblemsBadge(){
+  const t = $('dev-tab-prob'); if(!t) return;
+  const n = (_DEV.problems || []).length;
+  t.textContent = n ? T('Problems') + ' (' + n + ')' : T('Problems');
+  t.classList.toggle('rb-tab-warn', !!n);
+}
+if(!window.__devProbListen){
+  window.__devProbListen = true;
+  window.addEventListener('message', e => {
+    const d = e && e.data; if(!d || d.__amv !== 'preview-error') return;
+    const f = document.querySelector('#dev-prev-body .dev-prev-frame');
+    if(!f || e.source !== f.contentWindow) return;
+    const m = String(d.m || '').slice(0, 600).trim(); if(!m) return;
+    const list = _DEV.problems || (_DEV.problems = []);
+    const had = list.find(p => p.m === m);
+    if(had) had.n++; else if(list.length < 50) list.push({ m, n: 1, at: Date.now() });
+    _devProblemsBadge();
+    if(!$('dev-prob-body')?.hidden) _devRenderProblems();
+  });
+}
+function _devRenderProblems(){
+  const host = $('dev-prob-body'); if(!host) return;
+  const list = _DEV.problems || [];
+  const running = !!document.querySelector('#dev-prev-body .dev-prev-frame');
+  if(!list.length){
+    host.innerHTML = '<div class="dev-side-empty">' + escH(running
+      ? T('No problems in the running preview. Errors from the app appear here as it runs.')
+      : T('Open the preview to run the app; anything that goes wrong in it appears here.')) + '</div>';
+    return;
+  }
+  host.innerHTML = '<div class="dev-side-h">' + escH(T('Problems in the running preview')) + '</div><ul class="dev-prob-list">' +
+    list.map((p, i) => '<li class="dev-prob"><code class="dev-prob-m">' + escH(p.m) + '</code>' +
+      (p.n > 1 ? '<span class="dev-prob-n">' + escH(T('{0} times').replace('{0}', p.n)) + '</span>' : '') +
+      '<button type="button" class="btn bs dev-prob-fix" data-prob="' + i + '">' + escH(T('Fix this')) + '</button></li>').join('') + '</ul>';
+  host.querySelectorAll('[data-prob]').forEach(b => b.addEventListener('click', () => {
+    const p = list[+b.getAttribute('data-prob')]; const t = $('dev-msg'); if(!p || !t) return;
+    t.value = T('Fix this error from the running preview:') + '\n' + p.m;
+    _devSend();
+  }));
+}
+/* ── NEXT STEPS: three things worth doing next, asked for, not invented ────
+   Nothing is shown until somebody asks, because the suggestions come from
+   AMV reading this project, and that is a message from their allowance - the
+   button says so. Each suggestion goes into the box to edit or send. */
+let _devNextBusy = false;
+function _devRenderNext(){
+  const host = $('dev-next-body'); if(!host) return;
+  const s = _DEV.next || null;
+  const files = (() => { try{ return _devProjectFiles(); }catch(e){ return []; } })();
+  const have = files.length || (_DEV.lastHTML || '').trim();
+  host.innerHTML = '<div class="dev-side-h">' + escH(T('Next steps')) + '</div>' +
+    (!have ? '<div class="dev-side-empty">' + escH(T('Build something first; then AMV can suggest what to do next.')) + '</div>'
+    : (s && s.list && s.list.length
+        ? '<ul class="dev-next-list">' + s.list.map((x, i) => '<li><button type="button" class="dev-next" data-next="' + i + '">' + escH(x) + '</button></li>').join('') + '</ul>'
+        : (s && s.err ? '<div class="dev-side-empty" role="alert">' + escH(s.err) + '</div>' : '')) +
+      '<button type="button" class="btn bs dev-next-ask" id="dev-next-ask"' + (_devNextBusy ? ' disabled' : '') + '>' +
+        escH(_devNextBusy ? T('Thinking\u2026') : (s && s.list ? T('Suggest again') : T('Suggest next steps'))) + '</button>' +
+      '<div class="dev-side-note">' + escH(T('Uses one message from your allowance.')) + '</div>');
+  host.querySelectorAll('[data-next]').forEach(b => b.addEventListener('click', () => {
+    const t = $('dev-msg'); const x = s.list[+b.getAttribute('data-next')]; if(!t || !x) return;
+    t.value = x; t.focus(); try{ t.dispatchEvent(new Event('input')); }catch(e){}
+  }));
+  const ask = $('dev-next-ask'); if(ask) ask.addEventListener('click', _devAskNext);
+}
+async function _devAskNext(){
+  if(_devNextBusy) return;
+  _devNextBusy = true; _devRenderNext();
+  try{
+    let files = []; try{ files = _devProjectFiles(); }catch(e){}
+    const asked = (_DEV.log || []).filter(m => m.role === 'user').slice(-4).map(m => '- ' + String(m.text || '').slice(0, 300)).join('\n');
+    const page = String(_DEV.lastHTML || '').slice(0, 6000);
+    const prob = (_DEV.problems || []).slice(0, 5).map(p => '- ' + p.m).join('\n');
+    const prompt = 'Files: ' + (files.map(f => f.path || f.name).filter(Boolean).slice(0, 60).join(', ') || '(single page)') +
+      '\n\nWhat the person asked for so far:\n' + (asked || '(nothing yet)') +
+      (prob ? '\n\nErrors in the running preview:\n' + prob : '') +
+      (page ? '\n\nThe current page (start):\n' + page : '');
+    const sys = 'You review a small app someone is building and suggest the three most valuable next changes. ' +
+      'Each is one short instruction they could send as-is (under 15 words), concrete to THIS app, most valuable first; fix any listed error first. ' +
+      'Answer with a JSON array of exactly three strings and nothing else.';
+    const r = await aiComplete(prompt, sys, { max_tokens: 300 });
+    const txt = String((r && (r.text || r.content || r)) || '');
+    const m = txt.match(/\[[\s\S]*\]/);
+    const list = m ? JSON.parse(m[0]).map(x => String(x || '').trim()).filter(Boolean).slice(0, 3) : [];
+    if(!list.length) throw new Error('empty');
+    _DEV.next = { list, at: Date.now() };
+  }catch(e){
+    _DEV.next = { err: T('AMV could not suggest anything just now. Try again in a moment.') };
+    try{ console.error('AMV: next steps failed', e); }catch(_){}
+  }finally{ _devNextBusy = false; _devRenderNext(); }
+}
+try{ Object.assign(window, { _devProblemsReset, _devRenderProblems, _devRenderNext }); }catch(e){}
+
 function _devOpenExternal(){
   let html='';
   try{ html = _devProjectPreviewHTML() || _DEV.lastHTML || ''; }catch(e){ html = _DEV.lastHTML || ''; }
