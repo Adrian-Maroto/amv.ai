@@ -43,6 +43,54 @@ section('The assistant is told all three on every message');
 const ctx = await page.evaluate(() => _profileContext());
 ok(/Addy/.test(ctx) && /Student/.test(ctx) && /bullet points/.test(ctx), 'name, work and instructions are in the context', ctx.slice(0, 200));
 
+section('And it is in what is actually sent - and a change counts from the next message');
+{
+  /* Read off the wire, not off _profileContext(): a context function that is
+     right and never reaches the request is the defect this file exists for. */
+  const sendAndRead = (text) => page.evaluate(async (text) => {
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
+    window._aiBackendReady = () => true;
+    window.__sent = null;
+    if (!window.__realFetch) window.__realFetch = window.fetch;
+    window.fetch = async (url, init) => {
+      if (/\/v1\/messages/.test(String(url))) {
+        try { window.__sent = JSON.parse(init.body); } catch (e) {}
+        const enc = new TextEncoder();
+        const ev = (d) => 'event: ' + d.type + '\ndata: ' + JSON.stringify(d) + '\n\n';
+        const body = [ev({ type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 1 } } }),
+          ev({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+          ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }),
+          ev({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } }),
+          ev({ type: 'message_stop' })].join('');
+        return new Response(enc.encode(body), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      return window.__realFetch(url, init);
+    };
+    newChat(); await new Promise(r => setTimeout(r, 100));
+    document.getElementById('mta').value = text;
+    sendMsg();
+    for (let i = 0; i < 100 && !window.__sent; i++) await new Promise(r => setTimeout(r, 50));
+    for (let i = 0; i < 60 && S.busy; i++) await new Promise(r => setTimeout(r, 50));
+    const b = window.__sent || {};
+    if (!window.__sent) return 'NOT SENT: ' + JSON.stringify(getMsgs().map(m => String(m.d || m.c).slice(0, 60))).slice(0, 300);
+    return typeof b.system === 'string' ? b.system : JSON.stringify(b.system || '');
+  }, text);
+
+  await page.evaluate(() => { saveStr('amv_personality', 'concise');
+    S.memory = (S.memory || []).concat([{ id: 'm-test', text: 'Has a dog called Biscuit', t: Date.now(), cat: 'personal' }]); });
+  const sys1 = await sendAndRead('Plan a walk for my dog Biscuit this weekend');
+  ok(/Addy/.test(sys1), 'the name they asked for is sent', sys1.slice(0, 120));
+  ok(/Student/.test(sys1) && /bullet points/.test(sys1), 'with their work and their standing instructions', '');
+  ok(/Be brief and direct/.test(sys1), 'and the personality they picked', '');
+  ok(/Biscuit/.test(sys1), 'and what AMV remembers about them, when it is relevant', '');
+
+  await page.evaluate(() => { saveStr('amv_nickname', 'Captain'); saveStr('amv_personality', 'warm'); });
+  await page.waitForTimeout(900);   /* the send floor between two messages is 800ms */
+  const sys2 = await sendAndRead('What should I cook for dinner tonight?');
+  ok(/Captain/.test(sys2) && !/called Addy/.test(sys2), 'a new name counts from the very next message', sys2.slice(0, 160));
+  ok(/warm, patient/.test(sys2) && !/Be brief and direct/.test(sys2), 'and so does a new personality', '');
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors);
 
