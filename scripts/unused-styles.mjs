@@ -22,8 +22,12 @@ const ALLOW = new Set([]);
 export function unusedStyles(root = ROOT) {
   const css = readFileSync(join(root, 'styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const pub = join(root, 'public');
+  /* Not the app.<hash>.js files: public/ keeps the last three builds so a
+     tab opened before a deploy finds its code, and reading them counted a
+     class the CURRENT code had dropped as used until two more deploys had
+     rotated it out. app.js is the current code, readable. */
   const files = ['app.js', 'index.html']
-    .concat(existsSync(pub) ? readdirSync(pub).filter(f => f.endsWith('.js') && f !== 'sw.js').map(f => join('public', f)) : [])
+    .concat(existsSync(pub) ? readdirSync(pub).filter(f => f.endsWith('.js') && f !== 'sw.js' && !/^app\.[0-9a-f]+\.js$/.test(f)).map(f => join('public', f)) : [])
     .concat(existsSync(join(pub, 'countries')) ? readdirSync(join(pub, 'countries')).map(f => join('public', 'countries', f)) : []);
   const code = files.map(f => {
     const t = readFileSync(join(root, f), 'utf8');

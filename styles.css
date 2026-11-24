@@ -1234,7 +1234,6 @@ input,textarea,select{font-family:var(--fn);}
    ============================================================ */
 .dna-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:var(--r-lg);border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-family:var(--fn);font-size:var(--t-base);font-weight:550;cursor:pointer;transition:background-color .18s,border-color .18s,color .18s,box-shadow .18s,transform .18s,opacity .18s,filter .18s}
 .dna-btn:hover{border-color:var(--accent-txt);background:var(--s2)}
-.dna-btn .dna-dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
 
 .dna-ov{position:fixed;inset:0;z-index:9500;background:rgba(8,8,10,.78);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow-y:auto}
 .dna-modal{width:min(1080px,98vw);background:var(--s1);border:1px solid var(--bdl);border-radius:var(--r-3xl);overflow:hidden;box-shadow:0 40px 100px -20px rgba(0,0,0,.7);display:flex;flex-direction:column;max-height:92vh}
@@ -16196,10 +16195,8 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
 .upg2-foot{ display:flex; align-items:center; justify-content:center; gap:var(--sp-2); margin-top:var(--sp-4); color:var(--mu); flex-wrap:wrap; }
 @media (max-width:640px){ .upg-modal.upg2{ padding:var(--sp-5) var(--sp-4); } .upg2-grid{ grid-template-columns:1fr; } }
 
-/* Billing: the change-plan control beside the plan. */
+/* Billing: the plan row at the top of the summary. */
 .bill-sum-top{ display:flex; align-items:center; flex-wrap:wrap; gap:var(--sp-3) var(--sp-4); }
-.bill-sum-top .bill-change{ margin-left:auto; min-height:40px; }
-@media (max-width:640px){ .bill-sum-top .bill-change{ margin-left:0; width:100%; } }
 .pl2-fine{ color:var(--mu); font-size:var(--t-sm); margin:var(--sp-1) 0 0; }
 /* The price beside the plan's name, the button at the far end - not the
    three spread evenly across the row by the older space-between. */
