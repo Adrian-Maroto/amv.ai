@@ -10,6 +10,8 @@ function setupApp(){
     saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');
   });
   on($('nav-av'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
+  /* Phones: New chat from the top bar (A407). */
+  on($('nav-new'),'click',()=>{ if(S.sbOpen && window.matchMedia('(max-width:720px)').matches) toggleSb(); openFreshChat(); });
 
   // All data-tab buttons in icon rail - includes the bottom-left tools row
   document.querySelectorAll('.snb[data-tab], .sb-tool[data-tab]').forEach(btn=>{

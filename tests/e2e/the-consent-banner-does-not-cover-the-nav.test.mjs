@@ -16,6 +16,10 @@
    each other. A screenshot showed it and read as "banner at the bottom", which
    is what a consent banner looks like.
 
+   Since Nov 24 the phone has no bottom bar - the top bar opens the menu and
+   starts a new chat - so the navigation checked is those two controls, and
+   the banner goes back to the bottom edge. The rule is the same one.
+
    This asserts REACHABILITY, not geometry. Two boxes not overlapping is a
    proxy; what matters is which element receives the tap, and that is what
    elementFromPoint answers. */
@@ -38,10 +42,8 @@ const probe = () => page.evaluate(() => {
     return c.display !== 'none' && c.visibility !== 'hidden' && b.width > 0 && b.height > 0; };
   const banner = [...document.querySelectorAll('div,section,aside')]
     .find(d => vis(d) && /Essential cookies keep AMV running/.test(d.textContent) && d.children.length < 8);
-  const nav = [...document.querySelectorAll('button,a')]
-    .filter(el => vis(el) && /^(New chat|Build|Crew|More)$/.test(el.textContent.trim()))
-    /* The bottom bar's copies, not the sidebar's - taken by position. */
-    .filter(el => el.getBoundingClientRect().top > window.innerHeight * 0.75);
+  /* The phone's navigation: the menu button and New chat, in the top bar. */
+  const nav = ['tsb', 'nav-new'].map(id => document.getElementById(id)).filter(el => el && vis(el));
   return {
     bannerShown: !!banner,
     bannerFullyOnScreen: banner
@@ -53,17 +55,17 @@ const probe = () => page.evaluate(() => {
       const b = el.getBoundingClientRect();
       const top = document.elementFromPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
       const reachable = !!(top && (el === top || el.contains(top) || top.contains(el)));
-      return reachable ? null : el.textContent.trim();
+      return reachable ? null : el.id;
     }).filter(Boolean),
   };
 });
 
-section('On a phone, the banner is showing and the bar is still tappable');
+section('On a phone, the banner is showing and the navigation is still tappable');
 {
   await freshVisit(390, 844);
   const v = await probe();
   ok(v.bannerShown, 'the consent banner is up, which is the state being tested', v.bannerShown);
-  ok(v.navCount === 4, 'all four bottom-nav buttons are on screen', v.navCount);
+  ok(v.navCount === 2, 'the menu and New chat are on screen', v.navCount);
   ok(v.blocked.length === 0,
      'and none of them is covered by the banner', v.blocked);
   ok(v.bannerFullyOnScreen,
@@ -80,7 +82,7 @@ section('The small tablet the two rules used to disagree about');
   await freshVisit(700, 900);
   const v = await probe();
   ok(v.bannerShown, 'the banner is up here too', v.bannerShown);
-  ok(v.navCount === 4, 'the bottom bar is shown at this width', v.navCount);
+  ok(v.navCount === 2, 'the menu and New chat are shown at this width', v.navCount);
   ok(v.blocked.length === 0, 'and it is not covered either', v.blocked);
 }
 

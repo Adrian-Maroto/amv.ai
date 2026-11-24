@@ -49,7 +49,8 @@ section('From another screen, New chat opens a fresh conversation, not the old o
 
   /* The owner's words: "remove the new chat section". There was a second New
      chat, a pill in the top bar, doing the same job as the sidebar's. One
-     button for one job - the top bar holds none. */
+     button for one job - the top bar holds none. (On a phone, where the menu
+     is closed, the top bar has the one New chat - see the phone section.) */
   const top = await page.evaluate(() => [...document.querySelectorAll('#anav button')]
     .filter(b => b.getBoundingClientRect().width > 0 && /new chat/i.test(b.textContent + ' ' + (b.title || '') + ' ' + (b.getAttribute('aria-label') || '')))
     .map(b => b.id || b.className));
@@ -91,14 +92,18 @@ section('An old chat is opened from Recents');
   ok(r.cur === r.old && r.msgs === 2, 'and opens with its messages', r);
 }
 
-section('On a phone, the bottom bar says New chat and does the same');
+section('On a phone, the top bar says New chat and does the same');
 {
+  /* The phone has one navigation now (Nov 24): the menu, opened from the top
+     bar, and New chat beside it - no bottom bar repeating the menu. */
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => { setTab('crew'); _renderBottomNav(); });
+  await page.evaluate(() => { setTab('crew'); });
   await page.waitForTimeout(250);
-  const lbl = await page.evaluate(() => (document.querySelector('[data-bntab="chat"] .bn-lbl') || {}).textContent);
-  ok(lbl === 'New chat', 'the bottom bar entry is called New chat', lbl);
-  await page.click('[data-bntab="chat"]');
+  const b = await page.evaluate(() => { const e = document.getElementById('nav-new'); const r = e && e.getBoundingClientRect();
+    return { lbl: e && e.getAttribute('aria-label'), shown: !!(r && r.width > 0), bar: !!document.getElementById('bottom-nav') }; });
+  ok(b.lbl === 'New chat' && b.shown, 'the top bar has New chat', b);
+  ok(!b.bar, 'and there is no bottom bar repeating the menu', b);
+  await page.click('#nav-new');
   await page.waitForTimeout(250);
   const r = await page.evaluate(() => ({ tab: S.tab, cur: S.cur, old: window.__old, empty: !(getCurConv().msgs || []).length }));
   ok(r.tab === 'chat' && r.cur !== r.old && r.empty, 'and opens a fresh chat, not the last one', r);

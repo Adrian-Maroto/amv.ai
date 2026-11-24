@@ -1550,7 +1550,6 @@ function _initMobileSidebar(){
       if(sb) sb.classList.remove('cl');
       if(ab) ab.classList.remove('sb-collapsed');
     }
-    _renderBottomNav();
   }catch(e){}
   /* The phone layout's first paint has the menu closed already (styles.css,
      html:not(.sb-init)); from the next frame on it slides when it is opened
@@ -1558,43 +1557,10 @@ function _initMobileSidebar(){
      never animated. */
   try{ requestAnimationFrame(()=>{ try{ document.documentElement.classList.add('sb-init'); }catch(e){} }); }catch(e){}
 }
-/* Native-feeling bottom navigation for mobile. "More" opens the full sidebar
-   for everything else.
-
-   THE PHONE WAS STILL DESCRIBING THE OLD SHAPE. Studio and Dev were listed
-   here as two separate destinations long after the sidebar was reduced to one
-   Build with the three modes inside it - so the desktop said Build and the
-   phone said Studio and Dev, for the same screen. They were not broken, which
-   is why it survived: both still route, because setBuildMode maps the old
-   names onto the modes. It was just the product disagreeing with itself
-   depending on what somebody was holding.
-
-   Crew earns the freed slot rather than nothing taking it: it is the surface
-   that runs work while the phone is in a pocket, which is the one most worth
-   reaching from a phone. */
-const BOTTOM_NAV=[
-  {tab:'chat',   label:'New chat', svg:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'},
-  {tab:'build',  label:'Build',  svg:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'},
-  {tab:'crew',   label:'Crew',   svg:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
-  {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
-];
-function _renderBottomNav(){
-  const nav=$('bottom-nav'); if(!nav) return;
-  const cur=S.tab;
-  nav.innerHTML=BOTTOM_NAV.map(item=>{
-    const active=(item.tab===cur)||(item.tab==='chat'&&(cur==='chat'));
-    return '<button class="bn-item'+(active?' on':'')+'" data-bntab="'+item.tab+'">'+
-      '<span class="bn-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+item.svg+'</svg></span>'+
-      '<span class="bn-lbl">'+item.label+'</span></button>';
-  }).join('');
-  nav.querySelectorAll('[data-bntab]').forEach(b=>b.addEventListener('click',()=>{
-    const t=b.dataset.bntab;
-    if(t==='__more'){ if(!S.sbOpen) toggleSb(); return; }
-    if(t==='chat'){ openFreshChat(); return; }
-    setTab(t);
-  }));
-}
-window._renderBottomNav=_renderBottomNav;
+/* THE PHONE HAS ONE NAVIGATION (owner, Nov 24). It had a bottom bar listing
+   New chat, Build and Crew, and the side menu listing them again - and the
+   menu's bottom row of tools sat under the bar. The bar is gone: the top bar
+   opens the menu, which holds every place, and New chat is in the top bar. */
 window._initMobileSidebar=_initMobileSidebar;
 
 /* THE LAYOUT WAS DECIDED ONCE, AT BOOT, AND NEVER AGAIN.
@@ -1979,7 +1945,6 @@ function setTab(t){
       history.replaceState(null,'',location.pathname+location.search);
     }
   }catch(e){}
-  try{ _renderBottomNav(); }catch(e){}
   /* New chat is an action, not a place: the open conversation is marked in
      Recents, so this entry is never shown as the one you are on. */
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t && b.dataset.tab!=='chat'));

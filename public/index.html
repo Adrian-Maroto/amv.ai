@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="9ace9c1ea1ab0e92">
+<meta name="amv-build" content="7a7268d0335ab7eb">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -2458,24 +2458,6 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 .eyebrow,
 .chome-recent-h,
 .hi-kind{font-feature-settings:'kern' 1}
-#bottom-nav{display:none}
-@media(max-width:720px){
-#bottom-nav{
-display:flex;position:fixed;left:0;right:0;bottom:0;z-index:400;
-background:var(--s1);border-top:1px solid var(--bd);
-padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
-box-shadow:0 -4px 20px rgba(0,0,0,.14)}
-.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
-background:none;border:none;color:var(--mu);cursor:pointer;padding:6px 2px;border-radius:var(--r-md);
-font-family:inherit;transition:color .13s,background .13s;min-height:48px;justify-content:center}
-.bn-item.on{color:var(--accent-txt)}
-.bn-item:active{background:var(--s2)}
-.bn-ic{display:flex;align-items:center;justify-content:center}
-.bn-lbl{font-size:var(--t-2xs);font-weight:600;letter-spacing:.01em}
-#vc,#cm,.settings-shell,#mc{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
-#cia{bottom:calc(58px + env(safe-area-inset-bottom,0px))}
-#cm.cm-empty{padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))}
-}
 @media(hover:none) and (max-width:720px){
 .snb{padding-top:11px;padding-bottom:11px}
 .btn{min-height:40px}
@@ -2592,7 +2574,6 @@ font-family:var(--fn);font-size:var(--t-sm);font-weight:600;color:var(--tx)}
 .ks-foot .ks-key{min-width:20px;height:20px;font-size:var(--t-xs)}
 svg[stroke]{stroke-linecap:round;stroke-linejoin:round}
 .snb svg,
-.bn-ic svg,
 .mact svg,
 .cmdk-item-ic svg,
 .art-card-ic svg,
@@ -4389,8 +4370,6 @@ display:flex!important;flex-direction:column!important;overflow:hidden!important
 #anav{flex:0 0 auto;padding-top:env(safe-area-inset-top,0px)}
 #abody{flex:1 1 auto;min-height:0;overflow:hidden}
 @media(max-width:720px){
-#bottom-nav{position:static!important;flex:0 0 auto;left:auto;right:auto;bottom:auto;z-index:1;
-box-shadow:0 -4px 20px rgba(0,0,0,.14)}
 #vc,#cm,.settings-shell,#mc{padding-bottom:14px!important}
 #cm.cm-empty{padding-bottom:16px!important}
 #cia{position:static!important;bottom:auto!important;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))!important}
@@ -8716,7 +8695,6 @@ animation:none!important;
 html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display:inline-block!important; }
 @media(max-width:700px){ html.boot-guest .hdr-login[hidden]{ display:none!important; } }
 @keyframes cwPh{ from{ background-position:100% 0; } to{ background-position:-100% 0; } }
-@media(max-width:720px){ #bottom-nav{ min-height:calc(61px + env(safe-area-inset-bottom,0px)); } }
 @media(max-width:720px){ html:not(.sb-init) #sb{ transform:translateX(-100%); transition:none!important; } }
 @media(max-width:720px){
 #cw-foryou .sec-head h3{ min-height:calc(2 * 1.35em); line-height:1.35; align-content:flex-start; }
@@ -8892,7 +8870,7 @@ border-radius:0; background:var(--s1); max-height:none; width:260px; flex:0 0 26
 @media(max-width:720px){
 .set-modal{ padding:0; background:var(--bg); }
 .set-modal .settings-shell{ width:100%; height:100%; border:0; border-radius:0; box-shadow:none; animation:none; }
-body.set-open #abody, body.set-open #bottom-nav{ visibility:hidden; }
+body.set-open #abody{ visibility:hidden; }
 }
 .sn-btn .sn-hit{ margin-left:auto; padding-left:var(--sp-2); font-size:var(--t-xs); font-weight:400; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }
 @media(min-width:721px) and (max-width:1000px){
@@ -10684,6 +10662,20 @@ font-size:var(--t-sm); color:var(--mu); }
 font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
 .cv-plan-up:hover{ filter:brightness(1.1); }
 .cv-plan-up:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+#anav .nav-r .nav-new{ display:none; }
+@media(max-width:720px){
+#anav .nav-r .nav-new{ display:flex; }
+#sb{ height:auto!important; bottom:0!important; }
+.cc-banner{ bottom:calc(8px + env(safe-area-inset-bottom,0px)); }
+#sb .sb-tools{ display:flex; flex-direction:column; align-items:stretch; gap:2px; padding:var(--sp-2) 0; }
+#sb .sb-tool{ justify-content:flex-start; gap:var(--sp-3); width:100%; height:auto; min-height:44px; padding:0 var(--sp-1); }
+.cv-plan{ top:var(--sp-2); }
+.cv-plan-up{ background:none; padding:0 var(--sp-2); }
+#sb .sb-tool[hidden]{ display:none; }
+#sb .sb-tool .sb-tool-tip{ position:static; opacity:1; transform:none; padding:0; background:none; color:inherit;
+font-size:var(--t-base); font-weight:500; pointer-events:none; }
+#sb .sb-tool:hover .sb-tool-tip{ transform:none; }
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -10886,6 +10878,10 @@ font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
       <button class="hdr-login" id="hdr-login" hidden>Log in</button>
     </div>
     <div class="nav-r">
+      <!-- Phones: New chat from the top bar; the menu holds everything else. -->
+      <button class="ib nav-new" id="nav-new" type="button" aria-label="New chat" title="New chat">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
       <button class="ib" id="theme-btn" title="Toggle light/dark mode">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       </button>
@@ -10936,12 +10932,11 @@ font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
       <div id="vc"></div>
     </div>
   </div>
-  <nav id="bottom-nav" aria-label="Primary"></nav>
 </div>
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.468096f227d6.js" defer integrity="sha384-6MPuwIYJeG0H6eDsGmh9yeAdXfcXjpF4XpHC9AyH8powFl/Qs5DsueKLLWt/K+Nt" data-amv-app></script>
+<script src="/app.6d098c17a612.js" defer integrity="sha384-xCV09KLRrXyHhfK/KQM6PZ4/kjOMtSFX25nCcJYu/CATXp7ZtiOOR3OR2vfAKfiX" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

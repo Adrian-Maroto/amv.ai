@@ -469,7 +469,7 @@ window._openSettingsPicker=_openSettingsPicker;
    router removes the layer the moment any other tab is drawn. A phone gets the
    whole screen, as before. It closes on X or Esc, never a click beside it. */
 let _setLayerFrom=null, _setLayerFresh=false;
-const _SET_UNDER=['anav','abody','bottom-nav'];
+const _SET_UNDER=['anav','abody'];
 /* Which section a search finds, and by what: its own name first, else the
    first of its contents the words typed name ("dark mode" finds Appearance by
    "dark"). Null when it is not about that at all. */

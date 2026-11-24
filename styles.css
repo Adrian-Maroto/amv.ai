@@ -3371,30 +3371,6 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 .hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
-/* ============================================================
-   MOBILE FIRST-CLASS + BOTTOM NAV (#14)
-   ============================================================ */
-#bottom-nav{display:none}
-@media(max-width:720px){
-  #bottom-nav{
-    display:flex;position:fixed;left:0;right:0;bottom:0;z-index:400;
-    background:var(--s1);border-top:1px solid var(--bd);
-    padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
-    box-shadow:0 -4px 20px rgba(0,0,0,.14)}
-  .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
-    background:none;border:none;color:var(--mu);cursor:pointer;padding:6px 2px;border-radius:var(--r-md);
-    font-family:inherit;transition:color .13s,background .13s;min-height:48px;justify-content:center}
-  .bn-item.on{color:var(--accent-txt)}
-  .bn-item:active{background:var(--s2)}
-  .bn-ic{display:flex;align-items:center;justify-content:center}
-  .bn-lbl{font-size:var(--t-2xs);font-weight:600;letter-spacing:.01em}
-  /* Make room so content isn't hidden behind the bar */
-  #vc,#cm,.settings-shell,#mc{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
-  /* The chat composer floats above the bottom nav */
-  #cia{bottom:calc(58px + env(safe-area-inset-bottom,0px))}
-  /* Hide the redundant top hamburger label spacing tweak on mobile - bottom nav is primary */
-  #cm.cm-empty{padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))}
-}
 /* Larger tap targets across the app on touch devices */
 @media(hover:none) and (max-width:720px){
   .snb{padding-top:11px;padding-bottom:11px}
@@ -3557,7 +3533,6 @@ body.sb-rail .sb-status{justify-content:center;padding:7px 0}
 svg[stroke]{stroke-linecap:round;stroke-linejoin:round}
 /* Icons inside interactive/nav/label contexts inherit currentColor cleanly */
 .snb svg,
-.bn-ic svg,
 .mact svg,
 .cmdk-item-ic svg,
 .art-card-ic svg,
@@ -6002,10 +5977,6 @@ html,body{height:100%;height:100dvh}
 #abody{flex:1 1 auto;min-height:0;overflow:hidden}
 
 @media(max-width:720px){
-  /* Bottom nav is now an in-flow row at the base of the shell - never
-     viewport-fixed - so it's always at the visible bottom. */
-  #bottom-nav{position:static!important;flex:0 0 auto;left:auto;right:auto;bottom:auto;z-index:1;
-    box-shadow:0 -4px 20px rgba(0,0,0,.14)}
   /* Content fills the gap and scrolls internally - no fixed-bar padding. */
   #vc,#cm,.settings-shell,#mc{padding-bottom:14px!important}
   #cm.cm-empty{padding-bottom:16px!important}
@@ -14982,7 +14953,6 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
    was drawn 13px tall and grew to 61px a moment later, moving everything next
    to it. It holds its real height from the first paint: 48px buttons, 6px
    above and below, a 1px border, and the phone's own safe area. */
-@media(max-width:720px){ #bottom-nav{ min-height:calc(61px + env(safe-area-inset-bottom,0px)); } }
 /* A phone's menu is closed before the bundle runs, not drawn open over the
    page and then slid shut: the slide ran on every load of every screen. */
 @media(max-width:720px){ html:not(.sb-init) #sb{ transform:translateX(-100%); transition:none!important; } }
@@ -15459,7 +15429,7 @@ body.set-open{ overflow:hidden; }
   .set-modal{ padding:0; background:var(--bg); }
   .set-modal .settings-shell{ width:100%; height:100%; border:0; border-radius:0; box-shadow:none; animation:none; }
   /* The panel covers the whole screen here, so nothing under it is drawn. */
-  body.set-open #abody, body.set-open #bottom-nav{ visibility:hidden; }
+  body.set-open #abody{ visibility:hidden; }
 }
 /* What a search matched inside a section, when it was not the section's name. */
 .sn-btn .sn-hit{ margin-left:auto; padding-left:var(--sp-2); font-size:var(--t-xs); font-weight:400; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }
@@ -18143,3 +18113,27 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
   font:600 var(--t-sm)/1 var(--fn); cursor:pointer; }
 .cv-plan-up:hover{ filter:brightness(1.1); }
 .cv-plan-up:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+/* ═══ LAYER A407 - one way around on a phone (owner, Nov 24) ═══
+   The phone had a bottom bar AND the side menu, listing the same places
+   twice, and the menu's own bottom row sat under the bar. Now the menu is
+   the one navigation, as in the leading chat apps: the top bar opens it, and
+   New chat is one tap from the top bar. The tools row becomes labelled rows,
+   because a phone has no hover to show an icon's name. */
+#anav .nav-r .nav-new{ display:none; }
+@media(max-width:720px){
+  #anav .nav-r .nav-new{ display:flex; }
+  /* The menu runs from under the top bar to the bottom edge - not a full
+     screen's height started under the bar, which pushed its last rows off. */
+  #sb{ height:auto!important; bottom:0!important; }
+  .cc-banner{ bottom:calc(8px + env(safe-area-inset-bottom,0px)); }
+  #sb .sb-tools{ display:flex; flex-direction:column; align-items:stretch; gap:2px; padding:var(--sp-2) 0; }
+  #sb .sb-tool{ justify-content:flex-start; gap:var(--sp-3); width:100%; height:auto; min-height:44px; padding:0 var(--sp-1); }
+  /* The plan line keeps its tap height on a phone but reads as a link. */
+  .cv-plan{ top:var(--sp-2); }
+  .cv-plan-up{ background:none; padding:0 var(--sp-2); }
+  #sb .sb-tool[hidden]{ display:none; }
+  #sb .sb-tool .sb-tool-tip{ position:static; opacity:1; transform:none; padding:0; background:none; color:inherit;
+    font-size:var(--t-base); font-weight:500; pointer-events:none; }
+  #sb .sb-tool:hover .sb-tool-tip{ transform:none; }
+}
