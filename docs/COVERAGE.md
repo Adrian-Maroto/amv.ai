@@ -2,14 +2,14 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-24 from 427 suites.
+2026-11-24 from 428 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
 this is branch coverage in bytes. Browser suites (tests/e2e) are not counted here: they drive
 the Worker too, so these numbers are a floor.
 
-**Whole Worker:** functions 1309/1309 (100.0%), code 92.9%.
+**Whole Worker:** functions 1312/1312 (100.0%), code 92.9%.
 
 ## The trust areas
 
@@ -89,7 +89,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.7% |
+| `28-password-reset.js` | 7/7 | 92.6% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.3% |
@@ -131,7 +131,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `66-telegram.js` | 5/5 | 75.7% |
 | `67-weekly-habits.js` | 2/2 | 100.0% |
 | `68-cloud-library.js` | 22/22 | 90.5% |
-| `68-refunds.js` | 10/10 | 86.8% |
+| `68-refunds.js` | 13/13 | 87.0% |
 | `69-buying.js` | 8/8 | 92.9% |
 | `69-speech.js` | 8/8 | 93.8% |
 | `70-hooks.js` | 22/22 | 94.7% |
