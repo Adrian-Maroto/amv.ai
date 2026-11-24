@@ -58,7 +58,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `02-partner-engines.js` | 27/27 | 95.2% |
 | `03-routing-and-cache.js` | 2/2 | 98.8% |
 | `04-data-layer.js` | 33/33 | 95.5% |
-| `04a-control-plane.js` | 18/18 | 92.3% |
+| `04a-control-plane.js` | 18/18 | 92.6% |
 | `04b-pg-backfill.js` | 18/18 | 90.7% |
 | `04c-pg-shadow.js` | 6/6 | 90.3% |
 | `04d-pg-read.js` | 17/17 | 92.5% |
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 87.0% |
-| `39-resumable-streams.js` | 17/17 | 94.6% |
+| `39-resumable-streams.js` | 17/17 | 94.7% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
