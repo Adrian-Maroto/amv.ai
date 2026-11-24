@@ -1692,7 +1692,12 @@ step('Page weight is under control', () => {
      hundred emoji on Crew, Build and Design cards, and one page header on
      every section (LAYER A399/A400). Nothing it replaced was in the page: the
      emoji live in the data files fetched on demand. */
-  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
+  /* 596 -> 598, 2026-11-24, UP on purpose: the owner's Build redesign ("still
+     blocky, small, hard to use - sections have to feel like billion dollars",
+     LAYER A401) - one composer, one mode switch and one set of starter chips
+     for Design it, Build an app and Work on code. The old tile and upload
+     rules it replaces were removed first (~1.4KB raw back). */
+  const CEILING = 598 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

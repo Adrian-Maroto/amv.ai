@@ -315,6 +315,7 @@ function _buildModeSwitchHTML(active){
         '<button class="build-mode' + (tab === active ? ' on' : '') + '"'
         + ' role="tab" aria-selected="' + (tab === active ? 'true' : 'false') + '"'
         + ' data-bmode="' + tab + '" title="' + escH(hint) + '">'
+        + _lineIcon({ studio:'palette', dev:'app', lab:'code' }[tab])
         + '<span class="build-mode-t">' + escH(label) + '</span>'
       + '</button>').join('')
   + '</div>'

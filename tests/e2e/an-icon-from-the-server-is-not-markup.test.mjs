@@ -46,6 +46,10 @@ section('A catalogue icon that is markup renders as none of it');
         img: !!d.querySelector('img'),
         raw: /onerror/i.test(d.innerHTML),
         iconText: (d.querySelector('.cw-job-ic') || { textContent: '' }).textContent.trim(),
+        /* Since Nov 24 a card's icon is its category's line icon (_lineIcon),
+           so "shows an icon" is an <svg> of ours - or text, for a card that
+           still draws the server's value through _safeIcon. */
+        lineIcon: !!d.querySelector('.cw-job-ic svg.line-ic'),
       };
       d.remove();
     }
@@ -61,7 +65,7 @@ section('A catalogue icon that is markup renders as none of it');
   for (const [name, c] of Object.entries(r.cards)) {
     ok(c.img === false, 'no tag is injected into the ' + name + ' card', { name, ...c });
     ok(c.raw === false, 'and no handler attribute survives into its HTML', { name, ...c });
-    ok(c.iconText.length > 0 && c.iconText.length < 14,
+    ok(c.lineIcon || (c.iconText.length > 0 && c.iconText.length < 14),
        'the ' + name + ' card still shows an icon rather than nothing', { name, ...c });
   }
   ok(r.pwned === 0, 'and nothing ran', r.pwned);

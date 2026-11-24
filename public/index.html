@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="3174cf4d01ecdb93">
+<meta name="amv-build" content="f0d0f6658b5a8af9">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -557,15 +557,6 @@ html,body{height:100%;overflow:hidden}
 .dsn-go:hover{transform:translateY(-1px);filter:brightness(1.08)}
 .dsn-hint{margin-top:16px;font-size:var(--t-base);color:var(--dim)}
 .dsn-starts{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.dsn-tile{display:flex;align-items:center;gap:16px;text-align:left;padding:22px 24px;border-radius:var(--r-3xl);border:1px solid rgba(255,255,255,.05);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));cursor:pointer;transition:transform .2s var(--ease),background .2s,border-color .2s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.dsn-tile:hover{transform:translateY(-3px);background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border-color:rgba(255,255,255,.12)}
-.dsn-tile.feat{grid-column:1 / -1;padding:30px 30px;background:linear-gradient(120deg,rgba(87, 132, 218,.12),rgba(87, 132, 218,.05));border-color:rgba(87, 132, 218,.18)}
-.dsn-tile-ic{font-size:var(--t-2xl);flex:0 0 auto;width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-2xl);background:rgba(255,255,255,.05)}
-.dsn-tile.feat .dsn-tile-ic{width:60px;height:60px;font-size:var(--ic-lg)}
-.dsn-tile-body{display:flex;flex-direction:column;gap:3px;min-width:0}
-.dsn-tile-t{font-size:var(--t-lg);font-weight:600;color:var(--tx)}
-.dsn-tile.feat .dsn-tile-t{font-size:var(--t-xl);letter-spacing:-.4px}
-.dsn-tile-d{font-size:var(--t-base);color:var(--mu);line-height:1.45}
 @media(max-width:680px){.dsn-starts{grid-template-columns:1fr}}
 .sv{padding:34px 28px 80px!important}
 .vi{max-width:760px!important;gap:22px!important}
@@ -626,7 +617,6 @@ border-color:var(--glass-soft2)!important;
 .wsc,
 .memc,
 .stc,
-.dsn-tile{transition:transform .22s var(--ease),border-color .22s,background .22s,box-shadow .22s}
 .wsc:hover,
 .memc:hover,
 .stc:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.13)!important}
@@ -664,7 +654,6 @@ box-shadow:none;
 .dsn-input-wrap{background:#15191f!important;border:1px solid #2a313b!important}
 .dsn-go{background:var(--accent)!important;box-shadow:none;border-radius:var(--r-md)!important}
 .dsn-go:hover{background:var(--accent-d)!important;transform:none!important}
-.dsn-tile.feat{background:#15191f!important;border-color:#2a313b!important}
 #vc{background:none!important}
 :root{--r-sm:8px!important;--r-md:10px!important;--r-lg:12px!important;
 --r-xl:14px!important;--r-2xl:16px!important;--r-3xl:18px}
@@ -1164,7 +1153,6 @@ box-shadow:0 24px 60px -24px rgba(0,0,0,.6);
 .dsn-input-wrap{background:var(--surface)!important;border:1px solid var(--hair)!important;border-radius:var(--rad-md)!important;box-shadow:none}
 .dsn-input-wrap:focus-within{border-color:var(--hair-strong)!important;box-shadow:none}
 .dsn-go{border-radius:var(--rad-sm)!important}
-.dsn-tile.feat{background:var(--surface-2)!important}
 .mb th,.mb td,.crew-res-body th,.crew-res-body td,.trip-result th,.trip-result td{border-color:var(--hair)!important}
 hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .br2,.kbsr,.faq-item,.ait{border-color:var(--hair)!important}
@@ -2965,16 +2953,7 @@ font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-sm);line-height:1
 min-width:150px;width:auto;text-overflow:ellipsis;
 padding-right:28px;
 }
-.dev-hero-upload{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:18px;flex-wrap:wrap}
-.dev-upload-btn{
-display:inline-flex;align-items:center;gap:7px;
-padding:7px 14px;border-radius:var(--r-md);
-background:transparent;border:1px dashed var(--bdl);
-color:var(--mu);font-size:var(--t-sm);font-weight:500;font-family:inherit;cursor:pointer;
-transition:border-color .14s,color .14s,background .14s;
-}
-.dev-upload-btn:hover{border-color:var(--accent-txt);color:var(--accent-txt);background:var(--accent-soft)}
-.dev-hero-or{font-size:var(--t-sm);color:var(--dim)}
+.dev-upload-btn{display:inline-flex;align-items:center;gap:7px;font-family:inherit;cursor:pointer}
 .dev-shell.dev-drop{outline:2px dashed var(--accent);outline-offset:-8px;background:var(--accent-soft)}
 .dev-shell.dev-drop::after{
 content:'Drop files to add them to the project';
@@ -10548,22 +10527,22 @@ column-gap:var(--sp-3)!important;row-gap:2px!important;align-items:center!import
 #int-catalog .int-card .int-desc{grid-area:desc;margin:0!important}
 #int-catalog .int-card > .int-act{grid-area:act;margin:0!important;align-self:center}
 }
-#vc .sv .vi > .eyebrow{display:none!important}
-#vc .sv .vi > h2:first-of-type,
-#vc .spv .spv-t,
-#vc .vi-conn .int2-h,
-#vc .tk2-h h1,
-#vc #cx-ask-h{
+:is(#vc,#set-modal) .sv .vi > .eyebrow{display:none!important}
+:is(#vc,#set-modal) .sv .vi > h2:first-of-type,
+:is(#vc,#set-modal) .spv .spv-t,
+:is(#vc,#set-modal) .vi-conn .int2-h,
+:is(#vc,#set-modal) .tk2-h h1,
+:is(#vc,#set-modal) #cx-ask-h{
 font-family:var(--fdisplay)!important;font-size:var(--t-2xl)!important;font-weight:600!important;
 letter-spacing:-.01em!important;line-height:1.2!important;margin:0!important;color:var(--tx)!important}
-#vc .sv .vi > h2:first-of-type + .vsub,
-#vc .spv .spv-sub,
-#vc .tk2-h .tk2-sub,#vc .tk2-h .tk2-go,
-#vc .cj-ask-hd .cj-promise{font-size:var(--t-md)!important;color:var(--mu)!important;line-height:1.55!important;max-width:64ch;margin-top:var(--sp-2)!important}
+:is(#vc,#set-modal) .sv .vi > h2:first-of-type + .vsub,
+:is(#vc,#set-modal) .spv .spv-sub,
+:is(#vc,#set-modal) .tk2-h .tk2-sub,:is(#vc,#set-modal) .tk2-h .tk2-go,
+:is(#vc,#set-modal) .cj-ask-hd .cj-promise{font-size:var(--t-md)!important;color:var(--mu)!important;line-height:1.55!important;max-width:64ch;margin-top:var(--sp-2)!important}
 @media (min-width:769px){#vc > .sv > .vi.spv{padding-left:0!important;padding-right:0!important}}
-#vc .spv .spv-head{padding-top:var(--sp-6)!important}
+:is(#vc,#set-modal) .spv .spv-head{padding-top:var(--sp-6)!important}
 #vc > .sv > .vi.vi-conn{padding-left:var(--sp-5)!important;padding-right:var(--sp-5)!important;padding-top:var(--sp-6)!important}
-#vc .spv .set-title{font-family:var(--fdisplay)!important;font-size:var(--t-xl)!important;font-weight:600!important;letter-spacing:-.01em!important;line-height:1.25!important}
+:is(#vc,#set-modal) .spv .set-title{font-family:var(--fdisplay)!important;font-size:var(--t-xl)!important;font-weight:600!important;letter-spacing:-.01em!important;line-height:1.25!important}
 #sb .sbdiv{width:auto!important;margin:9px 10px!important}
 #app .cj-card-ic .line-ic,#app .cj-p-ic .line-ic,#app .cw-job-ic .line-ic,#app .dsn-tile-ic .line-ic{color:var(--tx);opacity:.8;width:20px;height:20px}
 #app .dev-starts .dsn-tile-ic .line-ic{width:18px;height:18px}
@@ -10576,6 +10555,78 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 .empty-state .es-icon{box-shadow:none!important;background:var(--s2)!important;border:1px solid var(--bd)!important;backdrop-filter:none!important}
 .empty-state .es-icon svg{color:var(--mu)!important}
 .empty-state .es-title{font-family:var(--fn)!important;font-weight:600!important;font-size:var(--t-lg)!important;letter-spacing:0!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head{margin:0!important;text-align:center}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head h2{font-family:var(--fdisplay)!important;font-size:clamp(30px,3.2vw,42px)!important;font-weight:600!important;letter-spacing:-.025em!important;line-height:1.1!important;color:var(--tx)!important;margin:0!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-modes{display:inline-flex!important;align-self:center;gap:2px!important;padding:4px!important;margin:var(--sp-5) auto 0!important;
+background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:var(--r-pill)!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode{display:inline-flex!important;align-items:center;gap:8px;height:44px!important;min-height:44px!important;padding:0 18px!important;border:0!important;
+background:transparent!important;color:var(--mu)!important;border-radius:var(--r-pill)!important;font-size:var(--t-md)!important;font-weight:500!important;box-shadow:none!important;
+transition:background-color .18s var(--ease),color .18s var(--ease)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode .line-ic{width:16px;height:16px;opacity:.85}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode:hover{color:var(--tx)!important;background:var(--s2)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode.on{background:var(--s3)!important;color:var(--tx)!important;box-shadow:inset 0 0 0 1px var(--bdl),0 1px 2px rgba(0,0,0,.25)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode .build-mode-t{font-size:inherit!important;font-weight:inherit!important;color:inherit!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode-note{font-size:var(--t-lg)!important;color:var(--mu)!important;text-align:center;margin:var(--sp-4) auto 0!important;max-width:60ch}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-wrap{max-width:780px!important;width:100%;margin:0 auto!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-input-v2,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-hero,
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-shell.lab-blank > .lab-entry > .lab-compose,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-shell.lab-blank > .lab-entry > .lab-entry-do,
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-wrap > section{width:100%!important;max-width:760px!important;margin-left:auto!important;margin-right:auto!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-input-v2,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose{
+background:var(--s1)!important;border:1px solid var(--bdl)!important;border-radius:20px!important;
+box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 18px 44px -24px rgba(0,0,0,.65)!important;padding:18px 18px 14px!important;margin-top:var(--sp-6)!important;
+transition:border-color .18s var(--ease),box-shadow .18s var(--ease)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose:focus-within,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-input-v2:focus-within,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose:focus-within{border-color:color-mix(in srgb,var(--accent) 55%,var(--bdl))!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose textarea,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-input-v2 textarea,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose textarea{
+font-size:var(--t-lg)!important;line-height:1.55!important;min-height:96px;padding:2px 4px!important;background:transparent!important;border:0!important;box-shadow:none!important;color:var(--tx)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose textarea{font-family:var(--mn)!important;font-size:var(--t-md)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose .dna-btn,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose .secmodel-sel,
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-plus,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-sel,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .secmodel-sel,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-optbtn,
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .dvi-plus,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose select,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-p{
+height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important;background-color:var(--s2)!important;border:1px solid transparent!important;
+color:var(--tx)!important;font-size:var(--t-sm)!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-plus,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .dvi-plus{width:44px!important;padding:0!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose .dna-btn:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dvi-plus:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .dvi-plus:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-p:hover{background:var(--s3)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-go,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dev-send,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 #dev-send{
+width:44px!important;height:44px!important;min-height:44px!important;border-radius:50%!important;background:var(--accent)!important;background-image:none!important;
+color:#fff!important;border:0!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-go:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 .dev-send:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-input-v2 #dev-send:hover{background:var(--accent-d)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose .lab-go-a{height:44px!important;min-height:44px!important;border-radius:var(--r-pill)!important;background:var(--accent)!important;background-image:none!important;color:#fff!important;border:0!important;font-size:var(--t-sm)!important;box-shadow:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-hint{font-size:var(--t-sm)!important;color:var(--dim,var(--mu))!important;margin-top:var(--sp-3)!important;text-align:center}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-starts,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-row{display:flex!important;flex-wrap:wrap!important;justify-content:center!important;gap:10px!important;grid-template-columns:none!important;margin-top:var(--sp-5)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-row .lab-go{
+display:inline-flex!important;align-items:center!important;gap:8px!important;width:auto!important;min-height:44px!important;height:44px!important;padding:0 16px 0 12px!important;
+border-radius:var(--r-pill)!important;border:1px solid var(--bd)!important;background:transparent!important;color:var(--tx)!important;box-shadow:none!important;
+font-size:var(--t-md)!important;font-weight:500!important;transition:background-color .15s var(--ease),border-color .15s var(--ease)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-row .lab-go{padding:0 16px!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile:hover,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-row .lab-go:hover{background:var(--s2)!important;border-color:var(--bdl)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile-ic{width:auto!important;height:auto!important;background:none!important;border:0!important;box-shadow:none!important;padding:0!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile-ic .line-ic{width:16px!important;height:16px!important;opacity:.75}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile-body{display:inline!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile-t{font-size:inherit!important;font-weight:inherit!important;color:inherit!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts .dsn-tile-d{display:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-sub{display:block;text-align:center;font-size:var(--t-sm)!important;color:var(--mu)!important;margin-top:var(--sp-6)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-hero-upload{display:flex!important;justify-content:center;align-items:center;gap:6px;margin-top:var(--sp-5)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-hero-upload .dev-upload-btn{height:auto!important;min-height:44px!important;padding:0 10px!important;background:none!important;border:0!important;box-shadow:none!important;
+color:var(--mu)!important;font-size:var(--t-sm)!important;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--bdl)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-hero-upload .dev-upload-btn:hover{color:var(--tx)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-hero-upload .dev-hero-or{font-size:var(--t-sm)!important;color:var(--dim,var(--mu))!important}
+@media (max-width:560px){
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head h2{font-size:28px!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-modes{display:flex!important;width:100%}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode{flex:1 1 0;justify-content:center;padding:0 8px!important;font-size:var(--t-sm)!important;gap:6px}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-mode-note{font-size:var(--t-md)!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-compose,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-shell.dev-blank .dev-input-v2,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-compose{border-radius:18px!important;padding:14px 14px 12px!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-starts,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dev-starts,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .lab-go-row{justify-content:flex-start!important}
+}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-modes .build-mode{flex-direction:row!important;white-space:nowrap}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head .pghd-l{display:flex!important;flex-direction:column;align-items:center!important;justify-content:center;width:100%!important;max-width:none!important;text-align:center!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head h2{width:100%;text-align:center!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-hero,:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-hero > .dsn-compose{width:100%!important;max-width:760px!important;margin-left:auto!important;margin-right:auto!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .dsn-hero{margin-top:0!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) :is(.dna-btn,.dvi-plus,.dvi-optbtn,.lab-go-p){background-image:none!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .build-head{max-width:760px!important;margin-left:auto!important;margin-right:auto!important}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) :is(.lab-shell:not(.lab-blank) > .build-head,.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-head,.lab-shell:not(.lab-blank) > .build-modes,.lab-shell:not(.lab-blank) > .build-mode-note,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes,.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-mode-note){display:none!important}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -10827,7 +10878,7 @@ body.light #app .tk2 .tk-ic .int-mono{background:hsl(var(--mono-h,220) 55% 50% /
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.73eac80e07bc.js" defer integrity="sha384-KiGZ/RKluyDp4s0hwVDSfBHsIXYi67N95b/u6hzWqun+wweP9fz1F1UWvWnSgL8I" data-amv-app></script>
+<script src="/app.a7c7b511a2ac.js" defer integrity="sha384-IhMWbGsPvG9XrQlVaAeVYEObMEDk9LCGsT0g20QoN3Jmh8Orqs7AHvTgfVQv2kqb" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>
