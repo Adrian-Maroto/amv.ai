@@ -3669,7 +3669,7 @@ function showAttChip(){
   ab2.classList.toggle('att-photos', !!photos.length);
   ac.innerHTML=photos.length
     ? '<div class="att-ph-row" role="list" aria-label="'+escH(T('{0} photos').replace('{0}',photos.length))+'">'+photos.map((p,i)=>
-        '<div class="att-ph" role="listitem"><img src="'+escH(_photoUrl(p))+'" alt="'+escH(p.name||'')+'">'+
+        '<div class="att-ph" role="listitem"><img src="'+escH(safeMediaSrc(_photoUrl(p)))+'" alt="'+escH(p.name||'')+'">'+
         '<button type="button" class="att-ph-x" data-ph="'+i+'" aria-label="'+escH(T('Remove {0}').replace('{0}',p.name||T('photo')))+'">×</button></div>').join('')+'</div>'
     : '<span>'+(fmtIcon||icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
   ac.querySelectorAll('[data-ph]').forEach(b=>b.addEventListener('click',()=>{
@@ -3742,7 +3742,7 @@ function _msgPhotosHTML(m){
   if(!m || !Array.isArray(m.c)) return '';
   const ph = m.c.filter(b => b && b.type === 'image' && b.source && b.source.type === 'base64').map(b => b.source);
   if(!ph.length) return '';
-  return '<div class="msg-ph-row">' + ph.map(src => { const u = _photoUrl(src); return u ? '<img class="msg-ph" src="' + escH(u) + '" alt="">' : ''; }).join('') + '</div>';
+  return '<div class="msg-ph-row">' + ph.map(src => { const u = _photoUrl(src); return u ? '<img class="msg-ph" src="' + escH(safeMediaSrc(u)) + '" alt="">' : ''; }).join('') + '</div>';
 }
 function fmtSize(b){ if(b<1024) return b+'B'; if(b<1024*1024) return (b/1024).toFixed(1)+'KB'; return (b/(1024*1024)).toFixed(1)+'MB'; }
 
@@ -4156,17 +4156,17 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-settings">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
       'Settings</button>'+
-    /* Your files: what was attached before, kept in the account. It was in the
-       chat box's "+", which now holds only Upload and Research (Nov 24). */
-    '<button class="prof-item" id="pm-files">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
-      escH(T('Your files'))+'</button>'+
     /* Team sits beside Settings: seats, invites and roles are the other thing
        you set up for an account, and it had no door left once the rail lost
        its Team tab. */
     '<button class="prof-item" id="pm-team">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'+
       'Team</button>'+
+    /* Your files: what was attached before, kept in the account. It was in the
+       chat box's "+", which now holds only Upload and Research (Nov 24). */
+    '<button class="prof-item" id="pm-files">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
+      escH(T('Your files'))+'</button>'+
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
       'Help &amp; Learn More</button>'+

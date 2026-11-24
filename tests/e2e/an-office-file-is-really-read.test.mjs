@@ -34,7 +34,7 @@ const attach = async (files) => {
   await page.waitForFunction(() => S.att || window.__toasts.length, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(150);
   return page.evaluate(() => ({
-    att: S.att ? { kind: S.att.kind, name: S.att.name, mime: S.att.mime || '', format: S.att.format || '', summary: S.att.summary || '', data: S.att.data || '' } : null,
+    att: S.att ? { kind: S.att.kind, name: S.att.name, mime: S.att.mime || '', format: S.att.format || '', summary: S.att.summary || '', data: S.att.data || '', items: (S.att.items || []).map(p => p.name) } : null,
     chip: (document.getElementById('ac') || {}).textContent || '',
     toasts: window.__toasts.slice(),
   }));
@@ -165,8 +165,9 @@ section('Several files at once: read together, and nothing dropped silently');
   ok(/song\.mp3/.test(said) && /listen to recordings/.test(said), 'and the audio file is refused by name, with the reason');
 
   const two = await attach([{ name: 'a.png', mime: 'image/png', buffer: png }, { name: 'b.png', mime: 'image/png', buffer: png }]);
-  ok(two.att && two.att.kind === 'img', 'two pictures: one is attached (this used to attach nothing at all)', two.att && two.att.kind);
-  ok(/b\.png/.test(two.toasts.join(' ')), 'and the other is named');
+  /* Photos chosen together travel together now, up to twenty (Nov 24). */
+  ok(two.att && two.att.kind === 'imgs' && two.att.items.length === 2, 'two pictures: both are attached, together', two.att && two.att.kind);
+  ok(!/b\.png/.test(two.toasts.join(' ')), 'and neither is turned away');
 }
 
 section('Pictures: what the engine takes goes as itself; anything else is redrawn or refused');

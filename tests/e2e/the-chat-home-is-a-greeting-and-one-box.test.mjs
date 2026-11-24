@@ -138,11 +138,12 @@ for (const [vw, vh, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
     await page.evaluate(() => { S.busy = false; document.getElementById('snd').classList.remove('stop'); });
   }
 
-  section(label + ': the "+" opens files and Research');
+  section(label + ': the "+" opens upload and Research');
   {
     await page.click('#att-btn');
     const items = await page.evaluate(() => [...document.querySelectorAll('.ctxm [data-att]')].map(b => b.dataset.att));
-    ok(['upload', 'library', 'research'].every(k => items.includes(k)), 'files, your library and Research', items);
+    /* Upload and Research only (Nov 24); Your files is in the profile menu. */
+    ok(items.length === 2 && items[0] === 'upload' && items[1] === 'research', 'upload and Research, nothing else', items);
     await page.click('.ctxm [data-att="research"]');
     await page.waitForSelector('.research-menu [data-tier]', { timeout: 3000 });
     const m = await page.evaluate(() => { const r = document.querySelector('.research-menu').getBoundingClientRect(); return { top: r.top, left: r.left, w: r.width }; });

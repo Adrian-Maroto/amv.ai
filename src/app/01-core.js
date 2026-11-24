@@ -1855,6 +1855,9 @@ function safeUrl(u){
 function safeMediaSrc(u){
   const s = String(u == null ? '' : u).trim();
   if(/^data:(image\/(png|jpeg|jpg|gif|webp|avif)|video\/(mp4|webm));base64,[A-Za-z0-9+/=]+$/i.test(s)) return s;
+  /* And an object URL this page made itself (a photo attached here): only one
+     of this origin's own, with the exact shape the browser gives them. */
+  try{ if(/^blob:/i.test(s) && new RegExp('^blob:' + location.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/[0-9a-f-]{36}$', 'i').test(s)) return s; }catch(e){}
   return safeUrl(s);
 }
 try{ window.safeUrl=safeUrl; window.safeMediaSrc=safeMediaSrc; }catch(e){}
