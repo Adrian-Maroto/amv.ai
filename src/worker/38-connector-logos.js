@@ -352,7 +352,8 @@ async function shareRevoke(request, env){
   const rec = await DB.get(env, 'share', id);
   // Only the owner can revoke, and a missing record is not an error worth
   // leaking - either way the link no longer works for them.
-  if(rec && rec.owner === user.email.toLowerCase()) await DB.del(env, 'share', id);
+  const mine = !!(rec && rec.owner === user.email.toLowerCase());
+  if(mine) await DB.del(env, 'share', id);
   /* Under the lock, because shareCreate writes this same list. Revoking read
      it, filtered one out and wrote the whole thing back - so a share created
      in that window is erased from the index while its `share:` record lives
@@ -363,7 +364,13 @@ async function shareRevoke(request, env){
     if(!mine) return;
     mine.items = (mine.items||[]).filter(i => i.id !== id);
   }, { items: [] });
-  audit(env, 'share_revoked', { by: user.email, id });
+  /* The audit says what happened. It recorded "share_revoked" for anybody who
+     sent an id - so a stranger's attempt on somebody else's link read in the
+     log as that link being revoked (found by one-account-cannot-reach-
+     anothers-things). The answer stays the same either way, so it still does
+     not tell a stranger whether the link exists. */
+  if(mine) audit(env, 'share_revoked', { by: user.email, id });
+  else if(rec) audit(env, 'share_revoke_refused', { by: user.email, id, why: 'not_owner' });
   return json({ ok:true });
 }
 /* The public page. No auth, no JavaScript, everything escaped. */
