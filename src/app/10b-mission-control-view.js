@@ -902,7 +902,7 @@ async function mcRunCommand(instruction, opts){
     if(typeof runAgentTask!=='function') throw new Error('agent-unavailable');
     const {steps,results}=await runAgentTask(instruction,{onStep:(s)=>{ const m=box.querySelector('.mc-cmd-msg'); if(m) m.innerHTML='<span class="rr-dot"></span> Running: '+escH(String(s.tool||'').replace(/_/g,' '))+'…'; }});
     let html;
-    if(!steps.length){ html='<div>I couldn’t find a safe automatic action for that. Try being more specific, or use <b>Autonomous task</b> below to plan a multi-step job.</div>'; }
+    if(!steps.length){ html='<div>I couldn’t find a safe automatic action for that. Try saying what to do in more detail, or switch on a job below.</div>'; }
     else { html='<div class="mc-cmd-done-h">✓ Done - here’s what I did:</div><ul class="mc-cmd-steps">'+results.map((r,i)=>{ const label=(steps[i]&&steps[i].why)||r.tool; if(r.skipped) return '<li>⏭ Skipped: '+escH(label)+'</li>'; return '<li>'+(r.ok?'✓':'⚠')+' '+escH(label)+(r.ok?'':' - '+escH(r.error||'failed'))+'</li>'; }).join('')+'</ul>'; }
     box.innerHTML='<div class="mc-cmd-msg done">'+html+'</div>';
   }catch(e){
