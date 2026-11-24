@@ -238,6 +238,12 @@ section('If the preview document is not served, it degrades and says so');
        arrives - the same as a host that does not serve the file. The note
        still names the real preview document, because that is what somebody
        has to go and fix. */
+    /* When the frame's own load fired, and when the note appeared, so the
+       check can say which of the product's two deadlines answered - the grace
+       after load, or the eight-second cap - without betting on how fast a
+       loaded machine loads the frame. */
+    let loadAt = 0;
+    f.addEventListener('load', () => { if(!loadAt) loadAt = Date.now(); });
     f.src = p;
     /* Polled, up to the limit, rather than one look at a fixed moment: under
        four suites at once the frame's own load can take longer than the
@@ -245,6 +251,7 @@ section('If the preview document is not served, it degrades and says so');
        path that was working. */
     const t0 = Date.now();
     while (!host.querySelector('.prev-degraded') && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 100));
+    const noteAt = host.querySelector('.prev-degraded') ? Date.now() : 0;
     await new Promise(r => setTimeout(r, 150));
     const note = host.querySelector('.prev-degraded');
     const frames = [...host.querySelectorAll('iframe')];
@@ -252,6 +259,8 @@ section('If the preview document is not served, it degrades and says so');
     const fr = frames[0] && frames[0].getBoundingClientRect();
     return {
       note: note ? note.textContent : '',
+      afterLoad: (loadAt && noteAt) ? noteAt - loadAt : -1,
+      sinceSend: noteAt ? noteAt - t0 : -1,
       frames: frames.length,
       sameFrame: frames.length === 1 && frames[0].id === 'deg-frame',
       srcdoc: !!(frames[0] && frames[0].getAttribute('srcdoc')),
@@ -267,14 +276,18 @@ section('If the preview document is not served, it degrades and says so');
   /* A small wrong document: it lands at once, so the grace after load is what
      answers, and it answers quickly - before the product's eight-second cap,
      which is what proves it was the load that answered and not the cap. */
-  const light = await probe('package.json', 6500);
-  ok(/not being served/i.test(light.note),
-     'a small wrong document is spotted from its load, within seconds', light.note.slice(0, 60));
+  const light = await probe('package.json', 12000);
+  /* Answered by the load: the note came within a few seconds of the frame's
+     own load event (the product's grace is 1.5s, polled every 0.1s). The cap
+     answering instead would show as the frame loading early and the note
+     arriving ~8s after the send. */
+  ok(/not being served/i.test(light.note) && light.afterLoad >= 0 && light.afterLoad < 4000,
+     'a small wrong document is spotted from its load, within seconds', { note: light.note.slice(0, 60), afterLoad: light.afterLoad, sinceSend: light.sinceSend });
 
   /* The heavy one: the host answers an unknown path with the whole app, whose
      load event waits on its subresources. This is the case the load-armed
      version sat blank through. */
-  const heavy = await probe('no-such-preview-file.html', 9000);
+  const heavy = await probe('no-such-preview-file.html', 12000);
   ok(/not being served/i.test(heavy.note),
      'and a host that answers with the app itself does not leave it blank', heavy.note.slice(0, 60));
   ok(/JavaScript will not run/i.test(heavy.note),

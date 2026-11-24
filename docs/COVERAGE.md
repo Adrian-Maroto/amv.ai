@@ -74,7 +74,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `12-app-connectors.js` | 34/34 | 90.6% |
 | `13-schedules-and-approvals.js` | 30/30 | 92.7% |
 | `14-renewal-finder.js` | 25/25 | 98.4% |
-| `15-run-context-and-execution.js` | 36/36 | 93.3% |
+| `15-run-context-and-execution.js` | 36/36 | 93.4% |
 | `15a-job-queue.js` | 12/12 | 92.8% |
 | `16-site-deploys.js` | 6/6 | 92.9% |
 | `17-error-reporting.js` | 2/2 | 99.5% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.4% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
