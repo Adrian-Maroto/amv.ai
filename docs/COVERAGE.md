@@ -89,7 +89,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `26-crew-sync.js` | 7/7 | 87.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
-| `28-password-reset.js` | 7/7 | 92.7% |
+| `28-password-reset.js` | 7/7 | 92.6% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.3% |
@@ -145,7 +145,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `77a-agent-signins.js` | 25/25 | 88.2% |
 | `78-teach-replay.js` | 5/5 | 87.0% |
 | `79-meaning.js` | 3/3 | 98.1% |
-| `80-switches.js` | 10/10 | 92.7% |
+| `80-switches.js` | 10/10 | 90.9% |
 | `81-web-push.js` | 15/15 | 94.7% |
 | `82-tasks.js` | 4/4 | 94.4% |
 | `83-support.js` | 4/4 | 84.6% |
