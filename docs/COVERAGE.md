@@ -2,14 +2,14 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-24 from 427 suites.
+2026-11-25 from 428 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
 this is branch coverage in bytes. Browser suites (tests/e2e) are not counted here: they drive
 the Worker too, so these numbers are a floor.
 
-**Whole Worker:** functions 1312/1312 (100.0%), code 92.9%.
+**Whole Worker:** functions 1315/1315 (100.0%), code 92.9%.
 
 ## The trust areas
 
@@ -86,13 +86,13 @@ Functions 52/52 (100.0%), code 93.3%.
 | `23-consent.js` | 1/1 | 95.7% |
 | `24-bank-data.js` | 18/18 | 83.2% |
 | `25-linked-accounts.js` | 22/22 | 76.6% |
-| `26-crew-sync.js` | 7/7 | 87.6% |
+| `26-crew-sync.js` | 10/10 | 88.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
 | `28-password-reset.js` | 7/7 | 92.7% |
 | `29-router.js` | 14/14 | 92.9% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
-| `31-sign-in-codes.js` | 38/38 | 90.3% |
+| `31-sign-in-codes.js` | 38/38 | 90.0% |
 | `32-teams.js` | 13/13 | 95.3% |
 | `33-team-roles.js` | 34/34 | 86.8% |
 | `34-chat-sync.js` | 16/16 | 95.8% |
@@ -101,7 +101,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 96.1% |
-| `39-resumable-streams.js` | 17/17 | 94.7% |
+| `39-resumable-streams.js` | 17/17 | 94.6% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
@@ -145,7 +145,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `77a-agent-signins.js` | 25/25 | 88.2% |
 | `78-teach-replay.js` | 5/5 | 87.0% |
 | `79-meaning.js` | 3/3 | 98.1% |
-| `80-switches.js` | 10/10 | 90.9% |
+| `80-switches.js` | 10/10 | 92.7% |
 | `81-web-push.js` | 15/15 | 94.7% |
 | `82-tasks.js` | 4/4 | 94.4% |
 | `83-support.js` | 4/4 | 84.6% |

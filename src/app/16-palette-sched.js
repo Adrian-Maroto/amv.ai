@@ -11,7 +11,7 @@ function _paletteCommands(){
     {id:'new-chat',label:'New chat',group:'Actions',kw:'new chat conversation start',icon:'plus',run:()=>{ try{ newChat(); }catch(e){} }},
     {id:'new-dev',label:'New Dev session',group:'Actions',kw:'new dev build code session',icon:'code',run:()=>{ try{ _sessNew('dev'); _resetToolState&&_resetToolState('dev'); }catch(e){} setTab('dev'); }},
     {id:'new-lab',label:'New Lab session',group:'Actions',kw:'new lab run code session',icon:'lab',run:()=>{ try{ _sessNew('lab'); _resetToolState&&_resetToolState('lab'); }catch(e){} setTab('lab'); }},
-    {id:'toggle-theme',label:'Toggle light / dark theme',group:'Actions',kw:'theme dark light mode toggle appearance',icon:'theme',run:()=>{ document.body.classList.toggle('light'); try{ saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark'); }catch(e){} }},
+    {id:'toggle-theme',label:'Toggle light / dark theme',group:'Actions',kw:'theme dark light mode toggle appearance',icon:'theme',run:()=>{ _themeFlip(); }},
     {id:'errors',label:'Errors - what\u2019s breaking for your users',group:'Actions',kw:'errors bugs crashes reports monitoring bugs dashboard',icon:'nav',run:()=>{ try{ openErrors(); }catch(e){} }},
     {id:'mysites',label:'My live sites - view or take down',group:'Actions',kw:'sites deploy live url hosting published apps',icon:'nav',run:()=>{ try{ openMySites(); }catch(e){} }},
     {id:'handoffs',label:'Context handoffs - download or resume',group:'Actions',kw:'handoff context download resume paste transfer continue new chat',icon:'nav',run:()=>{ try{ openHandoffManager(); }catch(e){} }},

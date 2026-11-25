@@ -38,7 +38,7 @@
          reach outside the account; making the screen light is neither, and
          stopping to ask about it teaches people to click through the prompts
          that matter. Same reasoning that took the risk chooser out of Crew. */
-      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"}',
+      set_theme:{ desc:'Switch the theme. Args: {theme:"dark"|"light"|"system"} - system follows the device.',
         /* THIS SAVED THE PREFERENCE AND NEVER CHANGED THE SCREEN.
 
            It called applyTheme, guarded by `typeof applyTheme === 'function'`,
@@ -51,13 +51,8 @@
            A guard that is always false is a feature that never ran, and this one
            reported success while doing half the job. Applied the way the rest of
            the product applies it. */
-        async run(a){ const t=(a&&a.theme)==='light'?'light':'dark';
-          try{
-            saveStr('amv_theme',t);
-            document.body.classList.toggle('light', t==='light');
-            const sw=$('dark-sw'); if(sw) sw.checked = (t==='dark');
-          }catch(e){}
-          return { theme:t }; } },
+        async run(a){ const w=a&&a.theme; const t=(w==='light'||w==='system')?w:'dark';
+          return { theme:_themeApply(t) }; } },
       set_language:{ desc:'Change the interface language. Args: {code}',
         async run(a){ const c=String((a&&a.code)||'').trim();
           if(!c || (typeof LANGS!=='undefined' && !LANGS[c])) nothing('That language is not one of the supported codes.');

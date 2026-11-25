@@ -5,10 +5,7 @@ function setupApp(){
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
   on($('nav-back'),'click',()=>{ navBack(); });
   try{ _navPaint(); }catch(e){}
-  on($('theme-btn'),'click',function(){
-    document.body.classList.toggle('light');
-    saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');
-  });
+  on($('theme-btn'),'click',function(){ _themeFlip(); });
   on($('nav-av'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
   /* Phones: New chat from the top bar (A407). */
   on($('nav-new'),'click',()=>{ if(S.sbOpen && window.matchMedia('(max-width:720px)').matches) toggleSb(); openFreshChat(); });
@@ -589,7 +586,7 @@ function setupKeyboard(){
       try{ toggleSb(); }catch(_){}
       return;
     }
-    if(_mod(e)&&e.shiftKey&&(e.key==='L'||e.key==='l')){e.preventDefault();document.body.classList.toggle('light');saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');return;}
+    if(_mod(e)&&e.shiftKey&&(e.key==='L'||e.key==='l')){e.preventDefault();_themeFlip();return;}
     if(_mod(e)&&e.key===','){e.preventDefault();S.settingsPane='account';setTab('settings');return;}
     if(_mod(e)&&e.key==='/'){e.preventDefault();setTab('help');return;}
     // "?" (Shift+/) opens the keyboard shortcut cheat sheet
@@ -723,10 +720,28 @@ try {
   }
 })();
 
-// Apply saved theme
-const savedTheme = loadStr('amv_theme');
-// Default to DARK. Only use light if the user explicitly chose it.
-if(savedTheme === 'light') document.body.classList.add('light');
+/* THEME: Light, Dark or System. System follows the device and keeps
+   following it - the evening switch to dark happens on an open page too -
+   which is the third choice every leading assistant offers (docs/RESEARCH.md,
+   Controls). Dark stays the default: only a choice someone made changes it.
+   Every place that switches the theme goes through here, so the setting, the
+   screen and the Appearance pane can never disagree. */
+const _THEME_MQ = (function(){ try{ return window.matchMedia('(prefers-color-scheme: light)'); }catch(e){ return null; } })();
+function _themePref(){ const t = loadStr('amv_theme'); return (t === 'light' || t === 'system') ? t : 'dark'; }
+function _themeApply(pref){
+  if(pref) saveStr('amv_theme', pref);
+  const p = _themePref();
+  const light = p === 'light' || (p === 'system' && !!(_THEME_MQ && _THEME_MQ.matches));
+  document.body.classList.toggle('light', light);
+  document.querySelectorAll('[data-theme-opt]').forEach(b => {
+    const on = b.dataset.themeOpt === p; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
+  return p;
+}
+/* The quick switch (top bar, Shift+L, the command menu) flips what is on the
+   screen, so from System it lands on the opposite of what the device shows. */
+function _themeFlip(){ return _themeApply(document.body.classList.contains('light') ? 'dark' : 'light'); }
+try{ if(_THEME_MQ) _THEME_MQ.addEventListener('change', () => { if(_themePref() === 'system') _themeApply(); }); }catch(e){ console.error('AMV: the device theme cannot be followed', e); }
+_themeApply();
 // Apply saved accent theme (default azure = no attribute).
 /* Sixteen. The dot is the colour the stylesheet actually applies in dark
    mode, not a sample of it - a swatch that does not match what pressing it

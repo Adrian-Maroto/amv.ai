@@ -48,6 +48,20 @@ microsoft.com, adobe.com) is never credited to one of them.
 | Suggestions under the box (`_homeSuggestHTML`, 05-ui-blocks.js) | Two, from two different places: one of the person's recent chats (carry on, what is new since, a weekly briefing - the last two only for an English title that reads as a subject; titles that are not words never shown), a Crew job, something to build | Which two places, and which chat: random, new on every load and new chat - the owner's instruction (Nov 17). **Which Crew job: weighted by the share of internet users who go online for that reason** | The person's own chats; GWI Q4 2025 main reasons for using the internet (`CW_GWI`, the Crew row above) | Live; GWI by hand |
 | Starter chips (no recent chats) | Advice, Look up, Edit, Build, Automate | How people use an assistant, most first | NBER w34255 (2025), 1.5 million conversations | By hand |
 
+## Controls (which buttons a screen has)
+
+Sources here are the leading assistants' and app builders' own help pages,
+read on the date given. They are named in the local research report
+(`reports/`, kept out of the repository), because nothing pushed names
+another AI company.
+
+| List | What is in it | Order | Source | Refresh |
+|---|---|---|---|---|
+| Actions under an answer (05-ui-blocks.js) | Copy, Good/Bad response, Read aloud, Share, Retry, Branch from here, Continue, Export | Most used first, the rest under More | The two most used assistants' help centers: mobile app FAQ and release notes (branching, editing with attachments, the retry menu), and "regenerate or modify responses" / "export responses"; read Nov 25 2026 | By hand |
+| A chat's menu in the list (`showConvMenu`) | Open, Rename, Star, Add to project, Export, Share, Study mode, Archive, Delete | Destructive last, behind a divider | A leading assistant's help center, "share and unshare chats" and "share a chat with specific people"; read Nov 25 2026 | By hand |
+| Theme (Appearance, `_themeApply`) | Light, Dark, System | Light, Dark, System | The leading assistant's appearance help page and the field-wide Light/Dark/System baseline in the Nov 25 research report | By hand |
+| The Build workspace's preview controls | **Gap until built:** a device-size toggle (desktop, tablet, phone), Refresh, and version history with Restore | - | Two leading app builders' docs: "preview and test your app", "revert and restore with version history", "versions"; read Nov 25 2026 | By hand |
+
 ## Gaps - not backed yet
 
 | What | Today | What would back it |
@@ -57,5 +71,5 @@ microsoft.com, adobe.com) is never credited to one of them.
 | The order of the topics on Integrations (Email, Calendar, Messaging ...) | Written order. **Tried and rejected (Nov 17): the Chrome UX Report cannot order topics.** It measures sites, and a topic's score from it is a count of the apps somebody chose to list in it - Shopping came first because 16 of its 19 listed shops are in the top thousand; nearly every topic has one top-thousand app, so its best app ties them all | GWI's full "main reasons for using the internet" table (share of users per reason - staying in touch, video, music, shopping ... - not just the seven Crew uses), mapped one topic to one reason, with work topics (developer, cloud, monitoring) ordered by a work-software source; or what people connect (server counts) once there are enough. The table is on datareportal.com and statista.com, which this build environment cannot reach |
 | Crew's job templates and Task wording (what each one says it does) | Written | Not a ranking question; checked by the catalogue suites for what they claim |
 | Whether a country's Crew job can really be done for that service (Build 16 audit AG-12) | A country job is a research instruction AMV carries out in its browser; it is not a tested connection to that service, and nothing on screen says it is | A capability record per service - a working connector, its scopes, the countries it works in, when it last passed a test - before any listing may say it connects |
-| Which other companies' models the picker offers, and in what order (`docs/PLAN-MODEL-PICKER.md`; built Nov 18) | AMV's own engines first, then each maker in the order the owner lists them in `AMV_PARTNER_ENGINES`; none switched on yet | The shape is backed (Perplexity's help center model table, snapshot Oct 27 2026). Which models, on which plan, in what order waits on the owner's contracts; the order then follows a public usage measure per model (to be chosen with the line-up), never a guess |
+| Which other companies' models the picker offers, and in what order (`docs/PLAN-MODEL-PICKER.md`; built Nov 18) | AMV's own engines first, then each maker in the order the owner lists them in `AMV_PARTNER_ENGINES`; none switched on yet | The shape is backed (a leading answer engine's own help-center model table, snapshot Oct 27 2026; named in the local research notes). Which models, on which plan, in what order waits on the owner's contracts; the order then follows a public usage measure per model (to be chosen with the line-up), never a guess |
 | Crew's categories cap | Removed with the old page (Nov 16): the first hundred are weighted where use is | The owner chose popularity order; the chips reach every part of life |

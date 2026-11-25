@@ -534,15 +534,20 @@ function _renderSetPaneInner(only, into){
       _webLiveLoad().then(ok => { if(ok && wj.isConnected) window._webJarPane(wj); else wj.remove(); });
     }
   } else if(sp==='appearance'){
-    const isDark=!document.body.classList.contains('light');
+    const themeNow=_themePref();
+    const thBtn=(id,label,svg)=>'<button class="fs-opt'+(themeNow===id?' on':'')+'" role="radio" aria-checked="'+(themeNow===id)+'" data-theme-opt="'+id+'"><span class="fs-pv" aria-hidden="true">'+svg+'</span><span class="fs-lbl">'+escH(T(label))+'</span></button>';
+    const SVG_ATTR=' width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
     const fsBtn=(px,label)=>'<button class="fs-opt'+(curFs===px?' on':'')+'" data-fs="'+px+'"><span class="fs-pv" style="font-size:'+(px+1)+'px">Aa</span><span class="fs-lbl">'+label+'</span></button>';
     pane.innerHTML=
       '<h2 class="set-title">Appearance</h2>'+
       '<div class="set-sub">Customize how AMV.AI looks and feels. Changes apply instantly across the whole app.</div>'+
       '<div class="ss2"><h3>Theme</h3>'+
-        '<div class="br2"><div><div class="opt-name">Dark Mode</div><div class="opt-desc">Deep dark, easy on the eyes</div></div>'+
-          '<label class="sw"><input type="checkbox" id="dark-sw" '+(isDark?'checked':'')+' ><span class="sw-sl"></span></label>'+
+        '<div class="opt-desc" style="margin-bottom:14px">'+escH(T('System follows your device, and changes when it does.'))+'</div>'+
+        '<div class="fs-row" role="radiogroup" aria-label="'+escH(T('Theme'))+'">'+
+          thBtn('light','Light','<svg'+SVG_ATTR+'><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>')+
+          thBtn('dark','Dark','<svg'+SVG_ATTR+'><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>')+
+          thBtn('system','System','<svg'+SVG_ATTR+'><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>')+
         '</div>'+
       '</div>'+
       '<div class="ss2"><h3>Accent color</h3>'+
@@ -601,7 +606,7 @@ function _renderSetPaneInner(only, into){
          nothing until you hear it. */
       try{ if(typeof AMVSpeech!=='undefined' && AMVSpeech.speak) AMVSpeech.speak('Reading at this speed.'); }catch(e){}
     });
-    on($('dark-sw'),'change',function(){ document.body.classList.toggle('light',!this.checked); saveStr('amv_theme',this.checked?'dark':'light'); });
+    pane.querySelectorAll('[data-theme-opt]').forEach(b=>on(b,'click',()=>_themeApply(b.dataset.themeOpt)));
     pane.querySelectorAll('[data-accent]').forEach(sw=>on(sw,'click',()=>{
       applyAccent(sw.dataset.accent);
       pane.querySelectorAll('.accent-sw').forEach(x=>x.classList.toggle('on',x===sw));
