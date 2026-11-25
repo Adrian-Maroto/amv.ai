@@ -210,8 +210,8 @@ section('Only the bridge’s own routes exist there');
 {
   const r = await call(env, '/v1/computer/pair', { code: 'x' }, pat);
   ok(r.status === 404, 'pairing is not a route', r.status);
-  const m = await call(env, '/v1/computer/mcp/start', {}, pat);
-  ok(m.status === 404, 'nor are connectors', m.status);
+  const m = await call(env, '/v1/computer/screen/shot', {}, pat);
+  ok(m.status === 404, 'nor is the screen - the cloud computer has none', m.status);
 }
 
 for (const c of running) try { c.kill('SIGKILL'); } catch (e) {}

@@ -108,6 +108,7 @@ async function _mcpStart(id){
      the stored entry it starts from is checked by id here. The first start
      may download the program, so it gets longer than a warm one needs. */
   const desktop = cfg.id === MCP_BROWSER.id && cfg.desktop === true;
+  if(desktop && BRIDGE.cloud) throw Object.assign(new Error(BRIDGE_CLOUD_LOCAL_ONLY), { code: 'no_computer' });
   const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id), desktop },
                               desktop ? 180000 : 70000);
   /* `session` is the bridge pairing this came from. A token belongs to one run
@@ -122,8 +123,18 @@ async function _mcpStop(id){
   delete MCP.live[id];
 }
 async function mcpCall(id, method, params){
-  const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
-  return d.result;
+  try{
+    const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
+    return d.result;
+  }catch(e){
+    /* The cloud computer sleeps after a few idle minutes and its connectors
+       stop with it. The first call after that finds no such server: start it
+       again from the saved configuration and send the same call once. */
+    if(!(BRIDGE.cloud && e && e.code === 'no_such_server')) throw e;
+    await _mcpStart(id);
+    const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
+    return d.result;
+  }
 }
 try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCall; }catch(e){}
 
@@ -142,7 +153,7 @@ try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCal
    changing, which is what it was. Within a turn the list is fixed: a tool
    that appears mid-turn is offered from the next one. */
 async function mcpRefreshTools(){
-  if(!bridgeLocal()) return false;
+  if(!bridgeRunsConnectors()) return false;
   const mine = Object.keys(MCP.live).filter(id => {
     const l = MCP.live[id];
     return l && !l.error && l.session === BRIDGE.token;
@@ -180,7 +191,7 @@ try{ window.mcpRefreshTools=mcpRefreshTools; }catch(e){}
    stopped (freeing the name on the bridge, which still holds a dead process)
    and started again, and the result is whatever that start says. */
 async function mcpStartAll(){
-  if(!bridgeLocal()) return [];
+  if(!bridgeRunsConnectors()) return [];
   let running = null;
   try{
     const d = await _bridgeCall('mcp/list', {}, 15000);
@@ -188,6 +199,7 @@ async function mcpStartAll(){
   }catch(e){ running = null; }   /* cannot confirm anything, so reuse nothing */
   const out = [];
   for(const s of MCP.servers.slice(0, MCP_MAX_SERVERS)){
+    if(BRIDGE.cloud && s.id === MCP_BROWSER.id) continue;   // needs a screen: your own computer
     const had = MCP.live[s.id];
     if(had && !had.error && had.session === BRIDGE.token && running && running.has(s.id)){
       out.push({ id:s.id, ok:true, tools:(had.tools || []).length, reused:true });
@@ -561,7 +573,7 @@ try{ _mcpLoad(); }catch(e){}
    codebase has shipped several of those.
    ══════════════════════════════════════════════════════════════════════ */
 function _mcpCardHTML(){
-  const connected = bridgeLocal();
+  const connected = bridgeRunsConnectors();
   const rows = MCP.servers.map(sv => {
     const live = MCP.live[sv.id];
     const n = live && live.tools ? live.tools.length : 0;
@@ -644,7 +656,7 @@ function _mcpWireCard(root){
     add.disabled = true;
     try{
       const realId = _mcpAdd(id, command, args, _mcpParseEnv(envLine));
-      if(bridgeLocal()){
+      if(bridgeRunsConnectors()){
         say('Starting ' + realId + '…');
         try{
           const live = await _mcpStart(realId);

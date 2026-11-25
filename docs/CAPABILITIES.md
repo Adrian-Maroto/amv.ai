@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-82 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
+83 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -182,6 +182,7 @@
 | The cloud workspace outlives its container when the workspace bucket is bound: saved before an idle machine stops, restored before the next one answers, packages and caches left out, deleted with the account | `cloud/computer.mjs`, `bridge/amv-bridge.mjs`, `src/worker/10-cloud-computer.js` | - | `worker/the-cloud-workspace-outlives-its-container.test.mjs` |
 | A saved cloud workspace carries its checksum, and a copy that does not match is never unpacked | `bridge/amv-bridge.mjs`, `cloud/computer.mjs` | - | `worker/the-cloud-workspace-outlives-its-container.test.mjs` |
 | Every cloud workspace busy: connecting waits for one instead of failing | `src/app/36-bridge.js` | - | `e2e/no-computer-to-hand-amv-lends-you-one.test.mjs` |
+| Connectors run on AMV's cloud computer for paid plans, each in a folder of its own outside the saved workspace | `src/worker/29-router.js`, `src/app/36-bridge.js`, `bridge/amv-bridge.mjs` | - | `worker/connectors-run-on-the-cloud-computer-for-paid-plans.test.mjs`, `e2e/no-computer-to-hand-amv-lends-you-one.test.mjs` |
 | The cloud workspace keeps its five earlier saved copies, and any of them can be put back without losing the current one | `cloud/computer.mjs`, `src/worker/10-cloud-computer.js`, `src/app/36d-workspace-copies.js` | - | `worker/the-cloud-workspace-outlives-its-container.test.mjs` |
 
 ## Triggers

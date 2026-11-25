@@ -1196,12 +1196,12 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(chatToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
-    try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
+    try{ if(bridgeRunsConnectors() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
     /* And the apps somebody has signed in to - Notion, Canva, Stripe. These need
        no computer, so they are offered whenever they are connected, and each
        call is asked for with its arguments shown before it runs. */
     try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
-    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeLocal(), remote: true })); }catch(e){}
+    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeRunsConnectors(), remote: true })); }catch(e){}
     /* Buying (shopping.js): offered while AMV's browser runs. */
     try{ if(MCP.live[MCP_BROWSER.id] && !window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop);
          if(window.amvShop && window.amvShop.live()) tools = tools.concat(window.amvShop.tools); }

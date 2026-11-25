@@ -41,7 +41,12 @@ try{ window.BRIDGE = BRIDGE; }catch(e){}
    nothing else to it - so everything that opens something the person sees, or
    holds their credentials, asks for this rather than "connected". */
 function bridgeLocal(){ return !!(BRIDGE.connected && !BRIDGE.cloud); }
-const BRIDGE_CLOUD_LOCAL_ONLY = 'Connectors, sign-ins and the screen run on your own computer, and AMV is using its cloud workspace right now. '
+/* CONNECTORS RUN ON EITHER MACHINE (owner, Nov 25): the person's own computer,
+   or AMV's cloud computer (paid plans - the server checks). The browser you
+   sign in with is the exception and keeps asking bridgeLocal(): it needs a
+   screen and the person in front of it. */
+function bridgeRunsConnectors(){ return !!BRIDGE.connected; }
+const BRIDGE_CLOUD_LOCAL_ONLY = 'Signing in to a website and the screen run on your own computer, and AMV is using its cloud workspace right now. '
   + 'Disconnect it under Integrations \u203a Your computer, then connect this one.';
 try{ window.bridgeLocal = bridgeLocal; }catch(e){}
 
@@ -257,8 +262,9 @@ function _bridgeAnswer(status, d){
    back from the bridge is the bridge's own answer, passed through, so its
    refusals are told the same way; what the SERVER refuses (the plan, the
    month's minutes, a machine that would not start) carries a `code`, and is
-   said in the server's words. Only commands and files go: connectors and the
-   screen are refused here, before a request, with what to do instead. */
+   said in the server's words. Commands, files and (since Nov 25) connectors go;
+   the sign-in browser and the screen are refused here, before a request, with
+   what to do instead. */
 /* Each route spelled out whole, so the checks that every path the app asks
    for is one the server has can read them - and so a route not listed here is
    simply not sent. */
@@ -266,6 +272,8 @@ const BRIDGE_CLOUD_PATHS = {
   'exec': '/v1/computer/exec', 'exec/cancel': '/v1/computer/exec/cancel', 'read': '/v1/computer/read',
   'write': '/v1/computer/write', 'list': '/v1/computer/list', 'delete': '/v1/computer/delete',
   'status': '/v1/computer/status', 'revoke': '/v1/computer/revoke',
+  'mcp/start': '/v1/computer/mcp/start', 'mcp/call': '/v1/computer/mcp/call', 'mcp/stop': '/v1/computer/mcp/stop',
+  'mcp/list': '/v1/computer/mcp/list', 'mcp/tools': '/v1/computer/mcp/tools',
 };
 function _bridgeCloudState(){
   return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud workspace', root: 'amv-cloud:/work',
@@ -659,7 +667,8 @@ function _bridgeCardHTML(){
         + 'for the whole request. Nothing on this device is reachable from it.</p>'
       + '<p class="brg-p brg-warn"><b>It is cleared when it sleeps.</b> After 5 minutes without use it stops, '
         + 'and its files go with it. Download or push anything you want to keep.</p>'
-      + '<p class="brg-p">Connectors, sign-ins and the screen need your own computer.</p>'
+      + '<p class="brg-p">Connectors you added run here too, each in a folder of its own that is deleted when it stops. '
+        + 'Signing in to a website and the screen need your own computer.</p>'
       + '<p class="brg-p brg-cloud-min" id="brg-cloud-min" aria-live="polite"></p>'
       + '<div class="brg-repo" id="brg-repo" aria-live="polite">' + _cloudRepoHTML() + '</div>'
       + '<div class="brg-acts">'

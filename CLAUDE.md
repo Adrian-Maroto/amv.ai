@@ -195,8 +195,11 @@ Companion docs (do not duplicate them here - read them):
   into the child's environment, never localStorage.
   **AMV's cloud computer** is the same bridge started with `--cloud` in a
   container per account (`cloud/`, a Worker of its own on Cloudflare
-  Containers): a key from the environment replaces pairing, no screen, no
-  connectors. The page reaches it only through `/v1/computer/*` with the
+  Containers): a key from the environment replaces pairing, no screen.
+  Connectors run there too on paid plans (`/v1/computer/mcp/*`,
+  `bridgeRunsConnectors()`), each in a throwaway folder outside the saved
+  workspace, started again on the first call after the machine slept; the
+  sign-in browser needs a screen and stays on the person's own. The page reaches it only through `/v1/computer/*` with the
   person's sign-in (`BRIDGE.cloud`, `_bridgeCloudCall`); the Worker names the
   container from a hash of the account and meters AWAKE time - what the
   provider bills - against the plan (LESSONS 579). Anything needing the

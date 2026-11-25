@@ -4653,5 +4653,43 @@
   "bn": "আপনাকে তাদের পরিবারে যোগ করতে চায়। আপনার AMV কত খরচ করতে পারবে তা তারা ঠিক করবে। তারা আপনার কথোপকথন দেখতে পারবে না।",
   "ur": "آپ کو اپنے خاندان میں شامل کرنا چاہتے ہیں۔ وہ طے کریں گے کہ آپ کا AMV کتنا خرچ کر سکتا ہے۔ وہ آپ کی گفتگو نہیں دیکھ سکیں گے۔",
   "ta": "உங்களைத் தங்கள் குடும்பத்தில் சேர்க்க விரும்புகிறார். உங்கள் AMV எவ்வளவு செலவிடலாம் என்பதை அவர் அமைப்பார். அவரால் உங்கள் உரையாடல்களைப் பார்க்க முடியாது."
+ },
+ "On AMV’s cloud computer, in a folder of its own that is deleted when it stops.": {
+  "es": "En el ordenador en la nube de AMV, en una carpeta propia que se borra cuando se detiene.",
+  "zh": "在 AMV 的云端电脑上，运行于专属文件夹中，停止时该文件夹会被删除。",
+  "hi": "AMV के क्लाउड कंप्यूटर पर, अपने अलग फ़ोल्डर में, जो रुकने पर हटा दिया जाता है।",
+  "ar": "على كمبيوتر AMV السحابي، في مجلد خاص به يُحذف عند توقفه.",
+  "pt": "No computador na nuvem do AMV, em uma pasta própria que é apagada quando ele para.",
+  "fr": "Sur l'ordinateur cloud d'AMV, dans un dossier à part supprimé à l'arrêt.",
+  "de": "Auf dem Cloud-Computer von AMV, in einem eigenen Ordner, der beim Beenden gelöscht wird.",
+  "ja": "AMV のクラウドコンピューター上の専用フォルダーで動き、停止すると削除されます。",
+  "ru": "На облачном компьютере AMV, в отдельной папке, которая удаляется при остановке.",
+  "ko": "AMV 클라우드 컴퓨터의 전용 폴더에서 실행되며, 멈추면 폴더가 삭제됩니다.",
+  "it": "Sul computer cloud di AMV, in una cartella tutta sua che viene eliminata quando si ferma.",
+  "tr": "AMV'nin bulut bilgisayarında, durduğunda silinen kendine ait bir klasörde.",
+  "vi": "Trên máy tính đám mây của AMV, trong một thư mục riêng sẽ bị xóa khi dừng.",
+  "id": "Di komputer cloud AMV, dalam folder tersendiri yang dihapus saat berhenti.",
+  "bn": "AMV-এর ক্লাউড কম্পিউটারে, নিজস্ব একটি ফোল্ডারে, যা থামলে মুছে ফেলা হয়।",
+  "ur": "AMV کے کلاؤڈ کمپیوٹر پر، اپنے الگ فولڈر میں جو رکنے پر حذف ہو جاتا ہے۔",
+  "ta": "AMV-இன் கிளவுட் கணினியில், நிறுத்தும்போது நீக்கப்படும் தனி கோப்புறையில்."
+ },
+ "AMV didn’t write this one. It runs on AMV’s cloud computer with the access shown above.": {
+  "es": "AMV no escribió este. Se ejecuta en el ordenador en la nube de AMV con el acceso indicado arriba.",
+  "zh": "这不是 AMV 编写的。它会在 AMV 的云端电脑上以上方显示的权限运行。",
+  "hi": "इसे AMV ने नहीं लिखा है। यह ऊपर दिखाई गई पहुँच के साथ AMV के क्लाउड कंप्यूटर पर चलता है।",
+  "ar": "لم يكتب AMV هذا. يعمل على كمبيوتر AMV السحابي بالصلاحيات الموضحة أعلاه.",
+  "pt": "Este não foi escrito pelo AMV. Ele roda no computador na nuvem do AMV com o acesso mostrado acima.",
+  "fr": "AMV n'a pas écrit celui-ci. Il s'exécute sur l'ordinateur cloud d'AMV avec les accès indiqués ci-dessus.",
+  "de": "Dieser stammt nicht von AMV. Er läuft auf dem Cloud-Computer von AMV mit dem oben gezeigten Zugriff.",
+  "ja": "これは AMV が作ったものではありません。上に示したアクセス権で AMV のクラウドコンピューター上で動きます。",
+  "ru": "Его написал не AMV. Он работает на облачном компьютере AMV с доступом, указанным выше.",
+  "ko": "이것은 AMV가 만든 것이 아닙니다. 위에 표시된 권한으로 AMV 클라우드 컴퓨터에서 실행됩니다.",
+  "it": "Questo non l'ha scritto AMV. Funziona sul computer cloud di AMV con l'accesso indicato sopra.",
+  "tr": "Bunu AMV yazmadı. Yukarıda gösterilen erişimle AMV'nin bulut bilgisayarında çalışır.",
+  "vi": "AMV không viết cái này. Nó chạy trên máy tính đám mây của AMV với quyền truy cập hiển thị ở trên.",
+  "id": "Ini bukan buatan AMV. Ia berjalan di komputer cloud AMV dengan akses yang ditampilkan di atas.",
+  "bn": "এটি AMV লেখেনি। এটি উপরে দেখানো অ্যাক্সেস নিয়ে AMV-এর ক্লাউড কম্পিউটারে চলে।",
+  "ur": "یہ AMV نے نہیں لکھا۔ یہ اوپر دکھائی گئی رسائی کے ساتھ AMV کے کلاؤڈ کمپیوٹر پر چلتا ہے۔",
+  "ta": "இதை AMV எழுதவில்லை. மேலே காட்டப்பட்ட அணுகலுடன் AMV-இன் கிளவுட் கணினியில் இது இயங்கும்."
  }
 }

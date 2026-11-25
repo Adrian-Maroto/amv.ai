@@ -9679,12 +9679,12 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(chatToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
-    try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
+    try{ if(bridgeRunsConnectors() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
     /* And the apps somebody has signed in to - Notion, Canva, Stripe. These need
        no computer, so they are offered whenever they are connected, and each
        call is asked for with its arguments shown before it runs. */
     try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
-    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeLocal(), remote: true })); }catch(e){}
+    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: bridgeRunsConnectors(), remote: true })); }catch(e){}
     /* Buying (shopping.js): offered while AMV's browser runs. */
     try{ if(MCP.live[MCP_BROWSER.id] && !window.amvShop) await _lazyLoad('shopping.js', () => !!window.amvShop);
          if(window.amvShop && window.amvShop.live()) tools = tools.concat(window.amvShop.tools); }
@@ -35129,7 +35129,7 @@ function cdirOpen(id){
   for(const k in _cdir){ const f = (_cdir[k].servers || []).find(x => x.id === id); if(f){ s = f; break; } }
   const r = $('ovr'); if(!s || !r) return;
   const cmd = (s.command + ' ' + (s.args || []).join(' ')).trim();
-  const bridged = bridgeLocal();
+  const bridged = bridgeRunsConnectors();
   const env = s.env || [];
   const fact = (k, v, cls) => '<div class="cwp-fact' + (cls ? ' ' + cls : '') + '"><dt>' + escH(k) + '</dt><dd>' + v + '</dd></div>';
   r.innerHTML =
@@ -35143,7 +35143,7 @@ function cdirOpen(id){
           fact('Published as', '<code class="cdir-code">'+escH(s.id)+(s.version?' · '+escH(s.version):'')+'</code>')+
           fact('AMV will run', '<code class="cdir-code">'+escH(cmd)+'</code>')+
           fact('Where', bridged
-            ? 'On the computer you have connected, through the bridge.'
+            ? (BRIDGE.cloud ? escH(T('On AMV\u2019s cloud computer, in a folder of its own that is deleted when it stops.')) : 'On the computer you have connected, through the bridge.')
             : '<span class="bill-unknown">Nowhere yet - a connector is a program, so it needs a computer connected above.</span>',
             bridged ? '' : 'warn')+
           (env.length
@@ -35163,7 +35163,7 @@ function cdirOpen(id){
 
            The real control was never this text. It is the per-call consent in
            chat, which cannot be skipped by not reading. */
-        '<p class="cdir-warn">' + escH(T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
+        '<p class="cdir-warn">' + escH(BRIDGE.cloud ? T('AMV didn\u2019t write this one. It runs on AMV\u2019s cloud computer with the access shown above.') : T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
       '</div>'+
       '<div class="cwp-act">'+
         '<button class="btn bs" id="cdir-cancel">Close</button>'+
@@ -45510,7 +45510,12 @@ try{ window.BRIDGE = BRIDGE; }catch(e){}
    nothing else to it - so everything that opens something the person sees, or
    holds their credentials, asks for this rather than "connected". */
 function bridgeLocal(){ return !!(BRIDGE.connected && !BRIDGE.cloud); }
-const BRIDGE_CLOUD_LOCAL_ONLY = 'Connectors, sign-ins and the screen run on your own computer, and AMV is using its cloud workspace right now. '
+/* CONNECTORS RUN ON EITHER MACHINE (owner, Nov 25): the person's own computer,
+   or AMV's cloud computer (paid plans - the server checks). The browser you
+   sign in with is the exception and keeps asking bridgeLocal(): it needs a
+   screen and the person in front of it. */
+function bridgeRunsConnectors(){ return !!BRIDGE.connected; }
+const BRIDGE_CLOUD_LOCAL_ONLY = 'Signing in to a website and the screen run on your own computer, and AMV is using its cloud workspace right now. '
   + 'Disconnect it under Integrations \u203a Your computer, then connect this one.';
 try{ window.bridgeLocal = bridgeLocal; }catch(e){}
 
@@ -45726,8 +45731,9 @@ function _bridgeAnswer(status, d){
    back from the bridge is the bridge's own answer, passed through, so its
    refusals are told the same way; what the SERVER refuses (the plan, the
    month's minutes, a machine that would not start) carries a `code`, and is
-   said in the server's words. Only commands and files go: connectors and the
-   screen are refused here, before a request, with what to do instead. */
+   said in the server's words. Commands, files and (since Nov 25) connectors go;
+   the sign-in browser and the screen are refused here, before a request, with
+   what to do instead. */
 /* Each route spelled out whole, so the checks that every path the app asks
    for is one the server has can read them - and so a route not listed here is
    simply not sent. */
@@ -45735,6 +45741,8 @@ const BRIDGE_CLOUD_PATHS = {
   'exec': '/v1/computer/exec', 'exec/cancel': '/v1/computer/exec/cancel', 'read': '/v1/computer/read',
   'write': '/v1/computer/write', 'list': '/v1/computer/list', 'delete': '/v1/computer/delete',
   'status': '/v1/computer/status', 'revoke': '/v1/computer/revoke',
+  'mcp/start': '/v1/computer/mcp/start', 'mcp/call': '/v1/computer/mcp/call', 'mcp/stop': '/v1/computer/mcp/stop',
+  'mcp/list': '/v1/computer/mcp/list', 'mcp/tools': '/v1/computer/mcp/tools',
 };
 function _bridgeCloudState(){
   return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud workspace', root: 'amv-cloud:/work',
@@ -46128,7 +46136,8 @@ function _bridgeCardHTML(){
         + 'for the whole request. Nothing on this device is reachable from it.</p>'
       + '<p class="brg-p brg-warn"><b>It is cleared when it sleeps.</b> After 5 minutes without use it stops, '
         + 'and its files go with it. Download or push anything you want to keep.</p>'
-      + '<p class="brg-p">Connectors, sign-ins and the screen need your own computer.</p>'
+      + '<p class="brg-p">Connectors you added run here too, each in a folder of its own that is deleted when it stops. '
+        + 'Signing in to a website and the screen need your own computer.</p>'
       + '<p class="brg-p brg-cloud-min" id="brg-cloud-min" aria-live="polite"></p>'
       + '<div class="brg-repo" id="brg-repo" aria-live="polite">' + _cloudRepoHTML() + '</div>'
       + '<div class="brg-acts">'
@@ -47605,6 +47614,7 @@ async function _mcpStart(id){
      the stored entry it starts from is checked by id here. The first start
      may download the program, so it gets longer than a warm one needs. */
   const desktop = cfg.id === MCP_BROWSER.id && cfg.desktop === true;
+  if(desktop && BRIDGE.cloud) throw Object.assign(new Error(BRIDGE_CLOUD_LOCAL_ONLY), { code: 'no_computer' });
   const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id), desktop },
                               desktop ? 180000 : 70000);
   /* `session` is the bridge pairing this came from. A token belongs to one run
@@ -47619,8 +47629,18 @@ async function _mcpStop(id){
   delete MCP.live[id];
 }
 async function mcpCall(id, method, params){
-  const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
-  return d.result;
+  try{
+    const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
+    return d.result;
+  }catch(e){
+    /* The cloud computer sleeps after a few idle minutes and its connectors
+       stop with it. The first call after that finds no such server: start it
+       again from the saved configuration and send the same call once. */
+    if(!(BRIDGE.cloud && e && e.code === 'no_such_server')) throw e;
+    await _mcpStart(id);
+    const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
+    return d.result;
+  }
 }
 try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCall; }catch(e){}
 
@@ -47639,7 +47659,7 @@ try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCal
    changing, which is what it was. Within a turn the list is fixed: a tool
    that appears mid-turn is offered from the next one. */
 async function mcpRefreshTools(){
-  if(!bridgeLocal()) return false;
+  if(!bridgeRunsConnectors()) return false;
   const mine = Object.keys(MCP.live).filter(id => {
     const l = MCP.live[id];
     return l && !l.error && l.session === BRIDGE.token;
@@ -47677,7 +47697,7 @@ try{ window.mcpRefreshTools=mcpRefreshTools; }catch(e){}
    stopped (freeing the name on the bridge, which still holds a dead process)
    and started again, and the result is whatever that start says. */
 async function mcpStartAll(){
-  if(!bridgeLocal()) return [];
+  if(!bridgeRunsConnectors()) return [];
   let running = null;
   try{
     const d = await _bridgeCall('mcp/list', {}, 15000);
@@ -47685,6 +47705,7 @@ async function mcpStartAll(){
   }catch(e){ running = null; }   /* cannot confirm anything, so reuse nothing */
   const out = [];
   for(const s of MCP.servers.slice(0, MCP_MAX_SERVERS)){
+    if(BRIDGE.cloud && s.id === MCP_BROWSER.id) continue;   // needs a screen: your own computer
     const had = MCP.live[s.id];
     if(had && !had.error && had.session === BRIDGE.token && running && running.has(s.id)){
       out.push({ id:s.id, ok:true, tools:(had.tools || []).length, reused:true });
@@ -48058,7 +48079,7 @@ try{ _mcpLoad(); }catch(e){}
    codebase has shipped several of those.
    ══════════════════════════════════════════════════════════════════════ */
 function _mcpCardHTML(){
-  const connected = bridgeLocal();
+  const connected = bridgeRunsConnectors();
   const rows = MCP.servers.map(sv => {
     const live = MCP.live[sv.id];
     const n = live && live.tools ? live.tools.length : 0;
@@ -48141,7 +48162,7 @@ function _mcpWireCard(root){
     add.disabled = true;
     try{
       const realId = _mcpAdd(id, command, args, _mcpParseEnv(envLine));
-      if(bridgeLocal()){
+      if(bridgeRunsConnectors()){
         say('Starting ' + realId + '…');
         try{
           const live = await _mcpStart(realId);

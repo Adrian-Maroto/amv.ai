@@ -518,7 +518,7 @@ function cdirOpen(id){
   for(const k in _cdir){ const f = (_cdir[k].servers || []).find(x => x.id === id); if(f){ s = f; break; } }
   const r = $('ovr'); if(!s || !r) return;
   const cmd = (s.command + ' ' + (s.args || []).join(' ')).trim();
-  const bridged = bridgeLocal();
+  const bridged = bridgeRunsConnectors();
   const env = s.env || [];
   const fact = (k, v, cls) => '<div class="cwp-fact' + (cls ? ' ' + cls : '') + '"><dt>' + escH(k) + '</dt><dd>' + v + '</dd></div>';
   r.innerHTML =
@@ -532,7 +532,7 @@ function cdirOpen(id){
           fact('Published as', '<code class="cdir-code">'+escH(s.id)+(s.version?' · '+escH(s.version):'')+'</code>')+
           fact('AMV will run', '<code class="cdir-code">'+escH(cmd)+'</code>')+
           fact('Where', bridged
-            ? 'On the computer you have connected, through the bridge.'
+            ? (BRIDGE.cloud ? escH(T('On AMV\u2019s cloud computer, in a folder of its own that is deleted when it stops.')) : 'On the computer you have connected, through the bridge.')
             : '<span class="bill-unknown">Nowhere yet - a connector is a program, so it needs a computer connected above.</span>',
             bridged ? '' : 'warn')+
           (env.length
@@ -552,7 +552,7 @@ function cdirOpen(id){
 
            The real control was never this text. It is the per-call consent in
            chat, which cannot be skipped by not reading. */
-        '<p class="cdir-warn">' + escH(T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
+        '<p class="cdir-warn">' + escH(BRIDGE.cloud ? T('AMV didn\u2019t write this one. It runs on AMV\u2019s cloud computer with the access shown above.') : T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
       '</div>'+
       '<div class="cwp-act">'+
         '<button class="btn bs" id="cdir-cancel">Close</button>'+

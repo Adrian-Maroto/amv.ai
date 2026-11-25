@@ -12,8 +12,10 @@
      to a port on this computer - and come back as the bridge said;
    - the server's own refusals (the month's minutes) are said in its words and
      do not disconnect; the bridge's refusals still come through as refusals;
-   - connectors, sign-ins and the screen are refused BEFORE any request, with
-     what to do instead, and none of their tools are offered;
+   - connectors go to AMV's server too (paid plans, Nov 25), and one the
+     sleeping machine dropped is started again and its call sent once more;
+   - signing in to a website and the screen are refused BEFORE any request,
+     with what to do instead, and none of their tools are offered;
    - the card says plainly that the machine is cleared when it sleeps;
    - it survives a reload of the tab, and Disconnect stops what runs there and
      forgets it. */
@@ -126,7 +128,7 @@ section('Using it: asked first, then connected - and the card says what it is');
   const c = await mountCard();
   ok(/cloud workspace is connected/.test(c.text) && /cleared when it sleeps/.test(c.text) && /After 5 minutes/.test(c.text) && /including the 5 minutes/.test(c.text),
      'the card says it is cleared when it sleeps', c.text.slice(0, 500));
-  ok(/Connectors, sign-ins and the screen need your own computer/.test(c.text), 'and what needs your own computer');
+  ok(/Connectors you added run here too/.test(c.text) && /Signing in to a website and the screen need your own computer/.test(c.text), 'and what runs there, and what needs your own computer');
   ok(/12 of 300 minutes/.test(c.text), 'and the minutes used', c.text);
 }
 
@@ -170,20 +172,60 @@ section('The server’s refusals in its words, and they do not disconnect');
   ok(/refused that command: it looks like a recursive delete/.test(b || '') && /refuses it for everybody/.test(b || ''), 'the bridge’s own refusal comes through as one', b);
 }
 
-section('Connectors, sign-ins and the screen: refused before any request');
+section('Connectors run there - and one the sleeping machine dropped is started again');
+{
+  const TOOLS = [{ name: 'shout', description: 'Return the text in capitals.', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }];
+  await setAnswer('/v1/computer/mcp/list', 200, { servers: [] });
+  await setAnswer('/v1/computer/mcp/start', 200, { id: 'echo', info: { name: 'echo' }, rev: 1, capabilities: {}, tools: TOOLS });
+  /* The first call finds the connector gone - the machine slept - and the
+     second, after a start, reaches it. */
+  await page.evaluate(() => {
+    let n = 0;
+    window.__answers['/v1/computer/mcp/call'] = null;
+    const base = AMV_API._fetch;
+    AMV_API._fetch = async (path, opts) => {
+      if (path !== '/v1/computer/mcp/call') return base(path, opts);
+      window.__calls.push({ path, method: 'POST', body: JSON.parse(opts.body) });
+      n++;
+      const a = n === 1 ? { status: 404, body: { error: 'no_such_server' } } : { status: 200, body: { result: { content: [{ type: 'text', text: 'HI' }] } } };
+      return { ok: a.status === 200, status: a.status, json: async () => a.body };
+    };
+  });
+  const r = await page.evaluate(async () => {
+    const saved = MCP.servers.slice();
+    MCP.servers = [{ id: 'echo', command: 'node', args: ['echo.mjs'] }, { id: MCP_BROWSER.id, command: 'npx', args: ['@playwright/mcp'], desktop: true }];
+    const n = window.__calls.length;
+    const started = await mcpStartAll();
+    const res = await mcpCall('echo', 'tools/call', { name: 'shout', arguments: { text: 'hi' } });
+    const sent = window.__calls.slice(n).map(c => c.path + (c.body && c.body.id ? ':' + c.body.id : ''));
+    MCP.servers = saved;
+    return { started, res, sent, runs: bridgeRunsConnectors(), local: bridgeLocal() };
+  });
+  ok(r.runs === true && r.local === false, 'connectors run on the cloud computer, which is still not "your own"', r);
+  ok(r.started.length === 1 && r.started[0].id === 'echo' && r.started[0].ok, 'the connector started there; the sign-in browser was not asked for', r.started);
+  ok(!r.sent.some(s => /amv-browser|playwright/.test(s)), 'nothing about the sign-in browser reached the server', r.sent);
+  ok(r.res && r.res.content && r.res.content[0].text === 'HI', 'a call after the machine slept came back', r.res);
+  ok(JSON.stringify(r.sent) === JSON.stringify(['/v1/computer/mcp/list', '/v1/computer/mcp/start:echo', '/v1/computer/mcp/call:echo', '/v1/computer/mcp/start:echo', '/v1/computer/mcp/call:echo']),
+     'list, start, a call that found it gone, one start again, the same call once more', r.sent);
+  ok(local.length === 0, 'and none of it went to a port on this computer', local);
+}
+
+section('Signing in to a website and the screen: refused before any request');
 {
   const r = await page.evaluate(async () => {
     const n = window.__calls.length;
-    let mcp = null, browser = null;
-    try { await _bridgeCall('mcp/start', { id: 'x' }, 5000); } catch (e) { mcp = { m: e.message, code: e.code }; }
+    let browser = null, desk = null;
     try { await browserEnsure(); } catch (e) { browser = { m: e.message, code: e.code }; }
+    const saved = MCP.servers.slice();
+    MCP.servers = [{ id: MCP_BROWSER.id, command: 'npx', args: ['@playwright/mcp'], desktop: true }];
+    try { await _mcpStart(MCP_BROWSER.id); } catch (e) { desk = { m: e.message, code: e.code }; }
+    MCP.servers = saved;
     const shot = await (async () => { try { await _bridgeCall('screen/shot', {}, 5000); return null; } catch (e) { return e.code; } })();
-    return { mcp, browser, shot, started: await mcpStartAll(), screen: computerToolsOffered().length, sent: window.__calls.length - n };
+    return { browser, desk, shot, screen: computerToolsOffered().length, sent: window.__calls.length - n };
   });
-  ok(r.mcp && r.mcp.code === 'cloud_local_only' && /Disconnect it/.test(r.mcp.m), 'a connector: refused, with what to do', r.mcp);
-  ok(r.browser && /your own computer/.test(r.browser.m), 'AMV’s browser for sign-ins: the same', r.browser);
+  ok(r.browser && /your own computer/.test(r.browser.m), 'AMV’s browser for sign-ins: refused, with what to do', r.browser);
+  ok(r.desk && r.desk.code === 'no_computer' && /Disconnect it/.test(r.desk.m), 'starting it directly: the same', r.desk);
   ok(r.shot === 'cloud_local_only' && r.screen === 0, 'the screen is neither reachable nor offered', r);
-  ok(Array.isArray(r.started) && r.started.length === 0, 'connectors are not started on it', r.started);
   ok(r.sent === 0, 'and none of it reached the server', r.sent);
 }
 

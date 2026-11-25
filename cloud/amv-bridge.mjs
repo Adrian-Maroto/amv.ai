@@ -1731,12 +1731,20 @@ const server = createServer(async (req, res) => {
          other windows. So they are handed over only when the page asks for
          them by name for this connector, and this terminal says so. */
       const desktop = body.desktop === true;
+      /* The cloud computer has no screen, and nobody to type a password into
+         a window on it - the browser you sign in with stays on your own. */
+      if (desktop && CLOUD) return json(res, 403, { error: 'no_screen', message: 'AMV\u2019s cloud computer has no screen. The browser you sign in with runs on your own computer.' });
       if (desktop) {
         for (const k of DESKTOP_ENV) if (process.env[k] != null && !(k in envExtra)) envExtra[k] = process.env[k];
       }
 
-      const srv = mcpStart(id, command, args, envExtra,
-                           desktop ? realpathSync(mkdtempSync(join(tmpdir(), 'amv-browser-'))) : '');
+      /* ON THE CLOUD COMPUTER A CONNECTOR RUNS IN A FOLDER OF ITS OWN (Nov 25).
+         The workspace folder is saved to AMV's storage between sessions, and a
+         connector may write its credentials or a token cache wherever it runs.
+         So in cloud mode it runs in a throwaway folder outside the workspace,
+         deleted when it stops - nothing it writes is ever in a saved copy. */
+      const ownDir = (desktop || CLOUD) ? realpathSync(mkdtempSync(join(tmpdir(), desktop ? 'amv-browser-' : 'amv-mcp-'))) : '';
+      const srv = mcpStart(id, command, args, envExtra, ownDir);
       mcpServers.set(id, srv);
       console.log('  · started MCP server "' + id + '": ' + command + ' ' + args.join(' '));
       if (desktop) console.log('    it may open a window on your screen - the browser you sign in with');

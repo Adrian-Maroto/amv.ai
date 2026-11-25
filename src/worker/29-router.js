@@ -1000,6 +1000,14 @@ async function _route(request, env, ctx) {
     case '/v1/computer/exec': case '/v1/computer/exec/cancel': case '/v1/computer/read':
     case '/v1/computer/write': case '/v1/computer/list': case '/v1/computer/delete':
     case '/v1/computer/revoke': case '/v1/computer/status':
+    /* CONNECTORS ON THE CLOUD COMPUTER (owner, Nov 25: paid plans only - the
+       cloud computer is Pro and above, checked in _computerOpen). The same
+       machine, the same signed call, the same awake-time meter; what runs is
+       a connector the person added, its credentials in the request body for
+       that start only. The browser that needs a screen is not one of these:
+       the bridge refuses `desktop` in cloud mode. */
+    case '/v1/computer/mcp/start': case '/v1/computer/mcp/call': case '/v1/computer/mcp/stop':
+    case '/v1/computer/mcp/list': case '/v1/computer/mcp/tools':
       return computerRoute(request, env, path.slice('/v1/computer/'.length));
     case '/v1/sessions/end': return sessionsEnd(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
