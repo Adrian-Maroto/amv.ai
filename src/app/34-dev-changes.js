@@ -182,6 +182,12 @@ function _devChangeCardHTML(entry){
                       : '<polyline points="9 14 4 9 9 4"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>')
             + '</svg></button>'
          : '')
+    /* RESTORE THIS VERSION: the whole project as it stood after this turn,
+       on every applied turn but the newest. It is recorded as a turn of its
+       own, so the restore has its own Undo. */
+    + (t && !staged && !undone && !discarded && !t.machine && entry.chgId !== 'chg' + _DEVCHG.seq
+        ? '<button class="dvc-undo dvc-restore" type="button" data-dvc-restore="' + escH(entry.chgId) + '">' + escH(T('Restore this version')) + '</button>'
+        : '')
     + '</div>';
   /* A ROW HAS TO DO SOMETHING, AND WHAT THAT IS DEPENDS ON THE STATE.
 
@@ -239,6 +245,7 @@ async function _devToggleTurn(id){
 }
 try{ window._devToggleTurn=_devToggleTurn; }catch(e){}
 
+
 /* Wiring, called by the log renderer after it writes the markup. Kept here
    beside the markup it belongs to rather than in the renderer, so a change
    to one is a change to one file. */
@@ -246,6 +253,8 @@ function _devWireChangeCards(root){
   if(!root) return;
   root.querySelectorAll('[data-dvc-undo]').forEach(b =>
     on(b, 'click', () => _devToggleTurn(b.dataset.dvcUndo)));
+  root.querySelectorAll('[data-dvc-restore]').forEach(b =>
+    on(b, 'click', () => window._devRestoreVersion && window._devRestoreVersion(b.dataset.dvcRestore)));
   root.querySelectorAll('[data-dvc-apply]').forEach(b =>
     on(b, 'click', () => _devApplyStaged(b.dataset.dvcApply)));
   root.querySelectorAll('[data-dvc-discard]').forEach(b =>

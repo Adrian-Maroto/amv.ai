@@ -78,7 +78,8 @@ function renderCodeView(){
                  Nov 24: "preview, bugs, suggestions on the right"). */
               {id:'dev-tab-prob',key:'problems',label:'Problems'},
               {id:'dev-tab-next',key:'next',label:'Next steps'}],
-        actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-refresh" title="Refresh the preview" aria-label="Refresh the preview"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><polyline points="21 3 21 8 16 8"/></svg></button>
+          <button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           <button class="dev-openext" id="dev-github" title="Push this project to GitHub"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
           <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` })}
@@ -170,6 +171,14 @@ function renderCodeView(){
   try{ _devPaintPreview(); }catch(e){}
   try{ if(_devProjectFiles().length){ _devRenderTree(); _devShowActive(); } }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
+  /* REFRESH starts the app again from its files: a fresh page, a fresh
+     Problems list, the size that was chosen kept. A run's printed output is
+     not a page, so it is said rather than silently left as it was. */
+  on($('dev-refresh'),'click',()=>{
+    if(document.querySelector('#dev-prev-body .dev-prev-out')){ toast(T('This result is printed output, not a page. Run it again to refresh it.'), 'info', 4000); return; }
+    if(!_devPaintPreview()){ toast(T('There is no page to refresh yet.'), 'info', 3000); return; }
+    try{ document.querySelector('#dev-vp .studio-vp-b.on')?.click(); }catch(e){}
+  });
   _wireBuildRecents(vc);
   _wireSplit('dev-split', 'dev-shell');
   /* Back to the page that lists the builds. The work is already saved and stays
@@ -383,6 +392,20 @@ function _devAfterTurn(){
   _DEV.turnEndedAt = Date.now(); _DEV.turnNote = null;
   _devNoteProblems();
 }
+/* RESTORE THIS VERSION (the button is on the change card, 34-dev-changes.js;
+   the card exists only inside this workspace, so the work lives here). */
+function _devRestoreVersion(id){
+  const t = _DEVCHG.turns[id]; if(!t || t.machine || t.staged) return;
+  const before = _devSnapshot();
+  const rows = _devChangeSet(before, t.after);
+  if(!rows.length){ try{ toast(T('The project is already at this version.'), 'info', 3000); }catch(e){} return; }
+  _devRestore(t.after);
+  _DEV.log.push({ role:'ai', text:T('Restored the project to how it was after that change.'), changes:rows, chgId:_devRecordTurn(before, _devSnapshot()) });
+  try{ _devRenderLog(); }catch(e){}
+  try{ _devRenderTree(); }catch(e){}
+  try{ _devShowActive(); }catch(e){}
+  try{ _devPaintPreview(); }catch(e){}
+}
 function _devRenderProblems(){
   const host = $('dev-prob-body'); if(!host) return;
   const list = _DEV.problems || [];
@@ -453,7 +476,7 @@ async function _devAskNext(){
     try{ console.error('AMV: next steps failed', e); }catch(_){}
   }finally{ _devNextBusy = false; _devRenderNext(); }
 }
-try{ Object.assign(window, { _devProblemsReset, _devRenderProblems, _devRenderNext, _devAfterTurn }); }catch(e){}
+try{ Object.assign(window, { _devProblemsReset, _devRenderProblems, _devRenderNext, _devAfterTurn, _devRestoreVersion }); }catch(e){}
 
 function _devOpenExternal(){
   let html='';

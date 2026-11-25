@@ -18239,3 +18239,11 @@ body.light #anav{ background:var(--bg); }
   .cc-banner{ bottom:calc(68px + env(safe-area-inset-bottom,0px)); }
 }
 @media(prefers-reduced-motion:reduce){ .bn-item{ transition:none; } }
+
+/* ═══ LAYER A413 - Restore this version beside Undo ═══
+   Undo keeps the far end; Restore sits just before it, so the two read as one
+   group of ways back and never wrap under the count on a narrow pane. */
+.dvc-head{ flex-wrap:wrap; }
+.dvc-undo + .dvc-restore{ margin-left:0; order:-1; }
+.dvc-head > .dvc-restore{ margin-left:auto; }
+.dvc-head > .dvc-restore + .dvc-undo, .dvc-head > .dvc-undo:has(+ .dvc-restore){ margin-left:0; }

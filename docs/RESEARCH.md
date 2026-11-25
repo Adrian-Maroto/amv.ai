@@ -61,7 +61,7 @@ another AI company.
 | A chat's menu in the list (`showConvMenu`) | Open, Rename, Star, Add to project, Export, Share, Study mode, Archive, Delete | Destructive last, behind a divider | A leading assistant's help center, "share and unshare chats" and "share a chat with specific people"; read Nov 25 2026 | By hand |
 | Theme (Appearance, `_themeApply`) | Light, Dark, System | Light, Dark, System | The leading assistant's appearance help page and the field-wide Light/Dark/System baseline in the Nov 25 research report | By hand |
 | The phone's bottom bar (`_BN`, 03-sessions.js) | Chat, Build, Crew, Tasks; everything else and the chats in the side menu | Most used first | The two most used assistants each moved their phone apps to a bottom bar of four in the week of Nov 19 2026, keeping the side menu for history (their announcements and press coverage, named in the local report); which four AMV shows is the owner's choice (Nov 25) | By hand |
-| The Build workspace's preview controls | **Gap until built:** a device-size toggle (desktop, tablet, phone), Refresh, and version history with Restore | - | Two leading app builders' docs: "preview and test your app", "revert and restore with version history", "versions"; read Nov 25 2026 | By hand |
+| The Build workspace's preview controls (code-view.js, 34-dev-changes.js) | Desktop / tablet / phone size, Refresh, and on every turn's change card Undo and (all but the newest) Restore this version | Size first, then Refresh, then the ways out (download, GitHub, deploy, open) | Two leading app builders' docs: "preview and test your app", "revert and restore with version history", "versions"; read Nov 25 2026 | By hand |
 
 ## Gaps - not backed yet
 
