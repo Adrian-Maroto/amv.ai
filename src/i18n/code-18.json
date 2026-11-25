@@ -4083,5 +4083,43 @@
   "bn": "AMV এই মুহূর্তে কিছু সাজেস্ট করতে পারেনি। একটু পরে আবার চেষ্টা করুন।",
   "ur": "AMV ابھی کچھ تجویز نہیں کر سکا۔ تھوڑی دیر بعد دوبارہ کوشش کریں۔",
   "ta": "AMV இப்போது எதையும் பரிந்துரைக்க முடியவில்லை. சிறிது நேரத்தில் மீண்டும் முயலவும்."
+ },
+ "After this change the running app reported a problem: {0}. It is on the Problems tab, with Fix this.": {
+  "es": "Tras este cambio, la app en ejecución informó de un problema: {0}. Está en la pestaña Problemas, con Corregir esto.",
+  "zh": "此更改后，正在运行的应用报告了一个问题：{0}。它在“问题”选项卡中，并附有“修复此问题”。",
+  "hi": "इस बदलाव के बाद चल रहे ऐप ने एक समस्या बताई: {0}। यह समस्याएँ टैब में है, इसे ठीक करें के साथ।",
+  "ar": "بعد هذا التغيير أبلغ التطبيق قيد التشغيل عن مشكلة: {0}. ستجدها في علامة تبويب المشكلات، مع أصلح هذا.",
+  "pt": "Depois desta alteração, o app em execução relatou um problema: {0}. Está na aba Problemas, com Corrigir isto.",
+  "fr": "Après cette modification, l'application en cours a signalé un problème : {0}. Il se trouve dans l'onglet Problèmes, avec Corriger.",
+  "de": "Nach dieser Änderung hat die laufende App ein Problem gemeldet: {0}. Es steht im Tab Probleme, mit Beheben.",
+  "ja": "この変更の後、実行中のアプリが問題を報告しました: {0}。「問題」タブにあり、「これを修正」で直せます。",
+  "ru": "После этого изменения запущенное приложение сообщило о проблеме: {0}. Она на вкладке «Проблемы», с кнопкой «Исправить».",
+  "ko": "이 변경 후 실행 중인 앱이 문제를 보고했습니다: {0}. 문제 탭에 있으며 '이 문제 해결'로 고칠 수 있습니다.",
+  "it": "Dopo questa modifica l'app in esecuzione ha segnalato un problema: {0}. È nella scheda Problemi, con Correggi.",
+  "tr": "Bu değişiklikten sonra çalışan uygulama bir sorun bildirdi: {0}. Sorunlar sekmesinde, Bunu düzelt ile birlikte.",
+  "vi": "Sau thay đổi này, ứng dụng đang chạy đã báo một sự cố: {0}. Nó nằm ở thẻ Sự cố, kèm Sửa lỗi này.",
+  "id": "Setelah perubahan ini, aplikasi yang berjalan melaporkan satu masalah: {0}. Ada di tab Masalah, dengan Perbaiki ini.",
+  "bn": "এই পরিবর্তনের পর চলমান অ্যাপটি একটি সমস্যা জানিয়েছে: {0}। এটি সমস্যা ট্যাবে আছে, এটি ঠিক করুন সহ।",
+  "ur": "اس تبدیلی کے بعد چلتی ایپ نے ایک مسئلہ بتایا: {0}۔ یہ مسائل ٹیب میں ہے، اسے ٹھیک کریں کے ساتھ۔",
+  "ta": "இந்த மாற்றத்திற்குப் பிறகு இயங்கும் ஆப் ஒரு சிக்கலைத் தெரிவித்தது: {0}. அது சிக்கல்கள் தாவலில் உள்ளது, இதைச் சரிசெய் உடன்."
+ },
+ "After this change the running app reported {0} problems. They are on the Problems tab, each with Fix this.": {
+  "es": "Tras este cambio, la app en ejecución informó de {0} problemas. Están en la pestaña Problemas, cada uno con Corregir esto.",
+  "zh": "此更改后，正在运行的应用报告了 {0} 个问题。它们在“问题”选项卡中，每个都附有“修复此问题”。",
+  "hi": "इस बदलाव के बाद चल रहे ऐप ने {0} समस्याएँ बताईं। वे समस्याएँ टैब में हैं, हर एक के साथ इसे ठीक करें।",
+  "ar": "بعد هذا التغيير أبلغ التطبيق قيد التشغيل عن {0} مشكلات. ستجدها في علامة تبويب المشكلات، ولكل منها أصلح هذا.",
+  "pt": "Depois desta alteração, o app em execução relatou {0} problemas. Estão na aba Problemas, cada um com Corrigir isto.",
+  "fr": "Après cette modification, l'application en cours a signalé {0} problèmes. Ils se trouvent dans l'onglet Problèmes, chacun avec Corriger.",
+  "de": "Nach dieser Änderung hat die laufende App {0} Probleme gemeldet. Sie stehen im Tab Probleme, jeweils mit Beheben.",
+  "ja": "この変更の後、実行中のアプリが {0} 件の問題を報告しました。「問題」タブにあり、それぞれ「これを修正」で直せます。",
+  "ru": "После этого изменения запущенное приложение сообщило о проблемах: {0}. Они на вкладке «Проблемы», у каждой есть «Исправить».",
+  "ko": "이 변경 후 실행 중인 앱이 {0}개의 문제를 보고했습니다. 문제 탭에 있으며 각각 '이 문제 해결'로 고칠 수 있습니다.",
+  "it": "Dopo questa modifica l'app in esecuzione ha segnalato {0} problemi. Sono nella scheda Problemi, ognuno con Correggi.",
+  "tr": "Bu değişiklikten sonra çalışan uygulama {0} sorun bildirdi. Sorunlar sekmesindeler, her biri Bunu düzelt ile birlikte.",
+  "vi": "Sau thay đổi này, ứng dụng đang chạy đã báo {0} sự cố. Chúng nằm ở thẻ Sự cố, mỗi mục kèm Sửa lỗi này.",
+  "id": "Setelah perubahan ini, aplikasi yang berjalan melaporkan {0} masalah. Semuanya ada di tab Masalah, masing-masing dengan Perbaiki ini.",
+  "bn": "এই পরিবর্তনের পর চলমান অ্যাপটি {0}টি সমস্যা জানিয়েছে। সেগুলো সমস্যা ট্যাবে আছে, প্রতিটির সাথে এটি ঠিক করুন।",
+  "ur": "اس تبدیلی کے بعد چلتی ایپ نے {0} مسائل بتائے۔ یہ مسائل ٹیب میں ہیں، ہر ایک کے ساتھ اسے ٹھیک کریں۔",
+  "ta": "இந்த மாற்றத்திற்குப் பிறகு இயங்கும் ஆப் {0} சிக்கல்களைத் தெரிவித்தது. அவை சிக்கல்கள் தாவலில் உள்ளன, ஒவ்வொன்றுக்கும் இதைச் சரிசெய்."
  }
 }

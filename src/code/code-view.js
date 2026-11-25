@@ -349,10 +349,39 @@ if(!window.__devProbListen){
     const m = String(d.m || '').slice(0, 600).trim(); if(!m) return;
     const list = _DEV.problems || (_DEV.problems = []);
     const had = list.find(p => p.m === m);
-    if(had) had.n++; else if(list.length < 50) list.push({ m, n: 1, at: Date.now() });
+    if(had){ had.n++; had.last = Date.now(); } else if(list.length < 50) list.push({ m, n: 1, at: Date.now() });
     _devProblemsBadge();
     if(!$('dev-prob-body')?.hidden) _devRenderProblems();
+    if(!_DEV.busy && _DEV.turnEndedAt && Date.now() - _DEV.turnEndedAt < DEV_AFTER_TURN_MS) _devNoteProblems();
   });
+}
+/* "DONE" MEANS THE APP RUNS CLEAN. When a turn ends, the running preview is
+   asked: anything it has reported - or reports in the next fifteen seconds,
+   while the new page starts - is said once in the conversation, so a change
+   that broke the app is never left reading as finished. Said, not acted on:
+   fixing it is another turn, which is the person's to start (Fix this). */
+const DEV_AFTER_TURN_MS = 15000;
+function _devNoteProblems(){
+  /* Only what the app reported since this turn began - an old error the
+     turn never touched is not news about this change. */
+  const since = _DEV.turnStartedAt || 0;
+  const fresh = (_DEV.problems || []).filter(p => (p.last || p.at) >= since);
+  const n = fresh.length;
+  if(!n) return;
+  const text = (n === 1
+    ? T('After this change the running app reported a problem: {0}. It is on the Problems tab, with Fix this.')
+    : T('After this change the running app reported {0} problems. They are on the Problems tab, each with Fix this.'))
+      .replace('{0}', n === 1 ? String(fresh[0].m).slice(0, 160) : String(n));
+  /* One note per turn, kept up to date as the page goes on reporting - a
+     page that throws three times is three problems, not a first one. */
+  const note = _DEV.turnNote && _DEV.log.includes(_DEV.turnNote) ? _DEV.turnNote : null;
+  if(note){ if(note.text === text) return; note.text = text; }
+  else { _DEV.turnNote = { role: 'sys', text }; _DEV.log.push(_DEV.turnNote); }
+  try{ _devRenderLog(); }catch(e){ console.error('AMV: the conversation could not be redrawn', e); }
+}
+function _devAfterTurn(){
+  _DEV.turnEndedAt = Date.now(); _DEV.turnNote = null;
+  _devNoteProblems();
 }
 function _devRenderProblems(){
   const host = $('dev-prob-body'); if(!host) return;
@@ -424,7 +453,7 @@ async function _devAskNext(){
     try{ console.error('AMV: next steps failed', e); }catch(_){}
   }finally{ _devNextBusy = false; _devRenderNext(); }
 }
-try{ Object.assign(window, { _devProblemsReset, _devRenderProblems, _devRenderNext }); }catch(e){}
+try{ Object.assign(window, { _devProblemsReset, _devRenderProblems, _devRenderNext, _devAfterTurn }); }catch(e){}
 
 function _devOpenExternal(){
   let html='';

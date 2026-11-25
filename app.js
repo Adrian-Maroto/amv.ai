@@ -45317,6 +45317,9 @@ function _devBusy(on, label){
   if(t) t.textContent = on ? (label || 'Building') : '';
   const send = document.getElementById('dev-send');
   if(send) send.disabled = !!on;
+  /* A turn that ends is checked against the running app (code-view.js). */
+  if(on) _DEV.turnStartedAt = Date.now();
+  if(!on){ try{ if(window._devAfterTurn) window._devAfterTurn(); }catch(e){ console.error('AMV: the after-turn check failed', e); } }
 }
 try{ window._devBusy=_devBusy; }catch(e){}
 

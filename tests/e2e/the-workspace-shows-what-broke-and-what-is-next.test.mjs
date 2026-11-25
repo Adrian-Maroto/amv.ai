@@ -11,7 +11,10 @@
      · Fix this sends the error to AMV as the next message;
      · a new page starts with no problems;
      · Next steps shows nothing until asked, then three suggestions that each
-       go into the box, and says what asking costs. */
+       go into the box, and says what asking costs;
+     · a change that ends with the app broken says so in the conversation -
+       once, with the full count - and a clean one, or an old error the
+       change never touched, says nothing. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -81,6 +84,26 @@ await page.evaluate(() => { aiComplete = async () => { throw new Error('offline'
 await page.click('#dev-next-ask');
 await page.waitForTimeout(400);
 ok(/could not suggest/.test(await page.evaluate(() => document.getElementById('dev-next-body').textContent)), 'a failure is said, not shown as no suggestions');
+
+section('A change that leaves the app broken says so in the conversation');
+const notes = () => page.evaluate(() => ({ log: _DEV.log.filter(m => m.role === 'sys' && /After this change/.test(m.text)).map(m => m.text),
+  shown: [...document.querySelectorAll('.dev-msg-sys')].map(e => e.textContent).filter(t => /After this change/.test(t)) }));
+const turn = (html) => page.evaluate((h) => { _devBusy(true); _devSetFile('index.html', h, 'html');
+  _previewMount(document.getElementById('dev-prev-body'), h, 'dev-prev-frame'); _devBusy(false); }, html);
+await page.evaluate(() => { setTab('dev'); renderCodeView(); });
+await page.waitForTimeout(300);
+await turn('<!doctype html><p>fine</p>');
+await page.waitForTimeout(900);
+ok((await notes()).log.length === 0, 'a change that runs clean adds nothing', await notes());
+await turn(BROKEN);
+await page.waitForFunction(() => _DEV.log.some(m => m.role === 'sys' && /reported 3 problems/.test(m.text)), null, { timeout: 8000 }).catch(() => {});
+const t1 = await notes();
+ok(t1.log.length === 1 && /reported 3 problems/.test(t1.log[0]), 'one note, with every problem the page reported', t1.log);
+ok(t1.shown.length === 1 && /Problems tab/.test(t1.shown[0]), 'shown in the conversation, pointing at the tab', t1.shown);
+/* A turn that changes nothing new while an old error stays quiet is not news. */
+await page.evaluate(() => { _devBusy(true); _devBusy(false); });
+await page.waitForTimeout(900);
+ok((await notes()).log.length === 1, 'a later turn does not repeat an old error', (await notes()).log);
 
 section('No JavaScript errors from AMV');
 /* The app under test throws on purpose, inside its sandboxed frame; those are
