@@ -99,10 +99,13 @@ async function publicConfig(request, env) {
      exists, not what it is called at Stripe. */
   try{
     const yearly = [];
-    for (const p of ['pro', 'elite', 'ultra', 'team']) {
+    for (const p of ['pro', 'family', 'elite', 'ultra', 'team']) {
       if (_stripePriceId(env, p, 'year')) yearly.push(p);
     }
     if (yearly.length) out.yearlyPlans = yearly;
+    /* Whether the Family plan can be bought here at all - drawn as a plan
+       only where its price exists, said as "not open yet" elsewhere. */
+    if (_stripePriceId(env, 'family', 'month')) out.familyPlan = true;
   }catch(e){}
   for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
     const v = String((env && env[secret]) || '').trim();

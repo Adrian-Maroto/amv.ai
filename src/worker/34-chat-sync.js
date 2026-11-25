@@ -279,6 +279,25 @@ function _baseLimits(user) {
       allModels: true,                    // Apex included - it is what the seat price buys
     };
   }
+  /* THE FAMILY PLAN (owner, Nov 25): up to six people, Pro's capability each,
+     and ONE allowance shared by the family - twice Pro's. Six full Pro
+     allowances on a thirty-dollar plan could cost about sixty-six dollars a
+     month in compute at full use; a shared 2x pool tops out near twenty-two.
+     Pooled the way a team is: the month, the message ceiling and the
+     top-engine week are the family's (one counter, keyed by the family), the
+     burst controls are each person's. The parent's per-member monthly cap
+     (FAMILY_DEFAULTS, _familyLimitsOf) still applies on top. */
+  if (user.plan === 'family') {
+    const per = PLAN_LIMITS.pro;
+    return Object.assign({}, per, {
+      dayTokens: per.dayTokens * 2,
+      monthTokens: per.monthTokens * 2,
+      monthMessages: per.monthMessages * 2,
+      topMessagesWeek: per.topMessagesWeek * 2,
+      messages5h: per.messages5h,
+      rpm: per.rpm,
+    });
+  }
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
     const price = c.price || 30;

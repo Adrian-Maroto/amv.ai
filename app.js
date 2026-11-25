@@ -515,6 +515,8 @@ let _publicConfigFail = '';
    read, and empty forever on a deployment that sells monthly only - which is
    the state every deployment starts in. */
 let _YEARLY_PLANS = [];
+/* Whether this deployment sells the Family plan (its price is set). */
+let _FAMILY_OPEN = false;
 /* Server speech, as /v1/public-config describes it. Both false until it says
    otherwise, so nothing is offered that the server has not confirmed. */
 let _SPEECH = { listen: false, speak: false };
@@ -593,6 +595,7 @@ async function _loadPublicConfigOnce(){
        toggle that should not have been there, and offering a cheaper-looking
        option that cannot be bought is the worst version of that. */
     try{ _YEARLY_PLANS = Array.isArray(d.yearlyPlans) ? d.yearlyPlans.slice(0,8).map(String) : []; }catch(e){}
+    _FAMILY_OPEN = d.familyPlan === true;
     /* Which halves of server speech this deployment has. In memory, like the
        yearly plans: a fact about the server, re-read on every load. */
     try{ _SPEECH = { listen: !!(d.speech && d.speech.listen), speak: !!(d.speech && d.speech.speak) }; }catch(e){}
@@ -12980,6 +12983,21 @@ function _planPitch(key){
     ],
     reassure: t('One price, cancel anytime'),
   },
+  family: {
+    anchor: t('Up to six people, Pro for everyone, one shared allowance'),
+    feats: [
+      /* The numbers are the server's: one pool of twice Pro's, the five-hour
+         window each person's. Each member signs in to their own account and
+         nobody, the payer included, can read anybody else's chats. */
+      [1,t('<b>You and up to five people</b> you invite, each with their own account')],
+      [1,t('<b>Everything in Pro</b> for every person, AMV Forge included')],
+      [1,t('<b>One shared allowance</b>, twice Pro\u2019s, that renews on your billing date')],
+      [1,t('<b>{n} every {h} hours</b> for each person',{n:_msg5hLabel('family'),h:H})],
+      [1,t('<b>A monthly limit for each person</b> that you set')],
+      [1,t('<b>Private chats</b> - nobody sees anybody else\u2019s conversations')],
+    ],
+    reassure: t('One price for the whole family, cancel anytime'),
+  },
   elite: {
     anchor: t('For founders, builders &amp; power users'),
     feats: [
@@ -18656,145 +18674,19 @@ function openUpgradeModal(lockedModel){
   r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else if(typeof openUpgrade==='function'){ openUpgrade(k); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
-function openPlanCompare(highlight){
-  const r=$('ovr'); if(!r) return;
-  const plans=['free','pro','elite','ultra','custom'];
-  const isC=p=>p==='custom';
-  const rows=[
-    ['Price', p=>isC(p)?'From $10':(p==='free'?'$0':'$'+PLANS[p].price+'/mo')],
-    /* MESSAGES BEFORE TOKENS, AND THE WINDOWS BEFORE THE TOTAL.
-
-       "2.3M tokens a month" was the only usage row, and it is the figure
-       somebody is least able to act on. The three rows below are the ones that
-       decide what a day feels like, and all three are read from the tables the
-       Worker enforces rather than typed in here. Tokens stay, last, because
-       they are still the secondary guard and somebody comparing carefully will
-       want them. */
-    ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
-    ['Top-engine messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
-    /* The month is the token allowance; the monthly MESSAGE ceiling is an
-       anti-abuse number that allowance runs out long before, so it is not a
-       row anybody should compare plans on. */
-    ['Monthly allowance (tokens)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
-    ['AMV Pulse (fast)', p=>'\u2713'],
-    ['AMV Core (balanced)', p=>'\u2713'],
-    ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],
-    ['AMV Apex (flagship)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
-    ['Autonomous agents & Crew', p=>p==='free'?'-':'\u2713'],
-    ['Full-stack builder (frontend + backend + auth)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':(p==='pro'?'Frontend':'-'))],
-    ['One-click deploy to a live URL', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
-    ['Download full multi-file projects', p=>p==='free'?'-':'\u2713'],
-    ['Deploy & host multiple live apps', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
-    ['Autonomous multi-step projects', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'\u2713':(PLAN_RANK[p]>=2?'Limited':'-'))],
-    ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
-    /* No "Image generation" row. It sat here claiming a tick on every tier -
-       on the detailed comparison somebody opens precisely when they are trying
-       to work out what the money buys - for a feature that was removed from
-       the product. A comparison table is a promise in a grid. */
-    /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
-       enforced at any tier. This is the throughput limit that is real, and it
-       is read from the table the Worker checks against. */
-    ['Requests a minute (how much runs at once)', p=>_rpmCell(p)],
-    /* The number, not a word the server has never honoured. AUTO_MAX_BY_PLAN
-       is the thing that decides, and it is what this row now reads. */
-    ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
-    ['Connect Gmail, Drive, Calendar, GitHub', p=>p==='free'?'-':'\u2713'],
-    /* "Early access to new features" and "Priority speed / Fastest hardware"
-       were rows here. Nothing in AMV releases a feature to one plan first,
-       and every plan runs on the same engines and the same hardware - the
-       difference is how much, which the rows above already say in numbers. */
-    ['Team workspaces (roles, shared projects)', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
-    ['Support', p=>isC(p)?'Priority':(PLAN_RANK[p]>=3?'Dedicated':(PLAN_RANK[p]>=2?'Priority 24/7':(p==='pro'?'Priority':'Community')))],
-    ['Hard cap (no overage)', p=>p==='free'?'-':'\u2713'],
-  ];
-  const colName=p=>isC(p)?'Custom':PLANS[p].name;
-  const head='<th></th>'+plans.map(p=>'<th class="'+(p===highlight?'pc-hl':'')+'">'+colName(p)+(p===highlight?'<span class="pc-tag">Recommended</span>':'')+'</th>').join('');
-  const body=rows.map(([label,fn])=>'<tr><td class="pc-row">'+label+'</td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+fn(p)+'</td>').join('')+'</tr>').join('');
-  const cta='<tr><td></td>'+plans.map(p=>'<td class="'+(p===highlight?'pc-hl':'')+'">'+(p==='free'?'':'<button class="btn '+(p===highlight?'bp':'')+' pc-go" data-pcgo="'+p+'" style="font-size:var(--t-xs);padding:6px 9px">'+(isC(p)?'Build':'Get')+'</button>')+'</td>').join('')+'</tr>';
-  r.innerHTML='<div class="upg-ov" id="pc-bg"><div class="pc-modal">'+
-    '<button class="dna-x" id="pc-x" style="position:absolute;top:16px;right:16px;z-index:2">\u2715</button>'+
-    '<div class="pc-head"><h2>Compare plans</h2><p>Everything each plan includes - pick what fits how you work.</p></div>'+
-    '<div class="pc-scroll"><table class="pc-table"><thead><tr>'+head+'</tr></thead><tbody>'+body+cta+'</tbody></table></div>'+
-  '</div></div>';
-  const close=()=>{ r.innerHTML=''; };
-  onBackdrop($('pc-bg'),close); on($('pc-x'),'click',close);
-  r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else if(typeof openUpgrade==='function'){ openUpgrade(k); } else { openCheckout(k); } }));
+/* THE PLAN COMPARISON AND THE CUSTOM PLAN BUILDER are fetched with Settings
+   (settings-panes.js, prefetched once the page is idle): only somebody on the
+   Plans or Billing screen opens them, and they were ~2.7KB gzipped on every
+   first visit (Nov 25). These stand-ins fetch the file; its own functions
+   replace them as it loads. */
+function openPlanCompare(highlight){ _plansLazy('openPlanCompare', openPlanCompare, [highlight]); }
+function openCustomPlan(){ _plansLazy('openCustomPlan', openCustomPlan, []); }
+function _plansLazy(name, stand, args){
+  _lazyLoad('settings-panes.js', () => window[name] !== stand).then(ok => {
+    if(ok) window[name].apply(null, args);
+    else toast(T('That could not be loaded. Check your connection and try again.'), 'error', 5000);
+  });
 }
-window.openPlanCompare=openPlanCompare;
-
-/* ===== CUSTOM PLAN BUILDER - interactive, abuse-proof ===== */
-function openCustomPlan(){
-  const r=$('ovr'); if(!r) return;
-  const saved=load('amv_custom_cfg');
-  let price=(saved&&saved.price)||30;
-  const render=()=>{
-    const s=_customPlanSummary(price);
-    const marginPct=Math.round(s.margin*100);
-    r.innerHTML='<div class="upg-ov" id="cp-bg"><div class="cp-modal">'+
-      '<button class="dna-x" id="cp-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
-      '<div class="cp-head"><span class="eyebrow" style="color:var(--accent-txt)">Custom plan</span>'+
-        '<h2>Pay exactly for what you need</h2>'+
-        '<p>Set your monthly budget. You get a guaranteed pool of usage for that price - all models included, hard-capped so there are never surprise charges.</p></div>'+
-      '<div class="cp-price-row"><span class="cp-cur">$</span><span class="cp-price" id="cp-price">'+price+'</span><span class="cp-per">/month</span></div>'+
-      '<div class="cp-local" id="cp-local"></div>'+
-      '<input type="range" id="cp-slider" min="'+CUSTOM_PLAN.MIN_PRICE+'" max="500" step="5" value="'+price+'" class="cp-range">'+
-      '<div class="cp-range-lbls"><span>$'+CUSTOM_PLAN.MIN_PRICE+'</span><span>$500</span></div>'+
-      '<div class="cp-grid">'+
-        _cpStat(s.monthlyTokens.toLocaleString(),'tokens on Core')+
-        (s.hasApex?_cpStat(s.apexTokens.toLocaleString(),'tokens on Apex'):_cpStat('$'+CUSTOM_PLAN.APEX_MIN_PRICE+'+','unlocks top models'))+
-        _cpStat('~'+s.approxMessages.toLocaleString(),'AI messages')+
-        _cpStat(s.dailyCap.toLocaleString(),'daily limit')+
-      '</div>'+
-      '<div class="cp-note">Usage is metered as credits - faster models use fewer, the most powerful use more. Mix and match however you like; your pool is yours.</div>'+
-      '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
-        '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+escH(T(f))+'</span>').join('')+'</div></div>'+
-      '<button class="btn bp cp-go" id="cp-buy">Get Custom - $'+price+'/mo</button>'+
-      '<p class="cp-fine">Usage is capped at your plan size. The message window resets every '+USAGE_WINDOW_HOURS+' hours and the token allowance monthly; unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
-    '</div></div>';
-    const close=()=>{ r.innerHTML=''; };
-    onBackdrop($('cp-bg'),close); on($('cp-x'),'click',close);
-    const _cpLocal=()=>{ const el=$('cp-local'); if(el) el.textContent=(window.AMVCurrency&&AMVCurrency.isLocal())?('≈ '+AMVCurrency.fmt(price)+' /mo in your currency'):''; };
-    _cpLocal();
-    const sl=$('cp-slider');
-    on(sl,'input',()=>{ price=parseInt(sl.value,10); const ps=_customPlanSummary(price);
-      $('cp-price').textContent=price; _cpLocal();
-      const g=r.querySelectorAll('.cp-stat-n');
-      if(g.length>=4){ g[0].textContent=ps.monthlyTokens.toLocaleString(); g[1].textContent=ps.hasApex?ps.apexTokens.toLocaleString():('$'+CUSTOM_PLAN.APEX_MIN_PRICE+'+'); g[2].textContent='~'+ps.approxMessages.toLocaleString(); g[3].textContent=ps.dailyCap.toLocaleString(); }
-      const gl=r.querySelectorAll('.cp-stat-l'); if(gl.length>=2) gl[1].textContent=ps.hasApex?'tokens on Apex':'unlocks top models';
-      const incl=$('cp-incl-list'); if(incl) incl.innerHTML=_cpInclFeatures(ps.hasApex).map(f=>'<span>✓ '+escH(T(f))+'</span>').join('');
-      const buy=$('cp-buy'); if(buy) buy.textContent='Get Custom - $'+price+'/mo';
-    });
-    on($('cp-buy'),'click',()=>{
-      // store the chosen config; checkout will activate it
-      store('amv_custom_cfg',{price, ts:Date.now()});
-      // price is dynamic - pass it to checkout
-      close();
-      openCheckout('custom', price);
-    });
-  };
-  render();
-}
-function _cpStat(n,l){ return '<div class="cp-stat"><div class="cp-stat-n">'+n+'</div><div class="cp-stat-l">'+l+'</div></div>'; }
-/* The included-features list for the custom plan, adjusted for whether the
-   chosen price unlocks the top models (Apex). */
-function _cpInclFeatures(hasApex){
-  return [
-    hasApex?'All models incl. Apex (top models)':'All Pro models (Fast, Core, Coding)',
-    'Autonomous agents & Crew',
-    /* NOT "Images, video & 3D". Image and video generation were removed from
-       this product end to end, and a plan's feature list is the single worst
-       place for a promise of something that does not exist - somebody reads it
-       while deciding what to pay. AMV reads an image you upload; it does not
-       make one. */
-    'Reads your files and images \u00b7 interactive 3D',
-    'Build & ship apps',
-    /* NOT "Priority speed" either: there is no priority queue and no faster
-       hardware for any plan, so it was a promise the server never keeps. */
-    'Hard cap - no overage charges'
-  ];
-}
-window.openCustomPlan=openCustomPlan;
-window.openUpgradeModal=openUpgradeModal;
 function _switchPlan(target){
   if(target==='free'){
     showConfirmAsync('Cancel your subscription and switch to Free? You\u2019ll keep access until the end of your billing period.').then(confirmed=>{
@@ -18838,11 +18730,15 @@ const PLANS={
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
      paying for instead of something to ration. */
+  /* Owner, Nov 25: $30 a month, the payer and up to five people they invite,
+     Pro for each, one shared allowance of twice Pro's (the server's
+     _baseLimits and _billingSubjectOf). */
+  family:{name:'Family',price:30,blurb:'Up to six people, Pro for everyone, one shared allowance',allowance:''},
   team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',allowance:''},
   custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',allowance:''},
 };
 const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
-const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
+const PLAN_RANK={free:0,pro:1,family:1,elite:2,ultra:3,custom:2,team:2};
 
 /* WHAT THE PLANS PAGE MAY SAY ABOUT BACKGROUND JOBS.
 
@@ -18863,7 +18759,7 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
    Comparing the tables alone would not have been enough - free is 0 in the
    table and 1 in the answer, because `|| 1` turns the zero into the single
    weekly job the refusal message promises. */
-const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+const AUTO_MAX_BY_PLAN={free:0,pro:5,family:5,elite:25,ultra:100};
 
 /* WHAT "PARALLEL AGENTS" WAS SELLING, AND WHAT IS ACTUALLY TIERED.
 
@@ -18950,6 +18846,9 @@ const USAGE_WINDOW_HOURS=5;
 
 function _planMsgNum(tbl,p){
   if(p==='team'||p==='custom') return tbl.pro;   // the tier those rank at
+  /* Family: the month and the top-engine week are ONE pool of twice Pro's;
+     the five-hour window is each person's, Pro's. */
+  if(p==='family') return tbl===PLAN_MESSAGES_5H ? tbl.pro : tbl.pro*2;
   return tbl[p]||tbl.free;
 }
 /* Written out in full on a card. "100K messages" reads as a rounding; 100,000
@@ -18961,6 +18860,7 @@ function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString();
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
   if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
+  if(p==='family') return PLAN_RPM.pro;      // each person's, Pro's
   return PLAN_RPM[p]||PLAN_RPM.free;
 }
 /* Two forms, because a table cell and a sentence want different things. The
@@ -42247,6 +42147,10 @@ function renderPlansView() {
       + '</div>'
       + '<div class="pl2-grid">' + ladder.map(card).join('') + '</div>'
       + '<div class="pl2-more">'
+        /* Family (owner, Nov 25): sold only where its price is set; elsewhere
+           the row says so instead of opening a checkout that would refuse. */
+        + '<button type="button" class="pl2-row" id="pl2-family"' + (now === 'family' ? ' disabled aria-disabled="true"' : '') + '><span class="pl2-row-t"><b>' + escH(T('Family')) + '</b> · $' + PLANS.family.price + ' ' + escH(T('/ month')) + '</span>'
+          + '<span class="pl2-row-d">' + escH(now === 'family' ? T('Your current plan') : _FAMILY_OPEN ? T('Up to six people, Pro for everyone, one shared allowance') : T('Coming soon - up to six people on one plan')) + (now === 'family' ? '' : ' →') + '</span></button>'
         + '<button type="button" class="pl2-row" data-stab="team"><span class="pl2-row-t"><b>' + escH(T('Team')) + '</b> · $' + teamP + ' ' + escH(T('per person / month')) + '</span>'
           + '<span class="pl2-row-d">' + escH(T('One bill and a shared pool for everyone you work with')) + ' →</span></button>'
         + '<button type="button" class="pl2-row" data-dact="openCustomPlan"><span class="pl2-row-t"><b>' + escH(T('Custom')) + '</b> · ' + escH(T('from $10 / month')) + '</span>'
@@ -42258,6 +42162,10 @@ function renderPlansView() {
           ? '<details class="pl2-limits"><summary>' + escH(T('How usage limits work')) + '</summary>' + _usageShapeBand() + '</details>' : '')
       + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
     + '</div></div>';
+  on($('pl2-family'), 'click', () => {
+    if (_FAMILY_OPEN) openUpgrade('family');
+    else toast(T('The Family plan is not open for purchase yet.'), 'info', 4000);
+  });
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
   });

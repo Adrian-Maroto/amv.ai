@@ -29,22 +29,31 @@ function _famChildRow(m){
   '</div>';
 }
 
+/* The way to pay for the people in your family, where it can be bought. */
+function _famPlanOffer(){
+  return '<p class="fam-p fam-quiet">'+escH(T('To pay for them as well, the Family plan covers up to six people for $30 a month.'))+
+    ' <button type="button" class="btn bs" data-stab="plans">'+escH(T('See the Family plan'))+'</button></p>';
+}
+
 function _famParentHTML(st){
   const p = st && st.parentOf;
   if(!p){
     return '<div class="ss2"><h3>Your family</h3>'+
-      /* Said as it is: joining a family sets limits on an account; it does not
-         move the account onto the parent's plan (nothing in billing does that),
-         so the pane must not say "you pay for their AMV" (Nov 24). */
-      '<p class="fam-p">Add someone to decide what AMV may spend on their account, whether they can buy '+
-      'anything, and whether they can take money out. They keep their own sign-in, their own plan and '+
-      'their own conversations.</p>'+
+      (st && st.payer
+        ? '<p class="fam-p">'+escH(T('Your Family plan covers you and up to five people you add here: Pro for each of them, and one shared allowance. You also decide what each of them may spend.'))+'</p>'
+        : '<p class="fam-p">Add someone to decide what AMV may spend on their account, whether they can buy '+
+          'anything, and whether they can take money out. They keep their own sign-in, their own plan and '+
+          'their own conversations.</p>'+_famPlanOffer())+
       '<p class="fam-p fam-quiet">Nobody is in your family yet.</p></div>';
   }
   const kids = p.members || [];
+  /* Whether the Family PLAN pays for them is the server's answer (covered),
+     never inferred here (Nov 25). */
   return '<div class="ss2"><h3>Your family</h3>'+
-    '<p class="fam-p">You set what each of these accounts may spend. '+
-    'They keep their own sign-in, their own plan and their own conversations.</p>'+
+    (p.covered
+      ? '<p class="fam-p">'+escH(T('Your Family plan covers everyone here: Pro for each person, and one shared allowance. You set what each of them may spend.'))+'</p>'
+      : '<p class="fam-p">You set what each of these accounts may spend. '+
+        'They keep their own sign-in, their own plan and their own conversations.</p>'+_famPlanOffer())+
     '<div class="fam-seen">'+
       '<div class="fam-seen-col fam-can"><div class="fam-seen-h">You can see</div>'+
         '<ul><li>How much of each limit they have used</li><li>Which limits you have set</li></ul></div>'+
@@ -62,7 +71,12 @@ function _famChildHTML(st){
   if(!c) return '';
   const L = c.limits || {};
   return '<div class="ss2 fam-child-note"><h3>You are in '+escH(c.parent)+'\u2019s family</h3>'+
-    '<p class="fam-p">They pay for your AMV. Here is exactly what that means, and it is the whole list.</p>'+
+    /* "They pay for your AMV" was said to every member while nothing in
+       billing did that. Now it is said only when the server says the Family
+       plan covers this account (Nov 25). */
+    '<p class="fam-p">'+escH(c.covered
+      ? T('Their Family plan pays for your AMV. Here is exactly what they can and cannot see - it is the whole list.')
+      : T('They set limits on your account. Here is exactly what they can and cannot see - it is the whole list.'))+'</p>'+
     '<div class="fam-seen">'+
       '<div class="fam-seen-col fam-can"><div class="fam-seen-h">They can see</div><ul>'+
         (c.canSee||[]).map(x=>'<li>'+escH(x)+'</li>').join('')+'</ul></div>'+
@@ -165,12 +179,14 @@ function _renderFamilyPaneNow(pane){
 
   pane.innerHTML =
     '<h2 class="set-title">Family</h2>'+
-    '<div class="set-sub">Pay for someone’s AMV and set what it may spend. They keep their own sign-in and their own conversations.</div>'+
+    '<div class="set-sub">'+escH(T('Set what the people in your family may spend - and with the Family plan, pay for their AMV. They keep their own sign-in and their own conversations.'))+'</div>'+
     (pend.length ?
       '<div class="ss2 fam-inbox"><h3>Invitations for you</h3>'+
         pend.map(p =>
           '<div class="fam-inv" data-fam-inv="'+escH(p.id)+'">'+
-            '<p class="fam-p"><b>'+escH(p.from)+'</b> wants to add you to their family. They would pay for your AMV and set what it may spend. They could not see your conversations.</p>'+
+            '<p class="fam-p"><b>'+escH(p.from)+'</b> '+escH(p.pays
+              ? T('wants to add you to their family. Their Family plan would pay for your AMV, and they would set what it may spend. They could not see your conversations.')
+              : T('wants to add you to their family. They would set what your AMV may spend. They could not see your conversations.'))+'</p>'+
             '<label class="lbl" for="fam-code-'+escH(p.id)+'">Code from the email we sent you</label>'+
             '<div class="mf-codeline">'+
               '<input class="inp" id="fam-code-'+escH(p.id)+'" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">'+

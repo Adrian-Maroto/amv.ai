@@ -610,7 +610,9 @@ const RAW_TO_KEY = {
   // smart routing -> balanced default
   'auto': 'amv-core', '': 'amv-core',
 };
-const PLAN_RANK = { free: 0, pro: 1, elite: 2, ultra: 3 };
+/* `family` (Nov 25, owner): Pro's capability for every member - what differs
+   is the allowance, which is pooled (_baseLimits) and the price (_planPriceUSD). */
+const PLAN_RANK = { free: 0, pro: 1, family: 1, elite: 2, ultra: 3 };
 
 /* The model provider's key, under an AMV name - and only that name.
 
@@ -5302,7 +5304,7 @@ const _retryAfterUntil = (at) => {
    Autonomous work is the most expensive thing AMV does - a job runs whether or
    not anybody is watching - so the free tier gets exactly one weekly job. That
    is enough to see it genuinely work, and not enough to run a business on. */
-const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, elite: 25, ultra: 100 };
+const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, family: 5, elite: 25, ultra: 100 };
 const AUTO_MAX_PER_USER = 100;                   // hard cap: no runaway fan-out
 /* The results list was never trimmed. It is read on every Crew screen and
    appended to on every run, so it grows without limit - and the record it lives
@@ -16722,14 +16724,20 @@ async function familyGet(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const own = await DB.get(env, 'fam', user.email);
+  /* Whether the Family PLAN pays for this family right now - read from the
+     same resolution every limit uses, so the pane can never claim cover the
+     quotas do not give. */
+  const ownPlanFamily = _planOf(await DB.get(env, 'ent', user.email)) === 'family';
   /* Two different answers, because a parent and a child need different things.
      A parent gets the panel. A child gets the truth about what is visible to
      whom - stated by the server, so it cannot drift from what is enforced. */
   return json({ ok:true,
-    parentOf: own ? { id: own.id, members: (own.members||[]).filter(m=>m.role==='child'), max: FAMILY_MAX_CHILDREN } : null,
+    parentOf: own ? { id: own.id, members: (own.members||[]).filter(m=>m.role==='child'), max: FAMILY_MAX_CHILDREN, covered: ownPlanFamily } : null,
+    payer: ownPlanFamily,
     childOf: user.family ? {
       parent: user.family.parent,
       limits: user.family.limits,
+      covered: user.plan === 'family' && String(user.billingSubject || '') === 'family:' + String(user.family.parent || '').toLowerCase(),
       /* Written once, here, and shown verbatim. */
       canSee: ['How much of the monthly limit you have used', 'Which limits they have set'],
       cannotSee: ['Your conversations', 'What you ask AMV', 'Anything AMV writes for you'],
@@ -16926,8 +16934,13 @@ async function familyPending(request, env){
   for(const it of (idx.items || []).slice(0, 20)){
     if(!it || !(it.expiresAt > now)) continue;
     const inv = await DB.get(env, 'link', user.email + '|' + it.id);
-    if(inv && inv.status === 'pending' && inv.expiresAt > now && _isFamilyLink(inv))
-      out.push({ id: it.id, from: inv.grantee, expiresAt: inv.expiresAt });
+    if(inv && inv.status === 'pending' && inv.expiresAt > now && _isFamilyLink(inv)){
+      /* Whether joining would put them on the inviter's Family plan - said
+         from the inviter's plan now, so the invitation never promises cover
+         that is not there. */
+      const pays = _planOf(await DB.get(env, 'ent', inv.grantee)) === 'family';
+      out.push({ id: it.id, from: inv.grantee, expiresAt: inv.expiresAt, pays });
+    }
   }
   return json({ ok:true, invitations: out });
 }
@@ -24576,7 +24589,7 @@ function _teamPlanPrice(cfg){ return _teamSeatCount(cfg) * TEAM_SEAT_PRICE_USD; 
    one of them to be a month out of date while still looking authoritative, and
    the number they compute is the profit guarantee. A per-seat plan would have
    had to be added to all three, correctly, forever. */
-const PLAN_PRICE_USD = { pro: 15, elite: 75, ultra: 200 };
+const PLAN_PRICE_USD = { pro: 15, family: 30, elite: 75, ultra: 200 };
 function _planPriceUSD(plan, cfg){
   if(plan === 'team') return _teamPlanPrice(cfg);
   if(plan === 'custom') return (cfg && +cfg.price) || 0;
@@ -26100,6 +26113,25 @@ function _baseLimits(user) {
       rpm: per.rpm,                       // per person: this is a burst control, not a pool
       allModels: true,                    // Apex included - it is what the seat price buys
     };
+  }
+  /* THE FAMILY PLAN (owner, Nov 25): up to six people, Pro's capability each,
+     and ONE allowance shared by the family - twice Pro's. Six full Pro
+     allowances on a thirty-dollar plan could cost about sixty-six dollars a
+     month in compute at full use; a shared 2x pool tops out near twenty-two.
+     Pooled the way a team is: the month, the message ceiling and the
+     top-engine week are the family's (one counter, keyed by the family), the
+     burst controls are each person's. The parent's per-member monthly cap
+     (FAMILY_DEFAULTS, _familyLimitsOf) still applies on top. */
+  if (user.plan === 'family') {
+    const per = PLAN_LIMITS.pro;
+    return Object.assign({}, per, {
+      dayTokens: per.dayTokens * 2,
+      monthTokens: per.monthTokens * 2,
+      monthMessages: per.monthMessages * 2,
+      topMessagesWeek: per.topMessagesWeek * 2,
+      messages5h: per.messages5h,
+      rpm: per.rpm,
+    });
   }
   if (user.plan === 'custom' && user.customCfg) {
     const c = user.customCfg;
@@ -31449,6 +31481,7 @@ function _stripePriceId(env, plan, cycle) {
     elite: env.STRIPE_PRICE_ELITE_YEAR,
     ultra: env.STRIPE_PRICE_ULTRA_YEAR,
     team:  env.STRIPE_PRICE_TEAM_SEAT_YEAR,
+    family: env.STRIPE_PRICE_FAMILY_YEAR,
   } : {
     pro:   env.STRIPE_PRICE_PRO,
     elite: env.STRIPE_PRICE_ELITE,
@@ -31457,6 +31490,9 @@ function _stripePriceId(env, plan, cycle) {
        quantity, which means Stripe handles proration on every change and the
        number of seats AMV honours is by definition the number being billed. */
     team:  env.STRIPE_PRICE_TEAM_SEAT,
+    /* One flat monthly price for the whole family (owner, Nov 25: $30, up to
+       six people). Not per seat: adding a member costs nothing more. */
+    family: env.STRIPE_PRICE_FAMILY,
   };
   return map[plan] || null;
 }
@@ -31481,9 +31517,10 @@ function _stripePriceId(env, plan, cycle) {
    keeps the distinction that matters: a plan AMV does not sell is a bad
    request, and a plan AMV sells but this deployment has not priced is a
    configuration gap that names the secret to set. */
-const SELLABLE_PLANS = new Set(['pro', 'elite', 'ultra', 'team']);
+const SELLABLE_PLANS = new Set(['pro', 'family', 'elite', 'ultra', 'team']);
 const PLAN_PRICE_ENV = { pro: 'STRIPE_PRICE_PRO', elite: 'STRIPE_PRICE_ELITE',
-                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT' };
+                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT',
+                         family: 'STRIPE_PRICE_FAMILY' };
 function _planUnsellable(plan, cycle) {
   const p = String(plan || '').toLowerCase();
   /* Yearly is optional and monthly is not, so a missing yearly price is its own
@@ -31521,6 +31558,7 @@ const PLAN_FROM_PRICE = (env) => {
   add(env.STRIPE_PRICE_ELITE, 'elite');
   add(env.STRIPE_PRICE_ULTRA, 'ultra');
   add(env.STRIPE_PRICE_TEAM_SEAT, 'team');
+  add(env.STRIPE_PRICE_FAMILY, 'family');
   /* THE YEARLY PRICES GRANT THE SAME PLAN, and forgetting this half is how a
      yearly subscriber pays and gets nothing: the webhook is the only thing
      that turns money into access, and it recognises a subscription by its
@@ -31529,6 +31567,7 @@ const PLAN_FROM_PRICE = (env) => {
   add(env.STRIPE_PRICE_ELITE_YEAR, 'elite');
   add(env.STRIPE_PRICE_ULTRA_YEAR, 'ultra');
   add(env.STRIPE_PRICE_TEAM_SEAT_YEAR, 'team');
+  add(env.STRIPE_PRICE_FAMILY_YEAR, 'family');
   return out;
 };
 
@@ -32165,7 +32204,7 @@ async function _planPopShift(env, fromPlan, toPlan, fromSeats, toSeats){
 }
 async function _planPopulation(env){
   const out = {};
-  for(const plan of ['free','pro','elite','ultra','custom','team']){
+  for(const plan of ['free','pro','family','elite','ultra','custom','team']){
     try{ out[plan] = Math.max(0, (await counter(env, `plancount:${plan}`, { op:'get' })).value || 0); }
     catch(e){ out[plan] = 0; }
   }
@@ -32244,7 +32283,38 @@ async function _billingSubjectOf(env, email, ent){
                    travels with the subject, so a team member is measured over
                    the TEAM's period rather than opening one of their own. */
                 renewedAt: +e.renewedAt || 0 };
-  if(!e.teamId) return out;
+  /* THE FAMILY PLAN: the payer and every member draw on ONE allowance, keyed
+     by the family (its record is stored under the payer's address). The payer
+     is covered by their own plan; a member is covered only while the family
+     record lists them AND the payer's plan is Family right now - so removing
+     someone, them leaving, or the payer cancelling or lapsing (_planOf) ends
+     the cover on the very next request, with nothing to clean up. A team seat
+     outranks this: a work plan is the employer's to pay for. */
+  if(!e.teamId){
+    if(out.plan === 'family'){
+      out.subject = 'family:' + em;
+      return out;
+    }
+    if(e.familyOf){
+      /* The payer is read off the family record, never inferred from the key
+         it is stored under - and the pool is keyed by the payer, which is the
+         key the payer's own requests use above. */
+      const fam = await DB.get(env, 'fam', String(e.familyOf));
+      const parent = String((fam && fam.parentEmail) || '').toLowerCase();
+      const listed = !!parent && parent !== em && (fam.members || []).some(x => x.email === em);
+      if(listed){
+        const pe = await DB.get(env, 'ent', parent);
+        if(_planOf(pe) === 'family' && _planRankOf('family') >= _planRankOf(out.plan, out.customCfg)){
+          out.plan = 'family';
+          out.customCfg = null;
+          out.subject = 'family:' + parent;
+          out.renewedAt = +(pe && pe.renewedAt) || 0;
+          out.familyPayer = parent;
+        }
+      }
+    }
+    return out;
+  }
   const team = await DB.get(env, 'team', e.teamId);
   /* Membership is the source of truth, exactly as in _teamOf - a stale pointer
      left on an entitlement record must not keep buying compute after removal. */
@@ -38257,7 +38327,7 @@ async function adminStats(request, env) {
   const killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
 
   // list entitlements (paying users) via the durable layer (D1 query or KV scan)
-  let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0, team: 0 };
+  let users = [], plans = { free: 0, pro: 0, family: 0, elite: 0, ultra: 0, custom: 0, team: 0 };
   let mrr = 0, pastDue = 0, atRisk = 0;
 
   /* Bounded on purpose, and reported. Past this many accounts the per-account
@@ -38833,10 +38903,13 @@ async function publicConfig(request, env) {
      exists, not what it is called at Stripe. */
   try{
     const yearly = [];
-    for (const p of ['pro', 'elite', 'ultra', 'team']) {
+    for (const p of ['pro', 'family', 'elite', 'ultra', 'team']) {
       if (_stripePriceId(env, p, 'year')) yearly.push(p);
     }
     if (yearly.length) out.yearlyPlans = yearly;
+    /* Whether the Family plan can be bought here at all - drawn as a plan
+       only where its price exists, said as "not open yet" elsewhere. */
+    if (_stripePriceId(env, 'family', 'month')) out.familyPlan = true;
   }catch(e){}
   for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
     const v = String((env && env[secret]) || '').trim();
@@ -39282,6 +39355,15 @@ function _readinessReport(env, seen) {
       how: put('STRIPE_PRICE_PRO_YEAR') + ', ' + put('STRIPE_PRICE_ELITE_YEAR') + ' and ' + put('STRIPE_PRICE_ULTRA_YEAR')
            + ' (and ' + put('STRIPE_PRICE_TEAM_SEAT_YEAR') + ' for Teams)' },
 
+    /* THE FAMILY PLAN (owner, Nov 25): one flat recurring price, $30 a month,
+       for the payer and up to five people they invite. Optional like yearly -
+       without it the Plans screen says Family is not open yet and nobody is
+       walked into a refused checkout. */
+    { id: 'stripePriceFamily', name: 'Family plan price (Stripe)', blocking: false,
+      on: _has(env, 'STRIPE_PRICE_FAMILY'),
+      turnsOn: 'Selling the Family plan: one subscription that covers the payer and up to five people they invite, sharing one allowance worth twice Pro\u2019s. Create a $30/month recurring price in Stripe and paste its id; the yearly one is optional.',
+      how: put('STRIPE_PRICE_FAMILY') + ' (and, optionally, ' + put('STRIPE_PRICE_FAMILY_YEAR') + ')' },
+
     { id: 'paypal', name: 'PayPal', blocking: false,
       on: _has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET'),
       turnsOn: 'A second way to pay, for people who will not hand over a card. Needs an app in the PayPal developer dashboard; both halves, or the checkout says PayPal is not set up rather than opening a flow that fails.',
@@ -39530,6 +39612,7 @@ function _readinessReport(env, seen) {
     speechVoiceModel: 'Core', speechVoice: 'Core', speechVoicePrice: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
     stripePricesYearly: 'Taking money',
+    stripePriceFamily: 'Taking money',
     teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
     paypalHook: 'Taking money', paypalLive: 'Taking money',
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',

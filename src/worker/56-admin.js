@@ -478,7 +478,7 @@ async function adminStats(request, env) {
   const killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
 
   // list entitlements (paying users) via the durable layer (D1 query or KV scan)
-  let users = [], plans = { free: 0, pro: 0, elite: 0, ultra: 0, custom: 0, team: 0 };
+  let users = [], plans = { free: 0, pro: 0, family: 0, elite: 0, ultra: 0, custom: 0, team: 0 };
   let mrr = 0, pastDue = 0, atRisk = 0;
 
   /* Bounded on purpose, and reported. Past this many accounts the per-account

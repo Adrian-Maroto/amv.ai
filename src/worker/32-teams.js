@@ -62,7 +62,7 @@ function _teamPlanPrice(cfg){ return _teamSeatCount(cfg) * TEAM_SEAT_PRICE_USD; 
    one of them to be a month out of date while still looking authoritative, and
    the number they compute is the profit guarantee. A per-seat plan would have
    had to be added to all three, correctly, forever. */
-const PLAN_PRICE_USD = { pro: 15, elite: 75, ultra: 200 };
+const PLAN_PRICE_USD = { pro: 15, family: 30, elite: 75, ultra: 200 };
 function _planPriceUSD(plan, cfg){
   if(plan === 'team') return _teamPlanPrice(cfg);
   if(plan === 'custom') return (cfg && +cfg.price) || 0;

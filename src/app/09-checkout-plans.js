@@ -16,11 +16,15 @@ const PLANS={
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
      paying for instead of something to ration. */
+  /* Owner, Nov 25: $30 a month, the payer and up to five people they invite,
+     Pro for each, one shared allowance of twice Pro's (the server's
+     _baseLimits and _billingSubjectOf). */
+  family:{name:'Family',price:30,blurb:'Up to six people, Pro for everyone, one shared allowance',allowance:''},
   team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',allowance:''},
   custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',allowance:''},
 };
 const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
-const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
+const PLAN_RANK={free:0,pro:1,family:1,elite:2,ultra:3,custom:2,team:2};
 
 /* WHAT THE PLANS PAGE MAY SAY ABOUT BACKGROUND JOBS.
 
@@ -41,7 +45,7 @@ const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
    Comparing the tables alone would not have been enough - free is 0 in the
    table and 1 in the answer, because `|| 1` turns the zero into the single
    weekly job the refusal message promises. */
-const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+const AUTO_MAX_BY_PLAN={free:0,pro:5,family:5,elite:25,ultra:100};
 
 /* WHAT "PARALLEL AGENTS" WAS SELLING, AND WHAT IS ACTUALLY TIERED.
 
@@ -128,6 +132,9 @@ const USAGE_WINDOW_HOURS=5;
 
 function _planMsgNum(tbl,p){
   if(p==='team'||p==='custom') return tbl.pro;   // the tier those rank at
+  /* Family: the month and the top-engine week are ONE pool of twice Pro's;
+     the five-hour window is each person's, Pro's. */
+  if(p==='family') return tbl===PLAN_MESSAGES_5H ? tbl.pro : tbl.pro*2;
   return tbl[p]||tbl.free;
 }
 /* Written out in full on a card. "100K messages" reads as a rounding; 100,000
@@ -139,6 +146,7 @@ function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString();
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
   if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
+  if(p==='family') return PLAN_RPM.pro;      // each person's, Pro's
   return PLAN_RPM[p]||PLAN_RPM.free;
 }
 /* Two forms, because a table cell and a sentence want different things. The

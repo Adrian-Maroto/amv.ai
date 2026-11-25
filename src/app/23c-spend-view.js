@@ -207,6 +207,10 @@ function renderPlansView() {
       + '</div>'
       + '<div class="pl2-grid">' + ladder.map(card).join('') + '</div>'
       + '<div class="pl2-more">'
+        /* Family (owner, Nov 25): sold only where its price is set; elsewhere
+           the row says so instead of opening a checkout that would refuse. */
+        + '<button type="button" class="pl2-row" id="pl2-family"' + (now === 'family' ? ' disabled aria-disabled="true"' : '') + '><span class="pl2-row-t"><b>' + escH(T('Family')) + '</b> · $' + PLANS.family.price + ' ' + escH(T('/ month')) + '</span>'
+          + '<span class="pl2-row-d">' + escH(now === 'family' ? T('Your current plan') : _FAMILY_OPEN ? T('Up to six people, Pro for everyone, one shared allowance') : T('Coming soon - up to six people on one plan')) + (now === 'family' ? '' : ' →') + '</span></button>'
         + '<button type="button" class="pl2-row" data-stab="team"><span class="pl2-row-t"><b>' + escH(T('Team')) + '</b> · $' + teamP + ' ' + escH(T('per person / month')) + '</span>'
           + '<span class="pl2-row-d">' + escH(T('One bill and a shared pool for everyone you work with')) + ' →</span></button>'
         + '<button type="button" class="pl2-row" data-dact="openCustomPlan"><span class="pl2-row-t"><b>' + escH(T('Custom')) + '</b> · ' + escH(T('from $10 / month')) + '</span>'
@@ -218,6 +222,10 @@ function renderPlansView() {
           ? '<details class="pl2-limits"><summary>' + escH(T('How usage limits work')) + '</summary>' + _usageShapeBand() + '</details>' : '')
       + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
     + '</div></div>';
+  on($('pl2-family'), 'click', () => {
+    if (_FAMILY_OPEN) openUpgrade('family');
+    else toast(T('The Family plan is not open for purchase yet.'), 'info', 4000);
+  });
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
   });

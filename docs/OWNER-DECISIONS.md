@@ -665,3 +665,13 @@ the repository.
     from Stripe and PayPal (only you can), and AMV reconciles every account to
     the cent against it and writes a signed opening balance. Until then, the
     rule stands: money is read from KV.
+21. **The Family plan (decided Nov 25)**: $30 a month for the payer and up to
+    five people they invite. Every member gets Pro's capability; the family
+    shares ONE allowance worth twice Pro's (month, message ceiling and
+    top-engine week pooled; the five-hour window and requests a minute are
+    each person's). The parent's per-member monthly cap still applies. Chosen
+    over "full Pro each" because six full Pro allowances could cost about $66
+    a month in compute at full use on a $30 plan; a shared 2x pool tops out
+    near $22. **Still yours to do:** create the $30/month recurring price in
+    Stripe and set `STRIPE_PRICE_FAMILY` (optionally `STRIPE_PRICE_FAMILY_YEAR`).
+    Until then the Plans screen says Family is coming soon.

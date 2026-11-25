@@ -12,14 +12,20 @@ async function familyGet(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const own = await DB.get(env, 'fam', user.email);
+  /* Whether the Family PLAN pays for this family right now - read from the
+     same resolution every limit uses, so the pane can never claim cover the
+     quotas do not give. */
+  const ownPlanFamily = _planOf(await DB.get(env, 'ent', user.email)) === 'family';
   /* Two different answers, because a parent and a child need different things.
      A parent gets the panel. A child gets the truth about what is visible to
      whom - stated by the server, so it cannot drift from what is enforced. */
   return json({ ok:true,
-    parentOf: own ? { id: own.id, members: (own.members||[]).filter(m=>m.role==='child'), max: FAMILY_MAX_CHILDREN } : null,
+    parentOf: own ? { id: own.id, members: (own.members||[]).filter(m=>m.role==='child'), max: FAMILY_MAX_CHILDREN, covered: ownPlanFamily } : null,
+    payer: ownPlanFamily,
     childOf: user.family ? {
       parent: user.family.parent,
       limits: user.family.limits,
+      covered: user.plan === 'family' && String(user.billingSubject || '') === 'family:' + String(user.family.parent || '').toLowerCase(),
       /* Written once, here, and shown verbatim. */
       canSee: ['How much of the monthly limit you have used', 'Which limits they have set'],
       cannotSee: ['Your conversations', 'What you ask AMV', 'Anything AMV writes for you'],
@@ -216,8 +222,13 @@ async function familyPending(request, env){
   for(const it of (idx.items || []).slice(0, 20)){
     if(!it || !(it.expiresAt > now)) continue;
     const inv = await DB.get(env, 'link', user.email + '|' + it.id);
-    if(inv && inv.status === 'pending' && inv.expiresAt > now && _isFamilyLink(inv))
-      out.push({ id: it.id, from: inv.grantee, expiresAt: inv.expiresAt });
+    if(inv && inv.status === 'pending' && inv.expiresAt > now && _isFamilyLink(inv)){
+      /* Whether joining would put them on the inviter's Family plan - said
+         from the inviter's plan now, so the invitation never promises cover
+         that is not there. */
+      const pays = _planOf(await DB.get(env, 'ent', inv.grantee)) === 'family';
+      out.push({ id: it.id, from: inv.grantee, expiresAt: inv.expiresAt, pays });
+    }
   }
   return json({ ok:true, invitations: out });
 }

@@ -4500,6 +4500,21 @@ function _planPitch(key){
     ],
     reassure: t('One price, cancel anytime'),
   },
+  family: {
+    anchor: t('Up to six people, Pro for everyone, one shared allowance'),
+    feats: [
+      /* The numbers are the server's: one pool of twice Pro's, the five-hour
+         window each person's. Each member signs in to their own account and
+         nobody, the payer included, can read anybody else's chats. */
+      [1,t('<b>You and up to five people</b> you invite, each with their own account')],
+      [1,t('<b>Everything in Pro</b> for every person, AMV Forge included')],
+      [1,t('<b>One shared allowance</b>, twice Pro\u2019s, that renews on your billing date')],
+      [1,t('<b>{n} every {h} hours</b> for each person',{n:_msg5hLabel('family'),h:H})],
+      [1,t('<b>A monthly limit for each person</b> that you set')],
+      [1,t('<b>Private chats</b> - nobody sees anybody else\u2019s conversations')],
+    ],
+    reassure: t('One price for the whole family, cancel anytime'),
+  },
   elite: {
     anchor: t('For founders, builders &amp; power users'),
     feats: [

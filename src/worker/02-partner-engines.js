@@ -385,7 +385,9 @@ const RAW_TO_KEY = {
   // smart routing -> balanced default
   'auto': 'amv-core', '': 'amv-core',
 };
-const PLAN_RANK = { free: 0, pro: 1, elite: 2, ultra: 3 };
+/* `family` (Nov 25, owner): Pro's capability for every member - what differs
+   is the allowance, which is pooled (_baseLimits) and the price (_planPriceUSD). */
+const PLAN_RANK = { free: 0, pro: 1, family: 1, elite: 2, ultra: 3 };
 
 /* The model provider's key, under an AMV name - and only that name.
 

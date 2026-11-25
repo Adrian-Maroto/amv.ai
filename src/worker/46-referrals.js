@@ -453,7 +453,7 @@ async function _planPopShift(env, fromPlan, toPlan, fromSeats, toSeats){
 }
 async function _planPopulation(env){
   const out = {};
-  for(const plan of ['free','pro','elite','ultra','custom','team']){
+  for(const plan of ['free','pro','family','elite','ultra','custom','team']){
     try{ out[plan] = Math.max(0, (await counter(env, `plancount:${plan}`, { op:'get' })).value || 0); }
     catch(e){ out[plan] = 0; }
   }
@@ -532,7 +532,38 @@ async function _billingSubjectOf(env, email, ent){
                    travels with the subject, so a team member is measured over
                    the TEAM's period rather than opening one of their own. */
                 renewedAt: +e.renewedAt || 0 };
-  if(!e.teamId) return out;
+  /* THE FAMILY PLAN: the payer and every member draw on ONE allowance, keyed
+     by the family (its record is stored under the payer's address). The payer
+     is covered by their own plan; a member is covered only while the family
+     record lists them AND the payer's plan is Family right now - so removing
+     someone, them leaving, or the payer cancelling or lapsing (_planOf) ends
+     the cover on the very next request, with nothing to clean up. A team seat
+     outranks this: a work plan is the employer's to pay for. */
+  if(!e.teamId){
+    if(out.plan === 'family'){
+      out.subject = 'family:' + em;
+      return out;
+    }
+    if(e.familyOf){
+      /* The payer is read off the family record, never inferred from the key
+         it is stored under - and the pool is keyed by the payer, which is the
+         key the payer's own requests use above. */
+      const fam = await DB.get(env, 'fam', String(e.familyOf));
+      const parent = String((fam && fam.parentEmail) || '').toLowerCase();
+      const listed = !!parent && parent !== em && (fam.members || []).some(x => x.email === em);
+      if(listed){
+        const pe = await DB.get(env, 'ent', parent);
+        if(_planOf(pe) === 'family' && _planRankOf('family') >= _planRankOf(out.plan, out.customCfg)){
+          out.plan = 'family';
+          out.customCfg = null;
+          out.subject = 'family:' + parent;
+          out.renewedAt = +(pe && pe.renewedAt) || 0;
+          out.familyPayer = parent;
+        }
+      }
+    }
+    return out;
+  }
   const team = await DB.get(env, 'team', e.teamId);
   /* Membership is the source of truth, exactly as in _teamOf - a stale pointer
      left on an entitlement record must not keep buying compute after removal. */

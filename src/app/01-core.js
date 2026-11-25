@@ -515,6 +515,8 @@ let _publicConfigFail = '';
    read, and empty forever on a deployment that sells monthly only - which is
    the state every deployment starts in. */
 let _YEARLY_PLANS = [];
+/* Whether this deployment sells the Family plan (its price is set). */
+let _FAMILY_OPEN = false;
 /* Server speech, as /v1/public-config describes it. Both false until it says
    otherwise, so nothing is offered that the server has not confirmed. */
 let _SPEECH = { listen: false, speak: false };
@@ -593,6 +595,7 @@ async function _loadPublicConfigOnce(){
        toggle that should not have been there, and offering a cheaper-looking
        option that cannot be bought is the worst version of that. */
     try{ _YEARLY_PLANS = Array.isArray(d.yearlyPlans) ? d.yearlyPlans.slice(0,8).map(String) : []; }catch(e){}
+    _FAMILY_OPEN = d.familyPlan === true;
     /* Which halves of server speech this deployment has. In memory, like the
        yearly plans: a fact about the server, re-read on every load. */
     try{ _SPEECH = { listen: !!(d.speech && d.speech.listen), speak: !!(d.speech && d.speech.speak) }; }catch(e){}

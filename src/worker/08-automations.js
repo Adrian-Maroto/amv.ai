@@ -24,7 +24,7 @@
    Autonomous work is the most expensive thing AMV does - a job runs whether or
    not anybody is watching - so the free tier gets exactly one weekly job. That
    is enough to see it genuinely work, and not enough to run a business on. */
-const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, elite: 25, ultra: 100 };
+const AUTO_MAX_BY_PLAN = { free: 0, pro: 5, family: 5, elite: 25, ultra: 100 };
 const AUTO_MAX_PER_USER = 100;                   // hard cap: no runaway fan-out
 /* The results list was never trimmed. It is read on every Crew screen and
    appended to on every run, so it grows without limit - and the record it lives

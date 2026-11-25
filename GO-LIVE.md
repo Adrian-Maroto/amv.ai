@@ -383,6 +383,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `STRIPE_WEBHOOK_SECRET` | Confirms payments so upgrades/purchases actually apply |
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ELITE`, `STRIPE_PRICE_ULTRA` | The price IDs for each plan |
 | `STRIPE_PRICE_PRO_YEAR`, `STRIPE_PRICE_ELITE_YEAR`, `STRIPE_PRICE_ULTRA_YEAR`, `STRIPE_PRICE_TEAM_SEAT_YEAR` | Optional. The yearly price IDs, which is what makes the Monthly/Yearly choice appear |
+| `STRIPE_PRICE_FAMILY` (and optionally `STRIPE_PRICE_FAMILY_YEAR`) | The Family plan: a $30/month recurring price covering the payer and up to five invited people, sharing one allowance of twice Pro's. Without it the Plans screen says Family is not open yet |
 
 > Prediction markets were removed (LESSONS 595). The Kalshi and Polymarket
 > keys are no longer read; delete them if they are set.

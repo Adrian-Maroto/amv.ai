@@ -33,6 +33,7 @@ function _stripePriceId(env, plan, cycle) {
     elite: env.STRIPE_PRICE_ELITE_YEAR,
     ultra: env.STRIPE_PRICE_ULTRA_YEAR,
     team:  env.STRIPE_PRICE_TEAM_SEAT_YEAR,
+    family: env.STRIPE_PRICE_FAMILY_YEAR,
   } : {
     pro:   env.STRIPE_PRICE_PRO,
     elite: env.STRIPE_PRICE_ELITE,
@@ -41,6 +42,9 @@ function _stripePriceId(env, plan, cycle) {
        quantity, which means Stripe handles proration on every change and the
        number of seats AMV honours is by definition the number being billed. */
     team:  env.STRIPE_PRICE_TEAM_SEAT,
+    /* One flat monthly price for the whole family (owner, Nov 25: $30, up to
+       six people). Not per seat: adding a member costs nothing more. */
+    family: env.STRIPE_PRICE_FAMILY,
   };
   return map[plan] || null;
 }
@@ -65,9 +69,10 @@ function _stripePriceId(env, plan, cycle) {
    keeps the distinction that matters: a plan AMV does not sell is a bad
    request, and a plan AMV sells but this deployment has not priced is a
    configuration gap that names the secret to set. */
-const SELLABLE_PLANS = new Set(['pro', 'elite', 'ultra', 'team']);
+const SELLABLE_PLANS = new Set(['pro', 'family', 'elite', 'ultra', 'team']);
 const PLAN_PRICE_ENV = { pro: 'STRIPE_PRICE_PRO', elite: 'STRIPE_PRICE_ELITE',
-                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT' };
+                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT',
+                         family: 'STRIPE_PRICE_FAMILY' };
 function _planUnsellable(plan, cycle) {
   const p = String(plan || '').toLowerCase();
   /* Yearly is optional and monthly is not, so a missing yearly price is its own
@@ -105,6 +110,7 @@ const PLAN_FROM_PRICE = (env) => {
   add(env.STRIPE_PRICE_ELITE, 'elite');
   add(env.STRIPE_PRICE_ULTRA, 'ultra');
   add(env.STRIPE_PRICE_TEAM_SEAT, 'team');
+  add(env.STRIPE_PRICE_FAMILY, 'family');
   /* THE YEARLY PRICES GRANT THE SAME PLAN, and forgetting this half is how a
      yearly subscriber pays and gets nothing: the webhook is the only thing
      that turns money into access, and it recognises a subscription by its
@@ -113,6 +119,7 @@ const PLAN_FROM_PRICE = (env) => {
   add(env.STRIPE_PRICE_ELITE_YEAR, 'elite');
   add(env.STRIPE_PRICE_ULTRA_YEAR, 'ultra');
   add(env.STRIPE_PRICE_TEAM_SEAT_YEAR, 'team');
+  add(env.STRIPE_PRICE_FAMILY_YEAR, 'family');
   return out;
 };
 

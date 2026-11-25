@@ -26,7 +26,10 @@ import { codeOnly } from '../lib/source.mjs';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const server = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* The page and the screens it fetches: the plan comparison lives in
+   settings-panes.js since Nov 25, and what it prints is still the page's
+   promise. Tables are read from app.js first (table() takes the first match). */
+const client = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'src/settings/settings-panes.js'), 'utf8');
 
 /* Both tables, read out of the source they actually live in. Parsed rather
    than imported: app.js is a browser bundle and the Worker is a module, and a

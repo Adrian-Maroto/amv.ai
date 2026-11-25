@@ -254,6 +254,15 @@ function _readinessReport(env, seen) {
       how: put('STRIPE_PRICE_PRO_YEAR') + ', ' + put('STRIPE_PRICE_ELITE_YEAR') + ' and ' + put('STRIPE_PRICE_ULTRA_YEAR')
            + ' (and ' + put('STRIPE_PRICE_TEAM_SEAT_YEAR') + ' for Teams)' },
 
+    /* THE FAMILY PLAN (owner, Nov 25): one flat recurring price, $30 a month,
+       for the payer and up to five people they invite. Optional like yearly -
+       without it the Plans screen says Family is not open yet and nobody is
+       walked into a refused checkout. */
+    { id: 'stripePriceFamily', name: 'Family plan price (Stripe)', blocking: false,
+      on: _has(env, 'STRIPE_PRICE_FAMILY'),
+      turnsOn: 'Selling the Family plan: one subscription that covers the payer and up to five people they invite, sharing one allowance worth twice Pro\u2019s. Create a $30/month recurring price in Stripe and paste its id; the yearly one is optional.',
+      how: put('STRIPE_PRICE_FAMILY') + ' (and, optionally, ' + put('STRIPE_PRICE_FAMILY_YEAR') + ')' },
+
     { id: 'paypal', name: 'PayPal', blocking: false,
       on: _has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET'),
       turnsOn: 'A second way to pay, for people who will not hand over a card. Needs an app in the PayPal developer dashboard; both halves, or the checkout says PayPal is not set up rather than opening a flow that fails.',
@@ -502,6 +511,7 @@ function _readinessReport(env, seen) {
     speechVoiceModel: 'Core', speechVoice: 'Core', speechVoicePrice: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
     stripePricesYearly: 'Taking money',
+    stripePriceFamily: 'Taking money',
     teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
     paypalHook: 'Taking money', paypalLive: 'Taking money',
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people', push: 'Reaching people',
