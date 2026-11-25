@@ -9542,6 +9542,9 @@ async function _callAITurn(msgs, _opts) {
   const mdl=MODELS[_routeKey]||MODELS.core;
   /* A temporary chat starts from nothing it was not told in this conversation. */
   const _mems=(loadStr('amv_cap_memory')!=='0' && !_isTempChat())?_relevantMemories(msgs):[];
+  /* Which saved memories went with this question, by id - never their text,
+     so one deleted later is gone from old answers too (_memUsedHTML). */
+  const _memIds=_mems.length?S.memory.filter(m=>_mems.includes(m.text)).map(m=>m.id).slice(0,12):null;
   const _agenticSys = '\n\nYOU CAN ACTUALLY DO THINGS - you are not limited to describing them. You have real tools:\n'+
     '\u2022 run_code - when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
     '\u2022 fix_code - when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
@@ -10243,6 +10246,7 @@ async function _callAITurn(msgs, _opts) {
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
     if(_recovered) _base._recovered=true;   // complete, just not delivered live
     if(_more) _base._more=_more;
+    if(_memIds && _memIds.length) _base.mem=_memIds;
     msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:_engineErr ? 'engine' : true}) : _base;
     _recordUsageOnce();
     // Auto-title chat
@@ -10849,6 +10853,8 @@ function bindChatEvents() {
     else if(action==='speak') speakMessage(idx);
     else if(action==='share-answer') shareAnswer(idx);
     else if(action==='answer-more') _answerMoreToggle(btn);
+    else if(action==='mem-used'){ const l=btn.nextElementSibling; if(l){ l.hidden=!l.hidden; btn.setAttribute('aria-expanded', String(!l.hidden)); } }
+    else if(action==='mem-manage') setTab('memory');
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
        that plan - being sent to a row of four after pressing a button with a
        plan's name on it is the nudge forgetting what it just offered. */
@@ -10894,6 +10900,18 @@ function bindChatEvents() {
    via the existing auto-save. Each user toggles their own single reaction per
    message (this is a single-user client, so a reaction is on/off). */
 const _REACTION_SET = ['👍','❤️','🎉','🔥','😂','🤔','👎'];
+/* MEMORIES SENT WITH THIS ANSWER. Said as what happened - AMV had them when
+   it answered - not as a claim about which ones the answer leaned on, which
+   nothing can measure. Only memories that still exist are named. */
+function _memUsedHTML(m, i){
+  const ids = Array.isArray(m.mem) ? m.mem : null; if(!ids) return '';
+  const list = (S.memory || []).filter(x => ids.includes(x.id)); if(!list.length) return '';
+  return '<div class="mem-used"><button class="mem-used-b" type="button" data-action="mem-used" data-idx="'+i+'" aria-expanded="false">'
+    + escH(T('{0} of your memories').replace('{0}', list.length)) + '</button>'
+    + '<div class="mem-used-l" hidden><div class="mem-used-h">'+escH(T('AMV had these saved memories when it answered:'))+'</div><ul>'
+    + list.map(x => '<li>'+escH(x.text)+'</li>').join('') + '</ul>'
+    + '<button class="btn bs mem-used-go" type="button" data-action="mem-manage">'+escH(T('Manage memory'))+'</button></div></div>';
+}
 function _reactionsHTML(m, i){
   const r = m.reactions;
   if(!r) return '';
@@ -11629,7 +11647,7 @@ function renderChatMsgs() {
             '<button class="mact-mi mact-react" role="menuitem" data-action="react" data-idx="'+i+'"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg><span>'+escH(T('React'))+'</span></button>'+
           '</div></span>'+
       '</div>'+
-      _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
+      _reactionsHTML(m,i)+_memUsedHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
       '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
   }).join('')+
