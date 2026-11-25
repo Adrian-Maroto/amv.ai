@@ -6255,6 +6255,7 @@ function _initMobileSidebar(){
       if(sb) sb.classList.remove('cl');
       if(ab) ab.classList.remove('sb-collapsed');
     }
+    _bnPaint();
   }catch(e){}
   /* The phone layout's first paint has the menu closed already (styles.css,
      html:not(.sb-init)); from the next frame on it slides when it is opened
@@ -6267,6 +6268,38 @@ function _initMobileSidebar(){
    menu's bottom row of tools sat under the bar. The bar is gone: the top bar
    opens the menu, which holds every place, and New chat is in the top bar. */
 window._initMobileSidebar=_initMobileSidebar;
+
+/* THE PHONE'S BAR OF FOUR (owner, Nov 25). The two most used assistants both
+   moved their phone apps to a bottom bar of four in the week of Nov 19, and
+   kept the side menu for history - this is that shape (docs/RESEARCH.md,
+   Controls). The four are the places used most; the menu keeps the chats and
+   everything else, and on a phone does not list the four again. Built from
+   markup in index.html; shown by the stylesheet at phone width only. */
+const _BN = [
+  { tab:'chat',  label:'Chat',  on:['chat'], svg:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>' },
+  { tab:'build', label:'Build', on:['build','dev','lab','studio'], svg:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' },
+  { tab:'crew',  label:'Crew',  on:['crew'], svg:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
+  { tab:'tasks', label:'Tasks', on:['tasks'], svg:'<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+];
+function _bnPaint(){
+  const nav = $('bottom-nav'); if(!nav) return;
+  if(!nav.firstChild){
+    nav.innerHTML = _BN.map(i => '<button type="button" class="bn-item" data-bntab="'+i.tab+'">'+
+      '<span class="bn-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+i.svg+'</svg></span>'+
+      '<span class="bn-lbl">'+escH(T(i.label))+'</span></button>').join('');
+    nav.addEventListener('click', e => {
+      const b = e.target.closest('[data-bntab]'); if(!b) return;
+      if(S.sbOpen && window.matchMedia('(max-width:720px)').matches) toggleSb();
+      setTab(b.dataset.bntab);
+    });
+  }
+  nav.querySelectorAll('[data-bntab]').forEach(b => {
+    const on = _BN.find(i => i.tab === b.dataset.bntab).on.includes(S.tab);
+    b.classList.toggle('on', on);
+    if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+}
+try{ window._bnPaint = _bnPaint; }catch(e){}
 
 /* THE LAYOUT WAS DECIDED ONCE, AT BOOT, AND NEVER AGAIN.
 
@@ -6653,6 +6686,7 @@ function setTab(t){
   /* New chat is an action, not a place: the open conversation is marked in
      Recents, so this entry is never shown as the one you are on. */
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t && b.dataset.tab!=='chat'));
+  try{ _bnPaint(); }catch(e){ console.error('AMV: the phone bar could not be drawn', e); }
   /* (old 'More' section removed - tools now live in the bottom-left row) */
   const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',spend:'Spending',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');

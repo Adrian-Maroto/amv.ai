@@ -1,13 +1,16 @@
-/* EVERY PLACE IS ONE MENU AWAY ON A PHONE (owner, Nov 24: "the bar at the
-   bottom and the list on the side ... some sections you can't even get to").
+/* EVERY PLACE IS ONE TAP OR ONE MENU AWAY ON A PHONE (owner, Nov 24: "the bar
+   at the bottom and the list on the side ... some sections you can't even get
+   to"; Nov 25: a bar of four - Chat, Build, Crew, Tasks - with the menu for the
+   rest, the shape the two most used assistants moved to that week).
 
-   The phone had a bottom bar repeating the menu, and the menu's own bottom row
-   - Tasks, Integrations, Memory, Spending - sat under it, as unlabelled icons.
    Held, at 390x844, by what receives the tap (elementFromPoint), not by where
    boxes are:
-     · no bottom bar;
-     · the top bar's menu button opens the menu;
-     · every place in it is on screen, labelled, takes the tap, and goes there;
+     · the bar holds exactly Chat, Build, Crew, Tasks, labelled, each taking
+       the tap and going there, the current one marked;
+     · the menu does not list those four again (New chat stays: it starts one);
+     · every other place in the menu is on screen, labelled, takes the tap, and
+       goes there;
+     · the bar steps aside while somebody types;
      · New chat is in the top bar, and Settings is behind the avatar. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -18,13 +21,47 @@ await page.evaluate(() => { try { localStorage.setItem('amv_consent', JSON.strin
 await page.waitForTimeout(500);
 await page.evaluate(() => { document.querySelectorAll('.cc-banner').forEach(b => b.remove()); });
 
-section('One navigation');
-ok(await page.evaluate(() => !document.getElementById('bottom-nav')), 'there is no bottom bar');
+section('The bar of four');
+const BAR = [['chat', 'Chat'], ['build', 'Build'], ['crew', 'Crew'], ['tasks', 'Tasks']];
+const bar = await page.evaluate(() => [...document.querySelectorAll('#bottom-nav [data-bntab]')].map(b => [b.dataset.bntab, b.innerText.trim()]));
+ok(JSON.stringify(bar) === JSON.stringify(BAR), 'Chat, Build, Crew, Tasks - in that order, labelled', bar);
+for (const [tab, label] of BAR) {
+  await page.evaluate(() => { setTab('help'); });
+  const r = await page.evaluate((tab) => {
+    const el = document.querySelector('#bottom-nav [data-bntab="' + tab + '"]'); const b = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
+    return { onScreen: b.top >= 0 && b.bottom <= innerHeight + 1, takes: !!(hit && (hit === el || el.contains(hit))), h: Math.round(b.height), w: Math.round(b.width) };
+  }, tab);
+  ok(r.onScreen && r.takes && r.h >= 44 && r.w >= 44, label + ': on screen, big enough, takes the tap', r);
+  await page.click('#bottom-nav [data-bntab="' + tab + '"]');
+  await page.waitForTimeout(300);
+  const now = await page.evaluate((tab) => ({ tab: S.tab, marked: document.querySelector('#bottom-nav [data-bntab="' + tab + '"]').getAttribute('aria-current') }), tab);
+  ok(now.tab === tab && now.marked === 'page', '... goes to ' + label + ' and marks it', now);
+}
+const shown = await page.evaluate(() => { const r = document.getElementById('bottom-nav').getBoundingClientRect(); return { bottom: Math.round(innerHeight - r.bottom), h: Math.round(r.height) }; });
+ok(shown.bottom <= 1 && shown.h >= 56, 'the bar sits on the bottom edge', shown);
 
-const PLACES = [['chat', 'New chat'], ['build', 'Build'], ['crew', 'Crew'], ['handoff', 'Handoff'],
-                ['tasks', 'Tasks'], ['integrations', 'Integrations'], ['memory', 'Memory'], ['spend', 'Spending']];
+section('The menu does not repeat the four');
+await page.evaluate(() => { if (!S.sbOpen) toggleSb(); });
+await page.waitForTimeout(350);
+const dup = await page.evaluate(() => ['build', 'crew', 'tasks'].filter(t => [...document.querySelectorAll('#sb [data-tab="' + t + '"]')].some(e => e.getBoundingClientRect().width > 0)));
+ok(dup.length === 0, 'Build, Crew and Tasks are not listed again in the menu', dup);
+await page.evaluate(() => { if (S.sbOpen) toggleSb(); });
 
-section('Every place in the menu is on screen, labelled, and takes the tap');
+section('The bar steps aside while somebody types');
+await page.evaluate(() => setTab('chat'));
+await page.waitForTimeout(300);
+await page.focus('#mta');
+await page.waitForTimeout(150);
+ok(await page.evaluate(() => getComputedStyle(document.getElementById('bottom-nav')).display === 'none'), 'hidden while the box has the keyboard');
+await page.evaluate(() => document.activeElement.blur());
+await page.waitForTimeout(150);
+ok(await page.evaluate(() => getComputedStyle(document.getElementById('bottom-nav')).display !== 'none'), 'and back when it does not');
+
+const PLACES = [['chat', 'New chat'], ['handoff', 'Handoff'],
+                ['integrations', 'Integrations'], ['memory', 'Memory'], ['spend', 'Spending']];
+
+section('Every other place in the menu is on screen, labelled, and takes the tap');
 for (const [tab, label] of PLACES) {
   await page.evaluate(() => { if (S.sbOpen) toggleSb(); setTab('settings'); setTab('help'); });
   await page.click('#tsb');

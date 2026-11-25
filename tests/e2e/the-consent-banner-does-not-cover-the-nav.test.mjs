@@ -42,8 +42,10 @@ const probe = () => page.evaluate(() => {
     return c.display !== 'none' && c.visibility !== 'hidden' && b.width > 0 && b.height > 0; };
   const banner = [...document.querySelectorAll('div,section,aside')]
     .find(d => vis(d) && /Essential cookies keep AMV running/.test(d.textContent) && d.children.length < 8);
-  /* The phone's navigation: the menu button and New chat, in the top bar. */
-  const nav = ['tsb', 'nav-new'].map(id => document.getElementById(id)).filter(el => el && vis(el));
+  /* The phone's navigation: the menu button and New chat in the top bar, and
+     the bar of four at the bottom (Nov 25). */
+  const nav = [...['tsb', 'nav-new'].map(id => document.getElementById(id)), ...document.querySelectorAll('#bottom-nav [data-bntab]')]
+    .filter(el => el && vis(el));
   return {
     bannerShown: !!banner,
     bannerFullyOnScreen: banner
@@ -65,7 +67,7 @@ section('On a phone, the banner is showing and the navigation is still tappable'
   await freshVisit(390, 844);
   const v = await probe();
   ok(v.bannerShown, 'the consent banner is up, which is the state being tested', v.bannerShown);
-  ok(v.navCount === 2, 'the menu and New chat are on screen', v.navCount);
+  ok(v.navCount === 6, 'the menu, New chat and the bar of four are on screen', v.navCount);
   ok(v.blocked.length === 0,
      'and none of them is covered by the banner', v.blocked);
   ok(v.bannerFullyOnScreen,
@@ -82,7 +84,7 @@ section('The small tablet the two rules used to disagree about');
   await freshVisit(700, 900);
   const v = await probe();
   ok(v.bannerShown, 'the banner is up here too', v.bannerShown);
-  ok(v.navCount === 2, 'the menu and New chat are shown at this width', v.navCount);
+  ok(v.navCount === 6, 'the menu, New chat and the bar of four are shown at this width', v.navCount);
   ok(v.blocked.length === 0, 'and it is not covered either', v.blocked);
 }
 

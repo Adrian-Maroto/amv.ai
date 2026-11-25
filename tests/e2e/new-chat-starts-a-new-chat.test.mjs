@@ -94,15 +94,15 @@ section('An old chat is opened from Recents');
 
 section('On a phone, the top bar says New chat and does the same');
 {
-  /* The phone has one navigation now (Nov 24): the menu, opened from the top
-     bar, and New chat beside it - no bottom bar repeating the menu. */
+  /* On a phone New chat is in the top bar (Nov 24); the bar of four at the
+     bottom (Nov 25) has Chat, which returns to the conversation, not a new one. */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { setTab('crew'); });
   await page.waitForTimeout(250);
   const b = await page.evaluate(() => { const e = document.getElementById('nav-new'); const r = e && e.getBoundingClientRect();
-    return { lbl: e && e.getAttribute('aria-label'), shown: !!(r && r.width > 0), bar: !!document.getElementById('bottom-nav') }; });
+    return { lbl: e && e.getAttribute('aria-label'), shown: !!(r && r.width > 0), bar: [...document.querySelectorAll('#bottom-nav [data-bntab]')].map(x => x.dataset.bntab).join() }; });
   ok(b.lbl === 'New chat' && b.shown, 'the top bar has New chat', b);
-  ok(!b.bar, 'and there is no bottom bar repeating the menu', b);
+  ok(b.bar === 'chat,build,crew,tasks', 'and the bottom bar is the four places, not another New chat', b);
   await page.click('#nav-new');
   await page.waitForTimeout(250);
   const r = await page.evaluate(() => ({ tab: S.tab, cur: S.cur, old: window.__old, empty: !(getCurConv().msgs || []).length }));

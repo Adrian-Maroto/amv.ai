@@ -18210,3 +18210,32 @@ body.light #anav{ background:var(--bg); }
   .rb-tabs .rb-tab{ flex:1 1 auto; padding:5px 6px; }
   .rb-acts{ flex-wrap:wrap; }
 }
+
+/* ═══ LAYER A412 - the phone's bar of four (owner, Nov 25) ═══
+   Chat, Build, Crew, Tasks at the bottom on a phone; the side menu keeps the
+   chats and the other places and does not list these four again. It sits in
+   the page's column below the content, so nothing scrolls under it. Hidden
+   while somebody types (the keyboard needs the room) and under Settings. */
+#bottom-nav{ display:none; }
+@media(max-width:720px){
+  #bottom-nav{ display:flex; flex:0 0 auto; position:static; z-index:1; gap:2px;
+    background:var(--s1); border-top:1px solid var(--bd);
+    padding:6px var(--sp-1) calc(6px + env(safe-area-inset-bottom,0px)); }
+  .bn-item{ flex:1 1 0; min-width:0; min-height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:3px; padding:4px 2px; border:0; background:none; border-radius:var(--r-md); color:var(--mu);
+    font:600 var(--t-xs)/1.1 var(--fn); cursor:pointer; transition:color .13s var(--ease), background .13s var(--ease); }
+  .bn-item.on{ color:var(--accent-txt); }
+  .bn-item:active{ background:var(--s2); }
+  .bn-item:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  .bn-ic{ display:flex; }
+  .bn-lbl{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  #sb .snb[data-tab="build"], #sb .snb[data-tab="crew"], #sb .sb-tool[data-tab="tasks"]{ display:none!important; }
+  body:has(#abody :is(textarea, input[type="text"], input[type="search"], [contenteditable="true"]):focus) #bottom-nav,
+  body.set-open #bottom-nav{ display:none; }
+  /* The open menu runs to the bottom edge over where the bar is; the bar keeps
+     its room (no jump) but is not drawn or tappable under it. */
+  body:has(#sb:not(.cl)) #bottom-nav{ visibility:hidden; }
+  #cia{ padding-bottom:10px!important; }
+  .cc-banner{ bottom:calc(68px + env(safe-area-inset-bottom,0px)); }
+}
+@media(prefers-reduced-motion:reduce){ .bn-item{ transition:none; } }
