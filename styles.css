@@ -18251,7 +18251,7 @@ body.light #anav{ background:var(--bg); }
 .dvc-head > .dvc-restore + .dvc-undo, .dvc-head > .dvc-undo:has(+ .dvc-restore){ margin-left:0; }
 
 /* ═══ LAYER A415 - answers read like a well-set document (owner, Nov 25:
-   "ChatGPT and Claude level ... paragraphs, bold letters, big letters") ═══
+   "[the leading assistants'] level ... paragraphs, bold letters, big letters") ═══
    Headings were 16px over 15px body - structure nobody could see. They now
    step clearly (about 1.6 / 1.4 / 1.18 of the body, so the Font size
    setting scales them too), bold reads as emphasis rather than shouting, list
