@@ -18249,13 +18249,3 @@ body.light #anav{ background:var(--bg); }
 .dvc-undo + .dvc-restore{ margin-left:0; order:-1; }
 .dvc-head > .dvc-restore{ margin-left:auto; }
 .dvc-head > .dvc-restore + .dvc-undo, .dvc-head > .dvc-undo:has(+ .dvc-restore){ margin-left:0; }
-
-/* ═══ LAYER A414 - which memories went with an answer ═══ */
-.mem-used{ margin-top:var(--sp-1); }
-.mem-used-b{ background:none; border:0; padding:4px 2px; min-height:28px; color:var(--mu); font:500 var(--t-xs)/1.2 var(--fn); cursor:pointer; text-decoration:underline; text-decoration-color:var(--bd); text-underline-offset:3px; }
-.mem-used-b:hover{ color:var(--tx); }
-.mem-used-b:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-xs); }
-.mem-used-l{ margin-top:var(--sp-1); padding:var(--sp-2) var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s1); font-size:var(--t-sm); color:var(--tx); }
-.mem-used-h{ color:var(--mu); font-size:var(--t-xs); margin-bottom:var(--sp-1); }
-.mem-used-l ul{ margin:0 0 var(--sp-2); padding-left:18px; }
-.mem-used-l li{ margin:2px 0; overflow-wrap:anywhere; }
