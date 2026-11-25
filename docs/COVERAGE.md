@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-25 from 428 suites.
+2026-11-25 from 430 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.7%.
+Functions 139/139 (100.0%), code 91.6%.
 
 
 ### Company sign-in and SCIM
@@ -55,7 +55,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | File | Functions called | Code |
 |---|---|---|
 | `01-config.js` | 3/3 | 97.4% |
-| `02-partner-engines.js` | 27/27 | 95.2% |
+| `02-partner-engines.js` | 27/27 | 95.3% |
 | `03-routing-and-cache.js` | 2/2 | 98.8% |
 | `04-data-layer.js` | 33/33 | 95.5% |
 | `04a-control-plane.js` | 18/18 | 92.6% |
@@ -85,17 +85,17 @@ Functions 52/52 (100.0%), code 93.3%.
 | `22-subscribe.js` | 4/4 | 89.7% |
 | `23-consent.js` | 1/1 | 95.7% |
 | `24-bank-data.js` | 18/18 | 83.2% |
-| `25-linked-accounts.js` | 22/22 | 76.6% |
+| `25-linked-accounts.js` | 22/22 | 76.7% |
 | `26-crew-sync.js` | 10/10 | 88.6% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
 | `28-password-reset.js` | 7/7 | 92.7% |
-| `29-router.js` | 14/14 | 92.9% |
+| `29-router.js` | 14/14 | 93.0% |
 | `30-accounts-and-sync.js` | 20/20 | 96.9% |
 | `31-sign-in-codes.js` | 38/38 | 90.0% |
 | `32-teams.js` | 13/13 | 95.3% |
 | `33-team-roles.js` | 34/34 | 86.8% |
-| `34-chat-sync.js` | 16/16 | 95.8% |
+| `34-chat-sync.js` | 16/16 | 95.9% |
 | `34a-retention.js` | 8/8 | 97.1% |
 | `35-batches.js` | 19/19 | 92.0% |
 | `36-share-pages.js` | 12/12 | 93.6% |
@@ -106,9 +106,9 @@ Functions 52/52 (100.0%), code 93.3%.
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
 | `43-sms-agent.js` | 9/9 | 90.0% |
-| `44-payments.js` | 2/2 | 99.3% |
+| `44-payments.js` | 2/2 | 99.4% |
 | `45-abuse-and-activity.js` | 6/6 | 96.7% |
-| `46-referrals.js` | 27/27 | 96.2% |
+| `46-referrals.js` | 27/27 | 96.3% |
 | `47-renewal-sweep.js` | 7/7 | 94.2% |
 | `48-other-calendars.js` | 10/10 | 80.1% |
 | `49-renewals-and-ledger.js` | 15/15 | 92.5% |
@@ -120,7 +120,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `55-listing-reports.js` | 11/11 | 89.8% |
 | `56-admin.js` | 21/21 | 97.4% |
 | `57-public-api.js` | 7/7 | 94.9% |
-| `58-public-config-and-funnel.js` | 3/3 | 99.1% |
+| `58-public-config-and-funnel.js` | 3/3 | 98.9% |
 | `59-support.js` | 3/3 | 97.9% |
 | `60-readiness.js` | 9/9 | 96.6% |
 | `61-owner-digest.js` | 35/35 | 87.8% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
@@ -145,7 +145,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `77a-agent-signins.js` | 25/25 | 88.2% |
 | `78-teach-replay.js` | 5/5 | 87.0% |
 | `79-meaning.js` | 3/3 | 98.1% |
-| `80-switches.js` | 10/10 | 92.7% |
+| `80-switches.js` | 10/10 | 90.9% |
 | `81-web-push.js` | 15/15 | 94.7% |
 | `82-tasks.js` | 4/4 | 94.4% |
 | `83-support.js` | 4/4 | 84.6% |
