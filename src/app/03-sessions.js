@@ -206,10 +206,16 @@ const _TOOL_DEFAULTS = {
      the moment it started, looking exactly like a product that does not work.
      The reset check is what required this line, the same hour the fields were
      added. */
+  /* `problems` and the three `turn*` fields are what the running preview
+     reported and when the last turn began and ended (code-view.js). They are
+     about this session's app: carried over, a new build would open with the
+     last one's errors and could be told a change broke something it never
+     ran. */
   dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
          handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
-         compact:null, atHome:false, queue:[], stop:false, ctrl:null },
+         compact:null, atHome:false, queue:[], stop:false, ctrl:null,
+         problems:[], turnStartedAt:0, turnEndedAt:0, turnNote:null },
   /* `atHome` is the same view intent Dev declares above and Studio below, and
      Lab is the one of the three that did not have it until the sidebar's Build
      entry needed a way home that does not delete somebody's code. A new session
