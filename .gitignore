@@ -55,3 +55,7 @@ mcp-session.txt
 
 # Local audit evidence (never deploy as static assets)
 audit-output/
+
+# Research notes and reports name other companies; they are kept out of the repository.
+research_notes/
+reports/
