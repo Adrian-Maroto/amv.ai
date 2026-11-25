@@ -129,7 +129,10 @@ function railShape() {
 
   section('On a phone it wraps instead of walking off the side');
   const shown = s.tools.filter(t => t.shown);
-  ok(shown.length === ORDER.length, 'all five tools are present', shown.map(t => t.tab));
+  /* On a phone Tasks is in the bar of four at the bottom (Nov 25), so the
+     menu's rail holds the rest. */
+  const PHONE = ORDER.filter(t => t !== 'tasks');
+  ok(shown.length === PHONE.length && PHONE.every(t => shown.some(x => x.tab === t)), 'every tool not in the bottom bar is present', shown.map(t => t.tab));
   const out = shown.filter(t => t.pastRight > 0.5 || t.pastLeft > 0.5);
   ok(out.length === 0, 'and not one of them is laid out outside the rail', out);
 

@@ -18215,7 +18215,7 @@ body.light #anav{ background:var(--bg); }
    Chat, Build, Crew, Tasks at the bottom on a phone; the side menu keeps the
    chats and the other places and does not list these four again. It sits in
    the page's column below the content, so nothing scrolls under it. Hidden
-   while somebody types (the keyboard needs the room) and under Settings. */
+   under Settings. */
 #bottom-nav{ display:none; }
 @media(max-width:720px){
   #bottom-nav{ display:flex; flex:0 0 auto; position:static; z-index:1; gap:2px;
@@ -18230,7 +18230,9 @@ body.light #anav{ background:var(--bg); }
   .bn-ic{ display:flex; }
   .bn-lbl{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
   #sb .snb[data-tab="build"], #sb .snb[data-tab="crew"], #sb .sb-tool[data-tab="tasks"]{ display:none!important; }
-  body:has(#abody :is(textarea, input[type="text"], input[type="search"], [contenteditable="true"]):focus) #bottom-nav,
+  /* Not hidden while typing: a phone's keyboard already covers the bottom of
+     the page, and hiding it moved the whole layout between a tap landing and
+     its click firing - so a tap on "+" missed. */
   body.set-open #bottom-nav{ display:none; }
   /* The open menu runs to the bottom edge over where the bar is; the bar keeps
      its room (no jump) but is not drawn or tappable under it. */

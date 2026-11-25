@@ -10,7 +10,7 @@
      · the menu does not list those four again (New chat stays: it starts one);
      · every other place in the menu is on screen, labelled, takes the tap, and
        goes there;
-     · the bar steps aside while somebody types;
+     · the bar stays put while somebody types (nothing jumps under a tap);
      · New chat is in the top bar, and Settings is behind the avatar. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -48,15 +48,17 @@ const dup = await page.evaluate(() => ['build', 'crew', 'tasks'].filter(t => [..
 ok(dup.length === 0, 'Build, Crew and Tasks are not listed again in the menu', dup);
 await page.evaluate(() => { if (S.sbOpen) toggleSb(); });
 
-section('The bar steps aside while somebody types');
+section('The bar stays put while somebody types');
+/* Hiding it on focus moved the layout between a tap and its click, so a tap
+   on "+" missed (gate, Nov 25). The keyboard covers the bottom anyway. */
 await page.evaluate(() => setTab('chat'));
 await page.waitForTimeout(300);
+const y0 = await page.evaluate(() => document.getElementById('att-btn').getBoundingClientRect().top);
 await page.focus('#mta');
 await page.waitForTimeout(150);
-ok(await page.evaluate(() => getComputedStyle(document.getElementById('bottom-nav')).display === 'none'), 'hidden while the box has the keyboard');
+const y1 = await page.evaluate(() => document.getElementById('att-btn').getBoundingClientRect().top);
+ok(Math.abs(y1 - y0) < 1, 'focusing the box moves nothing', { y0, y1 });
 await page.evaluate(() => document.activeElement.blur());
-await page.waitForTimeout(150);
-ok(await page.evaluate(() => getComputedStyle(document.getElementById('bottom-nav')).display !== 'none'), 'and back when it does not');
 
 const PLACES = [['chat', 'New chat'], ['handoff', 'Handoff'],
                 ['integrations', 'Integrations'], ['memory', 'Memory'], ['spend', 'Spending']];
