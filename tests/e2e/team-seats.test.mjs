@@ -79,28 +79,42 @@ section('Yearly is a real choice that reaches checkout as yearly');
     AMV_API.stripeCheckout = async (...a) => { calls.push(a); const e = new Error('x'); e.code = 'not_configured'; throw e; };
     document.querySelector('[data-team-cycle="year"]').click();
     document.getElementById('seat-buy').click();
-    /* First the workspace being bought (owner, Nov 25), then the payment. */
-    for (let i = 0; i < 60 && !document.getElementById('tpv-go'); i++) await new Promise(r => setTimeout(r, 50));
-    const pv = document.querySelector('.tpv');
-    const preview = pv ? { text: pv.innerText, rows: pv.querySelectorAll('.tpv-row').length, charged: calls.length } : null;
-    document.getElementById('tpv-go') && document.getElementById('tpv-go').click();
+    /* First the workspace being bought, on a page of its own - not a popup
+       (owner, Nov 25) - then the payment. */
+    for (let i = 0; i < 60 && !document.getElementById('tsu-go'); i++) await new Promise(r => setTimeout(r, 50));
+    const pg = document.querySelector('#vc .tsu');
+    const setup = pg ? { text: pg.innerText, rows: pg.querySelectorAll('.tsu-row').length, charged: calls.length,
+                         overlay: !!document.querySelector('#ovr .ov'), kept: sessionStorage.getItem('amv_team_setup'),
+                         yearPressed: (document.querySelector('[data-tsu-cycle="year"]') || {}).getAttribute?.('aria-pressed') } : null;
+    document.getElementById('tsu-go') && document.getElementById('tsu-go').click();
     await new Promise(r => setTimeout(r, 200));
-    const out = { calls, preview, open: !!document.querySelector('.tpv'), say: document.getElementById('seat-say').textContent,
-                  total: document.getElementById('seat-total').textContent,
-                  pressed: document.querySelector('[data-team-cycle="year"]').getAttribute('aria-pressed') };
+    const out = { calls, setup, say: (document.getElementById('tsu-say') || {}).textContent || '',
+                  total: (document.getElementById('tsu-total') || {}).textContent || '' };
+    /* More people redraws the workspace and the order together. */
+    document.querySelector('[data-tsu-cycle="month"]').click();
+    const before = document.querySelectorAll('#tsu-list .tsu-row').length;
+    document.querySelector('[data-tsu-step="1"]').click();
+    out.more = { before, after: document.querySelectorAll('#tsu-list .tsu-row').length, n: document.getElementById('tsu-n').value,
+                 total: document.getElementById('tsu-total').textContent, pick: loadStr('amv_seat_pick') };
+    document.querySelector('[data-tsu-step="-1"]').click();
+    document.getElementById('tsu-back').click();
+    await new Promise(r => setTimeout(r, 100));
+    out.back = { landing: !!document.getElementById('seat-buy'), kept: sessionStorage.getItem('amv_team_setup') };
     AMV_API.stripeCheckout = orig.co;
     delete AMV_API.hasSession; if (orig.live) Object.defineProperty(AMV_API, 'live', orig.live); else delete AMV_API.live;
-    document.querySelector('[data-team-cycle="month"]').click();
     return out;
   });
-  ok(r.preview && /Preview/.test(r.preview.text) && /Owner/.test(r.preview.text) && /Admin/.test(r.preview.text) && /Member/.test(r.preview.text),
-     'the button first shows the workspace being bought: the roles and what each may do', r.preview);
-  ok(r.preview && r.preview.rows >= 2 && /billed yearly/.test(r.preview.text) && r.preview.charged === 0,
-     'with the seats as places to invite into and the price, before anything is asked of the payment page', r.preview);
-  ok(!r.open, 'Continue to payment closes it', r.open);
-  ok(r.calls.length === 1 && r.calls[0][0] === 'team' && r.calls[0][3] === 'year', 'checkout is asked for the team plan, yearly', r.calls);
-  ok(r.pressed === 'true' && !/\$/.test(r.total), 'the toggle says so, and no yearly figure is invented', r);
+  ok(r.setup && !r.setup.overlay && r.setup.kept === '1', 'the button opens a page of its own, not a popup', r.setup);
+  ok(r.setup && /Preview/.test(r.setup.text) && /Owner/.test(r.setup.text) && /Admin/.test(r.setup.text) && /Member/.test(r.setup.text) && /Who can do what/.test(r.setup.text),
+     'it shows the workspace being bought: the roles and what each may do', r.setup);
+  ok(r.setup && r.setup.rows >= 2 && /Step 1 of 2/.test(r.setup.text) && r.setup.charged === 0 && r.setup.yearPressed === 'true',
+     'with the seats as places to invite into, and the yearly choice carried over, before anything is asked of checkout', r.setup);
+  ok(r.calls.length === 1 && r.calls[0][0] === 'team' && r.calls[0][3] === 'year' && r.calls[0][2] >= 3, 'checkout is asked for the team plan, yearly, with the seats', r.calls);
+  ok(!/\$/.test(r.total) && /billed yearly/.test(r.total), 'no yearly figure is invented', r.total);
   ok(/Yearly Team billing is not switched on/.test(r.say) && /nothing was charged/i.test(r.say), 'and an unconfigured yearly price says so, charging nothing', r.say);
+  ok(r.more.after === r.more.before + 1 && /\$\d+ a month/.test(r.more.total) && r.more.pick === r.more.n,
+     'one more person adds a seat to the workspace and to the total', r.more);
+  ok(r.back.landing && r.back.kept === null, 'and Back returns to the Team page', r.back);
 }
 
 section('A member without the plan still sees their own team');

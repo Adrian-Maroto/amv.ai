@@ -1991,47 +1991,129 @@ function _cpInclFeatures(hasApex){
 window.openCustomPlan=openCustomPlan;
 window.openUpgradeModal=openUpgradeModal;
 
-/* THE TEAM WORKSPACE, SHOWN BEFORE IT IS BOUGHT (owner, Nov 25: "when you
+/* THE TEAM WORKSPACE, SET UP ON A PAGE OF ITS OWN (owner, Nov 25: "when you
    add a team workspace, show that you need to pay for it first - a little
-   demo of what you get: the roles, the people, then Buy").
+   demo of what you get"; then: "I don't want the team to be a popup ... more
+   clear, more convincing").
 
-   Opened by "Add Team workspace" (06-team-market.js). What it shows is the
-   workspace the person is about to create, with them as its owner and the
-   seats they picked as empty places for the people they invite - labelled
-   a preview, because nothing exists until the payment goes through. The
-   roles say what each one may do, which is what the server enforces
-   (Owner: billing and everything; Admin: people and the library; Member:
-   their own work). "Continue to payment" runs the same checkout the button
-   always ran, from this click. */
-function _teamPreviewOpen(o){
-  const r = document.getElementById('ovr'); if(!r) return false;
-  o = o || {};
-  const n = Math.max(1, +o.n || 3), price = +o.price || 20;
+   "Add Team workspace" (06-team-market.js) comes here: step 1 of 2, the
+   workspace the person is about to create - them as its owner, the seats
+   they pick as places for the people they invite, what each role may do
+   (what the server enforces: Owner billing and everything; Admin people and
+   the library; Member their own work) - beside the order it adds up to.
+   Step 2 is the processor's own checkout, followed in THIS tab the way every
+   plan's checkout is (_payGo), so there is no second window to lose. Labelled
+   a preview, because nothing exists until the payment goes through, and the
+   button says what it does: it opens checkout, it does not charge. */
+function _teamSetupPage(vc){
+  vc = vc || document.getElementById('vc'); if(!vc) return false;
+  const P = (typeof PLANS !== 'undefined' && PLANS.team) || { price: 20 };
+  const price = +P.price || 20;
+  const min = (typeof TEAM_SEAT_MIN !== 'undefined') ? TEAM_SEAT_MIN : 3;
+  const max = (typeof TEAM_SEAT_MAX !== 'undefined') ? TEAM_SEAT_MAX : 500;
+  const clamp = v => Math.max(min, Math.min(max, Math.floor(+v || 0) || min));
+  let n = clamp(loadStr('amv_seat_pick') || min);
+  let yearly = loadStr('amv_team_cycle') === 'year';
   const me = (typeof S !== 'undefined' && S.user && (S.user.name || S.user.email)) || T('You');
   const ini = String(me).trim().charAt(0).toUpperCase() || 'Y';
-  const role = (name, what) => '<div class="tpv-role"><b>' + escH(T(name)) + '</b><span>' + escH(T(what)) + '</span></div>';
-  const empty = Math.min(n - 1, 4);
-  const rows = '<li class="tpv-row"><span class="tpv-av">' + escH(ini) + '</span><span class="tpv-who"><b>' + escH(String(me)) + '</b><span>' + escH(T('You')) + '</span></span><span class="tpv-tag">' + escH(T('Owner')) + '</span></li>'
-    + Array.from({ length: empty }, (_, i) => '<li class="tpv-row tpv-open"><span class="tpv-av" aria-hidden="true">+</span><span class="tpv-who"><b>' + escH(T('Invite by email')) + '</b><span>' + escH(T('A seat for someone you add')) + '</span></span><span class="tpv-tag">' + escH(T(i === 0 ? 'Admin' : 'Member')) + '</span></li>').join('')
-    + (n - 1 > empty ? '<li class="tpv-more">' + escH(T('and {0} more seats').replace('{0}', String(n - 1 - empty))) + '</li>' : '');
-  const total = o.yearly ? T('{0} people, billed yearly').replace('{0}', String(n)) : T('${0} a month for {1} people').replace('{0}', String(n * price)).replace('{1}', String(n));
-  r.innerHTML = '<div class="ov" id="tpv-bg"><div class="ob tpv" role="dialog" aria-modal="true" aria-labelledby="tpv-h">'
-    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
-    + '<div class="tpv-top"><h2 id="tpv-h">' + escH(T('Your Team workspace')) + '</h2><span class="tpv-badge">' + escH(T('Preview')) + '</span></div>'
-    + '<p class="tpv-sub">' + escH(T('This is the workspace you are about to create. It starts the moment payment goes through.')) + '</p>'
-    + '<ul class="tpv-list">' + rows + '</ul>'
-    + '<div class="tpv-roles">'
-      + role('Owner', 'Billing, seats, roles and everything an admin can do.')
-      + role('Admin', 'Adds and removes people, and manages the shared library.')
-      + role('Member', 'Uses AMV with their own allowance. Their chats stay private.')
-    + '</div>'
-    + '<div class="tpv-pay"><span>' + escH(total) + '</span><button class="btn bp" id="tpv-go" type="button">' + escH(T('Continue to payment')) + '</button></div>'
-    + '<p class="tpv-fine">' + escH(T('Nothing is charged until you confirm on the payment page.')) + '</p>'
-    + '</div></div>';
-  try{ onBackdrop(document.getElementById('tpv-bg'), closeOvr); }catch(e){}
-  const go = document.getElementById('tpv-go');
-  if(go) go.addEventListener('click', () => { try{ closeOvr(); }catch(e){} if(typeof o.onGo === 'function') o.onGo(); });
-  try{ go && go.focus(); }catch(e){}
+  const ck = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const role = (name, what) => '<div class="tsu-role"><b>' + escH(T(name)) + '</b><span>' + escH(T(what)) + '</span></div>';
+  const gets = ['AMV’s top models for every person', 'Each seat brings its own full allowance', 'A shared project and prompt library', 'Invite by email - no keys to hand out', 'One bill for the whole team', 'Teammates never see your chats'];
+  vc.innerHTML = '<div class="sv fi"><div class="vi tsu">'
+    + '<button class="tsu-back" type="button" id="tsu-back"><span aria-hidden="true">←</span> ' + escH(T('Team')) + '</button>'
+    + '<span class="eyebrow">' + escH(T('Step 1 of 2 · Your workspace')) + '</span>'
+    + '<h2>' + escH(T('Set up your Team workspace')) + '</h2>'
+    + '<p class="vsub">' + escH(T('This is what you are creating. Payment is the next step, on a secure checkout page, and nothing is charged before you confirm there.')) + '</p>'
+    + '<div class="tsu-grid">'
+      + '<section class="tsu-ws" aria-labelledby="tsu-ws-h">'
+        + '<div class="tsu-ws-head"><span class="tsu-logo" aria-hidden="true">' + escH(ini) + '</span>'
+          + '<div class="tsu-ws-name"><b id="tsu-ws-h">' + escH(T('Your Team workspace')) + '</b><span id="tsu-ws-sub"></span></div>'
+          + '<span class="tsu-badge">' + escH(T('Preview')) + '</span></div>'
+        + '<ul class="tsu-list" id="tsu-list"></ul>'
+        + '<h3>' + escH(T('Who can do what')) + '</h3>'
+        + '<div class="tsu-roles">'
+          + role('Owner', 'Billing, seats, roles and everything an admin can do.')
+          + role('Admin', 'Adds and removes people, and manages the shared library.')
+          + role('Member', 'Uses AMV with their own allowance. Their chats stay private.')
+        + '</div>'
+        + '<h3>' + escH(T('What every seat gets')) + '</h3>'
+        + '<ul class="tsu-gets">' + gets.map(g => '<li>' + ck + '<span>' + escH(T(g)) + '</span></li>').join('') + '</ul>'
+      + '</section>'
+      + '<aside class="tsu-sum" aria-labelledby="tsu-sum-h">'
+        + '<h3 id="tsu-sum-h">' + escH(T('Your order')) + '</h3>'
+        + '<div class="tsu-field"><span class="tsu-lbl" id="tsu-n-l">' + escH(T('People')) + '</span>'
+          + '<div class="seat-pick tsu-pick" role="group" aria-labelledby="tsu-n-l">'
+            + '<button class="btn bs seat-step" type="button" data-tsu-step="-1" aria-label="' + escH(T('One fewer person')) + '">−</button>'
+            + '<input id="tsu-n" class="inp seat-n" type="number" inputmode="numeric" min="' + min + '" max="' + max + '" aria-labelledby="tsu-n-l">'
+            + '<button class="btn bs seat-step" type="button" data-tsu-step="1" aria-label="' + escH(T('One more person')) + '">+</button>'
+          + '</div></div>'
+        + '<div class="tsu-field"><span class="tsu-lbl" id="tsu-c-l">' + escH(T('Billing')) + '</span>'
+          + '<div class="team-cycle" role="group" aria-labelledby="tsu-c-l">'
+            + '<button type="button" class="team-cyc" data-tsu-cycle="month">' + escH(T('Monthly')) + '</button>'
+            + '<button type="button" class="team-cyc" data-tsu-cycle="year">' + escH(T('Yearly')) + '</button>'
+          + '</div></div>'
+        + '<div class="tsu-line"><span id="tsu-line-l"></span><span id="tsu-line-r"></span></div>'
+        + '<div class="tsu-total"><span>' + escH(T('Total')) + '</span><b id="tsu-total"></b></div>'
+        + '<button class="btn bp tsu-go" id="tsu-go" type="button">' + escH(T('Continue to secure checkout')) + '</button>'
+        + '<div class="tsu-say" id="tsu-say" role="status" aria-live="polite"></div>'
+        + '<p class="tsu-fine">' + escH(T('Nothing is charged until you confirm on the checkout page. Change the number of people or cancel any time.')) + '</p>'
+        + '<p class="tsu-fine">' + escH(T('Minimum {0} people. Somebody added mid-month costs only the part of the month they are there for.').replace('{0}', String(min))) + '</p>'
+      + '</aside>'
+    + '</div></div></div>';
+  const $i = id => document.getElementById(id);
+  const say = (t, kind) => { const s = $i('tsu-say'); if(s){ s.textContent = t || ''; s.className = 'tsu-say' + (kind ? ' ' + kind : ''); } };
+  const paint = () => {
+    const inp = $i('tsu-n'); if(!inp) return;
+    inp.value = String(n);
+    try{ saveStr('amv_seat_pick', String(n)); saveStr('amv_team_cycle', yearly ? 'year' : 'month'); }catch(e){}
+    document.querySelectorAll('[data-tsu-cycle]').forEach(b => { const on = (b.dataset.tsuCycle === 'year') === yearly; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    const shown = Math.min(n - 1, 5);
+    $i('tsu-list').innerHTML = '<li class="tsu-row"><span class="tsu-av">' + escH(ini) + '</span><span class="tsu-who"><b>' + escH(String(me)) + '</b><span>' + escH(T('You')) + '</span></span><span class="tsu-tag own">' + escH(T('Owner')) + '</span></li>'
+      + Array.from({ length: shown }, (_, i) => '<li class="tsu-row tsu-open"><span class="tsu-av" aria-hidden="true">+</span><span class="tsu-who"><b>' + escH(T('Invite by email')) + '</b><span>' + escH(T('A seat for someone you add')) + '</span></span><span class="tsu-tag">' + escH(T(i === 0 ? 'Admin' : 'Member')) + '</span></li>').join('')
+      + (n - 1 > shown ? '<li class="tsu-more">' + escH(T('and {0} more seats').replace('{0}', String(n - 1 - shown))) + '</li>' : '');
+    $i('tsu-ws-sub').textContent = T('{0} seats · Team plan').replace('{0}', String(n));
+    $i('tsu-line-l').textContent = T('Team × {0} people').replace('{0}', String(n));
+    $i('tsu-line-r').textContent = T('${0} each a month').replace('{0}', String(price));
+    /* No yearly figure is made up here: that price lives in the processor,
+       and checkout shows it before anything is paid. */
+    $i('tsu-total').textContent = yearly ? T('Shown at checkout, billed yearly') : T('${0} a month').replace('{0}', String(n * price));
+  };
+  paint();
+  const inp = $i('tsu-n');
+  inp.addEventListener('change', () => { n = clamp(inp.value); paint(); });
+  document.querySelectorAll('[data-tsu-step]').forEach(b => b.addEventListener('click', () => { n = clamp(n + (+b.dataset.tsuStep || 0)); paint(); }));
+  document.querySelectorAll('[data-tsu-cycle]').forEach(b => b.addEventListener('click', () => { yearly = b.dataset.tsuCycle === 'year'; say(''); paint(); }));
+  $i('tsu-back').addEventListener('click', () => { try{ sessionStorage.removeItem('amv_team_setup'); }catch(e){} try{ renderTeamView(); }catch(e){} });
+  const go = $i('tsu-go');
+  let busy = false;
+  const label = b => { if(!go.isConnected) return; go.disabled = b; go.setAttribute('aria-busy', b ? 'true' : 'false'); go.textContent = T(b ? 'Opening secure checkout…' : 'Continue to secure checkout'); };
+  go.addEventListener('click', async () => {
+    if(busy) return;
+    n = clamp(inp.value); paint();
+    const cycle = yearly ? 'year' : 'month';
+    say('');
+    /* Two different reasons it cannot go on, said as two different things:
+       somebody signed out can fix theirs; a page with no server cannot. */
+    if(!(window.AMV_API && AMV_API.live)){ say(T('Team checkout runs on the AMV server, which this page cannot reach right now. Nothing was charged.'), 'err'); return; }
+    if(!AMV_API.hasSession){ say(T('Sign in first and this takes you straight to checkout.')); try{ openAuth('signup'); }catch(e){} return; }
+    busy = true; label(true);
+    try{
+      const url = safeUrl(await AMV_API.stripeCheckout('team', (S.user && S.user.email) || '', n, cycle));
+      if(!url) throw new Error('no checkout url');
+      busy = false;
+      _payGo(url);
+      setTimeout(() => label(false), 4000);
+    }catch(e){
+      busy = false; label(false);
+      say(e && e.code === 'not_configured'
+        ? (cycle === 'year'
+            ? T('Yearly Team billing is not switched on yet, so nothing was charged. Choose Monthly to go ahead.')
+            : T('Team billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.'))
+        : T('Checkout could not open. Nothing was charged - please try again.'), 'err');
+    }
+  });
+  try{ vc.scrollTop = 0; window.scrollTo(0, 0); }catch(e){}
+  try{ go.focus({ preventScroll: true }); }catch(e){}
   return true;
 }
-window._teamPreviewOpen = _teamPreviewOpen;
+window._teamSetupPage = _teamSetupPage;

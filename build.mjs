@@ -124,6 +124,12 @@ function emitBridge() {
       for (const list of Object.values(d.kinds || {})) for (const e of (list || [])) {
         if (!(+e.r > 0 && +e.r <= 10000) || typeof e.n !== 'string' || e.n.length < 4 || e.n.length > 80) continue;
         const k = e.n; (names[k] = names[k] || []); if (names[k].indexOf(cc) < 0) names[k].push(cc);
+        /* And the name its own site goes by - chase.com, renfe.com, bbva.es -
+           as "@chase": the short name people actually say. The page counts
+           one only where it is written as a name, capitalised. */
+        const host = String(e.s || '').toLowerCase().split('/')[0].split('.');
+        const label = (host.length >= 3 && /^(bank|gov|nic|ac|co|com|org|net|edu|gob|go|or|ne)$/.test(host[host.length - 2]) ? host[host.length - 3] : host[host.length - 2]) || '';
+        if (/^[a-z]{4,24}$/.test(label)) { const a = '@' + label; (names[a] = names[a] || []); if (names[a].indexOf(cc) < 0) names[a].push(cc); }
       }
     }
     const out = {}; for (const k of Object.keys(names).sort()) out[k] = names[k].join(',');

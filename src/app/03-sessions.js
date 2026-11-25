@@ -1948,7 +1948,7 @@ function setTab(t){
     if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);
     return;
   }
-  try{ if(t!=='team' && window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); }catch(e){}
+  try{ if(t!=='team'){ sessionStorage.removeItem('amv_team_setup'); if(window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); } }catch(e){}
   /* The connector directory's own page state. A screen somebody left is not
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}

@@ -83,8 +83,11 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 236], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 236 (Nov 25): three - the Help center, moved out of the page
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 237], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 237 (Nov 25): one - the Team setup page (settings-panes.js),
+     which replaced the preview popup: the page itself and its workspace
+     list, redrawn as seats change, every value through escH.
+     innerHTML 236 (Nov 25): three - the Help center, moved out of the page
      (help-faqs.js); the Team preview before payment (settings-panes.js), every
      name and sentence through escH; and the Crew card that offers to connect a
      recognised service (mission-control.js), whose words go through escH and

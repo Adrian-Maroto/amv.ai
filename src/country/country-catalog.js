@@ -667,7 +667,11 @@ function ccMeasure(cc){
 }
 /* English only: "a {n}" before a vowel is "an" - "Find an Iberia flight". The
    translated titles are left alone ("a {n}" is "the" in Portuguese). */
-const _ccAn = (t, e) => /^[aeiou]/i.test(e.n) ? String(t).replace(/\b([Aa]) \{n\}/g, '$1n {n}') : String(t);
+/* "an" before a vowel SOUND: "an IKEA", but "a United Airlines flight", "a
+   Europcar", "a One" - a "you" or "w" sound takes "a" (seen in the United
+   States' Popular tasks, Nov 25). */
+const _ccVowel = (n) => /^[aeiou]/i.test(n) && !/^(u[nst]i|u[rs][aeu]|uber|euro?|eu[^r]|one\b|once)/i.test(n);
+const _ccAn = (t, e) => _ccVowel(e.n) ? String(t).replace(/\b([Aa]) \{n\}/g, '$1n {n}') : String(t);
 /* {c}: the country the entry was listed in - "the United States" in English
    (as the rest of Crew says it), the browser's own name for it otherwise. */
 const _ccPlace = (cc, en) => {
@@ -801,7 +805,10 @@ const CC_LEADS = [
   ["agency", "Fill in an official form", "Help me fill in this official form correctly: [form or link]"],
   ["museum", "What to do this weekend", "What is on this weekend in [city], {c}? Events, shows and free things to do."],
   ["theatre", "Find tickets for a show", "Find tickets for [show or event] in [city]: the best price and seats."],
-  ["sportsclub", "When {n} plays next", "When and where does {n} play next, and how do I get tickets?"],
+  /* No club is named: the data has clubs of some sports only, by site visits,
+     so it cannot say whose team somebody follows (it gave the United States
+     a football club and Pakistan, a cricket country, another). */
+  ["sportsclub", "When my team plays next", "When and where does [my team] play next, and how do I get tickets? Use the team's or the league's official site."],
   ["park", "Plan a day out", "Plan a day out in [place] for [who]: what to see, where to eat and how to get there."],
   ["museum", "Find a museum or exhibition", "Which museums or exhibitions in [city] are worth it right now, such as {n}? Prices and opening hours."],
   ["festival", "Festivals coming up", "Which festivals are coming up in {c} in the next few months, and how do I get tickets?"]
@@ -848,21 +855,44 @@ function _ccBrand(host){
   const shared = /^(bank|gov|nic|ac|co|com|org|net|edu|gob|go|or|ne)$/;
   return (l.length >= 3 && shared.test(l[l.length - 2]) ? l.slice(-3) : l.slice(-2)).join('.');
 }
+/* Popular takes turns across the everyday areas, in the order the note
+   above gives them - news, the bank, phone and internet, shopping, food,
+   travel, bills, sport - each turn taking that area's most
+   visited service not yet listed (Nov 25, owner: "all the most popular, no
+   irrelevant ones"). By visits alone almost every candidate sits in the same
+   band of the report, so the order inside it decided everything, and fame
+   decided it for the world: the BBC, the New York Times and CNN opened
+   Spain, Mexico and Nigeria, while ranking for the country's own instead
+   opened the United States with three pizza chains. Taking turns puts a
+   bank, a shop and a way to travel in the first ten everywhere. */
+const CC_POP_AREAS = [['newspaper', 'newssite', 'tv', 'radio'], ['bank'], ['telecom', 'isp'], ['supermarket', 'retail', 'ecommerce', 'mall'],
+  ['restaurant'], ['airline', 'rail', 'bus', 'airport', 'hotel'], ['utility', 'insurer'], ['sportsclub', 'stadium']];
 function ccTasksPopular(d, all){
   const byId = new Map((all || []).map(t => [t.id, t]));
-  const out = [], brands = new Set();
-  /* The report gives bands (top 1,000, 5,000...), not exact counts, so
-     within a band the better-known service goes first (Wikipedia editions,
-     w) - CNN and McDonald's before a regional chain in the same band. */
-  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9);
-  const ranked = _ccByPop(d).map((x, k) => [x, k]).sort((a, b) => (R(a[0]) - R(b[0])) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1])).map(z => z[0]);
-  for(const x of ranked){
-    if(!(x.kind in CC_EVERYDAY) || !CC_TASKS[x.kind]) continue;
-    const b = _ccBrand(x.e.s); if(brands.has(b)) continue;
-    const i = Math.min(CC_EVERYDAY[x.kind], CC_TASKS[x.kind].length - 1);
-    const t = byId.get('cc-' + x.kind + '-' + x.e.q + '-' + i); if(!t) continue;
-    brands.add(b); out.push(t);
-    if(out.length >= 50) break;
+  /* Inside an area: the visits band, then the outlets listed in half the
+     world or more (the BBC, CNN, IKEA - x of 50 and up) after the rest, then
+     the best known (Wikipedia editions). Ranking for the country's own here
+     instead picked Posteo as Germany's phone company and Banobras as
+     Mexico's bank. */
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), G = x => (+x.e.x || 1) >= 50 ? 1 : 0;
+  const ranked = _ccByPop(d).map((x, k) => [x, k]).sort((a, b) => (R(a[0]) - R(b[0])) || (G(a[0]) - G(b[0])) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1])).map(z => z[0]);
+  const queues = CC_POP_AREAS.map(kinds => ranked.filter(x => kinds.indexOf(x.kind) >= 0));
+  const out = [], brands = new Set(), at = queues.map(() => 0);
+  const take = (q) => {
+    const list = queues[q];
+    while(at[q] < list.length){
+      const x = list[at[q]++];
+      if(!(x.kind in CC_EVERYDAY) || !CC_TASKS[x.kind]) continue;
+      const b = _ccBrand(x.e.s); if(brands.has(b)) continue;
+      const i = Math.min(CC_EVERYDAY[x.kind], CC_TASKS[x.kind].length - 1);
+      const t = byId.get('cc-' + x.kind + '-' + x.e.q + '-' + i); if(!t) continue;
+      brands.add(b); out.push(t); return true;
+    }
+    return false;
+  };
+  for(let more = true; more && out.length < 50;){
+    more = false;
+    for(let q = 0; q < queues.length && out.length < 50; q++) if(take(q)) more = true;
   }
   return out;
 }
@@ -1461,7 +1491,17 @@ const _CC_FIND_COMMON = new Set(('about after again also always back bank bills 
   + 'mobile money monday monthly more morning music national news next night office online open orange order pay people phone '
   + 'plus post power price radio ready rent sale save school search send shop shopping simple smart social sport star store '
   + 'sunday target taxi team text that this time times today total tour town trade travel unit united union vision voice water '
-  + 'weather week weekly where with work world your').split(' '));
+  + 'weather week weekly where with work world your '
+  /* Words that come up in the request itself (Nov 25: "my Telcel plan" also
+     matched a service called Plan). */
+  + 'plan plans account accounts bill parcel package train trains flight flights ticket tickets statement balance '
+  + 'transfer transfers spend spent offer offers group global apps cloud drive photos maps chat notes order orders '
+  + 'tell remind remember watch track compare summary summarize find show make help call meet hello alert').split(' '));
+/* The name a service's own site goes by - chase.com, bbva.es, hdfc.bank.in -
+   which is what people say ("my Chase card"), where the catalogue's name is
+   the formal one ("JPMorgan Chase"). Counted only where it is written as a
+   name, with a capital, so "an apple pie" is never Apple. */
+const _ccSiteName = (s) => { const b = _ccBrand(String(s || '').toLowerCase()).split('.')[0]; return /^[a-z]{4,24}$/.test(b) && !_CC_FIND_COMMON.has(b) ? b : ''; };
 const _ccFindNorm = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .replace(/[^a-z0-9À-￿]+/g, ' ').trim();
 let _ccNamesP = null;
@@ -1473,27 +1513,31 @@ function _ccNamesLoad(){
 async function ccFindServices(text, max){
   const hay = ' ' + _ccFindNorm(text) + ' ';
   if(hay.trim().length < 3) return [];
+  const caps = new Set((String(text).match(/\p{Lu}[\p{L}\p{N}]*/gu) || []).map(w => _ccFindNorm(w)));
   /* Only the countries that can hold an answer are read: the person's own,
      and those the name index (service-names.json, built from every country's
      file) says list a name that appears in what was said. One small index
      instead of a hundred files on the first lookup. */
   const codes = [];
-  try{ const own = typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : ''; if(own) codes.push(own); }catch(e){}
+  let own = '';
+  try{ own = (typeof _cwCountryGuess === 'function' && _cwCountryGuess()) || ''; if(own) codes.push(own); }catch(e){}
   const idx = await _ccNamesLoad();
   if(idx) for(const [name, ccs] of Object.entries(idx)){
-    const n = _ccFindNorm(name); if(n.length < 4 || _CC_FIND_COMMON.has(n) || hay.indexOf(' ' + n + ' ') < 0) continue;
+    if(name.charAt(0) === '@'){ const a = name.slice(1); if(a.length < 4 || _CC_FIND_COMMON.has(a) || !caps.has(a)) continue; }
+    else { const n = _ccFindNorm(name); if(n.length < 4 || _CC_FIND_COMMON.has(n) || hay.indexOf(' ' + n + ' ') < 0) continue; }
     for(const cc of String(ccs).split(',')) if(/^[A-Z]{2}$/.test(cc) && codes.indexOf(cc) < 0) codes.push(cc);
     if(codes.length > 12) break;
   }
   const by = new Map();
   const consider = (kind, e, cc, topic) => {
     const n = _ccFindNorm(e.n);
-    if(n.length < 4 || _CC_FIND_COMMON.has(n)) return;
-    if(hay.indexOf(' ' + n + ' ') < 0) return;
+    let tok = (n.length >= 4 && !_CC_FIND_COMMON.has(n) && hay.indexOf(' ' + n + ' ') >= 0) ? n : '';
+    if(!tok){ const a = _ccSiteName(e.s); if(a && caps.has(a)) tok = a; }
+    if(!tok) return;
     const k = e.s; let x = by.get(k);
-    if(!x){ x = { name: e.n, site: e.s, kind, topic: topic || CC_KIND_TOPIC[kind] || '', cc: [], r: 1e9, len: n.length }; by.set(k, x); }
+    if(!x){ x = { name: e.n, site: e.s, kind, topic: topic || CC_KIND_TOPIC[kind] || '', cc: [], r: 1e9, ro: 1e9, len: tok.length, tok }; by.set(k, x); }
     if(cc && x.cc.indexOf(cc) < 0) x.cc.push(cc);
-    if(+e.r > 0) x.r = Math.min(x.r, +e.r);
+    if(+e.r > 0){ x.r = Math.min(x.r, +e.r); if(cc && cc === own) x.ro = Math.min(x.ro, +e.r); }
   };
   let i = 0;
   const one = async () => { while(i < codes.length){ const cc = codes[i++]; const d = await ccLoad(cc).catch(() => null); if(!d) continue;
@@ -1501,9 +1545,18 @@ async function ccFindServices(text, max){
   await Promise.all(Array.from({ length: 8 }, one));
   const g = await ccGlobalLoad().catch(() => null);
   if(g) for(const rows of Object.values(g)) for(const x of rows) consider('global', x.e, '', x.topic);
-  /* The longest name first ("Bank of America" over "America"), then the most
-     visited, then the one most countries list. */
-  return [...by.values()].sort((a, b) => (b.len - a.len) || (a.r - b.r) || (b.cc.length - a.cc.length)).slice(0, max || 3);
+  /* The longest name first ("Bank of America" over "America"), then the
+     person's own country's ("Santander" in Spain is Banco Santander, not the
+     Polish consumer lender), then the most visited, then the one most
+     countries list. */
+  const mine = x => own && x.cc.indexOf(own) >= 0 ? 1 : 0;
+  /* One answer for each name said: "Santander and BBVA" is two banks, not
+     three Santanders. Between two of the person's own, the one visited more
+     from their country - Spain's BBVA, not BBVA Colombia, which Spain's
+     file also lists. */
+  const said = new Set();
+  return [...by.values()].sort((a, b) => (b.len - a.len) || (mine(b) - mine(a)) || (a.ro - b.ro) || (a.r - b.r) || (b.cc.length - a.cc.length))
+    .filter(x => !said.has(x.tok) && said.add(x.tok)).slice(0, max || 3).map(x => { delete x.tok; delete x.ro; return x; });
 }
 try{ window.ccFindServices = ccFindServices; }catch(e){}
 function ccUseService(q){

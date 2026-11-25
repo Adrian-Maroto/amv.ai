@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="d3f2bc2fc9a1f428">
+<meta name="amv-build" content="c3b9fb39aee812dd">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10772,30 +10772,59 @@ body:has(#sb:not(.cl)) #bottom-nav{ visibility:hidden; }
 #app .cj .cj-box{min-height:76px;padding:10px 10px 10px var(--sp-4);border-radius:24px}
 #app .cj .cj-box textarea.cj-input{min-height:48px}
 }
-.ob.tpv{max-width:520px;width:100%}
-.tpv-top{display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-1)}
-.tpv-top h2{margin:0;font-family:var(--fdisplay);font-size:var(--t-xl);letter-spacing:-.01em}
-.tpv-badge{font-size:var(--t-xs);font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:var(--r-pill);padding:2px 10px}
-.tpv-sub{color:var(--mu);font-size:var(--t-sm);margin:0 0 var(--sp-3)}
-.tpv-list{list-style:none;margin:0 0 var(--sp-3);padding:0;border:1px solid var(--bd);border-radius:var(--r-lg);overflow:hidden}
-.tpv-row{display:flex;align-items:center;gap:var(--sp-3);padding:10px var(--sp-3);border-top:1px solid var(--bd)}
-.tpv-row:first-child{border-top:0}
-.tpv-av{flex:0 0 32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:var(--on-accent,#fff);font-weight:600;font-size:var(--t-sm)}
-.tpv-open .tpv-av{background:var(--s2);color:var(--mu);border:1px dashed var(--bdl)}
-.tpv-who{flex:1;min-width:0;display:flex;flex-direction:column}
-.tpv-who b{font-size:var(--t-md);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tpv-who span{font-size:var(--t-xs);color:var(--mu)}
-.tpv-open .tpv-who b{color:var(--mu);font-weight:500}
-.tpv-tag{flex:0 0 auto;font-size:var(--t-xs);color:var(--tx);border:1px solid var(--bd);border-radius:var(--r-pill);padding:2px 10px}
-.tpv-more{padding:8px var(--sp-3);font-size:var(--t-xs);color:var(--mu);border-top:1px solid var(--bd)}
-.tpv-roles{display:grid;gap:var(--sp-2);margin-bottom:var(--sp-4)}
-.tpv-role{display:grid;grid-template-columns:80px 1fr;gap:var(--sp-2);font-size:var(--t-sm);line-height:1.45}
-.tpv-role b{font-weight:600}
-.tpv-role span{color:var(--mu)}
-.tpv-pay{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap;padding-top:var(--sp-3);border-top:1px solid var(--bd)}
-.tpv-pay span{font-weight:600;font-size:var(--t-md)}
-.tpv-fine{font-size:var(--t-xs);color:var(--mu);margin:var(--sp-2) 0 0}
-@media (max-width:480px){.tpv-role{grid-template-columns:1fr;gap:2px}.tpv-pay .btn{width:100%}}
+.tsu{max-width:1080px;margin:0 auto}
+.tsu-back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:6px 0;margin-bottom:var(--sp-3);color:var(--mu);font:inherit;font-size:var(--t-sm);cursor:pointer;min-height:36px}
+.tsu-back:hover{color:var(--tx)}
+.tsu-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+.tsu h2{font-family:var(--fdisplay);font-size:var(--t-2xl);letter-spacing:-.02em;line-height:1.15;margin:var(--sp-1) 0 var(--sp-2)}
+.tsu > .vsub{max-width:620px;margin-bottom:var(--sp-5)}
+.tsu-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-5);align-items:start}
+@media (min-width:900px){.tsu-grid{grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr)}.tsu-sum{position:sticky;top:var(--sp-4)}}
+.tsu-ws,.tsu-sum{border:1px solid var(--bd);border-radius:var(--r-xl);background:var(--s1);padding:var(--sp-5);min-width:0}
+.tsu-ws h3,.tsu-sum h3{font-size:var(--t-sm);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.06em;margin:var(--sp-5) 0 var(--sp-3)}
+.tsu-sum h3{margin-top:0}
+.tsu-ws-head{display:flex;align-items:center;gap:var(--sp-3);padding-bottom:var(--sp-4);border-bottom:1px solid var(--bd);margin-bottom:var(--sp-4)}
+.tsu-logo{flex:0 0 44px;height:44px;border-radius:var(--r-md);display:inline-flex;align-items:center;justify-content:center;background:var(--accent-grad,var(--accent));color:var(--on-accent,#fff);font-family:var(--fdisplay);font-weight:600;font-size:var(--t-lg)}
+.tsu-ws-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tsu-ws-name b{font-size:var(--t-lg);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsu-ws-name span{font-size:var(--t-sm);color:var(--mu)}
+.tsu-badge{flex:0 0 auto;font-size:var(--t-xs);font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:var(--r-pill);padding:3px 10px}
+.tsu-list{list-style:none;margin:0;padding:0;border:1px solid var(--bd);border-radius:var(--r-lg);overflow:hidden;background:var(--bg)}
+.tsu-row{display:flex;align-items:center;gap:var(--sp-3);padding:12px var(--sp-4);border-top:1px solid var(--bd)}
+.tsu-row:first-child{border-top:0}
+.tsu-av{flex:0 0 34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:var(--on-accent,#fff);font-weight:600;font-size:var(--t-sm)}
+.tsu-open .tsu-av{background:transparent;color:var(--mu);border:1px dashed var(--bdl)}
+.tsu-who{flex:1;min-width:0;display:flex;flex-direction:column}
+.tsu-who b{font-size:var(--t-md);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsu-who span{font-size:var(--t-xs);color:var(--mu)}
+.tsu-open .tsu-who b{color:var(--mu);font-weight:500}
+.tsu-tag{flex:0 0 auto;font-size:var(--t-xs);color:var(--tx);border:1px solid var(--bd);border-radius:var(--r-pill);padding:3px 10px}
+.tsu-tag.own{border-color:transparent;background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tsu-more{padding:10px var(--sp-4);font-size:var(--t-sm);color:var(--mu);border-top:1px solid var(--bd)}
+.tsu-roles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3)}
+.tsu-role{border:1px solid var(--bd);border-radius:var(--r-lg);padding:var(--sp-3);display:flex;flex-direction:column;gap:4px;font-size:var(--t-sm);line-height:1.45}
+.tsu-role b{font-weight:600;font-size:var(--t-md)}
+.tsu-role span{color:var(--mu)}
+.tsu-gets{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2) var(--sp-4)}
+.tsu-gets li{display:flex;gap:var(--sp-2);align-items:flex-start;font-size:var(--t-base);line-height:1.45}
+.tsu-gets svg{flex:0 0 16px;margin-top:2px;color:var(--grn)}
+.tsu-field{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-3);flex-wrap:wrap}
+.tsu-lbl{font-size:var(--t-base);font-weight:500}
+.tsu-pick{margin:0}
+.tsu-line{display:flex;justify-content:space-between;gap:var(--sp-3);font-size:var(--t-sm);color:var(--mu);padding-top:var(--sp-3);border-top:1px solid var(--bd)}
+.tsu-total{display:flex;justify-content:space-between;align-items:baseline;gap:var(--sp-3);margin:var(--sp-2) 0 var(--sp-4)}
+.tsu-total span{font-weight:600}
+.tsu-total b{font-family:var(--fdisplay);font-size:var(--t-xl);font-weight:600;text-align:right}
+.tsu-go{width:100%;min-height:46px;font-size:var(--t-md)}
+.tsu-say{font-size:var(--t-sm);margin-top:var(--sp-2)}
+.tsu-say:empty{display:none}
+.tsu-say.err{color:var(--red)}
+.tsu-fine{font-size:var(--t-xs);color:var(--mu);margin:var(--sp-2) 0 0;line-height:1.5}
+@media (max-width:640px){
+.tsu h2{font-size:var(--t-xl)}
+.tsu-ws,.tsu-sum{padding:var(--sp-4)}
+.tsu-roles,.tsu-gets{grid-template-columns:1fr}
+}
 :root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-help.hc2{max-width:760px;margin:0 auto;padding-top:var(--sp-4)}
 .hc2-hero{text-align:center;margin-bottom:var(--sp-4)}
 .hc2-hero h2{font-family:var(--fdisplay);font-size:var(--t-2xl);font-weight:600;letter-spacing:-.025em;line-height:1.15;margin:0 0 var(--sp-3)}
@@ -11084,7 +11113,7 @@ body:has(#sb:not(.cl)) #bottom-nav{ visibility:hidden; }
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.d665e60cf12b.js" defer integrity="sha384-DVqY44HJobisRlUkLKh2AvMPZqOe3e9dcm/huDofAmX3pkKmgpGbiIhAJEVJw/5Z" data-amv-app></script>
+<script src="/app.3df415459c02.js" defer integrity="sha384-7Gd0SeNR4kcJO2/mH/h+oPelgPls+d4NCjmDl7mqlavwn7Za0CQasAg2AXdTIBg9" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

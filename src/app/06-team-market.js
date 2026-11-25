@@ -208,11 +208,14 @@ function renderTeamView(){
     'gets AMV’s top models, and you get one bill.';
 
   // No backend yet: the same offer, and the button says why it cannot finish.
-  if(!AMVTeam.enabled()){
+  /* Somebody on the setup step stays there across a reload. */
+  const landing=()=>{
+    let setup=false; try{ setup=sessionStorage.getItem('amv_team_setup')==='1'; }catch(e){}
+    if(setup){ _teamSetupGo(); return; }
     vc.innerHTML=teamLanding(LEAD);
     _wireSeatBuy();
-    return;
-  }
+  };
+  if(!AMVTeam.enabled()){ landing(); return; }
 
   /* Membership comes BEFORE the plan gate. A seat is the team paying for the
      person filling it, so somebody invited onto an Elite team is a full member
@@ -223,11 +226,7 @@ function renderTeamView(){
     // a member on any plan has a team, so the nav item follows membership too
     try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
     if(team){ _renderTeamManage(vc, team); return; }
-    if(!hasTeamPlan){
-      vc.innerHTML=teamLanding(LEAD);
-      _wireSeatBuy();
-      return;
-    }
+    if(!hasTeamPlan){ landing(); return; }
     _renderTeamCreate(vc);
   }).catch(()=>{
     vc.innerHTML='<div class="sv fi"><div class="vi">'+
@@ -260,7 +259,6 @@ function _wireSeatBuy(){
   document.querySelectorAll('.seat-step').forEach(b=>on(b,'click',()=>{
     el.value=String(clamp(+el.value + (+b.dataset.seat||0))); paint();
   }));
-  const cycle=()=>loadStr('amv_team_cycle')==='year'?'year':'month';
   document.querySelectorAll('[data-team-cycle]').forEach(b=>on(b,'click',()=>{
     const y=b.dataset.teamCycle==='year';
     try{ saveStr('amv_team_cycle', y?'year':'month'); }catch(e){}
@@ -273,50 +271,21 @@ function _wireSeatBuy(){
       : 'Billed monthly. Cancel or change the number of people any time.';
     paint();
   }));
-  /* First the workspace they are buying, then the payment (owner, Nov 25).
-     The preview lives with Settings' panes (settings-panes.js, fetched when
-     the page is idle); if it cannot be fetched, the checkout goes straight
-     on rather than the button doing nothing. */
-  on($('seat-buy'),'click',()=>{
-    const n=clamp(el.value);
-    _lazyLoad('settings-panes.js', () => typeof window._teamPreviewOpen === 'function').then(ok => {
-      if(!(ok && window._teamPreviewOpen({ n, price:P.price, yearly:cycle()==='year', onGo:_seatCheckout }))) _seatCheckout();
-    });
-  });
-  const _seatCheckout=async()=>{
-    const n=clamp(el.value);
-    const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
-    /* Two different reasons it cannot go on, said as two different things:
-       somebody signed out can fix theirs; a page with no server cannot. */
-    if(!(window.AMV_API&&AMV_API.live)){
-      say('Team checkout runs on the AMV server, which this page cannot reach right now. Nothing was charged.');
-      return;
-    }
-    if(!AMV_API.hasSession){
-      say('Sign in first and this takes you straight to checkout.');
-      try{ openAuth('signup'); }catch(e){}
-      return;
-    }
-    const btn=$('seat-buy'); if(btn){ btn.disabled=true; btn.textContent='Opening\u2026'; }
-    say('');
-    /* Opened on the click, before the await spends the user activation - see
-       _preopenPay. Team seats are the largest single sale AMV makes, so this is
-       the last button that should be losing itself to a pop-up blocker. */
-    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
-    try{
-      const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n,cycle());
-      _openExternalPay(url,'team','card',pre);
-    }catch(e){
-      try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
-      say(e&&e.code==='not_configured'
-        ? (cycle()==='year'
-            ? 'Yearly Team billing is not switched on yet, so nothing was charged. Choose Monthly to go ahead.'
-            : 'Team billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.')
-        : (e&&e.message)||'Could not open checkout. Nothing was charged.');
-    }finally{ if(btn){ btn.disabled=false; btn.textContent='Add Team workspace'; } }
-  };
+  /* First the workspace they are buying, on a page of its own, then the
+     payment (owner, Nov 25) - _teamSetupPage in settings-panes.js. */
+  on($('seat-buy'),'click',()=>{ el.value=String(clamp(el.value)); paint(); _teamSetupGo(); });
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
+function _teamSetupGo(){
+  try{ sessionStorage.setItem('amv_team_setup','1'); }catch(e){}
+  _lazyLoad('settings-panes.js',()=>typeof window._teamSetupPage==='function').then(ok=>{
+    if(S.tab!=='team') return;
+    if(ok){ window._teamSetupPage($('vc')); return; }
+    try{ sessionStorage.removeItem('amv_team_setup'); }catch(e){}
+    toast(T('That could not be loaded. Check your connection and try again.'),'error',6000);
+    renderTeamView();
+  });
+}
 
 /* Settings -> Team. The question this answers is "what IS this", which the
    product could not answer anywhere: the Team tab showed either a tool or an
