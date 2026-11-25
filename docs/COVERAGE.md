@@ -2,7 +2,7 @@
 
 Measured by `node scripts/coverage.mjs` - V8's own block coverage over every
 Worker suite (tests/worker), mapped back onto `src/worker/`. Generated on
-2026-11-25 from 430 suites.
+2026-11-25 from 431 suites.
 
 "Functions" is how many top-level functions any suite called at all. "Code" is the share of
 code inside blocks that ran - an `if` whose branch never ran is a block that did not run, so
@@ -17,7 +17,7 @@ Every function in these areas that no Worker suite ever calls, by name. This lis
 
 ### Sign-in, passkeys, two-step, sessions
 
-Functions 139/139 (100.0%), code 91.6%.
+Functions 139/139 (100.0%), code 91.7%.
 
 
 ### Company sign-in and SCIM
@@ -37,7 +37,7 @@ Functions 77/77 (100.0%), code 93.9%.
 
 ### Spending limits and usage
 
-Functions 50/50 (100.0%), code 93.2%.
+Functions 50/50 (100.0%), code 93.3%.
 
 
 ### Action protocol (writes on connected accounts)
@@ -64,7 +64,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `04d-pg-read.js` | 17/17 | 92.5% |
 | `05-audit-log.js` | 13/13 | 97.9% |
 | `06-input-validation.js` | 2/2 | 90.7% |
-| `07-atomic-counters.js` | 19/19 | 94.6% |
+| `07-atomic-counters.js` | 19/19 | 94.7% |
 | `08-automations.js` | 7/7 | 97.8% |
 | `09-connected-accounts.js` | 36/36 | 88.7% |
 | `09a-action-protocol.js` | 6/6 | 91.0% |
@@ -86,22 +86,22 @@ Functions 52/52 (100.0%), code 93.3%.
 | `23-consent.js` | 1/1 | 95.7% |
 | `24-bank-data.js` | 18/18 | 83.2% |
 | `25-linked-accounts.js` | 22/22 | 76.7% |
-| `26-crew-sync.js` | 10/10 | 88.6% |
+| `26-crew-sync.js` | 10/10 | 88.7% |
 | `27-backup-restore.js` | 14/14 | 94.7% |
 | `27a-nightly-backup.js` | 23/23 | 86.4% |
 | `28-password-reset.js` | 7/7 | 92.7% |
 | `29-router.js` | 14/14 | 93.0% |
-| `30-accounts-and-sync.js` | 20/20 | 96.9% |
+| `30-accounts-and-sync.js` | 20/20 | 97.1% |
 | `31-sign-in-codes.js` | 38/38 | 90.0% |
 | `32-teams.js` | 13/13 | 95.3% |
 | `33-team-roles.js` | 34/34 | 86.8% |
 | `34-chat-sync.js` | 16/16 | 95.9% |
 | `34a-retention.js` | 8/8 | 97.1% |
-| `35-batches.js` | 19/19 | 92.0% |
+| `35-batches.js` | 19/19 | 92.1% |
 | `36-share-pages.js` | 12/12 | 93.6% |
 | `37-connector-directory.js` | 3/3 | 97.7% |
 | `38-connector-logos.js` | 10/10 | 96.1% |
-| `39-resumable-streams.js` | 17/17 | 94.6% |
+| `39-resumable-streams.js` | 17/17 | 94.8% |
 | `40-widget.js` | 12/12 | 93.1% |
 | `41-signed-tokens.js` | 31/31 | 93.4% |
 | `42-deploy-routes.js` | 0/0 | 100.0% |
@@ -111,7 +111,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `46-referrals.js` | 27/27 | 96.3% |
 | `47-renewal-sweep.js` | 7/7 | 94.2% |
 | `48-other-calendars.js` | 10/10 | 80.1% |
-| `49-renewals-and-ledger.js` | 15/15 | 92.5% |
+| `49-renewals-and-ledger.js` | 15/15 | 92.7% |
 | `50-extra-usage.js` | 13/13 | 92.6% |
 | `51-marketplace.js` | 3/3 | 93.4% |
 | `52-marketplace-trust.js` | 11/11 | 92.9% |
@@ -137,7 +137,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `70-hooks.js` | 22/22 | 94.7% |
 | `71-scim.js` | 15/15 | 84.0% |
 | `72-web-takeover.js` | 10/10 | 80.3% |
-| `73-passkeys-and-mfa.js` | 43/43 | 89.3% |
+| `73-passkeys-and-mfa.js` | 43/43 | 89.5% |
 | `74-site-icons.js` | 6/6 | 94.1% |
 | `75-source-previews.js` | 3/3 | 97.7% |
 | `76-email-words.js` | 2/2 | 99.8% |
