@@ -195,7 +195,7 @@ section('One definition of what a plan costs');
   /* There were three copies of the price table - the chat backstop, the SMS
      backstop and the automation budget. Three copies of the number that IS the
      profit guarantee is three chances for one to be quietly out of date. */
-  const copies = (src.match(/= ?\{ ?pro: ?15, ?elite: ?75, ?ultra: ?200 ?\}/g) || []).length;   // assignments, not the comment describing them
+  const copies = (src.match(/= ?\{ ?pro: ?15,(?: ?family: ?30,)? ?elite: ?75, ?ultra: ?200 ?\}/g) || []).length;   // Family ($30) joined the table Nov 25   // assignments, not the comment describing them
   ok(copies === 1, 'the plan price table exists exactly once', copies);
   /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
      arithmetic while it lived inline in the chat handler. Moving it into one
