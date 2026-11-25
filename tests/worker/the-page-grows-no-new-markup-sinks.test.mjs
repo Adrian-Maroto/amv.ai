@@ -34,7 +34,10 @@ const CEILING = {
   /* 406 (Nov 24): DOWN three - Handoff's screen moved out of the page into
      handoff-view.js (counted with the fetched files below, which rose by the
      same three). */
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 406],
+  /* 401 (Nov 25): DOWN five - Billing's screen moved out of the page into
+     settings-panes.js (counted with the fetched files below, which rose by
+     the same five). */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 401],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],
@@ -73,8 +76,11 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 223], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 223 (Nov 24): three, the code workspace's Problems and Next
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 228], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 228 (Nov 25): five, moved, not new - Billing's screen
+     (invoices, credit, the plan card) came out of the page into
+     settings-panes.js, and the page's ceiling went down by the same five.
+     innerHTML 223 (Nov 24): three, the code workspace's Problems and Next
      steps (code-view.js) - the empty state, the problem list and the
      suggestions. Every value through escH: fixed sentences through T(), each
      problem's text (relayed from the sandboxed preview as a string, never

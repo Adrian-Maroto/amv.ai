@@ -1697,7 +1697,10 @@ step('Page weight is under control', () => {
      LAYER A401) - one composer, one mode switch and one set of starter chips
      for Design it, Build an app and Work on code. The old tile and upload
      rules it replaces were removed first (~1.4KB raw back). */
-  const CEILING = 598 * 1024;   // gzipped, which is what actually crosses the network
+  /* 598 -> 596, 2026-11-25, DOWN: Billing's screen moved into settings-panes.js
+     (~4KB gzipped off every first visit); the ceiling follows it down so the
+     room cannot be quietly spent. */
+  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
