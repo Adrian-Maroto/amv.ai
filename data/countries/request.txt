@@ -1,2 +1,2 @@
-# Empty = every country AMV lists. Run 7: shopping centres only.
-# kinds: mall
+# Empty = every country AMV lists. Run 8: job sites (employment websites) only.
+# kinds: jobsite

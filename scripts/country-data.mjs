@@ -51,6 +51,11 @@ export const KINDS = {
   retail:      ['Q507619',   40, 'retail chain'],
   supermarket: ['Q18043413', 25, 'supermarket chain'],
   ecommerce:   ['Q4382945',  25, 'online shop'],
+  /* Where people there look for work (owner, Nov 25: "in the US LinkedIn,
+     Indeed; Germany, Spain, Italy, China, Vietnam their own"). Before the
+     employer and business kinds, so a job board filed as a business (InfoJobs
+     in Spain) is listed as a job board. */
+  jobsite:     ['Q580148',   25, 'employment website'],
   restaurant:  ['Q18534542', 20, 'restaurant chain'],
   hotel:       ['Q1631129',  15, 'hotel chain'],
   agency:      ['Q327333',   60, 'government agency'],
