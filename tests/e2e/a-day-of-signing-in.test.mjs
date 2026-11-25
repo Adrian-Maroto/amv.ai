@@ -64,10 +64,24 @@ const boot = async () => {
   await page.evaluate(() => { try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {} document.getElementById('cookie-consent-banner')?.remove(); });
 };
 const fill = (sel, v) => page.evaluate(([s, v]) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); }, [sel, v]);
+/* Opened the way a person opens it: after sign-out has finished redrawing the
+   app. signOut() returns before goApp()'s own redraw has run, and a form opened
+   inside that moment was closed under the test (CI, Nov 24) - so the form is
+   opened, filled and, if the redraw took it away, opened again. */
 const signIn = async () => {
-  await page.evaluate(() => openAuth('login'));
-  await until(() => !!document.getElementById('a-email'));
-  await fill('#a-email', 'day@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
+  let filled = false;
+  for (let i = 0; i < 4 && !filled; i++) {
+    await page.waitForTimeout(i ? 400 : 250);
+    await page.evaluate(() => { if (!document.getElementById('a-email')) openAuth('login'); });
+    await until(() => !!document.getElementById('a-email'), 5000);
+    filled = await page.evaluate(([em, pw]) => {
+      const a = document.getElementById('a-email'), b = document.getElementById('a-pass');
+      if (!a || !b) return false;
+      a.value = em; a.dispatchEvent(new Event('input', { bubbles: true }));
+      b.value = pw; b.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }, ['day@example.com', 'A-real-Passw0rd!']);
+  }
   await page.evaluate(() => document.getElementById('auth-submit').click());
   await until(() => !!document.getElementById('cv-code') || !!(window.AMV_API && AMV_API.token && S.user && S.user.email));
   return page.evaluate(() => ({ asked: !!document.getElementById('cv-code'),
