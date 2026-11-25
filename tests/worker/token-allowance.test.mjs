@@ -32,7 +32,10 @@ section('The allowance is denominated in work, not in a unit that moved');
    billing period is exactly what the tokenizer scaling gave it - which is what
    this section is actually about. Only the shape of a single day moved, and
    that is asserted separately below. */
-const RESHAPED = new Set(['free.dayTokens']);
+/* And on Nov 25 the owner doubled the free MONTH (650,000, from 325,000) and
+   raised its day to 45,000 - the free plan grew, on purpose; docs/OWNER-DECISIONS.md
+   "The free plan grows". Named here rather than loosened. */
+const RESHAPED = new Set(['free.dayTokens', 'free.monthTokens']);
 Object.entries(BEFORE).forEach(([plan, [day, month]]) => {
   const now = W.PLAN_LIMITS[plan];
   const monthRatio = now.monthTokens / month;
@@ -41,8 +44,9 @@ Object.entries(BEFORE).forEach(([plan, [day, month]]) => {
     ok(Math.abs(dayRatio - W.TOKENIZER_SCALE) < 0.02,
        `${plan} daily allowance scaled with the tokenizer`, dayRatio.toFixed(3));
   }
-  ok(Math.abs(monthRatio - W.TOKENIZER_SCALE) < 0.02,
-     `${plan} monthly allowance scaled with the tokenizer`, monthRatio.toFixed(3));
+  if (!RESHAPED.has(plan + '.monthTokens'))
+    ok(Math.abs(monthRatio - W.TOKENIZER_SCALE) < 0.02,
+       `${plan} monthly allowance scaled with the tokenizer`, monthRatio.toFixed(3));
 });
 
 section('And the free tier cannot be spent in a week');

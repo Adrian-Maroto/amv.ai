@@ -87,7 +87,8 @@ section('Free stops, and says why in a way somebody can act on');
      than equal to it: the cap moved from 52,000 to 20,000 when the free tier
      was reshaped, and a test that spends exactly the cap silently stops testing
      the refusal the day somebody changes it. */
-  const key = await burnDay(60000);          // free dayTokens is 20000
+  /* 45,000 since Nov 25 (the free plan grew); this burns over four times that. */
+  const key = await burnDay(200000);         // free dayTokens is 45000
   ok(!!key, 'the usage counter was found', key);
 
   const r = await ask();

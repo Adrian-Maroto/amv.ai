@@ -765,8 +765,10 @@ async function amvOfficeEditTool(input){
       + '<ul class="oe-list">' + said.map((x, i) => '<li><label class="oe-pick"><input type="checkbox" checked data-oe-v="' + escH(v.id) + '" data-oe-i="' + i + '"> ' + escH(x) + '</label></li>').join('') + '</ul>'
       + '<p class="pj-note oe-say" data-oe-say="' + escH(v.id) + '">' + escH(T('Untick a change to leave it out of the file.')) + '</p>'
       + (r.refused.length ? '<p class="pj-note">' + escH(T('Not changed:')) + ' ' + escH(r.refused.map(x => x.why).join(' ')) + '</p>' : '')
-      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button> '
-      + '<button type="button" class="btn mc-mini ghost" data-dact="amvOfficeToLibrary" data-darg="' + escH(v.id) + '">' + escH(T('Save to my files')) + '</button></div>'
+      /* Download only (owner, Nov 25): "Your files" left the menu, so a copy
+         saved there could not be reached again from chat. To edit it again,
+         attach the downloaded file. */
+      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button></div>'
   };
 }
 /* A change left out, or put back: the file is made again from the version

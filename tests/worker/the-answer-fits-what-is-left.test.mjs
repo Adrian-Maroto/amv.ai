@@ -121,7 +121,10 @@ section('A new free account with long instructions is answered, not refused');
   await ctx.settle();
   ok(r.status === 200, 'the first message is served', r.status);
   const mt = sent[0] && sent[0].max_tokens;
-  ok(mt >= FLOOR && mt < 16000, 'with the answer’s ceiling lowered to what the day has room for', mt);
+  /* Since Nov 25 the free day (45,000) holds the full 16,000-token answer
+     plus long instructions, so it is no longer lowered on a first message -
+     a day with little left is lowered, below. */
+  ok(mt >= FLOOR && mt <= 16000 && mt + 4000 <= DAY, 'with an answer ceiling the day has room for', mt);
   ok((env._peak.get(dayKey(email)) || 0) <= DAY, 'and the day was never booked past its cap', env._peak.get(dayKey(email)));
 }
 

@@ -208,6 +208,8 @@ const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s,
    notes when the engine could have read it whole. aiProxy now checks a request
    against its engine's own context instead (_fitsContext). */
 const ENGINE_CONTEXT_TOKENS = 1000000;
+/* The engine a free account's light messages run on (owner, Nov 25). */
+const LIGHT_ENGINE_KEY = 'amv-pulse';
 const ENGINES = {
   'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
   'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free', context: ENGINE_CONTEXT_TOKENS,  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },

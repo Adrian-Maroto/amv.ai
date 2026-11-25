@@ -1774,10 +1774,15 @@ try{ window.buildHome=buildHome; }catch(e){}
    missing for the same reason. Build is left out on purpose: it has modes and
    a project inside it, and an address that named only the tab would reopen
    the wrong one. */
+/* Every screen somebody works on has an address (owner, Nov 25: "when I
+   refresh it should keep me on Build, Handoff..."). A reload on a screen
+   that had none fell back to a new chat. */
 const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
                   settings:'settings', help:'help', crew:'crew', market:'market',
                   integrations:'integrations', tasks:'tasks', spend:'spending',
-                  memory:'memory', team:'team' };
+                  memory:'memory', team:'team',
+                  build:'build', dev:'code', studio:'design', lab:'lab', handoff:'handoff',
+                  usage:'usage' };
 const _tabForSlug=(slug)=>Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug)||'';
 
 /* DOES THIS HOST SERVE THE APP AT A BARE PATH? ASK THE ADDRESS BAR.

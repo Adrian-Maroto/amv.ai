@@ -21,7 +21,9 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ tab: 'chat', user: { name: 'O', email: 'o@x.com', ini: 'O' } });
 const { page, errors } = app;
 
-const log = () => page.evaluate(() => [...document.querySelectorAll('#cv-log .cv-msg')].map(m => ({
+/* The said messages; a connect card (a service the job names, Nov 25) is
+   checked in its own section below. */
+const log = () => page.evaluate(() => [...document.querySelectorAll('#cv-log .cv-msg:not(.cv-card)')].map(m => ({
   who: m.classList.contains('you') ? 'you' : 'amv', t: m.querySelector('.cv-bubble').textContent.trim(),
   chips: [...m.querySelectorAll('.cv-chip')].map(c => c.dataset.cv) })));
 const last = async () => { const l = await log(); return l[l.length - 1] || {}; };
@@ -134,6 +136,27 @@ section('On a phone it fills the screen, and the answer box is reachable');
   ok(r.sw <= 390, 'nothing runs off the side', r.sw);
   await page.click('#cv-x');
   await page.setViewportSize({ width: 1280, height: 800 });
+}
+
+section('A service named in the job is recognised from any country, and offered to connect');
+{
+  /* Owner, Nov 25: "I could be in Spain and say a job for an English bank -
+     it should recognise it and ask me to connect it." */
+  await page.evaluate(() => { try { closeOvr(); } catch (e) {} saveStr('amv_cw_country', 'ES'); });
+  await fakeServer('ok');
+  await ask('every morning tell me my Monzo balance and anything unusual');
+  let card = null;
+  for (let i = 0; i < 60 && !card; i++) {
+    card = await page.evaluate(() => { const c = document.querySelector('#cv-log .cv-card'); return c ? { text: c.innerText, act: [...c.querySelectorAll('[data-dact="chatConnectGo"]')].map(b => b.dataset.darg) } : null; });
+    if (!card) await page.waitForTimeout(100);
+  }
+  const said = await page.evaluate(() => [...document.querySelectorAll('#cv-log .cv-bubble')].map(b => b.textContent).join(' | '));
+  const chipsKept = await page.evaluate(() => !!document.querySelector('#cv-log .cv-chip'));
+  ok(chipsKept, 'and the question waiting for an answer keeps its choices', chipsKept);
+  ok(card && /Monzo/.test(card.text), 'the card names the service, though the person is in Spain', card);
+  ok(card && card.act.some(a => /^web:https:\/\/(www\.)?monzo\.com/.test(a)), 'and its sign-in opens Monzo’s official address, not a blank page', card && card.act);
+  ok(/This job uses Monzo/.test(said), 'AMV says the job uses it and asks to connect it', said);
+  await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
 }
 
 section('Signed out, the box does what it did before');

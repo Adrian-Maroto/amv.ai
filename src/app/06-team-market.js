@@ -273,7 +273,17 @@ function _wireSeatBuy(){
       : 'Billed monthly. Cancel or change the number of people any time.';
     paint();
   }));
-  on($('seat-buy'),'click',async()=>{
+  /* First the workspace they are buying, then the payment (owner, Nov 25).
+     The preview lives with Settings' panes (settings-panes.js, fetched when
+     the page is idle); if it cannot be fetched, the checkout goes straight
+     on rather than the button doing nothing. */
+  on($('seat-buy'),'click',()=>{
+    const n=clamp(el.value);
+    _lazyLoad('settings-panes.js', () => typeof window._teamPreviewOpen === 'function').then(ok => {
+      if(!(ok && window._teamPreviewOpen({ n, price:P.price, yearly:cycle()==='year', onGo:_seatCheckout }))) _seatCheckout();
+    });
+  });
+  const _seatCheckout=async()=>{
     const n=clamp(el.value);
     const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
     /* Two different reasons it cannot go on, said as two different things:
@@ -304,7 +314,7 @@ function _wireSeatBuy(){
             : 'Team billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.')
         : (e&&e.message)||'Could not open checkout. Nothing was charged.');
     }finally{ if(btn){ btn.disabled=false; btn.textContent='Add Team workspace'; } }
-  });
+  };
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
 

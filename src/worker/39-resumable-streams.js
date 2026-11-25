@@ -192,7 +192,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0, partnerName = '', reservedPartnerUSD = 0 }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, tokWeight = 1, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', project = '', stopped = null, creditName = '', reservedCreditUSD = 0, partnerName = '', reservedPartnerUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -315,7 +315,10 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
         actual < reserved  ->  refund the unused part
 
      Adding `total` outright here would double-charge every single call. */
-  const delta = total - (reserved || 0);
+  /* Weighted the way it was reserved (aiProxy's tokW): a plan that counts a
+     cheaper engine's tokens at what they cost settles in the same unit. */
+  const counted = tokWeight > 0 && tokWeight < 1 ? Math.ceil(total * tokWeight) : total;
+  const delta = counted - (reserved || 0);
   if (delta !== 0) {
     await counter(env, dName, { op: 'incr', amount: delta, ttlMs: 86400000 * 35 });
     await counter(env, mName, { op: 'incr', amount: delta, ttlMs: 86400000 * 70 });
@@ -633,7 +636,10 @@ async function usageReport(request, env) {
     window5h: {
       /* It opens with the first message, so until then there is no reset
          time to give - `startsAt: null` says "it starts when you do". */
-      used: win5Used, limit: limits.messages5h || 0,
+      /* With light messages (the free plan) the window holds both: `standard`
+         on the standard engine, then the rest on the lightest one. */
+      used: win5Used, limit: (limits.messages5h || 0) + (Number(limits.messages5hLight) || 0),
+      standard: limits.messages5h || 0, light: Number(limits.messages5hLight) || 0,
       startedAt: (win5 && win5.start) || null,
       resetAt: (win5 && win5.start) ? win5.start + WINDOW_5H_MS : null,
     },

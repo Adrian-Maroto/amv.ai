@@ -109,6 +109,26 @@ function emitBridge() {
   /* The worldwide services under each Integrations topic, packed from
      data/global (scripts/global-services.mjs says what is left out and why). */
   { const g = buildGlobalServices('.'); writeFileSync('global-services.json', g.services); GLOBAL_REACH = g.countries; }
+  /* WHICH COUNTRY NAMES A SERVICE (Nov 25). Crew and chat recognise a service
+     named in what somebody says wherever it is from - a UK bank asked for
+     from Spain - without fetching every country's file: this maps each
+     service people actually visit (a Chrome UX Report band of 10,000 or
+     better in its country) to the countries that list it. The page then
+     fetches only those countries' files. Sorted, so a rebuild with the same
+     data writes the same bytes. */
+  {
+    const names = {};
+    const files = existsSync('data/countries') ? readdirSync('data/countries').filter(f => /^[A-Z]{2}\.json$/.test(f)).sort() : [];
+    for (const f of files) {
+      const d = JSON.parse(readFileSync('data/countries/' + f, 'utf8')); const cc = f.slice(0, 2);
+      for (const list of Object.values(d.kinds || {})) for (const e of (list || [])) {
+        if (!(+e.r > 0 && +e.r <= 10000) || typeof e.n !== 'string' || e.n.length < 4 || e.n.length > 80) continue;
+        const k = e.n; (names[k] = names[k] || []); if (names[k].indexOf(cc) < 0) names[k].push(cc);
+      }
+    }
+    const out = {}; for (const k of Object.keys(names).sort()) out[k] = names[k].join(',');
+    writeFileSync('service-names.json', JSON.stringify({ about: 'Service name -> the countries whose catalogue lists it (most visited only). Built by build.mjs from data/countries.', names: out }));
+  }
   /* The readable list of what AMV can do, from the checked one. */
   writeFileSync('docs/CAPABILITIES.md', renderCapabilities(JSON.parse(readFileSync('docs/capabilities.json', 'utf8')), (f) => readFileSync(f, 'utf8')));
   /* The command-line tool, downloaded from Settings -> API keys - the page
@@ -1252,6 +1272,7 @@ const PUBLISH = [
   'shopping.js',           // shopping in AMV's browser, fetched when the browser runs
   'app-reach.json',        // how much each app is used, per country - fetched with Integrations
   'global-services.json',  // the services used worldwide, per Integrations topic - fetched with Integrations
+  'service-names.json',    // which country lists a service, for recognising one named from anywhere - fetched on the first lookup
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell

@@ -403,6 +403,13 @@ async function handoffAct(request, env){
     entry = (mine.incoming || []).find(h => h.id === id) || null;
     if (!entry) return;
     mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
+    /* HANDED TO YOURSELF (owner, Nov 25): the sent copy is in this same
+       record, and the sender's update below is skipped for it - so it went on
+       saying "waiting on them" after it was done. Updated here, in the same
+       locked write. */
+    if (String(entry.from_email || '').toLowerCase() === user.email) {
+      mine.sent = (mine.sent || []).map(h => (h.id === id ? { ...h, status } : h));
+    }
   }, { incoming:[], sent:[] });
   if(!entry) return json({ error:'not found' }, 404);
 

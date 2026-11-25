@@ -101,6 +101,24 @@ ok((afterAlice.incoming || []).length === (beforeAlice.incoming || []).length,
 const forged = await W.handoffAct(req({ id:'h-not-mine', action:'done' }), env);
 ok(forged.status === 404, 'an id that is not in your own inbox is refused', forged.status);
 
+section('Handed to yourself: marking it done says done on the sent copy too');
+{
+  /* Owner, Nov 25: "I sent it to myself and pressed Mark done, and it still
+     shows as sent, waiting on them." The sent copy is in the same record as
+     the inbox, and the update to the sender's copy was skipped for it. */
+  asUser = 'carol@test.com';
+  r = await W.handoffCreate(req({ title:'Note to self', context:'tomorrow', to:'carol@test.com' }), env);
+  ok((await r.json()).ok, 'carol hands work to herself');
+  const mine0 = JSON.parse(store.get('handoff:carol@test.com'));
+  const sid = mine0.incoming[0].id;
+  ok(mine0.sent.length === 1 && mine0.sent[0].id === sid, 'it is in her sent list and her inbox, as one handoff', mine0.sent.map(h => h.id));
+  await W.handoffAct(req({ id:sid, action:'done' }), env);
+  const mine = JSON.parse(store.get('handoff:carol@test.com'));
+  ok(mine.incoming[0].status === 'done', 'the inbox copy is done', mine.incoming[0].status);
+  ok(mine.sent[0].status === 'done', 'and so is the sent copy - not waiting on herself', mine.sent[0].status);
+  ok(mine.sent.length === 1 && mine.incoming.length === 1, 'and nothing was added', [mine.sent.length, mine.incoming.length]);
+}
+
 section('Input validation');
 asUser = 'alice@test.com';
 r = await W.handoffCreate(req({ title:'', to:'' }), env);

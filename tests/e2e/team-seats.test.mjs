@@ -79,8 +79,13 @@ section('Yearly is a real choice that reaches checkout as yearly');
     AMV_API.stripeCheckout = async (...a) => { calls.push(a); const e = new Error('x'); e.code = 'not_configured'; throw e; };
     document.querySelector('[data-team-cycle="year"]').click();
     document.getElementById('seat-buy').click();
+    /* First the workspace being bought (owner, Nov 25), then the payment. */
+    for (let i = 0; i < 60 && !document.getElementById('tpv-go'); i++) await new Promise(r => setTimeout(r, 50));
+    const pv = document.querySelector('.tpv');
+    const preview = pv ? { text: pv.innerText, rows: pv.querySelectorAll('.tpv-row').length, charged: calls.length } : null;
+    document.getElementById('tpv-go') && document.getElementById('tpv-go').click();
     await new Promise(r => setTimeout(r, 200));
-    const out = { calls, say: document.getElementById('seat-say').textContent,
+    const out = { calls, preview, open: !!document.querySelector('.tpv'), say: document.getElementById('seat-say').textContent,
                   total: document.getElementById('seat-total').textContent,
                   pressed: document.querySelector('[data-team-cycle="year"]').getAttribute('aria-pressed') };
     AMV_API.stripeCheckout = orig.co;
@@ -88,6 +93,11 @@ section('Yearly is a real choice that reaches checkout as yearly');
     document.querySelector('[data-team-cycle="month"]').click();
     return out;
   });
+  ok(r.preview && /Preview/.test(r.preview.text) && /Owner/.test(r.preview.text) && /Admin/.test(r.preview.text) && /Member/.test(r.preview.text),
+     'the button first shows the workspace being bought: the roles and what each may do', r.preview);
+  ok(r.preview && r.preview.rows >= 2 && /billed yearly/.test(r.preview.text) && r.preview.charged === 0,
+     'with the seats as places to invite into and the price, before anything is asked of the payment page', r.preview);
+  ok(!r.open, 'Continue to payment closes it', r.open);
   ok(r.calls.length === 1 && r.calls[0][0] === 'team' && r.calls[0][3] === 'year', 'checkout is asked for the team plan, yearly', r.calls);
   ok(r.pressed === 'true' && !/\$/.test(r.total), 'the toggle says so, and no yearly figure is invented', r);
   ok(/Yearly Team billing is not switched on/.test(r.say) && /nothing was charged/i.test(r.say), 'and an unconfigured yearly price says so, charging nothing', r.say);

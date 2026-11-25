@@ -41,3 +41,111 @@ const FAQS=[
   {c:'privacy', q:'How is my data protected?', a:'Your chats are kept in your browser and, when you are signed in, synced to your account over an encrypted connection (TLS). Passwords are salted and hashed with PBKDF2 - AMV never stores the password itself. Card details go straight to Stripe - AMV never sees them. Export or delete everything any time in Settings \u2192 Privacy.'}
 ];
 try{ window._FAQS = FAQS; }catch(e){}
+
+/* THE HELP CENTER ITSELF (moved here from the page, Nov 25): drawn with the
+   questions it holds, and replacing the page's stand-in (12a-view-router-help.js). */
+const FAQ_CATS=[
+  ['start','Getting started'],
+  ['chat','Chat and results'],
+  ['create','Design and 3D'],
+  ['build','Building apps'],
+  ['auto','Automations and approvals'],
+  ['connect','Connections and teamwork'],
+  ['billing','Plans and billing'],
+  ['privacy','Memory, data and privacy']
+];
+
+function _renderHelpViewReal(){
+  const vc=$('vc'); if(!vc) return;
+  /* The questions arrive from help-faqs.js the first time; everything else on
+     this screen is drawn at once, and the questions fill in when they land. */
+  const _faqsHere=true;
+  const FAQS=window._FAQS||[];
+  const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
+    '<button class="hc-chip on" data-hcc="all">All</button>'+
+    FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
+  '</div>';
+  const groups=FAQ_CATS.map(c=>{
+    const items=FAQS.map((f,i)=>[f,i]).filter(x=>x[0].c===c[0]);
+    if(!items.length) return '';
+    return '<section class="hc-group" data-hcg="'+c[0]+'">'+
+      '<h3 class="hc-group-h">'+escH(c[1])+'</h3>'+
+      items.map(x=>
+        '<div class="faq-item" id="fi-'+x[1]+'" data-hcg="'+c[0]+'">'+
+          '<div class="faq-q" data-fi="'+x[1]+'"><span>'+x[0].q+'</span><span class="faq-arr">+</span></div>'+
+          '<div class="faq-a">'+x[0].a+'</div>'+
+        '</div>').join('')+
+    '</section>';
+  }).join('');
+  /* ONE CENTERED COLUMN (owner, Nov 25: "the Help center looks weird, not
+     centered - make it very clear, like the leading assistants'"). Their help
+     centers open the same way: one question, a large search, the topics,
+     then the answers, then the two ways to a person. Every id the rest of
+     the app and the suites use is kept. */
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi vi-help hc2">'+
+      '<header class="hc2-hero">'+
+        '<h2>'+escH(T('How can we help?'))+'</h2>'+
+        '<div class="hc2-search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'+
+          '<input type="search" id="faq-search" placeholder="'+escH(T('Search help…'))+'" aria-label="'+escH(T('Search help'))+'"></div>'+
+        chips+
+      '</header>'+
+      '<div class="hc2-body">'+
+        '<div id="faq-list">'+(_faqsHere?groups:'<p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p>')+'</div>'+
+        '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
+      '</div>'+
+      '<div class="hc2-help">'+
+        '<div class="hc2-card"><h3>Still need help?</h3>'+
+          '<p>Ask AMV - it can answer from the product itself - or write to us.</p>'+
+          '<div class="hc2-acts">'+
+            '<button class="btn bp" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
+            supportButton({label:'Email Support',cls:'btn bs',subject:'AMV Support request'})+
+          '</div>'+
+          (_supportEmail()?'<p class="hc2-mail">Or email us directly at <b>'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
+        '</div>'+
+        '<div class="hc2-card"><h3>Share feedback</h3>'+
+          '<p>Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
+          '<div class="hc2-acts">'+
+            '<button class="btn bs" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
+            '<button class="btn bs" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      _appsCardHTML()+
+    '</div></div>';
+  _appsCardWire();
+  vc.querySelectorAll('.faq-q').forEach(q=>{
+    q.addEventListener('click',()=>{
+      document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
+    });
+  });
+
+  /* One function decides what is visible, from the two inputs, every time.
+     Two independent handlers each hiding rows is how a chip and a search box
+     end up disagreeing about the same row. */
+  let cat='all';
+  function apply(){
+    const s=(($('faq-search')||{}).value||'').toLowerCase().trim();
+    let shown=0;
+    vc.querySelectorAll('.faq-item').forEach(item=>{
+      const f=FAQS[+item.querySelector('.faq-q').dataset.fi];
+      const okCat = cat==='all' || f.c===cat;
+      const okTxt = !s || f.q.toLowerCase().includes(s) || f.a.toLowerCase().includes(s);
+      const on = okCat && okTxt;
+      item.hidden = !on;
+      if(on) shown++;
+    });
+    /* A heading over nothing reads as a group with no answers in it. */
+    vc.querySelectorAll('.hc-group').forEach(g=>{
+      g.hidden = !g.querySelector('.faq-item:not([hidden])');
+    });
+    const none=$('faq-none'); if(none) none.hidden = shown>0;
+  }
+  vc.querySelectorAll('[data-hcc]').forEach(b=>b.addEventListener('click',()=>{
+    cat=b.dataset.hcc;
+    vc.querySelectorAll('[data-hcc]').forEach(x=>x.classList.toggle('on',x===b));
+    apply();
+  }));
+  on($('faq-search'),'input',apply);
+}
+try{ window.renderHelpView = _renderHelpViewReal; }catch(e){}

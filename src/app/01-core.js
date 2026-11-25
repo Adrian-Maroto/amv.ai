@@ -1171,14 +1171,14 @@ const AMV_API = {
   _syncUnguardedTold: false,
 
   async syncPull(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
       if(d && d.ok){ this.syncRev = d.rev || 0; this.retention = d.retention || null; return d.data; }
       return null; }
     catch(e){ return null; }
   },
   async syncPush(data, _retried){
-    if(!this.live || !this.token) return false;
+    if(!this.live || !this.hasSession) return false;
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
@@ -1303,19 +1303,19 @@ const AMV_API = {
   /* Programmatic access to this account. The key is returned exactly once, at
      creation - the server never stores it and cannot show it again. */
   async keysList(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/keys/list', {method:'POST', body:'{}'});
     return await r.json().catch(()=>null);
   },
   async keyCreate(name){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/keys/create', {method:'POST', body:JSON.stringify({name})});
     const d = await r.json().catch(()=>null);
     if(!r.ok || !d || !d.ok){ const e=new Error((d&&d.error)||'could not create a key'); if(d&&d.code) e.code=d.code; throw e; }
     return d;
   },
   async keyRevoke(id){
-    if(!this.live || !this.token) return false;
+    if(!this.live || !this.hasSession) return false;
     const r = await this._fetch('/v1/keys/revoke', {method:'POST', body:JSON.stringify({id})});
     const d = await r.json().catch(()=>null);
     return !!(d && d.ok);
@@ -1325,15 +1325,21 @@ const AMV_API = {
      stop a request. Everything the Usage screen showed before this came from
      device-local counters that the server has never seen. */
   async usage(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/usage');
     return await r.json().catch(()=>null);
   },
 
   /* This account's own security history. Read-only, and the server is the only
      thing that writes it - nothing here can add, edit or hide an entry. */
+  /* `hasSession`, not `token` (Nov 25), here and in the seven reads beside
+     it. Right after a reload the sign-in is still being restored from its
+     cookie and the page holds no token yet; asking for one returned null
+     before anything was sent, and the bell said "Could not check: Security"
+     on every page load. A request without one gets a 401, which _fetch
+     answers by renewing from the cookie and asking again. */
   async activity(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/activity');
     return await r.json().catch(()=>null);
   },
@@ -1348,13 +1354,13 @@ const AMV_API = {
     return await r.json().catch(()=>null);
   },
   async sessions(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/sessions');
     if(!r.ok) return null;
     return await r.json().catch(()=>null);
   },
   async endSession(id){
-    if(!this.live || !this.token) return { ok:false, error:'Not connected to the AMV server.' };
+    if(!this.live || !this.hasSession) return { ok:false, error:'Not connected to the AMV server.' };
     const r = await this._fetch('/v1/sessions/end', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
     const d = await r.json().catch(()=>({}));
     return r.ok ? { ok:true } : { ok:false, error: d.error || ('The server answered '+r.status+'.') };

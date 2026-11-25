@@ -4162,11 +4162,8 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-team">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'+
       'Team</button>'+
-    /* Your files: what was attached before, kept in the account. It was in the
-       chat box's "+", which now holds only Upload and Research (Nov 24). */
-    '<button class="prof-item" id="pm-files">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
-      escH(T('Your files'))+'</button>'+
+    /* Your files left this menu (owner, Nov 25). The library is still where a
+       project adds a file from (07b-projects.js, "pj-lib"). */
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
       'Help &amp; Learn More</button>'+
@@ -4201,7 +4198,6 @@ function showProfMenu(trigger) {
   document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-team')?.addEventListener('click',()=>{ close(); setTab('team'); });
-  document.getElementById('pm-files')?.addEventListener('click',()=>{ close(); openFileLibrary(); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });
@@ -4471,7 +4467,8 @@ function _planPitch(key){
          The window and the weekly top-engine count are the ones that bind,
          and the month is shown as what is left, in Usage. */
       [1,t('<b>A daily allowance</b> to try everything, no card')],
-      [1,t('Up to <b>{n} every {h} hours</b>, so it comes back the same day',{n:_msg5hLabel('free'),h:H})],
+      /* Owner, Nov 25: after the standard messages, more on the lighter engine. */
+      [1,t('<b>{n} every {h} hours</b>, then <b>{l} more</b> on the lighter engine',{n:PLAN_MESSAGES_5H.free.toLocaleString(),l:PLAN_MESSAGES_5H_LIGHT.free.toLocaleString(),h:H})],
       [1,t('Chat, code &amp; interactive 3D models')],
       [1,t('File analysis - PDF, images, code')],
       [0,t('AMV Forge and Apex, the top engines')],

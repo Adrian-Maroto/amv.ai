@@ -381,17 +381,6 @@ try{ window.render404View=render404View; }catch(e){}
    chip, and search still runs across every answer regardless of the chip - so
    the two routes do not fight. A group with nothing left after a search hides
    its heading too, which is the bug this kind of filtering usually ships with. */
-const FAQ_CATS=[
-  ['start','Getting started'],
-  ['chat','Chat and results'],
-  ['create','Design and 3D'],
-  ['build','Building apps'],
-  ['auto','Automations and approvals'],
-  ['connect','Connections and teamwork'],
-  ['billing','Plans and billing'],
-  ['privacy','Memory, data and privacy']
-];
-
 /* The questions themselves live in help-faqs.js, fetched when Help opens. */
 let _faqsP = null;
 function _faqsLoad(){
@@ -405,94 +394,19 @@ function _faqsLoad(){
   });
   return _faqsP;
 }
+/* THE HELP CENTER IS DRAWN BY help-faqs.js (Nov 25), with its questions:
+   only some visitors open it, and the page has a size ceiling. This stand-in
+   fetches that file and hands over to its renderHelpView, which replaces
+   this one; if the file cannot arrive, it says so with a way to try again. */
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
-  /* The questions arrive from help-faqs.js the first time; everything else on
-     this screen is drawn at once, and the questions fill in when they land. */
-  const _faqsHere=Array.isArray(window._FAQS);
-  if(!_faqsHere) _faqsLoad().then(ok=>{
+  const stand=renderHelpView;
+  vc.innerHTML='<div class="sv fi"><div class="vi vi-help"><p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p></div></div>';
+  _faqsLoad().then(ok=>{
     if(S.tab!=='help') return;
-    if(ok){ renderHelpView(); return; }
+    if(ok && window.renderHelpView!==stand){ window.renderHelpView(); return; }
     const n=document.getElementById('faq-loading');
-    if(n) n.textContent=T('The questions could not be loaded. Check your connection and try again.');
+    if(n) n.innerHTML=escH(T('The questions could not be loaded. Check your connection and try again.'))+' <button class="btn bs" data-dact="renderHelpView" type="button">'+escH(T('Retry'))+'</button>';
   });
-  const FAQS=_faqsHere?window._FAQS:[];
-  const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
-    '<button class="hc-chip on" data-hcc="all">All</button>'+
-    FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
-  '</div>';
-  const groups=FAQ_CATS.map(c=>{
-    const items=FAQS.map((f,i)=>[f,i]).filter(x=>x[0].c===c[0]);
-    if(!items.length) return '';
-    return '<section class="hc-group" data-hcg="'+c[0]+'">'+
-      '<h3 class="hc-group-h">'+escH(c[1])+'</h3>'+
-      items.map(x=>
-        '<div class="faq-item" id="fi-'+x[1]+'" data-hcg="'+c[0]+'">'+
-          '<div class="faq-q" data-fi="'+x[1]+'"><span>'+x[0].q+'</span><span class="faq-arr">+</span></div>'+
-          '<div class="faq-a">'+x[0].a+'</div>'+
-        '</div>').join('')+
-    '</section>';
-  }).join('');
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi vi-help">'+
-      '<span class="eyebrow">Help</span>'+
-      '<h2>Help Center</h2>'+
-      '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
-      '<div class="ss2">'+
-        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:var(--t-lg);margin-bottom:13px">'+
-        chips+
-        '<div id="faq-list">'+(_faqsHere?groups:'<p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p>')+'</div>'+
-        '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
-      '</div>'+
-      _appsCardHTML()+
-      '<div class="ss2"><h3>Share feedback</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bp" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
-          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
-        '</div>'+
-      '</div>'+
-      '<div class="ss2"><h3>Still need help?</h3>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
-          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
-        '</div>'+
-        (_supportEmail()?'<p style="font-size:var(--t-sm);color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
-      '</div>'+
-    '</div></div>';
-  _appsCardWire();
-  vc.querySelectorAll('.faq-q').forEach(q=>{
-    q.addEventListener('click',()=>{
-      document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
-    });
-  });
-
-  /* One function decides what is visible, from the two inputs, every time.
-     Two independent handlers each hiding rows is how a chip and a search box
-     end up disagreeing about the same row. */
-  let cat='all';
-  function apply(){
-    const s=(($('faq-search')||{}).value||'').toLowerCase().trim();
-    let shown=0;
-    vc.querySelectorAll('.faq-item').forEach(item=>{
-      const f=FAQS[+item.querySelector('.faq-q').dataset.fi];
-      const okCat = cat==='all' || f.c===cat;
-      const okTxt = !s || f.q.toLowerCase().includes(s) || f.a.toLowerCase().includes(s);
-      const on = okCat && okTxt;
-      item.hidden = !on;
-      if(on) shown++;
-    });
-    /* A heading over nothing reads as a group with no answers in it. */
-    vc.querySelectorAll('.hc-group').forEach(g=>{
-      g.hidden = !g.querySelector('.faq-item:not([hidden])');
-    });
-    const none=$('faq-none'); if(none) none.hidden = shown>0;
-  }
-  vc.querySelectorAll('[data-hcc]').forEach(b=>b.addEventListener('click',()=>{
-    cat=b.dataset.hcc;
-    vc.querySelectorAll('[data-hcc]').forEach(x=>x.classList.toggle('on',x===b));
-    apply();
-  }));
-  on($('faq-search'),'input',apply);
 }
 

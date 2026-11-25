@@ -543,6 +543,20 @@ async function aiProxy(request, env, ctx, principal) {
                   { 'Retry-After': '300' });
     }
   }
+  /* THE FREE PLAN'S LIGHT MESSAGES (owner, Nov 25). After the five-hour
+     window's standard messages are used, the turn is answered by the lightest
+     engine instead of refused - up to messages5hLight more - and the page is
+     told why (X-AMV-Engine-Why), so it never passes for the engine chosen. */
+  if (!partnerEng && Number(limits.messages5hLight) > 0 && ENGINES[LIGHT_ENGINE_KEY]) {
+    const want = routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
+    if (want !== LIGHT_ENGINE_KEY) {
+      let used5 = 0;
+      try { const w5 = await counter(env, `msgs5h:${user.email || user.billingSubject}`, { op: 'sessionGet', windowMs: WINDOW_5H_MS }); used5 = (w5 && w5.value) || 0; } catch (e) { used5 = 0; }
+      if (used5 >= Number(limits.messages5h)) {
+        routed = { key: LIGHT_ENGINE_KEY, why: 'Your ' + Number(limits.messages5h) + ' standard messages for these five hours are used, so this answer comes from the lighter engine. Upgrade for the standard engine all day.' };
+      }
+    }
+  }
   const key = routed ? routed.key : partnerEng ? partnerEng.key
             : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
   // Carry the engine's own name with it, so metering can bucket by engine
@@ -668,7 +682,12 @@ async function aiProxy(request, env, ctx, principal) {
      request with no max_tokens book a sixteenth of what it could spend. */
   const _outCap = Number(eng.maxOut) || 16000;
   let estOut = Math.max(1, Math.min(Number(body.max_tokens) || _outCap, _outCap));
-  let reserve = estIn + estOut;
+  /* Counted at what the engine costs where the plan says so (the free plan):
+     a token on an engine a quarter of the standard price is a quarter of a
+     token against the allowance. Never more than one. */
+  const tokW = (limits.costWeighted && eng && eng.inCost > 0 && ENGINES['amv-core'])
+    ? Math.min(1, eng.inCost / ENGINES['amv-core'].inCost) : 1;
+  let reserve = Math.ceil((estIn + estOut) * tokW);
   /* Set when the answer's length was lowered to fit what is left of the
      allowance, and said to the page (X-AMV-Answer-Cap): an answer cut short
      for that reason must not read as one that reached the most AMV writes. */
@@ -691,9 +710,9 @@ async function aiProxy(request, env, ctx, principal) {
     let res = await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
     if (res.allowed) return res;
     const used = (await counter(env, name, { op: 'get' })).value || 0;
-    const fit = Math.floor(cap - used - estIn);
+    const fit = Math.floor((cap - used) / tokW - estIn);
     if (fit < ANSWER_FLOOR_TOKENS || fit >= estOut) return res;
-    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut; _capByAllowance = true;
+    estOut = fit; reserve = Math.ceil((estIn + estOut) * tokW); body.max_tokens = estOut; _capByAllowance = true;
     return await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
   };
 
@@ -766,7 +785,9 @@ async function aiProxy(request, env, ctx, principal) {
      By address, not by the billing subject: on a team the window is each
      member's own burst control, never a pool one teammate can empty. */
   const win5Name = `msgs5h:${user.email || subject}`;
-  const win5Cap = Number(limits.messages5h) || 0;
+  /* On the lightest engine the window holds the light messages too. */
+  const win5Cap = (Number(limits.messages5h) || 0)
+    + (key === LIGHT_ENGINE_KEY && Number(limits.messages5hLight) > 0 ? Number(limits.messages5hLight) : 0);
   const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
   const topCap = Number(limits.topMessagesWeek) || 0;
   /* Only the engines that actually cost the money are counted weekly. The
@@ -1197,7 +1218,7 @@ async function aiProxy(request, env, ctx, principal) {
      refused above has already given them back and the numbers here are what is
      genuinely still booked. */
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
-    reqMessages: body.messages || [], reserved: reserve, feature: _tag.surface, project: _tag.project,
+    reqMessages: body.messages || [], reserved: reserve, tokWeight: tokW, feature: _tag.surface, project: _tag.project,
     reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
     creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD,
     partnerName: partnerCap > 0 ? partnerName : '', reservedPartnerUSD: bookedPartnerUSD }));

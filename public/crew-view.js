@@ -1754,7 +1754,34 @@ function crewConverse(text){
     _cvSay('amv', T('Say more - what should AMV do with “{0}”? For example: “tell me every time somebody posts about something”.').replace('{0}', text));
     return;
   }
-  _cv.goal = text; _cvAskHow();
+  _cv.goal = text; _cvAskHow(); _cvRecognise();
+}
+/* THE SERVICE A JOB NAMES, FROM ANY COUNTRY (owner, Nov 25: "I could be in
+   Spain and say an English job - it should recognise it and ask me to
+   connect it"). Every country's catalogue is searched for a service named in
+   what was said; one that is not in AMV's own app directory (those are
+   checked by the job's own needs when it is set up) is offered here, with the
+   same connect card chat shows, opening its official address. Once per job,
+   alongside the conversation rather than in front of it - a slow lookup never
+   holds up the next question. */
+async function _cvRecognise(){
+  if(!_cv || _cv.recognised) return;
+  _cv.recognised = true;
+  let hits = [];
+  try{
+    if(typeof _ccReady === 'function' && await _ccReady() && typeof window.ccFindServices === 'function')
+      hits = await window.ccFindServices(_cv.goal, 2);
+  }catch(e){ hits = []; }
+  for(const h of hits){
+    if(!_cv) return;
+    /* An app AMV's directory connects directly is checked by the job's own
+       needs; one it lists without a connection is offered here like the rest. */
+    try{ const dm = typeof _cxDirMatch === 'function' ? _cxDirMatch(h.name) : null; if(dm && dm.a && dm.a.how) continue; }catch(e){}
+    let r = null;
+    try{ r = (typeof connectAccountTool === 'function') ? await connectAccountTool({ service: h.name }) : null; }catch(e){ r = null; }
+    if(!_cv || !r || !r.render) continue;
+    _cvCard(r.render, T('This job uses {0}. Connect it so AMV can do it for you:').replace('{0}', h.name));
+  }
 }
 function _cvAskHow(){
   const edge = (typeof _feasFloor === 'function') ? _feasFloor(_cv.goal) : null;
@@ -1774,7 +1801,7 @@ function _cvAnswer(v){
     _cvSay('you', v);
     const low = v.toLowerCase(), first = _cv.first.toLowerCase();
     _cv.goal = (low.indexOf(first) >= 0 || _cv.first.split(/\s+/).length >= 4) ? v : v + ' (' + _cv.first + ')';
-    _cvAskHow(); return;
+    _cvAskHow(); _cvRecognise(); return;
   }
   if(_cv.step === 'how'){
     const k = /^email$|mail|correo|e-?mail/i.test(v) ? 'email' : /^app$|amv|app|here|aqu[ií]/i.test(v) ? 'app' : '';
@@ -1849,6 +1876,20 @@ function _cvSay(who, text, chips, busy){
   m.innerHTML = '<p class="cv-bubble">' + (busy ? '<span class="rr-dot"></span> ' : '') + escH(text) + '</p>'
     + (chips && chips.length ? '<div class="cv-chips">' + chips.map(c => '<button class="cv-chip" type="button" data-cv="' + escH(c[0]) + '">' + escH(c[1]) + '</button>').join('') + '</div>' : '');
   log.appendChild(m);
+  log.scrollTop = log.scrollHeight;
+}
+/* A card AMV drew (the connect card): its own markup, every value in it
+   escaped where it was built (13d-connect-anything.js, _cxCard). */
+function _cvCard(html, said){
+  if(!_cv) return;
+  const log = document.getElementById('cv-log'); if(!log) return;
+  const m = document.createElement('div');
+  m.className = 'cv-msg amv cv-card';
+  m.innerHTML = (said ? '<p class="cv-bubble">' + escH(said) + '</p>' : '') + html;
+  /* Above the question that is waiting for an answer, so its choices stay
+     where they are and still work - the lookup can finish after it was asked. */
+  const open = [...log.querySelectorAll('.cv-msg.amv')].reverse().find(x => x.querySelector('.cv-chips'));
+  if(open) log.insertBefore(m, open); else log.appendChild(m);
   log.scrollTop = log.scrollHeight;
 }
 function _cvUnsay(){ const b = document.querySelector('#cv-log .cv-msg.busy'); if(b) b.remove(); }

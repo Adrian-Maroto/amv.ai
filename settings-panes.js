@@ -1388,7 +1388,9 @@ function renderBillingView(targetEl){
   const usagePct = _us ? Math.max(0, Math.min(100, +_us.pct || 0)) : null;
   let usageReset = ''; try{ usageReset = AMVUsage.resetLabel(); }catch(e){}
   const usageRows = plan==='free'
-    ? _bfact(T('Messages'), escH(_msg5hLabel('free')) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours, within a daily allowance')
+    /* One line (owner, Nov 25: "it has a second line"): the window's messages
+       only; the lighter engine's share is said on the Usage meters. */
+    ? _bfact(T('Messages'), escH(_msg5hLabel('free')) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
     : ((plan!=='custom'
             /* The same figures as the plan cards: the window that binds a
                burst, and the month as an allowance - never the 100,000-a-month
@@ -1987,3 +1989,48 @@ function _cpInclFeatures(hasApex){
 }
 window.openCustomPlan=openCustomPlan;
 window.openUpgradeModal=openUpgradeModal;
+
+/* THE TEAM WORKSPACE, SHOWN BEFORE IT IS BOUGHT (owner, Nov 25: "when you
+   add a team workspace, show that you need to pay for it first - a little
+   demo of what you get: the roles, the people, then Buy").
+
+   Opened by "Add Team workspace" (06-team-market.js). What it shows is the
+   workspace the person is about to create, with them as its owner and the
+   seats they picked as empty places for the people they invite - labelled
+   a preview, because nothing exists until the payment goes through. The
+   roles say what each one may do, which is what the server enforces
+   (Owner: billing and everything; Admin: people and the library; Member:
+   their own work). "Continue to payment" runs the same checkout the button
+   always ran, from this click. */
+function _teamPreviewOpen(o){
+  const r = document.getElementById('ovr'); if(!r) return false;
+  o = o || {};
+  const n = Math.max(1, +o.n || 3), price = +o.price || 20;
+  const me = (typeof S !== 'undefined' && S.user && (S.user.name || S.user.email)) || T('You');
+  const ini = String(me).trim().charAt(0).toUpperCase() || 'Y';
+  const role = (name, what) => '<div class="tpv-role"><b>' + escH(T(name)) + '</b><span>' + escH(T(what)) + '</span></div>';
+  const empty = Math.min(n - 1, 4);
+  const rows = '<li class="tpv-row"><span class="tpv-av">' + escH(ini) + '</span><span class="tpv-who"><b>' + escH(String(me)) + '</b><span>' + escH(T('You')) + '</span></span><span class="tpv-tag">' + escH(T('Owner')) + '</span></li>'
+    + Array.from({ length: empty }, (_, i) => '<li class="tpv-row tpv-open"><span class="tpv-av" aria-hidden="true">+</span><span class="tpv-who"><b>' + escH(T('Invite by email')) + '</b><span>' + escH(T('A seat for someone you add')) + '</span></span><span class="tpv-tag">' + escH(T(i === 0 ? 'Admin' : 'Member')) + '</span></li>').join('')
+    + (n - 1 > empty ? '<li class="tpv-more">' + escH(T('and {0} more seats').replace('{0}', String(n - 1 - empty))) + '</li>' : '');
+  const total = o.yearly ? T('{0} people, billed yearly').replace('{0}', String(n)) : T('${0} a month for {1} people').replace('{0}', String(n * price)).replace('{1}', String(n));
+  r.innerHTML = '<div class="ov" id="tpv-bg"><div class="ob tpv" role="dialog" aria-modal="true" aria-labelledby="tpv-h">'
+    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<div class="tpv-top"><h2 id="tpv-h">' + escH(T('Your Team workspace')) + '</h2><span class="tpv-badge">' + escH(T('Preview')) + '</span></div>'
+    + '<p class="tpv-sub">' + escH(T('This is the workspace you are about to create. It starts the moment payment goes through.')) + '</p>'
+    + '<ul class="tpv-list">' + rows + '</ul>'
+    + '<div class="tpv-roles">'
+      + role('Owner', 'Billing, seats, roles and everything an admin can do.')
+      + role('Admin', 'Adds and removes people, and manages the shared library.')
+      + role('Member', 'Uses AMV with their own allowance. Their chats stay private.')
+    + '</div>'
+    + '<div class="tpv-pay"><span>' + escH(total) + '</span><button class="btn bp" id="tpv-go" type="button">' + escH(T('Continue to payment')) + '</button></div>'
+    + '<p class="tpv-fine">' + escH(T('Nothing is charged until you confirm on the payment page.')) + '</p>'
+    + '</div></div>';
+  try{ onBackdrop(document.getElementById('tpv-bg'), closeOvr); }catch(e){}
+  const go = document.getElementById('tpv-go');
+  if(go) go.addEventListener('click', () => { try{ closeOvr(); }catch(e){} if(typeof o.onGo === 'function') o.onGo(); });
+  try{ go && go.focus(); }catch(e){}
+  return true;
+}
+window._teamPreviewOpen = _teamPreviewOpen;

@@ -34,7 +34,7 @@ await page.waitForFunction(() => true);
 await page.evaluate(() => setTab('integrations'));
 await page.waitForFunction(() => typeof window.ccLoad === 'function', null, { timeout: 15000 });
 
-section('In every country: most visited first, the country’s own first inside a bucket, one each before a second');
+section('In every country: most visited first, the better known first inside a bucket, one each before a second');
 {
   const r = await page.evaluate(async () => {
     const bad = [];
@@ -42,14 +42,20 @@ section('In every country: most visited first, the country’s own first inside 
     let n = 0;
     for (const cc of codes) {
       const d = await ccLoad(cc); if (!d) continue; n++;
-      const R = e => (+e.r > 0 ? +e.r : 1e9), own = e => (+e.x || 1) < 3;
+      /* Inside a bucket the better known goes first, leaning to the country's
+         own (owner, Nov 25: M&T Bank led the United States, above Bank of
+         America and Chase): Wikipedia editions over the square root of how
+         many countries list it. */
+      const R = e => (+e.r > 0 ? +e.r : 1e9), K = e => (+e.w || 0) / Math.sqrt(Math.max(1, +e.x || 1));
       const svc = ccServices(d).map(x => x.e);
       for (let i = 1; i < svc.length; i++) {
         const a = svc[i - 1], b = svc[i];
         if (R(a) > R(b)) { bad.push(cc + ': ' + a.n + ' (' + R(a) + ') before ' + b.n + ' (' + R(b) + ')'); break; }
-        if (R(a) === R(b) && !own(a) && own(b)) { bad.push(cc + ': the world’s ' + a.n + ' before the country’s own ' + b.n); break; }
+        if (R(a) === R(b) && K(a) < K(b)) { bad.push(cc + ': ' + a.n + ' (' + K(a).toFixed(1) + ') before the better known ' + b.n + ' (' + K(b).toFixed(1) + ')'); break; }
       }
-      for (const [name, list] of [['jobs', ccJobs(d)], ['tasks', ccTasks(d)]]) {
+      /* A section's opening tasks (ccLeads) come before the service-by-service
+         ones and are checked below; the order checked here is the rest. */
+      for (const [name, list] of [['jobs', ccJobs(d)], ['tasks', ccTasks(d).filter(t => !t.lead)]]) {
         const seen = new Set(), firstPass = Math.min(list.length, new Set(list.map(j => j.e.q + '|' + j.kind)).size);
         for (let i = 0; i < firstPass; i++) { const k = list[i].e.q + '|' + list[i].kind;
           if (seen.has(k)) { bad.push(cc + ' ' + name + ': a second for ' + list[i].e.n + ' before every service had one'); break; } seen.add(k); }
@@ -65,6 +71,27 @@ section('In every country: most visited first, the country’s own first inside 
   });
   ok(r.n >= 100, 'checked ' + r.n + ' countries', r.n);
   ok(r.bad.length === 0, 'services, jobs and tasks in that order everywhere', r.bad);
+}
+
+section('Each section opens with what people most often want to do there, named with the country’s top services');
+{
+  const r = await page.evaluate(async () => {
+    const us = await ccLoad('US'), es = await ccLoad('ES');
+    const usTasks = ccTasks(us), esTasks = ccTasks(es);
+    const firstLeadAt = usTasks.findIndex(t => !t.lead);
+    const money = usTasks.filter(t => _cjCat({ ccKind: t.kind }) === 'Money').slice(0, 3).map(t => t.title);
+    const save = usTasks.find(t => t.lead && t.title === 'Compare savings rates');
+    const esSave = esTasks.find(t => t.lead && /savings rates/.test(t.prompt));
+    const usBanks = ccServices(us).filter(x => x.kind === 'bank').slice(0, 6).map(x => x.e.n);
+    return { firstLeadAt, money, savePrompt: save && save.prompt, esPrompt: esSave && esSave.prompt, usBanks,
+      leadsOnly: usTasks.slice(0, firstLeadAt).every(t => t.lead), n: firstLeadAt };
+  });
+  ok(r.leadsOnly && r.n >= 40, 'the everyday tasks lead the list, before any service-by-service task', r.n);
+  ok(r.money[0] === 'Compare savings rates', 'Money opens with comparing savings rates, not one bank’s account', r.money);
+  ok(r.usBanks.indexOf('Bank of America') >= 0 && r.usBanks.indexOf('Bank of America') < r.usBanks.indexOf('M&T Bank'),
+     'Bank of America ranks above M&T Bank in the United States', r.usBanks);
+  ok(/Bank of America/.test(r.savePrompt || '') && !/M&T/.test(r.savePrompt || ''), 'and the task names the country’s top banks', r.savePrompt);
+  ok(r.esPrompt && r.esPrompt !== r.savePrompt && !/Bank of America/.test(r.esPrompt), 'Spain’s names Spain’s banks', r.esPrompt);
 }
 
 section('What people there switch on goes first, the most switched on first');

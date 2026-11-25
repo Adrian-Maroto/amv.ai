@@ -385,7 +385,7 @@ function renderBillingView(targetEl){
    tighter than the server's, the user is stopped early by a number the server
    would have allowed - a limit that exists nowhere but here. */
 const PLAN_TIERS={
-  free:  { dailyTokenCap:20000,    rpmMax:8,  models:['fast','core'] },
+  free:  { dailyTokenCap:45000,    rpmMax:8,  models:['fast','core'] },
   /* Moved with the server's, which is the only reason these numbers exist.
      The allowances were reset to what the margin backstop actually funds, and
      a browser guard left on the old figure is the failure the note above

@@ -86,7 +86,7 @@ const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
 
    Mirrored from the Worker, with a test comparing both tables, exactly as
    before. */
-const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
+const PLAN_MONTH_TOKENS={free:650000,pro:2340000,elite:9100000,ultra:23400000};
 /* Short enough to sit on a card, and never rounded UP - an advertised
    allowance is a promise, so 2,470,000 shows as 2.4M rather than 2.5M. */
 function _allowanceLabel(p){
@@ -123,8 +123,11 @@ function _allowanceLabel(p){
    suite lifts both and compares them plan by plan - the same arrangement
    AUTO_MAX_BY_PLAN and PLAN_RPM already have, for the same reason. A price
    that disagrees with its enforcement is the defect, not the number. */
-const PLAN_MONTH_MESSAGES={free:3000,pro:100000,elite:300000,ultra:1000000};
+const PLAN_MONTH_MESSAGES={free:6000,pro:100000,elite:300000,ultra:1000000};
 const PLAN_MESSAGES_5H={free:25,pro:1000,elite:3000,ultra:10000};
+/* Free's light messages (owner, Nov 25): after the 25, up to 100 more on the
+   lightest engine in the same five hours. Mirrored from messages5hLight. */
+const PLAN_MESSAGES_5H_LIGHT={free:100};
 const PLAN_TOP_WEEK={free:0,pro:100,elite:500,ultra:1300};
 /* Five hours, named once. It is the shape of the window, not a number to tune
    on a page. */
@@ -140,7 +143,7 @@ function _planMsgNum(tbl,p){
 /* Written out in full on a card. "100K messages" reads as a rounding; 100,000
    reads as a promise, and it is the promise that is true. */
 function _msgMonthLabel(p){ return _planMsgNum(PLAN_MONTH_MESSAGES,p).toLocaleString(); }
-function _msg5hLabel(p){ return _planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); }
+function _msg5hLabel(p){ const n=_planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); const l=PLAN_MESSAGES_5H_LIGHT[p]; return l ? n+' + '+l.toLocaleString() : n; }
 function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString(); }
 
 function _rpmForPlan(p){

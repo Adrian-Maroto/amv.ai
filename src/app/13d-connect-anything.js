@@ -153,12 +153,24 @@ async function connectAccountTool(input){
   /* 3. The open registry, and 4. signing in on their own computer - which is
      the one door that opens for ANY service with a password, in any country -
      and what can be done besides. */
+  /* 2b. Every country's catalogue (owner, Nov 25): a service listed in ANY
+     country - a UK bank asked for from Spain - is recognised by name, and its
+     official address is what the sign-in opens, rather than a blank page. */
+  let known = null;
+  if(!(input && input.url)){
+    try{
+      if(typeof _ccReady === 'function' && await _ccReady() && typeof window.ccFindServices === 'function'){
+        const f = await window.ccFindServices(q, 1);
+        known = (f && f[0]) || null;
+      }
+    }catch(e){ known = null; }
+  }
   const reg = await _cxRegistry(q);
-  const money = _CX_MONEY.test(asked);
-  const site = (typeof _browserUrl === 'function') ? _browserUrl(input && input.url) : '';
+  const money = _CX_MONEY.test(asked) || !!(known && (known.kind === 'bank' || known.topic === 'money'));
+  const site = (typeof _browserUrl === 'function') ? _browserUrl((input && input.url) || (known ? 'https://' + known.site : '')) : '';
   const siteHost = site && site !== 'about:blank' ? new URL(site).hostname : '';
   const bridged = bridgeLocal();
-  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + q + ' on your computer' }];
+  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + (known ? known.name : q) + ' on your computer' }];
   reg.servers.forEach(s => acts.push({ code:'reg:' + s.id, label:'Add ' + s.name }));
   if(money) acts.push({ code:'how:bank', label:'Link a bank or brokerage' });
   acts.push({ code:'how:mail', label:'Connect the mailbox it emails' });
@@ -178,12 +190,15 @@ async function connectAccountTool(input){
       + 'Tell them to check the address bar shows the real site before signing in. '
       + 'Once they say they are signed in, you can use the amv-browser tools (open a page, read it, click, fill a form) to do what they asked - each one asks their permission first. '
       + 'It works while that window is open and AMV is open on their computer; it ends when they close it. A scheduled Crew job on AMV’s servers cannot use it. ';
+  const where = known ? (known.cc || []).slice(0, 3).map(cc => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[1] : cc; }).join(', ') : '';
+  const knownLine = known ? 'RECOGNISED in AMV’s catalogue of services by country: ' + known.name + ' (' + known.site + ')'
+      + (where ? ', listed in ' + where : ', used worldwide') + '. That is its official address, so the sign-in button opens it. ' : '';
   return {
-    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
+    text: knownLine + 'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
       + (money ? 'It sounds financial, so the bank link is offered too: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
       + 'Other real options, shown as buttons: connect the mailbox that receives its statements and alerts (AMV then reads those), and Notify me, which records the request. They can also upload an export or statement in chat. '
       + 'Tell them plainly what you know about the service, and never claim a connection exists until they have signed in and you have read a page from it.' + signIn,
-    render:_cxCard(q, siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.', acts,
+    render:_cxCard(known ? known.name : q, (known && where ? where + ' \u00b7 ' : '') + (siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.'), acts,
       (siteHost ? 'Check the address bar shows ' + siteHost + ' before you type your password. ' : 'Type its web address in the window that opens. ')
         + 'AMV never sees your password, and asks before every step it takes there.')
   };

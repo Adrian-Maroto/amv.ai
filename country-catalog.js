@@ -701,8 +701,16 @@ const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t
 function _ccByPop(d){
   const out = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})) (list || []).forEach((e, i) => out.push({ kind, e, i }));
-  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), W = x => ((+x.e.x || 1) >= 3 ? 1 : 0);
-  return out.sort((a, b) => (R(a) - R(b)) || (W(a) - W(b)) || (a.i - b.i) || ((+b.e.w || 0) - (+a.e.w || 0)) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
+  /* Inside a bucket (owner, Nov 25): "Open an account at M&T Bank" led the
+     United States, because the country's-own rule put every service listed
+     in fewer than three countries first - and Bank of America (in 23
+     countries' data) and Chase (6) are not "the world's", they are the
+     country's biggest. So the better known goes first (Wikipedia editions,
+     w), leaning toward the country's own by how widely it is listed (w over
+     the square root of x): El País stays ahead of the New York Times in
+     Spain, and Wells Fargo, Citi and Bank of America ahead of M&T. */
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.sqrt(Math.max(1, +x.e.x || 1));
+  return out.sort((a, b) => (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
 function _ccByPopPass(d, TPL, make){
   const ents = _ccByPop(d).filter(x => TPL[x.kind] && TPL[x.kind].length);
@@ -717,9 +725,112 @@ function _ccByPopPass(d, TPL, make){
    it - so AMV starts where the person was told it would. Half the task
    templates never named the site; it is added to those, never twice. */
 const _ccWithSite = (p, e) => p.indexOf(e.s) >= 0 ? p : p + ' Start from ' + e.n + '’s official site, ' + e.s + '.';
+/* EACH SECTION OPENS WITH WHAT PEOPLE MOST OFTEN WANT TO DO (owner, Nov 25:
+   "for money, the most popular is not 'open an account at M&T' - it is
+   compare savings rates, lower my loan interest, transfer fees...").
+
+   A section used to be the country's services in visit order, one template
+   each, so it opened with whichever bank happened to sort first. Now each
+   opens with the everyday tasks below, in the order the largest published
+   study of assistant use ranks what people ask for - practical guidance
+   first, then looking up specific information, then writing (NBER working
+   paper 34255, "How People Use ChatGPT", Sept 2025; docs/RESEARCH.md). Each
+   is filled with the country's MOST VISITED services of the right kind
+   ({n} the first, {top} the first three), so the same task names Chase in
+   the United States and Santander in Spain. The service-by-service tasks
+   follow, most visited first. [kind, title, prompt] - the kind decides the
+   section; a country with no service of that kind lends one from the same
+   section, and a section with none drops the task. */
+const CC_LEADS = [
+  ["bank", "Compare savings rates", "Compare the current savings rates at {top} and other banks in {c}, from their official sites. Which pays the most, and on what conditions?"],
+  ["bank", "Make me a monthly budget", "Help me make a simple monthly budget. Ask me for my income and regular costs, then lay it out and show where I can save."],
+  ["bank", "Pay less interest on a loan or card", "How can I pay less interest on my [loan or credit card] in {c}? Explain my options step by step, from official sources."],
+  ["bank", "Send money abroad for less", "What is the cheapest way to send [amount] from {c} to [country]? Compare a transfer from {n} with the main money transfer services, fees and exchange rate included."],
+  ["bank", "Check and raise my credit score", "How do I check my credit score in {c} for free, and what raises it fastest?"],
+  ["bank", "Pay off my debt faster", "Make me a plan to pay off these debts as fast as possible: [debts, amounts and interest rates]."],
+  ["bank", "Explain my bank statement", "Explain my bank statement and flag anything unusual, and any fees I could avoid: [paste or attach]"],
+  ["insurer", "Find cheaper insurance", "Compare [car, home or health] insurance in {c} from {top} and others: the price, what is covered and the excess."],
+  ["airline", "Find cheap flights", "Find the cheapest way to fly from [city] to [place] around [dates]. Compare {top} and others on the total price with bags."],
+  ["airline", "Plan a trip, day by day", "Plan a [number]-day trip to [place] for [who]: day by day, with how to get around and roughly what it costs."],
+  ["airline", "Entry rules for another country", "What documents, visa and entry rules apply to someone from {c} travelling to [country]? Use official sources and say when they were last updated."],
+  ["airline", "My flight was delayed or cancelled", "My [airline] flight was delayed or cancelled. What refund or compensation am I owed, and how do I claim it?"],
+  ["hotel", "Find a hotel within my budget", "Find a well-rated hotel in [place] for [dates] under [budget]. Compare {top} and others."],
+  ["rail", "Train or bus between two cities", "Compare the train and the bus from [city] to [city] in {c}: times, prices and where to book. Start with {n}."],
+  ["airport", "Get from the airport to the city", "What is the best way to get from {n} to the city centre? The options, prices and times."],
+  ["airline", "Make a packing list", "Make a packing list for [trip, weather and number of days]."],
+  ["ecommerce", "Find the best price for something", "Find the best price for [product] at {top} and other shops in {c}, delivery included."],
+  ["ecommerce", "Help me choose what to buy", "Help me choose a [product] for [what I need it for] under [budget]. Compare the best options and say why."],
+  ["supermarket", "Plan my weekly groceries", "Plan a week of meals and the shopping list for [number of people] on a budget of [amount], using what {n} sells."],
+  ["ecommerce", "Return an order and get a refund", "How do I return my order from [shop] and get my money back? The steps, the deadline and the cost."],
+  ["ecommerce", "Is this deal real?", "Is this a good deal, and is the seller trustworthy? [link or details]"],
+  ["retail", "Find a gift", "Suggest gift ideas for [person, age and interests] under [budget], with where to buy each in {c}."],
+  ["hospital", "What could my symptoms mean?", "I have had [symptoms] since [when]. What could it be, what can I do at home, and when should I see a doctor? I know this is not a diagnosis."],
+  ["hospital", "Explain my test results", "Explain these test results in plain words, and what I should ask my doctor: [paste or attach]"],
+  ["hospital", "See a doctor in {c}", "How do I book a doctor or specialist appointment in {c}, and what does it cost? Start with {n}."],
+  ["pharma", "Check a medicine", "What is [medicine] for, its usual dose and side effects, and does it interact with [other medicines]? From official sources."],
+  ["hospital", "Make me a workout plan", "Make me a [number]-week workout plan for [goal], [days] a week, with what I have: [equipment]."],
+  ["hospital", "Plan healthy meals", "Plan a week of healthy meals for [goal or diet], with a shopping list."],
+  ["newspaper", "Today’s top news in {c}", "Summarize today’s most important news in {c} from {top}, with a link for each story."],
+  ["newspaper", "Explain a story simply", "Explain this news story simply: what happened, why it matters and what is disputed. [link or topic]"],
+  ["newssite", "This week in the news", "Give me a short summary of this week’s main news in {c} and in the world."],
+  ["newspaper", "Follow a topic", "What is the latest on [topic]? Summarize it from several reliable sources and say where they disagree."],
+  ["tv", "Fact-check a claim", "Is this true? [claim] Check it against reliable sources and say how sure you are."],
+  ["university", "Explain a topic simply", "Explain [topic] simply, with an example, then quiz me with three questions."],
+  ["university", "Help me study for an exam", "Make me a study plan for [exam] on [date], and quiz me on [subject]."],
+  ["university", "Apply to a university in {c}", "How do I apply to [course] at universities in {c} such as {top}? The requirements, deadlines and costs."],
+  ["university", "Outline my essay", "Help me outline an essay on [topic]: the main argument, the sections and sources to read. Do not write it for me."],
+  ["library", "Learn a language", "Teach me [language] for [goal]: a short daily plan and today’s first lesson."],
+  ["university", "Find a scholarship", "Find scholarships in {c} for [field and level], with deadlines and links."],
+  ["employer", "Improve my CV", "Improve my CV for [role]: stronger wording, a clean layout and anything missing. Here it is: [paste or attach]"],
+  ["employer", "Write a cover letter", "Write a cover letter for [role] at [company]. Here are my CV and the advert: [paste]"],
+  ["employer", "Prepare for a job interview", "Prepare me for a [role] interview at [company]: likely questions, strong answers and what to ask them."],
+  ["company", "Write a professional email", "Write a clear, polite email to [who] about [what]."],
+  ["employer", "Ask for a raise", "Help me ask for a raise: what to say, what my role pays in {c}, and how to handle a no."],
+  ["employer", "Find jobs near me", "Find [role] jobs in [city], {c}, at employers such as {top}, posted in the last two weeks."],
+  ["telecom", "Lower my phone bill", "How can I pay less for my phone? Compare plans from {top} in {c} for [how I use it]."],
+  ["utility", "Cut my energy bill", "How can I lower my electricity and gas bill in {c}? Compare {n} with other suppliers, and give me quick savings at home."],
+  ["isp", "Compare internet plans", "Compare home internet plans in {c} from {top} for [area and usage]: speed, price and contract length."],
+  ["utility", "Fix something at home", "Help me fix [problem] at home, step by step, and tell me when to call a professional."],
+  ["carmaker", "Choose a car", "Help me choose a car for [needs] under [budget] in {c}: new or used, and what it costs to run."],
+  ["telecom", "Cancel or switch a contract", "How do I cancel or switch my [provider] contract in {c}, and what notice or fees apply?"],
+  ["agency", "Renew my passport", "How do I renew my passport in {c}? The documents, cost, how long it takes and where to apply."],
+  ["agency", "File my taxes", "Help me file my taxes in {c} as [situation]: deadlines, forms and what I can claim. Official sources only."],
+  ["agency", "Get or renew a driving licence", "How do I get or renew a driving licence in {c}? The steps, documents and cost."],
+  ["agency", "Benefits I may be able to get", "Which government benefits or support can I get in {c} as [situation], and how do I apply?"],
+  ["embassy", "Get a visa", "How do I get a visa for [country] from {c}? The documents, fees, waiting time and where to apply."],
+  ["agency", "Fill in an official form", "Help me fill in this official form correctly: [form or link]"],
+  ["museum", "What to do this weekend", "What is on this weekend in [city], {c}? Events, shows and free things to do."],
+  ["theatre", "Find tickets for a show", "Find tickets for [show or event] in [city]: the best price and seats."],
+  ["sportsclub", "When {n} plays next", "When and where does {n} play next, and how do I get tickets?"],
+  ["park", "Plan a day out", "Plan a day out in [place] for [who]: what to see, where to eat and how to get there."],
+  ["museum", "Find a museum or exhibition", "Which museums or exhibitions in [city] are worth it right now, such as {n}? Prices and opening hours."],
+  ["festival", "Festivals coming up", "Which festivals are coming up in {c} in the next few months, and how do I get tickets?"]
+];
+const _ccAnd = (names) => names.length < 2 ? (names[0] || '') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+function ccLeads(d){
+  const pop = _ccByPop(d), byKind = {};
+  pop.forEach(x => { (byKind[x.kind] = byKind[x.kind] || []).push(x.e); });
+  const cat = k => (typeof CJ_KIND_CAT !== 'undefined' && CJ_KIND_CAT[k]) || '';
+  const out = [];
+  CC_LEADS.forEach(([kind, title, prompt], i) => {
+    let list = byKind[kind];
+    if(!(list && list.length)){ const alt = pop.find(x => cat(x.kind) && cat(x.kind) === cat(kind)); if(!alt) return; list = byKind[alt.kind]; }
+    const e = list[0];
+    const top = _ccAnd(list.slice(0, 3).map(x => x.n));
+    const tr = T(title);
+    /* Where AMV should start: the official sites of the services the task
+       names, so it does not begin from a search result. */
+    let p = _ccFill(prompt.replace(/\{top\}/g, top), e, true, d.cc);
+    if(prompt.indexOf('{top}') >= 0) p += ' Start from their official sites: ' + list.slice(0, 3).map(x => x.s).join(', ') + '.';
+    else if(prompt.indexOf('{n}') >= 0) p = _ccWithSite(p, e);
+    out.push({ id:'cl-' + i + '-' + e.q, kind, e, lead:true, tpl:title,
+      title:_ccFill(tr, e, tr === title, d.cc), prompt:p });
+  });
+  return out;
+}
 function ccTasks(d){
-  return _ccByPopPass(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
-    return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; });
+  return ccLeads(d).concat(_ccByPopPass(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
+    return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; }));
 }
 /* TASKS' POPULAR: WHAT PEOPLE DO EVERY DAY (Nov 23). The owner, of Popular:
    "make them things people can do every day ... this applies to all
@@ -776,7 +887,7 @@ function ccPopularNote(cc, crew){
     : T('Ranked by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a task is run in AMV.');
   return t.split('{0}').join(place).replace('{1}', m.month);
 }
-try{ window.ccPopularNote = ccPopularNote; window.ccMeasure = ccMeasure; window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
+try{ window.ccPopularNote = ccPopularNote; window.ccMeasure = ccMeasure; window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccLeads = ccLeads; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
 
 /* CREW: the catalogue's jobs as ordinary Crew jobs, so the panel, the "when"
    picker and the switch treat them exactly like the rest. They run on AMV's
@@ -1330,6 +1441,71 @@ async function ccSearchServices(q){
   };
   paint();
 }
+/* A SERVICE NAMED ANYWHERE, FOUND IN EVERY COUNTRY (owner, Nov 25).
+
+   "I could be in Spain and say a job for an English bank - it should
+   recognise it." Chat's connect card and Crew's box looked only in AMV's own
+   app directory, so a service from another country's catalogue was a blank
+   page to sign in on. This reads the same files the Integrations search does
+   (every country's, then the worldwide list) and finds services whose NAME
+   appears in what was said, as whole words - so "check my Monzo balance"
+   finds Monzo, wherever the person is. Each hit carries its official site and
+   the countries that list it, so the sign-in opens the real address.
+
+   A name that is also an everyday word ("Post", "Target", "Line") would turn
+   ordinary sentences into connect cards, so names under four letters, and a
+   short list of common words, are never matched on their own. */
+const _CC_FIND_COMMON = new Set(('about after again also always back bank bills book booking card cards care cash check city '
+  + 'class clean code coffee daily data deal deals dear dinner direct easy email energy every express fast first food free fresh '
+  + 'friday good great green health help home hotel house insurance just life line link live local mail market media metro '
+  + 'mobile money monday monthly more morning music national news next night office online open orange order pay people phone '
+  + 'plus post power price radio ready rent sale save school search send shop shopping simple smart social sport star store '
+  + 'sunday target taxi team text that this time times today total tour town trade travel unit united union vision voice water '
+  + 'weather week weekly where with work world your').split(' '));
+const _ccFindNorm = (t) => String(t || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9À-￿]+/g, ' ').trim();
+let _ccNamesP = null;
+function _ccNamesLoad(){
+  if(!_ccNamesP) _ccNamesP = fetch('service-names.json', { cache: 'force-cache' }).then(r => r.ok ? r.json() : null)
+    .then(d => (d && d.names && typeof d.names === 'object') ? d.names : null).catch(() => { _ccNamesP = null; return null; });
+  return _ccNamesP;
+}
+async function ccFindServices(text, max){
+  const hay = ' ' + _ccFindNorm(text) + ' ';
+  if(hay.trim().length < 3) return [];
+  /* Only the countries that can hold an answer are read: the person's own,
+     and those the name index (service-names.json, built from every country's
+     file) says list a name that appears in what was said. One small index
+     instead of a hundred files on the first lookup. */
+  const codes = [];
+  try{ const own = typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : ''; if(own) codes.push(own); }catch(e){}
+  const idx = await _ccNamesLoad();
+  if(idx) for(const [name, ccs] of Object.entries(idx)){
+    const n = _ccFindNorm(name); if(n.length < 4 || _CC_FIND_COMMON.has(n) || hay.indexOf(' ' + n + ' ') < 0) continue;
+    for(const cc of String(ccs).split(',')) if(/^[A-Z]{2}$/.test(cc) && codes.indexOf(cc) < 0) codes.push(cc);
+    if(codes.length > 12) break;
+  }
+  const by = new Map();
+  const consider = (kind, e, cc, topic) => {
+    const n = _ccFindNorm(e.n);
+    if(n.length < 4 || _CC_FIND_COMMON.has(n)) return;
+    if(hay.indexOf(' ' + n + ' ') < 0) return;
+    const k = e.s; let x = by.get(k);
+    if(!x){ x = { name: e.n, site: e.s, kind, topic: topic || CC_KIND_TOPIC[kind] || '', cc: [], r: 1e9, len: n.length }; by.set(k, x); }
+    if(cc && x.cc.indexOf(cc) < 0) x.cc.push(cc);
+    if(+e.r > 0) x.r = Math.min(x.r, +e.r);
+  };
+  let i = 0;
+  const one = async () => { while(i < codes.length){ const cc = codes[i++]; const d = await ccLoad(cc).catch(() => null); if(!d) continue;
+    for(const [kind, list] of Object.entries(d.kinds || {})) for(const e of (list || [])) consider(kind, e, cc); } };
+  await Promise.all(Array.from({ length: 8 }, one));
+  const g = await ccGlobalLoad().catch(() => null);
+  if(g) for(const rows of Object.values(g)) for(const x of rows) consider('global', x.e, '', x.topic);
+  /* The longest name first ("Bank of America" over "America"), then the most
+     visited, then the one most countries list. */
+  return [...by.values()].sort((a, b) => (b.len - a.len) || (a.r - b.r) || (b.cc.length - a.cc.length)).slice(0, max || 3);
+}
+try{ window.ccFindServices = ccFindServices; }catch(e){}
 function ccUseService(q){
   const x = _ccSvc[q]; if(!x || x.kind === 'bank' || (x.kind === 'global' && x.topic === 'money')) return;
   const text = 'Using AMV\u2019s browser, open ' + x.e.s + ' (' + x.e.n + '). I will sign in myself if it asks. Then help me [what you want to do there].';

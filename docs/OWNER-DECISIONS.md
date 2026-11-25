@@ -135,6 +135,10 @@ file, so AMV can go on editing it there. That crosses devices only where
 account files are switched on (the `AMV_FILES` storage binding); without it
 the file is kept on the device that saved it, and the card says exactly
 that. Two open copies following each other without a save is still to come.
+*Changed 25 November (owner):* "Your files" left the account menu, and the
+owner chose to remove "Save to my files" with it, so nothing saves to a place
+chat cannot reach. The edited file is downloaded; to edit it again, attach it.
+The file library stays where a project adds a file from.
 
 **Decided 24 October, on the owner's standing instruction to answer each of
 these the way a company out to beat ChatGPT and Claude at a billion users
@@ -675,3 +679,16 @@ the repository.
     near $22. **Still yours to do:** create the $30/month recurring price in
     Stripe and set `STRIPE_PRICE_FAMILY` (optionally `STRIPE_PRICE_FAMILY_YEAR`).
     Until then the Plans screen says Family is coming soon.
+22. **The free plan grows (decided Nov 25)**: 25 messages every five hours on
+    the standard engine, then up to 100 more in the same window on the
+    lightest engine (AMV Pulse), said on the answer when it happens. Chosen
+    over a flat higher number on the standard engine because free sign-ups
+    include bots, and at scale every free message is compute with no revenue
+    behind it. Correction to how it was first put: the free plan's TOKEN
+    budget, not its message count, was always what ran out first (a message
+    carries its conversation, so it is thousands of tokens), so raising the
+    count alone would have changed little. So tokens on the lighter engine
+    count at what they cost - a quarter - and the budgets rose: 650,000 a
+    month (from 325,000) and 45,000 a day (from 20,000; a day at the cap
+    still cannot use the month up in under a fortnight). A day of long conversations can still reach the daily budget
+    before the 125th message.

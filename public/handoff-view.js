@@ -354,6 +354,9 @@ async function hoDone(id){
     return;
   }
   const a=_hoIn().filter(x=>x.id!==id); _hoSaveIn(a);
+  /* Handed to yourself: the sent copy on this device says done at once,
+     without waiting for the next sync to bring the server's word back. */
+  if(res.ok){ const o=_hoOut(); if(o.some(x=>x && x.id===id)) _hoSaveOut(o.map(x=>x && x.id===id ? Object.assign({}, x, { status:'done' }) : x)); }
   toast(res.ok ? 'Marked done'
               : 'Marked done here. Whoever sent it will see that once AMV is connected to a backend.',
         'info', res.ok?2500:6000);

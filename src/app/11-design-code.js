@@ -787,6 +787,14 @@ function _studioSetHTML(html, brief){
   if(a.history.length>30) a.history=a.history.slice(-30);
   _STUDIO.html=html; // keep legacy field in sync
 }
+/* THE QUALITY BAR, WRITTEN ONCE (owner, Nov 25: "design, build and code have
+   to be billion-dollar quality"). What the published guidance on assistant-
+   built interfaces and coding agents agrees on - name the defaults to avoid,
+   one composition per first screen, a type and spacing system; plan bigger
+   changes, verify, never weaken a test, review your own diff - stated as
+   rules every Design, Build and Code instruction carries (docs/RESEARCH.md). */
+const _QUALITY_UI = ' DESIGN RULES: the first screen reads as one composition with one clear focal point; a real type scale (at most two families, tight headings, body at least 16px, lines of 60-75 characters); one spacing scale used everywhere; a small deliberate palette with WCAG AA contrast; no card inside a card, no decorative gradients or glows, no lorem ipsum or placeholder images - write real content; every control has hover, focus and disabled states; it works at phone width with no sideways scroll.';
+const _QUALITY_CODE = ' ENGINEERING RULES: read the code you change before changing it; for anything bigger than a small fix, decide which files change, what must not change and how you will check it; fix the cause, not the symptom - never weaken, skip or delete a test or an assertion, and never silence an error, to make something pass; handle the empty, loading and error cases; before you finish, re-read what you changed as a reviewer would and fix what you find.';
 async function _studioCreate(brief){
   _STUDIO.prompt=brief;
   // detect the kind of deliverable
@@ -799,7 +807,7 @@ async function _studioCreate(brief){
     : type==='component' ? 'Build a polished, self-contained component demo - the component centered on a tasteful backdrop, with real states (hover/active) and a couple of variants shown.'
     : type==='graphic' ? 'Build a single high-impact graphic/poster as a self-contained HTML page sized like a social/print asset, with striking type and composition.'
     : 'Build a complete, multi-section responsive web page - every section finished with real convincing copy, no placeholders.';
-  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_userStyle();
+  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_QUALITY_UI+_userStyle();
   try{
     _studioStatus('Designing…');
     const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this, obeying the DESIGN DNA exactly. Make it breathtaking - award-tier, finished:\n'+brief, sys, {max_tokens:16000, model:_sectionModel('design')});

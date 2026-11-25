@@ -1171,14 +1171,14 @@ const AMV_API = {
   _syncUnguardedTold: false,
 
   async syncPull(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
       if(d && d.ok){ this.syncRev = d.rev || 0; this.retention = d.retention || null; return d.data; }
       return null; }
     catch(e){ return null; }
   },
   async syncPush(data, _retried){
-    if(!this.live || !this.token) return false;
+    if(!this.live || !this.hasSession) return false;
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
@@ -1303,19 +1303,19 @@ const AMV_API = {
   /* Programmatic access to this account. The key is returned exactly once, at
      creation - the server never stores it and cannot show it again. */
   async keysList(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/keys/list', {method:'POST', body:'{}'});
     return await r.json().catch(()=>null);
   },
   async keyCreate(name){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/keys/create', {method:'POST', body:JSON.stringify({name})});
     const d = await r.json().catch(()=>null);
     if(!r.ok || !d || !d.ok){ const e=new Error((d&&d.error)||'could not create a key'); if(d&&d.code) e.code=d.code; throw e; }
     return d;
   },
   async keyRevoke(id){
-    if(!this.live || !this.token) return false;
+    if(!this.live || !this.hasSession) return false;
     const r = await this._fetch('/v1/keys/revoke', {method:'POST', body:JSON.stringify({id})});
     const d = await r.json().catch(()=>null);
     return !!(d && d.ok);
@@ -1325,15 +1325,21 @@ const AMV_API = {
      stop a request. Everything the Usage screen showed before this came from
      device-local counters that the server has never seen. */
   async usage(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/usage');
     return await r.json().catch(()=>null);
   },
 
   /* This account's own security history. Read-only, and the server is the only
      thing that writes it - nothing here can add, edit or hide an entry. */
+  /* `hasSession`, not `token` (Nov 25), here and in the seven reads beside
+     it. Right after a reload the sign-in is still being restored from its
+     cookie and the page holds no token yet; asking for one returned null
+     before anything was sent, and the bell said "Could not check: Security"
+     on every page load. A request without one gets a 401, which _fetch
+     answers by renewing from the cookie and asking again. */
   async activity(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/activity');
     return await r.json().catch(()=>null);
   },
@@ -1348,13 +1354,13 @@ const AMV_API = {
     return await r.json().catch(()=>null);
   },
   async sessions(){
-    if(!this.live || !this.token) return null;
+    if(!this.live || !this.hasSession) return null;
     const r = await this._fetch('/v1/sessions');
     if(!r.ok) return null;
     return await r.json().catch(()=>null);
   },
   async endSession(id){
-    if(!this.live || !this.token) return { ok:false, error:'Not connected to the AMV server.' };
+    if(!this.live || !this.hasSession) return { ok:false, error:'Not connected to the AMV server.' };
     const r = await this._fetch('/v1/sessions/end', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
     const d = await r.json().catch(()=>({}));
     return r.ok ? { ok:true } : { ok:false, error: d.error || ('The server answered '+r.status+'.') };
@@ -6476,10 +6482,15 @@ try{ window.buildHome=buildHome; }catch(e){}
    missing for the same reason. Build is left out on purpose: it has modes and
    a project inside it, and an address that named only the tab would reopen
    the wrong one. */
+/* Every screen somebody works on has an address (owner, Nov 25: "when I
+   refresh it should keep me on Build, Handoff..."). A reload on a screen
+   that had none fell back to a new chat. */
 const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
                   settings:'settings', help:'help', crew:'crew', market:'market',
                   integrations:'integrations', tasks:'tasks', spend:'spending',
-                  memory:'memory', team:'team' };
+                  memory:'memory', team:'team',
+                  build:'build', dev:'code', studio:'design', lab:'lab', handoff:'handoff',
+                  usage:'usage' };
 const _tabForSlug=(slug)=>Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug)||'';
 
 /* DOES THIS HOST SERVE THE APP AT A BARE PATH? ASK THE ADDRESS BAR.
@@ -12645,11 +12656,8 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-team">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'+
       'Team</button>'+
-    /* Your files: what was attached before, kept in the account. It was in the
-       chat box's "+", which now holds only Upload and Research (Nov 24). */
-    '<button class="prof-item" id="pm-files">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'+
-      escH(T('Your files'))+'</button>'+
+    /* Your files left this menu (owner, Nov 25). The library is still where a
+       project adds a file from (07b-projects.js, "pj-lib"). */
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
       'Help &amp; Learn More</button>'+
@@ -12684,7 +12692,6 @@ function showProfMenu(trigger) {
   document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-team')?.addEventListener('click',()=>{ close(); setTab('team'); });
-  document.getElementById('pm-files')?.addEventListener('click',()=>{ close(); openFileLibrary(); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });
@@ -12954,7 +12961,8 @@ function _planPitch(key){
          The window and the weekly top-engine count are the ones that bind,
          and the month is shown as what is left, in Usage. */
       [1,t('<b>A daily allowance</b> to try everything, no card')],
-      [1,t('Up to <b>{n} every {h} hours</b>, so it comes back the same day',{n:_msg5hLabel('free'),h:H})],
+      /* Owner, Nov 25: after the standard messages, more on the lighter engine. */
+      [1,t('<b>{n} every {h} hours</b>, then <b>{l} more</b> on the lighter engine',{n:PLAN_MESSAGES_5H.free.toLocaleString(),l:PLAN_MESSAGES_5H_LIGHT.free.toLocaleString(),h:H})],
       [1,t('Chat, code &amp; interactive 3D models')],
       [1,t('File analysis - PDF, images, code')],
       [0,t('AMV Forge and Apex, the top engines')],
@@ -14961,7 +14969,17 @@ function _wireSeatBuy(){
       : 'Billed monthly. Cancel or change the number of people any time.';
     paint();
   }));
-  on($('seat-buy'),'click',async()=>{
+  /* First the workspace they are buying, then the payment (owner, Nov 25).
+     The preview lives with Settings' panes (settings-panes.js, fetched when
+     the page is idle); if it cannot be fetched, the checkout goes straight
+     on rather than the button doing nothing. */
+  on($('seat-buy'),'click',()=>{
+    const n=clamp(el.value);
+    _lazyLoad('settings-panes.js', () => typeof window._teamPreviewOpen === 'function').then(ok => {
+      if(!(ok && window._teamPreviewOpen({ n, price:P.price, yearly:cycle()==='year', onGo:_seatCheckout }))) _seatCheckout();
+    });
+  });
+  const _seatCheckout=async()=>{
     const n=clamp(el.value);
     const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
     /* Two different reasons it cannot go on, said as two different things:
@@ -14992,7 +15010,7 @@ function _wireSeatBuy(){
             : 'Team billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.')
         : (e&&e.message)||'Could not open checkout. Nothing was charged.');
     }finally{ if(btn){ btn.disabled=false; btn.textContent='Add Team workspace'; } }
-  });
+  };
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}
 
@@ -18335,7 +18353,7 @@ function renderBillingView(targetEl){
    tighter than the server's, the user is stopped early by a number the server
    would have allowed - a limit that exists nowhere but here. */
 const PLAN_TIERS={
-  free:  { dailyTokenCap:20000,    rpmMax:8,  models:['fast','core'] },
+  free:  { dailyTokenCap:45000,    rpmMax:8,  models:['fast','core'] },
   /* Moved with the server's, which is the only reason these numbers exist.
      The allowances were reset to what the margin backstop actually funds, and
      a browser guard left on the old figure is the failure the note above
@@ -18800,7 +18818,7 @@ const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
 
    Mirrored from the Worker, with a test comparing both tables, exactly as
    before. */
-const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
+const PLAN_MONTH_TOKENS={free:650000,pro:2340000,elite:9100000,ultra:23400000};
 /* Short enough to sit on a card, and never rounded UP - an advertised
    allowance is a promise, so 2,470,000 shows as 2.4M rather than 2.5M. */
 function _allowanceLabel(p){
@@ -18837,8 +18855,11 @@ function _allowanceLabel(p){
    suite lifts both and compares them plan by plan - the same arrangement
    AUTO_MAX_BY_PLAN and PLAN_RPM already have, for the same reason. A price
    that disagrees with its enforcement is the defect, not the number. */
-const PLAN_MONTH_MESSAGES={free:3000,pro:100000,elite:300000,ultra:1000000};
+const PLAN_MONTH_MESSAGES={free:6000,pro:100000,elite:300000,ultra:1000000};
 const PLAN_MESSAGES_5H={free:25,pro:1000,elite:3000,ultra:10000};
+/* Free's light messages (owner, Nov 25): after the 25, up to 100 more on the
+   lightest engine in the same five hours. Mirrored from messages5hLight. */
+const PLAN_MESSAGES_5H_LIGHT={free:100};
 const PLAN_TOP_WEEK={free:0,pro:100,elite:500,ultra:1300};
 /* Five hours, named once. It is the shape of the window, not a number to tune
    on a page. */
@@ -18854,7 +18875,7 @@ function _planMsgNum(tbl,p){
 /* Written out in full on a card. "100K messages" reads as a rounding; 100,000
    reads as a promise, and it is the promise that is true. */
 function _msgMonthLabel(p){ return _planMsgNum(PLAN_MONTH_MESSAGES,p).toLocaleString(); }
-function _msg5hLabel(p){ return _planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); }
+function _msg5hLabel(p){ const n=_planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); const l=PLAN_MESSAGES_5H_LIGHT[p]; return l ? n+' + '+l.toLocaleString() : n; }
 function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString(); }
 
 function _rpmForPlan(p){
@@ -25517,6 +25538,14 @@ function _studioSetHTML(html, brief){
   if(a.history.length>30) a.history=a.history.slice(-30);
   _STUDIO.html=html; // keep legacy field in sync
 }
+/* THE QUALITY BAR, WRITTEN ONCE (owner, Nov 25: "design, build and code have
+   to be billion-dollar quality"). What the published guidance on assistant-
+   built interfaces and coding agents agrees on - name the defaults to avoid,
+   one composition per first screen, a type and spacing system; plan bigger
+   changes, verify, never weaken a test, review your own diff - stated as
+   rules every Design, Build and Code instruction carries (docs/RESEARCH.md). */
+const _QUALITY_UI = ' DESIGN RULES: the first screen reads as one composition with one clear focal point; a real type scale (at most two families, tight headings, body at least 16px, lines of 60-75 characters); one spacing scale used everywhere; a small deliberate palette with WCAG AA contrast; no card inside a card, no decorative gradients or glows, no lorem ipsum or placeholder images - write real content; every control has hover, focus and disabled states; it works at phone width with no sideways scroll.';
+const _QUALITY_CODE = ' ENGINEERING RULES: read the code you change before changing it; for anything bigger than a small fix, decide which files change, what must not change and how you will check it; fix the cause, not the symptom - never weaken, skip or delete a test or an assertion, and never silence an error, to make something pass; handle the empty, loading and error cases; before you finish, re-read what you changed as a reviewer would and fix what you find.';
 async function _studioCreate(brief){
   _STUDIO.prompt=brief;
   // detect the kind of deliverable
@@ -25529,7 +25558,7 @@ async function _studioCreate(brief){
     : type==='component' ? 'Build a polished, self-contained component demo - the component centered on a tasteful backdrop, with real states (hover/active) and a couple of variants shown.'
     : type==='graphic' ? 'Build a single high-impact graphic/poster as a self-contained HTML page sized like a social/print asset, with striking type and composition.'
     : 'Build a complete, multi-section responsive web page - every section finished with real convincing copy, no placeholders.';
-  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_userStyle();
+  const sys='You are AMV Design - the most talented design AI ever built. Your output must look like a $50k agency deliverable that wins design awards: a distinctive concept (never a template), confident typography with real hierarchy, a cohesive intentional palette, generous deliberate whitespace, editorial layout, tasteful micro-interactions, pixel-perfect alignment. '+typeGuide+' Output a COMPLETE self-contained HTML document (inline <style>, no external assets except Google Fonts) - fully responsive, production-quality. The DESIGN DNA below is the sole source of truth for style. Return ONLY the HTML in a single ```html code block.'+_QUALITY_UI+_userStyle();
   try{
     _studioStatus('Designing…');
     const resp=await aiComplete(dnaPromptBlock()+'\n\nDesign this, obeying the DESIGN DNA exactly. Make it breathtaking - award-tier, finished:\n'+brief, sys, {max_tokens:16000, model:_sectionModel('design')});
@@ -26794,7 +26823,7 @@ async function _devSend(){
         'You may create or edit ANY files. For EACH file you write, output a fenced block whose FIRST line is "WRITE_FILE: <path>" followed by the COMPLETE file contents (never fragments/diffs). '+
         'Only include files you actually changed or added. Before the file blocks, give a one or two sentence summary of what you changed. '+
         'When starting a NEW project, scaffold it as a REAL multi-file project the way a senior engineer would - separate files for markup, styles, scripts, components, config and a README - rather than cramming everything into one file. Use clear, conventional paths (index.html, styles/main.css, scripts/app.js, components/<name>.js). '+
-        'If any UI is involved, it must look like a top design agency built it.'+_userStyle();
+        'If any UI is involved, it must look like a top design agency built it.'+_QUALITY_CODE+_QUALITY_UI+_userStyle();
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
       /* The conversation, which Dev never sent. Without it "make the button
          bigger" arrives as a request about a button the model has never
@@ -26866,7 +26895,7 @@ async function _devSend(){
     const hasCurrent=!!_DEV.curCode;
     const sys='You are AMV Forge - a principal-level '+_DEV.lang+' engineer in a live code workspace. Your code must be the best version possible: production-ready, complete error handling, performance-aware, secure by default, elegantly structured. '+
       (hasCurrent?'You are EDITING existing code. Apply the user\u2019s requested change to the current code and return the COMPLETE updated program - never a fragment. ':'Write complete, runnable '+_DEV.lang+' code for the request. ')+
-      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.'+_userStyle();
+      'If the request is UI, it must look like a top design agency built it - real hierarchy, deliberate spacing, polished interactions. Briefly explain what you did in one or two sentences, then give ONE fenced '+_DEV.lang+' code block with the full program. Keep it self-contained so it runs directly.'+_QUALITY_CODE+(/\b(html|css|ui|page|site|landing|component|button|form|layout|design|style|frontend|dashboard)\b/i.test(msg)?_QUALITY_UI:'')+_userStyle();
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
@@ -29370,17 +29399,6 @@ try{ window.render404View=render404View; }catch(e){}
    chip, and search still runs across every answer regardless of the chip - so
    the two routes do not fight. A group with nothing left after a search hides
    its heading too, which is the bug this kind of filtering usually ships with. */
-const FAQ_CATS=[
-  ['start','Getting started'],
-  ['chat','Chat and results'],
-  ['create','Design and 3D'],
-  ['build','Building apps'],
-  ['auto','Automations and approvals'],
-  ['connect','Connections and teamwork'],
-  ['billing','Plans and billing'],
-  ['privacy','Memory, data and privacy']
-];
-
 /* The questions themselves live in help-faqs.js, fetched when Help opens. */
 let _faqsP = null;
 function _faqsLoad(){
@@ -29394,95 +29412,20 @@ function _faqsLoad(){
   });
   return _faqsP;
 }
+/* THE HELP CENTER IS DRAWN BY help-faqs.js (Nov 25), with its questions:
+   only some visitors open it, and the page has a size ceiling. This stand-in
+   fetches that file and hands over to its renderHelpView, which replaces
+   this one; if the file cannot arrive, it says so with a way to try again. */
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
-  /* The questions arrive from help-faqs.js the first time; everything else on
-     this screen is drawn at once, and the questions fill in when they land. */
-  const _faqsHere=Array.isArray(window._FAQS);
-  if(!_faqsHere) _faqsLoad().then(ok=>{
+  const stand=renderHelpView;
+  vc.innerHTML='<div class="sv fi"><div class="vi vi-help"><p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p></div></div>';
+  _faqsLoad().then(ok=>{
     if(S.tab!=='help') return;
-    if(ok){ renderHelpView(); return; }
+    if(ok && window.renderHelpView!==stand){ window.renderHelpView(); return; }
     const n=document.getElementById('faq-loading');
-    if(n) n.textContent=T('The questions could not be loaded. Check your connection and try again.');
+    if(n) n.innerHTML=escH(T('The questions could not be loaded. Check your connection and try again.'))+' <button class="btn bs" data-dact="renderHelpView" type="button">'+escH(T('Retry'))+'</button>';
   });
-  const FAQS=_faqsHere?window._FAQS:[];
-  const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
-    '<button class="hc-chip on" data-hcc="all">All</button>'+
-    FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
-  '</div>';
-  const groups=FAQ_CATS.map(c=>{
-    const items=FAQS.map((f,i)=>[f,i]).filter(x=>x[0].c===c[0]);
-    if(!items.length) return '';
-    return '<section class="hc-group" data-hcg="'+c[0]+'">'+
-      '<h3 class="hc-group-h">'+escH(c[1])+'</h3>'+
-      items.map(x=>
-        '<div class="faq-item" id="fi-'+x[1]+'" data-hcg="'+c[0]+'">'+
-          '<div class="faq-q" data-fi="'+x[1]+'"><span>'+x[0].q+'</span><span class="faq-arr">+</span></div>'+
-          '<div class="faq-a">'+x[0].a+'</div>'+
-        '</div>').join('')+
-    '</section>';
-  }).join('');
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi vi-help">'+
-      '<span class="eyebrow">Help</span>'+
-      '<h2>Help Center</h2>'+
-      '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
-      '<div class="ss2">'+
-        '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:var(--t-lg);margin-bottom:13px">'+
-        chips+
-        '<div id="faq-list">'+(_faqsHere?groups:'<p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p>')+'</div>'+
-        '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
-      '</div>'+
-      _appsCardHTML()+
-      '<div class="ss2"><h3>Share feedback</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          '<button class="btn bp" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="bug">Report a bug</button>'+
-          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openFeedback" data-darg="idea">Suggest a feature</button>'+
-        '</div>'+
-      '</div>'+
-      '<div class="ss2"><h3>Still need help?</h3>'+
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-          supportButton({label:'Email Support',cls:'btn bp',subject:'AMV Support request'})+
-          '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="askAmv" data-darg="">Ask AMV directly</button>'+
-        '</div>'+
-        (_supportEmail()?'<p style="font-size:var(--t-sm);color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
-      '</div>'+
-    '</div></div>';
-  _appsCardWire();
-  vc.querySelectorAll('.faq-q').forEach(q=>{
-    q.addEventListener('click',()=>{
-      document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');
-    });
-  });
-
-  /* One function decides what is visible, from the two inputs, every time.
-     Two independent handlers each hiding rows is how a chip and a search box
-     end up disagreeing about the same row. */
-  let cat='all';
-  function apply(){
-    const s=(($('faq-search')||{}).value||'').toLowerCase().trim();
-    let shown=0;
-    vc.querySelectorAll('.faq-item').forEach(item=>{
-      const f=FAQS[+item.querySelector('.faq-q').dataset.fi];
-      const okCat = cat==='all' || f.c===cat;
-      const okTxt = !s || f.q.toLowerCase().includes(s) || f.a.toLowerCase().includes(s);
-      const on = okCat && okTxt;
-      item.hidden = !on;
-      if(on) shown++;
-    });
-    /* A heading over nothing reads as a group with no answers in it. */
-    vc.querySelectorAll('.hc-group').forEach(g=>{
-      g.hidden = !g.querySelector('.faq-item:not([hidden])');
-    });
-    const none=$('faq-none'); if(none) none.hidden = shown>0;
-  }
-  vc.querySelectorAll('[data-hcc]').forEach(b=>b.addEventListener('click',()=>{
-    cat=b.dataset.hcc;
-    vc.querySelectorAll('[data-hcc]').forEach(x=>x.classList.toggle('on',x===b));
-    apply();
-  }));
-  on($('faq-search'),'input',apply);
 }
 
 /* === SETTINGS VIEW === */
@@ -35737,12 +35680,24 @@ async function connectAccountTool(input){
   /* 3. The open registry, and 4. signing in on their own computer - which is
      the one door that opens for ANY service with a password, in any country -
      and what can be done besides. */
+  /* 2b. Every country's catalogue (owner, Nov 25): a service listed in ANY
+     country - a UK bank asked for from Spain - is recognised by name, and its
+     official address is what the sign-in opens, rather than a blank page. */
+  let known = null;
+  if(!(input && input.url)){
+    try{
+      if(typeof _ccReady === 'function' && await _ccReady() && typeof window.ccFindServices === 'function'){
+        const f = await window.ccFindServices(q, 1);
+        known = (f && f[0]) || null;
+      }
+    }catch(e){ known = null; }
+  }
   const reg = await _cxRegistry(q);
-  const money = _CX_MONEY.test(asked);
-  const site = (typeof _browserUrl === 'function') ? _browserUrl(input && input.url) : '';
+  const money = _CX_MONEY.test(asked) || !!(known && (known.kind === 'bank' || known.topic === 'money'));
+  const site = (typeof _browserUrl === 'function') ? _browserUrl((input && input.url) || (known ? 'https://' + known.site : '')) : '';
   const siteHost = site && site !== 'about:blank' ? new URL(site).hostname : '';
   const bridged = bridgeLocal();
-  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + q + ' on your computer' }];
+  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + (known ? known.name : q) + ' on your computer' }];
   reg.servers.forEach(s => acts.push({ code:'reg:' + s.id, label:'Add ' + s.name }));
   if(money) acts.push({ code:'how:bank', label:'Link a bank or brokerage' });
   acts.push({ code:'how:mail', label:'Connect the mailbox it emails' });
@@ -35762,12 +35717,15 @@ async function connectAccountTool(input){
       + 'Tell them to check the address bar shows the real site before signing in. '
       + 'Once they say they are signed in, you can use the amv-browser tools (open a page, read it, click, fill a form) to do what they asked - each one asks their permission first. '
       + 'It works while that window is open and AMV is open on their computer; it ends when they close it. A scheduled Crew job on AMV’s servers cannot use it. ';
+  const where = known ? (known.cc || []).slice(0, 3).map(cc => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[1] : cc; }).join(', ') : '';
+  const knownLine = known ? 'RECOGNISED in AMV’s catalogue of services by country: ' + known.name + ' (' + known.site + ')'
+      + (where ? ', listed in ' + where : ', used worldwide') + '. That is its official address, so the sign-in button opens it. ' : '';
   return {
-    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
+    text: knownLine + 'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
       + (money ? 'It sounds financial, so the bank link is offered too: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
       + 'Other real options, shown as buttons: connect the mailbox that receives its statements and alerts (AMV then reads those), and Notify me, which records the request. They can also upload an export or statement in chat. '
       + 'Tell them plainly what you know about the service, and never claim a connection exists until they have signed in and you have read a page from it.' + signIn,
-    render:_cxCard(q, siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.', acts,
+    render:_cxCard(known ? known.name : q, (known && where ? where + ' \u00b7 ' : '') + (siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.'), acts,
       (siteHost ? 'Check the address bar shows ' + siteHost + ' before you type your password. ' : 'Type its web address in the window that opens. ')
         + 'AMV never sees your password, and asks before every step it takes there.')
   };
@@ -47404,7 +47362,12 @@ const _AGENT_SYS =
 + '3. VERIFY IT YOURSELF. Run the build, the tests, the linter - whatever this project has. If '
 + 'something fails, read the error, fix it, and run it again. Keep going until it passes or until '
 + 'you are certain it cannot be fixed without a decision only the user can make.\n'
-+ '4. Never claim something works because it should. If you did not run it, say that you did not.\n\n'
++ '4. Never claim something works because it should. If you did not run it, say that you did not.\n'
++ '5. Fix the cause, not the symptom. Never weaken, skip or delete a test or an assertion, and never '
++ 'silence an error, to make something pass. If the same fix fails twice, stop, re-read the error and '
++ 'the code, and change approach.\n'
++ '6. Before you finish, read back what you changed as a reviewer would - a typo, a leftover debug '
++ 'line, a case you did not handle - and fix it.\n\n'
 + 'Be economical: the smallest command that answers the question, and no exploratory rummaging '
 + 'once you know where you are. Finish with a short plain-English summary of what changed and what '
 + 'you verified - no file listing, that is shown separately.\n\n'

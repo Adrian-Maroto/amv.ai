@@ -930,8 +930,17 @@ const PLAN_LIMITS = {
      is on the account record but not on the request path, so that needs new
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
-  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,   monthMessages: 3000,
-           messages5h: 25,     topMessagesWeek: 0 },
+  /* FREE, FROM NOV 25 (owner): 25 messages every five hours on the standard
+     engine, then up to 100 more on the lightest one (messages5hLight) - the
+     shape the leading assistants use, so a free account can keep going while
+     AMV pays standard prices for the first 25 only. Tokens on a cheaper
+     engine count at what they cost (costWeighted: the lightest engine is a
+     quarter of the standard one), so the light messages do not empty the
+     day. The month doubles to 650,000; the day is 45,000 - fourteen days at
+     the cap, never under a fortnight (see the note above on the tier that
+     died on day six). */
+  free:  { dayTokens: 45000,    monthTokens: 650000,    rpm: 8,   monthMessages: 6000,
+           messages5h: 25,     messages5hLight: 100,   costWeighted: true,  topMessagesWeek: 0 },
   /* WHAT THESE ARE MEASURED AGAINST, WRITTEN DOWN THIS TIME.
 
      The note above calls the dollar backstop a floor "normal users never
