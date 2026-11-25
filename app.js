@@ -22260,7 +22260,7 @@ const CJ_KIND_CAT = {
   retail:'Shopping', supermarket:'Shopping', ecommerce:'Shopping', restaurant:'Shopping', mall:'Shopping',
   agency:'Government & paperwork', ministry:'Government & paperwork', embassy:'Government & paperwork', union:'Government & paperwork',
   hospital:'Health', pharma:'Health',
-  employer:'Work & career', company:'Work & career', software:'Work & career', nonprofit:'Work & career',
+  employer:'Work & career', jobsite:'Work & career', company:'Work & career', software:'Work & career', nonprofit:'Work & career',
   museum:'Going out', theatre:'Going out', stadium:'Going out', sportsclub:'Going out', park:'Going out', zoo:'Going out', festival:'Going out', brewery:'Going out',
 };
 /* The older category names, folded into the same set. */
@@ -35324,7 +35324,6 @@ const AMV_APP_CATS = [
     'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step math.',
   ]},
   { id:'jobs', t:'Jobs &amp; careers', q:'jobs', apps:[
-    'Job boards worldwide|jobs|StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
     'LinkedIn||Profiles, jobs and your network.', 'Indeed||Job search.', 'Glassdoor||Jobs, salaries and reviews.',
     'ZipRecruiter||Job search in the US.', 'Upwork||Freelance work.', 'Fiverr||Freelance services.', 'Monster||Job search.',
     'Handshake||Jobs for students.', 'Wellfound||Jobs at startups.', 'Freelancer||Freelance projects.', 'Seek||Jobs in Australia and New Zealand.',

@@ -35,7 +35,7 @@ const CC_KINDS = {
   hotel:['🏨','Hotels'], agency:['🏛️','Government'], ministry:['🏛️','Ministries'],
   hospital:['🏥','Hospitals'], utility:['⚡','Energy'], carmaker:['🚗','Car makers'],
   museum:['🏛️','Museums'], library:['📚','Libraries'], sportsclub:['⚽','Football clubs'],
-  employer:['💼','Employers'],
+  employer:['💼','Employers'], jobsite:['🔎','Job sites'],
   school:['🏫','Schools'], research:['🔬','Research'], publisher:['📖','Publishers'],
   software:['💻','Software'], pharma:['💊','Pharmaceuticals'], nonprofit:['🤝','Nonprofits'],
   theatre:['🎭','Theaters'], stadium:['🏟️','Stadiums'], mall:['🏬','Shopping centers'],
@@ -110,6 +110,8 @@ const CC_TASKS = {
   museum:[['Visit {n}','Plan a visit to {n}: hours, tickets, what not to miss. Use {s}.'],['{n} exhibitions','What exhibitions are on at {n} now and coming up, with dates and ticket prices? Use {s}.']],
   library:[['Use {n}','How do I join {n} and borrow books or e-books? Use {s}.']],
   sportsclub:[['{n} fixtures','When does {n} play next, and where can I watch or buy a ticket? Use {s}.'],['{n} tickets','How do I buy tickets for a {n} match, and what do they cost?']],
+  jobsite:[['Find jobs on {n}','Find [role] jobs in [city] on {n}, posted in the last two weeks, with links. Use {s}.'],
+           ['Make my {n} profile stand out','Improve my {n} profile for [role] - headline, summary and skills - from what I paste. Use {s} for what it shows employers.']],
   employer:[['Jobs at {n}','Find current [role] openings at {n}, with locations and how to apply. Use {s}.'],
             ['Interview at {n}','Prepare me for an interview at {n} for [role]: what they ask and what they value.'],
             ['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and reputation as an employer.']],
@@ -538,6 +540,10 @@ const CC_CREW = {
            ['Tours at {n}','Each month, tours and tastings at {n}, with how to book.','monthly'],
            ['{n} awards','Each month, awards won by {n}’s beers.','monthly'],
            ['{n} in the news','Each month, news about {n}, in a few lines with links.','monthly']],
+  jobsite:[['New jobs on {n}','Each day, new [role] postings on {n} in [location], with links.','daily'],
+           ['Remote jobs on {n}','Each day, new remote [role] postings on {n}, with links.','daily'],
+           ['Internships on {n}','Each week, new internships and graduate roles on {n} in [field], with links.','weekly'],
+           ['Jobs on {n} in {c}','Each day, new [role] postings on {n} in {c}, with links.','daily','c']],
   employer:[['New jobs at {n}','Each day, new [role] openings at {n} in [location], with links.','daily'],
             ['{n} in the news','Each week, news about {n} - results, layoffs, hiring - in a few lines.','weekly'],
             ['{n} as an employer','Each month, what current and former employees say about working at {n}, from public reviews, in a few lines.','monthly'],
@@ -849,7 +855,7 @@ function ccTasks(d){
    visits, so only its first is listed. */
 const CC_EVERYDAY = { newspaper: 0, newssite: 0, tv: 0, radio: 0, bank: 4, telecom: 0, isp: 0, supermarket: 0, retail: 2,
   ecommerce: 2, restaurant: 1, airline: 0, rail: 0, bus: 0, hotel: 0, airport: 1, utility: 0, sportsclub: 0,
-  insurer: 0, software: 1, mall: 0, theatre: 0, stadium: 0 };
+  insurer: 0, software: 1, mall: 0, theatre: 0, stadium: 0, jobsite: 0 };
 function _ccBrand(host){
   const l = String(host).split('.');
   const shared = /^(bank|gov|nic|ac|co|com|org|net|edu|gob|go|or|ne)$/;
@@ -857,7 +863,7 @@ function _ccBrand(host){
 }
 /* Popular takes turns across the everyday areas, in the order the note
    above gives them - news, the bank, phone and internet, shopping, food,
-   travel, bills, sport - each turn taking that area's most
+   travel, bills, sport, work - each turn taking that area's most
    visited service not yet listed (Nov 25, owner: "all the most popular, no
    irrelevant ones"). By visits alone almost every candidate sits in the same
    band of the report, so the order inside it decided everything, and fame
@@ -866,7 +872,7 @@ function _ccBrand(host){
    opened the United States with three pizza chains. Taking turns puts a
    bank, a shop and a way to travel in the first ten everywhere. */
 const CC_POP_AREAS = [['newspaper', 'newssite', 'tv', 'radio'], ['bank'], ['telecom', 'isp'], ['supermarket', 'retail', 'ecommerce', 'mall'],
-  ['restaurant'], ['airline', 'rail', 'bus', 'airport', 'hotel'], ['utility', 'insurer'], ['sportsclub', 'stadium']];
+  ['restaurant'], ['airline', 'rail', 'bus', 'airport', 'hotel'], ['utility', 'insurer'], ['sportsclub', 'stadium'], ['jobsite']];
 function ccTasksPopular(d, all){
   const byId = new Map((all || []).map(t => [t.id, t]));
   /* Inside an area: the visits band, then the outlets listed in half the
@@ -1100,7 +1106,7 @@ const CC_KIND_TOPIC = {
   newspaper:'news', newssite:'news', tv:'news', radio:'news', publisher:'news',
   university:'school', college:'school', school:'school', library:'school', research:'school',
   hospital:'health', pharma:'health', telecom:'home', isp:'home', utility:'home', carmaker:'home',
-  employer:'jobs', company:'jobs', software:'work', nonprofit:'home',
+  employer:'jobs', company:'jobs', jobsite:'jobs', software:'work', nonprofit:'home',
   agency:'gov', ministry:'gov', embassy:'gov', union:'gov',
   museum:'out', theatre:'out', stadium:'out', sportsclub:'out', park:'out', zoo:'out', festival:'out', brewery:'out',
 };
@@ -1270,6 +1276,7 @@ function _ccFillBy(d, g, here){
       if(add.length) by[t] = (by[t] || []).concat(add);
     }
   }
+  if(by.jobs) by.jobs = _ccJobsOrder(by.jobs, here, d && d.cc);
   if(by.news){
     /* A few outlets are filed in the country data under their address
        ("reuters.com"); the worldwide table has the name. */
@@ -1322,6 +1329,33 @@ function _ccNewsOrder(rows, here, cc){
     .map(z => z[0]);
 }
 try{ window._ccNewsOrder = _ccNewsOrder; }catch(e){}
+/* JOBS: THE SITES PEOPLE THERE LOOK FOR WORK ON, FIRST (Nov 25). The owner:
+   "instead of job boards worldwide, the popular ones of the country - in the
+   US LinkedIn, Indeed; in Germany, Spain, Italy, China, Vietnam their own".
+   Job sites (the country's own, `jobsite`, and the worldwide ones) by visits
+   from the country (Chrome UX Report), then a site on the country's own
+   domain, then how widely each is documented; then the country's job sites
+   nobody has measured yet; then the employers in their order; and last the
+   worldwide entries never measured here - which is where the odd ones in
+   that list (a college dance team, a trade union) belong. */
+const _ccJobLead = new WeakSet();
+function _ccJobsOrder(rows, here, cc){
+  const tld = /^[A-Z]{2}$/.test(String(cc || '')) ? (cc === 'GB' ? 'uk' : String(cc).toLowerCase()) : '';
+  const home = (x) => (tld && String(x.e.s || '').toLowerCase().endsWith('.' + tld)) ? 0 : 1;
+  const R = _ccGlobalReach, codes = here && here.codes;
+  const okHere = !!(R && typeof codes === 'string' && codes.length === R.n);
+  const visits = (x) => {
+    if(+x.e.r > 0) return +x.e.r;
+    if(x.kind === 'global' && okHere && x.i != null){ const h = +codes[x.i]; if(h) return CC_REACH_BUCKET[h] || 1e9; }
+    return 1e9;
+  };
+  const site = (x) => x.kind === 'jobsite' || x.kind === 'global';
+  const band = (x) => { const v = visits(x); return site(x) ? (v < 1e9 ? 0 : x.kind === 'jobsite' ? 1 : 3) : 2; };
+  return rows.map((x, i) => [x, i, band(x), visits(x), home(x)])
+    .sort((a, b) => (a[2] - b[2]) || (a[2] < 2 ? (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) : 0) || (a[1] - b[1]))
+    .map(z => { if(z[2] < 2) _ccJobLead.add(z[0]); return z[0]; });
+}
+try{ window._ccJobsOrder = _ccJobsOrder; }catch(e){}
 function _ccFillDraw(root, by){
   /* A row is registered when it is drawn - its Use / Link reads it there. */
   const svcRow = (x) => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; return _ccSvcRowHTML(x); };
@@ -1359,7 +1393,7 @@ function _ccFillDraw(root, by){
     /* News leads with the outlets: they go before the reading apps, and on a
        closed topic they take the first screen, the apps moving behind See
        the remaining. Every other topic keeps its apps first. */
-    const lead = topic === 'news';
+    const lead = topic === 'news' || topic === 'jobs';
     const nm = (t) => String(t || '').trim().toLowerCase();
     list.querySelectorAll('.cc-dup').forEach(n => n.classList.remove('cc-dup'));
     if(lead){
@@ -1372,18 +1406,31 @@ function _ccFillDraw(root, by){
       if(appNames.size) rows = rows.filter(x => !appNames.has(nm(x.e.n)));
     }
     const shown = list.querySelectorAll('.int-card:not(.cc-dup)').length;
-    let fill, pushed = 0;
+    let fill, pushed = 0, unshown = 0;
     if(lead){
-      fill = open ? rows.length : Math.min(rows.length, CC_INT_SHOWN);
-      list.insertAdjacentHTML('afterbegin', rows.slice(0, fill).map(svcRow).join(''));
+      /* In Jobs only the job sites lead; the employers come after the apps
+         (LinkedIn's own card before a company's careers page). */
+      const head = topic === 'jobs' ? rows.filter(x => _ccJobLead.has(x)) : rows;
+      const tail = topic === 'jobs' ? rows.filter(x => !_ccJobLead.has(x)) : [];
+      fill = open ? head.length : Math.min(head.length, CC_INT_SHOWN);
+      list.insertAdjacentHTML('afterbegin', head.slice(0, fill).map(svcRow).join(''));
+      unshown = head.length - fill;
+      let appsShown = 0;
       if(!open){
         const apps = [...list.querySelectorAll('.int-card:not(.cc-svc):not(.cc-dup)')], room = Math.max(0, CC_INT_SHOWN - fill);
         apps.slice(room).forEach(n => n.classList.add('cc-pushed'));
         pushed = Math.max(0, apps.length - room);
+        appsShown = Math.min(apps.length, room);
+      }
+      if(tail.length){
+        const t = open ? tail.length : Math.max(0, CC_INT_SHOWN - fill - appsShown);
+        list.insertAdjacentHTML('beforeend', tail.slice(0, t).map(svcRow).join(''));
+        unshown += tail.length - t;
       }
     } else {
       fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
       list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
+      unshown = rows.length - fill;
     }
     const topicName = ((sec.querySelector('h3') || {}).textContent || '').trim();
     if(open){
@@ -1396,7 +1443,7 @@ function _ccFillDraw(root, by){
       }
       continue;
     }
-    const rest = (btn ? (+btn.dataset.rest || 0) : 0) + Math.max(0, rows.length - fill) + pushed;
+    const rest = (btn ? (+btn.dataset.rest || 0) : 0) + Math.max(0, unshown) + pushed;
     if(btn){
       if(rest > 0){
         const svg = btn.querySelector('svg');

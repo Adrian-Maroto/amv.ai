@@ -2021,7 +2021,7 @@ function _teamSetupPage(vc){
   const gets = ['AMV’s top models for every person', 'Each seat brings its own full allowance', 'A shared project and prompt library', 'Invite by email - no keys to hand out', 'One bill for the whole team', 'Teammates never see your chats'];
   vc.innerHTML = '<div class="sv fi"><div class="vi tsu">'
     + '<button class="tsu-back" type="button" id="tsu-back"><span aria-hidden="true">←</span> ' + escH(T('Team')) + '</button>'
-    + '<span class="eyebrow">' + escH(T('Step 1 of 2 · Your workspace')) + '</span>'
+    + '<p class="tsu-step">' + escH(T('Step 1 of 2 · Your workspace')) + '</p>'
     + '<h2>' + escH(T('Set up your Team workspace')) + '</h2>'
     + '<p class="vsub">' + escH(T('This is what you are creating. Payment is the next step, on a secure checkout page, and nothing is charged before you confirm there.')) + '</p>'
     + '<div class="tsu-grid">'

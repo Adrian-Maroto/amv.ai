@@ -105,9 +105,9 @@ section('Yearly is a real choice that reaches checkout as yearly');
     return out;
   });
   ok(r.setup && !r.setup.overlay && r.setup.kept === '1', 'the button opens a page of its own, not a popup', r.setup);
-  ok(r.setup && /Preview/.test(r.setup.text) && /Owner/.test(r.setup.text) && /Admin/.test(r.setup.text) && /Member/.test(r.setup.text) && /Who can do what/.test(r.setup.text),
+  ok(r.setup && /Preview/.test(r.setup.text) && /Owner/.test(r.setup.text) && /Admin/.test(r.setup.text) && /Member/.test(r.setup.text) && /Who can do what/i.test(r.setup.text),
      'it shows the workspace being bought: the roles and what each may do', r.setup);
-  ok(r.setup && r.setup.rows >= 2 && /Step 1 of 2/.test(r.setup.text) && r.setup.charged === 0 && r.setup.yearPressed === 'true',
+  ok(r.setup && r.setup.rows >= 2 && /Step 1 of 2/i.test(r.setup.text) && r.setup.charged === 0 && r.setup.yearPressed === 'true',
      'with the seats as places to invite into, and the yearly choice carried over, before anything is asked of checkout', r.setup);
   ok(r.calls.length === 1 && r.calls[0][0] === 'team' && r.calls[0][3] === 'year' && r.calls[0][2] >= 3, 'checkout is asked for the team plan, yearly, with the seats', r.calls);
   ok(!/\$/.test(r.total) && /billed yearly/.test(r.total), 'no yearly figure is invented', r.total);

@@ -1546,7 +1546,7 @@ const CJ_KIND_CAT = {
   retail:'Shopping', supermarket:'Shopping', ecommerce:'Shopping', restaurant:'Shopping', mall:'Shopping',
   agency:'Government & paperwork', ministry:'Government & paperwork', embassy:'Government & paperwork', union:'Government & paperwork',
   hospital:'Health', pharma:'Health',
-  employer:'Work & career', company:'Work & career', software:'Work & career', nonprofit:'Work & career',
+  employer:'Work & career', jobsite:'Work & career', company:'Work & career', software:'Work & career', nonprofit:'Work & career',
   museum:'Going out', theatre:'Going out', stadium:'Going out', sportsclub:'Going out', park:'Going out', zoo:'Going out', festival:'Going out', brewery:'Going out',
 };
 /* The older category names, folded into the same set. */
