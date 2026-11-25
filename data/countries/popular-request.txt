@@ -1,2 +1,2 @@
 # Countries to rank by real visits (empty = all). Changing this file runs the country-popular workflow.
-# run: 2
+# run: 3 - job sites: boards from the job hunt list filed and added as job sites

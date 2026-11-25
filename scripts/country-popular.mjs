@@ -48,6 +48,29 @@ const UA = 'AMV-country-data/1.0 (public-data builder; contact via the project r
 const ADD_BELOW = 10000;          // sites in a country's top 10,000 are looked up
 const ADD_MAX_PER_KIND = 60;      // and at most this many are added to one kind
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+/* JOB SITES BY THE BOARDS AMV'S JOB HUNT USES (Nov 25). Wikidata files
+   InfoJobs, Naukri or LinkedIn as a business or a social network rather than
+   an employment website, so the job-site kind alone left Spain with one board
+   and India with none. The national boards in src/worker/64-job-boards.js are
+   the ones AMV's job hunt already sends people to; a site on that list is a
+   job site whatever Wikidata calls it - its ORDER is still the visits measured
+   here. A board given as a page on a government site (a ministry's job page)
+   is skipped, and a
+   board's whole domain counts only where the board IS the whole domain, so
+   findajob.dwp.gov.uk never makes the rest of that ministry a job site. */
+const JOB_HOSTS = (() => {
+  const out = new Set();
+  try {
+    const src = readFileSync(join(ROOT, 'src', 'worker', '64-job-boards.js'), 'utf8');
+    for (const m of src.matchAll(/url:\s*'(https?:\/\/[^']+)'/g)) {
+      try { const u = new URL(m[1]); const h = u.hostname.toLowerCase().replace(/^www\./, ''); if (u.pathname.replace(/\/+$/, '') && /(^|\.)(gov|gob|go|gouv|govt|gv|mil)\./.test(h)) continue; out.add(h); } catch (e) {}
+    }
+  } catch (e) {}
+  return out;
+})();
+/* The exact host, or its registrable domain - which is on the list only when
+   a board is that whole domain (indeed.com covers uk.indeed.com). */
+const isJobHost = (h) => { h = String(h || '').toLowerCase().replace(/^www\./, ''); return JOB_HOSTS.has(h) || JOB_HOSTS.has(reg(h)); };
 const qid = (uri) => String(uri).split('/').pop();
 
 async function sparql(q, tries = 4, ms = 90000) {
@@ -148,6 +171,12 @@ async function main() {
       const r = rankOf(c, e.s); if (r) { e.r = r; n++; } else delete e.r;
       have.add(reg(e.s)); haveQ.add(e.q);
     }
+    /* A job board filed under another kind (Indeed as a business) is a job site. */
+    for (const [k, list] of Object.entries(d.kinds || {})) {
+      if (k === 'jobsite') continue;
+      for (let i = list.length - 1; i >= 0; i--) if (isJobHost(list[i].s)) { (d.kinds.jobsite = d.kinds.jobsite || []).push(list[i]); list.splice(i, 1); }
+      if (!list.length) delete d.kinds[k];
+    }
     ranked += n;
     /* 2. Add the most-visited sites Wikidata can place, by their website. */
     const cand = [...c.byReg.entries()].filter(([g, r]) => r <= ADD_BELOW && !have.has(g)).sort((a, b) => a[1] - b[1]).map(x => x[0]);
@@ -174,6 +203,35 @@ async function main() {
         haveQ.add(q);
         (found[kind] = found[kind] || []).push({ q, n: name, s: host, w: +b.n.value, r: c.byReg.get(reg(host)) || ADD_BELOW });
       }
+      await sleep(250);
+    }
+    /* The job boards among the most visited sites here, looked up by their
+       website alone - Wikidata's class for them is not the question. */
+    const jobCand = [...c.byReg.entries()].filter(([g, r]) => r <= ADD_BELOW && isJobHost(g) && !have.has(g)).map(x => x[0]);
+    for (let i = 0; i < jobCand.length && Date.now() < END; i += 40) {
+      const batch = jobCand.slice(i, i + 40);
+      const vals = batch.flatMap(g => ['https://' + g + '/', 'https://www.' + g + '/', 'https://' + g, 'https://www.' + g, 'http://' + g + '/', 'http://www.' + g + '/'].map(u => '<' + u + '>')).join(' ');
+      let rows = [];
+      try {
+        rows = await sparql(`SELECT ?i ?site ?n ?iLabel WHERE {
+          VALUES ?site { ${vals} }
+          ?i wdt:P856 ?site ; wikibase:sitelinks ?n .
+          FILTER NOT EXISTS { ?i wdt:P576 ?gone } FILTER NOT EXISTS { ?i wdt:P582 ?ended }
+          SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,es,fr,de,pt,it,nl,ru,tr,ar,id,ja,ko,zh". }
+        }`, 2, 60000);
+      } catch (e) { console.log(cc, 'job board lookup failed:', e.message); continue; }
+      /* One item per site: the best documented (LinkedIn, not a page about it). */
+      const best = new Map();
+      for (const b of rows) {
+        const q = qid(b.i.value); if (haveQ.has(q)) continue;
+        const name = b.iLabel && b.iLabel.value;
+        if (!name || /^Q\d+$/.test(name) || name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
+        let host = ''; try { host = new URL(b.site.value).hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
+        if (!host || !isJobHost(host)) continue;
+        const e = { q, n: name, s: host, w: +b.n.value, r: c.byReg.get(reg(host)) || ADD_BELOW };
+        const was = best.get(host); if (!was || e.w > was.w) best.set(host, e);
+      }
+      for (const e of best.values()) { if (haveQ.has(e.q)) continue; haveQ.add(e.q); (found.jobsite = found.jobsite || []).push(e); }
       await sleep(250);
     }
     let a = 0;
