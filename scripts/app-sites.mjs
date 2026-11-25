@@ -89,7 +89,6 @@ export const APP_SITES = {
   'Brightspace': 'brightspace.com', 'PowerSchool': 'powerschool.com', 'Anki': 'ankiweb.net', 'Notability': 'notability.com',
   'GoodNotes': 'goodnotes.com', 'Photomath': 'photomath.com',
   // Jobs
-  'Job boards worldwide': null,
   // Home
   'Everyday life where you live': null, 'AMV around the world': null, 'Google Home': 'home.google.com', 'Amazon Alexa': 'alexa.amazon.com',
   'Apple Home': null, 'SmartThings': 'smartthings.com', 'Philips Hue': 'philips-hue.com', 'Google Nest': 'home.nest.com',
