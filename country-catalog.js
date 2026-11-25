@@ -734,7 +734,7 @@ const _ccWithSite = (p, e) => p.indexOf(e.s) >= 0 ? p : p + ' Start from ' + e.n
    opens with the everyday tasks below, in the order the largest published
    study of assistant use ranks what people ask for - practical guidance
    first, then looking up specific information, then writing (NBER working
-   paper 34255, "How People Use ChatGPT", Sept 2025; docs/RESEARCH.md). Each
+   paper 34255, Sept 2025; docs/RESEARCH.md). Each
    is filled with the country's MOST VISITED services of the right kind
    ({n} the first, {top} the first three), so the same task names Chase in
    the United States and Santander in Spain. The service-by-service tasks

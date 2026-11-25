@@ -1389,15 +1389,16 @@ function renderBillingView(targetEl){
   let usageReset = ''; try{ usageReset = AMVUsage.resetLabel(); }catch(e){}
   const usageRows = plan==='free'
     /* One line (owner, Nov 25: "it has a second line"): the window's messages
-       only; the lighter engine's share is said on the Usage meters. */
-    ? _bfact(T('Messages'), escH(_msg5hLabel('free')) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
+       standard messages only; the lighter engine's further 100 are said on
+       the plan card and the Usage meters. */
+    ? _bfact(T('Messages'), escH(T('{0} messages every {1} hours').replace('{0}', _planMsgNum(PLAN_MESSAGES_5H, 'free').toLocaleString()).replace('{1}', String(USAGE_WINDOW_HOURS))))
     : ((plan!=='custom'
             /* The same figures as the plan cards: the window that binds a
                burst, and the month as an allowance - never the 100,000-a-month
                anti-abuse ceiling, which the token and cost allowance runs out
                long before. That allowance is what a month actually is, so it
                is not called secondary. */
-            ? _bfact(T('Messages'), escH(_msg5hLabel(plan)) + ' messages every ' + USAGE_WINDOW_HOURS + ' hours')
+            ? _bfact(T('Messages'), escH(T('{0} messages every {1} hours').replace('{0}', _msg5hLabel(plan)).replace('{1}', String(USAGE_WINDOW_HOURS))))
               + (_planMsgNum(PLAN_TOP_WEEK, plan)
                   ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
                   : '')

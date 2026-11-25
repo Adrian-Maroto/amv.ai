@@ -809,41 +809,8 @@ try{
 }catch(e){}
 try{ window._oePickChanged = _oePickChanged; }catch(e){}
 
-/* SAVE TO MY FILES (docs/OWNER-DECISIONS.md #11): the edited file itself, as
-   the person has it now - only the changes still ticked - kept in their files
-   on this device and, where this AMV keeps files in the account, there too, so
-   attaching it on another device brings back the file and not just its words.
-   Each answer says where it actually went; "in your account" is said only
-   when the account said it has it. */
-const _OE_MIME = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
-async function amvOfficeToLibraryNow(id){
-  let held = null, v = null;
-  for(const h of _OFFICE_FILES.values()){ const f = h.versions.find(x => x.id === id); if(f){ held = h; v = f; break; } }
-  if(!v){ toast(T('That edited file was made in an earlier visit and is not kept. Attach the file again and ask for the change.'), 'error', 8000); return false; }
-  if(!_libWho()){ toast(T('Sign in to keep your files.'), 'error', 6000); return false; }
-  try{ if(typeof _isTempChat === 'function' && _isTempChat()){ toast(T('This is a temporary chat, so nothing from it is kept. Download the file instead.'), 'info', 7000); return false; } }catch(e){}
-  const att = { kind: 'office', name: v.file || held.name, size: v.buf.byteLength, format: held.format,
-    mime: _OE_MIME[held.format] || '', b64: _frB64(new Uint8Array(v.buf)) };
-  if(!(await _libKeep(att, { cloud: false }))){
-    toast(T('This browser is not letting AMV keep files on this device (a private window can do that). Download the file instead.'), 'error', 8000);
-    return false;
-  }
-  const offHere = () => toast(T('Saved to your files on this device. Keeping files in your account is not switched on for this AMV yet.'), 'info', 8000);
-  if(!_libCloudOn()){ toast(T('Saved to your files on this device.'), 'success', 5000); return true; }
-  if(_libCloudState.configured === false){ offHere(); return true; }
-  let d = null, err = '';
-  try{ d = await _libCloudPut(Object.assign({ sig: _libSig(att) }, att)); }catch(e){ err = String((e && e.message) || ''); }
-  if(d && d.ok && d.configured !== false && d.file){
-    toast(T('Saved to your files. Open it from Your files on any device and AMV can go on editing it.'), 'success', 7000);
-    return true;
-  }
-  if(d && d.configured === false){ _libCloudState.configured = false; offHere(); return true; }
-  toast(T('Saved to your files on this device, but not in your account:') + ' ' + (err || T('That file could not be kept in your account.')), 'error', 9000);
-  return true;
-}
-try{ window.amvOfficeToLibraryNow = amvOfficeToLibraryNow; }catch(e){}
+/* Save to my files was removed (owner, Nov 25; docs/OWNER-DECISIONS.md #11):
+   an edited file is downloaded, nothing else. */
 /* ── From a message, to a download ──────────────────────────────────────── */
 function _exportName(text, ext){
   const first = (String(text || '').match(/^#{1,3}\s+(.+)$/m) || [])[1] || String(text || '').split('\n').find(l => l.trim()) || 'AMV';

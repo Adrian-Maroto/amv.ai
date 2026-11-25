@@ -18334,7 +18334,7 @@ body.light #anav{ background:var(--bg); }
    Owner, Nov 25: "it looks weird, not centered - make it very clear".
    One question, a large search, the topics, the answers, then the two ways
    to a person - all on one centered column of reading width. */
-:root:not(#_a):not(#_b) #vc .vi-help.hc2{max-width:760px;margin:0 auto;padding-top:var(--sp-4)}
+:root:not(#_a):not(#_b) :is(#vc,#set-modal) .vi-help.hc2{max-width:760px;margin:0 auto;padding-top:var(--sp-4)}
 .hc2-hero{text-align:center;margin-bottom:var(--sp-4)}
 .hc2-hero h2{font-family:var(--fdisplay);font-size:var(--t-2xl);font-weight:600;letter-spacing:-.025em;line-height:1.15;margin:0 0 var(--sp-3)}
 .hc2-search{position:relative;max-width:600px;margin:0 auto var(--sp-3)}

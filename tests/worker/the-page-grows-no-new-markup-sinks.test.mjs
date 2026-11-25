@@ -40,7 +40,11 @@ const CEILING = {
   /* 401 (Nov 25): DOWN five - Billing's screen moved out of the page into
      settings-panes.js (counted with the fetched files below, which rose by
      the same five). */
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 396],
+  /* 397 (Nov 25): UP one, net - the Help center moved into help-faqs.js
+     (one fewer here) and the page keeps a stand-in that draws "Loading…"
+     and, when the file cannot be fetched, a Retry line (two). Both are fixed
+     sentences through T() and escH. */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 397],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],
@@ -79,8 +83,13 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 233], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
-  /* innerHTML 233 (Nov 25): five, moved, not new - the plan comparison and
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 236], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 2], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  /* innerHTML 236 (Nov 25): three - the Help center, moved out of the page
+     (help-faqs.js); the Team preview before payment (settings-panes.js), every
+     name and sentence through escH; and the Crew card that offers to connect a
+     recognised service (mission-control.js), whose words go through escH and
+     whose card is the connect tool's own, already escaped, render.
+     innerHTML 233 (Nov 25): five, moved, not new - the plan comparison and
      the Custom plan builder, out of the page into settings-panes.js.
      innerHTML 228 (Nov 25): five, moved, not new - Billing's screen
      (invoices, credit, the plan card) came out of the page into
