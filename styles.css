@@ -18249,3 +18249,24 @@ body.light #anav{ background:var(--bg); }
 .dvc-undo + .dvc-restore{ margin-left:0; order:-1; }
 .dvc-head > .dvc-restore{ margin-left:auto; }
 .dvc-head > .dvc-restore + .dvc-undo, .dvc-head > .dvc-undo:has(+ .dvc-restore){ margin-left:0; }
+
+/* ═══ LAYER A415 - answers read like a well-set document (owner, Nov 25:
+   "ChatGPT and Claude level ... paragraphs, bold letters, big letters") ═══
+   Headings were 16px over 15px body - structure nobody could see. They now
+   step clearly (about 1.6 / 1.4 / 1.18 of the body, so the Font size
+   setting scales them too), bold reads as emphasis rather than shouting, list
+   items are the size of the paragraphs around them, and a table's sort
+   arrows appear only where they mean something. */
+.mb.ai h1, .mb.ai h2, .mb.ai h3, .mb.ai h4{ color:var(--tx); letter-spacing:-.01em; line-height:1.3; text-wrap:balance; }
+.mb.ai h1{ font-size:1.6em!important; font-weight:700!important; margin:1.4em 0 .5em!important; }
+.mb.ai h2{ font-size:1.4em!important; font-weight:650!important; margin:1.35em 0 .45em!important; }
+.mb.ai h3{ font-size:1.18em!important; font-weight:650!important; margin:1.2em 0 .4em!important; }
+.mb.ai h4{ font-size:1em!important; font-weight:650!important; margin:1.1em 0 .35em!important; color:var(--tx)!important; }
+.mb.ai > :is(h1,h2,h3,h4):first-child{ margin-top:0!important; }
+.mb.ai li{ font-size:inherit!important; }
+.mb.ai strong, .mb.ai b{ font-weight:650; color:var(--tx); }
+.mb.ai :is(h1,h2,h3,h4) strong{ font-weight:inherit; }
+.mb.ai :is(ul,ol) + :is(h2,h3), .mb.ai .mtbl + :is(h2,h3), .mb.ai pre + :is(h2,h3){ margin-top:1.4em!important; }
+.mtbl-t th::after{ content:''; }
+.mtbl-t th:not(:empty):is(:hover,:focus-visible)::after{ content:'↕'; }
+.mtbl-t th:empty{ cursor:default; }
