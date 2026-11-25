@@ -75,7 +75,9 @@ section('One component, above all three results');
     ok(!seen[name].none, name + ' has the shared bar', !seen[name].none);
     ok(seen[name].overflow <= 0, 'and nothing spills out of it on desktop', name + ' ' + seen[name].overflow);
   }
-  ok(seen.dev.tabs.length === 2 && seen.studio.tabs.length === 2,
+  /* Dev also carries Problems and Next steps (Nov 24); both lead with these two. */
+  const pc = t => t.length >= 2 && t[0].label === 'Preview' && t[1].label === 'Code';
+  ok(pc(seen.dev.tabs) && pc(seen.studio.tabs) && seen.studio.tabs.length === 2,
      'Dev and Studio both carry a Preview and a Code tab',
      JSON.stringify([seen.dev.tabs.map(t => t.label), seen.studio.tabs.map(t => t.label)]));
   ok(seen.lab.tabs.length === 0 && seen.lab.titleShown,

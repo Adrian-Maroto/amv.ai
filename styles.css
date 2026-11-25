@@ -18198,3 +18198,15 @@ body.light #anav{ background:var(--bg); }
 .dev-next:focus-visible, .dev-prob-fix:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 .dev-next-ask{ align-self:flex-start; }
 .rb-tab.rb-tab-warn{ color:var(--red-txt); }
+
+/* ═══ LAYER A411 - four result tabs on a phone ═══
+   Dev's bar carries Preview, Code, Problems and Next steps now. On a 390px
+   screen they and the actions do not fit one row, so the bar wraps: the tabs
+   take the first row, full width, and the actions the second - nothing spills
+   off the screen and nothing shrinks below a tap. */
+@media (max-width: 560px){
+  .rb{ flex-wrap:wrap; }
+  .rb-tabs{ flex:1 1 100%; justify-content:space-between; }
+  .rb-tabs .rb-tab{ flex:1 1 auto; padding:5px 6px; }
+  .rb-acts{ flex-wrap:wrap; }
+}

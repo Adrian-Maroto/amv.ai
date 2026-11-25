@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="3190dc9c1e39f4ae">
+<meta name="amv-build" content="7330cc86a94588bb">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10717,6 +10717,12 @@ color:var(--tx); font:var(--t-base)/1.45 var(--fn); cursor:pointer; }
 .dev-next:focus-visible, .dev-prob-fix:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 .dev-next-ask{ align-self:flex-start; }
 .rb-tab.rb-tab-warn{ color:var(--red-txt); }
+@media (max-width: 560px){
+.rb{ flex-wrap:wrap; }
+.rb-tabs{ flex:1 1 100%; justify-content:space-between; }
+.rb-tabs .rb-tab{ flex:1 1 auto; padding:5px 6px; }
+.rb-acts{ flex-wrap:wrap; }
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
