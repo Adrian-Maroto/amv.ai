@@ -175,6 +175,9 @@ Companion docs (do not duplicate them here - read them):
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.
+  A message typed during a turn joins it at the next round boundary (`steer`,
+  after that round's tool results, never mid-step); one handed in that no
+  round read comes back as `unanswered` and is queued again.
 - **Programs run in the code sandbox, never on the page.** `runCode`,
   `_runPythonInWorker` and friends (`14-engine.js`) post jobs to
   `src/sandbox/sandbox.js`, framed as `<iframe sandbox="allow-scripts">` with NO

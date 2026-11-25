@@ -6,7 +6,7 @@
 */
 import { spawn } from 'child_process';
 import { cpus } from 'os';
-import { readdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { readdirSync, existsSync, readFileSync, writeFileSync, unlinkSync, rmSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { say, sayLine } from './lib/say.mjs';
@@ -68,6 +68,20 @@ if (held) {
 }
 if (NEEDS_LOCK) { try { writeFileSync(LOCK, String(process.pid)); } catch (e) {} }
 const dropLock = () => { try { if (lockHeldBy() === process.pid) unlinkSync(LOCK); } catch (e) {} };
+
+/* LAST RUN'S SERVER COPIES GO BEFORE THIS ONE STARTS (Nov 25).
+
+   Each Worker suite writes its own copy of amv-backend.js (~3MB) into a
+   `.build` folder to import it, many under a name unique to that run. Nothing
+   removed them: 6,183 had piled up to 19GB, and the gate's file walk read
+   every one - one fast stage went from one second to nine and a half minutes.
+   They are only ever written immediately before they are imported, so with
+   the lock held (no other run is using them) they can all go. */
+if (NEEDS_LOCK) {
+  for (const d of [join(__dir, 'worker', '.build'), join(__dir, 'audit', '.build')]) {
+    try { rmSync(d, { recursive: true, force: true }); mkdirSync(d, { recursive: true }); } catch (e) {}
+  }
+}
 process.on('exit', dropLock);
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => { dropLock(); process.exit(130); });

@@ -2,7 +2,7 @@
 
 <!-- Generated from docs/capabilities.json by tools/capabilities-doc.mjs on every build. Edit the registry, not this page. -->
 
-83 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
+84 capabilities are built. Each names the code that does it and the test that proves it; the gate fails if either is missing. The settings column is read from that code on every build: what it reads directly, shown on the go-live screen as on or off. 7 more are planned and listed at the end.
 
 ## Accounts
 
@@ -42,6 +42,12 @@
 | A background job can have a monthly budget of its own | `src/worker/77-agents.js`, `src/worker/13-schedules-and-approvals.js` | - | `worker/an-agent-works-within-what-it-was-given.test.mjs` |
 | A background job can be steered for its next run with a note that is used once | `src/worker/13-schedules-and-approvals.js`, `src/worker/15-run-context-and-execution.js`, `src/crew/mission-control.js` | - | `worker/a-job-can-be-steered-for-its-next-run.test.mjs` |
 | A step of a Task can be the critic that checks the steps it waits for, and one question can become two researchers and a critic | `src/worker/12-app-connectors.js`, `src/worker/15-run-context-and-execution.js` | - | `worker/a-task-in-steps-keeps-going-without-you.test.mjs` |
+
+## build
+
+| What | Built in | Reads these settings | Proved by |
+|---|---|---|---|
+| A message typed while Build's agent works joins the running turn at its next step, and is handed back if no step read it | `src/app/14-engine.js`, `src/app/37-build-agent.js` | - | `e2e/what-you-type-while-it-works-joins-the-turn.test.mjs` |
 
 ## Code
 

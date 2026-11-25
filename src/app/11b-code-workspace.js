@@ -803,7 +803,9 @@ function _devRenderQueue(){
   try{ canStop = !!(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running); }catch(e){}
   host.innerHTML='<div class="dvq-head">'
       + '<span class="dvq-n">'+q.length+' queued</span>'
-      + '<span class="dvq-w">'+escH(T('Sends when this turn finishes'))+'</span>'
+      /* An agent turn takes it at its next step (steering, Nov 25); a
+         single in-browser answer has no next step, so it goes after. */
+      + '<span class="dvq-w">'+escH(T(canStop ? 'Joins this turn at its next step' : 'Sends when this turn finishes'))+'</span>'
       + (canStop ? '<button class="dvq-now" id="dev-queue-now" type="button">'+escH(T('Stop and send now'))+'</button>' : '')
     + '</div>'
     + q.map((t,i)=>'<div class="dvq-item"><span class="dvq-t">'+escH(t)+'</span>'

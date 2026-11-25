@@ -256,6 +256,15 @@ function _agentVerbFor(name){
   return who ? who.id : name;
 }
 function _agentStepHTML(s, live){
+  /* What the person added while it worked, where it joined the turn. Their
+     own words, so they are not translated. */
+  if(s && s.name === '_joined'){
+    return '<li class="ags-step ags-joined">'
+      + '<span class="ags-dot" aria-hidden="true"></span>'
+      + '<span class="ags-verb" data-i18n>You added</span>'
+      + '<span class="ags-said">' + escH(String(s.detail || '').slice(0, 400)) + '</span>'
+      + '</li>';
+  }
   const verb = _agentVerbFor(s.name);
   const mcp = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(s.name) : null;
   const what = mcp ? mcp.tool
@@ -546,6 +555,15 @@ async function _devSendAgent(msg, stat){
       max_tokens: 8000,
       runTool: _agentRunTool,
       beforeEnd: _agentBeforeEnd,
+      /* What was typed while this runs joins it at the next step (steering),
+         rather than waiting for the whole job to end. */
+      steer: () => {
+        const q = (typeof _devQueue === 'function') ? _devQueue() : [];
+        if(!q.length) return [];
+        const took = q.splice(0, q.length);
+        try{ _devRenderQueue(); }catch(e){}
+        return took;
+      },
       signal: _AGENT.ctrl ? _AGENT.ctrl.signal : undefined,
       stopped: () => {
         if(_AGENT.stop) return true;
@@ -562,6 +580,10 @@ async function _devSendAgent(msg, stat){
                + String(ev.step.input.command || ev.step.input.path || '').slice(0, 40)); }catch(e){}
           paint();
         } else if(ev.phase === 'end'){ paint(); }
+        else if(ev.phase === 'steered'){
+          for(const t of ev.texts || []) _AGENT.steps.push({ name:'_joined', input:{}, ok:true, detail:t, round: ev.round });
+          paint();
+        }
         else if(ev.phase === 'waiting'){
           try{ _devBusy(true, 'Engine busy - retrying (' + ev.attempt + ')'); }catch(e){}
         }
@@ -571,6 +593,7 @@ async function _devSendAgent(msg, stat){
       },
     });
   }catch(err){
+    _agentRequeue(err && err.unanswered);
     /* The steps already taken are real and stay on the screen with their own
        changelist. An error at round nine does not un-write round three. */
     entry._snag = _errText(err);
@@ -581,8 +604,27 @@ async function _devSendAgent(msg, stat){
 
   entry.text = out.text || 'Done.';
   entry.why = lostMachine ? 'disconnected' : out.why;
+  _agentRequeue(out.unanswered);
   _agentFinish(entry);
 }
+/* Handed in, never read: stopped or cut off before the next round. It goes
+   back to the FRONT of the queue, ahead of anything typed since, and its
+   "you added" line comes off the log, because it did not join anything. */
+function _agentRequeue(texts){
+  if(!Array.isArray(texts) || !texts.length) return;
+  try{
+    const q = _devQueue();
+    q.unshift(...texts);
+    for(const t of texts){
+      for(let i = _AGENT.steps.length - 1; i >= 0; i--){
+        const s = _AGENT.steps[i];
+        if(s && s.name === '_joined' && s.detail === t){ _AGENT.steps.splice(i, 1); break; }
+      }
+    }
+    _devRenderQueue();
+  }catch(e){}
+}
+try{ window._agentRequeue=_agentRequeue; }catch(e){}
 
 /* What every ending has in common, so a stopped turn, a failed turn and a
    finished one all get the same changelist and the same Undo. */

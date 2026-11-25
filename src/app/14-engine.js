@@ -452,6 +452,26 @@ async function _aiAgentLoopRun(opts){
   const onStep = opts.onStep || function(){};
   const stopped = opts.stopped || function(){ return false; };
   const resultMax = opts.resultMax || AGENT_RESULT_MAX;
+  /* STEERING (Nov 25). What the person typed while this ran, taken from the
+     surface's own queue at the next safe point - after a round's tools have
+     all finished, never in the middle of one - and handed in as theirs. A
+     message that arrives while it is writing files does not wait for the
+     whole job to end, and it never lands between two halves of one step. */
+  const steer = typeof opts.steer === 'function' ? opts.steer : null;
+  /* What was handed in but never reached a model round - the next round was
+     stopped, or hit a limit - goes back to the caller as `unanswered`, so it
+     is sent after rather than silently swallowed. */
+  let pendingJoined = [];
+  const joined = () => {
+    if(!steer || stopped() || rounds >= maxRounds || Date.now() > deadline) return [];
+    let got = [];
+    try{ got = (steer() || []).map(t => String(t || '').trim()).filter(Boolean); }catch(e){ got = []; }
+    if(got.length){ pendingJoined = got.slice(); onStep({ phase:'steered', texts: got, round: rounds }); }
+    return got;
+  };
+  const joinedText = (got) => 'While you were working, I added'
+    + (got.length > 1 ? ' these, in order' : '') + ':\n\n' + got.map(t => '"' + t + '"').join('\n\n')
+    + '\n\nTake this into account from here on. If it changes what you were doing, change course; if it is a separate request, do it after the current one.';
 
   /* ── WHAT WAS OFFERED IS WHAT MAY BE CALLED ───────────────────────────────
 
@@ -477,6 +497,7 @@ async function _aiAgentLoopRun(opts){
   const steps = [];
   let text = '', rounds = 0, why = 'done', endChecks = 0;
 
+  try{
   for(;;){
     if(stopped()){ why = 'stopped'; break; }
     if(rounds >= maxRounds){ why = 'rounds'; break; }
@@ -535,6 +556,7 @@ async function _aiAgentLoopRun(opts){
     try{ data = await _aiReadStream(res); }
     catch(e){ link.end(); if(_isAbort(e) || (opts.signal && opts.signal.aborted)){ why = 'stopped'; break; } throw e; }
     link.end();
+    pendingJoined = [];          // the model has now read whatever was handed in
     const blocks = data.content || [];
     const said = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('');
     if(said.trim()) text += (text ? '\n\n' : '') + said.trim();
@@ -553,6 +575,14 @@ async function _aiAgentLoopRun(opts){
          words back and let it carry on, the same way aiCompleteLong does -
          otherwise a long explanation at the end of a job is truncated and
          reads as the job having stopped. */
+      /* A message that arrived while it was writing its last answer joins
+         this turn rather than waiting behind it. */
+      const extra = data.stop_reason !== 'max_tokens' ? joined() : [];
+      if(extra.length){
+        messages.push({ role:'assistant', content: blocks.length ? blocks : 'Done.' });
+        messages.push({ role:'user', content: joinedText(extra) });
+        continue;
+      }
       if(data.stop_reason === 'max_tokens'){
         messages.push({ role:'assistant', content: blocks });
         messages.push({ role:'user', content:
@@ -623,10 +653,18 @@ async function _aiAgentLoopRun(opts){
     if(late){ why = 'time'; break; }
 
     messages.push({ role:'assistant', content: blocks.map(b => { if(!b || !b._bad) return b; const o = Object.assign({}, b); delete o._bad; return o; }) });
+    const got = joined();
+    if(got.length) results.push({ type:'text', text: joinedText(got) });
     messages.push({ role:'user', content: results });
   }
+  }catch(e){
+    /* A failure after a message was handed in but before a model read it
+       carries it back too, so the surface can send it again. */
+    try{ if(e && typeof e === 'object' && pendingJoined.length) e.unanswered = pendingJoined; }catch(_){}
+    throw e;
+  }
 
-  return { text, steps, rounds, why };
+  return { text, steps, rounds, why, unanswered: pendingJoined };
 }
 try{ window.aiAgentLoop=aiAgentLoop; }catch(e){}
 

@@ -4691,5 +4691,43 @@
   "bn": "এটি AMV লেখেনি। এটি উপরে দেখানো অ্যাক্সেস নিয়ে AMV-এর ক্লাউড কম্পিউটারে চলে।",
   "ur": "یہ AMV نے نہیں لکھا۔ یہ اوپر دکھائی گئی رسائی کے ساتھ AMV کے کلاؤڈ کمپیوٹر پر چلتا ہے۔",
   "ta": "இதை AMV எழுதவில்லை. மேலே காட்டப்பட்ட அணுகலுடன் AMV-இன் கிளவுட் கணினியில் இது இயங்கும்."
+ },
+ "Joins this turn at its next step": {
+  "es": "Se une a este turno en su próximo paso",
+  "zh": "将在本轮的下一步加入",
+  "hi": "इस बारी के अगले चरण में जुड़ जाएगा",
+  "ar": "ينضم إلى هذا الدور في خطوته التالية",
+  "pt": "Entra nesta vez no próximo passo",
+  "fr": "Rejoint ce tour à sa prochaine étape",
+  "de": "Fließt beim nächsten Schritt in diese Runde ein",
+  "ja": "このターンの次のステップで加わります",
+  "ru": "Будет учтено на следующем шаге этого хода",
+  "ko": "이번 차례의 다음 단계에서 반영됩니다",
+  "it": "Entra in questo turno al passo successivo",
+  "tr": "Bu turun bir sonraki adımında eklenir",
+  "vi": "Sẽ được đưa vào lượt này ở bước tiếp theo",
+  "id": "Bergabung ke giliran ini di langkah berikutnya",
+  "bn": "এই পালার পরের ধাপে যুক্ত হবে",
+  "ur": "اس باری کے اگلے مرحلے میں شامل ہو جائے گا",
+  "ta": "இந்த முறையின் அடுத்த படியில் சேர்க்கப்படும்"
+ },
+ "You added": {
+  "es": "Añadiste",
+  "zh": "你补充了",
+  "hi": "आपने जोड़ा",
+  "ar": "أضفتَ",
+  "pt": "Você acrescentou",
+  "fr": "Vous avez ajouté",
+  "de": "Sie haben ergänzt",
+  "ja": "追加した内容",
+  "ru": "Вы добавили",
+  "ko": "추가한 내용",
+  "it": "Hai aggiunto",
+  "tr": "Eklediğiniz",
+  "vi": "Bạn đã thêm",
+  "id": "Anda menambahkan",
+  "bn": "আপনি যোগ করেছেন",
+  "ur": "آپ نے شامل کیا",
+  "ta": "நீங்கள் சேர்த்தது"
  }
 }

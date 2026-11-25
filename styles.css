@@ -18278,3 +18278,13 @@ body.light #anav{ background:var(--bg); }
    is kept, so the scrollbar does not jump. Find in page still finds text in
    a topic that has not been drawn yet. */
 #int-catalog > .ss2{ content-visibility:auto; contain-intrinsic-size:auto 620px; }
+
+/* ═══ LAYER A417 - What you added while Build worked ═══
+   Steering: a message typed during an agent turn joins it at the next step
+   and is listed there, in the person's own words, between the steps it came
+   between. Set apart from the commands by the accent dot and normal text,
+   because it is something somebody said, not something that ran. */
+.ags-step.ags-joined{ align-items:flex-start; padding-top:var(--sp-1); padding-bottom:var(--sp-1); }
+.ags-joined .ags-dot{ background:var(--accent); margin-top:8px; }
+.ags-joined .ags-verb{ color:var(--accent); }
+.ags-said{ color:var(--tx); font-size:var(--t-sm); white-space:pre-wrap; overflow-wrap:anywhere; min-width:0; }

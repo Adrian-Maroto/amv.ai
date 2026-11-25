@@ -883,6 +883,9 @@ step('No window read reaches for a binding that is not on window', () => {
   const files = [];
   (function walk(dir) {
     for (const e of readdirSync(dir)) {
+      /* `.build` holds generated copies of the bundles a suite imports, not
+         tests - and once held 19GB of them, which this walk read in full. */
+      if (e === '.build' || e === 'node_modules') continue;
       const f = join(dir, e);
       if (statSync(f).isDirectory()) walk(f);
       else if (f.endsWith('.mjs')) files.push(f);
