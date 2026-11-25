@@ -18270,3 +18270,11 @@ body.light #anav{ background:var(--bg); }
 .mtbl-t th::after{ content:''; }
 .mtbl-t th:not(:empty):is(:hover,:focus-visible)::after{ content:'↕'; }
 .mtbl-t th:empty{ cursor:default; }
+
+/* ═══ LAYER A416 - Integrations draws what is on screen first ═══
+   The screen holds 32 topics, about 3,100 elements, and 2,800 of them were
+   two screens or more below the fold - laid out on every visit all the same.
+   Each topic now waits until it nears the screen; its last measured height
+   is kept, so the scrollbar does not jump. Find in page still finds text in
+   a topic that has not been drawn yet. */
+#int-catalog > .ss2{ content-visibility:auto; contain-intrinsic-size:auto 620px; }

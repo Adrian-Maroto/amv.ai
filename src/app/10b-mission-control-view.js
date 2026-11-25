@@ -534,8 +534,15 @@ async function _clarifyCheck(goal){
    is registered weekly rather than not at all - the job still runs unattended,
    and the local schedule keeps the exact day. */
 /* The person's own time zone, as their device reports it. */
+/* Asked once a minute at most: building a formatter to read the zone cost
+   ~6ms per Crew screen, once per job card (speed pass, Nov 25), and the zone
+   only changes when somebody travels. */
+let _tzMemo = null, _tzAt = 0;
 function _myTimeZone(){
-  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){ return ''; }
+  const now = Date.now();
+  if(_tzMemo !== null && now - _tzAt < 60000) return _tzMemo;
+  try{ _tzMemo = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){ _tzMemo = ''; }
+  _tzAt = now; return _tzMemo;
 }
 function _mcRepeatFor(payload){
   const cad = (payload.sched && payload.sched.cad) || payload.freq || 'daily';
