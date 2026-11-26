@@ -1,3 +1,3 @@
 # Countries to rank by real visits (empty = all). Changing this file runs the country-popular workflow.
-# run: 5 - the countries run 4 could not commit (its shards 1 and 2 met the cancelled run 3's late commits)
-AM AZ BO CL CZ EC FI GR ID IT KR LT MX NL PA PT RU SI TR US ZA AO BD BR CM DE EE FR GT IE JO KW LV MY NO PE PY RW SK TW UY ZM
+# run: 6 - the 49 countries runs 4 and 5 did not finish (cancelled to save time; every finished country was kept)
+AM AO AZ BD BO BR CL CM CZ DE EC EE FI FR GR GT ID IE IT JO KR KW LT LV MX MY NL NO PA PE PH PT PY QA RU RW SA SI SK SN TR TW TZ US UY UZ ZA ZM ZW
