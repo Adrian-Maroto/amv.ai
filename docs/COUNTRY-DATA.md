@@ -1,119 +1,119 @@
 # Country data: what each country really has
 
-Written by `node scripts/country-report.mjs` from `data/countries/` (data of 2026-11-14).
+Written by `node scripts/country-report.mjs` from `data/countries/` (data of 2026-11-25).
 A service is an organisation Wikidata files under that country, with an official
 website, not closed, ranked by how many Wikipedia editions cover it. Tasks and Crew
 jobs are what the page builds from those services, counted with the page's own
 tables. Nothing is padded: a country with few entries on Wikidata shows few.
 
-- Countries: **104**. Services: **100877**. Tasks: **289456**. Crew jobs, added up country by country: **1430130**.
-- Distinct Crew jobs across all countries - what "See all jobs" holds, a service listed in several countries counted once: **1009008**.
-- 500 or more services (Integrations): **102** countries. 200 or more: **104**. Under 200: **0**.
+- Countries: **104**. Services: **109647**. Tasks: **322225**. Crew jobs, added up country by country: **1695796**.
+- Distinct Crew jobs across all countries - what "See all jobs" holds, a service listed in several countries counted once: **1026269**.
+- 500 or more services (Integrations): **104** countries. 200 or more: **104**. Under 200: **0**.
 - 500 or more tasks: **104** countries. 500 or more Crew jobs: **104** countries.
 
 | Country | Services | Tasks | Crew jobs | Kinds |
 |---|---:|---:|---:|---:|
-| United States (US) | 1732 | 5000 | 22926 | 43 |
-| United Kingdom (GB) | 1682 | 4834 | 22065 | 44 |
-| Germany (DE) | 1681 | 4834 | 22032 | 44 |
-| Canada (CA) | 1608 | 4474 | 21461 | 44 |
-| Spain (ES) | 1586 | 4548 | 21396 | 44 |
-| France (FR) | 1573 | 4446 | 21031 | 44 |
-| Netherlands (NL) | 1559 | 4287 | 20373 | 44 |
-| Italy (IT) | 1538 | 4379 | 20666 | 44 |
-| Australia (AU) | 1511 | 4210 | 19844 | 44 |
-| Switzerland (CH) | 1505 | 4284 | 20569 | 43 |
-| Japan (JP) | 1498 | 4259 | 19914 | 44 |
-| Russia (RU) | 1437 | 4168 | 19924 | 43 |
-| China (CN) | 1405 | 4101 | 19578 | 43 |
-| Norway (NO) | 1388 | 3963 | 19096 | 43 |
-| Sweden (SE) | 1383 | 3881 | 19109 | 42 |
-| Austria (AT) | 1380 | 3949 | 18865 | 43 |
-| Mexico (MX) | 1370 | 3941 | 19586 | 43 |
-| Belgium (BE) | 1357 | 3758 | 18731 | 42 |
-| India (IN) | 1326 | 3873 | 18727 | 42 |
-| Ukraine (UA) | 1307 | 3811 | 18553 | 43 |
-| Ireland (IE) | 1306 | 3634 | 18293 | 42 |
-| Brazil (BR) | 1295 | 3761 | 17921 | 43 |
-| Türkiye (TR) | 1288 | 3801 | 18314 | 41 |
-| New Zealand (NZ) | 1285 | 3583 | 17793 | 42 |
-| Israel (IL) | 1282 | 3530 | 17934 | 42 |
-| Nigeria (NG) | 1276 | 3882 | 18758 | 40 |
-| Poland (PL) | 1264 | 3485 | 15420 | 41 |
-| South Korea (KR) | 1256 | 3779 | 18323 | 43 |
-| Czechia (CZ) | 1245 | 3525 | 17376 | 42 |
-| Finland (FI) | 1213 | 3330 | 17116 | 42 |
-| Portugal (PT) | 1210 | 3406 | 17389 | 40 |
-| Indonesia (ID) | 1196 | 3569 | 16919 | 41 |
-| Argentina (AR) | 1177 | 3440 | 17264 | 43 |
-| Taiwan (TW) | 1169 | 3458 | 16769 | 41 |
-| South Africa (ZA) | 1157 | 3331 | 17074 | 43 |
-| Singapore (SG) | 1100 | 3157 | 16166 | 41 |
-| Romania (RO) | 1037 | 2861 | 13841 | 41 |
-| Malaysia (MY) | 1035 | 2990 | 15741 | 38 |
-| Philippines (PH) | 1029 | 3113 | 15462 | 41 |
-| Ghana (GH) | 1018 | 3068 | 14579 | 37 |
-| Denmark (DK) | 1006 | 2872 | 14463 | 41 |
-| Egypt (EG) | 993 | 2928 | 14612 | 37 |
-| United Arab Emirates (AE) | 978 | 2954 | 14954 | 36 |
-| Greece (GR) | 975 | 2572 | 12691 | 41 |
-| Saudi Arabia (SA) | 939 | 2836 | 14605 | 36 |
-| Thailand (TH) | 931 | 2821 | 14372 | 39 |
-| Chile (CL) | 927 | 2493 | 12390 | 40 |
-| Colombia (CO) | 910 | 2526 | 12228 | 40 |
-| Uganda (UG) | 909 | 2714 | 13924 | 40 |
-| Hungary (HU) | 904 | 2404 | 12065 | 42 |
-| Pakistan (PK) | 897 | 2797 | 13962 | 37 |
-| Morocco (MA) | 880 | 2561 | 13594 | 39 |
-| Bangladesh (BD) | 870 | 2661 | 12919 | 37 |
-| Bulgaria (BG) | 861 | 2349 | 11789 | 41 |
-| Peru (PE) | 857 | 2395 | 11885 | 41 |
-| Kenya (KE) | 846 | 2574 | 12523 | 36 |
-| Vietnam (VN) | 835 | 2638 | 13134 | 41 |
-| Croatia (HR) | 828 | 2219 | 11004 | 40 |
-| Hong Kong (HK) | 827 | 2312 | 11024 | 38 |
-| Georgia (GE) | 822 | 2406 | 12104 | 39 |
-| Estonia (EE) | 815 | 2180 | 10618 | 40 |
-| Tunisia (TN) | 809 | 2348 | 11516 | 37 |
-| Armenia (AM) | 796 | 2291 | 11520 | 40 |
-| Serbia (RS) | 794 | 2188 | 10999 | 39 |
-| Slovakia (SK) | 794 | 2117 | 10509 | 41 |
-| Rwanda (RW) | 771 | 2280 | 11271 | 33 |
-| Kazakhstan (KZ) | 765 | 2263 | 11576 | 38 |
-| Azerbaijan (AZ) | 759 | 2216 | 11530 | 35 |
-| Sri Lanka (LK) | 758 | 2308 | 11800 | 37 |
-| Algeria (DZ) | 756 | 2225 | 11787 | 34 |
-| Lithuania (LT) | 734 | 1971 | 10056 | 41 |
-| Latvia (LV) | 733 | 1980 | 10258 | 40 |
-| Namibia (NA) | 726 | 1995 | 10288 | 37 |
-| Slovenia (SI) | 724 | 1870 | 9762 | 39 |
-| Lebanon (LB) | 722 | 2103 | 10572 | 33 |
-| Cameroon (CM) | 719 | 2075 | 10554 | 34 |
-| Zimbabwe (ZW) | 719 | 2089 | 10408 | 36 |
-| Venezuela (VE) | 715 | 2070 | 10487 | 36 |
-| Botswana (BW) | 705 | 2020 | 10141 | 33 |
-| Senegal (SN) | 701 | 2032 | 10190 | 34 |
-| Nepal (NP) | 691 | 2080 | 10023 | 36 |
-| Ethiopia (ET) | 677 | 2057 | 10085 | 33 |
-| Ecuador (EC) | 669 | 1901 | 9589 | 36 |
-| Tanzania (TZ) | 667 | 2002 | 9830 | 37 |
-| Uruguay (UY) | 666 | 1728 | 8958 | 39 |
-| Uzbekistan (UZ) | 665 | 2024 | 10203 | 38 |
-| Qatar (QA) | 645 | 1914 | 10102 | 34 |
-| Jordan (JO) | 618 | 1812 | 9437 | 35 |
-| Panama (PA) | 613 | 1711 | 8758 | 36 |
-| Zambia (ZM) | 608 | 1774 | 8993 | 35 |
-| Costa Rica (CR) | 601 | 1659 | 8513 | 40 |
-| Kuwait (KW) | 594 | 1708 | 8920 | 33 |
-| Dominican Republic (DO) | 583 | 1659 | 8541 | 35 |
-| Iraq (IQ) | 583 | 1767 | 8712 | 36 |
-| Bahrain (BH) | 581 | 1691 | 8802 | 35 |
-| Mozambique (MZ) | 575 | 1625 | 8422 | 32 |
-| Angola (AO) | 574 | 1701 | 8792 | 30 |
-| Bolivia (BO) | 573 | 1595 | 8298 | 34 |
-| Mongolia (MN) | 553 | 1580 | 8272 | 35 |
-| Oman (OM) | 530 | 1513 | 8139 | 34 |
-| Paraguay (PY) | 510 | 1424 | 7576 | 32 |
-| Guatemala (GT) | 507 | 1429 | 7594 | 35 |
-| Cambodia (KH) | 493 | 1441 | 7678 | 34 |
-| Myanmar (MM) | 427 | 1305 | 6911 | 28 |
+| United Kingdom (GB) | 1811 | 5233 | 25491 | 45 |
+| Germany (DE) | 1767 | 5098 | 24889 | 45 |
+| Canada (CA) | 1699 | 4778 | 24206 | 45 |
+| United States (US) | 1698 | 4868 | 22400 | 44 |
+| Australia (AU) | 1643 | 4691 | 23652 | 45 |
+| France (FR) | 1640 | 4657 | 23560 | 45 |
+| Netherlands (NL) | 1626 | 4533 | 23159 | 45 |
+| Italy (IT) | 1617 | 4630 | 23382 | 45 |
+| Spain (ES) | 1607 | 4619 | 23310 | 45 |
+| Japan (JP) | 1546 | 4445 | 21363 | 45 |
+| Switzerland (CH) | 1499 | 4306 | 22026 | 44 |
+| Belgium (BE) | 1439 | 4055 | 21583 | 43 |
+| Sweden (SE) | 1435 | 4056 | 21350 | 43 |
+| Austria (AT) | 1426 | 4073 | 21132 | 44 |
+| Denmark (DK) | 1418 | 3990 | 21128 | 42 |
+| Russia (RU) | 1408 | 4102 | 19570 | 44 |
+| New Zealand (NZ) | 1385 | 3933 | 20649 | 43 |
+| Ireland (IE) | 1356 | 3820 | 20761 | 43 |
+| Mexico (MX) | 1326 | 3913 | 19827 | 44 |
+| India (IN) | 1323 | 3938 | 19468 | 43 |
+| Israel (IL) | 1322 | 3715 | 19693 | 43 |
+| China (CN) | 1316 | 3917 | 19012 | 44 |
+| Poland (PL) | 1309 | 3770 | 17616 | 42 |
+| Norway (NO) | 1303 | 3746 | 18128 | 44 |
+| Ukraine (UA) | 1292 | 3850 | 19098 | 44 |
+| Brazil (BR) | 1288 | 3816 | 18655 | 44 |
+| Finland (FI) | 1283 | 3578 | 19609 | 44 |
+| Czechia (CZ) | 1266 | 3675 | 18386 | 43 |
+| Nigeria (NG) | 1255 | 3917 | 19079 | 41 |
+| South Korea (KR) | 1254 | 3849 | 19141 | 44 |
+| Türkiye (TR) | 1226 | 3647 | 17366 | 42 |
+| Singapore (SG) | 1202 | 3494 | 19158 | 42 |
+| Argentina (AR) | 1185 | 3563 | 18197 | 44 |
+| Portugal (PT) | 1139 | 3223 | 16586 | 41 |
+| Indonesia (ID) | 1118 | 3361 | 16009 | 42 |
+| Ghana (GH) | 1108 | 3409 | 17598 | 38 |
+| Greece (GR) | 1108 | 3064 | 16498 | 42 |
+| Romania (RO) | 1102 | 3193 | 16201 | 42 |
+| South Africa (ZA) | 1081 | 3137 | 16060 | 44 |
+| Taiwan (TW) | 1078 | 3226 | 15681 | 42 |
+| United Arab Emirates (AE) | 1067 | 3226 | 17504 | 38 |
+| Egypt (EG) | 1035 | 3165 | 16470 | 38 |
+| Philippines (PH) | 1033 | 3190 | 16327 | 41 |
+| Uganda (UG) | 1032 | 3092 | 17178 | 41 |
+| Morocco (MA) | 1025 | 3038 | 17326 | 40 |
+| Malaysia (MY) | 1023 | 3057 | 16423 | 39 |
+| Estonia (EE) | 1001 | 2795 | 15223 | 41 |
+| Hungary (HU) | 995 | 2802 | 14728 | 43 |
+| Chile (CL) | 990 | 2821 | 14958 | 41 |
+| Colombia (CO) | 986 | 2885 | 14849 | 41 |
+| Bulgaria (BG) | 973 | 2803 | 14893 | 42 |
+| Croatia (HR) | 966 | 2732 | 14821 | 41 |
+| Namibia (NA) | 963 | 2737 | 15926 | 39 |
+| Georgia (GE) | 956 | 2879 | 15805 | 40 |
+| Saudi Arabia (SA) | 956 | 2956 | 15937 | 37 |
+| Tunisia (TN) | 956 | 2844 | 15537 | 38 |
+| Botswana (BW) | 945 | 2777 | 15713 | 34 |
+| Hong Kong (HK) | 943 | 2790 | 14364 | 39 |
+| Kenya (KE) | 933 | 2899 | 15373 | 37 |
+| Armenia (AM) | 931 | 2774 | 15465 | 41 |
+| Zimbabwe (ZW) | 926 | 2754 | 15392 | 37 |
+| Thailand (TH) | 921 | 2811 | 14437 | 40 |
+| Bangladesh (BD) | 919 | 2917 | 14866 | 38 |
+| Senegal (SN) | 919 | 2713 | 15478 | 35 |
+| Serbia (RS) | 912 | 2648 | 14294 | 41 |
+| Pakistan (PK) | 907 | 2878 | 14919 | 38 |
+| Cameroon (CM) | 902 | 2663 | 15139 | 34 |
+| Algeria (DZ) | 898 | 2721 | 15390 | 36 |
+| Peru (PE) | 889 | 2556 | 13151 | 42 |
+| Latvia (LV) | 885 | 2516 | 14150 | 41 |
+| Rwanda (RW) | 884 | 2598 | 13502 | 34 |
+| Kazakhstan (KZ) | 877 | 2661 | 14734 | 39 |
+| Azerbaijan (AZ) | 872 | 2660 | 14655 | 36 |
+| Qatar (QA) | 867 | 2604 | 15487 | 35 |
+| Lithuania (LT) | 856 | 2435 | 13302 | 42 |
+| Lebanon (LB) | 853 | 2574 | 14494 | 34 |
+| Slovakia (SK) | 832 | 2292 | 11773 | 42 |
+| Venezuela (VE) | 831 | 2529 | 13974 | 37 |
+| Vietnam (VN) | 831 | 2616 | 13070 | 42 |
+| Sri Lanka (LK) | 812 | 2591 | 13978 | 38 |
+| Bahrain (BH) | 801 | 2393 | 13986 | 36 |
+| Costa Rica (CR) | 800 | 2325 | 13416 | 42 |
+| Dominican Republic (DO) | 794 | 2330 | 13573 | 37 |
+| Tanzania (TZ) | 793 | 2443 | 13490 | 38 |
+| Uzbekistan (UZ) | 789 | 2484 | 13502 | 39 |
+| Slovenia (SI) | 787 | 2113 | 11625 | 40 |
+| Ecuador (EC) | 783 | 2342 | 12823 | 37 |
+| Ethiopia (ET) | 775 | 2403 | 12966 | 34 |
+| Kuwait (KW) | 753 | 2265 | 13075 | 34 |
+| Mozambique (MZ) | 752 | 2227 | 12841 | 34 |
+| Jordan (JO) | 746 | 2308 | 12828 | 36 |
+| Angola (AO) | 737 | 2261 | 12821 | 31 |
+| Nepal (NP) | 733 | 2325 | 12269 | 37 |
+| Oman (OM) | 729 | 2169 | 12868 | 34 |
+| Uruguay (UY) | 729 | 1976 | 11004 | 40 |
+| Zambia (ZM) | 721 | 2132 | 11593 | 36 |
+| Bolivia (BO) | 716 | 2140 | 12282 | 35 |
+| Panama (PA) | 698 | 1990 | 10994 | 38 |
+| Iraq (IQ) | 684 | 2183 | 11639 | 37 |
+| Guatemala (GT) | 673 | 2014 | 11694 | 38 |
+| Mongolia (MN) | 672 | 2063 | 11407 | 36 |
+| Cambodia (KH) | 640 | 1979 | 11484 | 35 |
+| Paraguay (PY) | 598 | 1714 | 9947 | 32 |
+| Myanmar (MM) | 538 | 1759 | 9987 | 29 |

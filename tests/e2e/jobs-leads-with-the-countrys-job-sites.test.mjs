@@ -25,15 +25,23 @@ const jobs = (cc) => page.evaluate(async (cc) => {
     .map(c => ({ n: (c.querySelector('.int-name') || c).textContent.trim(), kind: c.dataset.cc || 'app' }));
 }, cc);
 
-const WANT = { US: /Indeed|LinkedIn|Glassdoor|ZipRecruiter/, DE: /StepStone|XING|Indeed|Arbeitsagentur|LinkedIn/i, ES: /InfoJobs|LinkedIn|Indeed/i,
-  IN: /Naukri|LinkedIn|Indeed|foundit/i, GB: /Indeed|Reed|LinkedIn|Totaljobs|CV-Library/i };
+/* What each country's first screen must lead with - the boards people there
+   use, measured by visits from there (Chrome UX Report, Nov 2026) - and the
+   other countries' local sites that must not be on it. */
+const WANT = {
+  US: [/^Indeed$/, /^LinkedIn$/], DE: [/XING|Bundesagentur/], ES: [/^InfoJobs$/, /^Indeed$/], IN: [/naukri/i, /^LinkedIn$/],
+  GB: [/^Indeed$/, /CV-Library/], JP: [/^doda$/], CN: [/Zhaopin|Boss Zhipin/], FR: [/Welcome to the Jungle|Hellowork|Cadremploi/], BR: [/VAGAS|Banco Nacional de Empregos/], VN: [/CareerViet|VietnamWorks|TopCV/], IT: [/^Indeed$/, /^LinkedIn$/],
+};
+const FOREIGN = { 'avito.ru': 'RU', 'FINN.no': 'NO', 'Kleinanzeigen': 'DE', 'Subito': 'IT', 'Job Bank': 'CA', 'USAJobs': 'US', 'Boss Zhipin': 'CN' };
 for (const cc of Object.keys(WANT)) {
   section(cc);
   const r = await jobs(cc);
   const names = (r || []).map(x => x.n);
   ok(Array.isArray(r) && r.length === 9, 'nine on the first screen', names);
   ok(r && r[0] && (r[0].kind === 'jobsite' || r[0].kind === 'global'), 'it opens on a job site, not an employer or an app', r && r[0]);
-  ok(names.slice(0, 4).some(n => WANT[cc].test(n)), 'and one of the sites people there use is in the first four', names);
+  for (const want of WANT[cc]) ok(names.slice(0, 6).some(n => want.test(n)), want + ' is in the first six', names);
+  const odd = names.filter(n => FOREIGN[n] && FOREIGN[n] !== cc);
+  ok(odd.length === 0, 'and no other country\'s local site is on it', odd);
   const firstApp = (r || []).findIndex(x => x.kind === 'app'), firstEmp = (r || []).findIndex(x => x.kind === 'employer' || x.kind === 'company');
   ok(firstEmp < 0 || (firstApp >= 0 && firstApp < firstEmp), 'an employer never comes before the app cards', names);
   ok(!names.includes('Job boards worldwide'), 'and there is no "Job boards worldwide" row', names);

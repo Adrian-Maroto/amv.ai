@@ -44,9 +44,9 @@ section('In every country: most visited first, the better known first inside a b
       const d = await ccLoad(cc); if (!d) continue; n++;
       /* Inside a bucket the better known goes first, leaning to the country's
          own (owner, Nov 25: M&T Bank led the United States, above Bank of
-         America and Chase): Wikipedia editions over the square root of how
+         America and Chase): Wikipedia editions over the fourth root of how
          many countries list it. */
-      const R = e => (+e.r > 0 ? +e.r : 1e9), K = e => (+e.w || 0) / Math.sqrt(Math.max(1, +e.x || 1));
+      const R = e => (+e.r > 0 ? +e.r : 1e9), K = e => (+e.w || 0) / Math.pow(Math.max(1, +e.x || 1), 0.25);
       const svc = ccServices(d).map(x => x.e);
       for (let i = 1; i < svc.length; i++) {
         const a = svc[i - 1], b = svc[i];

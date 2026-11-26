@@ -717,9 +717,12 @@ function _ccByPop(d){
      countries' data) and Chase (6) are not "the world's", they are the
      country's biggest. So the better known goes first (Wikipedia editions,
      w), leaning toward the country's own by how widely it is listed (w over
-     the square root of x): El País stays ahead of the New York Times in
-     Spain, and Wells Fargo, Citi and Bank of America ahead of M&T. */
-  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.sqrt(Math.max(1, +x.e.x || 1));
+     the fourth root of x): El País stays ahead of the New York Times in
+     Spain, and Wells Fargo, Citi and Bank of America ahead of M&T. The
+     square root it was until Nov 26 sank Bank of America below USAA and M&T
+     once the visit ranking listed it in 33 countries - it is visited from
+     abroad, which makes it no less the United States' own. */
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.pow(Math.max(1, +x.e.x || 1), 0.25);
   return out.sort((a, b) => (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
 function _ccByPopPass(d, TPL, make){
@@ -880,7 +883,10 @@ function ccTasksPopular(d, all){
      the best known (Wikipedia editions). Ranking for the country's own here
      instead picked Posteo as Germany's phone company and Banobras as
      Mexico's bank. */
-  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), G = x => (+x.e.x || 1) >= 50 ? 1 : 0;
+  /* Not for job sites: a worldwide one (LinkedIn, Indeed) is what people
+     there use, where a worldwide outlet or shop is not what a country reads
+     or buys from first. */
+  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), G = x => (x.kind !== 'jobsite' && (+x.e.x || 1) >= 50) ? 1 : 0;
   const ranked = _ccByPop(d).map((x, k) => [x, k]).sort((a, b) => (R(a[0]) - R(b[0])) || (G(a[0]) - G(b[0])) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1])).map(z => z[0]);
   const queues = CC_POP_AREAS.map(kinds => ranked.filter(x => kinds.indexOf(x.kind) >= 0));
   const out = [], brands = new Set(), at = queues.map(() => 0);
@@ -1365,7 +1371,7 @@ function _ccJobsOrder(rows, here, cc){
   const lead = (x, v) => !elsewhere(x) && (x.kind === 'jobsite' ? (v <= 5000 || (v <= 10000 && home(x) === 0)) : (v <= 1000 || (v <= 10000 && home(x) === 0)));
   /* Below the line: the country's own job sites visited less, then its
      employers, then everything from elsewhere and the never measured. */
-  const band = (x) => { const v = visits(x); return site(x) ? (lead(x, v) ? 0 : (v < 1e9 && (x.kind === 'jobsite' || home(x) === 0)) ? 1 : 3) : 2; };
+  const band = (x) => { const v = visits(x); return site(x) ? (lead(x, v) ? 0 : (v < 1e9 && !elsewhere(x) && (x.kind === 'jobsite' || home(x) === 0)) ? 1 : 3) : 2; };
   const sorted = rows.map((x, i) => [x, i, band(x), visits(x), home(x)])
     .sort((a, b) => (a[2] - b[2]) || (a[2] < 2 ? (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) : 0) || (a[1] - b[1]));
   /* Which lead is this country's answer, so it travels with this list - a
