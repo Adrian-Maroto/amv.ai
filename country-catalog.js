@@ -1332,13 +1332,12 @@ try{ window._ccNewsOrder = _ccNewsOrder; }catch(e){}
 /* JOBS: THE SITES PEOPLE THERE LOOK FOR WORK ON, FIRST (Nov 25). The owner:
    "instead of job boards worldwide, the popular ones of the country - in the
    US LinkedIn, Indeed; in Germany, Spain, Italy, China, Vietnam their own".
-   Job sites (the country's own, `jobsite`, and the worldwide ones) by visits
-   from the country (Chrome UX Report), then a site on the country's own
-   domain, then how widely each is documented; then the country's job sites
-   nobody has measured yet; then the employers in their order; and last the
-   worldwide entries never measured here - which is where the odd ones in
-   that list (a college dance team, a trade union) belong. */
-const _ccJobLead = new WeakSet();
+   Job sites among the country's 10,000 most visited (the country's own,
+   `jobsite`, and the worldwide ones) lead, by visits from the country (Chrome
+   UX Report), then a site on the country's own domain, then how widely each
+   is documented; then the job sites visited less; then the employers in
+   their order; and last the entries never measured here - which is where
+   the odd ones in that list (a college dance team, a trade union) belong. */
 function _ccJobsOrder(rows, here, cc){
   const tld = /^[A-Z]{2}$/.test(String(cc || '')) ? (cc === 'GB' ? 'uk' : String(cc).toLowerCase()) : '';
   const home = (x) => (tld && String(x.e.s || '').toLowerCase().endsWith('.' + tld)) ? 0 : 1;
@@ -1350,10 +1349,25 @@ function _ccJobsOrder(rows, here, cc){
     return 1e9;
   };
   const site = (x) => x.kind === 'jobsite' || x.kind === 'global';
-  const band = (x) => { const v = visits(x); return site(x) ? (v < 1e9 ? 0 : x.kind === 'jobsite' ? 1 : 3) : 2; };
-  return rows.map((x, i) => [x, i, band(x), visits(x), home(x)])
-    .sort((a, b) => (a[2] - b[2]) || (a[2] < 2 ? (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) : 0) || (a[1] - b[1]))
-    .map(z => { if(z[2] < 2) _ccJobLead.add(z[0]); return z[0]; });
+  /* Leading takes a site among the country's 10,000 most visited - the same
+     line the data uses for "popular" (scripts/country-popular.mjs). Measured
+     at all is not enough: Norway's FINN.no and Germany's Kleinanzeigen are in
+     every country's top million, and led Spain and India before this. */
+  /* A worldwide entry leads only from the country's top 1,000, or its top
+     10,000 on the country's own domain: FINN.no is in Spain's top 5,000 -
+     the Norwegians who live there - which is real and not what Spain uses. */
+  const lead = (x, v) => x.kind === 'jobsite' ? v <= 10000 : (v <= 1000 || (v <= 10000 && home(x) === 0));
+  /* Below the line: the country's own job sites visited less, then its
+     employers, then everything from elsewhere and the never measured. */
+  const band = (x) => { const v = visits(x); return site(x) ? (lead(x, v) ? 0 : (v < 1e9 && (x.kind === 'jobsite' || home(x) === 0)) ? 1 : 3) : 2; };
+  const sorted = rows.map((x, i) => [x, i, band(x), visits(x), home(x)])
+    .sort((a, b) => (a[2] - b[2]) || (a[2] < 2 ? (a[3] - b[3]) || (a[4] - b[4]) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) : 0) || (a[1] - b[1]));
+  /* Which lead is this country's answer, so it travels with this list - a
+     worldwide row is the same object in every country, and a set shared by
+     all of them made a site that leads in India lead in Japan too. */
+  const out = sorted.map(z => z[0]);
+  Object.defineProperty(out, 'lead', { value: new Set(sorted.filter(z => z[2] === 0).map(z => z[0])) });
+  return out;
 }
 try{ window._ccJobsOrder = _ccJobsOrder; }catch(e){}
 function _ccFillDraw(root, by){
@@ -1396,6 +1410,21 @@ function _ccFillDraw(root, by){
     const lead = topic === 'news' || topic === 'jobs';
     const nm = (t) => String(t || '').trim().toLowerCase();
     list.querySelectorAll('.cc-dup').forEach(n => n.classList.remove('cc-dup'));
+    if(lead && topic === 'jobs' && rows.lead){
+      /* A row on an app's own site is that app: linkedin.com is filed
+         worldwide as "LinkedIn Learning", and it is LinkedIn people mean.
+         It keeps the row's place in the visit order, under the app's name. */
+      const app = {};
+      list.querySelectorAll('.int-card:not(.cc-svc) .int-name').forEach(n => { const t = n.textContent.trim(); app[t.toLowerCase().replace(/[^a-z0-9]/g, '')] = t; });
+      const was = rows.lead, lead2 = new Set();
+      rows = rows.map(x => {
+        const label = _ccBrand(String(x.e.s || '').toLowerCase()).split('.')[0], name = app[label];
+        const y = (name && name !== x.e.n) ? Object.assign({}, x, { e: Object.assign({}, x.e, { n: name }) }) : x;
+        if(was.has(x)) lead2.add(y);
+        return y;
+      });
+      Object.defineProperty(rows, 'lead', { value: lead2 });
+    }
     if(lead){
       /* Where the outlet is listed, its app card (same name) is not shown
          twice - the outlet keeps its place in the visit order. */
@@ -1410,8 +1439,9 @@ function _ccFillDraw(root, by){
     if(lead){
       /* In Jobs only the job sites lead; the employers come after the apps
          (LinkedIn's own card before a company's careers page). */
-      const head = topic === 'jobs' ? rows.filter(x => _ccJobLead.has(x)) : rows;
-      const tail = topic === 'jobs' ? rows.filter(x => !_ccJobLead.has(x)) : [];
+      const leads = topic === 'jobs' ? (rows.lead || new Set()) : null;
+      const head = leads ? rows.filter(x => leads.has(x)) : rows;
+      const tail = leads ? rows.filter(x => !leads.has(x)) : [];
       fill = open ? head.length : Math.min(head.length, CC_INT_SHOWN);
       list.insertAdjacentHTML('afterbegin', head.slice(0, fill).map(svcRow).join(''));
       unshown = head.length - fill;
