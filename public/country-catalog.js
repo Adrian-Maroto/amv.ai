@@ -1356,7 +1356,13 @@ function _ccJobsOrder(rows, here, cc){
   /* A worldwide entry leads only from the country's top 1,000, or its top
      10,000 on the country's own domain: FINN.no is in Spain's top 5,000 -
      the Norwegians who live there - which is real and not what Spain uses. */
-  const lead = (x, v) => x.kind === 'jobsite' ? v <= 10000 : (v <= 1000 || (v <= 10000 && home(x) === 0));
+  /* And a site on ANOTHER country's domain never leads (Germany's
+     Kleinanzeigen.de is in Spain's top 5,000), nor does a .com outside the
+     top 5,000 unless it is the country's own (China's BOSS Zhipin is in
+     Japan's top 10,000). */
+  const GENERIC = /\.(com|net|org|info|biz|jobs|io|co|ai|me|tv|app|work|careers)$/;
+  const elsewhere = (x) => { const s = String(x.e.s || '').toLowerCase(); return !home(x) ? false : !GENERIC.test(s) && /\.[a-z]{2}$/.test(s); };
+  const lead = (x, v) => !elsewhere(x) && (x.kind === 'jobsite' ? (v <= 5000 || (v <= 10000 && home(x) === 0)) : (v <= 1000 || (v <= 10000 && home(x) === 0)));
   /* Below the line: the country's own job sites visited less, then its
      employers, then everything from elsewhere and the never measured. */
   const band = (x) => { const v = visits(x); return site(x) ? (lead(x, v) ? 0 : (v < 1e9 && (x.kind === 'jobsite' || home(x) === 0)) ? 1 : 3) : 2; };

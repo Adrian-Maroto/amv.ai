@@ -122,6 +122,10 @@ async function crux(cc) {
 }
 function rankOf(c, site) {
   const h = String(site).toLowerCase().replace(/^www\./, '');
+  /* A job board is visited on its country's subdomain (uk.indeed.com,
+     es.indeed.com), so it takes its domain's best band - indeed.com itself
+     ranked 50,000 in Spain, where Spaniards use es.indeed.com. */
+  if (isJobHost(h)) { const a = c.host.get(h) || 0, b = c.byReg.get(reg(h)) || 0; return (a && b) ? Math.min(a, b) : (a || b); }
   return c.host.get(h) || c.byReg.get(reg(h)) || 0;
 }
 
@@ -199,7 +203,9 @@ async function main() {
         if (!name || /^Q\d+$/.test(name) || name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
         let host = ''; try { host = new URL(b.site.value).hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
         if (!host || host.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(host)) continue;
-        const kind = kindOf[qid(b.cls.value)]; if (!kind) continue;
+        /* A job board is a job site, whatever else Wikidata files it as -
+           InfoJobs came in here as a business and so was never a job site. */
+        const kind = isJobHost(host) ? 'jobsite' : kindOf[qid(b.cls.value)]; if (!kind) continue;
         haveQ.add(q);
         (found[kind] = found[kind] || []).push({ q, n: name, s: host, w: +b.n.value, r: c.byReg.get(reg(host)) || ADD_BELOW });
       }
