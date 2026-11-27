@@ -618,8 +618,15 @@ const CC_BLOCKED = {
 /* An entry as the page accepts it, from any data file: a real Wikidata ID,
    a plain one-line name and a bare host - the source is editable by anybody,
    a name reaches an instruction and a site is where somebody signs in. */
+/* Adult sites are never listed, however visited (owner, Nov 27): xHamster
+   was filed as a company in 104 countries, so "Jobs at xHamster" sat in the
+   United States' Work & career. The same list as data/not-listed.json, which
+   the data scripts drop them by (the-catalogue-lists-no-adult-sites). */
+const CC_NOT_LISTED_HOSTS = new Set(["xhamster.com", "camsoda.com", "cam4.com", "private.com", "balancetanude.fr", "lovehoney.com", "lovehoney.com.au", "lovehoney.co.uk", "lovehoney.eu", "lovehoney.co.nz", "ashleymadison.com", "eroticcity.cz", "orion.de", "fleshlight.com"]);
+const CC_NOT_LISTED = /porn|xvideos|xnxx|xhamster|chaturbate|stripchat|bongacams|livejasmin|onlyfans|fansly|brazzers|camsoda|redtube|youporn|spankbang|hentai|adultfriendfinder/i;
+function _ccListed(s){ s = String(s || '').toLowerCase().replace(/^www\./, ''); return !CC_NOT_LISTED_HOSTS.has(s) && !CC_NOT_LISTED.test(s); }
 function _ccGood(e){
-  return !!e && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
+  return !!e && /^Q\d{1,12}$/.test(e.q) && _ccListed(e.s) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
     && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n)
     && typeof e.s === 'string' && e.s.length <= 80 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(e.s);
 }
@@ -646,6 +653,17 @@ async function ccLoad(cc){
       const good = e => _ccGood(e) && !(blocked && blocked.test(String(e.s || '')));
       const kinds = {};
       for(const [k, list] of Object.entries(d.kinds)) if(CC_KINDS[k] && Array.isArray(list)){ const ok = list.filter(good); if(ok.length) kinds[k] = ok; }
+      /* A chain filed under the wrong kind is moved to the one it is (Nov 27):
+         Wikidata's retail chains include Pizza Hut and AMC Theatres, so
+         Shopping offered "Best price at Pizza Hut". Moved, in their order, to
+         the end of the kind that fits, where its tasks are about a menu or a
+         show. */
+      for(const [to, re] of CC_REFILE){
+        const from = kinds.retail; if(!from) break;
+        const moved = from.filter(e => re.test(e.n)); if(!moved.length) continue;
+        kinds.retail = from.filter(e => !re.test(e.n)); kinds[to] = (kinds[to] || []).concat(moved);
+        if(!kinds.retail.length) delete kinds.retail;
+      }
       d.kinds = kinds;
       return d;
     }catch(e){ return null; }
@@ -703,10 +721,8 @@ const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t
    by scripts/country-reach.mjs: Facebook and MIT are in dozens, Renfe and El
    País in one, and it is the country's own that people there come for); then
    by place, then by sitelinks. One the report never saw comes after every one
-   it did. Jobs and tasks follow their services: one each, most visited
-   service first, before a second for any - the job each service leads with
-   rotated by its place, so the first screen is not one kind of job twenty
-   times over. What people in the country actually switch on reorders Crew on
+   it did. Jobs and tasks follow their services, ranked first by what each
+   is for (_ccByUse, Nov 27) and then in this order. What people in the country actually switch on reorders Crew on
    top of this (crew-view.js, _cjList). */
 function _ccByPop(d){
   const out = [];
@@ -725,14 +741,100 @@ function _ccByPop(d){
   const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.pow(Math.max(1, +x.e.x || 1), 0.25);
   return out.sort((a, b) => (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
-function _ccByPopPass(d, TPL, make){
+/* WHAT A SECTION SHOWS AFTER ITS OPENING TASKS: THE USEFUL FIRST (Nov 27).
+   The owner, of Work & career: "why does it say improve my CV at adidas and
+   then complain to Tesla? The first ones should be improve my CV, write a
+   cover letter, find jobs at LinkedIn ... any stupid job goes all the way at
+   the bottom - for every section, every country". After the opening tasks a
+   section was the country's services in visit order, one template each, so
+   "Facebook at a glance", "Complain to Tesla" and "Contact the National
+   Hockey League" came before "Find jobs on LinkedIn" - popularity of the
+   SITE, with no regard to what the task does for anybody.
+
+   Now each service's tasks are ranked by what they are for, in the order the
+   largest published study of assistant use ranks requests (NBER working paper
+   34255, Sept 2025; docs/RESEARCH.md): doing something with a service you use
+   - find a job, open an account, track an order, a cheaper plan - first;
+   then the occasional (cancel, a refund, a claim); then a brief ABOUT a
+   company ("at a glance", "contact", its news); and a complaint last. Within
+   that, the kinds of service a section is for come before ones it merely
+   lists - job sites before employers before any other company - and then the
+   most visited first, each service's tasks taking turns so the first screen
+   is not one bank five times. */
+const CC_TASK_DO = new Set(['Open an account at {n}', '{n}: fees explained', 'Get a quote from {n}', 'Make a claim with {n}', 'Apply to {n}',
+  'Today in {n}', 'Today on {n}', 'What is on {n} tonight', 'A cheaper {n} plan', 'A better {n} deal', 'Find a {n} flight', 'Plan a trip with {n}',
+  'Best price at {n}', 'A week’s shop at {n}', '{n} offers this week', 'Best price on {n}', 'Track a {n} order', 'Stay at a {n} hotel',
+  'Get something done with {n}', 'An appointment at {n}', 'Understand a {n} bill', 'Find jobs on {n}',
+  'Enroll at {n}', '{n} fixtures', 'Visa at {n}', 'Return something to {n}', 'Claim from {n}', 'What is on at {n}',
+  'Events at {n}', 'Check in with {n}', '{n} deadlines', 'Fix a {n} problem']);
+const CC_TASK_ABOUT = new Set(['{n} at a glance', 'Contact {n}', '{n} announcements', 'Donate to {n}', 'Submit to {n}', 'New books from {n}',
+  'Latest research from {n}', '{n} services and visiting']);
+/* Kinds a section lists without being for them: a company is in Work &
+   career because it employs people, not because anybody goes there to work
+   on their career. */
+const CC_KIND_SIDE = new Set(['company', 'software', 'pharma', 'research', 'publisher', 'brewery', 'union']);
+function _ccTaskTier(kind, title){
+  if(/^Complain to /.test(title)) return 4;
+  if(CC_TASK_ABOUT.has(title) || (title === 'Jobs at {n}' && CC_KIND_SIDE.has(kind))) return 3;
+  return CC_TASK_DO.has(title) ? 1 : 2;
+}
+/* Retail chains that are restaurants or cinemas, by name (see ccLoad). */
+const CC_REFILE = [
+  ['restaurant', /pizza|burger|chicken|taco\b|donut|doughnut|starbucks|mcdonald|\bkfc\b|subway|domino|wendy|dunkin|chipotle|popeyes|panera|arby|little caesars|papa john|chick-fil-a|denny|ihop|olive garden|applebee|buffalo wild|five guys|krispy kreme|tim hortons|nando|greggs|pret a manger|costa coffee|\bcaf[eé]\b|coffee/i],
+  ['theatre', /theatres?\b|cinemas?\b|cineplex|cinemark|multiplex/i],
+];
+/* Entries of a kind a section is for that it is NOT for by what they are: a
+   cargo carrier among airlines (nobody books a UPS flight), a space agency or
+   an archive among the offices people deal with, a prison's medical centre
+   among hospitals. They follow the rest of their section, like a company. */
+const CC_SIDE_NAME = {
+  airline: /cargo|\bUPS\b|fedex|\bDHL\b|atlas air|kalitta|polar air|aerologic|\bABX\b|western global/i,
+  agency: /aeronautic|\bspace\b|librar|archive|\bmint\b|cabinet|tsunami|hurricane|weather|meteorolog|geolog|survey|statistic|observator|laborator|research|ranger|national guard|\barmy\b|\bnavy\b|air force|marine corps|intelligence|census|museum|smithsonian|national park|parque nacional|parc national|nationalpark|wetter/i,
+  ministry: /defen[cs]e|\barmy\b|\bnavy\b|air force|intelligence|cabinet/i,
+  hospital: /prison|correctional|federal prisoners|veterinar|museum|museo|museu|mus[eé]e|research cent/i,
+};
+const _ccSide = (x) => CC_KIND_SIDE.has(x.kind) || !!(CC_SIDE_NAME[x.kind] && CC_SIDE_NAME[x.kind].test(x.e.n));
+/* A site on another country's own domain (avito.ru, kleinanzeigen.de listed
+   for the United States): real visits from people there, not where the
+   country goes. The same test Integrations' Jobs uses (_ccJobsOrder). */
+function _ccAbroad(e, cc){
+  const s = String((e && e.s) || '').toLowerCase(), tld = cc === 'GB' ? 'uk' : String(cc || '').toLowerCase();
+  return /\.[a-z]{2}$/.test(s) && !(tld && s.endsWith('.' + tld)) && !/\.(co|io|me|tv|ai)$/.test(s);
+}
+/* Crew's jobs, the same way (Nov 27, the owner: "I bet it's the same with
+   crew"): it was - "National Football League outages", "National Hockey
+   League recalls and safety notices" and "Reuters price changes" opened Work
+   & career. A kind's first job is the one it is for (a fare watch, a rate
+   change, new jobs, a morning brief); watching a company's news, results,
+   leadership, patents or share price is for the few who follow that company,
+   and goes after everything people use. */
+const CC_CREW_ABOUT = /in the news|\bnews\b|\bresults\b|leadership|patents|share price|shareholder|credit rating|acquisitions|sustainability|supply news|competitors|legal and regulatory|customer reviews|ratings and reviews|at a glance|strikes and labor|privacy and terms|as an employer|investigations|opinion|data breaches/i;
+function _ccCrewTier(kind, title, j){
+  if(CC_CREW_ABOUT.test(title)) return 3;
+  return j === 0 ? 1 : 2;
+}
+function _ccByUse(d, TPL, make, tierOf){
+  tierOf = tierOf || ((kind, title) => _ccTaskTier(kind, title));
   const ents = _ccByPop(d).filter(x => TPL[x.kind] && TPL[x.kind].length);
-  const out = [], most = Math.max(0, ...ents.map(x => TPL[x.kind].length));
-  for(let p = 0; p < most; p++) for(const x of ents){
-    const n = TPL[x.kind].length; if(p >= n) continue;
-    out.push(make(x.kind, x.e, (x.i + p) % n));
-  }
-  return out;
+  const cc = String((d && d.cc) || '').toUpperCase();
+  const rows = [];
+  ents.forEach((x, r) => {
+    /* A job site leads from the country's 5,000 most visited (Integrations'
+       line, _ccJobsOrder); one less visited follows the section's own kinds,
+       and one on another country's domain goes after everything. Either way
+       its tasks drop a tier: "Find jobs on" a site few people there use is
+       not worth more than an interview at a company they do. */
+    const abroad = _ccAbroad(x.e, cc);
+    const kw = abroad ? 4 : x.kind === 'jobsite' ? ((+x.e.r > 0 && +x.e.r <= 5000) ? 0 : 3) : _ccSide(x) ? 2 : 1;
+    const byT = new Map();
+    /* A complaint is last whatever else drops a tier. */
+    TPL[x.kind].forEach((t, j) => { const base = tierOf(x.kind, t[0], j), k = base >= 4 ? 9 : base + (kw >= 3 ? 1 : 0); if(!byT.has(k)) byT.set(k, []); byT.get(k).push(j); });
+    /* Each service's tasks of one tier in their written order - the first
+       is the one the kind is for ("Find jobs on", "Open an account at"). */
+    for(const [k, js] of byT) js.forEach((j, p) => rows.push([k, kw, p, r, x, j]));
+  });
+  rows.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]) || (a[3] - b[3]));
+  return rows.map(z => make(z[4].kind, z[4].e, z[5]));
 }
 /* A task opens chat with the service's name and the site the row shows under
    it - so AMV starts where the person was told it would. Half the task
@@ -799,7 +901,9 @@ const CC_LEADS = [
   ["employer", "Prepare for a job interview", "Prepare me for a [role] interview at [company]: likely questions, strong answers and what to ask them."],
   ["company", "Write a professional email", "Write a clear, polite email to [who] about [what]."],
   ["employer", "Ask for a raise", "Help me ask for a raise: what to say, what my role pays in {c}, and how to handle a no."],
-  ["employer", "Find jobs near me", "Find [role] jobs in [city], {c}, at employers such as {top}, posted in the last two weeks."],
+  /* On the job sites people there use (LinkedIn, Indeed and Glassdoor in
+     the United States; StepStone in Germany), not at named employers. */
+  ["jobsite", "Find jobs near me", "Find [role] jobs in [city], {c}, posted in the last two weeks, on {top} and the employers' own sites."],
   ["telecom", "Lower my phone bill", "How can I pay less for my phone? Compare plans from {top} in {c} for [how I use it]."],
   ["utility", "Cut my energy bill", "How can I lower my electricity and gas bill in {c}? Compare {n} with other suppliers, and give me quick savings at home."],
   ["isp", "Compare internet plans", "Compare home internet plans in {c} from {top} for [area and usage]: speed, price and contract length."],
@@ -845,7 +949,7 @@ function ccLeads(d){
   return out;
 }
 function ccTasks(d){
-  return ccLeads(d).concat(_ccByPopPass(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
+  return ccLeads(d).concat(_ccByUse(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
     return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; }));
 }
 /* TASKS' POPULAR: WHAT PEOPLE DO EVERY DAY (Nov 23). The owner, of Popular:
@@ -909,8 +1013,8 @@ function ccTasksPopular(d, all){
   return out;
 }
 function ccJobs(d){
-  return _ccByPopPass(d, CC_CREW, (kind, e, i) => { const t = CC_CREW[kind][i];
-    return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}) }; });
+  return _ccByUse(d, CC_CREW, (kind, e, i) => { const t = CC_CREW[kind][i];
+    return { id:_ccJobId(kind, e, i, d.cc), kind, e, i, title:_ccTitle(t[0], e, d.cc), prompt:_ccFill(t[1], e, true, d.cc), every:t[2], ...(_ccEvening(t[1]) ? { hour: 18 } : {}) }; }, _ccCrewTier);
 }
 function ccServices(d){
   return _ccByPop(d).map(x => ({ kind: x.kind, e: x.e }));
@@ -957,7 +1061,8 @@ async function ccCrewLoad(cc){
   const made = { d, key };
   _ccCrewMade[cc] = made;
   made.busy = (async () => {
-    const order = _ccByPopPass(d, CC_CREW, (kind, e, i) => [kind, e, i]), out = [];
+    /* In the order of what each job is for, the same as ccJobs (Nov 27). */
+    const order = _ccByUse(d, CC_CREW, (kind, e, i) => [kind, e, i], _ccCrewTier), out = [];
     for(let k = 0; k < order.length; k++){
       const [kind, e, i] = order[k]; out.push(ccCrewJob(kind, e, i, d.cc));
       if(k % 1500 === 1499){ await new Promise(r => setTimeout(r, 0)); if(_ccCrewMade[cc] !== made) return _ccCrewJobs[cc] || out; }

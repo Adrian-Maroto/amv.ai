@@ -1,0 +1,5 @@
+{
+  "why": "Adult sites are never listed as a service, a task or a Crew job, however visited (owner, Nov 27). The page checks every entry against the same list (CC_NOT_LISTED in src/country/country-catalog.js); the-catalogue-lists-no-adult-sites holds the two equal.",
+  "hosts": ["xhamster.com", "camsoda.com", "cam4.com", "private.com", "balancetanude.fr", "lovehoney.com", "lovehoney.com.au", "lovehoney.co.uk", "lovehoney.eu", "lovehoney.co.nz", "ashleymadison.com", "eroticcity.cz", "orion.de", "fleshlight.com"],
+  "pattern": "porn|xvideos|xnxx|xhamster|chaturbate|stripchat|bongacams|livejasmin|onlyfans|fansly|brazzers|camsoda|redtube|youporn|spankbang|hentai|adultfriendfinder"
+}

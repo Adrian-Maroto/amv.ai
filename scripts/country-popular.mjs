@@ -39,6 +39,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { gunzipSync } from 'zlib';
 import { KINDS } from './country-data.mjs';
+import { listed } from './not-listed.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'data', 'countries');
@@ -168,6 +169,8 @@ async function main() {
     const d = JSON.parse(readFileSync(path, 'utf8'));
     const c = await crux(cc);
     if (!c) { console.log(cc, 'no Chrome UX Report list'); continue; }
+    /* 0. Adult sites are never listed (data/not-listed.json). */
+    for (const [k, list] of Object.entries(d.kinds || {})) { d.kinds[k] = list.filter(e => listed(e.s)); if (!d.kinds[k].length) delete d.kinds[k]; }
     /* 1. Rank what is there. */
     const have = new Set(), haveQ = new Set();
     let n = 0;
@@ -205,6 +208,7 @@ async function main() {
         if (!host || host.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(host)) continue;
         /* A job board is a job site, whatever else Wikidata files it as -
            InfoJobs came in here as a business and so was never a job site. */
+        if (!listed(host)) continue;
         const kind = isJobHost(host) ? 'jobsite' : kindOf[qid(b.cls.value)]; if (!kind) continue;
         haveQ.add(q);
         (found[kind] = found[kind] || []).push({ q, n: name, s: host, w: +b.n.value, r: c.byReg.get(reg(host)) || ADD_BELOW });

@@ -16380,3 +16380,21 @@ ran at desktop width. Rule: a hiding class is written against the same
 selector that lays the element out (`#int-catalog .int-card.cc-dup`), and a
 check that something is listed once runs at phone width too
 (`integrations-fill-in-place`).
+
+## 675
+**Nov 27 - ordering by popularity ranks whatever is listed, so read what is listed.**
+Tasks and Crew were "ordered by popularity" and passed every suite about
+order. They were ordered by the popularity of the SITE, with no regard to
+what the task did for anybody. So Work & career opened on "Facebook at a
+glance", "Complain to Tesla" and "Contact the National Hockey League", with
+LinkedIn nineteenth. Crew opened on "National Football League outages". And
+the data held an adult site as a company in 104 countries ("Jobs at
+xHamster"), because a visit count cannot tell a job board from anything else
+people visit. The owner found it by reading the screen. Every check here
+compared one position with another and none read the words. Now tasks and
+jobs are ranked first by what they are for (`_ccByUse`), adult sites are
+refused by one list (`data/not-listed.json`, checked again by the page), and
+`each-section-leads-with-what-people-use` reads the first screen of every
+section in five countries the way the owner did. Rule: a suite about an
+order also reads the first screen of what it orders. And a ranking built
+from visits needs a list of what is never shown, kept in one place.

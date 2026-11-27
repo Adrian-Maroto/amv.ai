@@ -29,6 +29,10 @@ const src = readFileSync(join(ROOT, 'src/country/country-catalog.js'), 'utf8');
 const CREW = (0, eval)('(' + src.match(/const CC_CREW = (\{[\s\S]*?\n\});/)[1] + ')');
 /* And the page's nationwide blocks (CC_BLOCKED), read from the same source. */
 const BLOCKED = (0, eval)('(' + src.match(/const CC_BLOCKED = (\{[\s\S]*?\n\});/)[1] + ')');
+/* And the chains it files under the kind they are (CC_REFILE: Pizza Hut is a
+   restaurant, AMC Theatres a cinema), from the same source. */
+const REFILE = (0, eval)('(' + src.match(/const CC_REFILE = (\[[\s\S]*?\n\]);/)[1] + ')');
+const kindOf = (kind, e) => { if (kind !== 'retail') return kind; const m = REFILE.find(([, re]) => re.test(e.n)); return m ? m[0] : kind; };
 let CC = '';
 const good = e => e && !(BLOCKED[CC] && BLOCKED[CC].test(String(e.s || ''))) && /^Q\d{1,12}$/.test(e.q) && typeof e.n === 'string' && e.n.length >= 2 && e.n.length <= 90
   && !/[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(e.n);
@@ -37,11 +41,11 @@ let expect = 0;
 for (const f of readdirSync(join(ROOT, 'data/countries')).filter(f => /^[A-Z]{2}\.json$/.test(f)).sort()) {
   const d = JSON.parse(readFileSync(join(ROOT, 'data/countries', f), 'utf8'));
   CC = d.cc;
-  for (const [kind, list] of Object.entries(d.kinds || {})) {
-    const tpl = CREW[kind]; if (!tpl) continue;
-    const sc = tpl.filter(t => t[3] === 'c').length, own = tpl.length - sc;
+  for (const [kind0, list] of Object.entries(d.kinds || {})) {
     for (const e of list) {
       if (!good(e)) continue;
+      const kind = kindOf(kind0, e), tpl = CREW[kind]; if (!tpl) continue;
+      const sc = tpl.filter(t => t[3] === 'c').length, own = tpl.length - sc;
       expect += sc;
       const k = kind + '|' + e.q;
       if (!seen.has(k)) { seen.add(k); expect += own; }

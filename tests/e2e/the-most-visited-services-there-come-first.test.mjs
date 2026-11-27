@@ -6,7 +6,9 @@
      · the services are in the order people in that country visit them - the
        Chrome UX Report bucket, never a lower bucket ahead of a higher one -
        and inside a bucket the country's own before the world's;
-     · every service gets its first job or task before any gets a second;
+     · after a section's opening tasks, each job or task by what it is for
+       (an everyday one before a brief about a company, a complaint last),
+       and the same one across services in visit order (Nov 27);
      · what people in the country actually switch on goes ahead of what is
        only researched, the most switched on first;
      · the category chips are in the order their first job appears;
@@ -34,7 +36,7 @@ await page.waitForFunction(() => true);
 await page.evaluate(() => setTab('integrations'));
 await page.waitForFunction(() => typeof window.ccLoad === 'function', null, { timeout: 15000 });
 
-section('In every country: most visited first, the better known first inside a bucket, one each before a second');
+section('In every country: most visited first, the better known first inside a bucket, the useful before the rest');
 {
   const r = await page.evaluate(async () => {
     const bad = [];
@@ -53,17 +55,36 @@ section('In every country: most visited first, the better known first inside a b
         if (R(a) > R(b)) { bad.push(cc + ': ' + a.n + ' (' + R(a) + ') before ' + b.n + ' (' + R(b) + ')'); break; }
         if (R(a) === R(b) && K(a) < K(b)) { bad.push(cc + ': ' + a.n + ' (' + K(a).toFixed(1) + ') before the better known ' + b.n + ' (' + K(b).toFixed(1) + ')'); break; }
       }
-      /* A section's opening tasks (ccLeads) come before the service-by-service
-         ones and are checked below; the order checked here is the rest. */
-      for (const [name, list] of [['jobs', ccJobs(d)], ['tasks', ccTasks(d).filter(t => !t.lead)]]) {
-        const seen = new Set(), firstPass = Math.min(list.length, new Set(list.map(j => j.e.q + '|' + j.kind)).size);
-        for (let i = 0; i < firstPass; i++) { const k = list[i].e.q + '|' + list[i].kind;
-          if (seen.has(k)) { bad.push(cc + ' ' + name + ': a second for ' + list[i].e.n + ' before every service had one'); break; } seen.add(k); }
-        /* And the first pass follows the service order. */
-        const order = new Map(ccServices(d).map((x, i) => [x.e.q + '|' + x.kind, i]));
-        for (let i = 1; i < firstPass; i++) {
-          if (order.get(list[i - 1].e.q + '|' + list[i - 1].kind) > order.get(list[i].e.q + '|' + list[i].kind)) {
-            bad.push(cc + ' ' + name + ': ' + list[i].e.n + ' later than its service'); break; }
+      /* WHAT EACH IS FOR, THEN HOW VISITED (Nov 27, the owner: "the first
+         ones should be improve my CV, write a cover letter, find jobs at
+         LinkedIn ... any stupid job goes all the way at the bottom"). After a
+         section's opening tasks (checked below), in every section: no brief
+         about a company and no complaint comes before an everyday task of
+         that section, and the same task across services keeps the visit
+         order - one at a time, never a less visited service first. */
+      const cat = (x) => _cjCat({ ccKind: x.kind });
+      for (const [name, list, tier] of [['jobs', ccJobs(d), (x) => _ccCrewTier(x.kind, CC_CREW[x.kind][x.i][0], x.i)],
+                                        ['tasks', ccTasks(d).filter(t => !t.lead), (x) => _ccTaskTier(x.kind, x.tpl)]]) {
+        const by = {};
+        for (const x of list) (by[cat(x)] = by[cat(x)] || []).push(x);
+        for (const [c, l] of Object.entries(by)) {
+          const t = l.map(tier);
+          const lastDo = t.lastIndexOf(1), firstLow = t.findIndex(v => v >= 3);
+          /* Tier 1 from a service the section is FOR and that is visited
+             there; a foreign or side service's are allowed below. */
+          const own = (x) => !_ccSide(x) && !_ccAbroad(x.e, cc) && !(x.kind === 'jobsite' && !(+x.e.r > 0 && +x.e.r <= 5000));
+          const lastOwnDo = l.reduce((m, x, i) => (t[i] === 1 && own(x)) ? i : m, -1);
+          if (firstLow >= 0 && lastOwnDo > firstLow) { bad.push(cc + ' ' + name + ' ' + c + ': "' + l[firstLow].title + '" before "' + l[lastOwnDo].title + '"'); break; }
+          const comp = t.findIndex(v => v === 4);
+          if (comp >= 0 && t.slice(comp).some(v => v < 4)) { bad.push(cc + ' ' + name + ' ' + c + ': "' + l[comp].title + '" is not last'); break; }
+        }
+        /* The same task across services: in visit order. */
+        const order = new Map(ccServices(d).map((x, i) => [x.e.q + '|' + x.kind, i])), last = {};
+        for (const x of list) {
+          if (_ccSide(x) || _ccAbroad(x.e, cc) || x.kind === 'jobsite') continue;
+          const k = x.kind + '|' + (x.tpl || x.i), o = order.get(x.e.q + '|' + x.kind);
+          if (last[k] != null && last[k] > o) { bad.push(cc + ' ' + name + ': ' + x.title + ' after a less visited service'); break; }
+          last[k] = o;
         }
       }
     }

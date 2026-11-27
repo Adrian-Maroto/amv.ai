@@ -24,6 +24,7 @@
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { listed } from './not-listed.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'data', 'countries');
@@ -210,6 +211,7 @@ async function main() {
         if (name.length < 2 || name.length > 90 || /[\u0000-\u001f\u007f<>{}\[\]`]|https?:|www\./i.test(name)) continue;
         let host = ''; try { const u = new URL(b.site.value); if (u.protocol !== 'https:' && u.protocol !== 'http:') continue; host = u.hostname.toLowerCase().replace(/^www\./, ''); } catch (e) { continue; }
         if (!host || host.length > 80 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(host)) continue;
+        if (!listed(host)) continue;   // adult sites are never listed (data/not-listed.json)
         (got[cc][kind] = got[cc][kind] || []).push({ q: qid(b.i.value), n: name, s: host, w: +b.n.value });
       }
     };
