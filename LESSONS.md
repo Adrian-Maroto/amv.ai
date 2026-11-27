@@ -16353,3 +16353,30 @@ count is by address, the one thing there the sender does not pick
 (`an-outage-pages-somebody`, "invented ids from one address"). Rule: on an
 unauthenticated route, anything used to count, rank or decide "how many
 people" comes from the connection, never from the body.
+
+## 673
+**Nov 27 - a background redraw must not replace what is under the pointer.**
+"I click something and it doesn't do it, and I have to click it again." A
+sync pull, the end of a session restore and the plan arriving each call
+`renderView()`, and Settings answered by drawing its whole menu again. A
+press that began on the old button ended on a new one, and the browser fires
+no click for that. Nothing threw and nothing logged, and every suite passed,
+because a suite clicks in one step and never holds the button while the app
+does something else. Now a redraw that would draw the same menu keeps the
+menu and updates only what changed, and the open section waits for the
+pointer to lift (`settings-keeps-its-menu-under-the-pointer`, which holds the
+button down across a `renderView()`). Rule: a repaint triggered by data, not
+by the person, keeps the elements it does not need to change; and a test of
+"the press works" holds the press across the thing that can interrupt it.
+
+## 674
+**Nov 27 - a rule that hides something must out-rank every rule that shows it.**
+`.cc-dup{display:none!important}` hid an app card whose own site was listed
+in the same topic. Later, the phone layout gave every card
+`#int-catalog .int-card{display:grid!important}`: an id selector, so it won.
+On every phone, LinkedIn, Indeed and Glassdoor appeared twice under Jobs, and
+the outlets twice under News. Desktop was right, and the only check of it
+ran at desktop width. Rule: a hiding class is written against the same
+selector that lays the element out (`#int-catalog .int-card.cc-dup`), and a
+check that something is listed once runs at phone width too
+(`integrations-fill-in-place`).

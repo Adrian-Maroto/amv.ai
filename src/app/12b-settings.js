@@ -425,6 +425,24 @@ function _settingsPickerBtnHTML(){
     '<svg class="set-picker-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'+
   '</button>';
 }
+/* Whether a press is in progress anywhere: a background redraw of Settings
+   waits for it to end (renderSettingsView). */
+let _setPtrDown=false;
+try{
+  document.addEventListener('pointerdown', () => { _setPtrDown=true; }, true);
+  document.addEventListener('pointerup', () => { _setPtrDown=false; }, true);
+  document.addEventListener('pointercancel', () => { _setPtrDown=false; }, true);
+}catch(e){}
+/* The phone's section button names the section that is open: brought up to
+   date in place (its label, and the icon copied from that section's row). */
+function _setPickerSync(){
+  try{
+    const p=$('set-picker'), s=_curSetSection(); if(!p || !s) return;
+    const l=p.querySelector('.set-picker-lbl'); if(l) l.textContent=T(s.label);
+    const ic=document.querySelector('.sn-btn[data-sp="'+String(s.id).replace(/["\\]/g,'')+'"] svg'), old=p.querySelector('svg:not(.set-picker-chev)');
+    if(ic && old) old.replaceWith(ic.cloneNode(true));
+  }catch(e){ _logErr('settings.picker', e); }
+}
 function _openSettingsPicker(){
   const r=$('ovr'); if(!r) return;
   const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
@@ -537,6 +555,27 @@ function renderSettingsView(){
       (hit.by?'<span class="sn-hit" data-no-i18n>'+escH(hit.by)+'</span>':'')+'</button>';
   }).join('');
   const noMatch = q && !visibleSections.some(s=>s.id && _setSearchHit(s,q));
+  /* A REDRAW THAT CHANGES NOTHING DOES NOT REPLACE THE MENU (Nov 27, the
+     owner: "I click something and it doesn't do it, and I have to click it
+     again"). A sync pull, the end of a session restore and the plan arriving
+     each call renderView(), which drew all of Settings again - every menu
+     button replaced, so a press that began on the old button ended on a new
+     one and the browser fired no click; and the open section was drawn twice.
+     When the menu would come out the same, it stays: the highlighted row and
+     the section are brought up to date, and nothing under the pointer moves. */
+  const pickerHtml=_settingsPickerBtnHTML();
+  const navKey=navHtml.replace(/sn-btn on"/g,'sn-btn "')+'|'+(noMatch?1:0)+'|'+(pickerHtml?1:0)+'|'+(typeof _lang==='function'?_lang():'');
+  if(vc._setNavKey===navKey && vc.querySelector(':scope > .settings-shell')){
+    const cur=_setPaneFor(S.settingsPane);
+    vc.querySelectorAll('.sn-btn').forEach(b=>b.classList.toggle('on',b.dataset.sp===cur));
+    _setPickerSync();
+    /* And the open section is not redrawn under a press either: held until
+       the pointer is lifted, so the press inside it lands first. */
+    if(_setPtrDown) document.addEventListener('pointerup', () => setTimeout(() => { try{ if($('set-pane')) renderSetPane(); }catch(e){ _logErr('settings.redraw', e); } }, 0), { once:true, capture:true });
+    else renderSetPane();
+    return;
+  }
+  vc._setNavKey=navKey;
   vc.innerHTML=
     '<div class="settings-shell">'+
       '<button class="set-close" id="set-close" title="Close settings (Esc)" aria-label="Close settings">'+
@@ -544,7 +583,7 @@ function renderSettingsView(){
         '<span class="set-close-lbl">Close</span>'+
       '</button>'+
       '<div class="settings-nav">'+
-        _settingsPickerBtnHTML()+
+        pickerHtml+
         '<div class="set-search-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
           '<input id="set-search" class="set-search" type="search" name="amv-settings-search" placeholder="Search settings\u2026" value="'+escH(S._setSearch||'')+'" autocomplete="off">'+
         '</div>'+
@@ -559,6 +598,7 @@ function renderSettingsView(){
       try{ _navRecord(_navHere(), { tab:'settings', pane: target }); }catch(e){}
       S.settingsPane=target;
       vc.querySelectorAll('.sn-btn').forEach(b=>b.classList.toggle('on',b===btn));
+      _setPickerSync();
       renderSetPane();
     });
   });
