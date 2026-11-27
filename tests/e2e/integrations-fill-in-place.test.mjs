@@ -60,6 +60,24 @@ for (const w of [1440, 390]) {
   await app.close();
 }
 
+section('An app people in the country do not use follows the country’s own services');
+{
+  /* Nov 27: Zomato (India's) opened Food in the United States, and Swiggy,
+     Deliveroo and Just Eat filled its first screen ahead of DoorDash and the
+     country's own restaurants. */
+  const app = await bootApp({ tab: 'chat', viewport: { width: 1440, height: 900 } });
+  const { page } = app;
+  await page.evaluate(() => { try{ _cwSetCountry('US'); }catch(e){} setTab('integrations'); });
+  await page.waitForFunction(() => { const c = document.getElementById('int-catalog'); return c && !c.classList.contains('int-filling') && c.querySelector('[data-topic="food"] .cc-svc'); }, null, { timeout: 20000 });
+  const food = await page.evaluate(() => [...document.querySelectorAll('[data-topic="food"] .int-card')].filter(c => getComputedStyle(c).display !== 'none').slice(0, 9)
+    .map(c => ({ n: c.querySelector('.int-name').textContent.trim(), far: c.hasAttribute('data-far'), svc: c.classList.contains('cc-svc') })));
+  ok(food[0] && food[0].n === 'DoorDash', 'Food opens with DoorDash', food.map(x => x.n));
+  ok(!food.some(x => /Zomato|Swiggy/.test(x.n)), 'and India’s apps are not on its first screen', food.map(x => x.n));
+  const firstFar = food.findIndex(x => x.far), lastSvc = food.map(x => x.svc).lastIndexOf(true);
+  ok(firstFar < 0 || lastSvc < firstFar, 'any app not used there comes after the country’s own services', food);
+  await app.close();
+}
+
 section('With the catalogue unreachable, the apps stay and no placeholder is left behind');
 {
   const app = await bootApp({ tab: 'chat', beforeLoad: async (page) => { await page.route(/country-catalog/, r => r.abort('connectionreset')); } });

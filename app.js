@@ -33159,8 +33159,16 @@ function _integrationsCatalogHTML(opts){
        the visitor's own mailboxes first. */
     const cc=(()=>{ try{ return _cwCountryGuess(); }catch(e){ return ''; } })();
     const reach=(a)=>{ try{ return (typeof window._appReachKey==='function') ? window._appReachKey(a, cc) : null; }catch(e){ return null; } };
+    /* An app people in the country do not use - outside its 100,000 most
+       visited sites - follows the ones they do, however well it connects
+       (Nov 27: Zomato, India's, opened Food in the United States above
+       DoorDash, because it connects and DoorDash opens in the browser).
+       Connected stays first: it is somebody's own. */
+    const usedHere=(a)=>{ try{ return (typeof window._appUsedHere==='function') ? window._appUsedHere(a, cc) : null; }catch(e){ return null; } };
     const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):webRow(a); const k=reach(a);
-        return { a, o, rank:(o&&o.connected)?0:o?(o.web?1.5:1):2, k:(k==null?0:k), i:(k==null&&local(a))?1.5:i }; })
+        let rank=(o&&o.connected)?0:o?(o.web?1.5:1):2;
+        if(rank>0 && rank<2 && usedHere(a)===false) rank=1.75;
+        return { a, o, rank, k:(k==null?0:k), i:(k==null&&local(a))?1.5:i }; })
       .sort((x,y)=>x.rank-y.rank||x.k-y.k||x.i-y.i);
     let list=rows;
     if(qWords){ list=rows.filter(r=>hit(r.a)); if(!list.length) return ''; }
@@ -33196,7 +33204,7 @@ function _integrationsCatalogHTML(opts){
           +'<p class="int-req-s">'+escH(T('AMV cannot connect these yet. Ask for one and you will be told when it can.'))+'</p>'
           +'<div class="int-list">'+asks.map(r=>notifyRow(r.a)).join('')+'</div></div>'
       : '';
-    const html=shown.length ? shown.map(r=>intRow(r.o)).join('')
+    const html=shown.length ? shown.map(r=>{ const h=intRow(r.o); return r.rank===1.75 ? h.replace('<div class="int-card','<div data-far="1" class="int-card') : h; }).join('')
       : (req ? '' : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>');
     /* ONE BUTTON, FOR WHAT IS NOT ON SCREEN (Nov 17, the owner: "it should
        appear 9 then see the remaining"). A topic shows nine cards - its apps,

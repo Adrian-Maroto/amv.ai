@@ -1401,6 +1401,27 @@ function _ccFillBy(d, g, here){
       if(add.length) by[t] = (by[t] || []).concat(add);
     }
   }
+  /* WHAT A TOPIC IS FOR, BEFORE WHAT IT ONLY LISTS (Nov 27, the owner:
+     "organized - popularity and everything"). Government opened on the
+     Pacific Tsunami Warning Center, NASA and the Library of Congress; Home &
+     life listed Khan Academy and Lichess, nonprofits, among phone companies.
+     The same rule as Tasks (_ccSide): the country's own that a topic is for
+     keep their order, then the rest of its own, then a site on another
+     country's domain. Jobs and News have orders of their own, below. */
+  const ccx = String((d && d.cc) || '').toUpperCase();
+  /* A worldwide service people here do not use - outside the country's
+     100,000 most visited sites, the line apps are held to (_appUsedHere) -
+     is last of all: TfL, Snapp and the Tokyo Metro in the United States'
+     Maps, Gitee in its Testing. */
+  const R = _ccGlobalReach, hc = here && here.codes, okHere = !!(R && typeof hc === 'string' && hc.length === R.n);
+  const usedHere = (x) => { const h = +hc[x.i]; return h >= 1 && h <= 5; };
+  const lowly = (x) => x.kind === 'global' ? ((okHere && x.i != null && !usedHere(x)) ? 3 : 0)
+    : (_ccSide(x) || x.kind === 'nonprofit') ? 1 : _ccAbroad(x.e, ccx) ? 2 : 0;
+  for(const t of Object.keys(by)) if(t !== 'jobs' && t !== 'news'){
+    by[t] = by[t].map((x, i) => [x, i, lowly(x)]).sort((a, b) => (a[2] - b[2]) || (a[1] - b[1])).map(z => z[0]);
+    /* Which of them may take the place of an app people here do not use. */
+    Object.defineProperty(by[t], 'near', { value: new Set(by[t].filter(x => lowly(x) === 0)) });
+  }
   if(by.jobs) by.jobs = _ccJobsOrder(by.jobs, here, d && d.cc);
   if(by.news){
     /* A few outlets are filed in the country data under their address
@@ -1589,8 +1610,27 @@ function _ccFillDraw(root, by){
         unshown += tail.length - t;
       }
     } else {
-      fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
-      list.insertAdjacentHTML('beforeend', rows.slice(0, fill).map(svcRow).join(''));
+      /* An app people here do not use (data-far, 13-integrations.js) goes
+         after the country's own services: the services take its place and
+         it moves behind See the remaining (Nov 27: Swiggy and Zomato filled
+         Food in the United States ahead of its own restaurants). */
+      /* Only the services people here use take its place (rows.near, from
+         _ccFillBy); the rest come after it, as before. */
+      const put = (where, how, part) => { if(part.length) where.insertAdjacentHTML(how, part.map(svcRow).join('')); };
+      const far = [...list.querySelectorAll('.int-card[data-far]:not(.cc-dup):not(.cc-svc)')];
+      const nearN = rows.near ? rows.filter(x => rows.near.has(x)).length : rows.length, at = nearN ? far[0] : null;
+      if(at){
+        const apps = shown - far.length, nf = open ? nearN : Math.min(nearN, Math.max(0, CC_INT_SHOWN - apps));
+        put(at, 'beforebegin', rows.slice(0, nf));
+        const room = open ? far.length : Math.max(0, CC_INT_SHOWN - apps - nf);
+        if(!open){ far.slice(room).forEach(n => n.classList.add('cc-pushed')); pushed = Math.max(0, far.length - room); }
+        const t = open ? rows.length - nf : Math.max(0, CC_INT_SHOWN - apps - nf - Math.min(far.length, room));
+        put(list, 'beforeend', rows.slice(nf, nf + t));
+        fill = nf + t;
+      } else {
+        fill = open ? rows.length : Math.max(0, CC_INT_SHOWN - shown);
+        put(list, 'beforeend', rows.slice(0, fill));
+      }
       unshown = rows.length - fill;
     }
     const topicName = ((sec.querySelector('h3') || {}).textContent || '').trim();

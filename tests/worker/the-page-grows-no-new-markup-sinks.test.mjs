@@ -85,10 +85,13 @@ section('The files fetched on demand are held to the same account');
   const all = files.map(f => readFileSync(join(dir, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')).join('\n');
   const n = (re) => (all.match(re) || []).length;
   ok(files.length >= 25, 'there are files to read - an empty folder would pass everything below', files.length);
-  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 237], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 3], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
+  const LAZY = { 'innerHTML assignments': [CEILING['innerHTML assignments'][0], 238], 'insertAdjacentHTML calls': [CEILING['insertAdjacentHTML calls'][0], 3], 'outerHTML assignments': [CEILING['outerHTML assignments'][0], 3] };
   /* insertAdjacentHTML 3 (Nov 25): Jobs & careers puts the employers after
      the app cards (country-catalog.js), so the job sites lead - the same
      row markup as the other two, every name and site through escH.
+     innerHTML 238 (Nov 27): one - the placeholder card Integrations holds
+     a slot with until the country's services arrive (integrations-view.js),
+     fixed markup with no value in it at all.
      innerHTML 237 (Nov 25): one - the Team setup page (settings-panes.js),
      which replaced the preview popup: the page itself and its workspace
      list, redrawn as seats change, every value through escH.

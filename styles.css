@@ -18414,3 +18414,10 @@ body.light #anav{ background:var(--bg); }
 /* While filling, an empty topic's "nothing here yet" line takes no room -
    the placeholders hold its slots. */
 #int-catalog.int-filling .int-none{display:none}
+/* An app people in the country do not use is held like the empty slots
+   while the country's services arrive: they may take its place. */
+#int-catalog.int-filling .int-card[data-far] .int-ic,#int-catalog.int-filling .int-card[data-far] .int-name,
+#int-catalog.int-filling .int-card[data-far] .int-desc,#int-catalog.int-filling .int-card[data-far] .int-act > *{
+  color:transparent!important;background:var(--s2)!important;border-color:transparent!important;border-radius:var(--r-sm);box-shadow:none!important}
+#int-catalog.int-filling .int-card[data-far] .int-ic *,#int-catalog.int-filling .int-card[data-far] .int-act > * *{visibility:hidden}
+#int-catalog.int-filling .int-card[data-far]{pointer-events:none}

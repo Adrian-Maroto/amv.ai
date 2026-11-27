@@ -544,7 +544,17 @@ function _appReachKey(a, cc){
   if(world) return 7 + world;
   return _APP_DOORS.has(String(a.how || '').split(':')[0]) ? 1.5 : 50;
 }
-try{ window._appReachKey = _appReachKey; window._appReachLoad = _appReachLoad; }catch(e){}
+/* Whether people in the country use an app at all: its site among the
+   country's 100,000 most visited (bucket 1-5). Null until the file is here,
+   and for AMV's own doors, which have no site to measure. */
+function _appUsedHere(a, cc){
+  if(!_appReach || !a || !cc || typeof _appReach.c[cc] !== 'string') return null;
+  if(_APP_DOORS.has(String(a.how || '').split(':')[0])) return null;
+  const i = _appReach.idx[a.name]; if(i == null) return null;
+  const h = +(_appReach.c[cc][i] || 0);
+  return h > 0 && h <= 5;
+}
+try{ window._appReachKey = _appReachKey; window._appReachLoad = _appReachLoad; window._appUsedHere = _appUsedHere; }catch(e){}
 try{ _appReachLoad(); }catch(e){}
 
 /* THE COUNTRY, ON INTEGRATIONS TOO (Nov 23). The owner: "you should be able
