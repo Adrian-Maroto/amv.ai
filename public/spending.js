@@ -16,85 +16,64 @@ function _renderSpendingPaneNow(pane, redraw){
   const adult = comp ? comp.isAdult() : true;
   const hist = AMVSpend.history(25);
 
-  // What is standing between the user and being able to spend at all. Said up
-  // front, because the alternative is a purchase failing for a reason that is
-  // only explained after they have tried.
-  let gate = '';
-  if(comp && !accepted){
-    gate = '<div class="mf-gate" role="group" aria-labelledby="mf-gate-h">'+
-      '<h3 id="mf-gate-h">Before AMV can spend anything</h3>'+
-      '<p>Read what AMV can and cannot do with money, then accept. You can withdraw this at any time by turning spending off.</p>'+
-      '<ul class="mf-terms">'+ (comp.SUMMARY||[]).map(s => '<li>'+escH(s)+'</li>').join('') +'</ul>'+
-      '<button class="btn bp" id="mf-accept-terms" type="button">I accept these terms</button></div>';
-  } else if(comp && !ageKnown){
-    gate = '<div class="mf-gate" role="group" aria-labelledby="mf-age-h">'+
-      '<h3 id="mf-age-h">Confirm your age</h3>'+
-      '<p id="mf-age-why">Money features are for people ' + comp.ADULT_AGE + ' and over. We ask for the year only.</p>'+
-      '<label class="lbl" for="mf-birth">Year you were born</label>'+
-      '<input class="inp" id="mf-birth" type="number" inputmode="numeric" min="1900" max="'+(new Date().getFullYear())+'" '+
-        'placeholder="1998" autocomplete="bday-year" aria-describedby="mf-age-why mf-age-say">'+
-      '<div class="mf-say" id="mf-age-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="mf-save-birth" type="button">Confirm</button></div>';
-  } else if(comp && !adult){
-    gate = '<div class="mf-gate warn" role="note">'+
-      '<h3>Money features are ' + comp.ADULT_AGE + '+</h3>'+
-      '<p>Everything else in AMV keeps working. An adult can add you to their '+
-      '<b>Family</b> and set what AMV may spend for you.</p></div>';
-  }
+  /* ONE COLUMN, IN THE ORDER IT IS DECIDED (Nov 27, owner: "spending, what
+     it is, then the maximum spent this month, auto spend off, then the
+     limits, then save limits - very simple, centred, no lag").
 
-  const canConfigure = !gate;
+     It was three fact cards and then the same three things again in a pane
+     beneath them, the cards' buttons pressing the pane's controls - so
+     "Turn on" scrolled away and said to accept the terms first, and the card
+     changed only after the server answered. Now there is one of each: this
+     month, the switch, the limits. The switch changes the moment it is
+     pressed and goes back, saying why, if the account refuses; and where the
+     terms are still to be accepted they open right under the switch, with
+     the one button that accepts them and turns spending on. */
+  const needTerms = !!(comp && !accepted), needAge = !!(comp && accepted && !ageKnown), minor = !!(comp && accepted && ageKnown && !adult);
+  const inSettings = typeof redraw !== 'function';
+  const money = (n) => _mfMoney(n);
+  const stateLine = (on) => on ? T('AMV may buy within your limits') : T('AMV will not pay for anything');
+  const consentBox = needTerms
+    ? '<div class="mf-gate spx-consent" id="mf-consent" role="group" aria-labelledby="mf-gate-h" hidden>'+
+        '<h3 id="mf-gate-h">'+escH(T('Before AMV can spend anything'))+'</h3>'+
+        '<p>'+escH(T('Read what AMV can and cannot do with money, then accept. You can withdraw this at any time by turning spending off.'))+'</p>'+
+        '<ul class="mf-terms">'+ (comp.SUMMARY||[]).map(x => '<li>'+escH(x)+'</li>').join('') +'</ul>'+
+        '<button class="btn bp" id="mf-accept-terms" type="button">'+escH(T('I accept these terms'))+'</button></div>'
+    : needAge
+    ? '<div class="mf-gate spx-consent" id="mf-consent" role="group" aria-labelledby="mf-age-h" hidden>'+
+        '<h3 id="mf-age-h">'+escH(T('Confirm your age'))+'</h3>'+
+        '<p id="mf-age-why">Money features are for people ' + comp.ADULT_AGE + ' and over. We ask for the year only.</p>'+
+        '<label class="lbl" for="mf-birth">Year you were born</label>'+
+        '<input class="inp" id="mf-birth" type="number" inputmode="numeric" min="1900" max="'+(new Date().getFullYear())+'" '+
+          'placeholder="1998" autocomplete="bday-year" aria-describedby="mf-age-why mf-age-say">'+
+        '<div class="mf-say" id="mf-age-say" role="status" aria-live="polite"></div>'+
+        '<button class="btn bp" id="mf-save-birth" type="button">'+escH(T('Confirm'))+'</button></div>'
+    : '';
 
   pane.innerHTML =
-    '<h2 class="set-title">What AMV may spend for you</h2>'+
-    '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
-    /* THREE KINDS OF MONEY, NAMED APART (Build 17 audit B17-032). A purchase,
-       the AMV plan and a connected bank are three different things, and a
-       person who links a bank should not read that as AMV paying from it. */
-    '<dl class="mf-src">'+
-      '<div><dt>'+escH(T('Purchases'))+'</dt><dd>'+escH(T('Paid at the store’s own checkout, with the payment method you choose there. AMV never holds or sees it.'))+'</dd></div>'+
-      '<div><dt>'+escH(T('Your AMV plan'))+'</dt><dd>'+escH(T('Billed separately, and not counted here.'))+' <button type="button" class="lnk-inline" data-dact="setTab" data-darg="billing">'+escH(T('Billing'))+'</button></dd></div>'+
-      '<div><dt>'+escH(T('Connected banks'))+'</dt><dd>'+escH(T('Read only. AMV cannot pay from them or move money.'))+'</dd></div>'+
-    '</dl>'+
-    /* What this IS, before what it is set to.
-
-       The pane opened straight into three number fields. Somebody who has never
-       heard of AMV spending money on their behalf met "Buy without asking,
-       under" with no idea what would be bought, by what, or why they would want
-       it - which is the worst possible first impression for the one screen
-       about money. */
-    /* Folded behind one line. The consent gate below is NOT - agreeing to it
-       is the decision, and a decision is never hidden behind a tap. */
-    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
-      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
-      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
-      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
-      /* Said as AMV can show it (Build 16 audit D16-04): each sentence here is
-         a rule the server enforces or a fact of how buying works - nothing
-         wider than that. */
-      '<p><b>It is off until you turn it on.</b> With it off, AMV approves no purchase, however '+
-      'it is asked - it stops and tells you what it needs instead.</p>'+
-      '<ul class="mf-what-l">'+
-        '<li><b>How it buys</b> - AMV fills in the store\u2019s checkout in its browser and asks you first; '+
-          'you press the store\u2019s own pay button. It never presses it for you.</li>'+
-        '<li><b>What it does not do</b> - it does not move money between your accounts or send money '+
-          'to people. Switching this off stops any new purchase being approved; one you already paid for '+
-          'at the store is between you and the store.</li>'+
-        '<li><b>Why the limits matter</b> - the three numbers below are checked on your account before '+
-          'each purchase is approved, and the amount is held against the month first. A store can still '+
-          'charge more than it showed; when that happens it is booked and said on the receipt. The '+
-          'monthly ceiling decides the most AMV can approve in a month, so set it to a number you would '+
-          'not mind losing.</li>'+
-        '<li><b>It is written down</b> - each purchase recorded on your account appears below with what '+
-          'it was, where, and how much, and only you can see it.</li>'+
-      '</ul>'+
-    '</div></details>'+
-    gate +
-    (canConfigure ?
-    '<div class="ss2"><h3>Limits</h3>'+
-      '<div class="prv-pref"><div><div class="prv-pref-t">Let AMV spend money for me</div>'+
-        '<div class="prv-pref-s">Off means AMV approves no purchase, however it is asked.</div></div>'+
-        '<label class="sw"><input type="checkbox" id="mf-enabled" '+(c.enabled?'checked':'')+
-        ' aria-label="Let AMV spend money for me"><span class="sw-sl"></span></label></div>'+
+    (inSettings ? '<h2 class="set-title">'+escH(T('Spending'))+'</h2>'+
+      '<div class="set-sub">'+escH(T('When you ask chat or Crew to buy something, this decides whether AMV may pay for it, and caps what it spends in a month.'))+'</div>' : '')+
+    '<div class="spx">'+
+    /* This month: what is spent, of the most AMV may spend. */
+    '<div class="spx-card spx-month" id="spv-money-facts">'+
+      '<h3 class="spx-l">'+escH(T('Spent this month'))+'</h3>'+
+      '<div class="spx-big"><b id="spx-spent">'+escH(money(spent))+'</b> <span id="spx-of">/ '+escH(money(cap))+'</span></div>'+
+      '<div class="mf-bar" role="img" aria-label="'+escH(money(spent)+' / '+money(cap))+'"><span id="spx-bar" style="width:'+pct+'%"></span></div>'+
+      '<div class="spx-s"><span>'+escH(T('Monthly maximum'))+': <b id="spx-cap">'+escH(money(cap))+'</b></span><span>'+escH(T('Left this month'))+': <b id="spx-left">'+escH(money(AMVSpend.remaining()))+'</b></span></div>'+
+    '</div>'+
+    /* The switch. */
+    '<div class="spx-card spx-auto">'+
+      '<div class="spx-auto-t"><h3 class="spx-l">'+escH(T('Auto-spend'))+'</h3>'+
+        '<div class="spx-auto-s" id="spx-auto-s" role="status" aria-live="polite">'+escH(minor ? T('Money features are for adults.') : stateLine(c.enabled))+'</div>'+
+        '<div class="mf-say" id="mf-auto-say" aria-live="assertive"></div></div>'+
+      '<label class="sw"><input type="checkbox" id="mf-enabled" '+(c.enabled?'checked':'')+(minor?' disabled':'')+
+        ' aria-label="'+escH(T('Let AMV spend money for me'))+'" aria-describedby="spx-auto-s"><span class="sw-sl"></span></label>'+
+    '</div>'+
+    consentBox +
+    (minor ? '<div class="mf-gate warn" role="note"><h3>Money features are ' + comp.ADULT_AGE + '+</h3>'+
+      '<p>Everything else in AMV keeps working. An adult can add you to their <b>Family</b> and set what AMV may spend for you.</p></div>' : '')+
+    /* The limits, and the one button that saves them - not offered to
+       somebody the account would refuse to spend for. */
+    (minor ? '' : '<div class="spx-card spx-limits"><h3>'+escH(T('Limits'))+'</h3>'+
       '<div class="mf-grid">'+
         '<div><label class="lbl" for="mf-auto">Buy without asking, under</label>'+
           '<input class="inp" id="mf-auto" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.autoUnder))+'" '+
@@ -114,33 +93,62 @@ function _renderSpendingPaneNow(pane, redraw){
           '</select><div class="mf-hint" id="mf-cur-h">Stores that charge in another currency are not bought from.</div></div>'+
       '</div>'+
       '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
+      '<button class="btn bp spx-save" id="mf-save-limits" type="button">'+escH(T('Save limits'))+'</button>'+
       /* Where the ceiling is actually held. Without a backend these numbers are
          a preference on this device, and saying otherwise would be the exact
          false reassurance this screen exists to avoid. */
       '<p class="mf-hint mf-where">'+ (AMVSpend.serverBacked()
         ? 'These limits are held on your account, so they apply on every device and cannot be raised from this browser.'
         : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Once it is connected they move to your account and apply everywhere.') +'</p>'+
-    '</div>'+
-    '<div class="ss2"><h3>This month</h3>'+
-      '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent of '+escH(_mfMoney(cap))+'">'+
-        '<span style="width:'+pct+'%"></span></div>'+
-      '<div class="mf-bar-l">'+escH(_mfMoney(spent))+' spent · '+escH(_mfMoney(AMVSpend.remaining()))+' left of '+escH(_mfMoney(cap))+'</div>'+
-    '</div>' : '')+
-    '<div class="ss2"><h3>Purchases</h3>'+
-      (hist.length ?
+    '</div>')+
+    (hist.length ?
+      '<div class="spx-card"><h3>'+escH(T('Purchases'))+'</h3>'+
         '<table class="mf-tbl"><caption class="mf-cap">'+escH(T('Purchases recorded on this device'))+'</caption>'+
         '<thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Where</th><th scope="col">Amount</th></tr></thead><tbody>'+
         hist.map(h => '<tr><td>'+escH(_mfWhen(h.at))+'</td><td>'+escH(h.item||'-')+'</td>'+
           '<td>'+escH(h.merchant||'-')+'</td><td>'+escH(_mfMoney(h.amount))+'</td></tr>').join('')+
-        '</tbody></table>'
-        : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
-    '</div>'+
+        '</tbody></table></div>' : '')+
     /* What AMV bought in its browser, from the server's receipts
        (69-buying.js): store, total, order number, and whether the order was
        seen on the store's own confirmation page. */
-    (AMVSpend.serverBacked() ? '<div class="ss2" id="mf-buys"><h3>Bought in AMV\u2019s browser</h3><div id="mf-buys-b" role="status" aria-live="polite"><p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p></div></div>' : '')+
-    '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
+    (AMVSpend.serverBacked() ? '<div class="spx-card" id="mf-buys"><h3>Bought in AMV’s browser</h3><div id="mf-buys-b" role="status" aria-live="polite"><p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p></div></div>' : '')+
+    /* How it works, folded, at the end: read when wanted, never in the way. */
+    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
+      '<dl class="mf-src">'+
+        '<div><dt>'+escH(T('Purchases'))+'</dt><dd>'+escH(T('Paid at the store’s own checkout, with the payment method you choose there. AMV never holds or sees it.'))+'</dd></div>'+
+        '<div><dt>'+escH(T('Your AMV plan'))+'</dt><dd>'+escH(T('Billed separately, and not counted here.'))+' <button type="button" class="lnk-inline" data-dact="setTab" data-darg="billing">'+escH(T('Billing'))+'</button></dd></div>'+
+        '<div><dt>'+escH(T('Connected banks'))+'</dt><dd>'+escH(T('Read only. AMV cannot pay from them or move money.'))+'</dd></div>'+
+      '</dl>'+
+      '<p><b>It is off until you turn it on.</b> With it off, AMV approves no purchase, however '+
+      'it is asked - it stops and tells you what it needs instead.</p>'+
+      '<ul class="mf-what-l">'+
+        '<li><b>How it buys</b> - AMV fills in the store’s checkout in its browser and asks you first; '+
+          'you press the store’s own pay button. It never presses it for you.</li>'+
+        '<li><b>What it does not do</b> - it does not move money between your accounts or send money '+
+          'to people. Switching this off stops any new purchase being approved; one you already paid for '+
+          'at the store is between you and the store.</li>'+
+        '<li><b>Why the limits matter</b> - the three numbers above are checked on your account before '+
+          'each purchase is approved, and the amount is held against the month first. A store can still '+
+          'charge more than it showed; when that happens it is booked and said on the receipt. The '+
+          'monthly ceiling decides the most AMV can approve in a month, so set it to a number you would '+
+          'not mind losing.</li>'+
+        '<li><b>It is written down</b> - each purchase recorded on your account appears here with what '+
+          'it was, where, and how much, and only you can see it.</li>'+
+      '</ul>'+
+    '</div></details>'+
+    '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>'+
+    '</div>';
+
+  /* This month's figures, written in place - after a pull, a save or a switch -
+     so nothing on the screen is drawn twice. */
+  const paintMonth = () => {
+    const cc = AMVSpend.cfg(), sp = AMVSpend.spentThisMonth(), cp = +cc.monthlyCap || 0;
+    const set = (id, v) => { const el = $(id); if(el) el.textContent = v; };
+    set('spx-spent', money(sp)); set('spx-of', '/ ' + money(cp)); set('spx-cap', money(cp)); set('spx-left', money(AMVSpend.remaining()));
+    const bar = $('spx-bar'); if(bar) bar.style.width = (cp ? Math.min(100, Math.round(sp / cp * 100)) : 0) + '%';
+    const sw = $('mf-enabled'); if(sw && !sw.disabled && !sw.dataset.busy) sw.checked = !!cc.enabled;
+    const st = $('spx-auto-s'); if(st && !minor) st.textContent = stateLine(!!(sw ? sw.checked : cc.enabled));
+  };
 
   /* EVERY STATE SAID, AND EVERY RECEIPT REACHABLE (Build 16 audit D16-02).
      The section stayed hidden when the request failed or came back with
@@ -193,31 +201,58 @@ function _renderSpendingPaneNow(pane, redraw){
     }).catch(fail);
   };
   if($('mf-buys')) _mfBuys();
-  on($('mf-accept-terms'),'click',function(){
-    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
-    catch(e){ toast(e.message||'Could not save that','error'); }
-  });
-  on($('mf-save-birth'),'click',function(){
-    const v = ($('mf-birth')||{}).value;
-    try{
-      AMVCompliance.setBirthYear(v);
-      toast('Thanks - that is saved','success',2500); _again();
-    }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
-  });
-  on($('mf-enabled'),'change',async function(){
-    const want = this.checked, box = this;
-    box.disabled = true;
+  /* The switch: changed on the screen at once, saved behind it, and put back
+     - with the reason - only if the account refuses. Where the terms (or the
+     year of birth) are still to come, pressing it opens them right here
+     instead, and accepting turns spending on in the same press. */
+  const turnOn = async (want) => {
+    const box = $('mf-enabled'); if(!box) return;
+    box.checked = want; box.dataset.busy = '1';
+    const st = $('spx-auto-s'); if(st) st.textContent = stateLine(want);
     try{
       const cur = AMVSpend.cfg();
-      await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
-                            monthlyCap:cur.monthlyCap, enabled:want });
-      _mfSay('mf-limits-say', want ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
+      /* The state line above has already said it; nothing else moves. */
+      _mfSay('mf-auto-say', '', '');
+      await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase, monthlyCap:cur.monthlyCap, enabled:want });
     }catch(e){
       /* Leaving the switch showing "off" while the account still allows spending
          is the one outcome worth reverting the control for. */
-      box.checked = !want;
-      _mfSay('mf-limits-say', (e && e.message) || 'Could not change that on your account. It is unchanged.', 'err');
-    }finally{ box.disabled = false; }
+      box.checked = !want; if(st) st.textContent = stateLine(!want);
+      _mfSay('mf-auto-say', (e && e.message) || T('Could not change that on your account. It is unchanged.'), 'err');
+    }finally{ delete box.dataset.busy; paintMonth(); }
+  };
+  on($('mf-enabled'),'change',function(){
+    const want = this.checked;
+    const gate = $('mf-consent');
+    if(want && gate){
+      this.checked = false;
+      gate.hidden = false;
+      try{ gate.scrollIntoView({ block:'nearest', behavior:'smooth' }); }catch(e){}
+      try{ (gate.querySelector('#mf-birth') || gate.querySelector('button')).focus({ preventScroll:true }); }catch(e){}
+      return;
+    }
+    turnOn(want);
+  });
+  on($('mf-accept-terms'),'click',function(){
+    try{ AMVCompliance.accept(); }catch(e){ toast(e.message||'Could not save that','error'); return; }
+    /* The year of birth is the one step left, if it is not known: drawn in
+       the same place, then the switch goes on. */
+    if(comp && !comp.ageKnown()){
+      _again();
+      const g = $('mf-consent'); if(g){ g.hidden = false; try{ $('mf-birth').focus({ preventScroll:true }); }catch(e){} }
+      return;
+    }
+    if(comp && !comp.isAdult()){ _again(); return; }
+    const g = $('mf-consent'); if(g) g.remove();
+    turnOn(true);
+  });
+  on($('mf-save-birth'),'click',function(){
+    const v = ($('mf-birth')||{}).value;
+    try{ AMVCompliance.setBirthYear(v); }
+    catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); return; }
+    if(comp && !comp.isAdult()){ _again(); return; }
+    const g = $('mf-consent'); if(g) g.remove();
+    turnOn(true);
   });
   on($('mf-save-limits'),'click',async function(){
     const auto = +($('mf-auto')||{}).value, per = +($('mf-per')||{}).value, capv = +($('mf-cap')||{}).value;
@@ -240,6 +275,7 @@ function _renderSpendingPaneNow(pane, redraw){
       if($('mf-per')) $('mf-per').value = String(L.perPurchase);
       if($('mf-cap')) $('mf-cap').value = String(L.monthlyCap);
       const changed = (L.autoUnder !== auto || L.perPurchase !== per || L.monthlyCap !== capv);
+      paintMonth();
       _mfSay('mf-limits-say',
         (changed ? 'Saved, adjusted to the highest AMV allows. ' : 'Saved. ')+
         'AMV buys under '+_mfMoney(L.autoUnder)+' on its own, asks up to '+_mfMoney(L.perPurchase)+
@@ -251,17 +287,19 @@ function _renderSpendingPaneNow(pane, redraw){
     }finally{ btn.disabled = false; }
   });
 
-  /* Adopt the server's numbers, then redraw once. */
-  if(canConfigure && AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
+  /* Adopt the server's numbers, written into the fields in place - the
+     whole pane drawn again here was the jump the owner saw ("it shows
+     something and then something else"). A field somebody is typing in is
+     left alone. */
+  if(AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
     _SPEND_BUSY = true;
-    const _before = JSON.stringify(AMVSpend.cfg()) + '|' + AMVSpend.spentThisMonth();
     AMVSpend.pull().then(function(){
       _SPEND_PULLED = true; _SPEND_BUSY = false;
-      /* Drawn again only if the account's numbers differ from this device's -
-         most of the time they are the same, and a redraw for nothing is a
-         jump somebody sees. */
-      const _after = JSON.stringify(AMVSpend.cfg()) + '|' + AMVSpend.spentThisMonth();
-      try{ if(_after !== _before && document.getElementById('mf-save-limits')) _again(); }catch(e){}
+      const cc = AMVSpend.cfg();
+      [['mf-auto','autoUnder'],['mf-per','perPurchase'],['mf-cap','monthlyCap']].forEach(([id,k]) => {
+        const el = $(id); if(el && document.activeElement !== el) el.value = String(cc[k]); });
+      const cur = $('mf-cur'); if(cur && document.activeElement !== cur && cc.currency) cur.value = cc.currency;
+      paintMonth();
     }).catch(function(){
       /* Not fatal - the local mirror still renders. Marked pulled so a failed
          read does not retry on every redraw. */

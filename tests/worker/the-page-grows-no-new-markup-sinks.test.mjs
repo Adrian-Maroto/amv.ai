@@ -44,7 +44,9 @@ const CEILING = {
      (one fewer here) and the page keeps a stand-in that draws "Loading…"
      and, when the file cannot be fetched, a Retry line (two). Both are fixed
      sentences through T() and escH. */
-  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 397],
+  /* 395 (Nov 27): DOWN two - Spending's fact cards (_spvMoneyFacts) are gone;
+     the month is written in place by spending.js with textContent. */
+  'innerHTML assignments': [/\.innerHTML\s*\+?=(?!=)/g, 395],
   'insertAdjacentHTML calls': [/insertAdjacentHTML\s*\(/g, 11],
   'outerHTML assignments': [/\.outerHTML\s*=(?!=)/g, 7],
   'document.write (the checkout window’s own placeholder)': [/document\.write(ln)?\s*\(/g, 1],

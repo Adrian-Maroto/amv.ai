@@ -16,7 +16,9 @@ const { page, errors } = app;
 section('Spending names the three kinds of money apart');
 {
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); S.settingsPane = 'spending'; setTab('settings'); });
-  await page.waitForSelector('.mf-src', { timeout: 15000 });
+  await page.waitForSelector('.mf-src', { state: 'attached', timeout: 15000 });
+  /* Folded under "How this works" since Nov 27 - read when wanted. */
+  await page.click('details.mf-what > summary');
   const r = await page.evaluate(() => [...document.querySelectorAll('.mf-src > div')].map(d => d.innerText.replace(/\s+/g, ' ')));
   ok(r.length === 3, 'three rows', r);
   ok(/store’s own checkout/.test(r[0]) && /never holds or sees it/.test(r[0]), 'a purchase is paid at the store, and AMV never holds the card', r[0]);

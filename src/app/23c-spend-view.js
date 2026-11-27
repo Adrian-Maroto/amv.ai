@@ -22,80 +22,12 @@
 
 
 
-/* THE FOUR ANSWERS, EACH WITH ITS ONE ACTION (Nov 10, owner's words: "bank
-   account linked or no, max AMV can spend in a month, money spent this month,
-   and auto spend on or off - so easy").
-
-   They were four lines of text, which answered the question and then left the
-   person to find, further down, the control that changes it. Each is now a
-   card that says the fact and carries the thing you would do about it: link
-   a bank, change the ceiling, see how much of it is left, switch spending on
-   or off. The editors below stay the one real copy; these cards point at them
-   or press their controls, they do not duplicate them. */
-function _spvMoneyFacts() {
-  const c = (typeof AMVSpend !== 'undefined') ? AMVSpend.cfg() : null;
-  const money = (n) => (typeof _mfMoney === 'function') ? _mfMoney(n) : ('$' + (+n || 0).toFixed(2));
-  const spent = c ? (+AMVSpend.spentThisMonth() || 0) : 0;
-  const cap = c ? (+c.monthlyCap || 0) : 0;
-  const pct = cap > 0 ? Math.min(100, Math.round(spent / cap * 100)) : 0;
-  const card = (label, big, small, act, extra, cls) =>
-    '<div class="spv-f spv-fc' + (cls ? ' ' + cls : '') + '">'
-    + '<div class="spv-fc-l">' + escH(label) + '</div>'
-    + '<div class="spv-f-b">' + escH(big) + '</div>'
-    + '<div class="spv-f-s">' + escH(small) + '</div>'
-    + (extra || '')
-    + (act ? '<button class="btn bs spv-fc-a" type="button" data-spv-go="' + act[0] + '">' + escH(act[1]) + '</button>' : '')
-  + '</div>';
-  /* THREE, NOT FOUR (Nov 15, owner: "if you tell chat or Crew to spend money,
-     this regulates the total monthly budget"). The bank card is gone: it was
-     the investing check-in's link, which decides nothing about what AMV may
-     buy, and on this screen it read as if it did. */
-  return '<div class="spv-facts spv-facts-m spv-fcards" id="spv-money-facts">'
-    + card(T('Monthly maximum'), c ? money(cap) : '-', T('the most AMV may spend a month'),
-           c ? ['cap', T('Change')] : null)
-    + card(T('Spent this month'), c ? money(spent) : '-',
-           c ? (T('Left this month') + ': ' + money(Math.max(0, cap - spent))) : T('spent this month'), null,
-           c ? '<div class="mf-bar spv-fc-bar" role="img" aria-label="' + escH(money(spent) + ' / ' + money(cap)) + '"><span style="width:' + pct + '%"></span></div>' : '')
-    + card(T('Auto-spend'), c && c.enabled ? T('On') : T('Off'),
-           c && c.enabled ? T('AMV may buy within your limits') : T('AMV will not pay for anything'),
-           c ? ['auto', c.enabled ? T('Turn off') : T('Turn on')] : null, '', c && c.enabled ? 'on' : '')
-  + '</div>';
-}
-
-/* What each card's button does. The switch and the ceiling are the editor's
-   own controls, so a change made here is made by exactly the code that makes
-   it below - consent gate, server confirmation and all. */
-function _spvGo(what) {
-  const to = (id) => { const e = $(id); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); return e; };
-  if (what === 'cap') {
-    const cap = $('mf-cap');
-    if (cap) { cap.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { try { cap.focus(); cap.select(); } catch (e) {} }, 350); }
-    else to('spv-limits');   // the consent step comes first, and that is what is shown there
-    return;
-  }
-  if (what === 'auto') {
-    const box = $('mf-enabled');
-    if (box && !box.disabled) { box.click(); return; }
-    to('spv-limits');
-    toast(T('Read and accept how spending works first - it is just below.'), 'info');
-  }
-}
-function _spvRefreshFacts() {
-  const old = $('spv-money-facts'); if (!old) return;
-  const t = document.createElement('div'); t.innerHTML = _spvMoneyFacts();
-  old.replaceWith(t.firstElementChild);
-}
-
 function renderSpendView() {
-  /* SPENDING, AND ONLY SPENDING.
-
-     "Remove this from upgrade plan": Upgrade opened this page, and this page
-     opened on what Spending is, then the plan and its limits, then the money,
-     then the watchlist, then - at the bottom - the plans. Two screens in one,
-     and neither was the one somebody pressing Upgrade wanted. Now Upgrade has
-     its own screen (renderPlansView), the plan and its limits live in Plan &
-     billing, and this is the money AMV may spend for you: the balance and the
-     ceiling, the limits, the account it can see, what it is watching for. */
+  /* SPENDING, AND ONLY SPENDING: what it is, this month, the switch, the
+     limits - one centred column (Nov 27, owner). The three fact cards that
+     sat above the pane were a second copy of it, their buttons pressing the
+     pane's controls from a distance; they are gone, and the pane says each
+     thing once (spending.js). */
   const vc = $('vc'); if (!vc) return;
   vc.innerHTML =
     '<div class="sv fi"><div class="vi spv">'
@@ -103,34 +35,12 @@ function renderSpendView() {
         + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
         + '<p class="spv-sub">' + escH(T('When you ask chat or Crew to buy something, this decides whether AMV may pay for it, and caps what it spends in a month.')) + '</p>'
       + '</div>'
-      + _spvMoneyFacts()
-      /* The limits editor is the same pane Settings renders - one copy of the
-         most consequential control. Investing and the price watchlist are no
-         longer on this screen (Nov 15, the owner's call): this is the budget. */
       + '<section class="spv-sec" id="spv-limits"></section>'
     + '</div></div>';
-
-  /* When the pane needs drawing again (the server's numbers arrived, a limit
-     was saved) only the pane is drawn again, and the facts above refreshed in
-     place - redrawing this whole screen made it jump under the person reading
-     it. */
-  const redrawPane = () => { const p = $('spv-limits'); if (p && typeof window._renderSpendingPaneNow === 'function') window._renderSpendingPaneNow(p, redrawPane); try { _spvRefreshFacts(); } catch (e) {} };
-  try { _renderSpendingPane($('spv-limits'), redrawPane); } catch (e) {}
-  on(vc.querySelector('.spv'), 'click', _spvFactClick);
-  /* The editor below changes the facts above: when it says something (saved,
-     switched on, refused) the cards are read again from the same store. */
-  try {
-    const lim = $('spv-limits');
-    if (lim && 'MutationObserver' in window) {
-      let t = 0;
-      new MutationObserver(() => { clearTimeout(t); t = setTimeout(_spvRefreshFacts, 120); })
-        .observe(lim, { subtree: true, childList: true, characterData: true });
-    }
-  } catch (e) {}
-}
-function _spvFactClick(e) {
-  const b = e.target && e.target.closest && e.target.closest('[data-spv-go]');
-  if (b) _spvGo(b.dataset.spvGo);
+  /* Drawn again in place when it needs to be (terms accepted, age given),
+     the header above untouched. */
+  const redrawPane = () => { const p = $('spv-limits'); if (p && typeof window._renderSpendingPaneNow === 'function') window._renderSpendingPaneNow(p, redrawPane); };
+  try { _renderSpendingPane($('spv-limits'), redrawPane); } catch (e) { try { console.error('AMV: the spending pane could not be drawn', e); } catch (_) {} }
 }
 
 

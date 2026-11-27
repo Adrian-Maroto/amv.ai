@@ -41,11 +41,14 @@ await openPane('spending');
 const gate1 = await page.evaluate(() => ({
   blocked: AMVCompliance.gate('spend'),
   hasAccept: !!document.getElementById('mf-accept-terms'),
-  limitsHidden: !document.getElementById('mf-auto')
+  /* Pressing the switch opens the terms and leaves spending off (Nov 27:
+     the limits are on the screen, the decision to spend is not taken yet). */
+  limitsHidden: (() => { const b = document.getElementById('mf-enabled'); b.click();
+    return !b.checked && !AMVSpend.cfg().enabled && !document.getElementById('mf-consent').hidden; })()
 }));
 ok(typeof gate1.blocked === 'string', 'spending starts refused until consent is given', gate1.blocked);
 ok(gate1.hasAccept, 'and the pane offers the accept button that unblocks it');
-ok(gate1.limitsHidden, 'limits are not shown before consent - one decision at a time');
+ok(gate1.limitsHidden, 'the switch opens the terms instead of turning spending on - one decision at a time');
 
 const gate2 = await page.evaluate(async () => {
   document.getElementById('mf-accept-terms').click();
@@ -109,18 +112,18 @@ ok(good.under.allow && !good.under.needsApproval, 'a $10 purchase now goes throu
 ok(good.over.allow && good.over.needsApproval, 'a $60 purchase asks first');
 ok(good.way.allow === false, 'a $150 purchase is refused by the limit the user just typed');
 
-section('Purchases are listed, and an empty history says so');
+section('Purchases are listed, and an empty month says so');
 const hist = await page.evaluate(() => {
-  const before = document.querySelector('.set-pane').textContent;
+  const before = (document.getElementById('spx-spent') || {}).textContent;
   AMVSpend.record(24.5, { item: 'Graphing calculator', merchant: 'Campus Store', rule: 'auto' });
   renderSetPane();
   const el = document.querySelector('.set-pane');
-  return { emptyBefore: /has not bought anything/.test(before),
+  return { emptyBefore: before === '$0.00',
            row: /Graphing calculator/.test(el.textContent) && /Campus Store/.test(el.textContent),
            amount: /\$24\.50/.test(el.textContent),
            table: !!document.querySelector('.mf-tbl th[scope="col"]') };
 });
-ok(hist.emptyBefore, 'an empty history is stated plainly rather than left blank');
+ok(hist.emptyBefore, 'an empty month is stated plainly: spent $0.00', hist);
 ok(hist.row, 'a real purchase appears with what it was and where');
 ok(hist.amount, 'with the amount');
 ok(hist.table, 'and the table has proper column headers for screen readers');

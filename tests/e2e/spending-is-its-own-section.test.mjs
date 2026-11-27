@@ -74,9 +74,11 @@ section('Spending is its own tab, and is only Spending');
       plans: vc.querySelectorAll('.pg .plan, .pg > *, .pl2-card').length,
       planBlock: /Your plan, and what it gives you|Upgrade your plan|How the limit actually works/i.test(t),
       whatFolded: (() => { const d = vc.querySelector('details.mf-what'); return !!d && !d.open; })(),
-      gate: /Before AMV can spend anything/i.test(t),
+      /* The consent opens when the switch is pressed (Nov 27), right under it. */
+      gate: (() => { document.getElementById('mf-enabled').click(); return /Before AMV can spend anything/i.test(vc.innerText); })(),
       gateFolded: !!(vc.querySelector('.mf-gate') && vc.querySelector('.mf-gate').closest('details')),
-      purchases: /AMV has not bought anything for you/i.test(t),
+      /* With nothing bought the month says so: spent $0.00. */
+      purchases: /Spent this month/i.test(t) && (document.getElementById('spx-spent') || {}).textContent === '$0.00',
       chars: t.length,
       rail: !!document.querySelector('.sb-tool[data-tab="spend"]'),
     };
@@ -104,7 +106,10 @@ section('The limits live in exactly one place');
   const v = await page.evaluate(async () => {
     S.settingsPane = 'billing'; setTab('settings');
     await new Promise(r => setTimeout(r, 700));
-    return { caps: document.querySelectorAll('#mf-cap').length, usage: !!document.getElementById('set-sec-usage') };
+    /* Scoped to Settings: the Spending screen it was opened over keeps its own
+       limits (shown before consent since Nov 27), and that is the one place. */
+    const pane = document.getElementById('set-pane') || document.querySelector('.set-pane');
+    return { caps: pane ? pane.querySelectorAll('#mf-cap').length : -1, usage: !!document.getElementById('set-sec-usage') };
   });
   ok(v.caps === 0, 'Plan & billing holds no second copy of the spending limits', v.caps);
   ok(v.usage, 'while usage is still part of the plan screen');

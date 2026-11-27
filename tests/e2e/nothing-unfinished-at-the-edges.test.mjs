@@ -49,15 +49,18 @@ section('A closed drawer on a phone casts no shadow onto the page');
   ok(!again.open && again.reach === 0, 'and closing it takes the shadow with it', again);
 }
 
-section('Spending: the explainer and the consent card are two boxes, not one');
+section('Spending: the consent card and the cards around it are separate boxes');
 {
   /* The limits pane arrives from spending.js the first time. */
   await page.evaluate(async () => { setTab('spend'); for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50)); });
   await page.waitForTimeout(500);
+  /* Since Nov 27 the terms open under the switch when it is pressed. */
+  await page.click('.spx-auto .sw');
   const gap = await page.evaluate(() => {
-    const fold = document.querySelector('.mf-what'), gate = document.querySelector('.mf-gate');
-    if (!fold || !gate) return { missing: !fold ? 'fold' : 'gate' };
-    return { gap: gate.getBoundingClientRect().top - fold.getBoundingClientRect().bottom };
+    const auto = document.querySelector('.spx-auto'), gate = document.querySelector('.mf-gate'), lim = document.querySelector('.spx-limits');
+    if (!auto || !gate || !lim) return { missing: !auto ? 'switch' : !gate ? 'gate' : 'limits' };
+    const g = gate.getBoundingClientRect();
+    return { gap: Math.min(g.top - auto.getBoundingClientRect().bottom, lim.getBoundingClientRect().top - g.bottom) };
   });
   ok(gap.gap >= 8, 'there is clear space between them', gap);
 }

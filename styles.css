@@ -13997,18 +13997,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 
 /* What you are on, and what it gives you. */
 
-/* The four numbers the server refuses on. Equal weight, because no one of
-   them is the one somebody meets first. */
-.spv-facts{
-  display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:var(--sp-4); margin-top:var(--sp-5);
-  padding-top:var(--sp-4); border-top:1px solid var(--bdl);
-}
-/* min-width:0 so a long number wraps inside its column instead of widening
-   the track and pushing the fourth fact off the panel. */
-.spv-f{ min-width:0; }
-.spv-f-b{ font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:640; line-height:1.15; }
-.spv-f-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.4; margin-top:2px; }
 
 .spv-sec{ margin-top:var(--sp-7); }
 /* The borrowed panes' own heading, demoted from a page title to a section
@@ -14017,10 +14005,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .spv .set-title{ font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:640; margin:0 0 var(--sp-2); }
 .spv .set-sub{ font-size:var(--t-md); color:var(--mu); margin-bottom:var(--sp-4); max-width:64ch; }
 
-@media (max-width:860px){
-  .spv-facts{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-3); }
-
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
    LAYER A238 - the connector's own logo, over the letter it falls back to
@@ -14174,9 +14158,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    numbers makes the page read as being about the sale.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* The money row is four facts like the plan row, so it uses the same grid and
-   only says what is different: these are dollars, not allowances. */
-.spv-facts-m{ border-top:none; padding-top:0; margin-top:var(--sp-2); }
 
 /* ── Watching for a price ────────────────────────────────────────────────── */
 
@@ -16447,22 +16428,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .mact-mi:hover,.mact-mi:focus-visible{background:var(--s3);outline:none}
 @media (hover:none){.mact-mi{min-height:44px}}
 
-/* LAYER A354 - Spending's four answers as cards, each with its action
-   (Nov 10). Equal widths, the label above the number, the button pinned to
-   the bottom so a row of four lines up whatever the text. Two by two on a
-   tablet, one column on a phone. */
-.spv-fcards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3);margin:var(--sp-5) 0 var(--sp-6)}
-.spv-fc{display:flex;flex-direction:column;gap:6px;min-width:0;padding:var(--sp-4);background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg)}
-.spv-fc-l{font-size:var(--t-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mu)}
-.spv-fc .spv-f-b{font-family:var(--fdisplay);font-size:var(--t-xl);font-weight:600;color:var(--tx);overflow-wrap:anywhere}
-.spv-fc .spv-f-s{font-size:var(--t-sm);color:var(--mu);overflow-wrap:anywhere}
-.spv-fc.on .spv-f-b{color:var(--grn)}
-.spv-fc-bar{margin-top:2px}
-.spv-fc-a{margin-top:auto;align-self:flex-start;min-height:36px}
-@media (hover:none){.spv-fc-a{min-height:44px}}
-@media (max-width:1100px){.spv-fcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:359px){.spv-fcards{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:560px){.spv-fc{padding:var(--sp-3)}.spv-fc .spv-f-b{font-size:var(--t-lg)}.spv-fcards{gap:var(--sp-2)}}
 
 /* LAYER A355 - Crew is centred (Nov 10, owner: "Crew in the middle with an
    explanation, the text box, clear and simple"). One header for both the
@@ -16865,12 +16830,6 @@ body.light #app .vi-conn .int-mono{background:hsl(var(--mono-h,220) 55% 50% / .1
 .bank-st{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-2);padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1)}
 .bank-st p{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
 .bank-st.on b{color:var(--grn-txt)}
-/* Spending has three cards since Nov 15 (the bank card left): three equal
-   columns, and where they wrap to two, the odd one out spans the row rather
-   than leaving a hole beside it. */
-.spv-fcards{grid-template-columns:repeat(3,minmax(0,1fr))}
-@media (max-width:1100px){.spv-fcards{grid-template-columns:repeat(2,minmax(0,1fr))}.spv-fcards > .spv-fc:last-child:nth-child(odd){grid-column:1 / -1}}
-@media (max-width:359px){.spv-fcards > .spv-fc:last-child:nth-child(odd){grid-column:auto}}
 /* A SWITCH THAT IS STILL A SWITCH ON A PHONE. The touch rule makes every
    control 44px tall (LAYER A54), which stretched the 42x24 switch into a dark
    blob with its knob in a corner. The button keeps the 44px target; only its
@@ -18393,3 +18352,40 @@ body.light #anav{ background:var(--bg); }
   .hc2-hero h2{font-size:var(--t-2xl)}
   .hc2-help{grid-template-columns:1fr}
 }
+
+/* ═══ LAYER A421 - Spending as one centred column ═══
+   Owner, Nov 27: "spending, what it is, the maximum spent this month,
+   auto-spend, the limits, save limits - very simple, centred". One column
+   of the reading width, its title centred over it; this month, the switch
+   and the limits each a card of the same width; the folds at the end. */
+:is(#vc,#set-modal) .sv .vi.spv{max-width:640px!important;margin-left:auto!important;margin-right:auto!important}
+:is(#vc,#set-modal) .spv .spv-head{text-align:center;margin-bottom:var(--sp-5)}
+:is(#vc,#set-modal) .spv .spv-sub{margin-left:auto!important;margin-right:auto!important}
+.spx{display:flex;flex-direction:column;gap:var(--sp-4)}
+.spx-card{border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1);padding:var(--sp-5)}
+.spx-card h3{margin:0 0 var(--sp-3);font-size:var(--t-md);font-weight:600}
+.spx-l{font-size:var(--t-sm);font-weight:600;color:var(--mu)}
+.spx-big{margin:var(--sp-1) 0 var(--sp-3);font-family:var(--fdisplay);font-size:var(--t-2xl);font-weight:600;letter-spacing:-.01em}
+.spx-big span{font-size:var(--t-lg);color:var(--mu);font-weight:500}
+.spx-month .mf-bar{margin:0 0 var(--sp-3)}
+.spx-s{display:flex;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap;font-size:var(--t-sm);color:var(--mu)}
+.spx-s b{color:var(--tx);font-weight:600}
+.spx-auto{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+.spx-auto-t{min-width:0}
+.spx-auto-s{font-size:var(--t-base);color:var(--tx);margin-top:2px}
+.spx-consent{margin:0!important}
+.spx-limits .mf-grid{margin-bottom:var(--sp-3)}
+.spx-save{width:100%;min-height:44px;margin-top:var(--sp-2)}
+.spx .set-fold{margin:0!important}
+.spx .mf-where{margin:var(--sp-3) 0 0}
+@media (max-width:640px){.spx-card{padding:var(--sp-4)}.spx-big{font-size:var(--t-xl)}}
+/* One spacing between the cards: the old facts row's margin and the
+   section's top margin made two different gaps. */
+#app .spv #spv-money-facts{margin:0!important}
+:is(#vc,#set-modal) .spv .spv-sec{margin:0!important;padding:0!important;border:0!important}
+:is(#vc,#set-modal) .spv .spv-head{padding-top:var(--sp-6)!important;margin-bottom:var(--sp-5)!important}
+/* A refusal from the account shows under the switch it is about; empty, it takes no room. */
+.spx-auto .mf-say:empty{display:none}
+.spx-auto .mf-say{margin-top:var(--sp-1)}
+/* The two small card titles are headings for a screen reader, sized as labels. */
+.spx-card h3.spx-l{margin:0;font-size:var(--t-sm);font-weight:600;color:var(--mu)}
