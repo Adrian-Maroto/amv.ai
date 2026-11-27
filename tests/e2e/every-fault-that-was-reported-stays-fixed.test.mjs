@@ -291,7 +291,7 @@ section('6. Deciding on a job does not need a scroll, and connecting asks for no
     return out;
   });
   ok(r.onScreen, 'the decision is on the screen when the job opens', r.onScreen);
-  ok(r.screen && /^Connect .+ to your AMV$/.test(r.title.trim()),
+  ok(r.screen && /^Connect .+$/.test(r.title.trim()) && !/gmail/i.test(r.title),
      'connecting opens a screen that names the account', r.title.trim());
   ok(r.fields === 0, 'and asks for no credential here - the sign-in is at the provider', String(r.fields));
 }

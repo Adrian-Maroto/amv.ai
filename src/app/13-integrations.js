@@ -1286,6 +1286,14 @@ async function connAdd(provider){
      calendar digest must not quietly request permission to send mail. */
   const pick = await _connScopePick(p);
   if(!pick || !pick.length) return;
+  return _connStartWith(provider, pick);
+}
+try{ window.connAdd=connAdd; }catch(e){}
+/* The provider's own sign-in, for exactly these permissions - the person's
+   choice from the screen above, or, from a Crew job, the one thing that job
+   needs and nothing more (Nov 27, the owner: "when you press connect it
+   should not show this screen, it should connect"). */
+async function _connStartWith(provider, pick){
   try{
     const r = await AMV_API.connectStart(provider, pick, _connReturnTo());
     if(r && safeUrl(r.url)){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = safeUrl(r.url); return; }
@@ -1294,13 +1302,12 @@ async function connAdd(provider){
     /* The sign-in ended while the permissions were being chosen: ask for it,
        and pick this Connect up again afterwards rather than dropping it. */
     if(/session expired|sign in again/i.test(String((e&&e.message)||'')) && typeof _askToSignInAgain==='function'){
-      _askToSignInAgain(()=>connAddWhenReady(provider), true);
+      _askToSignInAgain(()=>_connStartWith(provider, pick), true);
       return;
     }
     toast(String((e&&e.message)||'That connection could not be started.'),'error',7000);
   }
 }
-try{ window.connAdd=connAdd; }catch(e){}
 /* Connect, from a row, without depending on the list having loaded first.
    connAdd returns quietly when it does not know the provider - which, from a
    row that says Connect, is a button that does nothing. So the list is asked
@@ -1396,7 +1403,7 @@ async function _connectFinish(code, state){
     const r = await AMV_API.connectFinish(code, state);
     if(r && r.ok){
       toast(r.unattended
-        ? (r.name||'That account')+' is connected. Jobs using it now run with AMV closed.'
+        ? '\u2713 '+(r.name||'That account')+' is connected. Jobs using it now run with AMV closed.'
         : (r.note || 'Connected, but only while AMV is open.'),
         r.unattended ? 'success' : 'info', r.unattended ? 5000 : 9000);
     } else {
@@ -1854,8 +1861,11 @@ async function openMailConnect(preset){
       const pw=$('ml-pass'); if(pw) pw.value='';
       await refreshMailStatus();
       r.innerHTML='';
-      toast('Mailbox connected','success');
+      toast('\u2713 '+T('Mailbox connected'),'success');
       try{ _refreshIntegrationsUI(); }catch(e){}
+      /* A Crew job that sent somebody here turns on now (it asks whether a
+         mailbox is connected, and one now is). */
+      try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){}
     }catch(e){
       /* The server distinguishes a wrong password from IMAP being switched off
          from a server that did not answer, and each needs a different action -

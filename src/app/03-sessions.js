@@ -1957,6 +1957,13 @@ function setTab(t){
   try{ if(t!=='crew' && S.crewPage) S.crewPage=''; }catch(e){}
   try{ _navRecord(_navFrom, { tab: t, pane: _navPane(t) }); }catch(e){}
   S.tab=t;
+  /* CHOOSING A PLAN IS A SCREEN OF ITS OWN (Nov 27, the owner: "the billing
+     page is centred but when you click on Pro, Ultra etc. it is not"). Billing
+     opens in the Settings panel, centred on the window; Plans and Upgrade were
+     drawn beside the side menu, so their middle sat 125px right of the
+     screen's. They now take the whole window, as a checkout does - the menu
+     steps aside while they are open and is back the moment you leave. */
+  try{ document.body.classList.toggle('pay-full', t==='plans' || t==='upgrade'); }catch(e){}
   /* THE ADDRESS BAR SAYS WHERE YOU ARE - AS A HASH, AND THAT IS DELIBERATE.
 
      Asked for as "/billing". A bare path cannot be served: what the host

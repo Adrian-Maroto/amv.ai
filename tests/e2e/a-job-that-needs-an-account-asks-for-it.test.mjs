@@ -70,26 +70,22 @@ section('Switching on a job that needs a mailbox asks for the mailbox');
       shown: !!el,
       title: (document.querySelector('.cwc-t') || {}).textContent || '',
       lead: (document.querySelector('.cwc-lead') || {}).textContent || '',
-      buttons: [...document.querySelectorAll('[data-conn-prov]')].map(b => b.dataset.connProv),
-      primary: document.querySelectorAll('.cwc-acts .bp').length,
-      /* Still on, because the intent was real and the job starts the moment
-         the account is linked. */
+      ways: [...document.querySelectorAll('.cwk-row')].map(x => x.querySelector('.cwk-n').textContent + ':' + x.querySelector('.cwk-go').textContent),
+      primary: document.querySelectorAll('.cwk-go.bp').length,
       jobOn: !!(_cwJobs().find(j => j.id === 'inbox_digest') || {}).on,
     };
   });
   ok(r.shown, 'a screen opens rather than a toast');
-  /* NOT "GMAIL", AND THIS ASSERTION USED TO REQUIRE IT.
-
-     The capability is a mailbox and the screen below offers google AND
-     microsoft - the next assertion says so - so the heading naming one of them
-     contradicted the buttons underneath it. It also sent somebody in a country
-     where Gmail is not the common mailbox after an account they may not have.
-     The heading names what the job needs; the buttons name who can grant it. */
-  ok(/^Connect a mailbox to your AMV$/.test(r.title.trim()), 'naming what it needs, not one vendor', r.title);
+  /* The heading names what the job needs; the rows name who can grant it. */
+  ok(/^Connect a mailbox$/.test(r.title.trim()), 'naming what it needs, not one vendor', r.title);
   ok(!/gmail/i.test(r.title), 'and not a provider the person may not use', r.title);
   ok(/Daily inbox digest/.test(r.lead), 'and the job that asked for it', r.lead.slice(0, 90));
-  ok(r.buttons.join(',') === 'google,microsoft',
-     'offering the providers that really grant reading mail', r.buttons.join(','));
+  /* Nov 27, the owner: "connect either Google, iCloud, Outlook etc. and simply
+     show Connect for all options - only one is needed". */
+  const names = r.ways.map(w => w.split(':')[0]);
+  ok(['Gmail', 'Outlook and Hotmail', 'iCloud Mail', 'Yahoo Mail'].every(n => names.includes(n)) && /Another email account/.test(names.join('|')),
+     'offering Gmail, Outlook, iCloud, Yahoo and any other mailbox', names.join(', '));
+  ok(r.ways.every(w => /:Connect$/.test(w)), 'each with the same one word: Connect', r.ways.join(' | '));
   ok(r.primary === 1, 'one of them is the offer, the rest are alternatives', String(r.primary));
   ok(r.jobOn, 'and the job stays on, waiting', r.jobOn);
 }
@@ -100,11 +96,10 @@ section('It never asks for the provider’s password');
     const el = document.querySelector('.cwc');
     const t = (el.textContent || '').replace(/\s+/g, ' ');
     return {
-      inputs: [...el.querySelectorAll('input,textarea')]
-        .map(i => (i.type || '') + ':' + (i.name || i.id || '')),
+      inputs: [...el.querySelectorAll('input,textarea')].map(i => (i.type || '') + ':' + (i.name || i.id || '')),
       passwords: el.querySelectorAll('input[type="password"]').length,
       saysSo: /never sees your password/i.test(t),
-      saysWhere: /sign in at Google, not here/i.test(t),
+      saysWhere: /sign in on their own page/i.test(t),
     };
   });
   ok(r.passwords === 0, 'there is no password field on it', r.inputs.join(' | '));
@@ -113,25 +108,42 @@ section('It never asks for the provider’s password');
   ok(r.saysWhere, 'and where the sign-in actually happens');
 }
 
-section('Connecting goes to the provider, asking only for what the job needs');
+section('Connect goes straight to the provider, asking only for what the job needs');
 {
   const r = await page.evaluate(async () => {
-    document.querySelector('[data-conn-prov="google"]').click();
-    await new Promise(x => setTimeout(x, 250));
-    /* The scope dialog is the existing one. It must be there, and it must not
-       have pre-ticked send-as-you for a job that only reads. */
-    const scopes = [...document.querySelectorAll('[data-scope]')]
-      .map(c => c.dataset.scope + (c.checked ? '*' : ''));
-    const go = document.getElementById('conn-go');
-    if (go) go.click();
-    await new Promise(x => setTimeout(x, 250));
-    return { scopes, started: window.__started, want: load('amv_cw_conn_want') };
+    const row = [...document.querySelectorAll('.cwk-row')].find(x => x.querySelector('.cwk-n').textContent === 'Gmail');
+    row.querySelector('.cwk-go').click();
+    await new Promise(x => setTimeout(x, 300));
+    return { picker: document.querySelectorAll('[data-scope]').length, started: window.__started, want: load('amv_cw_conn_want'),
+             still: !!document.querySelector('.cwk') };
   });
-  ok(r.scopes.length > 0, 'the permission dialog opens', r.scopes.join(','));
-  ok(r.started.length === 1 && r.started[0].provider === 'google',
-     'and the connection is started with that provider', JSON.stringify(r.started));
-  ok(!!r.want && r.want.job === 'inbox_digest',
-     'remembering which job sent us, so the trip can be finished', JSON.stringify(r.want));
+  /* Nov 27: "when you press connect it should NOT show this screen" - no
+     permission picker in between. The job decides the permission: reading
+     mail, and nothing a reading job does not need. */
+  ok(r.picker === 0, 'no second screen of permissions in between', String(r.picker));
+  ok(r.started.length === 1 && r.started[0].provider === 'google' && JSON.stringify(r.started[0].scopes) === '["mail.read"]',
+     'the sign-in starts with Google for reading mail, and nothing else', JSON.stringify(r.started));
+  ok(!!r.want && r.want.job === 'inbox_digest', 'remembering which job sent us, so the trip can be finished', JSON.stringify(r.want));
+  ok(!r.still, 'and the screen is gone - the next thing is the provider’s own page', r.still);
+}
+
+section('Drawn before the list of sign-ins arrives, it never says there is nothing to connect');
+{
+  /* The screen the owner photographed: opened cold, it was drawn before the
+     list came back and said "this copy of AMV cannot hold an account key" on
+     a deployment with Google set up. */
+  const r = await page.evaluate(async () => {
+    const real = AMV_API.connectList;
+    AMV_API.connectList = async () => { await new Promise(x => setTimeout(x, 600)); return real(); };
+    _connState = { state: 'idle', data: null, err: '' };
+    openCrewConnect('inbox_digest');
+    const t = (document.querySelector('.cwc') || {}).textContent || '';
+    const rows = document.querySelectorAll('.cwk-go').length;
+    closeOvr(); AMV_API.connectList = real; connReload();
+    await new Promise(x => setTimeout(x, 400));
+    return { rows, nothing: /cannot hold an account key|nothing to connect/i.test(t) };
+  });
+  ok(r.rows >= 4 && !r.nothing, 'every way is offered at once, with Connect', r);
 }
 
 /* Resuming is checked by WHICH JOB IT ACTS ON, not by whether that job ends up
@@ -192,7 +204,7 @@ section('Coming back still not connected resumes nothing');
      'backing out at the provider leaves the job exactly where it was', r.seen.join(','));
 }
 
-section('A deployment with nothing registered says so');
+section('A sign-in this deployment has not set up says so, and the other ways stay');
 {
   const r = await page.evaluate(async () => {
     AMV_API.connectList = async () => ({ configured: true, items: [], providers:
@@ -201,17 +213,22 @@ section('A deployment with nothing registered says so');
     await new Promise(x => setTimeout(x, 400));
     const jobs = _cwJobs(); const j = jobs.find(x => x.id === 'inbox_digest');
     j.on = false; _cwSaveJobs(jobs);
+    window.__started = [];
     openCrewConnect('inbox_digest');
-    await new Promise(x => setTimeout(x, 250));
-    const el = document.querySelector('.cwc');
-    const t = el ? el.textContent.replace(/\s+/g, ' ') : '';
-    const out = { buttons: document.querySelectorAll('[data-conn-prov]').length,
-                  says: /registered on this deployment/i.test(t) };
+    await new Promise(x => setTimeout(x, 100));
+    const said = []; const realToast = window.toast; window.toast = (m) => { said.push(String(m)); };
+    try{
+      [...document.querySelectorAll('.cwk-row')].find(x => x.querySelector('.cwk-n').textContent === 'Gmail').querySelector('.cwk-go').click();
+      await new Promise(x => setTimeout(x, 400));
+    } finally { window.toast = realToast; }
+    const out = { started: window.__started.length, said: said.join(' | '), open: !!document.querySelector('.cwk'),
+                  others: [...document.querySelectorAll('.cwk-n')].map(n => n.textContent).join(',') };
     closeOvr();
     return out;
   });
-  ok(r.buttons === 0, 'no button is offered that cannot work', String(r.buttons));
-  ok(r.says, 'and it says why, instead of a dead Connect');
+  ok(r.started === 0, 'nothing is started that cannot work', String(r.started));
+  ok(/not set up/i.test(r.said), 'it says why, to the person who pressed it', r.said);
+  ok(r.open && /iCloud Mail/.test(r.others), 'and the screen stays, with the other ways to connect', r.others);
 }
 
 ok(errors.length === 0, 'and none of it raised a page error', errors.slice(0, 3).join(' | '));

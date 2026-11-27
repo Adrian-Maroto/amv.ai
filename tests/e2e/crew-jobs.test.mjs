@@ -452,15 +452,17 @@ section('The fix is one tap from the job');
     const screen = document.querySelector('.cwc');
     const out = { id, tab: S.tab, shown: !!screen,
                   title: (document.querySelector('.cwc-t') || {}).textContent || '',
-                  provs: document.querySelectorAll('[data-conn-prov]').length,
+                  provs: document.querySelectorAll('.cwk-row .cwk-go').length,
                   fields: screen ? screen.querySelectorAll('input,textarea').length : -1 };
     try { closeOvr(); } catch (e) {}
     return out;
   });
   ok(!!went.id, 'the button knows which job it is on', went.id);
   ok(went.shown, 'Connect opens the screen for linking that account', JSON.stringify(went));
-  ok(/^Connect .+ to your AMV$/.test(went.title.trim()),
-     'which names the account rather than listing every provider', went.title);
+  /* Nov 27 (owner): the screen names what the job needs and lists every way
+     to give it, each with its own Connect - "only one is needed". */
+  ok(/^Connect .+$/.test(went.title.trim()) && !/gmail|google|outlook/i.test(went.title) && went.provs >= 2,
+     'which names what it needs, with a Connect for each way to give it', JSON.stringify({ title: went.title, provs: went.provs }));
   ok(went.fields === 0,
      'and asks for nothing here - the sign-in happens at the provider', String(went.fields));
 }

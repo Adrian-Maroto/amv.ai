@@ -16398,3 +16398,17 @@ refused by one list (`data/not-listed.json`, checked again by the page), and
 section in five countries the way the owner did. Rule: a suite about an
 order also reads the first screen of what it orders. And a ranking built
 from visits needs a list of what is never shown, kept in one place.
+
+## 676
+**Nov 27 - a screen that started a request must not answer before the reply.**
+Crew's connect screen called `_connLoad(false)` to fetch which sign-ins this
+deployment offers, and drew itself on the very next line from whatever was
+cached. On a cold open nothing was cached, so a deployment with Google set up
+said "this copy of AMV cannot hold an account key, so there is nothing to
+connect". The owner photographed it. Every suite stubbed the list as already
+loaded, so the race could not happen in them. Now the screen lists the ways
+to connect at once, without needing the list, and asks the server fresh on
+the press. A suite slows the list down and checks the screen still offers
+every way (`a-job-that-needs-an-account-asks-for-it`). Rule: a screen that
+starts a request awaits it before saying what the answer is, and a suite of
+it includes the reply arriving late.

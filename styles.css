@@ -12376,11 +12376,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   padding:var(--sp-7) var(--sp-5);
   display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-4);
 }
-.cwc-mark{
-  width:44px; height:44px; border-radius:var(--r-lg);
-  display:flex; align-items:center; justify-content:center;
-  background:var(--accent-soft); color:var(--accent-txt);
-}
 .cwc-t{
   margin:0; font-family:var(--fdisplay);
   font-size:var(--t-3xl); font-weight:640; letter-spacing:-.7px;
@@ -12388,31 +12383,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 }
 .cwc-lead{ margin:0; font-size:var(--t-lg); line-height:1.6; color:var(--mu); }
 .cwc-lead b{ color:var(--tx); font-weight:640; }
-.cwc-facts{
-  margin:var(--sp-2) 0 0; padding:0; list-style:none;
-  display:flex; flex-direction:column; gap:var(--sp-3);
-  font-size:var(--t-base); line-height:1.6; color:var(--mu);
-  border-top:1px solid var(--bd); padding-top:var(--sp-4);
-}
-.cwc-facts li{ position:relative; padding-left:22px; }
-.cwc-facts li::before{
-  content:''; position:absolute; left:2px; top:.55em;
-  width:6px; height:6px; border-radius:50%; background:var(--accent);
-}
-.cwc-facts b{ color:var(--tx); font-weight:640; }
 .cwc-acts{ display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
-.cwc-go{ font-size:var(--t-md); padding:11px 20px; }
-.cwc-none{
-  margin:var(--sp-3) 0 0; padding:var(--sp-4);
-  border:1px dashed var(--bd); border-radius:var(--r-lg);
-  font-size:var(--t-base); line-height:1.6; color:var(--mu);
-}
-.cwc-later{
-  margin-top:var(--sp-2); padding:0; border:none; background:none;
-  color:var(--dim); font-family:inherit; font-size:var(--t-base);
-  text-decoration:underline; text-underline-offset:3px; cursor:pointer;
-}
-.cwc-later:hover{ color:var(--mu); }
 .cwc .cwp-x{ position:absolute; top:var(--sp-4); right:var(--sp-4); }
 
 @media (max-width:560px){
@@ -18421,3 +18392,22 @@ body.light #anav{ background:var(--bg); }
   color:transparent!important;background:var(--s2)!important;border-color:transparent!important;border-radius:var(--r-sm);box-shadow:none!important}
 #int-catalog.int-filling .int-card[data-far] .int-ic *,#int-catalog.int-filling .int-card[data-far] .int-act > * *{visibility:hidden}
 #int-catalog.int-filling .int-card[data-far]{pointer-events:none}
+/* LAYER A423 - Crew's connect step (Nov 27): the ways to connect, one row
+   each with its own Connect, and one line of what signing in means. */
+.cwk-list{display:flex;flex-direction:column;gap:var(--sp-2);margin:var(--sp-5) 0 var(--sp-4)}
+.cwk-row{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1)}
+/* One column in the middle of the screen: the heading and the note centred
+   over the rows, the rows the column's full width. */
+.cwk .cwc-inner{align-items:stretch;max-width:520px;margin:0 auto}
+.cwk .cwc-t,.cwk .cwc-lead,.cwk .cwk-note{text-align:center}
+.cwk-ic{flex:0 0 auto;width:36px!important;height:36px!important;border-radius:var(--r-md)!important}
+.cwk-n{flex:1 1 auto;min-width:0;font-weight:600;font-size:var(--t-md);overflow-wrap:anywhere}
+.cwk-go{flex:0 0 auto;min-width:96px;min-height:40px}
+.cwk-note{margin:0;font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+@media (max-width:480px){.cwk-row{padding:var(--sp-3)}.cwk-go{min-width:84px}}
+/* LAYER A424 - Plans and Upgrade take the whole window (Nov 27), centred on
+   the screen like Billing's panel. Phones already use the full width. */
+@media (min-width:721px){
+  body.pay-full #sb,body.pay-full #sb-backdrop,body.pay-full #sb-rail-toggle,body.pay-full #tsb{display:none!important}
+  body.pay-full #abody #cv{transform:none!important;margin-left:0!important}
+}

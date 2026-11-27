@@ -206,69 +206,99 @@ function _cwConnectNeed(j, need, kind){
 }
 try{ window.cwNeeds = cwNeeds; }catch(e){}
 
+/* CONNECT, IN ONE PRESS (Nov 27, the owner, of a mail job: "it should show:
+   connect either Google, iCloud, Outlook etc. and simply show Connect for all
+   options - only one is needed - and when you press Connect it should NOT show
+   this screen. It should connect and then say Connected ✓").
+
+   It was a page of promises about permission slips, a Connect button for the
+   first provider only - and on a cold open, "This copy of AMV cannot hold an
+   account key", because it was drawn before the list of sign-ins had arrived
+   (_connLoad was started, not awaited), so a deployment with Google set up
+   said it had nothing to connect to.
+
+   Now: the ways to give AMV what this job needs, each with Connect. Connect
+   goes straight to that provider's own sign-in for exactly the one thing the
+   job needs (no permission picker in between - the job decides it), or, for
+   a mailbox read with an app password (iCloud, Yahoo, the country's own), to
+   that mailbox's form already chosen. Back from it, the account says
+   "✓ connected" and the job turns on (cwConnectResume). The facts that page
+   carried stay as one line: you sign in there, AMV never sees the password,
+   you can take it back. */
+const CW_CONNECT_WAYS = {
+  'mail.read':     [['oauth', 'google', 'Gmail'], ['oauth', 'microsoft', 'Outlook and Hotmail'], ['mail', 'icloud', 'iCloud Mail'], ['mail', 'yahoo', 'Yahoo Mail']],
+  'calendar.read': [['oauth', 'google', 'Google Calendar'], ['oauth', 'microsoft', 'Outlook Calendar']],
+  'drive.read':    [['oauth', 'google', 'Google Drive']],
+  'school.read':   [['oauth', 'google', 'Google Classroom']],
+};
+function _cwConnectWays(cap){
+  const ways = (CW_CONNECT_WAYS[cap] || []).slice();
+  if(cap === 'mail.read'){
+    /* The country's own mailboxes next (WEB.DE in Germany, Naver in Korea),
+       then any other by its IMAP address. */
+    let cc = ''; try{ cc = _cwCountryGuess(); }catch(e){}
+    try{ for(const [id, c] of Object.entries(AMV_MAIL_CC)) if(c === cc && ways.length < 7){
+      const a = (AMV_APP_CATS.find(x => x.id === 'email') || { apps: [] }).apps.find(x => String(x).split('|')[1] === 'mail:' + id);
+      if(a) ways.push(['mail', id, String(a).split('|')[0]]);
+    } }catch(e){}
+    ways.push(['mail', '', T('Another email account')]);
+  }
+  /* A capability nobody listed above: whatever the server says can grant it. */
+  if(!ways.length) _cwProvidersFor(cap).forEach(p => ways.push(['oauth', p.id, p.name]));
+  return ways;
+}
 function openCrewConnect(jobId){
   const j=_cwFindJob(jobId);
   const r=$('ovr'); if(!j||!r) return;
-  try{ if(typeof _connLoad==='function') _connLoad(false); }catch(e){}
   const missing=_cwMissingNeeds(j);
-  /* Nothing here to connect - either it is all connected already, or what is
-     missing is not a connector. The Connectors page is the honest destination
-     either way. Never a toggle: this is reached from a card whose job may
-     already be on, and turning it off because somebody pressed Connect is the
-     opposite of what they asked for. */
+  /* Nothing here to connect - all of it is connected, or what is missing is
+     not an account. Integrations is the honest destination either way; never
+     a toggle (pressing Connect must not turn a job off). */
   if(!missing.length){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} return; }
   const m=missing[0];
-  const provs=_cwProvidersFor(m.cap);
-  const ready=provs.filter(p=>p.ready);
-  const words=(typeof _connScopeWords==='function') ? _connScopeWords([m.cap]) : [m.cap];
-
-  const buttons = ready.length
-    /* One filled button. Two providers that both grant mail are two ways to do
-       the same thing, and rendering both as the primary action asks somebody to
-       choose between identical-looking buttons before they know there is no
-       wrong answer. The first is offered; the rest are available. */
-    ? ready.map((p,i)=>'<button class="btn '+(i?'bs':'bp')+' cwc-go" data-conn-prov="'+escH(p.id)+'">'
-        +(i?'Use ':'Connect with ')+escH(p.name)+'</button>').join('')
-    : '';
-  const none = provs.length
-    ? '<p class="cwc-none">No '+escH(m.label)+' app is registered on this deployment yet, so there is nothing to connect to. '
-      + 'Until that is set up this job cannot run, and AMV will not pretend otherwise.</p>'
-    : '<p class="cwc-none">This copy of AMV cannot hold an account key, so there is nothing to connect. '
-      + 'The job is saved and will start the moment a connection is possible.</p>';
-
+  const ways=_cwConnectWays(m.cap);
+  const row=(w, i)=>'<div class="cwk-row"><span class="int-ic cwk-ic" aria-hidden="true">'+_appMarkHTML(w[2])+'</span>'
+    +'<span class="cwk-n">'+escH(w[2])+'</span>'
+    +'<button class="btn '+(i?'bs':'bp')+' cwk-go" type="button" data-cwk="'+i+'">'+escH(T('Connect'))+'</button></div>';
   r.innerHTML =
-    '<div class="ov cwc-ov" id="cwc-bg"><div class="cwc" role="dialog" aria-modal="true" aria-labelledby="cwc-t">'+
-      '<button class="cwp-x" id="cwc-x" aria-label="Close">\u2715</button>'+
+    '<div class="ov cwc-ov" id="cwc-bg"><div class="cwc cwk" role="dialog" aria-modal="true" aria-labelledby="cwc-t">'+
+      '<button class="cwp-x" id="cwc-x" aria-label="'+escH(T('Close'))+'">✕</button>'+
       '<div class="cwc-inner">'+
-        '<div class="cwc-mark" aria-hidden="true">'+
-          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
-          '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg></div>'+
-        '<h1 class="cwc-t" id="cwc-t">Connect '+escH(m.label)+' to your AMV</h1>'+
-        '<p class="cwc-lead">You are turning on <b>'+escH(j.title)+'</b>. To do it, AMV needs to '+
-          escH(words.join(' and '))+'.</p>'+
-        '<ul class="cwc-facts">'+
-          '<li>You sign in at '+escH((ready[0]&&ready[0].name)||m.label)+', not here. '+
-            '<b>AMV never sees your password</b> - it receives a permission slip and nothing else.</li>'+
-          '<li>The permission covers only what you tick on the next screen, and it is held against '+
-            'this AMV account alone.</li>'+
-          '<li>You can take it back at any time, and every use is recorded with the name of the job '+
-            'that used it.</li>'+
-        '</ul>'+
-        (buttons ? '<div class="cwc-acts">'+buttons+'</div>' : none)+
-        '<button class="cwc-later" id="cwc-later">Not now</button>'+
+        '<h1 class="cwc-t" id="cwc-t">'+escH(T('Connect {0}').replace('{0}', T(m.label)))+'</h1>'+
+        '<p class="cwc-lead">'+escH(T('For “{0}”. Pick the one you use - one is enough.').replace('{0}', j.title))+'</p>'+
+        '<div class="cwk-list">'+ways.map(row).join('')+'</div>'+
+        '<p class="cwk-note">'+escH(T('You sign in on their own page; AMV never sees your password. Disconnect any time in Integrations.'))+'</p>'+
       '</div>'+
     '</div></div>';
   r.classList.add('on');
   const close=()=>{ try{ closeOvr(); }catch(e){} };
   on($('cwc-x'),'click',close);
-  on($('cwc-later'),'click',close);
   onBackdrop($('cwc-bg'),close);
-  r.querySelectorAll('[data-conn-prov]').forEach(b=>on(b,'click',()=>{
-    /* Remembered BEFORE leaving, because the next thing that happens is a
-       navigation away from this page. */
+  r.querySelectorAll('[data-cwk]').forEach(b=>on(b,'click',async()=>{
+    const w=ways[+b.dataset.cwk]; if(!w) return;
+    /* Remembered BEFORE leaving: the sign-in is a navigation away, and the
+       point of coming back is to finish turning this job on. */
     _cwConnWant({ job:j.id, cap:m.cap, at:Date.now() });
+    if(w[0]==='mail'){ close(); try{ openMailConnect(w[1]||undefined); }catch(e){} return; }
+    b.disabled=true; const was=b.textContent; b.textContent=T('Opening…');
+    /* Asked fresh on the press, so the answer is never "nothing to connect"
+       because the list had not arrived yet. */
+    try{ await _connLoad(true); }catch(e){}
+    const d=(typeof _connState!=='undefined'&&_connState)?_connState.data:null;
+    const p=((d&&d.providers)||[]).find(x=>x.id===w[1]);
+    b.disabled=false; b.textContent=was;
+    if(!d){
+      if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){ _askToSignInAgain(()=>{ try{ openCrewConnect(j.id); }catch(e){} }, true); return; }
+      toast(T('AMV could not reach its server just now. Check your connection and try again.'),'error',6000); return;
+    }
+    if(!p || !p.ready){
+      /* Said plainly, and only to the person who pressed it: the deployment
+         has no app registered with this provider yet. The other ways stay. */
+      toast(T('{0} sign-in is not set up on AMV yet. Try another option above.').replace('{0}', (p&&p.name)||w[2]),'info',7000);
+      return;
+    }
     close();
-    try{ connAdd(b.dataset.connProv); }catch(e){}
+    try{ await _connStartWith(p.id, [m.cap]); }catch(e){ toast(String((e&&e.message)||T('That connection could not be started.')),'error',6000); }
   }));
 }
 try{ window.openCrewConnect=openCrewConnect; }catch(e){}
@@ -287,6 +317,8 @@ async function cwConnectResume(){
   if(!want.at || Date.now()-want.at > 30*60000) return;
   const j=(_cwJobs()||[]).find(x=>x.id===want.job)||_cwFindJob(want.job);
   if(!j || j.on) return;
+  /* Asked of a fresh list, not of whatever was cached before the trip. */
+  try{ if(typeof _connLoad==='function') await _connLoad(true); }catch(e){}
   if(_cwMissingNeeds(j).length) return;      // still not connected: nothing to resume
   try{ setTab('crew'); }catch(e){}
   try{ cwToggle(j.id); }catch(e){}
