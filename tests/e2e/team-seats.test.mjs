@@ -273,10 +273,12 @@ section('Settings answers "what is spending", before asking for numbers');
   /* And it is ABOVE the terms gate. Somebody deciding whether to accept is
      exactly the person who needs the explanation, and it used to render only
      after they had already accepted. */
-  /* One tap away now ("How this works"), still ABOVE the terms gate. */
-  ok(/How this works/.test(r) && r.indexOf('How this works') < Math.max(0, r.indexOf('Before AMV can spend')),
+  /* Since Nov 27 the pane is one column - what it is, this month, the
+     switch, the limits - and the terms open under the switch when it is
+     pressed, carrying their own summary. What it is still comes first. */
+  ok(/How this works/.test(r) && r.indexOf('chat or Crew') >= 0 && r.indexOf('chat or Crew') < Math.max(0, r.indexOf('Before AMV can spend')),
      'the pane says what it is before what it is set to', r.slice(0, 120));
-  ok(r.indexOf('What this is') < r.indexOf('Before AMV can spend anything'),
+  ok(r.indexOf('chat or Crew') < r.indexOf('Before AMV can spend anything'),
      'and says it before asking them to accept anything');
   ok(/off until you turn it on/i.test(r), 'that it is off by default');
   /* "API key" also appears in the settings nav, so match on something only this

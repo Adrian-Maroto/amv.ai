@@ -20,6 +20,25 @@
    "ko": "f9d0da3b46e4",
    "ta": "9e26a9a821fd"
   },
+  "- the three numbers above are checked on your account before each purchase is approved, and the amount is held against the month first. A store can still charge more than it showed; when that happens it is booked and said on the receipt. The monthly ceiling decides the most AMV can approve in a month, so set it to a number you would not mind losing.": {
+   "es": "011060652306",
+   "zh": "1ea01ec038c9",
+   "hi": "63afe8576109",
+   "ar": "c64fe5447f24",
+   "pt": "f7d0ddb789c8",
+   "fr": "c876f60cfafa",
+   "de": "13cac4c045c7",
+   "ja": "b15fcc1c5a27",
+   "ru": "408f16e8659b",
+   "id": "bef6e7b4f463",
+   "bn": "0793659363ac",
+   "ur": "10b8c30785e7",
+   "tr": "14a16e254e64",
+   "vi": "025e6d3d08a3",
+   "it": "e55588df5077",
+   "ko": "4d2f708c942b",
+   "ta": "35a09a6df23b"
+  },
   "- the three numbers below are checked on your account before each purchase is approved, and the amount is held against the month first. A store can still charge more than it showed; when that happens it is booked and said on the receipt. The monthly ceiling decides the most AMV can approve in a month, so set it to a number you would not mind losing.": {
    "es": "a9d632bfe857",
    "zh": "755d746b7387",
@@ -2242,6 +2261,25 @@
    "it": "11698783b5be",
    "ko": "1c53815c9643",
    "ta": "b4cba0e6a5df"
+  },
+  "Stores that charge in another currency are not bought from.": {
+   "es": "fa9f3f48d940",
+   "zh": "318126e32df6",
+   "hi": "05f58f2bcdba",
+   "ar": "7eb132d35b60",
+   "pt": "760dcda7a67e",
+   "fr": "607d5010005e",
+   "de": "f0ce9266b31b",
+   "ja": "1c0793bcaf3d",
+   "ru": "27a9274af666",
+   "id": "03938e1e66d1",
+   "bn": "c50b252e4dd3",
+   "ur": "5da00067c0d3",
+   "tr": "8be76573a164",
+   "vi": "45bc12f93eac",
+   "it": "344fcab3021a",
+   "ko": "c5676eddb4d9",
+   "ta": "a43855d4b82a"
   },
   "Subscription": {
    "es": "5aa9378010cf",

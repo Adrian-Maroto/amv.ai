@@ -114,6 +114,9 @@ function _renderSpendingPaneNow(pane, redraw){
     (AMVSpend.serverBacked() ? '<div class="spx-card" id="mf-buys"><h3>Bought in AMV’s browser</h3><div id="mf-buys-b" role="status" aria-live="polite"><p class="mf-empty">'+escH(T('Loading what AMV bought…'))+'</p></div></div>' : '')+
     /* How it works, folded, at the end: read when wanted, never in the way. */
     '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
+      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
+      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
+      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
       '<dl class="mf-src">'+
         '<div><dt>'+escH(T('Purchases'))+'</dt><dd>'+escH(T('Paid at the store’s own checkout, with the payment method you choose there. AMV never holds or sees it.'))+'</dd></div>'+
         '<div><dt>'+escH(T('Your AMV plan'))+'</dt><dd>'+escH(T('Billed separately, and not counted here.'))+' <button type="button" class="lnk-inline" data-dact="setTab" data-darg="billing">'+escH(T('Billing'))+'</button></dd></div>'+
