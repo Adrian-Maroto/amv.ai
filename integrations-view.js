@@ -675,7 +675,35 @@ function renderIntegrationsView(){
   _wireIntegrationCatalog(vc);
   /* In this frame when the services are already here; otherwise as they come. */
   let drawn = false; try{ drawn = !!(window.ccFillIntegrationsNow && window.ccFillIntegrationsNow()); }catch(e){}
-  if(!drawn) _ccReady().then(ok=>{ if(ok) window.ccFillIntegrations(); });
+  if(!drawn){
+    /* NOTHING ON SCREEN TURNS INTO SOMETHING ELSE (Nov 27, the owner:
+       "it lags for a quick second... I don't want it to show something and
+       then something else"). Opened before the country's services had
+       arrived, each topic drew its apps and a count, then a moment later
+       the country's services pushed in, the count jumped (47 to 221) and
+       News and Jobs swapped their rows for the country's own. Now the slots
+       they will fill are held by placeholders of the same size, the count
+       waits, and they are filled in one draw (ccFillIntegrations clears
+       the placeholders in the frame it draws). */
+    const cat = document.getElementById('int-catalog');
+    const free = () => { try{ if(cat){ cat.classList.remove('int-filling'); cat.querySelectorAll('.int-ph').forEach(n => n.remove()); } }catch(e){} };
+    if(cat){
+      cat.classList.add('int-filling');
+      const ph = document.createElement('div'); ph.className = 'int-card int-ph'; ph.setAttribute('aria-hidden', 'true');
+      ph.innerHTML = '<div class="int-ic"></div><div class="int-body"><div class="int-top"><span class="int-name">&nbsp;</span></div><div class="int-desc">&nbsp;</div></div><div class="int-act"><span class="btn bs">&nbsp;</span></div>';
+      cat.querySelectorAll('.ss2[data-topic]').forEach(sec => {
+        const t = sec.dataset.topic, list = sec.querySelector('.int-list');
+        if(!list || (typeof _appOpen !== 'undefined' && _appOpen.has(t))) return;
+        /* News and Jobs lead with the country's own outlets and job sites, so
+           every slot there is the country's to fill. */
+        if(t === 'news' || t === 'jobs') list.classList.add('int-wait-all');
+        for(let i = list.querySelectorAll('.int-card').length; i < APP_ROWS_SHOWN; i++) list.appendChild(ph.cloneNode(true));
+      });
+    }
+    /* A catalogue that cannot be fetched (offline) leaves the apps as they
+       are rather than placeholders that never fill. */
+    _ccReady().then(ok=>{ if(ok) return window.ccFillIntegrations(); free(); }).catch(free).then(() => setTimeout(free, 0));
+  }
   try{
     const d=vc.querySelector('details.conn-machine');
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });

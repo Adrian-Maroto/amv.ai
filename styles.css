@@ -18389,3 +18389,28 @@ body.light #anav{ background:var(--bg); }
 .spx-auto .mf-say{margin-top:var(--sp-1)}
 /* The two small card titles are headings for a screen reader, sized as labels. */
 .spx-card h3.spx-l{margin:0;font-size:var(--t-sm);font-weight:600;color:var(--mu)}
+/* LAYER A422 - Integrations before the country's services arrive (Nov 27).
+   The slots they will fill are held by cards of the same size, shown as quiet
+   blocks; News and Jobs, which the country's own sites lead, hold every slot.
+   The count waits, so the button never reads one number and then another. */
+#int-catalog .int-ph{pointer-events:none}
+#int-catalog .int-ph .int-ic,#int-catalog .int-ph .int-name,#int-catalog .int-ph .int-desc,#int-catalog .int-ph .btn,
+#int-catalog .int-wait-all .int-card .int-ic,#int-catalog .int-wait-all .int-card .int-name,#int-catalog .int-wait-all .int-card .int-desc,#int-catalog .int-wait-all .int-card .int-act > *{
+  color:transparent!important;background:var(--s2)!important;border-color:transparent!important;border-radius:var(--r-sm);box-shadow:none!important}
+#int-catalog .int-ph .int-name,#int-catalog .int-wait-all .int-card .int-name{display:inline-block;width:9em}
+#int-catalog .int-ph .int-desc{width:80%}
+#int-catalog .int-wait-all .int-card .int-ic *,#int-catalog .int-wait-all .int-card .int-act > * *{visibility:hidden}
+#int-catalog .int-wait-all .int-card{pointer-events:none}
+#int-catalog.int-filling .int-more,#int-catalog.int-filling .int-none{visibility:hidden}
+@media (prefers-reduced-motion:no-preference){
+  #int-catalog .int-ph,#int-catalog .int-wait-all .int-card{animation:intPh 1.5s var(--ease-soft) infinite alternate}
+}
+@keyframes intPh{from{opacity:.55}to{opacity:1}}
+/* A listed twice is listed once on a phone too (Nov 27): the phone row
+   (A398) sets the card to grid with an id selector, which out-ranked the
+   rule hiding the app card behind its own site's row - so LinkedIn, Indeed
+   and Glassdoor each appeared twice under Jobs on every phone. */
+#int-catalog .int-card.cc-dup,#int-catalog .int-card.cc-pushed{display:none!important}
+/* While filling, an empty topic's "nothing here yet" line takes no room -
+   the placeholders hold its slots. */
+#int-catalog.int-filling .int-none{display:none}

@@ -1229,9 +1229,23 @@ async function ccFillIntegrations(){
      worldwide ones (a larger file) are added when theirs does, so a slow
      phone sees the country's banks and services without waiting for it. */
   const gp = Promise.all([ccGlobalLoad(), ccGlobalHereLoad(cc)]);
-  const d = await ccLoad(cc);
+  /* The placeholders the screen held the slots with go in the frame the
+     services are drawn - never a frame with neither. */
+  const draw = (d, g, here) => {
+    root.querySelectorAll('.int-ph').forEach(n => n.remove());
+    root.querySelectorAll('.int-wait-all').forEach(n => n.classList.remove('int-wait-all'));
+    try{ _ccFillWith(root, d, g, here); } finally { root.classList.remove('int-filling'); }
+  };
+  const d = await ccLoad(cc).catch(() => null);
   if(!root.isConnected) return;
-  _ccFillWith(root, d, null, null);
+  /* ONE DRAW, WHEN BOTH ARE HERE (Nov 27). The country's rows and then the
+     worldwide ones a moment later was two changes to the same grid; the
+     worldwide file is given a moment to arrive so they are drawn together,
+     and only a slow one is drawn after. */
+  const both = await Promise.race([gp, new Promise(r => setTimeout(() => r(null), 1500))]);
+  if(!root.isConnected) return;
+  if(both && both[0]){ draw(d, both[0], both[1]); return; }
+  draw(d, null, null);
   const [g, here] = await gp;
   if(g && root.isConnected) _ccFillWith(root, d, g, here);
 }

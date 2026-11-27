@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="565f2c67a7936b22">
+<meta name="amv-build" content="e602512881adc64d">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10853,6 +10853,21 @@ body:has(#sb:not(.cl)) #bottom-nav{ visibility:hidden; }
 .spx-auto .mf-say:empty{display:none}
 .spx-auto .mf-say{margin-top:var(--sp-1)}
 .spx-card h3.spx-l{margin:0;font-size:var(--t-sm);font-weight:600;color:var(--mu)}
+#int-catalog .int-ph{pointer-events:none}
+#int-catalog .int-ph .int-ic,#int-catalog .int-ph .int-name,#int-catalog .int-ph .int-desc,#int-catalog .int-ph .btn,
+#int-catalog .int-wait-all .int-card .int-ic,#int-catalog .int-wait-all .int-card .int-name,#int-catalog .int-wait-all .int-card .int-desc,#int-catalog .int-wait-all .int-card .int-act > *{
+color:transparent!important;background:var(--s2)!important;border-color:transparent!important;border-radius:var(--r-sm);box-shadow:none!important}
+#int-catalog .int-ph .int-name,#int-catalog .int-wait-all .int-card .int-name{display:inline-block;width:9em}
+#int-catalog .int-ph .int-desc{width:80%}
+#int-catalog .int-wait-all .int-card .int-ic *,#int-catalog .int-wait-all .int-card .int-act > * *{visibility:hidden}
+#int-catalog .int-wait-all .int-card{pointer-events:none}
+#int-catalog.int-filling .int-more,#int-catalog.int-filling .int-none{visibility:hidden}
+@media (prefers-reduced-motion:no-preference){
+#int-catalog .int-ph,#int-catalog .int-wait-all .int-card{animation:intPh 1.5s var(--ease-soft) infinite alternate}
+}
+@keyframes intPh{from{opacity:.55}to{opacity:1}}
+#int-catalog .int-card.cc-dup,#int-catalog .int-card.cc-pushed{display:none!important}
+#int-catalog.int-filling .int-none{display:none}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
