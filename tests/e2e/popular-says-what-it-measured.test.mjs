@@ -20,8 +20,11 @@ section('Tasks');
   ok(await note() === null, 'All has no such line - it is not a ranking claim', await note());
   await page.click('#tk2-cats [data-tkcat="popular"]');
   const n = await note();
-  ok(/visits from Spain to each service/.test(n || '') && /Chrome UX Report, October 2026/.test(n || ''), 'Popular says it is visits from Spain, and from which month', n);
-  ok(/not by how often a task is run in AMV/.test(n || ''), 'and that it is not use in AMV', n);
+  /* Since Nov 28 Popular is everyday tasks naming no company, in turns
+     across the parts of life; inside each, the kinds of service people in
+     the country visit most first. */
+  ok(/what people in Spain visit most/.test(n || '') && /Chrome UX Report, October 2026/.test(n || ''), 'Popular says it is what people in Spain visit, and from which month', n);
+  ok(/not how often a task is run in AMV/.test(n || ''), 'and that it is not use in AMV', n);
 }
 
 section('A country whose file has no visit data');
@@ -57,7 +60,7 @@ section('In Spanish');
     saveStr('amv_lang', 'es'); await _i18nLoadPack('es');
     return ccPopularNote('ES');
   }).catch(e => String(e));
-  ok(/Ordenado por visitas desde/.test(n) && /2026/.test(n), 'the sentence and the month are Spanish', n);
+  ok(/lo que más visita la gente de España/.test(n) && /octubre de 2026/.test(n), 'the sentence and the month are Spanish', n);
   await page.evaluate(() => saveStr('amv_lang', 'en'));
 }
 
