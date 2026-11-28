@@ -17,7 +17,9 @@ const { page, errors } = app;
 await page.evaluate(() => setTab('integrations'));
 await page.waitForFunction(() => typeof window.ccLoad === 'function' && typeof window.ccTasks === 'function', null, { timeout: 15000 });
 
-const LOW = /^(Complain to|Contact) |at a glance$/;
+/* A named company after it: "Contact a government office" is an everyday
+   task; "Contact Tesla" was a company's contact page. */
+const LOW = /^(Complain to|Contact) (?!a |an |the |my )|at a glance$/;
 const CREW_LOW = /in the news|\bresults\b|leadership|patents|share price|outages$|recalls and safety/;
 const r = await page.evaluate(async () => {
   const out = {};
@@ -30,13 +32,12 @@ const r = await page.evaluate(async () => {
     const work = by['Work & career'] || [];
     const near = work.find(t => t.lead && t.tpl === 'Find jobs near me');
     out[cc] = {
-      work: work.map(t => ({ title: t.title, kind: t.kind, lead: !!t.lead, n: t.e.n })).slice(0, 14),
+      work: work.map(t => ({ title: t.title, kind: t.kind })).slice(0, 14),
+      sites: ccServices(d).filter(x => x.kind === 'jobsite').slice(0, 8).map(x => x.e.n),
       near: near ? near.prompt : '',
       firstScreens: Object.fromEntries(Object.entries(by).map(([c, l]) => [c, l.slice(0, 20).map(t => t.title)])),
       crewWork: (jb['Work & career'] || []).slice(0, 10).map(j => ({ title: j.title, kind: j.kind })),
       crewFirst: Object.fromEntries(Object.entries(jb).map(([c, l]) => [c, l.slice(0, 12).map(j => j.title)])),
-      travel: (by.Travel || []).slice(0, 20).map(t => t.e.n),
-      shop: (by.Shopping || []).slice(0, 20).map(t => t.title),
     };
   }
   return out;
@@ -44,17 +45,17 @@ const r = await page.evaluate(async () => {
 
 for (const [cc, x] of Object.entries(r)) {
   section(cc + ': Work & career');
-  const after = x.work.filter(t => !t.lead);
   ok(x.work.slice(0, 2).map(t => t.title).join('|') === 'Improve my CV|Write a cover letter', 'opens with improving a CV and writing a cover letter', x.work.slice(0, 3).map(t => t.title));
-  ok(after[0] && after[0].kind === 'jobsite' && /^Find jobs on /.test(after[0].title), 'then finding jobs on the country’s most used job site', after.slice(0, 3).map(t => t.title));
-  ok(/LinkedIn|Indeed|InfoJobs|StepStone|naukri|Reed|XING/i.test(x.near), '"Find jobs near me" names the job sites people there use', x.near.slice(0, 160));
+  /* Nov 28: tasks name no company (the owner: "improve my CV says
+     adidas.com"). Finding jobs is about the country and its job sites, and
+     names none of them. */
+  ok(x.work.some(t => t.title === 'Find jobs near me') && x.near && !x.sites.some(n => x.near.indexOf(n) >= 0),
+     '"Find jobs near me" is there, naming no job site', x.near.slice(0, 160));
   const low = Object.entries(x.firstScreens).flatMap(([c, l]) => l.filter(t => LOW.test(t)).map(t => c + ': ' + t));
   ok(low.length === 0, 'no section’s first screen has a complaint, a contact page or a company brief', low.slice(0, 5));
   ok(x.crewWork[0] && x.crewWork[0].kind === 'jobsite', 'Crew’s Work & career opens with new jobs on a job site', x.crewWork.slice(0, 3));
   const clow = Object.entries(x.crewFirst).flatMap(([c, l]) => l.filter(t => CREW_LOW.test(t)).map(t => c + ': ' + t));
   ok(clow.length === 0, 'and no Crew section opens on a company’s news, results, outages or share price', clow.slice(0, 5));
-  ok(!x.travel.some(n => /cargo|\bUPS\b|fedex|\bDHL\b/i.test(n)), 'Travel names no cargo carrier', x.travel.filter(n => /cargo|UPS|fedex|DHL/i.test(n)));
-  ok(!x.shop.some(t => /^Best price (at|on) .*(pizza|burger|chicken|mcdonald|starbucks|cinema|theatre)/i.test(t)), 'Shopping prices no restaurant or cinema', x.shop.filter(t => /pizza|burger|cinema|theatre/i.test(t)));
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

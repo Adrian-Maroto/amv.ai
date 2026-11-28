@@ -352,7 +352,12 @@ TASK_EXTRA.forEach(t=>{ _TASK_PROMPTS[t[0]]=t[4]; });
 function launchTask(key){
   const prompt=TASKS[key]||_TASK_PROMPTS[key];
   if(!prompt){ toast('Task not found','error'); return; }
-  setTab('chat');
+  /* A NEW CHAT, every time (Nov 28, the owner: "when I click on something it
+     should start a new chat, not go to the most recent one"). setTab('chat')
+     reopened whatever conversation was last open and dropped the task into
+     the middle of it. openFreshChat is the sidebar's New chat: it starts one,
+     or uses the empty one already open rather than stacking blanks. */
+  openFreshChat();
   setTimeout(()=>{
     const ta=$('mta');
     if(ta){
@@ -381,7 +386,10 @@ function launchTask(key){
 let _tkQ = '', _tkC = 'all', _tkN = 60, _tkList = [], _tkCc = '';
 function _tkCatOf(t){ try{ return _cjCat({ ccKind: t.kind }); }catch(e){ return 'Home & life'; } }
 function _tkRow(t){
-  return `<button class="tk-row tk2-row" data-cc="${escH(t.kind)}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${_appMarkHTML((t.e && t.e.n) || t.title)}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span><span class="tk-d" data-no-i18n>${escH(t.e.s)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
+  /* The task and nothing else (Nov 28): no company's letter, no site under
+     it - the mark is the kind of thing it is about (a bank, a flight). */
+  let ic = '\u2022'; try{ ic = (CC_KINDS[t.kind] || [ic])[0]; }catch(e){}
+  return `<button class="tk-row tk2-row" data-cc="${escH(t.kind)}" data-dact="launchTask" data-darg="${escH(t.id)}"><span class="tk-ic" aria-hidden="true">${escH(ic)}</span><span class="tk-body"><span class="tk-t" data-no-i18n>${escH(t.title)}</span></span><span class="tk-arrow" aria-hidden="true">→</span></button>`;
 }
 /* Which country's list has been answered (even with nothing), so the body
    says Loading only while it is - in the list's own place, where the rows
@@ -390,7 +398,7 @@ let _tkAnswered = '';
 function _tkListHTML(){
   if(!_tkList.length) return (_tkCc && _tkAnswered !== _tkCc) ? `<p class="tk2-wait" role="status" aria-busy="true">${escH(T('Loading…'))}</p>` : '';
   const words = _tkQ.toLowerCase().split(/\s+/).filter(Boolean);
-  const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + t.e.n + ' ' + t.e.s + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
+  const hit = (t) => !words.length || words.every(w => (t._h || (t._h = (t.title + ' ' + T(_tkCatOf(t))).toLowerCase())).indexOf(w) >= 0);
   /* A search or a category: one list, the first rows and Show more. */
   if(words.length || _tkC !== 'all'){
     const rows = (_tkC === 'popular' ? (_tkPop.length ? _tkPop : _tkList.slice(0, TK_POPULAR_N)) : _tkList).filter(t => (_tkC === 'all' || _tkC === 'popular' || _tkCatOf(t) === _tkC) && hit(t));
@@ -470,7 +478,7 @@ function renderTasksView(){
   try{ _wireAutoServer(vc); }catch(e){}
   let t = 0;
   /* The matching tasks under the box as you type; picking one starts it. */
-  amvTypeahead($('tk-find'), { items: () => _tkList.map(x => ({ label: x.title, sub: x.e.n || '', id: x.id })),
+  amvTypeahead($('tk-find'), { items: () => _tkList.map(x => ({ label: x.title, sub: T(_tkCatOf(x)), id: x.id })),
     onPick: (it) => launchTask(it.id) });
   on($('tk-find'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _tkQ = v.trim(); _tkN = 60; _tkPaint(); }, 120); });
   on($('tk2-cats'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); } });

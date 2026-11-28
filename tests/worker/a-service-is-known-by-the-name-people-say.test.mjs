@@ -69,7 +69,9 @@ section('An everyday word is never taken for a service');
 }
 
 const pop = async (cc) => vm.runInContext(`(async () => { const d = await ccLoad('${cc}'); const t = ccTasks(d);
-  return { pop: ccTasksPopular(d, t).map(x => ({ kind: x.kind, n: x.e.n, x: +x.e.x || 1 })), leads: ccLeads(d).map(x => ({ kind: x.kind, title: x.title, prompt: x.prompt })) }; })()`, ctx);
+  const names = ccServices(d).map(x => x.e.n).filter(n => n && n.length > 3);
+  return { pop: ccTasksPopular(d, t).map(x => ({ kind: x.kind, title: x.title })), names,
+           leads: ccLeads(d).map(x => ({ kind: x.kind, title: x.title, prompt: x.prompt })) }; })()`, ctx);
 
 section('Popular takes turns across the everyday areas');
 {
@@ -81,10 +83,22 @@ section('Popular takes turns across the everyday areas');
     const first10 = new Set(r.pop.slice(0, 10).map(x => AREA[x.kind]));
     ok(r.pop.length === 50 && ['news', 'bank', 'shop', 'travel'].every(a => first10.has(a)),
        cc + ': fifty, with news, a bank, a shop and a way to travel in the first ten', { n: r.pop.length, areas: [...first10] });
+    ok(new Set(r.pop.map(x => x.title)).size === r.pop.length, cc + ': and no task twice', r.pop.length);
   }
-  const es = await pop('ES');
-  const news = es.pop.find(x => AREA[x.kind] === 'news');
-  ok(news && news.x < 50, 'Spain’s Popular opens with its own news, not an outlet listed in half the world', news);
+}
+
+/* Nov 28, the owner: "remove where it's from - 'compare saving rates' does
+   not have to say Wells Fargo; 'improve my CV' says adidas.com". A task is
+   text put in a new chat; naming a company only ever made it wrong. */
+section('No task names a company, in any country');
+{
+  for (const cc of ['US', 'BD', 'ES', 'JP', 'DE', 'BR']) {
+    const r = await pop(cc);
+    const named = r.leads.filter(x => r.names.some(n => (x.title + ' ' + x.prompt).indexOf(n) >= 0));
+    ok(r.leads.length >= 60 && named.length === 0, cc + ': ' + r.leads.length + ' tasks, none naming one of the country’s services',
+       named.slice(0, 3).map(x => x.title));
+    ok(r.leads.every(x => !/\{[a-z]+\}/.test(x.title + x.prompt)), cc + ': and no template slot left unfilled', '');
+  }
 }
 
 section('The opening Tasks name no sports club');

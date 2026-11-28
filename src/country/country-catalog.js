@@ -44,119 +44,6 @@ const CC_KINDS = {
   company:['🏢','Companies'],
 };
 
-/* What people do with each kind. [title, prompt]; {n} is the service, {s} its
-   site. The prompts ask for official sources and never act on their own. */
-const CC_TASKS = {
-  bank:[['Open an account at {n}','What do I need to open an account at {n} ({s})? Documents, fees and the steps, from their official site.'],
-        ['{n}: fees explained','Explain the current account fees at {n}, using {s}. Which can I avoid, and how?'],
-        ['Dispute a charge with {n}','Help me dispute a charge of [amount] from [merchant] on my {n} card. Draft the message; do not send it.'],
-        ['Compare {n} with another bank','Compare {n} with [another bank] on fees, app, savings rates and support, from their official sites.'],
-        ['{n} savings rates','What savings and deposit rates does {n} offer right now? Use {s} and say when it was last updated.']],
-  insurer:[['Get a quote from {n}','What would [type of cover] from {n} cost me, and what is excluded? Use {s}.'],
-           ['What my {n} policy covers','Explain what my {n} policy covers and excludes. Here is the policy: [paste or attach]'],
-           ['Make a claim with {n}','How do I make a claim with {n} for [what happened]? The steps, the documents and the deadline, from {s}.'],
-           ['Cancel a {n} policy','How do I cancel my {n} policy, what notice is needed, and is anything refunded?']],
-  university:[['Apply to {n}','How do I apply to {n} for [course]? Requirements, deadlines and steps, from {s}.'],
-              ['{n} deadlines','List the application and enrollment deadlines at {n} for [year], each with its official page on {s}.'],
-              ['Scholarships at {n}','What scholarships and financial aid does {n} offer for [my situation]? Official sources only.'],
-              ['{n} entry requirements','What grades, tests or documents does {n} require for [course], and by when? Use {s}.'],
-              ['Visit {n}','Plan a visit to {n}: open days, campus tours and how to get there.']],
-  college:[['Apply to {n}','How do I apply to {n} for [course]? Requirements, deadlines and steps, from {s}.'],
-           ['{n} courses and fees','What does [course] at {n} cost, and how long does it take? Use {s}.'],
-           ['{n} deadlines','List the application deadlines at {n}, each with its official page.']],
-  newspaper:[['Today in {n}','Brief me on today’s main stories in {n} ({s}), each in two sentences with a link.'],
-             ['What {n} says about it','What has {n} reported about [topic] this month? Summarize, with links.']],
-  newssite:[['Today on {n}','Brief me on today’s main stories on {n} ({s}), with links.'],
-            ['{n} on a topic','What has {n} published about [topic] recently? Summarize, with links.']],
-  tv:[['What is on {n} tonight','What is on {n} tonight and this week, and which shows are worth it? Use {s}.'],['Watch {n} online','How can I watch {n} online or on demand, and what does it cost?']],
-  radio:[['Listen to {n}','How do I listen to {n} live or catch up on a program? Use {s}.']],
-  telecom:[['A cheaper {n} plan','Find the cheapest {n} plan for [my usage] on {s}, and what changes from mine.'],
-           ['Cancel {n}','How do I cancel or switch away from {n}? Notice period, fees and steps.'],
-           ['Fix a {n} problem','Help me fix [problem] with my {n} service, then draft a message to their support if it is still not working.'],
-           ['{n} coverage','How good is {n} coverage at [address or area]? Official coverage map and independent reports.']],
-  isp:[['A better {n} deal','Is there a cheaper or faster {n} plan for [address]? Use {s}.'],
-       ['Report a {n} outage','Is {n} down in [area] right now, and how do I report it?']],
-  airline:[['Find a {n} flight','Find {n} flights from [A] to [B] around [dates], with prices and baggage.'],
-           ['{n} baggage rules','What are {n}’s cabin and checked baggage allowances and fees for [route or fare]? Use {s}.'],
-           ['Claim from {n}','My {n} flight [number, date] was [delayed / cancelled]. What am I owed, and draft the claim. Do not send it.'],
-           ['Check in with {n}','How and when do I check in with {n} for [flight], and what do I need at the airport? Use {s}.']],
-  airport:[['Get to {n}','The best way to get to {n} from [place] at [time], with cost and time.'],
-           ['{n} arrivals and delays','Are there delays at {n} today? Use the airport’s own pages at {s}.']],
-  rail:[['Plan a trip with {n}','Plan a trip with {n} from [A] to [B] on [date]: times, fares and the cheapest ticket.'],
-        ['{n} passes and discounts','What passes, cards or discounts does {n} offer for [my travel]? Use {s}.'],
-        ['Refund a {n} ticket','How do I get a refund or compensation from {n} for [what happened]?']],
-  bus:[['Plan a trip with {n}','Plan a trip with {n} from [A] to [B]: times, fares and tickets.'],['{n} tickets and passes','What tickets and passes does {n} sell, and which is cheapest for [my travel]?']],
-  retail:[['Best price at {n}','What does [product] cost at {n} right now, with delivery? Compare with two other shops.'],
-          ['Return something to {n}','How do I return [item] to {n}? The deadline, the steps and what I get back.'],
-          ['{n} offers this week','What offers does {n} have this week on [category]? Use {s}.']],
-  supermarket:[['A week’s shop at {n}','Plan a week of groceries for [people] on [budget] using {n}’s current prices.'],
-               ['{n} offers this week','What is on offer at {n} this week, and which deals are actually good? Use {s}.']],
-  ecommerce:[['Best price on {n}','Find the best price for [product] on {n}, with delivery and seller ratings.'],
-             ['Return something to {n}','How do I return [item] bought on {n} ({s}) - the deadline, who pays postage and when the refund arrives?'],
-             ['Track a {n} order','How do I track my {n} order [number], and what if it is late?']],
-  restaurant:[['{n} menu and allergens','What does {n} serve, and which dishes are free of [allergen]? Use {s}.'],['{n} near me','Where is the nearest {n} to [place], and what are its hours?']],
-  hotel:[['Stay at a {n} hotel','Compare {n} hotels in [city] for [dates], with prices and cancellation terms.'],['{n} cancellation policy','What is {n}’s cancellation and refund policy for [rate]?']],
-  agency:[['Get something done with {n}','How do I [what you need] with {n}? Official steps, documents and fees, from {s}.'],
-          ['{n} forms and deadlines','What forms and deadlines does {n} have for [my situation]?'],
-          ['Contact {n}','How do I contact {n} about [issue], and what should I have ready?']],
-  ministry:[['Get something done with {n}','How do I [what you need] with {n}? Official steps, from {s}.'],['{n} announcements','What has {n} announced recently that affects [me / my situation]?']],
-  hospital:[['An appointment at {n}','How do I book an appointment at {n} for [department]? Use {s}.'],['{n} services and visiting','What services does {n} offer, and what are the visiting hours?']],
-  utility:[['Understand a {n} bill','Explain this {n} bill and what I can do to lower it: [paste or attach].'],
-           ['Switch away from {n}','Is there a cheaper energy supplier than {n} for [my usage]? How do I switch?'],
-           ['Report a {n} outage','Is there a power outage with {n} in [area]? How do I report one?']],
-  carmaker:[['Service my {n}','How often does my {n} [model] need servicing, and what does it cost at an official dealer?'],
-            ['{n} recalls','Is my {n} [model, year] affected by any recall? Official sources only.'],
-            ['Compare {n} models','Compare {n} models for [needs and budget], with prices and running costs.']],
-  museum:[['Visit {n}','Plan a visit to {n}: hours, tickets, what not to miss. Use {s}.'],['{n} exhibitions','What exhibitions are on at {n} now and coming up, with dates and ticket prices? Use {s}.']],
-  library:[['Use {n}','How do I join {n} and borrow books or e-books? Use {s}.']],
-  sportsclub:[['{n} fixtures','When does {n} play next, and where can I watch or buy a ticket? Use {s}.'],['{n} tickets','How do I buy tickets for a {n} match, and what do they cost?']],
-  jobsite:[['Find jobs on {n}','Find [role] jobs in [city] on {n}, posted in the last two weeks, with links. Use {s}.'],
-           ['Make my {n} profile stand out','Improve my {n} profile for [role] - headline, summary and skills - from what I paste. Use {s} for what it shows employers.']],
-  employer:[['Jobs at {n}','Find current [role] openings at {n}, with locations and how to apply. Use {s}.'],
-            ['Interview at {n}','Prepare me for an interview at {n} for [role]: what they ask and what they value.'],
-            ['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and reputation as an employer.']],
-  school:[['Enroll at {n}','How do I enroll a child at {n}? Ages, documents, fees if any and deadlines, from {s}.'],
-          ['{n} term dates','What are the term dates, holidays and exam weeks at {n} for [year]? Use {s}.'],
-          ['Contact {n}','Who do I contact at {n} about [my question], and how? Use the official details on {s}.']],
-  research:[['{n} at a glance','Give me a short, sourced brief on {n}: what it researches, who funds it and its best-known work.'],
-            ['Latest research from {n}','Summarize the latest published research from {n} on [topic], with links to the sources.']],
-  publisher:[['New books from {n}','What has {n} published recently in [genre or subject]? Titles, authors and dates, from {s}.'],
-             ['Submit to {n}','Does {n} accept submissions for [my kind of work], and what are the guidelines? Use {s}.']],
-  software:[['{n} at a glance','Give me a short, sourced brief on {n}: its products, prices and how it compares with rivals.'],
-            ['Get help with {n}','I have this problem with a {n} product: [describe]. Find the official fix on {s} and walk me through it.'],
-            ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.']],
-  pharma:[['{n} at a glance','Give me a short, sourced brief on {n}: what it makes, recent news and where it operates.'],
-          ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.']],
-  nonprofit:[['Volunteer with {n}','How can I volunteer with {n} in [place]? What they need, the time it takes and how to apply, from {s}.'],
-             ['Donate to {n}','How does {n} use donations, and what are the ways to give? Official figures from {s}; do not pay anything.'],
-             ['Get help from {n}','Can {n} help with [my situation]? Who qualifies and how to ask, from {s}.']],
-  theatre:[['What is on at {n}','What is on at {n} this month and next, with dates and ticket prices? Use {s}.'],
-           ['{n} tickets','How do I buy tickets for [show] at {n}, what do they cost and which seats are good value?'],
-           ['Get to {n}','What is the best way to get to {n} from [place] - public transport, parking and how long to allow?']],
-  stadium:[['Events at {n}','What events are coming up at {n}, with dates and how to buy tickets? Use {s}.'],
-           ['Get to {n}','What is the best way to get to {n} from [place] on an event day - transport, parking and when to leave?'],
-           ['{n} tickets','How do I buy tickets for [event] at {n}, what do they cost and what can I bring in?']],
-  mall:[['Shops and hours at {n}','Which shops and restaurants are at {n}, and what are the opening hours this week? Use {s}.'],
-        ['Get to {n}','What is the best way to get to {n} from [place] - public transport, parking and the quiet times?']],
-  park:[['Visit {n}','Plan a visit to {n} for [dates]: how to get there, entry fees, where to stay and what not to miss.'],
-        ['Trails and rules at {n}','What are the best trails at {n} for [my level], and what permits or rules apply? Use {s}.']],
-  zoo:[['Visit {n}','Plan a visit to {n}: opening hours, ticket prices, how to get there and what not to miss. Use {s}.'],
-       ['{n} tickets','What do tickets to {n} cost for [who is going], and is it cheaper to book ahead? Use {s}.']],
-  festival:[['{n} dates and line-up','When is {n} next held, what is on the program and where does it take place? Use {s}.'],
-            ['{n} tickets','How do I get tickets for {n}, what do they cost and when do they go on sale? Use {s}.']],
-  embassy:[['Visa at {n}','What visa do I need for [purpose of travel], and how do I apply through {n}? Documents, fees and timing, from {s}.'],
-           ['An appointment at {n}','How do I book an appointment at {n} for [service], and what must I bring? Use {s}.'],
-           ['Contact {n}','How do I contact {n} about [my question] - address, hours and the right department? Use {s}.']],
-  union:[['Join {n}','Who can join {n}, what does it cost and what do members get? Use {s}.'],
-         ['Get help from {n}','Can {n} help with [my situation at work]? What they offer members and how to ask, from {s}.']],
-  brewery:[['Visit {n}','Does {n} offer tours or tastings? Times, prices and how to book, from {s}.'],
-           ['{n} at a glance','Give me a short, sourced brief on {n}: its history, what it makes and where to find it.']],
-  company:[['{n} at a glance','Give me a short, sourced brief on {n}: what it does, recent news and how it is regarded.'],
-           ['Jobs at {n}','What roles is {n} hiring for in [field]? Use their careers page on {s} and list what each asks for.'],
-           ['Contact {n}','How do I reach the right team at {n} about [my question]? Official contact details from {s}.'],
-           ['Complain to {n}','Help me write a complaint to {n} about [what happened], with what I want done. Draft it; do not send it.']],
-};
-
 /* What is worth watching on a schedule, per kind. [title, prompt, every].
 
    Nov 15 (owner: "1000+ jobs for every country, specific to it, based on what
@@ -741,43 +628,13 @@ function _ccByPop(d){
   const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.pow(Math.max(1, +x.e.x || 1), 0.25);
   return out.sort((a, b) => (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
-/* WHAT A SECTION SHOWS AFTER ITS OPENING TASKS: THE USEFUL FIRST (Nov 27).
-   The owner, of Work & career: "why does it say improve my CV at adidas and
-   then complain to Tesla? The first ones should be improve my CV, write a
-   cover letter, find jobs at LinkedIn ... any stupid job goes all the way at
-   the bottom - for every section, every country". After the opening tasks a
-   section was the country's services in visit order, one template each, so
-   "Facebook at a glance", "Complain to Tesla" and "Contact the National
-   Hockey League" came before "Find jobs on LinkedIn" - popularity of the
-   SITE, with no regard to what the task does for anybody.
-
-   Now each service's tasks are ranked by what they are for, in the order the
-   largest published study of assistant use ranks requests (NBER working paper
-   34255, Sept 2025; docs/RESEARCH.md): doing something with a service you use
-   - find a job, open an account, track an order, a cheaper plan - first;
-   then the occasional (cancel, a refund, a claim); then a brief ABOUT a
-   company ("at a glance", "contact", its news); and a complaint last. Within
-   that, the kinds of service a section is for come before ones it merely
-   lists - job sites before employers before any other company - and then the
-   most visited first, each service's tasks taking turns so the first screen
-   is not one bank five times. */
-const CC_TASK_DO = new Set(['Open an account at {n}', '{n}: fees explained', 'Get a quote from {n}', 'Make a claim with {n}', 'Apply to {n}',
-  'Today in {n}', 'Today on {n}', 'What is on {n} tonight', 'A cheaper {n} plan', 'A better {n} deal', 'Find a {n} flight', 'Plan a trip with {n}',
-  'Best price at {n}', 'A week’s shop at {n}', '{n} offers this week', 'Best price on {n}', 'Track a {n} order', 'Stay at a {n} hotel',
-  'Get something done with {n}', 'An appointment at {n}', 'Understand a {n} bill', 'Find jobs on {n}',
-  'Enroll at {n}', '{n} fixtures', 'Visa at {n}', 'Return something to {n}', 'Claim from {n}', 'What is on at {n}',
-  'Events at {n}', 'Check in with {n}', '{n} deadlines', 'Fix a {n} problem']);
-const CC_TASK_ABOUT = new Set(['{n} at a glance', 'Contact {n}', '{n} announcements', 'Donate to {n}', 'Submit to {n}', 'New books from {n}',
-  'Latest research from {n}', '{n} services and visiting']);
+/* THE USEFUL FIRST (Nov 27), now for Crew's jobs: Tasks name no service
+   since Nov 28 (ccLeads), so the per-service task tiers that ranked "Find
+   jobs on LinkedIn" above "Complain to Tesla" went with them. */
 /* Kinds a section lists without being for them: a company is in Work &
    career because it employs people, not because anybody goes there to work
    on their career. */
 const CC_KIND_SIDE = new Set(['company', 'software', 'pharma', 'research', 'publisher', 'brewery', 'union']);
-function _ccTaskTier(kind, title){
-  if(/^Complain to /.test(title)) return 4;
-  if(CC_TASK_ABOUT.has(title) || (title === 'Jobs at {n}' && CC_KIND_SIDE.has(kind))) return 3;
-  return CC_TASK_DO.has(title) ? 1 : 2;
-}
 /* Retail chains that are restaurants or cinemas, by name (see ccLoad). */
 const CC_REFILE = [
   ['restaurant', /pizza|burger|chicken|taco\b|donut|doughnut|starbucks|mcdonald|\bkfc\b|subway|domino|wendy|dunkin|chipotle|popeyes|panera|arby|little caesars|papa john|chick-fil-a|denny|ihop|olive garden|applebee|buffalo wild|five guys|krispy kreme|tim hortons|nando|greggs|pret a manger|costa coffee|\bcaf[eé]\b|coffee/i],
@@ -814,7 +671,6 @@ function _ccCrewTier(kind, title, j){
   return j === 0 ? 1 : 2;
 }
 function _ccByUse(d, TPL, make, tierOf){
-  tierOf = tierOf || ((kind, title) => _ccTaskTier(kind, title));
   const ents = _ccByPop(d).filter(x => TPL[x.kind] && TPL[x.kind].length);
   const cc = String((d && d.cc) || '').toUpperCase();
   const rows = [];
@@ -839,7 +695,6 @@ function _ccByUse(d, TPL, make, tierOf){
 /* A task opens chat with the service's name and the site the row shows under
    it - so AMV starts where the person was told it would. Half the task
    templates never named the site; it is added to those, never twice. */
-const _ccWithSite = (p, e) => p.indexOf(e.s) >= 0 ? p : p + ' Start from ' + e.n + '’s official site, ' + e.s + '.';
 /* EACH SECTION OPENS WITH WHAT PEOPLE MOST OFTEN WANT TO DO (owner, Nov 25:
    "for money, the most popular is not 'open an account at M&T' - it is
    compare savings rates, lower my loan interest, transfer fees...").
@@ -857,42 +712,42 @@ const _ccWithSite = (p, e) => p.indexOf(e.s) >= 0 ? p : p + ' Start from ' + e.n
    section; a country with no service of that kind lends one from the same
    section, and a section with none drops the task. */
 const CC_LEADS = [
-  ["bank", "Compare savings rates", "Compare the current savings rates at {top} and other banks in {c}, from their official sites. Which pays the most, and on what conditions?"],
+  ["bank", "Compare savings rates", "Compare the current savings rates at the main banks in {c}, from their official sites. Which pays the most, and on what conditions?"],
   ["bank", "Make me a monthly budget", "Help me make a simple monthly budget. Ask me for my income and regular costs, then lay it out and show where I can save."],
   ["bank", "Pay less interest on a loan or card", "How can I pay less interest on my [loan or credit card] in {c}? Explain my options step by step, from official sources."],
-  ["bank", "Send money abroad for less", "What is the cheapest way to send [amount] from {c} to [country]? Compare a transfer from {n} with the main money transfer services, fees and exchange rate included."],
+  ["bank", "Send money abroad for less", "What is the cheapest way to send [amount] from {c} to [country]? Compare a transfer from my bank with the main money transfer services, fees and exchange rate included."],
   ["bank", "Check and raise my credit score", "How do I check my credit score in {c} for free, and what raises it fastest?"],
   ["bank", "Pay off my debt faster", "Make me a plan to pay off these debts as fast as possible: [debts, amounts and interest rates]."],
   ["bank", "Explain my bank statement", "Explain my bank statement and flag anything unusual, and any fees I could avoid: [paste or attach]"],
-  ["insurer", "Find cheaper insurance", "Compare [car, home or health] insurance in {c} from {top} and others: the price, what is covered and the excess."],
-  ["airline", "Find cheap flights", "Find the cheapest way to fly from [city] to [place] around [dates]. Compare {top} and others on the total price with bags."],
+  ["insurer", "Find cheaper insurance", "Compare [car, home or health] insurance from the main insurers in {c}: the price, what is covered and the excess."],
+  ["airline", "Find cheap flights", "Find the cheapest way to fly from [city] to [place] around [dates]. Compare the airlines on the total price with bags."],
   ["airline", "Plan a trip, day by day", "Plan a [number]-day trip to [place] for [who]: day by day, with how to get around and roughly what it costs."],
   ["airline", "Entry rules for another country", "What documents, visa and entry rules apply to someone from {c} travelling to [country]? Use official sources and say when they were last updated."],
   ["airline", "My flight was delayed or cancelled", "My [airline] flight was delayed or cancelled. What refund or compensation am I owed, and how do I claim it?"],
-  ["hotel", "Find a hotel within my budget", "Find a well-rated hotel in [place] for [dates] under [budget]. Compare {top} and others."],
-  ["rail", "Train or bus between two cities", "Compare the train and the bus from [city] to [city] in {c}: times, prices and where to book. Start with {n}."],
-  ["airport", "Get from the airport to the city", "What is the best way to get from {n} to the city centre? The options, prices and times."],
+  ["hotel", "Find a hotel within my budget", "Find a well-rated hotel in [place] for [dates] under [budget]. Compare the options and where to book each."],
+  ["rail", "Train or bus between two cities", "Compare the train and the bus from [city] to [city] in {c}: times, prices and where to book."],
+  ["airport", "Get from the airport to the city", "What is the best way to get from [airport] to the city centre in {c}? The options, prices and times."],
   ["airline", "Make a packing list", "Make a packing list for [trip, weather and number of days]."],
-  ["ecommerce", "Find the best price for something", "Find the best price for [product] at {top} and other shops in {c}, delivery included."],
+  ["ecommerce", "Find the best price for something", "Find the best price for [product] at the main shops in {c}, delivery included."],
   ["ecommerce", "Help me choose what to buy", "Help me choose a [product] for [what I need it for] under [budget]. Compare the best options and say why."],
-  ["supermarket", "Plan my weekly groceries", "Plan a week of meals and the shopping list for [number of people] on a budget of [amount], using what {n} sells."],
+  ["supermarket", "Plan my weekly groceries", "Plan a week of meals and the shopping list for [number of people] on a budget of [amount], with prices from supermarkets in {c}."],
   ["ecommerce", "Return an order and get a refund", "How do I return my order from [shop] and get my money back? The steps, the deadline and the cost."],
   ["ecommerce", "Is this deal real?", "Is this a good deal, and is the seller trustworthy? [link or details]"],
   ["retail", "Find a gift", "Suggest gift ideas for [person, age and interests] under [budget], with where to buy each in {c}."],
   ["hospital", "What could my symptoms mean?", "I have had [symptoms] since [when]. What could it be, what can I do at home, and when should I see a doctor? I know this is not a diagnosis."],
   ["hospital", "Explain my test results", "Explain these test results in plain words, and what I should ask my doctor: [paste or attach]"],
-  ["hospital", "See a doctor in {c}", "How do I book a doctor or specialist appointment in {c}, and what does it cost? Start with {n}."],
+  ["hospital", "See a doctor in {c}", "How do I book a doctor or specialist appointment in {c}, and what does it cost?"],
   ["pharma", "Check a medicine", "What is [medicine] for, its usual dose and side effects, and does it interact with [other medicines]? From official sources."],
   ["hospital", "Make me a workout plan", "Make me a [number]-week workout plan for [goal], [days] a week, with what I have: [equipment]."],
   ["hospital", "Plan healthy meals", "Plan a week of healthy meals for [goal or diet], with a shopping list."],
-  ["newspaper", "Today’s top news in {c}", "Summarize today’s most important news in {c} from {top}, with a link for each story."],
+  ["newspaper", "Today’s top news in {c}", "Summarize today’s most important news in {c} from its main newspapers, with a link for each story."],
   ["newspaper", "Explain a story simply", "Explain this news story simply: what happened, why it matters and what is disputed. [link or topic]"],
   ["newssite", "This week in the news", "Give me a short summary of this week’s main news in {c} and in the world."],
   ["newspaper", "Follow a topic", "What is the latest on [topic]? Summarize it from several reliable sources and say where they disagree."],
   ["tv", "Fact-check a claim", "Is this true? [claim] Check it against reliable sources and say how sure you are."],
   ["university", "Explain a topic simply", "Explain [topic] simply, with an example, then quiz me with three questions."],
   ["university", "Help me study for an exam", "Make me a study plan for [exam] on [date], and quiz me on [subject]."],
-  ["university", "Apply to a university in {c}", "How do I apply to [course] at universities in {c} such as {top}? The requirements, deadlines and costs."],
+  ["university", "Apply to a university in {c}", "How do I apply to [course] at universities in {c}? The requirements, deadlines and costs."],
   ["university", "Outline my essay", "Help me outline an essay on [topic]: the main argument, the sections and sources to read. Do not write it for me."],
   ["library", "Learn a language", "Teach me [language] for [goal]: a short daily plan and today’s first lesson."],
   ["university", "Find a scholarship", "Find scholarships in {c} for [field and level], with deadlines and links."],
@@ -903,10 +758,10 @@ const CC_LEADS = [
   ["employer", "Ask for a raise", "Help me ask for a raise: what to say, what my role pays in {c}, and how to handle a no."],
   /* On the job sites people there use (LinkedIn, Indeed and Glassdoor in
      the United States; StepStone in Germany), not at named employers. */
-  ["jobsite", "Find jobs near me", "Find [role] jobs in [city], {c}, posted in the last two weeks, on {top} and the employers' own sites."],
-  ["telecom", "Lower my phone bill", "How can I pay less for my phone? Compare plans from {top} in {c} for [how I use it]."],
-  ["utility", "Cut my energy bill", "How can I lower my electricity and gas bill in {c}? Compare {n} with other suppliers, and give me quick savings at home."],
-  ["isp", "Compare internet plans", "Compare home internet plans in {c} from {top} for [area and usage]: speed, price and contract length."],
+  ["jobsite", "Find jobs near me", "Find [role] jobs in [city], {c}, posted in the last two weeks, on the job sites people there use and the employers' own sites."],
+  ["telecom", "Lower my phone bill", "How can I pay less for my phone? Compare plans from the main mobile networks in {c} for [how I use it]."],
+  ["utility", "Cut my energy bill", "How can I lower my electricity and gas bill in {c}? Compare the suppliers, and give me quick savings at home."],
+  ["isp", "Compare internet plans", "Compare home internet plans from the main providers in {c} for [area and usage]: speed, price and contract length."],
   ["utility", "Fix something at home", "Help me fix [problem] at home, step by step, and tell me when to call a professional."],
   ["carmaker", "Choose a car", "Help me choose a car for [needs] under [budget] in {c}: new or used, and what it costs to run."],
   ["telecom", "Cancel or switch a contract", "How do I cancel or switch my [provider] contract in {c}, and what notice or fees apply?"],
@@ -923,35 +778,83 @@ const CC_LEADS = [
      a football club and Pakistan, a cricket country, another). */
   ["sportsclub", "When my team plays next", "When and where does [my team] play next, and how do I get tickets? Use the team's or the league's official site."],
   ["park", "Plan a day out", "Plan a day out in [place] for [who]: what to see, where to eat and how to get there."],
-  ["museum", "Find a museum or exhibition", "Which museums or exhibitions in [city] are worth it right now, such as {n}? Prices and opening hours."],
-  ["festival", "Festivals coming up", "Which festivals are coming up in {c} in the next few months, and how do I get tickets?"]
+  ["museum", "Find a museum or exhibition", "Which museums or exhibitions in [city], {c}, are worth it right now? Prices and opening hours."],
+  ["festival", "Festivals coming up", "Which festivals are coming up in {c} in the next few months, and how do I get tickets?"],
+  /* WHAT THE COMPANY-BY-COMPANY TASKS DID, SAID ONCE (Nov 28). Tasks used to
+     list each of these once per company ("Open an account at Wells Fargo",
+     "Jobs at adidas"), so the page named a site on every row - and the wrong
+     one often enough that the owner asked for every name to go: "it just
+     generates a text, goes to a new chat and puts the text down". Each is
+     now the thing itself, once, about the country. */
+  ["bank", "Open a bank account", "What do I need to open a bank account in {c}? Compare the main banks on documents, fees and the steps, from their official sites."],
+  ["bank", "Avoid bank fees", "Which current account fees are usual in {c}, and how can I avoid them?"],
+  ["bank", "Dispute a card charge", "Help me dispute a charge of [amount] from [merchant] on my card. Draft the message to my bank; do not send it."],
+  ["insurer", "Make an insurance claim", "Help me make a claim on my [type] insurance for [what happened] in {c}: the steps, what to include and the deadlines."],
+  ["insurer", "What my insurance covers", "Explain what this insurance policy covers and excludes, in plain words: [paste or attach]"],
+  ["insurer", "Cancel an insurance policy", "How do I cancel my [type] insurance policy in {c}, and what notice or fees apply?"],
+  ["university", "University entry requirements", "What are the entry requirements for [course] at universities in {c}?"],
+  ["university", "University application deadlines", "When are this year’s application deadlines for [course] at universities in {c}?"],
+  ["tv", "What is on TV tonight", "What is worth watching on TV in {c} tonight? A short list by channel and time."],
+  ["radio", "Find a podcast or radio show", "Suggest radio shows or podcasts in {c} about [topic], and where to listen."],
+  ["telecom", "Fix a phone or internet problem", "Help me fix this problem with my phone or internet: [problem]. Step by step, and when to call my provider."],
+  ["telecom", "Best mobile coverage where I live", "Which mobile network has the best coverage in [area], {c}?"],
+  ["airline", "Baggage rules for my flight", "What are the baggage rules and fees for my flight with [airline] in [class]?"],
+  ["airline", "Check in for a flight", "How and when do I check in for my [airline] flight, and what do I need at the airport?"],
+  ["airport", "Is my flight on time?", "Is flight [number] on time today? Check the airport’s arrivals and departures."],
+  ["rail", "Rail passes and discounts", "Which rail passes or discount cards in {c} would save me money for [how I travel]?"],
+  ["rail", "Refund for a delayed train or bus", "How do I get a refund or compensation in {c} for a [train or bus] ticket that was delayed or cancelled?"],
+  ["ecommerce", "Track an order", "Where is my order from [shop]? Help me track it with [tracking number], and what to do if it is late."],
+  ["supermarket", "This week’s best offers", "What are the best supermarket offers in {c} this week on [things I buy]?"],
+  ["restaurant", "Find a restaurant", "Find a good restaurant in [area], {c}, for [occasion] under [budget], with what to order."],
+  ["restaurant", "Check a menu for allergens", "Which dishes at [restaurant] are safe for [allergy or diet]? Check its official menu."],
+  ["hotel", "Cancel a booking for free", "What is the cancellation policy of my booking at [hotel or site], and how do I cancel without paying?"],
+  ["agency", "Contact a government office", "How do I contact [government office] in {c} about [what], and what should I have ready?"],
+  ["utility", "Understand my energy bill", "Explain this energy bill in plain words and check it for mistakes: [paste or attach]"],
+  ["utility", "Report a power or water cut", "How do I report a [power, water or gas] cut at [address] in {c}, and when will it be fixed?"],
+  ["carmaker", "Check my car for recalls", "Is my [make, model and year] affected by any recall in {c}, and what do I do?"],
+  ["carmaker", "Car service: when and how much", "When does my [car] need its next service, and roughly what will it cost in {c}?"],
+  ["library", "Borrow books and e-books free", "How do I join a public library in {c} and borrow e-books for free?"],
+  ["jobsite", "Make my job profile stand out", "Improve my profile on a job site for [role]: headline, summary and skills, from what I paste."],
+  ["employer", "Research a company before applying", "Tell me about [company] before I apply: what it does, its culture, salaries and recent news."],
+  ["school", "Enrol my child in a school", "How do I enrol my child in a school in [area], {c}? The steps, documents and deadlines."],
+  ["school", "School term dates and holidays", "What are this year’s school term dates and holidays in [region], {c}?"],
+  ["software", "Get help with an app", "Help me with this problem in [app]: [problem]. Step by step."],
+  ["nonprofit", "Volunteer near me", "Where can I volunteer in [city], {c}, for [cause], and how do I sign up?"],
+  ["nonprofit", "Donate to a good charity", "Which charities in {c} working on [cause] use donations well, and is my donation tax-deductible?"],
+  ["embassy", "Book an embassy appointment", "How do I book an appointment at the [country] embassy or consulate in {c}, and what do I bring?"],
+  ["union", "Know my rights at work", "What are my rights at work in {c} about [issue], and who can help me? Official sources."],
+  ["company", "Complain about a company", "Help me write a complaint to [company] about [problem], and where to escalate it in {c} if they do not answer."],
+  ["stadium", "Get to a stadium or venue", "What is the best way to get to [venue] in [city] for [event], and when should I leave?"],
+  ["zoo", "Plan a visit to a zoo or park", "Plan a visit to [zoo or park] in {c} for [who]: tickets, opening hours and what not to miss."]
 ];
-const _ccAnd = (names) => names.length < 2 ? (names[0] || '') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+/* THE COUNTRY'S TASKS, EACH ONCE, NAMING NO COMPANY (Nov 28, the owner:
+   "remove where it's from, and say what it is - 'compare saving rates' does
+   not have to say Wells Fargo, 'improve my CV' should not say adidas.com").
+
+   A task is text put into a new chat; it does not run on a site. The page
+   printed the first service of the task's kind under it - an employer for
+   "Improve my CV", a social network for "Write a professional email" - so
+   the row read as a claim about a company that it never made, and was wrong
+   as often as the data's guess at a kind. Now a row is the task itself.
+
+   A task is listed when the country has services of its kind, or of its
+   category (a country with no airline in the data still has flights), so
+   the list stays the country's - only the company names are gone. */
 function ccLeads(d){
-  const pop = _ccByPop(d), byKind = {};
-  pop.forEach(x => { (byKind[x.kind] = byKind[x.kind] || []).push(x.e); });
+  const have = new Set(), cats = new Set();
   const cat = k => (typeof CJ_KIND_CAT !== 'undefined' && CJ_KIND_CAT[k]) || '';
+  _ccByPop(d).forEach(x => { have.add(x.kind); if(cat(x.kind)) cats.add(cat(x.kind)); });
   const out = [];
   CC_LEADS.forEach(([kind, title, prompt], i) => {
-    let list = byKind[kind];
-    if(!(list && list.length)){ const alt = pop.find(x => cat(x.kind) && cat(x.kind) === cat(kind)); if(!alt) return; list = byKind[alt.kind]; }
-    const e = list[0];
-    const top = _ccAnd(list.slice(0, 3).map(x => x.n));
+    if(!have.has(kind) && !(cat(kind) && cats.has(cat(kind)))) return;
     const tr = T(title);
-    /* Where AMV should start: the official sites of the services the task
-       names, so it does not begin from a search result. */
-    let p = _ccFill(prompt.replace(/\{top\}/g, top), e, true, d.cc);
-    if(prompt.indexOf('{top}') >= 0) p += ' Start from their official sites: ' + list.slice(0, 3).map(x => x.s).join(', ') + '.';
-    else if(prompt.indexOf('{n}') >= 0) p = _ccWithSite(p, e);
-    out.push({ id:'cl-' + i + '-' + e.q, kind, e, lead:true, tpl:title,
-      title:_ccFill(tr, e, tr === title, d.cc), prompt:p });
+    out.push({ id:'cl-' + i, kind, lead:true, tpl:title,
+      title:tr.replace(/\{c\}/g, () => _ccPlace(d.cc, tr === title)),
+      prompt:prompt.replace(/\{c\}/g, () => _ccPlace(d.cc, true)) });
   });
   return out;
 }
-function ccTasks(d){
-  return ccLeads(d).concat(_ccByUse(d, CC_TASKS, (kind, e, i) => { const t = CC_TASKS[kind][i];
-    return { id:'cc-' + kind + '-' + e.q + '-' + i, kind, e, tpl:t[0], title:_ccTitle(t[0], e), prompt:_ccWithSite(_ccFill(t[1], e, true), e) }; }));
-}
+function ccTasks(d){ return ccLeads(d); }
 /* TASKS' POPULAR: WHAT PEOPLE DO EVERY DAY (Nov 23). The owner, of Popular:
    "make them things people can do every day ... this applies to all
    countries". The fifty most visited services in the country, of the kinds
@@ -960,9 +863,6 @@ function ccTasks(d){
    actually do there, never an agency's forms or an embassy's contact page.
    One per brand: a chain's hotels or a league's clubs share the brand's
    visits, so only its first is listed. */
-const CC_EVERYDAY = { newspaper: 0, newssite: 0, tv: 0, radio: 0, bank: 4, telecom: 0, isp: 0, supermarket: 0, retail: 2,
-  ecommerce: 2, restaurant: 1, airline: 0, rail: 0, bus: 0, hotel: 0, airport: 1, utility: 0, sportsclub: 0,
-  insurer: 0, software: 1, mall: 0, theatre: 0, stadium: 0, jobsite: 0 };
 function _ccBrand(host){
   const l = String(host).split('.');
   const shared = /^(bank|gov|nic|ac|co|com|org|net|edu|gob|go|or|ne)$/;
@@ -979,36 +879,25 @@ function _ccBrand(host){
    opened the United States with three pizza chains. Taking turns puts a
    bank, a shop and a way to travel in the first ten everywhere. */
 const CC_POP_AREAS = [['newspaper', 'newssite', 'tv', 'radio'], ['bank'], ['telecom', 'isp'], ['supermarket', 'retail', 'ecommerce', 'mall'],
-  ['restaurant'], ['airline', 'rail', 'bus', 'airport', 'hotel'], ['utility', 'insurer'], ['sportsclub', 'stadium'], ['jobsite']];
+  ['restaurant'], ['airline', 'rail', 'bus', 'airport', 'hotel'], ['utility', 'insurer'], ['sportsclub', 'stadium'],
+  /* Work takes the CV, the cover letter and the interview with the job
+     sites (Nov 28): they are what people do there, and named no company. */
+  ['jobsite', 'employer'], ['hospital', 'pharma']];
 function ccTasksPopular(d, all){
-  const byId = new Map((all || []).map(t => [t.id, t]));
-  /* Inside an area: the visits band, then the outlets listed in half the
-     world or more (the BBC, CNN, IKEA - x of 50 and up) after the rest, then
-     the best known (Wikipedia editions). Ranking for the country's own here
-     instead picked Posteo as Germany's phone company and Banobras as
-     Mexico's bank. */
-  /* Not for job sites: a worldwide one (LinkedIn, Indeed) is what people
-     there use, where a worldwide outlet or shop is not what a country reads
-     or buys from first. */
-  const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), G = x => (x.kind !== 'jobsite' && (+x.e.x || 1) >= 50) ? 1 : 0;
-  const ranked = _ccByPop(d).map((x, k) => [x, k]).sort((a, b) => (R(a[0]) - R(b[0])) || (G(a[0]) - G(b[0])) || ((+b[0].e.w || 0) - (+a[0].e.w || 0)) || (a[1] - b[1])).map(z => z[0]);
-  const queues = CC_POP_AREAS.map(kinds => ranked.filter(x => kinds.indexOf(x.kind) >= 0));
-  const out = [], brands = new Set(), at = queues.map(() => 0);
-  const take = (q) => {
-    const list = queues[q];
-    while(at[q] < list.length){
-      const x = list[at[q]++];
-      if(!(x.kind in CC_EVERYDAY) || !CC_TASKS[x.kind]) continue;
-      const b = _ccBrand(x.e.s); if(brands.has(b)) continue;
-      const i = Math.min(CC_EVERYDAY[x.kind], CC_TASKS[x.kind].length - 1);
-      const t = byId.get('cc-' + x.kind + '-' + x.e.q + '-' + i); if(!t) continue;
-      brands.add(b); out.push(t); return true;
-    }
-    return false;
-  };
+  /* The same turns across the everyday areas as before, each turn now
+     taking that area's next task. Inside an area the kinds people in the
+     country visit most come first (the Chrome UX Report rank of the kind's
+     best-visited service there), then the written order - so the United
+     States opens its money turn on what its banks are visited for, and a
+     country whose data has no airline still gets flights in its travel turn. */
+  const rank = {}; _ccByPop(d).forEach((x, k) => { if(!(x.kind in rank)) rank[x.kind] = k; });
+  const R = t => (t.kind in rank ? rank[t.kind] : 1e9);
+  const queues = CC_POP_AREAS.map(kinds => (all || []).map((t, i) => [t, i]).filter(z => kinds.indexOf(z[0].kind) >= 0)
+    .sort((a, b) => (R(a[0]) - R(b[0])) || (a[1] - b[1])).map(z => z[0]));
+  const out = [], at = queues.map(() => 0);
   for(let more = true; more && out.length < 50;){
     more = false;
-    for(let q = 0; q < queues.length && out.length < 50; q++) if(take(q)) more = true;
+    for(let q = 0; q < queues.length && out.length < 50; q++) if(at[q] < queues[q].length){ out.push(queues[q][at[q]++]); more = true; }
   }
   return out;
 }
@@ -1030,7 +919,7 @@ function ccPopularNote(cc, crew){
   const t = !m.visits ? T('There is no visit data for {0}, so this list is in the catalog’s own order - not a measure of what is popular.')
     : crew === 'counted' ? T('Jobs picked for {0} and the ones people there switch on most in AMV come first; the rest by visits from {0} to each service (Chrome UX Report, {1}).')
     : crew ? T('Jobs picked for {0} come first; the rest by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a job is run in AMV.')
-    : T('Ranked by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a task is run in AMV.');
+    : T('Everyday tasks, taking turns across the parts of life; in each, what people in {0} visit most comes first (Chrome UX Report, {1}) - not how often a task is run in AMV.');
   return t.split('{0}').join(place).replace('{1}', m.month);
 }
 try{ window.ccPopularNote = ccPopularNote; window.ccMeasure = ccMeasure; window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccLeads = ccLeads; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}

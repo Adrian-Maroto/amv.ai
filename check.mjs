@@ -1097,7 +1097,9 @@ step('Every on-screen string in the code has a translation', () => {
      table that yields nothing is a broken pattern, not a clean file. */
   const TABLES = [
     ['src/country/country-catalog.js', /const CC_KINDS = \{[\s\S]*?\n\};/, /\[\s*'[^']*'\s*,\s*'((?:\\.|[^'\\])+)'\s*\]/g, 20],
-    ['src/country/country-catalog.js', /const CC_TASKS = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 60],
+    /* The country's tasks, each once and naming no company (Nov 28): every
+       title is on screen in the person's language. */
+    ['src/country/country-catalog.js', /const CC_LEADS = \[[\s\S]*?\n\];/, /\[\s*"[^"]*",\s*"((?:\\.|[^"\\])+)"/g, 90],
     ['src/country/country-catalog.js', /const CC_CREW = \{[\s\S]*?\n\};/, /\[\s*'((?:\\.|[^'\\])+)'\s*,\s*'/g, 20],
     ['src/integrations/integrations-view.js', /const TASK_EXTRA=\[[\s\S]*?\n\];/, /\["[^"]*","[^"]*","[^"]*","((?:\\.|[^"\\])+)"/g, 40],
     /* TASK_BY_FACT left with the advice and find-out groups (Nov 15, the

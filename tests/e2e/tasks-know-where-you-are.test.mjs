@@ -34,7 +34,10 @@ section('Only the country’s own tasks');
     uniq: document.querySelectorAll('.uniq-card').length, general: document.querySelectorAll('[data-darg^="x-"], .tasks-masonry').length }));
   ok(/Spain/.test(r.h), 'headed for Spain', r.h);
   const n = +r.sub.replace(/[^\d]/g, '');
-  ok(n >= 1000, 'with the count of what is really there, by category - ' + n, r.sub);
+  /* Each task once since Nov 28 (no company names), so about a hundred - the
+     categories' counts add up to the tasks the country has. */
+  const want = await page.evaluate(async () => ccTasks(await ccLoad('ES')).length);
+  ok(n === want && n >= 80, 'with the count of what is really there, by category - ' + n, { n, want });
   ok(r.uniq === 0 && !/Only on AMV/.test(r.text), 'no "Only on AMV"', r.uniq);
   ok(r.general === 0 && !/Advice & how-to|Find out/.test(r.text), 'no general advice, find-out or writing groups', r.general);
   ok(!/Wikidata/.test(r.text), 'and no "Source: Wikidata"', '');
@@ -54,21 +57,25 @@ section('Every one of them can be reached');
   ok(before > 0, 'All shows the first few of each', before);
 }
 
-section('A task opens chat, naming the service');
+section('A task opens a new chat, about the country, naming no service');
 {
-  const want = await page.evaluate(() => { const b = document.querySelector('#tk2-body .tk-row'); const s = b.querySelector('.tk-d').textContent; b.click(); return s; });
+  /* Nov 28, the owner: "when I click on something it should start a new
+     chat, not go to my last one" and "remove where it's from". */
+  const was = await page.evaluate(() => { const c = newConvObj(); c.msgs = [{ role: 'user', content: 'yesterday' }]; S.convs.unshift(c); S.cur = c.id; return c.id; });
+  const row = await page.evaluate(() => { const b = document.querySelector('#tk2-body .tk-row'); const t = b.textContent; b.click(); return t; });
   await page.waitForTimeout(400);
-  const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
-  ok(v.tab === 'chat' && v.val.indexOf(want) >= 0, 'the prompt is in chat and names ' + want, v.val.slice(0, 100));
+  const v = await page.evaluate(() => ({ tab: S.tab, cur: S.cur, msgs: ((S.convs.find(c => c.id === S.cur) || {}).msgs || []).length, val: (document.getElementById('mta') || {}).value || '' }));
+  ok(v.tab === 'chat' && v.cur !== was && v.msgs === 0 && v.val.length > 20, 'the task is in a new, empty chat', { row, v });
+  ok(!/\.[a-z]{2,}\b\//.test(v.val) && !/www\.|https?:/.test(v.val), 'and names no site', v.val.slice(0, 100));
 }
 
 section('Search, and nothing found goes to chat');
 {
   await openTasks('ES');
-  await page.fill('#tk-find', 'renfe');
+  await page.fill('#tk-find', 'train');
   await page.waitForTimeout(300);
   const r = await page.evaluate(() => [...document.querySelectorAll('#tk2-body .tk-row')].map(b => b.textContent.toLowerCase()));
-  ok(r.length >= 1 && r.every(t => t.indexOf('renfe') >= 0), 'only matching tasks are left', r.slice(0, 3));
+  ok(r.length >= 1 && r.every(t => t.indexOf('train') >= 0), 'only matching tasks are left', r.slice(0, 3));
   await page.fill('#tk-find', 'renew my fishing licence on the moon');
   await page.waitForTimeout(300);
   ok(await page.evaluate(() => !!document.getElementById('tk-none-go')), 'no match: an offer to ask in chat');

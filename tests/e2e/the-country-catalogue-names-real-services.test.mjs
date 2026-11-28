@@ -44,14 +44,18 @@ section('Not in the page: its own file, fetched when needed');
   ok(!r.inPage, 'the catalogue’s code is not inlined into index.html');
 }
 
-section('Tasks: a row per task per named entry');
+/* Tasks name no entry since Nov 28 (the owner: "remove where it's from" -
+   a task is text put in a new chat, and a company under it was wrong as
+   often as the data's guess at a kind). The file still decides which tasks
+   a country has; Integrations and Crew still name its services. */
+section('Tasks: each task once, naming no entry from the file');
 {
   await page.evaluate(() => setTab('tasks'));
   await page.waitForFunction(() => document.querySelector('#tk2-body .tk2-cat-h span') && document.querySelector('#tk2-body .tk-row'), null, { timeout: 15000 });
   const exp = await page.evaluate(f => window.ccTasks(f).length, { ...file, kinds: { ...file.kinds, bank: file.kinds.bank.filter(e => !BAD.includes(e)) } });
   /* The categories' "N examples" add up to every task (the chips carry no counts). */
   const head = await page.evaluate(() => [...document.querySelectorAll('#tk2-body .tk2-cat-h span')].reduce((s, e) => s + (+e.textContent.replace(/[^\d]/g, '') || 0), 0));
-  ok(head === exp && exp >= file.total * 3, 'the count is of every task - three or more per entry', { head, exp });
+  ok(head === exp && exp >= 40, 'the count is of every task the country has', { head, exp });
   /* Every one reachable: each category opened whole, Show more until there is no more. */
   const all = await page.evaluate(async () => {
     const seen = new Map();
@@ -65,11 +69,15 @@ section('Tasks: a row per task per named entry');
     return [...seen.values()];
   });
   ok(all.length === exp, 'every one can be reached, and the count on screen is the count of rows', { rows: all.length, exp });
-  ok(all.every(t => [...names].some(n => t.includes(n)) || /\.example\.es/.test(t)), 'and every row names an entry from the file', all.slice(0, 2));
+  ok(all.every(t => ![...names].some(n => t.includes(n)) && !/\.example\.es/.test(t)), 'and no row names an entry or a site', all.filter(t => /Prueba|example/.test(t)).slice(0, 2));
+  ok(new Set(all).size === all.length, 'and no task is listed twice', all.length);
+  /* A NEW chat (Nov 28, the owner: "it should not go to my last chat"). */
+  const before = await page.evaluate(() => { const c = newConvObj(); c.msgs = [{ role: 'user', content: 'an older chat' }]; S.convs.unshift(c); S.cur = c.id; return c.id; });
   await page.evaluate(() => document.querySelector('#tk2-body .tk-row[data-cc="bank"]').click());
   await page.waitForTimeout(400);
-  const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
-  ok(v.tab === 'chat' && /Banco Prueba/.test(v.val) && /bank\d+\.example\.es/.test(v.val), 'pressing one writes a prompt naming the bank and its site', v.val.slice(0, 90));
+  const v = await page.evaluate(() => ({ tab: S.tab, cur: S.cur, msgs: ((S.convs.find(c => c.id === S.cur) || {}).msgs || []).length, val: (document.getElementById('mta') || {}).value || '' }));
+  ok(v.tab === 'chat' && v.cur !== before && v.msgs === 0, 'pressing one opens a new chat, not the last one', v);
+  ok(v.val.length > 20 && !/Banco Prueba|example\.es/.test(v.val) && /Spain/.test(v.val), 'with the task about the country, naming no bank', v.val.slice(0, 90));
 }
 
 section('An entry that is not a plain name and a bare host is dropped');

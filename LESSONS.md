@@ -16432,3 +16432,20 @@ and a phone. It also found a Japanese library's one-word title wider than a
 phone. Rule: when a defect is said to be everywhere, enumerate the kinds the
 code branches on and open one of each - a table lookup with a default is
 where the unreported cases are.
+
+## 678
+**Nov 28 - a label that fills itself from data says what the data guessed, not what is true.**
+Every Tasks row printed a service under its title: the first entry of the
+task's kind in that country. "Improve my CV" is filed under employers, so the
+United States showed it over adidas.com; "Write a professional email" sat
+over Facebook. Nothing was wrong with the task - the line under it made a
+claim the task never made, and the claim was only as good as the data's
+guess at a kind. The owner asked for the names to go, and for a task to open
+a new chat rather than the last one (it called setTab('chat'), which reopens
+whatever was open). Tasks are now 103 everyday tasks, each once, about the
+country and naming no company; the old per-company templates went with
+their ranking code, and the CSS they masked: a class checker that counts a
+joined prefix ('cc-' + kind) as using every class with that prefix hid
+eighteen dead rules until the prefix went. Rule: a line under a title is a
+claim - if it is drawn from a lookup, check what the lookup returns for a
+dozen real rows before shipping it, and prefer no line to a guessed one.

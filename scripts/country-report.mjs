@@ -8,7 +8,13 @@ import { fileURLToPath } from 'url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = readFileSync(join(ROOT, 'src/country/country-catalog.js'), 'utf8');
 const ctx = {};
-new Function('ctx', src.slice(src.indexOf('const CC_KINDS'), src.indexOf('/* One country')) + ';ctx.T=CC_TASKS;ctx.C=CC_CREW;ctx.K=CC_KINDS')(ctx);
+new Function('ctx', src.slice(src.indexOf('const CC_KINDS'), src.indexOf('/* One country')) + ';ctx.C=CC_CREW;ctx.K=CC_KINDS')(ctx);
+/* Tasks name no service since Nov 28: each of CC_LEADS once, where the
+   country has its kind or another of the same category (ccLeads). */
+{ const a = src.indexOf('const CC_LEADS = ['), b = src.indexOf('\n];', a);
+  ctx.L = new Function('return ' + src.slice(src.indexOf('[', a), b + 2))(); }
+const jn = readFileSync(join(ROOT, 'src/app/10a-job-needs.js'), 'utf8');
+const KC = new Function('return ' + jn.slice(jn.indexOf('{', jn.indexOf('const CJ_KIND_CAT = {')), jn.indexOf('};', jn.indexOf('const CJ_KIND_CAT = {')) + 1))();
 const cap = readFileSync(join(ROOT, 'src/worker/65-country-capabilities.js'), 'utf8');
 const blk = cap.slice(cap.indexOf('const COUNTRY_NAME = {'), cap.indexOf('};', cap.indexOf('const COUNTRY_NAME = {')));
 const names = Object.fromEntries([...blk.matchAll(/\b([A-Z]{2}):\s*'([^']+)'/g)].map(m => [m[1], m[2]]));
@@ -21,7 +27,9 @@ const seenDir = new Set(); let distinct = 0;
 for (const f of readdirSync(join(ROOT, 'data/countries')).filter(f => /^[A-Z]{2}\.json$/.test(f)).sort()) {
   const d = JSON.parse(readFileSync(join(ROOT, 'data/countries', f), 'utf8'));
   let tasks = 0, jobs = 0, n = 0;
-  for (const [k, v] of Object.entries(d.kinds)) { if (!ctx.K[k]) continue; n += v.length; tasks += v.length * (ctx.T[k] || []).length; jobs += v.length * (ctx.C[k] || []).length;
+  const have = new Set(Object.keys(d.kinds).filter(k => ctx.K[k] && d.kinds[k].length)), cats = new Set([...have].map(k => KC[k]).filter(Boolean));
+  tasks = ctx.L.filter(([k]) => have.has(k) || (KC[k] && cats.has(KC[k]))).length;
+  for (const [k, v] of Object.entries(d.kinds)) { if (!ctx.K[k]) continue; n += v.length; jobs += v.length * (ctx.C[k] || []).length;
     const tpl = ctx.C[k] || [], sc = tpl.filter(t => t[3] === 'c').length;
     for (const e of v){ distinct += sc; if(!seenDir.has(k + '|' + e.q)){ seenDir.add(k + '|' + e.q); distinct += tpl.length - sc; } } }
   rows.push({ cc: d.cc, name: names[d.cc] || d.cc, n, tasks, jobs, kinds: Object.keys(d.kinds).length });
@@ -39,7 +47,7 @@ const out = [
   `- Countries: **${rows.length}**. Services: **${sum('n')}**. Tasks: **${sum('tasks')}**. Crew jobs, added up country by country: **${sum('jobs')}**.`,
   `- Distinct Crew jobs across all countries - what "See all jobs" holds, a service listed in several countries counted once: **${distinct}**.`,
   `- 500 or more services (Integrations): **${count(r => r.n >= 500)}** countries. 200 or more: **${count(r => r.n >= 200)}**. Under 200: **${count(r => r.n < 200)}**.`,
-  `- 500 or more tasks: **${count(r => r.tasks >= 500)}** countries. 500 or more Crew jobs: **${count(r => r.jobs >= 500)}** countries.`, '',
+  `- Tasks are the everyday tasks, each once and naming no company (since Nov 28), so a country has about a hundred: **${count(r => r.tasks >= 100)}** countries have 100 or more. 500 or more Crew jobs: **${count(r => r.jobs >= 500)}** countries.`, '',
   '| Country | Services | Tasks | Crew jobs | Kinds |', '|---|---:|---:|---:|---:|',
   ...rows.map(r => `| ${r.name} (${r.cc}) | ${r.n} | ${r.tasks} | ${r.jobs} | ${r.kinds} |`), '',
 ];

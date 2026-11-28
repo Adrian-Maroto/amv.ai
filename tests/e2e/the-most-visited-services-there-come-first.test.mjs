@@ -63,8 +63,9 @@ section('In every country: most visited first, the better known first inside a b
          that section, and the same task across services keeps the visit
          order - one at a time, never a less visited service first. */
       const cat = (x) => _cjCat({ ccKind: x.kind });
-      for (const [name, list, tier] of [['jobs', ccJobs(d), (x) => _ccCrewTier(x.kind, CC_CREW[x.kind][x.i][0], x.i)],
-                                        ['tasks', ccTasks(d).filter(t => !t.lead), (x) => _ccTaskTier(x.kind, x.tpl)]]) {
+      /* Crew's jobs only: Tasks name no service since Nov 28 (ccLeads), so
+         there is no service order for them to keep. */
+      for (const [name, list, tier] of [['jobs', ccJobs(d), (x) => _ccCrewTier(x.kind, CC_CREW[x.kind][x.i][0], x.i)]]) {
         const by = {};
         for (const x of list) (by[cat(x)] = by[cat(x)] || []).push(x);
         for (const [c, l] of Object.entries(by)) {
@@ -94,25 +95,25 @@ section('In every country: most visited first, the better known first inside a b
   ok(r.bad.length === 0, 'services, jobs and tasks in that order everywhere', r.bad);
 }
 
-section('Each section opens with what people most often want to do there, named with the country’s top services');
+section('Each section opens with what people most often want to do there, naming no company');
 {
+  /* Nov 28, the owner: "'compare saving rates' - I don't know if it should
+     say Wells Fargo". The task is about the country's banks, and says so. */
   const r = await page.evaluate(async () => {
     const us = await ccLoad('US'), es = await ccLoad('ES');
     const usTasks = ccTasks(us), esTasks = ccTasks(es);
-    const firstLeadAt = usTasks.findIndex(t => !t.lead);
     const money = usTasks.filter(t => _cjCat({ ccKind: t.kind }) === 'Money').slice(0, 3).map(t => t.title);
-    const save = usTasks.find(t => t.lead && t.title === 'Compare savings rates');
-    const esSave = esTasks.find(t => t.lead && /savings rates/.test(t.prompt));
+    const save = usTasks.find(t => t.title === 'Compare savings rates');
+    const esSave = esTasks.find(t => /savings rates/.test(t.prompt));
     const usBanks = ccServices(us).filter(x => x.kind === 'bank').slice(0, 6).map(x => x.e.n);
-    return { firstLeadAt, money, savePrompt: save && save.prompt, esPrompt: esSave && esSave.prompt, usBanks,
-      leadsOnly: usTasks.slice(0, firstLeadAt).every(t => t.lead), n: firstLeadAt };
+    return { money, savePrompt: save && save.prompt, esPrompt: esSave && esSave.prompt, usBanks, all: usTasks.every(t => t.lead) };
   });
-  ok(r.leadsOnly && r.n >= 40, 'the everyday tasks lead the list, before any service-by-service task', r.n);
+  ok(r.all, 'every task is one of the everyday tasks, none service by service', r.all);
   ok(r.money[0] === 'Compare savings rates', 'Money opens with comparing savings rates, not one bank’s account', r.money);
   ok(r.usBanks.indexOf('Bank of America') >= 0 && r.usBanks.indexOf('Bank of America') < r.usBanks.indexOf('M&T Bank'),
-     'Bank of America ranks above M&T Bank in the United States', r.usBanks);
-  ok(/Bank of America/.test(r.savePrompt || '') && !/M&T/.test(r.savePrompt || ''), 'and the task names the country’s top banks', r.savePrompt);
-  ok(r.esPrompt && r.esPrompt !== r.savePrompt && !/Bank of America/.test(r.esPrompt), 'Spain’s names Spain’s banks', r.esPrompt);
+     'Bank of America still ranks above M&T Bank in the United States, where services are named (Integrations)', r.usBanks);
+  ok(/the United States/.test(r.savePrompt || '') && !r.usBanks.some(n => (r.savePrompt || '').indexOf(n) >= 0), 'and the task is about the country’s banks, naming none', r.savePrompt);
+  ok(/Spain/.test(r.esPrompt || '') && r.esPrompt !== r.savePrompt, 'Spain’s is about Spain', r.esPrompt);
 }
 
 section('What people there switch on goes first, the most switched on first');

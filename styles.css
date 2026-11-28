@@ -882,7 +882,6 @@ html,body{height:100%;overflow:hidden}
 .tk-ic{flex:0 0 auto;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:var(--ic-sm);border-radius:var(--r-md);background:#161b22}
 .tk-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .tk-t{font-size:var(--t-md);font-weight:560;color:var(--tx)}
-.tk-d{font-size:var(--t-sm);color:var(--mu)}
 .tk-arrow{flex:0 0 auto;color:var(--dim);font-size:var(--t-md);opacity:0;transition:opacity .15s,transform .15s}
 .tk-row:hover .tk-arrow{opacity:1;transform:translateX(2px);color:var(--accent-txt)}
 
@@ -905,7 +904,6 @@ html,body{height:100%;overflow:hidden}
 /* body stays clean sans */
 body,
 .vsub,
-.tk-d,
 .cw-job-d{ font-family:var(--fn); }
 .vsub { font-size:var(--t-lg)!important; line-height:1.7; color:var(--mu)!important; font-weight:400; }
 
@@ -1371,7 +1369,6 @@ body.light{--hair:rgba(0,0,0,.09);--hair-strong:rgba(0,0,0,.14);--surface:#fffff
 .eyebrow{font-size:var(--t-sm)!important;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-txt)!important;font-weight:600!important;margin-bottom:18px!important}
 /* supporting text recedes */
 .sec-sub,
-.tk-d,
 .cw-job-d,
 .wsd,
 .memtm,
@@ -16490,57 +16487,14 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 
 
 
-/* LAYER A364 - The country catalogue on Tasks (Nov 10): a count with its
-   source, kind chips, the first rows, and Show all. A search reaches every
-   row, shown or not. */
-.cc-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-2);margin:var(--sp-5) 0 var(--sp-2);font-size:var(--t-base);color:var(--tx)}
-.cc-src{font-size:var(--t-xs);color:var(--mu)}
-.cc-chips{margin:0 0 var(--sp-3)}
-.cc-list .tk-row.cc-more{display:none}
-.cc-open .cc-list .tk-row.cc-more,.cc-filtered .cc-list .tk-row.cc-more{display:flex}
-.cc-list .tk-row.cc-off{display:none!important}
-.cc-list .tk-row[hidden]{display:none!important}
-
-.cc-all{margin-top:var(--sp-3)}
-.cc-crew{margin-top:var(--sp-6)}
-.cc-crew[hidden]{display:none}
-.cc-jobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
-.cc-job{display:flex;align-items:center;gap:var(--sp-3);min-width:0;width:100%;padding:12px 14px;text-align:left;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md);color:var(--tx);cursor:pointer;font:inherit}
-.cc-job:hover,.cc-job:focus-visible{background:var(--s2);border-color:var(--bdl)}
-.cc-job-ic{flex:none;font-size:18px}
-.cc-job-b{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
-.cc-job-t{font-size:var(--t-base);font-weight:600;overflow-wrap:anywhere}
-.cc-job-s{font-size:var(--t-xs);color:var(--mu);overflow-wrap:anywhere}
-.cc-jobs .cc-job.cc-more{display:none}
-.cc-open .cc-jobs .cc-job.cc-more,.cc-filtered .cc-jobs .cc-job.cc-more{display:flex}
-.cc-jobs .cc-job.cc-off{display:none!important}
-@media (max-width:760px){.cc-jobs{grid-template-columns:minmax(0,1fr)}}
-@media (hover:none){.cc-job{min-height:44px}}
-.cc-int{margin:var(--sp-5) 0}
-.cc-int[hidden]{display:none}
-.cc-svcs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
+/* LAYER A364 - a service row in the country catalogue and its Use button.
+   The rest of A364-A366 styled the catalogue's first Tasks layout (chips,
+   Show all, job cards), gone since Nov 15 and found dead on Nov 28 when the
+   task ids stopped starting with 'cc-' - the checker had read that prefix as
+   every cc- class being in use. */
 .cc-svc{display:flex;align-items:center;gap:var(--sp-3);min-width:0;padding:10px 12px;background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-md)}
 .cc-use{flex:none;min-height:34px}
-.cc-svcs .cc-svc.cc-more{display:none}
-.cc-open .cc-svcs .cc-svc.cc-more,.cc-filtered .cc-svcs .cc-svc.cc-more{display:flex}
-.cc-svcs .cc-svc.cc-off{display:none!important}
-@media (max-width:760px){.cc-svcs{grid-template-columns:minmax(0,1fr)}}
 @media (hover:none){.cc-use{min-height:44px}}
-
-/* LAYER A365 - The country catalogue's kind filters are one row that scrolls
-   sideways, not a wall: twenty-eight kinds wrapped into nine rows on a phone
-   and pushed every service below the fold. */
-.cc-chips{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:var(--sp-1);-webkit-overflow-scrolling:touch}
-.cc-chips > .cw-chip{flex:0 0 auto;white-space:nowrap}
-.cc-chips > .cw-chip{display:inline-flex;align-items:center;gap:6px}
-
-/* LAYER A366 - The country catalogue's rows by the room they have, not by the
-   window: at 768 the sidebar leaves two columns 250px each and a bank's name
-   broke in the middle of a word. Columns are as many as fit at 340px; a name
-   breaks between words, and a site address stays on one line. */
-.cc-jobs,.cc-svcs{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))}
-.cc-job-t{overflow-wrap:break-word;word-break:normal}
-.cc-job-s{overflow-wrap:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* LAYER A367 - Crew, one page (Nov 15). The owner: "tell AMV what to do and
    then a text box and run, simple - no need for so much padding, and not so
@@ -16708,7 +16662,6 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 #app .tk2 .tk2-row .tk-ic{flex:0 0 auto;width:32px;height:32px;border-radius:var(--r-sm);background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:var(--ic-sm)}
 #app .tk2 .tk2-row .tk-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 #app .tk2 .tk2-row .tk-t{font-size:var(--t-base);font-weight:500;color:var(--tx);overflow-wrap:break-word}
-#app .tk2 .tk2-row .tk-d{font-size:var(--t-xs);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #app .tk2 .tk2-row .tk-arrow{color:var(--dim)}
 .tk2-all{align-self:flex-start;font-size:var(--t-sm)}
 
@@ -17295,9 +17248,6 @@ html[dir="rtl"] .chome-sug{text-align:right}
 .cj-card .cj-tg{right:auto;inset-inline-end:var(--sp-4)}
 .cj-card-b{padding-right:var(--sp-4);padding-inline-end:68px}
 .cj-card:not(:has(.cj-tg)) .cj-card-b{padding-inline-end:var(--sp-4)}
-/* A task's line under its name wraps to two lines rather than vanishing
-   into an ellipsis at enlarged text; the whole of it opens with the task. */
-#app .tk2 .tk2-row .tk-d{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 /* A383 - what a Popular list is ranked by, one quiet line above it
    (build 16 audit D16-07). */
 .cc-measure{margin:0 0 var(--sp-3);font-size:var(--t-sm);color:var(--mu);line-height:1.5;max-width:72ch}
