@@ -88,17 +88,21 @@ section('A shop, bank or line not shown to operate in the country is never first
   /* Pakistan's file as it was: its only supermarkets were Sam's Club and
      Walmart Canada, both visited from Pakistan, neither operating there. */
   const pk = { cc: 'PK', kinds: { supermarket: [
-    { q: 'Q1', n: "Sam's Club", s: 'samsclub.com', r: 10000, l: 0 },
-    { q: 'Q2', n: 'Walmart Canada', s: 'walmart.ca', r: 10000 },
+    { q: 'Q1', n: "Sam's Club", s: 'samsclub.com', r: 10000, l: 0, x: 5 },
+    { q: 'Q2', n: 'Walmart Canada', s: 'walmart.ca', r: 10000, x: 8 },
     { q: 'Q3', n: 'Imtiaz', s: 'imtiaz.com.pk', r: 50000 },
-    { q: 'Q4', n: 'Carrefour', s: 'carrefour.com', r: 100000, l: 1 } ] } };
+    { q: 'Q4', n: 'Carrefour', s: 'carrefour.com', r: 100000, l: 1, x: 30 } ] } };
   const order = _ccByPop(pk).map(x => x.e.n + (_ccNotHere(x, 'PK') ? ' (not confirmed)' : ''));
   ok(order[0] === 'Imtiaz' && order[1] === 'Carrefour', 'the ones placed in Pakistan come first, even less visited', order);
   ok(order.slice(2).every(n => /not confirmed/.test(n)), 'and Sam\'s Club (checked: not there) and Walmart Canada (another country\'s domain) after them, marked', order);
   ok(!_ccNotHere({ kind: 'restaurant', e: { s: 'mcdonalds.com', l: 0 } }, 'PK') && !_ccNotHere({ kind: 'jobsite', e: { s: 'indeed.com' } }, 'PK'),
      'a restaurant chain or a job site is not held to it - they franchise or work from anywhere');
-  ok(!_ccNotHere({ kind: 'bank', e: { s: 'barclays.co.uk' } }, 'GB') && !_ccNotHere({ kind: 'telecom', e: { s: 'jazz.com.pk' } }, 'PK'),
+  ok(!_ccNotHere({ kind: 'bank', e: { s: 'barclays.co.uk', x: 4 } }, 'GB') && !_ccNotHere({ kind: 'telecom', e: { s: 'jazz.com.pk', x: 6 } }, 'PK'),
      'and a site on the country\'s own domain needs no other evidence');
+  ok(!_ccNotHere({ kind: 'bank', e: { s: 'soneribank.com', l: 0 } }, 'PK'), 'nor one that no other country lists - Soneri Bank, in Pakistan\'s file alone');
+  ok(!_ccNotHere({ kind: 'university', e: { s: 'mit.edu', l: 0, x: 60 } }, 'PK') && !_ccNotHere({ kind: 'retail', e: { s: 'ikea.com', l: 0, x: 40 } }, 'US'),
+     'and a university abroad or a shop chain is not held to it - people apply abroad, and chains open everywhere');
+  ok(_ccNotHere({ kind: 'bank', e: { s: 'monzo.com', l: 0, x: 3 } }, 'ES'), 'while a bank listed elsewhere and not placed in the country is marked (Monzo in Spain)');
   const sites = readFileSync(join(ROOT, 'scripts', 'country-sites.mjs'), 'utf8');
   ok(/wdt:P17 \?c/.test(sites) && /wdt:P159\/wdt:P17/.test(sites) && /wdt:P2541/.test(sites) && /has\(d\.qid\)/.test(sites),
      'the data pass places each entry by country, headquarters and operating area against the country\'s own Wikidata id');

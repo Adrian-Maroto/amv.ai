@@ -623,17 +623,21 @@ const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t
    list as LOCAL_KINDS in scripts/site-fit.mjs), an entry Wikidata does not
    place in the country - `l: 0`, from scripts/country-sites.mjs - or, before
    that was checked, one whose site is on another country's domain, goes
-   after the rest and its row says it is not confirmed there. Pakistan's only
+   after the rest and its row says it is not confirmed there - unless no
+   other country lists it. Pakistan's only
    supermarkets were Sam's Club and Walmart Canada: visited from Pakistan,
    operating in neither. Kept, because a missing fact is not proof of
    absence; never first. */
-const CC_LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'retail', 'supermarket', 'mall',
-  'rail', 'bus', 'hospital', 'school', 'college', 'university', 'agency', 'ministry']);
+const CC_LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'supermarket', 'mall',
+  'rail', 'bus', 'hospital', 'school', 'agency', 'ministry']);
 const CC_LOOSE_TLD = new Set(['co', 'io', 'tv', 'me', 'ai']);
 function _ccNotHere(x, cc){
   if(!x || !x.e || !CC_LOCAL_KINDS.has(x.kind)) return false;
   const tld = String(x.e.s || '').toLowerCase().split('.').pop(), own = String(cc || '').toUpperCase() === 'GB' ? 'uk' : String(cc || '').toLowerCase();
-  if(tld === own || x.e.l === 1) return false;
+  /* Listed by no other country (`x`, scripts/country-reach.mjs) is the
+     country's own in practice: Soneri Bank is in Pakistan's file alone,
+     Sam's Club in five, Walmart Canada in eight. */
+  if(tld === own || x.e.l === 1 || !(+x.e.x > 1)) return false;
   return x.e.l === 0 || (tld.length === 2 && !CC_LOOSE_TLD.has(tld));
 }
 try{ window._ccNotHere = _ccNotHere; }catch(e){}

@@ -71,9 +71,11 @@ export function siteRelated(host, name, was) {
   return n.indexOf(l) >= 0 || (!!w && (w.indexOf(l) >= 0 || l.indexOf(w) >= 0));
 }
 /* The kinds that are no use to somebody unless they operate in their country:
-   an account, a line, a shop, a ticket, a place to go. Not restaurants or
-   hotels (chains are franchised locally), not airlines (they fly in), not
-   online shops (they ship). The page's copy of this list is CC_LOCAL_KINDS
-   in country-catalog.js, and a suite holds them equal. */
-export const LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'retail', 'supermarket', 'mall',
-  'rail', 'bus', 'hospital', 'school', 'college', 'university', 'agency', 'ministry']);
+   an account, a line, a weekly shop, a ticket, a place to go. Not
+   restaurants, hotels or shop chains (franchised and opened everywhere -
+   Wikidata places IKEA in Sweden, not the United States), not airlines (they
+   fly in), not online shops (they ship), not universities (people apply
+   abroad: MIT is useful from Pakistan). The page's copy of this list is
+   CC_LOCAL_KINDS in country-catalog.js, and a suite holds them equal. */
+export const LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'supermarket', 'mall',
+  'rail', 'bus', 'hospital', 'school', 'agency', 'ministry']);

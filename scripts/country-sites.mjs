@@ -66,7 +66,9 @@ async function main() {
      are no use unless they operate in the country (LOCAL_KINDS), each entry
      gets `l`: 1 when Wikidata places it there - its country, its
      headquarters' country, its operating area, the jurisdiction it applies
-     to, or the place it is in - or its site is on the country's own domain;
+     to, the place it is in, or a subsidiary there (Carrefour España for
+     Carrefour, whose own country is France) - or its site is on the
+     country's own domain;
      0 when it was checked and none of those says so. The page puts 0 after
      the rest of its kind and says it is not confirmed there. Nothing is
      removed: Wikidata misses some real local branches, and a missing fact is
@@ -76,7 +78,8 @@ async function main() {
     const part = qs.slice(i, i + BATCH);
     const rows = await sparql(`SELECT ?i ?c WHERE { VALUES ?i { ${part.map(q => 'wd:' + q).join(' ')} }
       { ?i wdt:P17 ?c } UNION { ?i wdt:P159/wdt:P17 ?c } UNION { ?i wdt:P2541 ?c } UNION { ?i wdt:P2541/wdt:P17 ?c }
-      UNION { ?i wdt:P1001 ?c } UNION { ?i wdt:P1001/wdt:P17 ?c } UNION { ?i wdt:P131/wdt:P17 ?c } }`);
+      UNION { ?i wdt:P1001 ?c } UNION { ?i wdt:P1001/wdt:P17 ?c } UNION { ?i wdt:P131/wdt:P17 ?c }
+      UNION { ?i wdt:P355/wdt:P17 ?c } UNION { ?i wdt:P355/wdt:P159/wdt:P17 ?c } }`);
     for (const b of rows) { const q = qid(b.i.value); (where.get(q) || where.set(q, new Set()).get(q)).add(qid(b.c.value)); }
     if ((i / BATCH) % 20 === 0) console.log('placed', Math.min(qs.length, i + BATCH), 'of', qs.length);
     await sleep(250);
