@@ -28,6 +28,13 @@ const CW_NEED_KIND = {
   'Classroom':       'oauth',
   'Bank connection': 'bank',
   'Web research':    'always',
+  /* Run by AMV's own browser - nothing for the person to connect, which is
+     how the job's panel already lists it (`_cwUseRows`). Left unlisted it fell
+     through to 'app' and offered a bridge connector called "Web automation". */
+  'Web automation':  'always',
+  /* A form the person fills in once (`openJobHunt`), not a connector: the
+     directory has nothing by that name, so searching it found nothing. */
+  'Job hunt profile':'profile',
 };
 function _cwNeedKind(n){
   if(CW_NEED_KIND[n]) return CW_NEED_KIND[n];
@@ -61,12 +68,9 @@ function _cwNeedMet(n){
    row, where it rendered as "a bank connection" in bold with a lower-case
    article. A heading is a name. */
 const CW_NEED_TITLE = {
-  'Email':           'Email',
-  'Calendar':        'Calendar',
   'Drive':           'Cloud files',
-  'Classroom':       'Classroom',
   'Bank connection': 'Bank or card',
-  'Web research':    'Web research',
+  'Web automation':  'AMV’s browser',
 };
 function _cwNeedTitle(n){
   if(CW_NEED_TITLE[n]) return CW_NEED_TITLE[n];
@@ -79,17 +83,13 @@ function _cwNeedLabel(n){
   if(_cwNeedKind(n) === 'app') return _cwAppNameOf(n);
   return n;
 }
-function _cwNeedHow(n){
-  const kind = _cwNeedKind(n);
-  if(kind === 'always') return 'Built in - nothing to connect.';
-  if(kind === 'bank') return 'Linked on Spending, at your bank\u2019s own sign-in. AMV reads balances and transactions and can never move money.';
-  if(kind === 'app')  return 'A connector AMV starts on your computer through the bridge.';
-  return 'A sign-in at the provider. AMV never sees your password - only a permission slip you can take back.';
-}
 function _cwNeedsPlan(j){
-  return String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean)
+  /* "Nothing" is how a job that needs nothing says so. It is not a thing to
+     connect - listed, it read "This needs Nothing before it can run" with a
+     Connect button under it. */
+  return String((j && j.needs) || '').split(',').map(x => x.trim()).filter(n => n && n !== 'Nothing')
     .map(n => ({ need:n, kind:_cwNeedKind(n), label:_cwNeedLabel(n),
-                 title:_cwNeedTitle(n), how:_cwNeedHow(n), met:_cwNeedMet(n) }));
+                 title:_cwNeedTitle(n), met:_cwNeedMet(n) }));
 }
 try{ window._cwNeedsPlan = _cwNeedsPlan; }catch(e){}
 
@@ -139,6 +139,36 @@ function cwResumeIfAny(){
 }
 try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
 
+/* ONE SCREEN FOR EVERYTHING A JOB NEEDS (Nov 28, the owner: "it should be
+   centred and look aesthetic for all connectors ... this shows for almost
+   every job, every country, every section").
+
+   The same centred column and the same rows as the screen that connects a
+   mailbox (`openCrewConnect`), so the requirements list and the step after it
+   read as one product: a mark, the name, a short line of what counts, and
+   Connect - or a tick once it is there. The paragraph about permission slips
+   that every row repeated is said once, under the list. */
+/* The marks are the job panel's (_CW_USE_IC), so a need looks the same on
+   both screens. */
+const _CW_NEED_IC_OF = { 'Bank connection':'Bank', 'Drive':'Files', 'Job hunt profile':'Profile', 'Web research':'Web', 'Web automation':'Web' };
+function _cwNeedIcon(n){
+  const k = _CW_NEED_IC_OF[n] || (_CW_USE_IC[n] ? n : _cwNeedKind(n) === 'app' ? 'App' : 'Web');
+  return '<span class="int-ic cwk-ic cwk-svg" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + _CW_USE_IC[k] + '</svg></span>';
+}
+/* What counts, in a few words: the names of the ways this screen's next step
+   offers, so "Email" says which mailboxes before anybody presses anything. */
+function _cwNeedSub(p){
+  if(p.kind === 'oauth'){
+    const c = CW_NEEDS_CHECK[p.need];
+    let names = []; try{ names = _cwConnectWays(c && c.cap).filter(w => w[1]).map(w => w[2]); }catch(e){}
+    if(names.length > 3) return T('{0} and more').replace('{0}', names.slice(0, 3).join(', '));
+    if(names.length) return names.join(', ');
+  }
+  if(p.kind === 'bank') return T('At your bank’s own sign-in. Read-only - AMV can never move money.');
+  if(p.kind === 'profile') return T('Roles, places and your CV, filled in once.');
+  if(p.kind === 'always') return T('Built in - nothing to connect.');
+  return T('A connector AMV starts on your computer.');
+}
 function cwNeeds(jobId){
   const j = _cwFindJob(jobId);
   const r = $('ovr'); if(!j || !r) return;
@@ -148,29 +178,30 @@ function cwNeeds(jobId){
 
   const row = (p) => {
     const act = p.met
-      ? '<span class="cwn-ok" aria-label="Connected">\u2713 Connected</span>'
-      : '<button class="btn bp cwn-go" data-cwn-kind="' + escH(p.kind) + '"'
-        + ' data-cwn-need="' + escH(p.need) + '">Connect</button>';
-    return '<div class="cwn-row' + (p.met ? ' met' : '') + '">'
-      + '<div class="cwn-b"><div class="cwn-n">' + escH(p.title) + '</div>'
-        + '<div class="cwn-h">' + escH(p.how) + '</div></div>'
-      + '<div class="cwn-a">' + act + '</div>'
+      ? '<span class="cwn-ok">✓ ' + escH(T('Connected')) + '</span>'
+      : '<button class="btn bp cwk-go cwn-go" type="button" data-cwn-kind="' + escH(p.kind) + '"'
+        + ' data-cwn-need="' + escH(p.need) + '">' + escH(T('Connect')) + '</button>';
+    return '<div class="cwk-row cwn-row' + (p.met ? ' met' : '') + '">'
+      + _cwNeedIcon(p.need)
+      + '<span class="cwk-b"><span class="cwk-n cwn-n">' + escH(T(p.title)) + '</span>'
+        + '<span class="cwk-s">' + escH(_cwNeedSub(p)) + '</span></span>'
+      + act
     + '</div>';
   };
 
   r.innerHTML =
-    '<div class="ov cwc-ov" id="cwn-bg"><div class="cwc cwn" role="dialog" aria-modal="true" aria-labelledby="cwn-t">'
-    + '<button class="cwp-x" id="cwn-x" aria-label="Close">\u2715</button>'
+    '<div class="ov cwc-ov" id="cwn-bg"><div class="cwc cwk cwn" role="dialog" aria-modal="true" aria-labelledby="cwn-t">'
+    + '<button class="cwp-x" id="cwn-x" aria-label="' + escH(T('Close')) + '">✕</button>'
     + '<div class="cwc-inner">'
       + '<h1 class="cwc-t" id="cwn-t">' + escH(j.title) + '</h1>'
-      + '<p class="cwc-lead">' + (left.length
-          ? escH('This needs ' + left.map(p => p.label).join(' and ') + ' before it can run. '
-                 + 'Connect ' + (left.length > 1 ? 'them' : 'it') + ' here and come straight back.')
-          : escH('Everything this job needs is connected. It is ready to turn on.')) + '</p>'
-      + '<div class="cwn-list">' + plan.map(row).join('') + '</div>'
-      + '<div class="cwc-acts cwn-acts">'
-        + '<button class="btn bs" id="cwn-back">\u2190 Back to the job</button>'
-        + (left.length ? '' : '<button class="btn bp" id="cwn-on">'
+      + '<p class="cwc-lead">' + escH(left.length
+          ? T('Connect what it needs - one account for each is enough. Then it is ready to run.')
+          : T('Everything this job needs is connected. It is ready to turn on.')) + '</p>'
+      + '<div class="cwk-list cwn-list">' + plan.map(row).join('') + '</div>'
+      + (left.length ? '<p class="cwk-note">' + escH(T('You sign in on their own page; AMV never sees your password. Disconnect any time in Integrations.')) + '</p>' : '')
+      + '<div class="cwk-acts cwn-acts">'
+        + '<button class="btn bs" id="cwn-back" type="button">← ' + escH(T('Back to the job')) + '</button>'
+        + (left.length ? '' : '<button class="btn bp" id="cwn-on" type="button">'
             + escH(j.on ? T('Turn it off') : T('Run')) + '</button>')
       + '</div>'
     + '</div>'
@@ -183,22 +214,26 @@ function cwNeeds(jobId){
   on($('cwn-back'), 'click', back);
   on($('cwn-on'), 'click', () => { try{ closeOvr(); cwToggle(j.id); }catch(e){} });
 
-  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind)));
+  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind, true)));
 }
 /* Where connecting one thing a job needs starts - from this list, or straight
-   from the job's own panel, which lists the same needs. */
-function _cwConnectNeed(j, need, kind){
+   from the job's own panel, which lists the same needs. THE THING PRESSED: a
+   job needing a mailbox and a calendar opened the mailbox screen from the
+   calendar's Connect, because the next screen took the first missing need. */
+function _cwConnectNeed(j, need, kind, fromList){
   kind = kind || _cwNeedKind(need);
   /* Remembered BEFORE leaving, for every route - a provider sign-in is a
      full navigation and the tab changes are not much kinder. */
   _cwResumeJob(j.id);
-  if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
+  if(kind === 'oauth'){ try{ openCrewConnect(j.id, (CW_NEEDS_CHECK[need] || {}).cap, !!fromList); }catch(e){} return; }
   if(kind === 'bank'){
     /* The bank link dialog: where the link actually starts. Not Connectors,
        which has nothing to offer for a bank. */
-    try{ openBankLink(); }catch(e){}
+    try{ openBankLink(j.id); }catch(e){}
     return;
   }
+  if(kind === 'profile'){ try{ openJobHunt(); }catch(e){} return; }
+  if(kind === 'always'){ try{ cwPeek(j.id); }catch(e){} return; }
   /* An app: the directory, searched for the one it wants, so the thing they
      came for is the first thing on the screen. */
   try{ closeOvr(); setTab('integrations'); }catch(e){}
@@ -247,17 +282,23 @@ function _cwConnectWays(cap){
   if(!ways.length) _cwProvidersFor(cap).forEach(p => ways.push(['oauth', p.id, p.name]));
   return ways;
 }
-function openCrewConnect(jobId){
+function openCrewConnect(jobId, cap, fromList){
   const j=_cwFindJob(jobId);
   const r=$('ovr'); if(!j||!r) return;
   const missing=_cwMissingNeeds(j);
+  /* The need that was pressed, when one was; the first missing one when the
+     job has only one. */
+  if(cap){ const i=missing.findIndex(x=>x.cap===cap); if(i>0) missing.unshift(missing.splice(i,1)[0]); }
   /* Nothing here to connect - all of it is connected, or what is missing is
      not an account. Integrations is the honest destination either way; never
      a toggle (pressing Connect must not turn a job off). */
   if(!missing.length){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} return; }
   const m=missing[0];
   const ways=_cwConnectWays(m.cap);
-  const row=(w, i)=>'<div class="cwk-row"><span class="int-ic cwk-ic" aria-hidden="true">'+_appMarkHTML(w[2])+'</span>'
+  /* The catch-all row is not a company, so it gets an envelope, not the first
+     letter of "Another" - which read as a second AT&T beside it. */
+  const mark=(w)=>(w[0]==='mail'&&!w[1])?_cwNeedIcon('Email'):'<span class="int-ic cwk-ic" aria-hidden="true">'+_appMarkHTML(w[2])+'</span>';
+  const row=(w, i)=>'<div class="cwk-row">'+mark(w)
     +'<span class="cwk-n">'+escH(w[2])+'</span>'
     +'<button class="btn '+(i?'bs':'bp')+' cwk-go" type="button" data-cwk="'+i+'">'+escH(T('Connect'))+'</button></div>';
   r.innerHTML =
@@ -268,18 +309,23 @@ function openCrewConnect(jobId){
         '<p class="cwc-lead">'+escH(T('For “{0}”. Pick the one you use - one is enough.').replace('{0}', j.title))+'</p>'+
         '<div class="cwk-list">'+ways.map(row).join('')+'</div>'+
         '<p class="cwk-note">'+escH(T('You sign in on their own page; AMV never sees your password. Disconnect any time in Integrations.'))+'</p>'+
+        (fromList?'<div class="cwk-acts"><button class="btn bs" id="cwk-back" type="button">\u2190 '+escH(T('Back'))+'</button></div>':'')+
       '</div>'+
     '</div></div>';
   r.classList.add('on');
   const close=()=>{ try{ closeOvr(); }catch(e){} };
   on($('cwc-x'),'click',close);
   onBackdrop($('cwc-bg'),close);
+  on($('cwk-back'),'click',()=>{ try{ cwNeeds(j.id); }catch(e){ close(); } });
   r.querySelectorAll('[data-cwk]').forEach(b=>on(b,'click',async()=>{
     const w=ways[+b.dataset.cwk]; if(!w) return;
     /* Remembered BEFORE leaving: the sign-in is a navigation away, and the
        point of coming back is to finish turning this job on. */
     _cwConnWant({ job:j.id, cap:m.cap, at:Date.now() });
-    if(w[0]==='mail'){ close(); try{ openMailConnect(w[1]||undefined); }catch(e){} return; }
+    /* The form for that mailbox, as the next page of this one - Back returns
+       to these choices. "Another email account" starts on entering the server
+       yourself, which is what it says. */
+    if(w[0]==='mail'){ try{ openMailConnect(w[1]||'custom', ()=>openCrewConnect(j.id, m.cap, fromList)); }catch(e){} return; }
     b.disabled=true; const was=b.textContent; b.textContent=T('Opening…');
     /* Asked fresh on the press, so the answer is never "nothing to connect"
        because the list had not arrived yet. */
@@ -288,7 +334,7 @@ function openCrewConnect(jobId){
     const p=((d&&d.providers)||[]).find(x=>x.id===w[1]);
     b.disabled=false; b.textContent=was;
     if(!d){
-      if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){ _askToSignInAgain(()=>{ try{ openCrewConnect(j.id); }catch(e){} }, true); return; }
+      if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){ _askToSignInAgain(()=>{ try{ openCrewConnect(j.id, m.cap, fromList); }catch(e){} }, true); return; }
       toast(T('AMV could not reach its server just now. Check your connection and try again.'),'error',6000); return;
     }
     if(!p || !p.ready){
@@ -363,7 +409,10 @@ function cwConnect(jobId){
         if(typeof _intNeedsAccount === 'function' && _intNeedsAccount('your mailbox')) return;
         openMailConnect(j.connectHow.slice(5)); return;
       }
-      if(missing.length === 1 && missing[0].kind === 'oauth'){ openCrewConnect(jobId); return; }
+      /* One thing missing, of any kind but an app: straight to where that
+         thing is connected - the mailbox choices, the bank's link, the
+         profile form. The list is for two or more. */
+      if(missing.length === 1 && missing[0].kind !== 'app'){ _cwConnectNeed(j, missing[0].need, missing[0].kind); return; }
       cwNeeds(jobId); return;
     }catch(e){}
   }

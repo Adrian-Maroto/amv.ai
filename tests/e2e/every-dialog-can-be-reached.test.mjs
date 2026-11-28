@@ -117,7 +117,10 @@ for (const [label, w, h] of SIZES) {
          BACKDROP does - and reported Cowork as broken when scrolling its
          backdrop brought the bottom into view perfectly well. Scroll it the way
          a finger would, then look. */
-      const back = panel.closest('.ov, .ovr-bg, .upg-ov, .pay-ov, .dna-ov') || panel.parentElement;
+      /* A full-screen page (.cwc - connecting what a Crew job needs, the job
+         hunt profile) scrolls itself inside its backdrop; that is the thing a
+         finger moves. */
+      const back = panel.closest('.cwc, .ov, .ovr-bg, .upg-ov, .pay-ov, .dna-ov') || panel.parentElement;
       const topBefore = panel.getBoundingClientRect().top;
       if (back) { back.scrollTop = 0; }
       const topAtRest = panel.getBoundingClientRect().top;

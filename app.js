@@ -20749,6 +20749,13 @@ const CW_NEED_KIND = {
   'Classroom':       'oauth',
   'Bank connection': 'bank',
   'Web research':    'always',
+  /* Run by AMV's own browser - nothing for the person to connect, which is
+     how the job's panel already lists it (`_cwUseRows`). Left unlisted it fell
+     through to 'app' and offered a bridge connector called "Web automation". */
+  'Web automation':  'always',
+  /* A form the person fills in once (`openJobHunt`), not a connector: the
+     directory has nothing by that name, so searching it found nothing. */
+  'Job hunt profile':'profile',
 };
 function _cwNeedKind(n){
   if(CW_NEED_KIND[n]) return CW_NEED_KIND[n];
@@ -20782,12 +20789,9 @@ function _cwNeedMet(n){
    row, where it rendered as "a bank connection" in bold with a lower-case
    article. A heading is a name. */
 const CW_NEED_TITLE = {
-  'Email':           'Email',
-  'Calendar':        'Calendar',
   'Drive':           'Cloud files',
-  'Classroom':       'Classroom',
   'Bank connection': 'Bank or card',
-  'Web research':    'Web research',
+  'Web automation':  'AMV’s browser',
 };
 function _cwNeedTitle(n){
   if(CW_NEED_TITLE[n]) return CW_NEED_TITLE[n];
@@ -20800,17 +20804,13 @@ function _cwNeedLabel(n){
   if(_cwNeedKind(n) === 'app') return _cwAppNameOf(n);
   return n;
 }
-function _cwNeedHow(n){
-  const kind = _cwNeedKind(n);
-  if(kind === 'always') return 'Built in - nothing to connect.';
-  if(kind === 'bank') return 'Linked on Spending, at your bank\u2019s own sign-in. AMV reads balances and transactions and can never move money.';
-  if(kind === 'app')  return 'A connector AMV starts on your computer through the bridge.';
-  return 'A sign-in at the provider. AMV never sees your password - only a permission slip you can take back.';
-}
 function _cwNeedsPlan(j){
-  return String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean)
+  /* "Nothing" is how a job that needs nothing says so. It is not a thing to
+     connect - listed, it read "This needs Nothing before it can run" with a
+     Connect button under it. */
+  return String((j && j.needs) || '').split(',').map(x => x.trim()).filter(n => n && n !== 'Nothing')
     .map(n => ({ need:n, kind:_cwNeedKind(n), label:_cwNeedLabel(n),
-                 title:_cwNeedTitle(n), how:_cwNeedHow(n), met:_cwNeedMet(n) }));
+                 title:_cwNeedTitle(n), met:_cwNeedMet(n) }));
 }
 try{ window._cwNeedsPlan = _cwNeedsPlan; }catch(e){}
 
@@ -20860,6 +20860,36 @@ function cwResumeIfAny(){
 }
 try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
 
+/* ONE SCREEN FOR EVERYTHING A JOB NEEDS (Nov 28, the owner: "it should be
+   centred and look aesthetic for all connectors ... this shows for almost
+   every job, every country, every section").
+
+   The same centred column and the same rows as the screen that connects a
+   mailbox (`openCrewConnect`), so the requirements list and the step after it
+   read as one product: a mark, the name, a short line of what counts, and
+   Connect - or a tick once it is there. The paragraph about permission slips
+   that every row repeated is said once, under the list. */
+/* The marks are the job panel's (_CW_USE_IC), so a need looks the same on
+   both screens. */
+const _CW_NEED_IC_OF = { 'Bank connection':'Bank', 'Drive':'Files', 'Job hunt profile':'Profile', 'Web research':'Web', 'Web automation':'Web' };
+function _cwNeedIcon(n){
+  const k = _CW_NEED_IC_OF[n] || (_CW_USE_IC[n] ? n : _cwNeedKind(n) === 'app' ? 'App' : 'Web');
+  return '<span class="int-ic cwk-ic cwk-svg" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + _CW_USE_IC[k] + '</svg></span>';
+}
+/* What counts, in a few words: the names of the ways this screen's next step
+   offers, so "Email" says which mailboxes before anybody presses anything. */
+function _cwNeedSub(p){
+  if(p.kind === 'oauth'){
+    const c = CW_NEEDS_CHECK[p.need];
+    let names = []; try{ names = _cwConnectWays(c && c.cap).filter(w => w[1]).map(w => w[2]); }catch(e){}
+    if(names.length > 3) return T('{0} and more').replace('{0}', names.slice(0, 3).join(', '));
+    if(names.length) return names.join(', ');
+  }
+  if(p.kind === 'bank') return T('At your bank’s own sign-in. Read-only - AMV can never move money.');
+  if(p.kind === 'profile') return T('Roles, places and your CV, filled in once.');
+  if(p.kind === 'always') return T('Built in - nothing to connect.');
+  return T('A connector AMV starts on your computer.');
+}
 function cwNeeds(jobId){
   const j = _cwFindJob(jobId);
   const r = $('ovr'); if(!j || !r) return;
@@ -20869,29 +20899,30 @@ function cwNeeds(jobId){
 
   const row = (p) => {
     const act = p.met
-      ? '<span class="cwn-ok" aria-label="Connected">\u2713 Connected</span>'
-      : '<button class="btn bp cwn-go" data-cwn-kind="' + escH(p.kind) + '"'
-        + ' data-cwn-need="' + escH(p.need) + '">Connect</button>';
-    return '<div class="cwn-row' + (p.met ? ' met' : '') + '">'
-      + '<div class="cwn-b"><div class="cwn-n">' + escH(p.title) + '</div>'
-        + '<div class="cwn-h">' + escH(p.how) + '</div></div>'
-      + '<div class="cwn-a">' + act + '</div>'
+      ? '<span class="cwn-ok">✓ ' + escH(T('Connected')) + '</span>'
+      : '<button class="btn bp cwk-go cwn-go" type="button" data-cwn-kind="' + escH(p.kind) + '"'
+        + ' data-cwn-need="' + escH(p.need) + '">' + escH(T('Connect')) + '</button>';
+    return '<div class="cwk-row cwn-row' + (p.met ? ' met' : '') + '">'
+      + _cwNeedIcon(p.need)
+      + '<span class="cwk-b"><span class="cwk-n cwn-n">' + escH(T(p.title)) + '</span>'
+        + '<span class="cwk-s">' + escH(_cwNeedSub(p)) + '</span></span>'
+      + act
     + '</div>';
   };
 
   r.innerHTML =
-    '<div class="ov cwc-ov" id="cwn-bg"><div class="cwc cwn" role="dialog" aria-modal="true" aria-labelledby="cwn-t">'
-    + '<button class="cwp-x" id="cwn-x" aria-label="Close">\u2715</button>'
+    '<div class="ov cwc-ov" id="cwn-bg"><div class="cwc cwk cwn" role="dialog" aria-modal="true" aria-labelledby="cwn-t">'
+    + '<button class="cwp-x" id="cwn-x" aria-label="' + escH(T('Close')) + '">✕</button>'
     + '<div class="cwc-inner">'
       + '<h1 class="cwc-t" id="cwn-t">' + escH(j.title) + '</h1>'
-      + '<p class="cwc-lead">' + (left.length
-          ? escH('This needs ' + left.map(p => p.label).join(' and ') + ' before it can run. '
-                 + 'Connect ' + (left.length > 1 ? 'them' : 'it') + ' here and come straight back.')
-          : escH('Everything this job needs is connected. It is ready to turn on.')) + '</p>'
-      + '<div class="cwn-list">' + plan.map(row).join('') + '</div>'
-      + '<div class="cwc-acts cwn-acts">'
-        + '<button class="btn bs" id="cwn-back">\u2190 Back to the job</button>'
-        + (left.length ? '' : '<button class="btn bp" id="cwn-on">'
+      + '<p class="cwc-lead">' + escH(left.length
+          ? T('Connect what it needs - one account for each is enough. Then it is ready to run.')
+          : T('Everything this job needs is connected. It is ready to turn on.')) + '</p>'
+      + '<div class="cwk-list cwn-list">' + plan.map(row).join('') + '</div>'
+      + (left.length ? '<p class="cwk-note">' + escH(T('You sign in on their own page; AMV never sees your password. Disconnect any time in Integrations.')) + '</p>' : '')
+      + '<div class="cwk-acts cwn-acts">'
+        + '<button class="btn bs" id="cwn-back" type="button">← ' + escH(T('Back to the job')) + '</button>'
+        + (left.length ? '' : '<button class="btn bp" id="cwn-on" type="button">'
             + escH(j.on ? T('Turn it off') : T('Run')) + '</button>')
       + '</div>'
     + '</div>'
@@ -20904,22 +20935,26 @@ function cwNeeds(jobId){
   on($('cwn-back'), 'click', back);
   on($('cwn-on'), 'click', () => { try{ closeOvr(); cwToggle(j.id); }catch(e){} });
 
-  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind)));
+  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => _cwConnectNeed(j, b.dataset.cwnNeed, b.dataset.cwnKind, true)));
 }
 /* Where connecting one thing a job needs starts - from this list, or straight
-   from the job's own panel, which lists the same needs. */
-function _cwConnectNeed(j, need, kind){
+   from the job's own panel, which lists the same needs. THE THING PRESSED: a
+   job needing a mailbox and a calendar opened the mailbox screen from the
+   calendar's Connect, because the next screen took the first missing need. */
+function _cwConnectNeed(j, need, kind, fromList){
   kind = kind || _cwNeedKind(need);
   /* Remembered BEFORE leaving, for every route - a provider sign-in is a
      full navigation and the tab changes are not much kinder. */
   _cwResumeJob(j.id);
-  if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
+  if(kind === 'oauth'){ try{ openCrewConnect(j.id, (CW_NEEDS_CHECK[need] || {}).cap, !!fromList); }catch(e){} return; }
   if(kind === 'bank'){
     /* The bank link dialog: where the link actually starts. Not Connectors,
        which has nothing to offer for a bank. */
-    try{ openBankLink(); }catch(e){}
+    try{ openBankLink(j.id); }catch(e){}
     return;
   }
+  if(kind === 'profile'){ try{ openJobHunt(); }catch(e){} return; }
+  if(kind === 'always'){ try{ cwPeek(j.id); }catch(e){} return; }
   /* An app: the directory, searched for the one it wants, so the thing they
      came for is the first thing on the screen. */
   try{ closeOvr(); setTab('integrations'); }catch(e){}
@@ -20968,17 +21003,23 @@ function _cwConnectWays(cap){
   if(!ways.length) _cwProvidersFor(cap).forEach(p => ways.push(['oauth', p.id, p.name]));
   return ways;
 }
-function openCrewConnect(jobId){
+function openCrewConnect(jobId, cap, fromList){
   const j=_cwFindJob(jobId);
   const r=$('ovr'); if(!j||!r) return;
   const missing=_cwMissingNeeds(j);
+  /* The need that was pressed, when one was; the first missing one when the
+     job has only one. */
+  if(cap){ const i=missing.findIndex(x=>x.cap===cap); if(i>0) missing.unshift(missing.splice(i,1)[0]); }
   /* Nothing here to connect - all of it is connected, or what is missing is
      not an account. Integrations is the honest destination either way; never
      a toggle (pressing Connect must not turn a job off). */
   if(!missing.length){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} return; }
   const m=missing[0];
   const ways=_cwConnectWays(m.cap);
-  const row=(w, i)=>'<div class="cwk-row"><span class="int-ic cwk-ic" aria-hidden="true">'+_appMarkHTML(w[2])+'</span>'
+  /* The catch-all row is not a company, so it gets an envelope, not the first
+     letter of "Another" - which read as a second AT&T beside it. */
+  const mark=(w)=>(w[0]==='mail'&&!w[1])?_cwNeedIcon('Email'):'<span class="int-ic cwk-ic" aria-hidden="true">'+_appMarkHTML(w[2])+'</span>';
+  const row=(w, i)=>'<div class="cwk-row">'+mark(w)
     +'<span class="cwk-n">'+escH(w[2])+'</span>'
     +'<button class="btn '+(i?'bs':'bp')+' cwk-go" type="button" data-cwk="'+i+'">'+escH(T('Connect'))+'</button></div>';
   r.innerHTML =
@@ -20989,18 +21030,23 @@ function openCrewConnect(jobId){
         '<p class="cwc-lead">'+escH(T('For “{0}”. Pick the one you use - one is enough.').replace('{0}', j.title))+'</p>'+
         '<div class="cwk-list">'+ways.map(row).join('')+'</div>'+
         '<p class="cwk-note">'+escH(T('You sign in on their own page; AMV never sees your password. Disconnect any time in Integrations.'))+'</p>'+
+        (fromList?'<div class="cwk-acts"><button class="btn bs" id="cwk-back" type="button">\u2190 '+escH(T('Back'))+'</button></div>':'')+
       '</div>'+
     '</div></div>';
   r.classList.add('on');
   const close=()=>{ try{ closeOvr(); }catch(e){} };
   on($('cwc-x'),'click',close);
   onBackdrop($('cwc-bg'),close);
+  on($('cwk-back'),'click',()=>{ try{ cwNeeds(j.id); }catch(e){ close(); } });
   r.querySelectorAll('[data-cwk]').forEach(b=>on(b,'click',async()=>{
     const w=ways[+b.dataset.cwk]; if(!w) return;
     /* Remembered BEFORE leaving: the sign-in is a navigation away, and the
        point of coming back is to finish turning this job on. */
     _cwConnWant({ job:j.id, cap:m.cap, at:Date.now() });
-    if(w[0]==='mail'){ close(); try{ openMailConnect(w[1]||undefined); }catch(e){} return; }
+    /* The form for that mailbox, as the next page of this one - Back returns
+       to these choices. "Another email account" starts on entering the server
+       yourself, which is what it says. */
+    if(w[0]==='mail'){ try{ openMailConnect(w[1]||'custom', ()=>openCrewConnect(j.id, m.cap, fromList)); }catch(e){} return; }
     b.disabled=true; const was=b.textContent; b.textContent=T('Opening…');
     /* Asked fresh on the press, so the answer is never "nothing to connect"
        because the list had not arrived yet. */
@@ -21009,7 +21055,7 @@ function openCrewConnect(jobId){
     const p=((d&&d.providers)||[]).find(x=>x.id===w[1]);
     b.disabled=false; b.textContent=was;
     if(!d){
-      if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){ _askToSignInAgain(()=>{ try{ openCrewConnect(j.id); }catch(e){} }, true); return; }
+      if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){ _askToSignInAgain(()=>{ try{ openCrewConnect(j.id, m.cap, fromList); }catch(e){} }, true); return; }
       toast(T('AMV could not reach its server just now. Check your connection and try again.'),'error',6000); return;
     }
     if(!p || !p.ready){
@@ -21084,7 +21130,10 @@ function cwConnect(jobId){
         if(typeof _intNeedsAccount === 'function' && _intNeedsAccount('your mailbox')) return;
         openMailConnect(j.connectHow.slice(5)); return;
       }
-      if(missing.length === 1 && missing[0].kind === 'oauth'){ openCrewConnect(jobId); return; }
+      /* One thing missing, of any kind but an app: straight to where that
+         thing is connected - the mailbox choices, the bank's link, the
+         profile form. The list is for two or more. */
+      if(missing.length === 1 && missing[0].kind !== 'app'){ _cwConnectNeed(j, missing[0].need, missing[0].kind); return; }
       cwNeeds(jobId); return;
     }catch(e){}
   }
@@ -23010,7 +23059,6 @@ function _cwJobCard(j){
 }
 /* Which of the two a catalogue card should be is a fact about the account, not
    about the caller, so it is decided here rather than at each call site. */
-function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard(j); }
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
@@ -23092,6 +23140,10 @@ const _CW_USE_IC = {
   Calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   Bank:'<path d="M3 10h18M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18M12 3 3 8h18z"/>',
   Classroom:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+  Files:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
+  Profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  Web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.5-3.8-9S9.5 5.5 12 3z"/>',
+  App:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
 };
 /* THE JOB PANEL (rebuilt Nov 15 - owner: "when you click the job it still
    looks unprofessional and unclean"; "make sure you can edit crew jobs ... u
@@ -24280,14 +24332,6 @@ try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
 try{ window.cwToggle=cwToggle; window.cwReject=cwReject; }catch(e){}
 try{ window.addEventListener('resize', () => { try{ _mcCmdFit(document.getElementById('mc-cmd-input')); }catch(e){} }, { passive:true }); }catch(e){}
 
-/* The next time, on this device's clock, that a picked schedule is due. */
-function _cwNextLocal(sc){
-  const d = new Date(); d.setSeconds(0, 0); d.setHours(sc.hour, sc.minute);
-  if(sc.cad === 'weekly'){ const want = (sc.days || [d.getDay()])[0]; let add = (want - d.getDay() + 7) % 7; if(add === 0 && d.getTime() <= Date.now()) add = 7; d.setDate(d.getDate() + add); }
-  else if(sc.cad === 'monthly'){ d.setDate(sc.dom || d.getDate()); if(d.getTime() <= Date.now()) d.setMonth(d.getMonth() + 1); }
-  else if(d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-  return d.getTime();
-}
 /* ============================================================
    APPROVAL + PREVIEW WORKSPACE  (Phase 1 of the Mission Control redesign)
    ------------------------------------------------------------
@@ -34244,14 +34288,41 @@ function _mailConnectedAccount(){
 
 /* The picker. Grouped by country so somebody scans for their flag rather than
    reading forty names, and every provider carries its own setup sentence. */
-async function openMailConnect(preset){
-  const cat = await _mailLoadProviders();
+/* THE SAME CENTRED PAGE AS EVERY OTHER STEP OF CONNECTING (Nov 28, the
+   owner: "centred and aesthetic for all connectors"). Pressing iCloud Mail on
+   a job's connect screen used to drop into a small left-aligned popup headed
+   "Mail"; it is now the next page of the same thing, titled with the mailbox
+   that was pressed, with Back to the choices. `back`, when given, is where
+   Back and Cancel go. */
+function _mlShell(title, lead, body){
+  return '<div class="ov cwc-ov" id="ml-bg"><div class="cwc cwk ml-page" role="dialog" aria-modal="true" aria-labelledby="ml-h">'+
+    '<button class="cwp-x" id="ml-x" aria-label="'+escH(T('Close'))+'">\u2715</button>'+
+    '<div class="cwc-inner">'+
+      '<h1 class="cwc-t" id="ml-h">'+escH(title)+'</h1>'+
+      (lead?'<p class="cwc-lead">'+escH(lead)+'</p>':'')+
+      body+
+    '</div></div></div>';
+}
+async function openMailConnect(preset, back){
   const r=$('ovr'); if(!r) return;
+  const close=()=>{ try{ closeOvr(); }catch(e){ r.innerHTML=''; } };
+  const leave=()=>{ if(typeof back==='function'){ try{ back(); return; }catch(e){} } close(); };
+  /* Drawn at once, so the press answers before the provider list arrives. */
+  if(!_MAILP){
+    r.innerHTML=_mlShell(T('Connect your mailbox'), '', '<div class="ml-modal ml-card"><p class="mu" role="status">'+escH(T('Loading…'))+'</p></div>');
+    r.classList.add('on');
+    on($('ml-x'),'click',close);
+  }
+  const cat = await _mailLoadProviders();
   if(!cat || !cat.providers){
-    r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal"><h2>Mail</h2>'+
-      '<p class="mu">AMV could not load the provider list. Check your connection and try again.</p>'+
-      '<div class="ml-foot"><button class="btn" id="ml-x">Close</button></div></div></div>';
-    on($('ml-x'),'click',()=>{ r.innerHTML=''; });
+    r.innerHTML=_mlShell(T('Connect your mailbox'), T('AMV could not load the provider list. Check your connection and try again.'),
+      '<div class="cwk-acts ml-foot">'+(back?'<button class="btn bs" id="ml-cancel" type="button">\u2190 '+escH(T('Back'))+'</button>':'')+
+        '<button class="btn bp" id="ml-retry" type="button">'+escH(T('Try again'))+'</button></div>');
+    r.classList.add('on');
+    on($('ml-x'),'click',close);
+    on($('ml-cancel'),'click',leave);
+    on($('ml-retry'),'click',()=>{ openMailConnect(preset, back); });
+    onBackdrop($('ml-bg'),close);
     return;
   }
   const byCountry={};
@@ -34270,23 +34341,25 @@ async function openMailConnect(preset){
     '</optgroup>';
   }).join('');
 
-  r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal" role="dialog" aria-modal="true" aria-labelledby="ml-h">'+
-    '<div class="ml-head"><div><div class="eyebrow">Mail</div><h2 id="ml-h">Connect your mailbox</h2></div>'+
-      '<button class="tp-x" id="ml-x" aria-label="Close">✕</button></div>'+
-    '<p class="mu ml-intro">AMV works with '+(+cat.countries||20)+'+ countries’ mail providers over IMAP, the open standard they all support. Your password is encrypted on AMV’s server and is never sent back to this browser.</p>'+
-    '<label class="ml-f"><span>Provider</span><select id="ml-prov">'+opts+'</select></label>'+
+  const chosen=preset?cat.providers.find(x=>x.id===preset):null;
+  const title=(chosen&&!chosen.custom)?T('Connect {0}').replace('{0}', chosen.name):T('Connect your mailbox');
+  r.innerHTML=_mlShell(title, T('Use an app password from your mail provider - not your usual one. The steps for yours are under the box.'),
+    '<div class="ml-modal ml-card">'+
+    '<label class="ml-f"><span>'+escH(T('Provider'))+'</span><select id="ml-prov">'+opts+'</select></label>'+
     cat.providers.filter(p=>p.paused).map(p=>'<p class="mu ml-paused"><b>'+escH(p.name)+' is paused.</b> '+escH(p.paused)+'</p>').join('')+
     '<div id="ml-custom" style="display:none">'+
-      '<label class="ml-f"><span>IMAP server</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
-      '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
+      '<label class="ml-f"><span>'+escH(T('IMAP server'))+'</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
+      '<label class="ml-f"><span>'+escH(T('SMTP server'))+'</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
     '</div>'+
-    '<label class="ml-f"><span>Email address</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
-    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
+    '<label class="ml-f"><span>'+escH(T('Email address'))+'</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
+    '<label class="ml-f"><span>'+escH(T('App password'))+'</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
     '<p class="ml-setup" id="ml-setup"></p>'+
     '<div class="ml-err" id="ml-err" style="display:none" role="alert"></div>'+
-    '<div class="ml-foot"><button class="btn" id="ml-cancel">Cancel</button>'+
-      '<button class="btn bp" id="ml-go">Connect</button></div>'+
-  '</div></div>';
+    '<div class="ml-foot"><button class="btn bs" id="ml-cancel" type="button">'+(back?'\u2190 '+escH(T('Back')):escH(T('Cancel')))+'</button>'+
+      '<button class="btn bp" id="ml-go" type="button">'+escH(T('Connect'))+'</button></div>'+
+    '</div>'+
+    '<p class="cwk-note">'+escH(T('AMV works with the mail providers of {0}+ countries over IMAP. Your password is encrypted on AMV’s server and never sent back to this browser.').replace('{0}', String(+cat.countries||20)))+'</p>');
+  r.classList.add('on');
 
   const sel=$('ml-prov');
   const showSetup=()=>{
@@ -34303,9 +34376,9 @@ async function openMailConnect(preset){
   /* Guarded so a click INSIDE the dialog does not close it, without using
      stopPropagation - which would kill the delegated handlers on every button
      in here (LESSONS #5). */
-  onBackdrop($('ml-bg'),()=>{ r.innerHTML=''; });
-  on($('ml-x'),'click',()=>{ r.innerHTML=''; });
-  on($('ml-cancel'),'click',()=>{ r.innerHTML=''; });
+  onBackdrop($('ml-bg'),close);
+  on($('ml-x'),'click',close);
+  on($('ml-cancel'),'click',leave);
   on($('ml-go'),'click',async()=>{
     const btn=$('ml-go'), err=$('ml-err');
     const provider=sel.value;
@@ -34313,14 +34386,14 @@ async function openMailConnect(preset){
     const p=cat.providers.find(x=>x.id===provider);
     if(p&&p.custom){ body.imap=($('ml-imap')||{}).value||''; body.smtp=($('ml-smtp')||{}).value||''; }
     err.style.display='none';
-    btn.disabled=true; btn.textContent='Connecting…';
+    btn.disabled=true; btn.textContent=T('Connecting…');
     try{
       await AMV_API.mailConnect(body);
       /* Cleared the moment it has been handed over. There is no reason for a
          mailbox password to stay in a DOM node after it has been used. */
       const pw=$('ml-pass'); if(pw) pw.value='';
       await refreshMailStatus();
-      r.innerHTML='';
+      close();
       toast('\u2713 '+T('Mailbox connected'),'success');
       try{ _refreshIntegrationsUI(); }catch(e){}
       /* A Crew job that sent somebody here turns on now (it asks whether a
@@ -34332,7 +34405,7 @@ async function openMailConnect(preset){
          so its sentence is shown rather than a generic failure. */
       err.textContent=String((e&&e.message)||'Could not connect.');
       err.style.display='';
-      btn.disabled=false; btn.textContent='Connect';
+      btn.disabled=false; btn.textContent=T('Connect');
     }
   });
 }
@@ -39787,10 +39860,16 @@ function openJobHunt(){
   const r=typeof $==='function' && $('ovr'); if(!r) { try{ setTab('crew'); }catch(e){} return; }
   const c=AMVJobs.cfg();
   const val=v=>escH(v==null?'':String(v));
-  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" style="max-width:560px">'+
-    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
-    '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
+  /* The same centred page as every other step of connecting what a job needs
+     (Nov 28) - a job needing this profile opens it the way another job opens
+     its mailbox choices. */
+  let forJob=null; try{ const id=typeof _cwResumeJob==='function'?_cwResumeJob():''; forJob=id&&typeof _cwFindJob==='function'?_cwFindJob(id):null; }catch(e){}
+  r.innerHTML='<div class="ov cwc-ov" id="jh-bg"><div class="cwc cwk jh-page" role="dialog" aria-modal="true" aria-labelledby="jh-h">'+
+    '<button class="cwp-x" data-dact="closeOvr" aria-label="'+escH(T('Close'))+'">\u2715</button>'+
+    '<div class="cwc-inner">'+
+    '<h1 class="cwc-t" id="jh-h">'+escH(T('Job hunt profile'))+'</h1>'+
+    '<p class="cwc-lead">'+escH(forJob?T('For “{0}”.').replace('{0}', forJob.title)+' ':'')+escH(T('AMV finds roles that match it and prepares each application for you to review and send. Nothing goes to an employer without you.'))+'</p>'+
+    '<div class="ml-modal ml-card jh-modal">'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
       '<label class="jh-l">Roles to target<input id="jh-roles" class="inp" placeholder="e.g. Product Designer, UX Lead" value="'+val((c.targets.roles||[]).join(', '))+'"></label>'+
       '<label class="jh-l">Locations<input id="jh-loc" class="inp" placeholder="e.g. Remote, London, NYC" value="'+val((c.targets.locations||[]).join(', '))+'"></label>'+
@@ -39812,8 +39891,10 @@ function openJobHunt(){
         '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
       '<span style="font-size:var(--t-sm);color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
-    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" data-dact="closeOvr">Cancel</button></div>'+
-  '</div></div>';
+    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bs" id="jh-cancel" type="button">'+(forJob?'\u2190 '+escH(T('Back to the job')):escH(T('Cancel')))+'</button><button class="btn bp" id="jh-save" type="button" style="flex:1">'+escH(T('Save'))+'</button></div>'+
+  '</div></div></div></div>';
+  r.classList.add('on');
+  on($('jh-cancel'),'click',()=>{ if(forJob){ try{ cwPeek(forJob.id); return; }catch(e){} } closeOvr(); });
   onBackdrop($('jh-bg'),closeOvr);
   on($('jh-save'),'click',()=>{
     const g=id=>{ const el=$(id); return el?el.value.trim():''; };
@@ -39830,6 +39911,9 @@ function openJobHunt(){
     closeOvr();
     if(typeof toast==='function') toast(miss.length?('Saved. Still need: '+miss.map(m=>m.key).join(', ')):'Job Hunt saved. Turn it on in Crew to start.','success');
     try{ if(S.tab==='crew') renderCrewView(); }catch(e){}
+    /* Opened from a job that needed this profile: back to that job, which
+       now shows it ticked and Run where Connect was. */
+    if(!miss.length){ try{ if(typeof cwResumeIfAny==='function') cwResumeIfAny(); }catch(e){} }
   });
 }
 try{ window.openJobHunt=openJobHunt; }catch(e){}
@@ -41601,14 +41685,28 @@ try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
    same flow at the institution's own sign-in, in a dialog that a Crew job
    needing a bank and the Bank & money row in Integrations both open. One copy
    of the money flow, as before - this only gives it a door of its own. */
-function openBankLink(){
+/* The job it was opened for, kept across the pane's own redraws (it reopens
+   this dialog after a confirm) so the line naming the job does not vanish. */
+let _bankForJob='';
+function openBankLink(jobId){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="bank-bg"><div class="ccp bank-dlg" role="dialog" aria-modal="true" aria-label="'+escH(T('Link a bank'))+'">'
-    +'<header class="ccp-h"><h2>'+escH(T('Link a bank'))+'</h2><button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button></header>'
-    +'<div class="bank-b" id="bank-pane" data-mode="bank"></div></div></div>';
+  if(jobId!==undefined) _bankForJob=jobId?String(jobId):'';
+  let j=null; try{ j=_bankForJob&&typeof _cwFindJob==='function'?_cwFindJob(_bankForJob):null; }catch(e){}
+  /* The same centred column as every other step of connecting something
+     (Nov 28, the owner: "centred and aesthetic for all connectors"). */
+  r.innerHTML='<div class="ov cwc-ov" id="bank-bg"><div class="cwc cwk bank-dlg" role="dialog" aria-modal="true" aria-labelledby="bank-t">'
+    +'<button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button>'
+    +'<div class="cwc-inner">'
+      +'<h1 class="cwc-t" id="bank-t">'+escH(T('Link a bank'))+'</h1>'
+      +(j?'<p class="cwc-lead">'+escH(T('For “{0}”.').replace('{0}', j.title))+'</p>':'')
+      +'<div class="bank-b" id="bank-pane" data-mode="bank"></div>'
+      +(j?'<div class="cwk-acts"><button class="btn bs" id="bank-back" type="button">\u2190 '+escH(T('Back to the job'))+'</button></div>':'')
+    +'</div></div></div>';
   r.classList.add('on');
-  onBackdrop($('bank-bg'), closeOvr);
-  on($('bank-x'),'click',closeOvr);
+  const close=()=>{ _bankForJob=''; closeOvr(); };
+  onBackdrop($('bank-bg'), close);
+  on($('bank-x'),'click',close);
+  on($('bank-back'),'click',()=>{ const id=_bankForJob; _bankForJob=''; try{ cwPeek(id); }catch(e){ closeOvr(); } });
   try{ _renderInvestPane($('bank-pane')); }catch(e){}
 }
 try{ window.openBankLink=openBankLink; }catch(e){}

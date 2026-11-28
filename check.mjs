@@ -1703,7 +1703,15 @@ step('Page weight is under control', () => {
   /* 598 -> 596, 2026-11-25, DOWN: Billing's screen moved into settings-panes.js
      (~4KB gzipped off every first visit); the ceiling follows it down so the
      room cannot be quietly spent. */
-  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
+  /* 596 -> 597, 2026-11-28, UP on purpose: the owner's "every connector
+     centred and aesthetic, for every job in every country" - the requirements
+     list, a mailbox's form, the bank link and the job hunt profile as one
+     centred page with Back between them, plus the routing that sent the
+     profile and web automation to a connector search. Trimmed first: three
+     functions nothing called (_cwAnyCard, _cwNextLocal, _cwNeedHow), a second
+     copy of the need icons, and the old requirement-row styles. What is left,
+     about 1KB, is the change itself. */
+  const CEILING = 597 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html and its code file are ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

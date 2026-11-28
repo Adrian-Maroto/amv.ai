@@ -140,7 +140,6 @@ function _cwJobCard(j){
 }
 /* Which of the two a catalogue card should be is a fact about the account, not
    about the caller, so it is decided here rather than at each call site. */
-function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard(j); }
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${_lineIcon(j.cat)}</div>
@@ -222,6 +221,10 @@ const _CW_USE_IC = {
   Calendar:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   Bank:'<path d="M3 10h18M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18M12 3 3 8h18z"/>',
   Classroom:'<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+  Files:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
+  Profile:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+  Web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.5-3.8-9S9.5 5.5 12 3z"/>',
+  App:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
 };
 /* THE JOB PANEL (rebuilt Nov 15 - owner: "when you click the job it still
    looks unprofessional and unclean"; "make sure you can edit crew jobs ... u
@@ -1410,11 +1413,3 @@ try{ window._planAllowsCrew=_planAllowsCrew; }catch(e){}
 try{ window.cwToggle=cwToggle; window.cwReject=cwReject; }catch(e){}
 try{ window.addEventListener('resize', () => { try{ _mcCmdFit(document.getElementById('mc-cmd-input')); }catch(e){} }, { passive:true }); }catch(e){}
 
-/* The next time, on this device's clock, that a picked schedule is due. */
-function _cwNextLocal(sc){
-  const d = new Date(); d.setSeconds(0, 0); d.setHours(sc.hour, sc.minute);
-  if(sc.cad === 'weekly'){ const want = (sc.days || [d.getDay()])[0]; let add = (want - d.getDay() + 7) % 7; if(add === 0 && d.getTime() <= Date.now()) add = 7; d.setDate(d.getDate() + add); }
-  else if(sc.cad === 'monthly'){ d.setDate(sc.dom || d.getDate()); if(d.getTime() <= Date.now()) d.setMonth(d.getMonth() + 1); }
-  else if(d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-  return d.getTime();
-}

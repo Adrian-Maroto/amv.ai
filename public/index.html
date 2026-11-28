@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="0091a8a090f4ab4b">
+<meta name="amv-build" content="0eee29c028db48e4">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://amv.homes/api"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -7506,12 +7506,10 @@ line-height:1.15; color:var(--tx);
 }
 .cwc-lead{ margin:0; font-size:var(--t-lg); line-height:1.6; color:var(--mu); }
 .cwc-lead b{ color:var(--tx); font-weight:640; }
-.cwc-acts{ display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
 .cwc .cwp-x{ position:absolute; top:var(--sp-4); right:var(--sp-4); }
 @media (max-width:560px){
 .cwc-inner{ padding:var(--sp-6) var(--sp-4); }
 .cwc-t{ font-size:var(--t-2xl); }
-.cwc-acts .btn{ width:100%; }
 }
 .vi-conn{ gap:var(--sp-4)!important; }
 .vi-conn .ss2 + .ss2{ margin-top:0!important; }
@@ -8240,25 +8238,8 @@ background:color-mix(in srgb, var(--gold) 9%, transparent);
 }
 .cwp-need-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
 .cwp-need-p{ font-size:var(--t-sm); color:var(--tx); line-height:1.55; margin:0 0 var(--sp-3); opacity:.9; }
-.cwn-list{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-4) 0; text-align:left; }
-.cwn-row{
-display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
-padding:var(--sp-3) var(--sp-4);
-border:1px solid var(--bd); border-radius:var(--r-lg);
-background:var(--s1);
-}
 .cwn-row.met{ opacity:.72; }
-.cwn-b{ min-width:0; }
-.cwn-n{ font-size:var(--t-md); font-weight:600; color:var(--tx); }
-.cwn-h{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; margin-top:2px; }
-.cwn-a{ flex:0 0 auto; }
 .cwn-ok{ font-size:var(--t-sm); font-weight:600; color:var(--grn-txt); white-space:nowrap; }
-.cwn-acts{ display:flex; gap:var(--sp-2); justify-content:flex-end; flex-wrap:wrap; }
-@media (max-width:560px){
-.cwn-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
-.cwn-a,.cwn-a .btn{ width:100%; }
-.cwn-acts .btn{ flex:1 1 auto; }
-}
 .plnc .plnbtn{
 min-height:calc(2.8em + 24px);
 display:flex; align-items:center; justify-content:center;
@@ -10847,7 +10828,7 @@ color:transparent!important;background:var(--s2)!important;border-color:transpar
 .cwk-list{display:flex;flex-direction:column;gap:var(--sp-2);margin:var(--sp-5) 0 var(--sp-4)}
 .cwk-row{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1)}
 .cwk .cwc-inner{align-items:stretch;max-width:520px;margin:0 auto}
-.cwk .cwc-t,.cwk .cwc-lead,.cwk .cwk-note{text-align:center}
+.cwk .cwc-t,.cwk .cwc-lead,.cwk .cwk-note{text-align:center;overflow-wrap:anywhere}
 .cwk-ic{flex:0 0 auto;width:36px!important;height:36px!important;border-radius:var(--r-md)!important}
 .cwk-n{flex:1 1 auto;min-width:0;font-weight:600;font-size:var(--t-md);overflow-wrap:anywhere}
 .cwk-go{flex:0 0 auto;min-width:96px;min-height:40px}
@@ -10857,6 +10838,18 @@ color:transparent!important;background:var(--s2)!important;border-color:transpar
 body.pay-full #sb,body.pay-full #sb-backdrop,body.pay-full #sb-rail-toggle,body.pay-full #tsb{display:none!important}
 body.pay-full #abody #cv{transform:none!important;margin-left:0!important}
 }
+.cwk{align-items:flex-start}
+.cwk .cwc-inner{margin:auto}
+.cwk-svg{background:var(--s2)!important}
+.cwk-b{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cwk-s{font-size:var(--t-sm);color:var(--mu);line-height:1.45;overflow-wrap:anywhere}
+.cwk-acts{display:flex;justify-content:center;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-2)}
+.cwk .cwn-ok{flex:0 0 auto;min-width:96px;text-align:center}
+.cwk .ml-card{width:100%;max-width:none;max-height:none;overflow:visible;box-shadow:none}
+.cwk .ml-card .ml-foot{justify-content:space-between}
+.cwk.bank-dlg{height:100%;max-height:none}
+.cwk .bank-b{padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1);overflow:visible}
+@media (max-width:480px){.cwk-acts .btn{flex:1 1 auto}}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
@@ -11118,7 +11111,7 @@ body.pay-full #abody #cv{transform:none!important;margin-left:0!important}
 <div id="ovr"></div>
 
 <!-- BUILD:JS:START -->
-<script src="/app.fa7fab073993.js" defer integrity="sha384-HumHx4eatgVlNcz81pkO819diiv9rdcRvfMpchypFrTOdr25+Mz1E0+N3XBpjxe/" data-amv-app></script>
+<script src="/app.4cb948458eec.js" defer integrity="sha384-zc6o0GwnB2knR853tCQAI6rU+N1laFIFAhlR+t+m9B7opm98AuFShV8OoS4WHaSJ" data-amv-app></script>
 <script>(function(){try{var f=document.getElementById('amv-fonts');if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();(function(){var s=document.querySelector('script[data-amv-app]');if(!s)return;s.addEventListener('error',function(){try{if(document.getElementById('amv-load-failed'))return;var W={"es":["AMV no pudo terminar de cargarse. Revisa tu conexión y vuelve a cargar.","Volver a cargar"],"zh":["AMV 未能完成加载。请检查网络连接，然后重新加载。","重新加载"],"hi":["AMV पूरी तरह लोड नहीं हो सका। अपना कनेक्शन जाँचें, फिर दोबारा लोड करें।","दोबारा लोड करें"],"ar":["تعذّر إكمال تحميل AMV. تحقّق من اتصالك، ثم أعد التحميل.","إعادة التحميل"],"pt":["O AMV não conseguiu terminar de carregar. Verifique sua conexão e recarregue.","Recarregar"],"fr":["AMV n’a pas pu finir de se charger. Vérifiez votre connexion, puis rechargez.","Recharger"],"de":["AMV konnte nicht vollständig geladen werden. Prüfen Sie Ihre Verbindung und laden Sie neu.","Neu laden"],"ja":["AMV を最後まで読み込めませんでした。接続を確認してから再読み込みしてください。","再読み込み"],"ru":["AMV не удалось загрузить до конца. Проверьте подключение и перезагрузите страницу.","Перезагрузить"],"id":["AMV tidak dapat selesai dimuat. Periksa koneksi Anda, lalu muat ulang.","Muat ulang"],"bn":["AMV পুরোপুরি লোড হতে পারেনি। আপনার সংযোগ দেখে নিন, তারপর আবার লোড করুন।","আবার লোড করুন"],"ur":["AMV مکمل لوڈ نہیں ہو سکا۔ اپنا کنکشن چیک کریں، پھر دوبارہ لوڈ کریں۔","دوبارہ لوڈ کریں"],"tr":["AMV yüklenmeyi tamamlayamadı. Bağlantınızı kontrol edin, ardından yeniden yükleyin.","Yeniden yükle"],"vi":["AMV không thể tải xong. Hãy kiểm tra kết nối rồi tải lại.","Tải lại"],"it":["AMV non è riuscito a completare il caricamento. Controlla la connessione, poi ricarica.","Ricarica"],"ko":["AMV를 끝까지 불러오지 못했습니다. 연결을 확인한 다음 새로고침하세요.","새로고침"],"ta":["AMV முழுமையாக ஏற்றப்படவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து, மீண்டும் ஏற்றவும்.","மீண்டும் ஏற்று"]},l='';try{l=localStorage.getItem('amv_lang')||'';}catch(e){}if(!W[l])l=String(navigator.language||'').toLowerCase().split('-')[0];var w=W[l]||["AMV could not finish loading. Check your connection, then reload.",'Reload'];var d=document.createElement('div');d.id='amv-load-failed';d.setAttribute('role','alert');d.dir='auto';if(W[l])d.lang=l;d.style.cssText='position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483647;padding:14px 16px;border-radius:12px;background:#1c2128;color:#f2f1ee;font:15px/1.4 system-ui,sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 8px 30px rgba(0,0,0,.35)';var t=document.createElement('span');t.textContent=w[0];var b=document.createElement('button');b.type='button';b.textContent=w[1];b.style.cssText='flex:none;min-height:44px;padding:0 18px;border-radius:10px;border:0;background:#f2f1ee;color:#1c2128;font:600 15px system-ui,sans-serif;cursor:pointer';b.addEventListener('click',function(){location.reload();});d.appendChild(t);d.appendChild(b);document.body.appendChild(d);}catch(e){}});})();</script>
 <!-- BUILD:JS:END -->
 </body>

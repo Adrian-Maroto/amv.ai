@@ -274,14 +274,28 @@ try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
    same flow at the institution's own sign-in, in a dialog that a Crew job
    needing a bank and the Bank & money row in Integrations both open. One copy
    of the money flow, as before - this only gives it a door of its own. */
-function openBankLink(){
+/* The job it was opened for, kept across the pane's own redraws (it reopens
+   this dialog after a confirm) so the line naming the job does not vanish. */
+let _bankForJob='';
+function openBankLink(jobId){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="bank-bg"><div class="ccp bank-dlg" role="dialog" aria-modal="true" aria-label="'+escH(T('Link a bank'))+'">'
-    +'<header class="ccp-h"><h2>'+escH(T('Link a bank'))+'</h2><button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button></header>'
-    +'<div class="bank-b" id="bank-pane" data-mode="bank"></div></div></div>';
+  if(jobId!==undefined) _bankForJob=jobId?String(jobId):'';
+  let j=null; try{ j=_bankForJob&&typeof _cwFindJob==='function'?_cwFindJob(_bankForJob):null; }catch(e){}
+  /* The same centred column as every other step of connecting something
+     (Nov 28, the owner: "centred and aesthetic for all connectors"). */
+  r.innerHTML='<div class="ov cwc-ov" id="bank-bg"><div class="cwc cwk bank-dlg" role="dialog" aria-modal="true" aria-labelledby="bank-t">'
+    +'<button class="cwp-x" id="bank-x" aria-label="'+escH(T('Close'))+'">\u2715</button>'
+    +'<div class="cwc-inner">'
+      +'<h1 class="cwc-t" id="bank-t">'+escH(T('Link a bank'))+'</h1>'
+      +(j?'<p class="cwc-lead">'+escH(T('For “{0}”.').replace('{0}', j.title))+'</p>':'')
+      +'<div class="bank-b" id="bank-pane" data-mode="bank"></div>'
+      +(j?'<div class="cwk-acts"><button class="btn bs" id="bank-back" type="button">\u2190 '+escH(T('Back to the job'))+'</button></div>':'')
+    +'</div></div></div>';
   r.classList.add('on');
-  onBackdrop($('bank-bg'), closeOvr);
-  on($('bank-x'),'click',closeOvr);
+  const close=()=>{ _bankForJob=''; closeOvr(); };
+  onBackdrop($('bank-bg'), close);
+  on($('bank-x'),'click',close);
+  on($('bank-back'),'click',()=>{ const id=_bankForJob; _bankForJob=''; try{ cwPeek(id); }catch(e){ closeOvr(); } });
   try{ _renderInvestPane($('bank-pane')); }catch(e){}
 }
 try{ window.openBankLink=openBankLink; }catch(e){}

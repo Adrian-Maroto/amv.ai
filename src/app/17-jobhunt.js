@@ -216,10 +216,16 @@ function openJobHunt(){
   const r=typeof $==='function' && $('ovr'); if(!r) { try{ setTab('crew'); }catch(e){} return; }
   const c=AMVJobs.cfg();
   const val=v=>escH(v==null?'':String(v));
-  r.innerHTML='<div class="ov" id="jh-bg"><div class="ob jh-modal" style="max-width:560px">'+
-    '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-    '<h2 style="margin:0 0 4px">Job Hunt</h2>'+
-    '<p style="font-size:var(--t-sm);color:var(--mu);margin:0 0 14px">I find roles that match your profile and prepare a tailored application for each one, ready for you to review and send. Submitting on my own is not switched on yet - nothing goes to an employer without you.</p>'+
+  /* The same centred page as every other step of connecting what a job needs
+     (Nov 28) - a job needing this profile opens it the way another job opens
+     its mailbox choices. */
+  let forJob=null; try{ const id=typeof _cwResumeJob==='function'?_cwResumeJob():''; forJob=id&&typeof _cwFindJob==='function'?_cwFindJob(id):null; }catch(e){}
+  r.innerHTML='<div class="ov cwc-ov" id="jh-bg"><div class="cwc cwk jh-page" role="dialog" aria-modal="true" aria-labelledby="jh-h">'+
+    '<button class="cwp-x" data-dact="closeOvr" aria-label="'+escH(T('Close'))+'">\u2715</button>'+
+    '<div class="cwc-inner">'+
+    '<h1 class="cwc-t" id="jh-h">'+escH(T('Job hunt profile'))+'</h1>'+
+    '<p class="cwc-lead">'+escH(forJob?T('For “{0}”.').replace('{0}', forJob.title)+' ':'')+escH(T('AMV finds roles that match it and prepares each application for you to review and send. Nothing goes to an employer without you.'))+'</p>'+
+    '<div class="ml-modal ml-card jh-modal">'+
     '<div class="jh-form" style="display:flex;flex-direction:column;gap:11px">'+
       '<label class="jh-l">Roles to target<input id="jh-roles" class="inp" placeholder="e.g. Product Designer, UX Lead" value="'+val((c.targets.roles||[]).join(', '))+'"></label>'+
       '<label class="jh-l">Locations<input id="jh-loc" class="inp" placeholder="e.g. Remote, London, NYC" value="'+val((c.targets.locations||[]).join(', '))+'"></label>'+
@@ -241,8 +247,10 @@ function openJobHunt(){
         '<select id="jh-mode" class="sel" aria-label="Apply mode"><option value="ask"'+(c.mode==='ask'?' selected':'')+'>Show me each one before it is sent</option><option value="auto"'+(c.mode==='auto'?' selected':'')+'>Prepare as many as possible for one-tap sending</option></select>'+
       '<span style="font-size:var(--t-sm);color:var(--mu);display:block;margin-top:5px">Either way, nothing reaches an employer until you send it.</span></label>'+
     '</div>'+
-    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bp" id="jh-save" style="flex:1">Save</button><button class="btn bs" data-dact="closeOvr">Cancel</button></div>'+
-  '</div></div>';
+    '<div style="display:flex;gap:9px;margin-top:16px"><button class="btn bs" id="jh-cancel" type="button">'+(forJob?'\u2190 '+escH(T('Back to the job')):escH(T('Cancel')))+'</button><button class="btn bp" id="jh-save" type="button" style="flex:1">'+escH(T('Save'))+'</button></div>'+
+  '</div></div></div></div>';
+  r.classList.add('on');
+  on($('jh-cancel'),'click',()=>{ if(forJob){ try{ cwPeek(forJob.id); return; }catch(e){} } closeOvr(); });
   onBackdrop($('jh-bg'),closeOvr);
   on($('jh-save'),'click',()=>{
     const g=id=>{ const el=$(id); return el?el.value.trim():''; };
@@ -259,6 +267,9 @@ function openJobHunt(){
     closeOvr();
     if(typeof toast==='function') toast(miss.length?('Saved. Still need: '+miss.map(m=>m.key).join(', ')):'Job Hunt saved. Turn it on in Crew to start.','success');
     try{ if(S.tab==='crew') renderCrewView(); }catch(e){}
+    /* Opened from a job that needed this profile: back to that job, which
+       now shows it ticked and Run where Connect was. */
+    if(!miss.length){ try{ if(typeof cwResumeIfAny==='function') cwResumeIfAny(); }catch(e){} }
   });
 }
 try{ window.openJobHunt=openJobHunt; }catch(e){}

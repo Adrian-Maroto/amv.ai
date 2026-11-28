@@ -16412,3 +16412,23 @@ the press. A suite slows the list down and checks the screen still offers
 every way (`a-job-that-needs-an-account-asks-for-it`). Rule: a screen that
 starts a request awaits it before saying what the answer is, and a suite of
 it includes the reply arriving late.
+
+## 677
+**Nov 28 - "every job" means walking every kind of need, not fixing the one in the photo.**
+The owner photographed one job's connect screen and said the bug was in
+"almost every job, every country, every section". The fix for the photo
+(Nov 27) was right and incomplete. Opening Connect on every job showed why.
+A job that needs nothing said "This needs Nothing before it can run" with a
+Connect button. The job hunt profile and web automation fell through the
+routing table to "a connector on your computer", and Connect searched the
+directory for them. A job needing a mailbox and a calendar opened the
+mailbox choices from the calendar's button, because the next screen took the
+first missing need. And the list, a mailbox's form and the bank link were
+three more designs. Each suite had tested one job of one kind. Now every
+kind routes somewhere real, every step is the same centred page with Back
+between them, and `every-job-connects-on-one-centred-page` presses Connect on
+every built-in job and a spread of six countries' catalogues, on a laptop
+and a phone. It also found a Japanese library's one-word title wider than a
+phone. Rule: when a defect is said to be everywhere, enumerate the kinds the
+code branches on and open one of each - a table lookup with a default is
+where the unreported cases are.

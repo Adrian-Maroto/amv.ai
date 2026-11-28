@@ -12383,13 +12383,11 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 }
 .cwc-lead{ margin:0; font-size:var(--t-lg); line-height:1.6; color:var(--mu); }
 .cwc-lead b{ color:var(--tx); font-weight:640; }
-.cwc-acts{ display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
 .cwc .cwp-x{ position:absolute; top:var(--sp-4); right:var(--sp-4); }
 
 @media (max-width:560px){
   .cwc-inner{ padding:var(--sp-6) var(--sp-4); }
   .cwc-t{ font-size:var(--t-2xl); }
-  .cwc-acts .btn{ width:100%; }
 }
 
 /* ── LAYER A203 · the connector directory, and a page that stops being blocky ─
@@ -14026,26 +14024,8 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .cwp-need-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
 .cwp-need-p{ font-size:var(--t-sm); color:var(--tx); line-height:1.55; margin:0 0 var(--sp-3); opacity:.9; }
 
-.cwn-list{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-4) 0; text-align:left; }
-.cwn-row{
-  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
-  padding:var(--sp-3) var(--sp-4);
-  border:1px solid var(--bd); border-radius:var(--r-lg);
-  background:var(--s1);
-}
 .cwn-row.met{ opacity:.72; }
-.cwn-b{ min-width:0; }
-.cwn-n{ font-size:var(--t-md); font-weight:600; color:var(--tx); }
-.cwn-h{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; margin-top:2px; }
-.cwn-a{ flex:0 0 auto; }
 .cwn-ok{ font-size:var(--t-sm); font-weight:600; color:var(--grn-txt); white-space:nowrap; }
-.cwn-acts{ display:flex; gap:var(--sp-2); justify-content:flex-end; flex-wrap:wrap; }
-
-@media (max-width:560px){
-  .cwn-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
-  .cwn-a,.cwn-a .btn{ width:100%; }
-  .cwn-acts .btn{ flex:1 1 auto; }
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
    LAYER A240 - four plan buttons on one line
@@ -18399,7 +18379,7 @@ body.light #anav{ background:var(--bg); }
 /* One column in the middle of the screen: the heading and the note centred
    over the rows, the rows the column's full width. */
 .cwk .cwc-inner{align-items:stretch;max-width:520px;margin:0 auto}
-.cwk .cwc-t,.cwk .cwc-lead,.cwk .cwk-note{text-align:center}
+.cwk .cwc-t,.cwk .cwc-lead,.cwk .cwk-note{text-align:center;overflow-wrap:anywhere}
 .cwk-ic{flex:0 0 auto;width:36px!important;height:36px!important;border-radius:var(--r-md)!important}
 .cwk-n{flex:1 1 auto;min-width:0;font-weight:600;font-size:var(--t-md);overflow-wrap:anywhere}
 .cwk-go{flex:0 0 auto;min-width:96px;min-height:40px}
@@ -18411,3 +18391,22 @@ body.light #anav{ background:var(--bg); }
   body.pay-full #sb,body.pay-full #sb-backdrop,body.pay-full #sb-rail-toggle,body.pay-full #tsb{display:none!important}
   body.pay-full #abody #cv{transform:none!important;margin-left:0!important}
 }
+/* LAYER A425 - every step of connecting what a job needs is one page (Nov
+   28): the requirements list, the ways for one of them, a mailbox's form and
+   the bank link share the centred column and the rows of A423. Centred with
+   auto margins, not align-items, so a column taller than the screen scrolls
+   from its top instead of being cut off above it. */
+.cwk{align-items:flex-start}
+.cwk .cwc-inner{margin:auto}
+.cwk-svg{background:var(--s2)!important}
+.cwk-b{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cwk-s{font-size:var(--t-sm);color:var(--mu);line-height:1.45;overflow-wrap:anywhere}
+.cwk-acts{display:flex;justify-content:center;gap:var(--sp-2);flex-wrap:wrap;margin-top:var(--sp-2)}
+.cwk .cwn-ok{flex:0 0 auto;min-width:96px;text-align:center}
+/* The mailbox form and the bank pane sit in the column as one card, the
+   same surface as the rows above them on the screen before. */
+.cwk .ml-card{width:100%;max-width:none;max-height:none;overflow:visible;box-shadow:none}
+.cwk .ml-card .ml-foot{justify-content:space-between}
+.cwk.bank-dlg{height:100%;max-height:none}
+.cwk .bank-b{padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1);overflow:visible}
+@media (max-width:480px){.cwk-acts .btn{flex:1 1 auto}}

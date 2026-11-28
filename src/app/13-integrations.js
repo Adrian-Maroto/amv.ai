@@ -1784,14 +1784,41 @@ function _mailConnectedAccount(){
 
 /* The picker. Grouped by country so somebody scans for their flag rather than
    reading forty names, and every provider carries its own setup sentence. */
-async function openMailConnect(preset){
-  const cat = await _mailLoadProviders();
+/* THE SAME CENTRED PAGE AS EVERY OTHER STEP OF CONNECTING (Nov 28, the
+   owner: "centred and aesthetic for all connectors"). Pressing iCloud Mail on
+   a job's connect screen used to drop into a small left-aligned popup headed
+   "Mail"; it is now the next page of the same thing, titled with the mailbox
+   that was pressed, with Back to the choices. `back`, when given, is where
+   Back and Cancel go. */
+function _mlShell(title, lead, body){
+  return '<div class="ov cwc-ov" id="ml-bg"><div class="cwc cwk ml-page" role="dialog" aria-modal="true" aria-labelledby="ml-h">'+
+    '<button class="cwp-x" id="ml-x" aria-label="'+escH(T('Close'))+'">\u2715</button>'+
+    '<div class="cwc-inner">'+
+      '<h1 class="cwc-t" id="ml-h">'+escH(title)+'</h1>'+
+      (lead?'<p class="cwc-lead">'+escH(lead)+'</p>':'')+
+      body+
+    '</div></div></div>';
+}
+async function openMailConnect(preset, back){
   const r=$('ovr'); if(!r) return;
+  const close=()=>{ try{ closeOvr(); }catch(e){ r.innerHTML=''; } };
+  const leave=()=>{ if(typeof back==='function'){ try{ back(); return; }catch(e){} } close(); };
+  /* Drawn at once, so the press answers before the provider list arrives. */
+  if(!_MAILP){
+    r.innerHTML=_mlShell(T('Connect your mailbox'), '', '<div class="ml-modal ml-card"><p class="mu" role="status">'+escH(T('Loading…'))+'</p></div>');
+    r.classList.add('on');
+    on($('ml-x'),'click',close);
+  }
+  const cat = await _mailLoadProviders();
   if(!cat || !cat.providers){
-    r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal"><h2>Mail</h2>'+
-      '<p class="mu">AMV could not load the provider list. Check your connection and try again.</p>'+
-      '<div class="ml-foot"><button class="btn" id="ml-x">Close</button></div></div></div>';
-    on($('ml-x'),'click',()=>{ r.innerHTML=''; });
+    r.innerHTML=_mlShell(T('Connect your mailbox'), T('AMV could not load the provider list. Check your connection and try again.'),
+      '<div class="cwk-acts ml-foot">'+(back?'<button class="btn bs" id="ml-cancel" type="button">\u2190 '+escH(T('Back'))+'</button>':'')+
+        '<button class="btn bp" id="ml-retry" type="button">'+escH(T('Try again'))+'</button></div>');
+    r.classList.add('on');
+    on($('ml-x'),'click',close);
+    on($('ml-cancel'),'click',leave);
+    on($('ml-retry'),'click',()=>{ openMailConnect(preset, back); });
+    onBackdrop($('ml-bg'),close);
     return;
   }
   const byCountry={};
@@ -1810,23 +1837,25 @@ async function openMailConnect(preset){
     '</optgroup>';
   }).join('');
 
-  r.innerHTML='<div class="ov" id="ml-bg"><div class="ml-modal" role="dialog" aria-modal="true" aria-labelledby="ml-h">'+
-    '<div class="ml-head"><div><div class="eyebrow">Mail</div><h2 id="ml-h">Connect your mailbox</h2></div>'+
-      '<button class="tp-x" id="ml-x" aria-label="Close">✕</button></div>'+
-    '<p class="mu ml-intro">AMV works with '+(+cat.countries||20)+'+ countries’ mail providers over IMAP, the open standard they all support. Your password is encrypted on AMV’s server and is never sent back to this browser.</p>'+
-    '<label class="ml-f"><span>Provider</span><select id="ml-prov">'+opts+'</select></label>'+
+  const chosen=preset?cat.providers.find(x=>x.id===preset):null;
+  const title=(chosen&&!chosen.custom)?T('Connect {0}').replace('{0}', chosen.name):T('Connect your mailbox');
+  r.innerHTML=_mlShell(title, T('Use an app password from your mail provider - not your usual one. The steps for yours are under the box.'),
+    '<div class="ml-modal ml-card">'+
+    '<label class="ml-f"><span>'+escH(T('Provider'))+'</span><select id="ml-prov">'+opts+'</select></label>'+
     cat.providers.filter(p=>p.paused).map(p=>'<p class="mu ml-paused"><b>'+escH(p.name)+' is paused.</b> '+escH(p.paused)+'</p>').join('')+
     '<div id="ml-custom" style="display:none">'+
-      '<label class="ml-f"><span>IMAP server</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
-      '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
+      '<label class="ml-f"><span>'+escH(T('IMAP server'))+'</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
+      '<label class="ml-f"><span>'+escH(T('SMTP server'))+'</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
     '</div>'+
-    '<label class="ml-f"><span>Email address</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
-    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
+    '<label class="ml-f"><span>'+escH(T('Email address'))+'</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
+    '<label class="ml-f"><span>'+escH(T('App password'))+'</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
     '<p class="ml-setup" id="ml-setup"></p>'+
     '<div class="ml-err" id="ml-err" style="display:none" role="alert"></div>'+
-    '<div class="ml-foot"><button class="btn" id="ml-cancel">Cancel</button>'+
-      '<button class="btn bp" id="ml-go">Connect</button></div>'+
-  '</div></div>';
+    '<div class="ml-foot"><button class="btn bs" id="ml-cancel" type="button">'+(back?'\u2190 '+escH(T('Back')):escH(T('Cancel')))+'</button>'+
+      '<button class="btn bp" id="ml-go" type="button">'+escH(T('Connect'))+'</button></div>'+
+    '</div>'+
+    '<p class="cwk-note">'+escH(T('AMV works with the mail providers of {0}+ countries over IMAP. Your password is encrypted on AMV’s server and never sent back to this browser.').replace('{0}', String(+cat.countries||20)))+'</p>');
+  r.classList.add('on');
 
   const sel=$('ml-prov');
   const showSetup=()=>{
@@ -1843,9 +1872,9 @@ async function openMailConnect(preset){
   /* Guarded so a click INSIDE the dialog does not close it, without using
      stopPropagation - which would kill the delegated handlers on every button
      in here (LESSONS #5). */
-  onBackdrop($('ml-bg'),()=>{ r.innerHTML=''; });
-  on($('ml-x'),'click',()=>{ r.innerHTML=''; });
-  on($('ml-cancel'),'click',()=>{ r.innerHTML=''; });
+  onBackdrop($('ml-bg'),close);
+  on($('ml-x'),'click',close);
+  on($('ml-cancel'),'click',leave);
   on($('ml-go'),'click',async()=>{
     const btn=$('ml-go'), err=$('ml-err');
     const provider=sel.value;
@@ -1853,14 +1882,14 @@ async function openMailConnect(preset){
     const p=cat.providers.find(x=>x.id===provider);
     if(p&&p.custom){ body.imap=($('ml-imap')||{}).value||''; body.smtp=($('ml-smtp')||{}).value||''; }
     err.style.display='none';
-    btn.disabled=true; btn.textContent='Connecting…';
+    btn.disabled=true; btn.textContent=T('Connecting…');
     try{
       await AMV_API.mailConnect(body);
       /* Cleared the moment it has been handed over. There is no reason for a
          mailbox password to stay in a DOM node after it has been used. */
       const pw=$('ml-pass'); if(pw) pw.value='';
       await refreshMailStatus();
-      r.innerHTML='';
+      close();
       toast('\u2713 '+T('Mailbox connected'),'success');
       try{ _refreshIntegrationsUI(); }catch(e){}
       /* A Crew job that sent somebody here turns on now (it asks whether a
@@ -1872,7 +1901,7 @@ async function openMailConnect(preset){
          so its sentence is shown rather than a generic failure. */
       err.textContent=String((e&&e.message)||'Could not connect.');
       err.style.display='';
-      btn.disabled=false; btn.textContent='Connect';
+      btn.disabled=false; btn.textContent=T('Connect');
     }
   });
 }
