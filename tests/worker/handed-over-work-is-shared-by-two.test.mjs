@@ -85,14 +85,22 @@ r = await call(W.handoffItemGet, { id: HID });
 ok(r.d.item.data.msgs.map(m => m.id).join(',') === 'm1,m2,m3,m9' && r.d.item.by === 'alice@test.com', 'both people’s messages, in order', r.d.item.data.msgs.map(m => m.id));
 
 section('The shape and the size are checked before anything is delivered');
-const before = store.size;
+/* Writes nobody waits for (an audit line) from the calls above can land at
+   any time; under a loaded gate one landed between the two counts below and
+   read as "a refused handoff stored something". Counted once the store is
+   still, and any new key is named, so a real leak says what it was. */
+const settle = async () => { let n = -1; while (n !== store.size) { n = store.size; await new Promise(x => setTimeout(x, 60)); } };
+await settle();
+const before = store.size, keysBefore = new Set(store.keys());
 r = await call(W.handoffCreate, { title:'x', to:'bob@test.com', item:{ kind:'spreadsheet', data:{ state:{} } } });
 ok(r.status === 400 && r.d.error === 'bad_item', 'an unknown kind is refused', r);
 r = await call(W.handoffCreate, { title:'x', to:'bob@test.com', item:{ kind:'chat', data:{ msgs:[] } } });
 ok(r.status === 400, 'a chat with no messages is refused', r.status);
 r = await call(W.handoffCreate, { title:'x', to:'bob@test.com', item:{ kind:'studio', data:{ state:{ html:'x'.repeat(950000) } } } });
 ok(r.status === 413 && /too large/i.test(r.d.message), 'work over the limit is refused, saying so', r.d.message);
-ok(store.size === before, 'and none of those delivered or stored anything', [before, store.size]);
+await settle();
+const added = [...store.keys()].filter(k => !keysBefore.has(k));
+ok(store.size === before && !added.length, 'and none of those delivered or stored anything', added);
 r = await call(W.handoffItemPut, { id: HID, base: 3, data: { state:{} } });
 ok(r.status === 400 && (await W.DB.get(env, 'hoitem', HID)).v === 3, 'a save cannot change a chat into something else', r.status);
 r = await call(W.handoffCreate, { title:'Just a note', context:'no work attached', to:'bob@test.com' });
