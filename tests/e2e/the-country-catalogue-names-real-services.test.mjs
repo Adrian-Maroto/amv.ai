@@ -130,7 +130,7 @@ section('Integrations: every entry, in its topic, through AMV’s browser');
   });
   ok(r.n === file.total, 'every entry is there once its topic is opened whole', { n: r.n, total: file.total });
   ok(r.airline.length === 1 && r.bank.length === 1, 'each kind sits in one topic - the airlines together, the banks together', { airline: r.airline, bank: r.bank });
-  ok(r.btns.length === 1 && r.btns[0] === 'Use', 'and each says Use, since AMV cannot connect it', r.btns);
+  ok(r.btns.length === 1 && r.btns[0] === 'Ask AMV', 'and each says Ask AMV - a drafted chat, since AMV cannot connect it', r.btns);
   /* A bank is never opened in AMV's browser, where a signed-in session could
      move money: its row is Link, the read-only bank connection. */
   ok(r.bankBtns.length === 1 && r.bankBtns[0] === 'openBankLink:Link', 'except a bank, which says Link and opens the read-only bank link', r.bankBtns);

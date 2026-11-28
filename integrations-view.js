@@ -492,8 +492,11 @@ async function _tkLoad(cc, key){
   try{
     const d = (cc && await _ccReady()) ? await window.ccLoad(cc) : null;
     const list = d ? window.ccTasks(d) : [];
-    list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
+    /* An answer for a country somebody has already left changes nothing -
+       not the list, and not the prompts a press reads (Build 19 audit
+       NEW-07: they were stored before this check). */
     if(key !== _tkCc) return;
+    list.forEach(t => { _TASK_PROMPTS[t.id] = t.prompt; });
     _tkList = list; _tkAnswered = key;
     _tkPop = (d && window.ccTasksPopular) ? window.ccTasksPopular(d, list) : [];
     const sub = $('tk2-sub');

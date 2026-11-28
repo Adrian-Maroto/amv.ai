@@ -25,6 +25,7 @@ import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { listed } from './not-listed.mjs';
+import { siteBetter } from './site-fit.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'data', 'countries');
@@ -233,7 +234,13 @@ async function main() {
     for (const [kind, [, keep]] of Object.entries(KINDS)) {
       /* Fresh rows when the kind was asked in full; otherwise whichever of the two has more. */
       const fresh = got[cc][kind] || [], prev = (PLACE.has(cc) || QFIX[cc]) && oldV < 2 ? [] : (old[kind] || []);   // those two were matched wrongly before v2
-      const rows = (whole.has(kind) || fresh.length >= prev.length ? fresh : prev).slice().sort((x, y) => y.w - x.w), list = [];
+      /* An organisation with several official websites comes back once per
+         site; the one that fits this country is kept (site-fit.mjs), not
+         whichever row arrived first - which gave the United States Business
+         Insider's Polish edition. */
+      const best = new Map();
+      for (const e of (whole.has(kind) || fresh.length >= prev.length ? fresh : prev)) { const b = best.get(e.q); if (!b || siteBetter(e.s, b.s, cc)) best.set(e.q, e); }
+      const rows = [...best.values()].sort((x, y) => y.w - x.w), list = [];
       for (const e of rows) {
         if (seen.has(e.q) || hosts.has(e.s)) continue; seen.add(e.q); hosts.add(e.s);
         /* Past the limit it is still marked as seen, so a football club that

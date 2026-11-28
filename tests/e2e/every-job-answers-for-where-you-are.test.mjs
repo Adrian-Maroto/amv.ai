@@ -227,7 +227,7 @@ section('Integrations, from Spain: Spain’s services are used, never falsely co
   }));
   ok(!/Services in Spain|Popular in Spain/.test(d.text), 'no "Services in" or "Popular in" Spain block', '');
   ok(d.svc.length >= 20, 'Spain’s own services are in the topics', d.svc.length);
-  ok(d.svc.filter(x => x.k !== 'bank').every(x => x.b === 'Use'), 'each one is Use - opened in AMV’s browser - never a Connect it cannot keep', d.svc.filter(x => x.k !== 'bank' && x.b !== 'Use').slice(0, 3));
+  ok(d.svc.filter(x => x.k !== 'bank').every(x => x.b === 'Ask AMV'), 'each one is Ask AMV - opened in AMV’s browser - never a Connect it cannot keep', d.svc.filter(x => x.k !== 'bank' && x.b !== 'Ask AMV').slice(0, 3));
   /* A bank is never opened in AMV's browser: Link opens the read-only bank
      connection, which says itself whether linking works in Spain. */
   const banks = d.svc.filter(x => x.k === 'bank');

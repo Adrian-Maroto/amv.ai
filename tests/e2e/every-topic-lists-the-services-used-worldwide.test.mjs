@@ -115,7 +115,7 @@ section('In its topic, after the apps');
   ok(JSON.stringify(r.names) === JSON.stringify(['Mailbox Dos', 'Mailbox Uno']), 'the two good entries, the one visited from the visitor\u2019s country first', r.names);
   ok(r.lastApp, 'after the topic’s own apps');
   ok(!/onerror|tres\.example/.test(r.html), 'the entry that is not a plain name or a bare host never reaches the page');
-  ok(r.btn === 'Use', 'and each says Use', r.btn);
+  ok(r.btn === 'Ask AMV', 'and each says Ask AMV', r.btn);
   await page.evaluate(() => document.querySelector('#int-catalog [data-topic="email"] .cc-svc[data-cc="global"] .cc-use').click());
   await page.waitForTimeout(400);
   const v = await page.evaluate(() => ({ tab: S.tab, val: (document.getElementById('mta') || {}).value || '' }));
@@ -128,7 +128,7 @@ section('A worldwide money service never opens in AMV’s browser');
   const r = await page.evaluate(() => {
     const c = [...document.querySelectorAll('#int-catalog [data-topic="money"] .cc-svc[data-cc="global"]')].find(x => (x.querySelector('.int-name') || {}).textContent === 'Neo Bank Test');
     const a = c && c.querySelector('.int-act a');
-    const before = S.tab; ccUseService('Q911'); const after = S.tab;
+    const before = S.tab; ccUseService('Q911|neobank.example.org'); const after = S.tab;
     return { href: a ? a.getAttribute('href') : '', target: a ? a.target : '', rel: a ? a.rel : '', dact: c ? !!c.querySelector('[data-dact="ccUseService"]') : true, before, after };
   });
   ok(r.href === 'https://neobank.example.org/' && r.target === '_blank' && /noopener/.test(r.rel), 'it opens in the person’s own browser', r);

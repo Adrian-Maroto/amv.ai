@@ -848,7 +848,10 @@ function ccLeads(d){
   CC_LEADS.forEach(([kind, title, prompt], i) => {
     if(!have.has(kind) && !(cat(kind) && cats.has(cat(kind)))) return;
     const tr = T(title);
-    out.push({ id:'cl-' + i, kind, lead:true, tpl:title,
+    /* The country is in the id: one prompt per country, so an answer that
+       arrives for the country somebody just left cannot replace this one's
+       (Build 19 audit NEW-07). */
+    out.push({ id:'cl-' + d.cc + '-' + i, kind, lead:true, tpl:title,
       title:tr.replace(/\{c\}/g, () => _ccPlace(d.cc, tr === title)),
       prompt:prompt.replace(/\{c\}/g, () => _ccPlace(d.cc, true)) });
   });
@@ -1111,7 +1114,14 @@ const CC_KIND_TOPIC = {
   museum:'out', theatre:'out', stadium:'out', sportsclub:'out', park:'out', zoo:'out', festival:'out', brewery:'out',
 };
 const CC_EXTRA_TOPICS = { gov:'Government & paperwork', out:'Going out' };
-const _ccSvc = {};
+/* THE ROWS A BUTTON CAN NAME, by Wikidata id AND site (Nov 28, Build 19 audit
+   NEW-06). By id alone, the first country to draw a service kept it: after
+   moving from the United States to the United Kingdom, The Independent's
+   button still opened the American site. The same organisation in two
+   countries is two rows, each with its own site. */
+const _ccSvc = Object.create(null);
+const _ccSvcKey = (x) => String(x.e.q) + '|' + String(x.e.s);
+function _ccRegisterService(x){ const k = _ccSvcKey(x); _ccSvc[k] = x; return k; }
 /* THE SERVICES USED IN EVERY COUNTRY (Nov 23). The owner: "integrations
    should have a minimum of 200 per section - email, calendar, all these
    sections - for all countries". A country's file holds what is filed under
@@ -1188,7 +1198,10 @@ function _ccGlobalOrder(rows, here){
 function _ccAct(x){
   if(x.kind === 'bank') return `<button class="btn bs cc-use" type="button" data-dact="openBankLink">${escH(T('Link'))}</button>`;
   if(x.kind === 'global' && x.topic === 'money') return `<a class="btn bs cc-use" href="https://${escH(x.e.s)}/" target="_blank" rel="noopener noreferrer">${escH(T('Open'))}</a>`;
-  return `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(x.e.q)}">${escH(T('Use'))}</button>`;
+  /* "Ask AMV", not "Use" (Build 19 audit B19-R-07, NEW-08): the button opens a
+     new chat with a request drafted for AMV's browser - it connects nothing
+     and runs nothing until the person sends it. */
+  return `<button class="btn bs cc-use" type="button" data-dact="ccUseService" data-darg="${escH(_ccRegisterService(x))}">${escH(T('Ask AMV'))}</button>`;
 }
 /* A Crew-named service's icon is its fact's kind of thing. */
 const CC_FACT_KIND = { banks: 'bank', cards: 'bank', pay: 'bank', jobs: 'employer', shop: 'retail', groc: 'supermarket', food: 'restaurant',
@@ -1230,18 +1243,22 @@ async function ccFillIntegrations(){
     root.querySelectorAll('.int-wait-all').forEach(n => n.classList.remove('int-wait-all'));
     try{ _ccFillWith(root, d, g, here); } finally { root.classList.remove('int-filling'); }
   };
+  /* Still the screen AND the country this fill was started for (Build 19
+     audit NEW-07): a slow file for a country somebody has just left is
+     never drawn under the new one. */
+  const still = () => root.isConnected && cc === ((typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '');
   const d = await ccLoad(cc).catch(() => null);
-  if(!root.isConnected) return;
+  if(!still()) return;
   /* ONE DRAW, WHEN BOTH ARE HERE (Nov 27). The country's rows and then the
      worldwide ones a moment later was two changes to the same grid; the
      worldwide file is given a moment to arrive so they are drawn together,
      and only a slow one is drawn after. */
   const both = await Promise.race([gp, new Promise(r => setTimeout(() => r(null), 1500))]);
-  if(!root.isConnected) return;
+  if(!still()) return;
   if(both && both[0]){ draw(d, both[0], both[1]); return; }
   draw(d, null, null);
   const [g, here] = await gp;
-  if(g && root.isConnected) _ccFillWith(root, d, g, here);
+  if(g && still()) _ccFillWith(root, d, g, here);
 }
 /* Built once per country and reused (Nov 23, "Integrations still has some
    lag"): every See the remaining and every repaint used to rebuild and sort
@@ -1413,7 +1430,7 @@ function _ccJobsOrder(rows, here, cc){
 try{ window._ccJobsOrder = _ccJobsOrder; }catch(e){}
 function _ccFillDraw(root, by){
   /* A row is registered when it is drawn - its Use / Link reads it there. */
-  const svcRow = (x) => { if(!_ccSvc[x.e.q]) _ccSvc[x.e.q] = x; return _ccSvcRowHTML(x); };
+  const svcRow = (x) => _ccSvcRowHTML(x);
   const _ccSvcRowHTML = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
       <div class="int-ic" aria-hidden="true">${_appMarkHTML(x.e.n)}</div>
       <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
@@ -1587,7 +1604,7 @@ async function ccSearchServices(q){
   }
   if(tok !== _ccSearchTok || !box.isConnected) return;
   const all = [...by.values()].sort((a, b) => (a.r - b.r) || (b.cc.length - a.cc.length) || (a.e.n < b.e.n ? -1 : 1));
-  all.forEach(x => { _ccSvc[x.e.q] = { kind: x.kind, topic: x.topic, e: x.e }; });
+
   const flag = (cc) => { const r = (typeof _cwCountryRow === 'function') ? _cwCountryRow(cc) : null; return r ? r[2] : cc; };
   const where = (x) => x.cc.slice(0, 4).map(flag).join(' ') + (x.cc.length > 4 ? ' +' + (x.cc.length - 4) : '');
   const row = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}">
@@ -1696,10 +1713,14 @@ async function ccFindServices(text, max){
     .filter(x => !said.has(x.tok) && said.add(x.tok)).slice(0, max || 3).map(x => { delete x.tok; delete x.ro; return x; });
 }
 try{ window.ccFindServices = ccFindServices; }catch(e){}
-function ccUseService(q){
-  const x = _ccSvc[q]; if(!x || x.kind === 'bank' || (x.kind === 'global' && x.topic === 'money')) return;
-  const text = 'Using AMV\u2019s browser, open ' + x.e.s + ' (' + x.e.n + '). I will sign in myself if it asks. Then help me [what you want to do there].';
-  setTab('chat');
+function ccUseService(key){
+  const x = _ccSvc[key]; if(!x || x.kind === 'bank' || (x.kind === 'global' && x.topic === 'money')) return;
+  /* What the request says it will and will not do (Build 19 audit NEW-08):
+     the site is checked for the person's country first, the sign-in is
+     theirs, and nothing is bought, submitted or sent without their OK. */
+  const text = 'Using AMV\u2019s browser, open ' + x.e.s + ' (' + x.e.n + '). First check that it serves my country and can do what I want. I will sign in myself if it asks. Then help me [what you want to do there]. Do not buy, submit or send anything without asking me.';
+  /* A new chat, like every Task (Nov 28). */
+  try{ openFreshChat(); }catch(e){ setTab('chat'); }
   setTimeout(() => { const ta = document.getElementById('mta'); if(!ta) return;
     ta.value = text; fitChatComposer(ta); ta.focus(); const a = text.indexOf('['); if(a >= 0) ta.setSelectionRange(a, text.indexOf(']') + 1); }, 150);
 }

@@ -90,7 +90,7 @@ async function sparql(q, tries = 4, ms = 90000) {
    owner (sat.gob.mx). A short list, not the whole public-suffix list: a miss
    only makes a match less likely, never wrong. */
 const SECOND = new Set(['co', 'com', 'org', 'net', 'gov', 'gob', 'edu', 'ac', 'or', 'ne', 'go', 'gouv', 'nic', 'mil', 'gv', 'govt', 'nom', 'info', 'biz', 'sch', 'web']);
-function reg(host) {
+export function reg(host) {
   const p = String(host).toLowerCase().replace(/^www\./, '').split('.');
   if (p.length >= 3 && p[p.length - 1].length === 2 && SECOND.has(p[p.length - 2])) return p.slice(-3).join('.');
   return p.slice(-2).join('.');
@@ -100,11 +100,15 @@ function reg(host) {
    shared its first label - so two unrelated owners called "metro" shared one
    number. A rank is now only ever the site's own. */
 
-async function crux(cc) {
+/* `want` (YYYYMM) asks for that month only - a script that re-ranks a few
+   entries (country-sites.mjs) ranks them by the same month as the rest of the
+   file, never a newer one beside an older. */
+export async function crux(cc, want) {
   const now = new Date();
   for (let back = 0; back < 8; back++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
     const ym = d.getUTCFullYear() + String(d.getUTCMonth() + 1).padStart(2, '0');
+    if (want && ym !== want) continue;
     let r;
     try { r = await fetch(CRUX + cc.toLowerCase() + '/' + ym + '.csv.gz', { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(120000) }); } catch (e) { continue; }
     if (!r.ok) continue;
@@ -121,7 +125,7 @@ async function crux(cc) {
   }
   return null;
 }
-function rankOf(c, site) {
+export function rankOf(c, site) {
   const h = String(site).toLowerCase().replace(/^www\./, '');
   /* A job board is visited on its country's subdomain (uk.indeed.com,
      es.indeed.com), so it takes its domain's best band - indeed.com itself
@@ -261,4 +265,5 @@ async function main() {
   }
   console.log('done: ranked', ranked, 'added', added);
 }
-main().catch(e => { console.error(e); process.exit(1); });
+/* Run as a script, not when country-sites.mjs imports crux and rankOf. */
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch(e => { console.error(e); process.exit(1); });

@@ -1,0 +1,2 @@
+# Re-pick every service's website for its country (scripts/country-sites.mjs).
+# Empty = every country file. Nov 28: Build 19 audit NEW-06/NEW-12.

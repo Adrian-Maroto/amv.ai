@@ -1,0 +1,51 @@
+# Chooses each service's official website for the country it is listed in
+# (scripts/country-sites.mjs): of an organisation's websites on Wikidata, the
+# country's own domain, then a generic one, another country's last; entries
+# whose site changes are ranked again by the same Chrome UX Report month.
+# Then writes how many countries list each service (country-reach.mjs).
+# Commits the data to the branch it ran on, so it is reviewed like code.
+name: country-sites
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['data/countries/sites-request.txt']
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: 'Country codes separated by spaces (empty = every country file)'
+        required: false
+        default: ''
+permissions:
+  contents: write
+concurrency:
+  group: country-sites-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Choose the sites
+        timeout-minutes: 100
+        env:
+          COUNTRIES: ${{ github.event.inputs.countries }}
+        run: |
+          if [ -z "$COUNTRIES" ] && [ -f data/countries/sites-request.txt ]; then COUNTRIES="$(grep -v '^#' data/countries/sites-request.txt | tr '\n' ' ')"; fi
+          node scripts/country-sites.mjs $COUNTRIES
+          node scripts/country-reach.mjs
+      - name: Commit the data
+        run: |
+          git config user.name "amv-data-bot"
+          git config user.email "amv-data-bot@users.noreply.github.com"
+          git add data/countries
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -m "Country data: each service's website for its country ($(git diff --cached --name-only | wc -l) files)"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep $((i * 7))
+          done
+          exit 1
