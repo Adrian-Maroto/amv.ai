@@ -113,3 +113,24 @@ owner decision and declined, with the reason.
   filter.
 - **Treating Chrome visits as eligibility evidence**: refused, because the
   audit itself (R-15) says visits do not prove availability.
+
+## Found and fixed beyond the audit (Nov 28)
+Found while working the register on the owner's order: infrastructure and
+safety first, then AMV's design as a whole, then desktop, phone last.
+- **Buying could only be stopped with everything else.** Switches existed for
+  13 parts of AMV but not purchases: `feature:buying` now refuses a new
+  purchase while settle and release (money already held) always answer.
+  Suite, mutation-checked.
+- **Integrations said "Use opens the real site in AMV's browser"** about a
+  button that since this morning says Ask AMV and opens a new chat. It now
+  says what both buttons do, in 17 languages.
+- **Handoff named products nobody sees** ("a Studio design, a Dev project
+  or Lab code") - now a design, an app or some code, like its own picker,
+  and what it hands over is labelled the same way.
+- **Every person's avatar was the letter A** - the signed-in account and
+  every marketplace reviewer and seller alike. Now each person's initial.
+  Suite `an-avatar-is-its-person`.
+- **Memory** said "Add Memory" beside "Add your first memory" - one case.
+- **The country data** was re-picked twice and checked by hand before
+  shipping each time (LESSONS 681-682); a suite now fails if any bank,
+  shop, line or school in it is left unplaced.
