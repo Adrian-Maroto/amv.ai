@@ -1352,6 +1352,11 @@ try{ window.mcNeverSave = mcNeverSave; }catch(e){}
    or a category never redraws the page - and only the first rows are drawn,
    more as somebody asks for them.
    ══════════════════════════════════════════════════════════════════════════ */
+/* Crew opens on All, led by the country's own ten (owner, Nov 15). The
+   Build 19 audit (NEW-25) asked to open on Suggested instead; what it saw -
+   Xfinity first in the United States, public holidays first in Pakistan -
+   was All's order without the server's facts, which is fixed in _cjList, and
+   opening on the fifty would hide the country's researched ten. */
 let _cjQ = '', _cjC = 'all', _cjN = 24;
 let _cjCache = null, _cjCacheKey = '';
 /* Every job for the country being shown, best first: anything switched on,
@@ -1423,13 +1428,18 @@ function _cjList(noOnFirst){
   /* After everything written for the country: they have a chip of their own,
      and leading with them pushed the country's own jobs down the list. A
      country whose own jobs already watch its holidays keeps that one. */
+  /* The everyday fifty (Nov 23) are Popular's own list; here they are in All
+     so a search finds them, after the country's own work - which leads All
+     on purpose (the-top-ten-is-what-people-there-use) - and BEFORE the jobs
+     for one named mailbox or calendar. Without the server's facts (offline,
+     or before they arrive) the country's own work is empty, and All opened
+     on "Xfinity inbox digest" in the United States and on public holidays in
+     Pakistan: one provider's job with no evidence anybody there wants it
+     ahead of "your inbox, every morning" (Build 19 audit B19-D-02, NEW-03). */
+  safe(() => _cwPopularJobs(cc)).forEach(push);
   const ownHol = out.some(j => /^cc_[a-z]{2}_holidays$/.test(j.id || ''));
   safe(() => _cjInboxCal(cc)).filter(j => !(ownHol && /_holidays$/.test(j.id))).forEach(push);
   home.map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).forEach(x => push(x[0]));
-  /* The everyday fifty (Nov 23) are Popular's own list; here they are in All
-     so a search finds them, after the country's own work - which leads All
-     on purpose (the-top-ten-is-what-people-there-use). */
-  safe(() => _cwPopularJobs(cc)).forEach(push);
   cat.forEach(push);
   if(_cjRankOnly){ _cjRankCache = out; _cjRankKey = ckey; } else { _cjCache = out; _cjCacheKey = ckey; }
   return out;
@@ -1446,11 +1456,39 @@ const CJ_POPULAR_N = 50;
    every day ... others are lame"). Where the catalogue has fewer, the ranked
    list fills the rest - recurring jobs only, never a one-off explainer. */
 const CJ_ONE_OFF = /rights|rules|explained|new laws|elections|moving to|first employee|parental leave|check-ups|entitled|hiring your first|visa|entry rules|tenant|rent\b|parking/i;
+/* MEASURED FIRST, AND SAID SO (Nov 28, Build 19 audit B19-R-01, R-11,
+   NEW-01, NEW-02). Popular used to be the researched fifty in their fixed
+   order, then everything else - so a job people in the country really
+   switch on could never be first, however many did. Now: the jobs the
+   server has counted for this country (meta.ranked - enough distinct
+   accounts behind the country, and CREW_POPULAR_MIN_EACH behind the job, or
+   the server does not name it), most started first; then the fifty in their
+   research order. Each section is ordered the same way. Until there are
+   counts the chip says Suggested, not Popular, because research about what
+   people use is not a count of what they switch on here. */
+function _cjUsage(cc){
+  try{ const m = _cwMeta[cc], r = m && m.ranked; return (r && r.enough && r.counts && typeof r.counts === 'object') ? r : null; }catch(e){ return null; }
+}
+function _cjMeasured(list, rk){
+  if(!rk) return [];
+  const each = Math.max(1, +rk.each || 3);
+  return list.map((j, i) => [j, +rk.counts[j.id] || 0, i]).filter(x => x[1] >= each)
+    .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
+}
+function _cjEvidenceFirst(list, rk){
+  const lead = _cjMeasured(list, rk); if(!lead.length) return list;
+  const s = new Set(lead); return lead.concat(list.filter(j => !s.has(j)));
+}
 function _cjPopular(){
   const out = [], seen = new Set();
+  const cc = _cwCountryGuess(), rk = _cjUsage(cc);
+  const everyday = j => j && ['hourly', 'daily', 'weekly'].indexOf(String(j.every || 'daily')) >= 0 && !CJ_ONE_OFF.test(String(j.title || ''));
   const add = (j) => { if(j && j.id && !seen.has(j.id) && out.length < CJ_POPULAR_N){ seen.add(j.id); out.push(j); } };
-  try{ (_cwPopularJobs(_cwCountryGuess()) || []).forEach(add); }catch(e){}
-  _cjRanked().filter(j => j && ['hourly', 'daily', 'weekly'].indexOf(String(j.every || 'daily')) >= 0 && !CJ_ONE_OFF.test(String(j.title || ''))).forEach(add);
+  let fifty = []; try{ fifty = _cwPopularJobs(cc) || []; }catch(e){}
+  const ranked = _cjRanked();
+  _cjMeasured(fifty.concat(ranked).filter(everyday), rk).forEach(add);
+  fifty.forEach(add);
+  ranked.filter(everyday).forEach(add);
   return out;
 }
 function _cjMatch(j, words){
@@ -1463,7 +1501,8 @@ function _cjFiltered(){
   /* A search from Popular searches every job, so typing never hides a job
      because of which chip happened to be on. */
   if(_cjC === 'popular' && !words.length) return _cjPopular();
-  return _cjList().filter(j => (_cjC === 'all' || _cjC === 'popular' || _cjCat(j) === _cjC) && _cjMatch(j, words));
+  const got = _cjList().filter(j => (_cjC === 'all' || _cjC === 'popular' || _cjCat(j) === _cjC) && _cjMatch(j, words));
+  return (!words.length && _cjC !== 'all') ? _cjEvidenceFirst(got, _cjUsage(_cwCountryGuess())) : got;
 }
 /* A card: icon, title, one line of what it does, when it runs. */
 /* How often, and the time only once one is set: a job that is not on yet has
@@ -1503,7 +1542,9 @@ function _cjGridHTML(){
   /* Popular says what it is ranked by (Build 16 audit D16-07). Since Nov 23
      it is the researched everyday fifty (crew-data.js popular), so that is
      what it says; a search from it is a search of every job. */
-  const note = (_cjC === 'popular' && !_cjQ) ? T('Everyday jobs, in order of how many people use each kind of service (GWI, Pew Research Center and the Reuters Institute, 2023-2025).') : '';
+  const note = (_cjC === 'popular' && !_cjQ) ? (_cjUsage(_cwCountryGuess())
+    ? T('The jobs people here switch on most in AMV come first, counted once per account.') + ' ' + T('Everyday jobs, in order of how many people use each kind of service (GWI, Pew Research Center and the Reuters Institute, 2023-2025).')
+    : T('Everyday jobs, in order of how many people use each kind of service (GWI, Pew Research Center and the Reuters Institute, 2023-2025).') + ' ' + T('Not yet enough people here have used AMV to say which jobs are most popular.')) : '';
   return (note ? `<p class="cc-measure">${escH(note)}</p>` : '') + `<div class="cj-grid">${shown.map(_cjCard).join('')}</div>`
     + (list.length > shown.length ? `<div class="cj-more-w"><button class="btn bs cj-more" data-dact="cjMore">${escH(T('Show more'))} <span class="cj-n">${(list.length - shown.length).toLocaleString()}</span></button></div>` : '');
 }
@@ -1536,7 +1577,7 @@ function _cjChipsHTML(){
   /* No counts on the chips: "All 23,102" told nobody anything they could
      act on, and the owner asked for no big totals. */
   const chip = (k, label) => `<button class="cj-chip${_cjC === k ? ' on' : ''}" data-dact="cjCat" data-darg="${escH(k)}" aria-pressed="${_cjC === k}">${escH(label)}</button>`;
-  return chip('all', T('All')) + chip('popular', T('Popular'))
+  return chip('all', T('All')) + chip('popular', T(_cjUsage(_cwCountryGuess()) ? 'Popular' : 'Suggested'))
     + _cjCatsByFirst(all, _cjCat).filter(c => n[c]).map(c => chip(c, T(c))).join('');
 }
 /* The categories in the order their first job appears in the list - the list

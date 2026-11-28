@@ -289,7 +289,7 @@ section('A count of what people start beats the research');
      30 of them for a job the research puts far down the list. */
   const low = all.KE.kinds.slice(-1)[0];
   const lowId = all.KE.ids.slice(-1)[0];
-  await env.AMV_KV.put('stats:jobuse', JSON.stringify({ counts: {}, total: 40, byCountry: { KE: { counts: { [lowId]: 30 }, total: 40 } } }));
+  await env.AMV_KV.put('stats:jobuse', JSON.stringify({ counts: {}, total: 40, byCountry: { KE: { counts: { [lowId]: 30 }, total: 40, people: 30 } } }));
   /* A fresh browser: the catalogue is a public GET the browser may cache, and
      a visitor tomorrow is a new visit, not this one. */
   const c2 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });

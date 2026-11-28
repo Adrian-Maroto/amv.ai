@@ -1,7 +1,7 @@
 {
  "note": "Silenced failures in src/worker, per function, as last read by a person. check.mjs fails when a function gains one. Read the new one: if it turns a failure into an answer that grants, sends, spends or skips a check, fix it; if it is cleanup, logging or the strict answer, run node scripts/silenced-failures.mjs --write.",
- "read": "2026-11-22",
- "total": 288,
+ "read": "2026-11-28",
+ "total": 289,
  "sites": {
   "01-config.js:_mountRequest": 1,
   "02-partner-engines.js:_partnerEngineDefs": 1,
@@ -34,7 +34,7 @@
   "12-app-connectors.js:_rmcpRevoke": 1,
   "12-app-connectors.js:remoteCall": 1,
   "12-app-connectors.js:_jobuseBump": 1,
-  "12-app-connectors.js:_jobuseRead": 1,
+  "12-app-connectors.js:_jobuseRead": 2,
   "12-app-connectors.js:_detailSecrets": 2,
   "12-app-connectors.js:_quietLocalHour": 1,
   "13-schedules-and-approvals.js:_tzOk": 1,

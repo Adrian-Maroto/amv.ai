@@ -179,7 +179,7 @@ section('Once enough people in a country have started jobs, their order wins');
      there start the weekly shop most, then the homes search. The United
      States has none, so it keeps the research order. */
   await env.AMV_KV.put('stats:jobuse', JSON.stringify({ counts: {}, total: 40,
-    byCountry: { ES: { counts: { cc_es_groc: 22, cc_es_prop: 12, top_es_inbox: 6 }, total: 40 } } }));
+    byCountry: { ES: { counts: { cc_es_groc: 22, cc_es_prop: 12, top_es_inbox: 6 }, total: 40, people: 30 } } }));
   const { ctx, page } = await open('ES', 'crew');
   const r = await ten(page);
   ok(r.sec[0] === 'Groceries' && r.sec[1] === 'Home' && r.sec[2] === 'Mail', 'Spain: groceries, then homes, then mail - the order people there chose', r.sec.slice(0, 4));

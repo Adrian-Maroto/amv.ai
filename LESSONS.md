@@ -16462,3 +16462,20 @@ moves the one entry to now (`_userEvent`'s `mergeWithinMs`); the audit log
 still has every write. Rule: a person-facing notice is keyed to a change of
 state, not to the request that carried it - especially for anything marked
 safe to retry.
+
+## 680
+**Nov 28 - a count of events is not a count of people, and a list that is
+always first cannot be outranked.**
+Crew's "what people here switch on" counted every job creation, so one
+account creating and deleting the same job twenty-five times was a
+country's whole ranking. And Popular always started with the researched
+fifty in a fixed order, so no count could ever put a job first - the
+ranking existed on the server and could not reach position one on the
+screen. Both looked fine in every suite, because every suite seeded counts
+directly and none asked who was behind them. Now each account counts once
+per job per country (remembered in its own job record), distinct people are
+counted separately, nothing is published below 25 people in a place or 3
+behind a job, counted jobs lead Popular and every section, and the chip
+says Suggested until they exist. Rule: an aggregate that decides an order
+needs a unit (people, not events), a floor before it is shown, and a test
+that injects a count and checks it can actually reach the top.

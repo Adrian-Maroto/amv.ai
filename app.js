@@ -22214,7 +22214,7 @@ function _cwApplyLocal(cc, d){
     _cwBank[cc] = !!d.bank;
     const rk = (d.ranked && typeof d.ranked === 'object') ? d.ranked : {};
     _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || ''),
-      ranked: { enough: !!rk.enough, total: +rk.total || 0, need: +rk.need || 25,
+      ranked: { enough: !!rk.enough, total: +rk.total || 0, need: +rk.need || 25, each: +rk.each || 3,
                 counts: (rk.counts && typeof rk.counts === 'object' && !Array.isArray(rk.counts)) ? rk.counts : {} } };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';

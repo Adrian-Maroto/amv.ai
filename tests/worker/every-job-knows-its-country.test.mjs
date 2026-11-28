@@ -24,7 +24,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'country-jobs.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME, JOBUSE_MAX_IDS_COUNTRY, _jobuseBump, _jobuseRead };\n');
+writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME, JOBUSE_MAX_IDS_COUNTRY, JOBUSE_MAX_PER_ACCOUNT, CREW_POPULAR_MIN, CREW_POPULAR_MIN_EACH, _jobuseBump, _jobuseRead };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -98,9 +98,9 @@ const call = (env, path, body, tok, from) => {
   if (from) Object.defineProperty(r, 'cf', { value: { country: from } });
   return worker.fetch(r, env, mkCtx());
 };
-async function setup(env) {
-  const d = await (await call(env, '/auth/signup', { email: USER, name: 'T', password: PW })).json();
-  await W.DB.put(env, 'ent', USER, { plan: 'ultra', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
+async function setup(env, email = USER) {
+  const d = await (await call(env, '/auth/signup', { email, name: 'T', password: PW })).json();
+  await W.DB.put(env, 'ent', email, { plan: 'ultra', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' });
   return d.token;
 }
 async function created(env, tok, body, from) {
@@ -157,25 +157,80 @@ section('What people start is counted per country, and the ranking waits for eno
 {
   const env = mkEnv(); const tok = await setup(env);
   await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
-  await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
   await created(env, tok, { country: 'MX', srcId: 'cc_mx_jobs' }, 'MX');
+  const tok2 = await setup(env, 'second@example.com');
+  await created(env, tok2, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
   const es = await W._jobuseRead(env, 'ES'), mx = await W._jobuseRead(env, 'MX'), all = await W._jobuseRead(env, '');
-  ok(es.counts.cc_es_groc === 2 && es.total === 2, 'Spain’s starts are counted under Spain', es);
-  ok(mx.counts.cc_mx_jobs === 1 && !mx.counts.cc_es_groc, 'and Mexico’s under Mexico, never mixed', mx);
-  ok(all.total === 3 && all.counts.cc_es_groc === 2, 'and all of them in the world’s count', all);
+  ok(es.counts.cc_es_groc === 2 && es.total === 2 && es.people === 2, 'Spain’s starts are counted under Spain, two people behind them', es);
+  ok(mx.counts.cc_mx_jobs === 1 && !mx.counts.cc_es_groc && mx.people === 1, 'and Mexico’s under Mexico, never mixed', mx);
+  ok(all.total === 3 && all.counts.cc_es_groc === 2 && all.people === 2, 'and all of them in the world’s count - two people, not three', all);
   ok(!JSON.stringify([es, mx, all]).includes('@'), 'with nothing in any count that names a person', true);
   ok((await W.DB.get(env, 'stats', 'jobuse')) === null, 'and none of it through the one shared KV record every creation used to lock', true);
   const early = await (await call(env, '/v1/everyday?country=ES')).json();
-  ok(early.ranked && early.ranked.enough === false && Object.keys(early.ranked.counts).length === 0,
-     'two starts is not a ranking: nothing is ranked on too little, and the counts are not handed out', early.ranked);
-  /* Counts from before the move live in the old KV record. They still count,
-     added to the new ones - nothing counted before the move is lost. */
-  await W.DB.put(env, 'stats', 'jobuse', { counts: {}, total: 29, byCountry: { ES: { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29 } } });
-  const later = await (await call(env, '/v1/everyday?country=ES')).json();
+  ok(early.ranked && early.ranked.enough === false && Object.keys(early.ranked.counts).length === 0 && early.ranked.total === 0,
+     'two people is not a ranking: nothing is ranked on too little, and neither the counts nor the total are handed out', early.ranked);
+}
+
+section('One account cannot make a ranking by starting the same job again and again (B19-R-16)');
+{
+  const env = mkEnv(); const tok = await setup(env);
+  /* Free plan's one job: create, delete, create again - the loop the audit
+     named. Ultra has room, so the same job is simply created thirty times. */
+  for (let i = 0; i < 30; i++) await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
+  const es = await W._jobuseRead(env, 'ES'), all = await W._jobuseRead(env, '');
+  ok(es.counts.cc_es_groc === 1 && es.total === 1 && es.people === 1, 'thirty creations by one account are one start by one person', es);
+  ok(all.counts.cc_es_groc === 1 && all.people === 1, 'in the world as well', all);
+  /* Calling itself somewhere else adds that country once, never the world again. */
+  await created(env, tok, { country: 'PT', srcId: 'cc_es_groc' }, 'PT');
+  const pt = await W._jobuseRead(env, 'PT'), all2 = await W._jobuseRead(env, '');
+  ok(pt.counts.cc_es_groc === 1 && pt.people === 1 && all2.counts.cc_es_groc === 1 && all2.people === 1,
+     'and claiming another country counts there once, never the same job in the world twice', { pt, all2 });
+  const rec = await W.DB.get(env, 'auto', USER);
+  ok(Array.isArray(rec.counted) && rec.counted.length === 2 && rec.counted.includes('ES:cc_es_groc'),
+     'what has been counted is remembered in the account’s own job record, nowhere shared', rec.counted);
+  /* Bounded: past the cap an account adds nothing new. */
+  rec.counted = Array.from({ length: W.JOBUSE_MAX_PER_ACCOUNT }, (_, i) => 'ES:x' + i);
+  await W.DB.put(env, 'auto', USER, rec);
+  await created(env, tok, { country: 'ES', srcId: 'cc_es_prop' }, 'ES');
+  const es2 = await W._jobuseRead(env, 'ES'), rec2 = await W.DB.get(env, 'auto', USER);
+  ok(!es2.counts.cc_es_prop && rec2.counted.length === W.JOBUSE_MAX_PER_ACCOUNT, 'and the list one account can grow stops at its cap', rec2.counted.length);
+}
+
+section('A ranking needs enough people, and a job’s number enough people behind it (B19-S-23)');
+{
+  const env = mkEnv();
+  const person = { job: true, jobWorld: true, person: true, personWorld: true };
+  const one = { job: true, jobWorld: true, person: false, personWorld: false };
+  /* Twenty-four people in Spain: one short of the floor. */
+  for (let i = 0; i < W.CREW_POPULAR_MIN - 1; i++) await W._jobuseBump(env, 'cc_es_groc', 'ES', person);
+  let d = await (await call(env, '/v1/everyday?country=ES')).json();
+  ok(d.ranked.enough === false && d.ranked.total === 0 && Object.keys(d.ranked.counts).length === 0, 'twenty-four people: no ranking, no numbers', d.ranked);
+  let w = await (await call(env, '/crew/popular')).json();
+  ok(w.enough === false && w.top.length === 0 && w.total === 0, 'and the world’s list says nothing either', w);
+  await W._jobuseBump(env, 'cc_es_groc', 'ES', person);
+  /* Two people switched on the homes search, one the tax reminder. */
+  await W._jobuseBump(env, 'cc_es_prop', 'ES', one); await W._jobuseBump(env, 'cc_es_prop', 'ES', one);
+  await W._jobuseBump(env, 'cc_es_tax', 'ES', one);
+  for (let i = 0; i < W.CREW_POPULAR_MIN_EACH; i++) await W._jobuseBump(env, 'cc_es_bills', 'ES', one);
+  d = await (await call(env, '/v1/everyday?country=ES')).json();
+  ok(d.ranked.enough === true && d.ranked.people === W.CREW_POPULAR_MIN && d.ranked.counts.cc_es_groc === W.CREW_POPULAR_MIN,
+     'twenty-five people: Spain is ranked', d.ranked);
+  ok(d.ranked.counts.cc_es_bills === W.CREW_POPULAR_MIN_EACH && !('cc_es_prop' in d.ranked.counts) && !('cc_es_tax' in d.ranked.counts),
+     'and a job only one or two people switched on is not named at all', d.ranked.counts);
+  w = await (await call(env, '/crew/popular')).json();
+  ok(w.enough === true && w.top.every(x => x.n >= W.CREW_POPULAR_MIN_EACH) && !w.top.some(x => x.id === 'cc_es_tax'),
+     'the world’s list follows the same floors', w.top);
+  /* Counts from before deduplication live in the old KV record with no
+     people behind them. They add in, but cannot make a ranking alone. */
+  const env2 = mkEnv();
+  await W.DB.put(env2, 'stats', 'jobuse', { counts: {}, total: 29, byCountry: { ES: { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29 } } });
+  const old = await (await call(env2, '/v1/everyday?country=ES')).json();
+  ok(old.ranked.enough === false, 'twenty-nine old, undeduplicated starts with nobody counted behind them are not a ranking', old.ranked);
+  await W.DB.put(env2, 'stats', 'jobuse', { counts: {}, total: 29, byCountry: { ES: { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29, people: 30 } } });
+  await W._jobuseBump(env2, 'cc_es_groc', 'ES', one); await W._jobuseBump(env2, 'cc_es_groc', 'ES', one);
+  const later = await (await call(env2, '/v1/everyday?country=ES')).json();
   ok(later.ranked.enough === true && later.ranked.counts.cc_es_groc === 22 && later.ranked.counts.cc_es_prop === 9,
-     'past the floor, Spain’s counts come with Spain - the old record and the new tally together', later.ranked);
-  const mxr = await (await call(env, '/v1/everyday?country=MX')).json();
-  ok(mxr.ranked.enough === false, 'while Mexico, with one start, is still not ranked', mxr.ranked);
+     'once people are counted, the old record and the new tally add together', later.ranked);
 }
 
 section('Creations anywhere do not queue behind one another to be counted');

@@ -2063,15 +2063,9 @@ async function everydayJobs(request, env) {
      moment later would reshuffle rows somebody is already reading. Cached at
      the edge with everything else for an hour, which is fresh enough for a
      count and keeps this one read per country per hour. */
-  let ranked = { enough:false, total:0, need: CREW_POPULAR_MIN, counts:{} };
+  let ranked = _jobusePublic(null);
   if(code && Object.prototype.hasOwnProperty.call(COUNTRY_NAME, code)){
-    try{
-      const c = await _jobuseRead(env, code);
-      const total = c.total;
-      ranked = total >= CREW_POPULAR_MIN
-        ? { enough:true, total, need: CREW_POPULAR_MIN, counts: (c && c.counts) || {} }
-        : { enough:false, total, need: CREW_POPULAR_MIN, counts:{} };
-    }catch(_e){}
+    try{ ranked = _jobusePublic(await _jobuseRead(env, code)); }catch(_e){}
   }
   return json({
     ok: true, country: code, name: COUNTRY_NAME[code] || '',
