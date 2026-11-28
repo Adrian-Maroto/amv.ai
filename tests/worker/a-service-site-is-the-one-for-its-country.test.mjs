@@ -103,6 +103,17 @@ section('A shop, bank or line not shown to operate in the country is never first
   ok(!_ccNotHere({ kind: 'university', e: { s: 'mit.edu', l: 0, x: 60 } }, 'PK') && !_ccNotHere({ kind: 'retail', e: { s: 'ikea.com', l: 0, x: 40 } }, 'US'),
      'and a university abroad or a shop chain is not held to it - people apply abroad, and chains open everywhere');
   ok(_ccNotHere({ kind: 'bank', e: { s: 'monzo.com', l: 0, x: 3 } }, 'ES'), 'while a bank listed elsewhere and not placed in the country is marked (Monzo in Spain)');
+  /* Every bank, shop, line and school in the data has been placed (l is 0
+     or 1). country-popular adds visited sites without asking where they
+     operate; if country-sites was not run after it, this says so. */
+  const { readdirSync } = await import('fs');
+  const dir = join(ROOT, 'data', 'countries'), unplaced = [];
+  let checked = 0;
+  for (const f of readdirSync(dir).filter(f => /^[A-Z]{2}\.json$/.test(f))) {
+    const d = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    for (const [k, list] of Object.entries(d.kinds || {})) if (LOCAL_KINDS.has(k)) for (const e of list) { checked++; if (e.l !== 0 && e.l !== 1) unplaced.push(f.slice(0, 2) + ' ' + e.n); }
+  }
+  ok(checked > 10000 && unplaced.length === 0, 'all ' + checked + ' local-kind entries in the data are placed or marked not placed - run the country-sites workflow after country-popular', unplaced.slice(0, 5));
   const sites = readFileSync(join(ROOT, 'scripts', 'country-sites.mjs'), 'utf8');
   ok(/wdt:P17 \?c/.test(sites) && /wdt:P159\/wdt:P17/.test(sites) && /wdt:P2541/.test(sites) && /has\(d\.qid\)/.test(sites),
      'the data pass places each entry by country, headquarters and operating area against the country\'s own Wikidata id');
