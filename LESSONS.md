@@ -16479,3 +16479,32 @@ behind a job, counted jobs lead Popular and every section, and the chip
 says Suggested until they exist. Rule: an aggregate that decides an order
 needs a unit (people, not events), a floor before it is shown, and a test
 that injects a count and checks it can actually reach the top.
+
+## 681
+**Nov 28 - a tiebreak is a decision; "shorter" decided 500 sites wrong.**
+The rule that picks each organisation's website for a country broke ties
+between two equally fitting sites by the shorter host. Its first run moved
+The Epoch Times to its Indonesian edition, the Philadelphia Inquirer to
+philly.com, Malayala Manorama to its TV channel and three British
+universities to retired domains - Wikidata keeps old and sister sites as
+"official" too. It was caught by reading a sample of the 1,598 moves before
+shipping, not by a suite, so the data commit was reverted and the rule
+changed: ties go to the site more visited from the country, otherwise
+nothing changes, and a replacement must be recognisably the same
+organisation. Checked against every move of the bad run before running
+again. Rule: a data rewrite is reviewed as a diff of real rows, and a
+tiebreak that is not evidence (length, order, alphabet) leaves the current
+value alone.
+
+## 682
+**Nov 28 - "not confirmed" needs evidence in both directions.**
+Marking Pakistan's Sam's Club and Walmart Canada "not confirmed in
+Pakistan" was right; the first rule also marked MIT, IKEA in the United
+States and Soneri Bank - a Pakistani bank - because Wikidata places
+universities and chains in their home country and misses some local facts.
+The kinds held to it are now only those that must operate locally to be any
+use, an entry no other country lists counts as local, and a subsidiary in
+the country is evidence. Visits were deliberately not used to excuse an
+entry: the audit's own point is that visits do not prove availability.
+Rule: before a negative label ships, list who it lands on in five countries
+and read them.
