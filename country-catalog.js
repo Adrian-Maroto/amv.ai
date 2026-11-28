@@ -652,8 +652,11 @@ function _ccByPop(d){
      once the visit ranking listed it in 33 countries - it is visited from
      abroad, which makes it no less the United States' own. */
   const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.pow(Math.max(1, +x.e.x || 1), 0.25);
-  const cc = d && d.cc, N = x => (_ccNotHere(x, cc) ? 1 : 0);
-  return out.sort((a, b) => (N(a) - N(b)) || (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
+  /* Each entry's keys once, not on every comparison (Build 19 audit B19-P-05):
+     a sort of 25,000 entries compares about 400,000 times. */
+  const cc = d && d.cc;
+  for(const x of out){ x._n = _ccNotHere(x, cc) ? 1 : 0; x._r = R(x); x._k = K(x); }
+  return out.sort((a, b) => (a._n - b._n) || (a._r - b._r) || (b._k - a._k) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
 /* THE USEFUL FIRST (Nov 27), now for Crew's jobs: Tasks name no service
    since Nov 28 (ccLeads), so the per-service task tiers that ranked "Find

@@ -1602,6 +1602,7 @@ function _cjRepaint(){
   try{ const b = document.getElementById('cw-where'); if(b && b.classList.contains('cj-country')) b.outerHTML = _cjCountryBtnHTML(); }catch(e){}
   try{ const n = document.getElementById('cj-note'); if(n){ const t = _cjNoteText(); n.textContent = t; n.hidden = !t; } }catch(e){}
   _cjPaint();
+  try{ _cjTaWarm(); }catch(e){}
 }
 try{ window._cjRepaint = _cjRepaint; }catch(e){}
 function cjCat(c){ _cjC = c || 'all'; _cjN = 24; _cjPaint(); }
@@ -1951,16 +1952,40 @@ function _cjAskHTML(extra){
     <div id="mc-cmd-result" class="mc-cmd-result"></div>
   </section>`;
 }
+/* THE SUGGESTIONS' WORDS, WORKED OUT BEFORE ANYBODY TYPES (Build 19 audit
+   B19-P-01). The matcher keeps each item's words on the item; a fresh copy of
+   22,424 jobs on every keystroke threw that away (420 ms a letter on a
+   4x-slowed phone), and even kept, the first query that matched few jobs
+   worked out every job's words at once (484 ms). So the items live as long as
+   the list they came from, and their words are worked out in idle moments,
+   a few hundred at a time, once Crew has drawn. */
+let _cjTaSrc = null, _cjTaList = [], _cjTaAt = 0;
+function _cjTaItems(){
+  const l = _cjList();
+  if(l !== _cjTaSrc){ _cjTaSrc = l; _cjTaAt = 0; _cjTaList = l.map(j => ({ label: j.title, sub: j.desc || '', id: j.id })); }
+  return _cjTaList;
+}
+function _cjTaWarm(){
+  const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 30));
+  const step = () => {
+    if(!document.getElementById('cx-q')) return;
+    const items = _cjTaItems(), end = Math.min(items.length, _cjTaAt + 300);
+    for(; _cjTaAt < end; _cjTaAt++){ const it = items[_cjTaAt]; if(!it._taL) it._taL = _taWords(it.label); if(!it._taS) it._taS = _taWords(it.sub); }
+    if(_cjTaAt < items.length) idle(step);
+  };
+  idle(step);
+}
 function _cjWire(vc){
   const q = document.getElementById('cx-q');
   if(q){
     let t = 0;
     /* The matching jobs under the box as you type; picking one opens it. */
-    amvTypeahead(q, { items: () => _cjList().map(j => ({ label: j.title, sub: j.desc || '', id: j.id })),
+    amvTypeahead(q, { items: _cjTaItems,
       onPick: (it) => { try{ q.blur(); }catch(e){} cwPeek(it.id); } });
     on(q, 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _cjQ = v.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); }, 120); });
     on(q, 'keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(t); _cjQ = this.value.trim(); _cjN = 24; const g = document.getElementById('cj-grid'); if(g) g.innerHTML = _cjGridHTML(); } });
   }
+  try{ _cjTaWarm(); }catch(e){}
   /* The catalogue of the country's real services arrives after the page: its
      jobs join the list in place. */
   try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){}

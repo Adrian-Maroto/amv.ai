@@ -478,7 +478,9 @@ function renderTasksView(){
   try{ _wireAutoServer(vc); }catch(e){}
   let t = 0;
   /* The matching tasks under the box as you type; picking one starts it. */
-  amvTypeahead($('tk-find'), { items: () => _tkList.map(x => ({ label: x.title, sub: T(_tkCatOf(x)), id: x.id })),
+  /* Kept while the list is the same list - see _cjWire in crew-view.js. */
+  let taSrc = null, taItems = [];
+  amvTypeahead($('tk-find'), { items: () => { if(_tkList !== taSrc){ taSrc = _tkList; taItems = _tkList.map(x => ({ label: x.title, sub: T(_tkCatOf(x)), id: x.id })); } return taItems; },
     onPick: (it) => launchTask(it.id) });
   on($('tk-find'), 'input', function(){ const v = this.value; clearTimeout(t); t = setTimeout(() => { _tkQ = v.trim(); _tkN = 60; _tkPaint(); }, 120); });
   on($('tk2-cats'), 'click', (e) => { const b = e.target.closest && e.target.closest('[data-tkcat]'); if(b){ _tkC = b.dataset.tkcat; _tkN = 60; _tkPaint(); } });
