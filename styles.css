@@ -18360,3 +18360,25 @@ body.light #anav{ background:var(--bg); }
 .cwk.bank-dlg{height:100%;max-height:none}
 .cwk .bank-b{padding:var(--sp-4);border:1px solid var(--bd);border-radius:var(--r-lg);background:var(--s1);overflow:visible}
 @media (max-width:480px){.cwk-acts .btn{flex:1 1 auto}}
+
+/* LAYER A426 - the consent notice at 320px (Build 19 audit B19-D-01, NEW-16).
+   "Essential only" wrapped onto two lines and the notice stood 140px tall over
+   Crew's first jobs. One row of answers, tighter text; same three choices. */
+@media (max-width:360px){
+  .cc-inner{padding:var(--sp-3);gap:var(--sp-2)}
+  .cc-text{font-size:var(--t-sm)}
+  :root:not(#_a):not(#_b) .cc-actions .btn{flex:1 1 auto;padding:0 var(--sp-2)!important;white-space:nowrap!important;font-size:var(--t-sm)}
+}
+/* And Crew's country button: the grid gave it what "Browse more examples"
+   left - 59px at 320, "Pak" for Pakistan. A row that wraps: side by side
+   when both fit, one above the other when they do not, any country name. */
+@media (max-width:640px){
+  #app .cj .cj-tools{display:flex;flex-wrap:wrap}
+  #app .cj .cj-tools > *{flex:1 1 auto}
+  #app .cj .cj-tools .cj-country{overflow:visible}
+}
+/* The header at 320px: the account button ran 8-23px off the right edge and
+   the bell sat on top of New chat (measured on every tab; the left group
+   needs 252px). Below 341px the wordmark gives way to the "A" mark, and the
+   theme switch goes - Settings > Appearance has the same three choices. */
+@media (max-width:340px){ #anav .nav-r #theme-btn,#anav #app-brand .logo-wm{display:none} }
