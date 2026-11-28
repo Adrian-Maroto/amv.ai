@@ -17115,7 +17115,7 @@ function renderMemoryView(){
       '<p class="vsub">AMV remembers facts about you to personalize its answers. Every conversation is given the ones that matter to what you are asking.</p>'+
       '<div style="display:flex;gap:8px">'+
         '<input type="text" id="mem-inp" placeholder="e.g. I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
-        '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
+        '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add memory</button>'+
       '</div>'+
       '<div class="memio-bar">'+
         '<button class="btn bs" id="mem-imp-open" type="button">Import</button>'+

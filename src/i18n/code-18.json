@@ -8738,5 +8738,43 @@
   "bn": "এই পরিমাপ দেড় বছরের বেশি পুরোনো - এখন সেখানে কী সবচেয়ে বেশি দেখা হয় তা বলার জন্য খুব পুরোনো।",
   "ur": "یہ پیمائش ڈیڑھ سال سے زیادہ پرانی ہے - یہ بتانے کے لیے بہت پرانی کہ اب وہاں سب سے زیادہ کیا دیکھا جاتا ہے۔",
   "ta": "இந்த அளவீடு ஒன்றரை ஆண்டுகளுக்கு மேல் பழையது - இப்போது அங்கு அதிகம் பார்க்கப்படுவது எது என்று சொல்ல மிகப் பழையது."
+ },
+ "Connect gives AMV a key to the account that you can take back at any time. Ask AMV starts a new chat about that service, and AMV does nothing there without asking you.": {
+  "es": "Conectar le da a AMV una llave de la cuenta que puedes retirar cuando quieras. Preguntar a AMV abre un chat nuevo sobre ese servicio, y AMV no hace nada allí sin preguntarte.",
+  "zh": "“连接”会给 AMV 一把账户钥匙，你随时可以收回。“问 AMV”会就该服务开启一个新对话，未经你同意，AMV 不会在那里做任何事。",
+  "hi": "कनेक्ट करने से AMV को उस खाते की एक चाबी मिलती है, जिसे आप कभी भी वापस ले सकते हैं। \"AMV से पूछें\" उस सेवा के बारे में एक नई चैट शुरू करता है, और आपसे पूछे बिना AMV वहाँ कुछ नहीं करता।",
+  "ar": "«ربط» يمنح AMV مفتاحًا للحساب يمكنك استرجاعه في أي وقت. «اسأل AMV» يبدأ محادثة جديدة عن تلك الخدمة، ولا يفعل AMV هناك شيئًا دون أن يسألك.",
+  "pt": "Conectar dá ao AMV uma chave da conta que você pode retirar a qualquer momento. Perguntar ao AMV abre um novo chat sobre esse serviço, e o AMV não faz nada lá sem perguntar a você.",
+  "fr": "Connecter donne à AMV une clé du compte, que vous pouvez reprendre à tout moment. Demander à AMV ouvre une nouvelle discussion sur ce service, et AMV n’y fait rien sans vous demander.",
+  "de": "Verbinden gibt AMV einen Schlüssel zum Konto, den Sie jederzeit zurücknehmen können. „AMV fragen“ startet einen neuen Chat zu diesem Dienst, und AMV tut dort nichts, ohne Sie zu fragen.",
+  "ja": "「接続」はAMVにアカウントの鍵を渡すもので、いつでも取り消せます。「AMVに聞く」はそのサービスについて新しいチャットを始め、AMVはあなたに確認せずにそこで何もしません。",
+  "ru": "«Подключить» даёт AMV ключ к аккаунту, который вы можете забрать в любой момент. «Спросить AMV» начинает новый чат об этом сервисе, и AMV ничего там не делает, не спросив вас.",
+  "ko": "연결하면 AMV에 계정 열쇠를 주며, 언제든 다시 가져올 수 있습니다. \"AMV에 묻기\"는 그 서비스에 대한 새 채팅을 시작하며, AMV는 묻지 않고 그곳에서 아무것도 하지 않습니다.",
+  "it": "Collega dà ad AMV una chiave dell’account che puoi ritirare in qualsiasi momento. Chiedi ad AMV apre una nuova chat su quel servizio, e AMV lì non fa nulla senza chiedertelo.",
+  "tr": "Bağla, AMV’ye hesabın istediğin zaman geri alabileceğin bir anahtarını verir. AMV’ye sor, o hizmet hakkında yeni bir sohbet başlatır ve AMV sana sormadan orada hiçbir şey yapmaz.",
+  "vi": "Kết nối trao cho AMV một chìa khóa tài khoản mà bạn có thể lấy lại bất cứ lúc nào. Hỏi AMV mở một cuộc trò chuyện mới về dịch vụ đó, và AMV không làm gì ở đó mà không hỏi bạn.",
+  "id": "Hubungkan memberi AMV kunci akun yang bisa Anda tarik kembali kapan saja. Tanya AMV memulai obrolan baru tentang layanan itu, dan AMV tidak melakukan apa pun di sana tanpa bertanya kepada Anda.",
+  "bn": "সংযুক্ত করলে AMV অ্যাকাউন্টের একটি চাবি পায়, যা আপনি যেকোনো সময় ফিরিয়ে নিতে পারেন। \"AMV-কে জিজ্ঞাসা করুন\" সেই পরিষেবা নিয়ে একটি নতুন চ্যাট শুরু করে, এবং আপনাকে না জিজ্ঞাসা করে AMV সেখানে কিছুই করে না।",
+  "ur": "جوڑنے سے AMV کو اکاؤنٹ کی ایک چابی ملتی ہے جسے آپ کسی بھی وقت واپس لے سکتے ہیں۔ \"AMV سے پوچھیں\" اس سروس کے بارے میں ایک نئی چیٹ شروع کرتا ہے، اور AMV آپ سے پوچھے بغیر وہاں کچھ نہیں کرتا۔",
+  "ta": "இணைத்தல் AMV-க்குக் கணக்கின் ஒரு சாவியைத் தருகிறது; அதை எப்போது வேண்டுமானாலும் திரும்பப் பெறலாம். \"AMV-இடம் கேள்\" அந்தச் சேவையைப் பற்றி ஒரு புதிய உரையாடலைத் தொடங்கும்; உங்களைக் கேட்காமல் AMV அங்கே எதுவும் செய்யாது."
+ },
+ "Don’t describe the work - hand over the work itself. Pull in a conversation, a design, an app or some code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.": {
+  "es": "No describas el trabajo: entrega el trabajo en sí. Trae una conversación, un diseño, una app o algo de código, o pega lo que sea; tu compañero o un agente de Crew lo retoma dentro de AMV con todo el contexto, hace el cambio y te lo devuelve.",
+  "zh": "不要描述工作——直接交出工作本身。拉入一段对话、一个设计、一个应用或一些代码，或粘贴任何内容；你的同事或 Crew 智能体会在 AMV 中带着完整上下文接手，完成修改并交还给你。",
+  "hi": "काम का वर्णन न करें - काम ही सौंप दें। कोई बातचीत, डिज़ाइन, ऐप या कुछ कोड लाएँ, या कुछ भी पेस्ट करें; आपका साथी या कोई Crew एजेंट उसे AMV के भीतर पूरे संदर्भ के साथ उठाता है, बदलाव करता है और वापस सौंप देता है।",
+  "ar": "لا تصف العمل - سلّم العمل نفسه. اجلب محادثة أو تصميمًا أو تطبيقًا أو بعض الشيفرة، أو الصق أي شيء؛ يتسلّمه زميلك أو وكيل من Crew داخل AMV بكامل السياق، ويجري التغيير، ثم يعيده إليك.",
+  "pt": "Não descreva o trabalho - entregue o próprio trabalho. Traga uma conversa, um design, um app ou algum código, ou cole qualquer coisa; seu colega ou um agente do Crew assume dentro do AMV com todo o contexto, faz a alteração e devolve.",
+  "fr": "Ne décrivez pas le travail - transmettez le travail lui-même. Ajoutez une conversation, un design, une app ou du code, ou collez n’importe quoi ; votre collègue ou un agent Crew le reprend dans AMV avec tout le contexte, fait la modification et vous le rend.",
+  "de": "Beschreiben Sie die Arbeit nicht - übergeben Sie die Arbeit selbst. Holen Sie einen Chat, ein Design, eine App oder etwas Code dazu oder fügen Sie irgendetwas ein; Ihr Teammitglied oder ein Crew-Agent übernimmt es in AMV mit vollem Kontext, nimmt die Änderung vor und gibt es zurück.",
+  "ja": "作業を説明するのではなく、作業そのものを渡しましょう。会話、デザイン、アプリ、コードを取り込むか、何でも貼り付けてください。チームメイトや Crew エージェントが AMV 内で文脈ごと引き継ぎ、変更して返します。",
+  "ru": "Не описывайте работу - передайте саму работу. Добавьте разговор, дизайн, приложение или код либо вставьте что угодно; коллега или агент Crew подхватит это в AMV со всем контекстом, внесёт изменения и вернёт.",
+  "ko": "작업을 설명하지 말고 작업 자체를 넘기세요. 대화, 디자인, 앱 또는 코드를 가져오거나 무엇이든 붙여 넣으면, 팀원이나 Crew 에이전트가 AMV 안에서 전체 맥락과 함께 이어받아 수정하고 다시 넘겨줍니다.",
+  "it": "Non descrivere il lavoro: consegna il lavoro stesso. Porta una conversazione, un design, un’app o del codice, oppure incolla qualsiasi cosa; il tuo collega o un agente Crew lo riprende in AMV con tutto il contesto, fa la modifica e te lo restituisce.",
+  "tr": "İşi anlatma, işin kendisini devret. Bir sohbet, bir tasarım, bir uygulama ya da biraz kod getir veya herhangi bir şey yapıştır; ekip arkadaşın ya da bir Crew ajanı AMV içinde tüm bağlamla devralır, değişikliği yapar ve geri verir.",
+  "vi": "Đừng mô tả công việc - hãy giao chính công việc. Đưa vào một cuộc trò chuyện, một thiết kế, một ứng dụng hoặc một ít mã, hoặc dán bất cứ thứ gì; đồng đội hoặc một tác tử Crew sẽ tiếp nhận trong AMV với đầy đủ ngữ cảnh, thực hiện thay đổi và giao lại.",
+  "id": "Jangan menjelaskan pekerjaannya - serahkan pekerjaannya langsung. Bawa percakapan, desain, aplikasi, atau kode, atau tempel apa saja; rekan Anda atau agen Crew melanjutkannya di AMV dengan konteks lengkap, membuat perubahan, lalu menyerahkannya kembali.",
+  "bn": "কাজের বর্ণনা দেবেন না - কাজটিই হস্তান্তর করুন। একটি কথোপকথন, ডিজাইন, অ্যাপ বা কিছু কোড আনুন, বা যেকোনো কিছু পেস্ট করুন; আপনার সহকর্মী বা একটি Crew এজেন্ট পুরো প্রসঙ্গসহ AMV-এর ভেতরে তা নেয়, পরিবর্তন করে এবং ফিরিয়ে দেয়।",
+  "ur": "کام بیان نہ کریں - خود کام حوالے کریں۔ کوئی گفتگو، ڈیزائن، ایپ یا کچھ کوڈ لائیں، یا کچھ بھی پیسٹ کریں؛ آپ کا ساتھی یا Crew ایجنٹ اسے AMV میں پورے سیاق کے ساتھ سنبھالتا ہے، تبدیلی کرتا ہے اور واپس کر دیتا ہے۔",
+  "ta": "வேலையை விவரிக்க வேண்டாம் - வேலையையே ஒப்படையுங்கள். ஒரு உரையாடல், வடிவமைப்பு, செயலி அல்லது சிறிது குறியீட்டைக் கொண்டு வாருங்கள், அல்லது எதையும் ஒட்டுங்கள்; உங்கள் சக ஊழியரோ Crew முகவரோ முழுச் சூழலுடன் AMV-க்குள் அதை எடுத்துக்கொண்டு, மாற்றம் செய்து திருப்பித் தருவார்."
  }
 }

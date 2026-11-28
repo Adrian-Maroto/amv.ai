@@ -602,7 +602,7 @@ function renderIntegrationsView(){
        box here: one typed into now would be replaced under the cursor. */
     vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn" aria-busy="true">'
       + _intHeadHTML()
-      + '<p class="vsub int2-sub">' + escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.')) + ' ' + escH(T('Check the address before you sign in.')) + '</p>'
+      + '<p class="vsub int2-sub">' + escH(T('Connect gives AMV a key to the account that you can take back at any time. Ask AMV starts a new chat about that service, and AMV does nothing there without asking you.')) + ' ' + escH(T('Check the address before you sign in.')) + '</p>'
       + '<div class="int-wait" role="status" aria-label="' + escH(T('Loading…')) + '">' + '<div class="skel"></div>'.repeat(6) + '</div></div></div>';
     return;
   }
@@ -651,7 +651,7 @@ function renderIntegrationsView(){
       /* Two ways in, said once (Nov 15): Connect is a key AMV holds and you can
          take back; Use is AMV's browser on the real site, where you sign in
          yourself. Nothing on this page claims more than that. */
-      '<p class="vsub int2-sub">'+escH(T('Connect gives AMV a key to the account that you can take back at any time. Use opens the real site in AMV’s browser, and you sign in yourself.'))+' '+
+      '<p class="vsub int2-sub">'+escH(T('Connect gives AMV a key to the account that you can take back at any time. Ask AMV starts a new chat about that service, and AMV does nothing there without asking you.'))+' '+
         /* The sites come from a source anybody can edit, and a site is where
            somebody types a password - so the one habit that protects them is
            said where they meet the sites. */

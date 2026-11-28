@@ -71,7 +71,7 @@ function renderHandoffView(){
   vc.innerHTML=`<div class="sv fi"><div class="vi ho-page">
       <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
-      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.</p>
+      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a design, an app or some code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.</p>
       <div class="ho-flow"><span class="ho-flow-step">You paste the work</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">They pick up the baton</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">Handed back</span></div>
 
       <div class="ss2">
@@ -142,7 +142,7 @@ function _hoSessText(rec){
     const arts=(st.artifacts||[]).filter(a=>a&&(a.html||a.brief));
     const a=arts.find(x=>x.id===st.activeId)||arts[0];
     if(!a) return '';
-    return '[Studio design]\n'+
+    return '[Design]\n'+
       (st.prompt?('What was asked for:\n'+cap(st.prompt,600)+'\n\n'):'')+
       (a.brief?('Brief:\n'+cap(a.brief,800)+'\n\n'):'')+
       (a.html?('Markup:\n'+cap(a.html,12000)):'');
@@ -154,13 +154,13 @@ function _hoSessText(rec){
       const c=(st.project[f]&&st.project[f].content)||'';
       return '--- '+f+' ---\n'+cap(c,4000);
     }).join('\n\n');
-    return '[Dev project]\n'+
+    return '[App]\n'+
       (asked?('What was asked for:\n'+asked+'\n\n'):'')+
       (files.length?('Files ('+files.length+'):\n'+files.join(', ')+'\n\n'+body):cap(st.curCode,8000));
   }
   if(rec.kind==='lab'){
     const said=(st.chat||[]).slice(-4).map(m=>(m.role==='user'?'You: ':'AMV: ')+cap(m.text||m.content,200)).join('\n');
-    return '[Lab '+(st.lang||'code')+']\n'+
+    return '[Code'+(st.lang?' - '+st.lang:'')+']\n'+
       (said?('What was discussed:\n'+said+'\n\n'):'')+
       'Code:\n'+cap(st.code,12000);
   }
