@@ -554,7 +554,7 @@ async function _mktSellerProfile(sellerEmail, sellerName){
 
   const reviewList = reviews.length
     ? reviews.map(rv=>'<div class="mkt-review">'+
-        '<div class="mkt-review-h">'+_avatarHTML(rv.by,28)+'<div><div class="mkt-review-by">'+escH(rv.byName||rv.by.split('@')[0])+'</div>'+
+        '<div class="mkt-review-h">'+_avatarHTML(rv.by,28,rv.byName)+'<div><div class="mkt-review-by">'+escH(rv.byName||rv.by.split('@')[0])+'</div>'+
           '<div class="mkt-stars">'+[1,2,3,4,5].map(n=>'<span class="mkt-star'+(n<=rv.stars?' on':'')+'">\u2605</span>').join('')+'</div></div>'+
           '<span class="mkt-review-when">'+new Date(rv.ts).toLocaleDateString()+'</span></div>'+
         (rv.text?'<div class="mkt-review-text">'+escH(rv.text)+'</div>':'')+

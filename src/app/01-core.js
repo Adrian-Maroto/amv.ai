@@ -1915,21 +1915,35 @@ function amvMark(size, opts){
 try{ window.amvMark = amvMark; }catch(e){}
 
 // The generic AMV profile picture - same for everyone until they change it.
-function _defaultAvatarSVG(){
+function _defaultAvatarSVG(letter){
   // Unique gradient id per call - two avatars on one page must not share an id
   // (a duplicate SVG def id makes the second reference the first, misrendering).
   const g='amvAvG'+(++_amvMarkSeq);
+  const ch=escH(String(letter||'A').slice(0,1));
   return '<svg viewBox="0 0 40 40" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" style="display:block">'+
     '<defs><linearGradient id="'+g+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5784da"/><stop offset="1" stop-color="#3f6bc4"/></linearGradient></defs>'+
     '<rect width="40" height="40" fill="url(#'+g+')"/>'+
-    '<text x="20" y="26" text-anchor="middle" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">A</text>'+
+    '<text x="20" y="26" text-anchor="middle" font-family="Inter,Segoe UI,sans-serif" font-size="15" font-weight="800" letter-spacing="-1" fill="#fff">'+ch+'</text>'+
   '</svg>';
 }
 // The stored photo for an email, or '' if none.
 function _pfpFor(email){ try{ return email?loadStr('amv_pfp_'+String(email).toLowerCase()):''; }catch(e){ return ''; } }
 // Inner avatar markup: the photo if set, else the generic AMV avatar.
 // (Caller provides the round container; this fills it.)
-function _avatarInner(email){
+/* WHOSE AVATAR (Nov 28). Without a photo every person was the same "A" -
+   the account menu said "Sam Rivera" beside an A, and a marketplace page of
+   reviewers and sellers was a row of identical As nobody could tell apart.
+   Now it is the person's initial: their name when it is known (the signed-in
+   account, or `name` from the caller), else their address. "A" is kept for
+   AMV itself and for nobody in particular. */
+function _avatarLetter(email, name){
+  const e=String(email||'').toLowerCase();
+  let n=String(name||'');
+  if(!n && e && typeof S!=='undefined' && S.user && String(S.user.email||'').toLowerCase()===e) n=String(S.user.name||'');
+  const pick=(n.trim()||(e && e!=='amv' && e.indexOf('@')>0 ? e : '')).match(/[\p{L}\p{N}]/u);
+  return pick ? pick[0].toUpperCase() : 'A';
+}
+function _avatarInner(email, name){
   const pfp=_pfpFor(email);
   /* Always a data:image URL this browser made with FileReader, so in practice
      it is safe - but "in practice" is what every one of these was before it
@@ -1939,12 +1953,12 @@ function _avatarInner(email){
      icon: a picture that cannot be shown is not a reason to show nothing. */
   const safePfp = pfp ? safeMediaSrc(pfp) : '';
   if(safePfp) return '<img src="'+escH(safePfp)+'" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">';
-  return _defaultAvatarSVG();
+  return _defaultAvatarSVG(_avatarLetter(email, name));
 }
 // A complete round avatar element of a given pixel size.
-function _avatarHTML(email, size){
+function _avatarHTML(email, size, name){
   size=size||32;
-  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:var(--r-2xs);overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email)+'</div>';
+  return '<div class="amv-av" style="width:'+size+'px;height:'+size+'px;border-radius:var(--r-2xs);overflow:hidden;flex-shrink:0;background:var(--accent)">'+_avatarInner(email, name)+'</div>';
 }
 
 
