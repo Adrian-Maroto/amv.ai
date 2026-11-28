@@ -571,11 +571,18 @@ function ccMeasure(cc){
   const d = _ccDone[String(cc || '').toUpperCase()]; if(!d) return null;
   const m = /Chrome UX Report (\d{4})(\d{2})\b/.exec(String(d.popular || ''));
   const visits = !!m && Object.values(d.kinds || {}).some(l => (l || []).some(e => +e.r > 0));
-  let month = '';
+  let month = '', age = 0;
   if(m){ try{ const code = (typeof _lang === 'function' && _lang() !== 'auto') ? _lang() : undefined;
-    month = new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString(code, { month: 'long', year: 'numeric', timeZone: 'UTC' }); }catch(e){ month = m[1] + '-' + m[2]; } }
-  return { visits, month };
+    month = new Date(Date.UTC(+m[1], +m[2] - 1, 1)).toLocaleDateString(code, { month: 'long', year: 'numeric', timeZone: 'UTC' }); }catch(e){ month = m[1] + '-' + m[2]; }
+    const now = new Date(Date.now()); age = (now.getUTCFullYear() - +m[1]) * 12 + (now.getUTCMonth() + 1 - +m[2]); }
+  /* HOW OLD THE MEASUREMENT IS (Nov 28, Build 19 audit B19-R-13, NEW-13). A
+     month's visits say what people used that month; the notes named the
+     month but read as true forever. Past CC_FRESH_MONTHS the note says the
+     order may have changed; past CC_EXPIRE_MONTHS it says the measurement
+     is too old to call anything most visited now. */
+  return { visits, month, age, stale: !!m && age > CC_FRESH_MONTHS, expired: !!m && age > CC_EXPIRE_MONTHS };
 }
+const CC_FRESH_MONTHS = 6, CC_EXPIRE_MONTHS = 18;
 /* English only: "a {n}" before a vowel is "an" - "Find an Iberia flight". The
    translated titles are left alone ("a {n}" is "the" in Portuguese). */
 /* "an" before a vowel SOUND: "an IKEA", but "a United Airlines flight", "a
@@ -943,7 +950,9 @@ function ccPopularNote(cc, crew){
     : crew === 'counted' ? T('Jobs picked for {0} and the ones people there switch on most in AMV come first; the rest by visits from {0} to each service (Chrome UX Report, {1}).')
     : crew ? T('Jobs picked for {0} come first; the rest by visits from {0} to each service (Chrome UX Report, {1}) - not by how often a job is run in AMV.')
     : T('Everyday tasks, taking turns across the parts of life; in each, what people in {0} visit most comes first (Chrome UX Report, {1}) - not how often a task is run in AMV.');
-  return t.split('{0}').join(place).replace('{1}', m.month);
+  const age = !m.visits ? '' : m.expired ? ' ' + T('That measurement is over a year and a half old - too old to say what is most visited there now.')
+    : m.stale ? ' ' + T('That measurement is over six months old, so the order may have changed.') : '';
+  return t.split('{0}').join(place).replace('{1}', m.month) + age;
 }
 try{ window.ccPopularNote = ccPopularNote; window.ccMeasure = ccMeasure; window.ccLoad = ccLoad; window.ccTasks = ccTasks; window.ccLeads = ccLeads; window.ccJobs = ccJobs; window.ccServices = ccServices; }catch(e){}
 

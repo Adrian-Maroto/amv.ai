@@ -8700,5 +8700,43 @@
   "bn": "{0}-এ নিশ্চিত নয়",
   "ur": "{0} میں تصدیق شدہ نہیں",
   "ta": "{0}-இல் உறுதிசெய்யப்படவில்லை"
+ },
+ "That measurement is over six months old, so the order may have changed.": {
+  "es": "Esa medición tiene más de seis meses, así que el orden puede haber cambiado.",
+  "zh": "该测量已超过六个月，排序可能已有变化。",
+  "hi": "यह माप छह महीने से अधिक पुराना है, इसलिए क्रम बदल चुका हो सकता है।",
+  "ar": "مضى على هذا القياس أكثر من ستة أشهر، لذا ربما تغيّر الترتيب.",
+  "pt": "Essa medição tem mais de seis meses, então a ordem pode ter mudado.",
+  "fr": "Cette mesure date de plus de six mois ; l’ordre a pu changer.",
+  "de": "Diese Messung ist älter als sechs Monate, die Reihenfolge kann sich geändert haben.",
+  "ja": "この測定は6か月以上前のものなので、順位が変わっている可能性があります。",
+  "ru": "Этим данным больше шести месяцев, порядок мог измениться.",
+  "ko": "이 측정은 6개월이 넘었기 때문에 순서가 바뀌었을 수 있습니다.",
+  "it": "Questa misurazione ha più di sei mesi, quindi l’ordine potrebbe essere cambiato.",
+  "tr": "Bu ölçüm altı aydan eski; sıralama değişmiş olabilir.",
+  "vi": "Số liệu này đã hơn sáu tháng nên thứ tự có thể đã thay đổi.",
+  "id": "Pengukuran itu sudah lebih dari enam bulan, jadi urutannya mungkin sudah berubah.",
+  "bn": "এই পরিমাপ ছয় মাসের বেশি পুরোনো, তাই ক্রম বদলে যেতে পারে।",
+  "ur": "یہ پیمائش چھ ماہ سے زیادہ پرانی ہے، اس لیے ترتیب بدل چکی ہو سکتی ہے۔",
+  "ta": "இந்த அளவீடு ஆறு மாதங்களுக்கு மேல் பழையது, எனவே வரிசை மாறியிருக்கலாம்."
+ },
+ "That measurement is over a year and a half old - too old to say what is most visited there now.": {
+  "es": "Esa medición tiene más de un año y medio: es demasiado antigua para decir qué es lo más visitado allí ahora.",
+  "zh": "该测量已超过一年半，太旧了，无法说明现在那里访问最多的是什么。",
+  "hi": "यह माप डेढ़ साल से अधिक पुराना है - यह बताने के लिए बहुत पुराना कि अब वहाँ सबसे ज़्यादा क्या देखा जाता है।",
+  "ar": "مضى على هذا القياس أكثر من عام ونصف - وهو أقدم من أن يخبرنا بما هو الأكثر زيارة هناك الآن.",
+  "pt": "Essa medição tem mais de um ano e meio - antiga demais para dizer o que é mais visitado lá agora.",
+  "fr": "Cette mesure date de plus d’un an et demi : trop ancienne pour dire ce qui y est le plus visité aujourd’hui.",
+  "de": "Diese Messung ist älter als anderthalb Jahre - zu alt, um zu sagen, was dort jetzt am meisten besucht wird.",
+  "ja": "この測定は1年半以上前のもので、現在そこで最も訪問されているものを示すには古すぎます。",
+  "ru": "Этим данным больше полутора лет - слишком старые, чтобы говорить, что там посещают чаще всего сейчас.",
+  "ko": "이 측정은 1년 반이 넘어 지금 그곳에서 가장 많이 방문하는 곳을 말하기에는 너무 오래되었습니다.",
+  "it": "Questa misurazione ha più di un anno e mezzo: troppo vecchia per dire cosa è più visitato lì oggi.",
+  "tr": "Bu ölçüm bir buçuk yıldan eski; şu anda orada en çok neyin ziyaret edildiğini söylemek için çok eski.",
+  "vi": "Số liệu này đã hơn một năm rưỡi - quá cũ để nói hiện nay ở đó trang nào được truy cập nhiều nhất.",
+  "id": "Pengukuran itu sudah lebih dari satu setengah tahun - terlalu lama untuk menyebut apa yang paling banyak dikunjungi di sana sekarang.",
+  "bn": "এই পরিমাপ দেড় বছরের বেশি পুরোনো - এখন সেখানে কী সবচেয়ে বেশি দেখা হয় তা বলার জন্য খুব পুরোনো।",
+  "ur": "یہ پیمائش ڈیڑھ سال سے زیادہ پرانی ہے - یہ بتانے کے لیے بہت پرانی کہ اب وہاں سب سے زیادہ کیا دیکھا جاتا ہے۔",
+  "ta": "இந்த அளவீடு ஒன்றரை ஆண்டுகளுக்கு மேல் பழையது - இப்போது அங்கு அதிகம் பார்க்கப்படுவது எது என்று சொல்ல மிகப் பழையது."
  }
 }

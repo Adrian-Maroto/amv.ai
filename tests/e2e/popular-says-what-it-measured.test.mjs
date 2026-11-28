@@ -38,6 +38,17 @@ section('A country whose file has no visit data');
   ok(/There is no visit data for Spain/.test(n.t) && /not a measure of what is popular/.test(n.t), 'it says the order is the catalogue\'s, not a measure', n.t);
 }
 
+section('An old measurement says it is old (Build 19 audit B19-R-13, NEW-13)');
+{
+  const r = await page.evaluate(() => {
+    const real = Date.now, at = (y, m) => { Date.now = () => Date.UTC(y, m - 1, 15); try { return ccPopularNote('ES'); } finally { Date.now = real; } };
+    return { now: at(2026, 11), seven: at(2027, 5), two: at(2028, 10) };
+  });
+  ok(!/months old|year and a half/.test(r.now), 'a month ago: no caveat', r.now);
+  ok(/over six months old, so the order may have changed/.test(r.seven), 'seven months on, it says the order may have changed', r.seven);
+  ok(/too old to say what is most visited there now/.test(r.two), 'two years on, it says it is too old to say what is most visited', r.two);
+}
+
 section('Crew');
 {
   await page.evaluate(() => setTab('crew'));
