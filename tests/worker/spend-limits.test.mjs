@@ -289,5 +289,28 @@ section('Limits are readable, so the screen can show what really applies');
      'and the hard ceiling nobody can raise is stated', d.absoluteCap);
 }
 
+section('One change is one notice in the bell, never two');
+{
+  /* Nov 28, the owner: "when I change my spending I get double
+     notifications". Every save wrote an activity entry - switching spending
+     on and then pressing Save, or a retried request, showed it twice. */
+  store.clear();
+  const notices = () => JSON.parse(store.get('alog:a@x.com') || '[]').filter(e => e.kind === 'spend_limits_changed');
+  const L = { autoUnder: 20, perPurchase: 100, monthlyCap: 300, currency: 'USD' };
+  await W.spendSet(req({ limits: { ...L, enabled: true } }), env);
+  ok(notices().length === 1, 'switching spending on records one notice', notices().length);
+  await W.spendSet(req({ limits: { ...L, enabled: true } }), env);
+  ok(notices().length === 1, 'the same limits saved again - or a retry - record none', notices().length);
+  await W.spendSet(req({ limits: { ...L, monthlyCap: 400, enabled: true } }), env);
+  ok(notices().length === 1, 'a change a moment later is the same notice, moved to now', notices().length);
+  const d = await (await W.spendGet(new Request('https://x/v1/spend/limits', { method:'POST', body:'{}' }), env)).json();
+  ok(d.limits.monthlyCap === 400, 'and every save still took effect', d.limits);
+  /* An hour on, it is a new change and a new notice - somebody else changing
+     them later must still show up. */
+  const log = JSON.parse(store.get('alog:a@x.com')); log[log.length - 1].at -= 60 * 60 * 1000; store.set('alog:a@x.com', JSON.stringify(log));
+  await W.spendSet(req({ limits: { ...L, monthlyCap: 450, enabled: true } }), env);
+  ok(notices().length === 2, 'a change an hour later is a second notice', notices().length);
+}
+
 if (report('spend-limits') > 0) process.exitCode = 1;
 done();

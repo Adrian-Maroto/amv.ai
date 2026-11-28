@@ -63,7 +63,10 @@ function _deviceLabel(request) {
 
 /* Record one thing that happened to an account. Never throws: an account event
    is a record OF an action, and must not be able to break the action. */
-async function _userEvent(env, request, email, kind, detail) {
+/* `opts.mergeWithinMs`: an event of the same kind that is the newest on the
+   list and that recent is moved to now instead of a second being added - one
+   notice for a burst of the same change (spending limits, Nov 28). */
+async function _userEvent(env, request, email, kind, detail, opts) {
   try {
     const em = String(email || '').toLowerCase();
     if (!em || !kind) return;
@@ -80,7 +83,9 @@ async function _userEvent(env, request, email, kind, detail) {
     const key = `alog:${em}`;
     let list = [];
     try { list = JSON.parse(await env.AMV_KV.get(key) || '[]') || []; } catch (e) { list = []; }
-    list.push(ev);
+    const last = list[list.length - 1], merge = +((opts && opts.mergeWithinMs) || 0);
+    if (merge > 0 && last && last.kind === kind && ev.at - (+last.at || 0) <= merge) list[list.length - 1] = ev;
+    else list.push(ev);
     if (list.length > ACTIVITY_MAX_EVENTS) list = list.slice(-ACTIVITY_MAX_EVENTS);
     await env.AMV_KV.put(key, JSON.stringify(list), { expirationTtl: ACTIVITY_TTL_S });
   } catch (e) { /* never let logging break the thing being logged */ }

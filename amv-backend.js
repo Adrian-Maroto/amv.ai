@@ -14876,6 +14876,8 @@ const WEB_ABSOLUTE_SPEND_CAP = 2000;
    cautious reading of a disagreement is the safe one. */
 const SPEND_DEFAULTS = { autoUnder: 50, perPurchase: 250, monthlyCap: 500 };
 const SPEND_FIELD_MAX = { autoUnder: 2000, perPurchase: 2000, monthlyCap: 20000 };
+/* Changes to the limits within this long of each other are one notice. */
+const SPEND_NOTICE_MERGE_MS = 10 * 60 * 1000;
 
 function _spendClean(raw){
   const out = Object.assign({}, SPEND_DEFAULTS);
@@ -14936,9 +14938,19 @@ async function spendSet(request, env){
   if(blocked) return blocked;
   const body = await request.json().catch(() => ({}));
   const limits = _spendClean(body.limits || body);
+  const before = await _spendLimits(env, user.email);
   await DB.put(env, 'spendlimits', user.email, limits);
   audit(env, 'spend_limits_set', { by:user.email, limits });
-  await _userEvent(env, request, user.email, 'spend_limits_changed', {});
+  /* ONE NOTICE PER CHANGE (Nov 28, the owner: "when I change my spending I
+     get double notifications instead of one"). Every save wrote an entry to
+     the account's activity - the bell's "Spending limits changed" - so
+     switching spending on and then pressing Save, saving numbers that had
+     not changed, or a slow connection's retry (spend/set is safe to repeat,
+     01-core.js) each showed up again. A save that changes nothing records
+     nothing, and changes in the same few minutes are one entry, dated by
+     the latest. The audit trail above still has every write. */
+  const changed = Object.keys(limits).some(k => limits[k] !== before[k]);
+  if(changed) await _userEvent(env, request, user.email, 'spend_limits_changed', {}, { mergeWithinMs: SPEND_NOTICE_MERGE_MS });
   return json({ ok:true, limits });
 }
 
@@ -31691,7 +31703,10 @@ function _deviceLabel(request) {
 
 /* Record one thing that happened to an account. Never throws: an account event
    is a record OF an action, and must not be able to break the action. */
-async function _userEvent(env, request, email, kind, detail) {
+/* `opts.mergeWithinMs`: an event of the same kind that is the newest on the
+   list and that recent is moved to now instead of a second being added - one
+   notice for a burst of the same change (spending limits, Nov 28). */
+async function _userEvent(env, request, email, kind, detail, opts) {
   try {
     const em = String(email || '').toLowerCase();
     if (!em || !kind) return;
@@ -31708,7 +31723,9 @@ async function _userEvent(env, request, email, kind, detail) {
     const key = `alog:${em}`;
     let list = [];
     try { list = JSON.parse(await env.AMV_KV.get(key) || '[]') || []; } catch (e) { list = []; }
-    list.push(ev);
+    const last = list[list.length - 1], merge = +((opts && opts.mergeWithinMs) || 0);
+    if (merge > 0 && last && last.kind === kind && ev.at - (+last.at || 0) <= merge) list[list.length - 1] = ev;
+    else list.push(ev);
     if (list.length > ACTIVITY_MAX_EVENTS) list = list.slice(-ACTIVITY_MAX_EVENTS);
     await env.AMV_KV.put(key, JSON.stringify(list), { expirationTtl: ACTIVITY_TTL_S });
   } catch (e) { /* never let logging break the thing being logged */ }

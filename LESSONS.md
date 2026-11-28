@@ -16449,3 +16449,16 @@ joined prefix ('cc-' + kind) as using every class with that prefix hid
 eighteen dead rules until the prefix went. Rule: a line under a title is a
 claim - if it is drawn from a lookup, check what the lookup returns for a
 dozen real rows before shipping it, and prefer no line to a guessed one.
+
+## 679
+**Nov 28 - a notice per write is not a notice per change.**
+Spending's server wrote "Spending limits changed" to the account's activity
+on every save. The owner got two for one change: switching spending on is a
+save, pressing Save after it is another, and spend/set is marked safe to
+retry, so a slow connection can send the same save twice. Each was correct
+alone; together they read as the product repeating itself. Now a save that
+changes nothing records nothing, and the same change within ten minutes
+moves the one entry to now (`_userEvent`'s `mergeWithinMs`); the audit log
+still has every write. Rule: a person-facing notice is keyed to a change of
+state, not to the request that carried it - especially for anything marked
+safe to retry.

@@ -48,6 +48,8 @@ const WEB_ABSOLUTE_SPEND_CAP = 2000;
    cautious reading of a disagreement is the safe one. */
 const SPEND_DEFAULTS = { autoUnder: 50, perPurchase: 250, monthlyCap: 500 };
 const SPEND_FIELD_MAX = { autoUnder: 2000, perPurchase: 2000, monthlyCap: 20000 };
+/* Changes to the limits within this long of each other are one notice. */
+const SPEND_NOTICE_MERGE_MS = 10 * 60 * 1000;
 
 function _spendClean(raw){
   const out = Object.assign({}, SPEND_DEFAULTS);
@@ -108,9 +110,19 @@ async function spendSet(request, env){
   if(blocked) return blocked;
   const body = await request.json().catch(() => ({}));
   const limits = _spendClean(body.limits || body);
+  const before = await _spendLimits(env, user.email);
   await DB.put(env, 'spendlimits', user.email, limits);
   audit(env, 'spend_limits_set', { by:user.email, limits });
-  await _userEvent(env, request, user.email, 'spend_limits_changed', {});
+  /* ONE NOTICE PER CHANGE (Nov 28, the owner: "when I change my spending I
+     get double notifications instead of one"). Every save wrote an entry to
+     the account's activity - the bell's "Spending limits changed" - so
+     switching spending on and then pressing Save, saving numbers that had
+     not changed, or a slow connection's retry (spend/set is safe to repeat,
+     01-core.js) each showed up again. A save that changes nothing records
+     nothing, and changes in the same few minutes are one entry, dated by
+     the latest. The audit trail above still has every write. */
+  const changed = Object.keys(limits).some(k => limits[k] !== before[k]);
+  if(changed) await _userEvent(env, request, user.email, 'spend_limits_changed', {}, { mergeWithinMs: SPEND_NOTICE_MERGE_MS });
   return json({ ok:true, limits });
 }
 
