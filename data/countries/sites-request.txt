@@ -1,3 +1,4 @@
 # Re-pick every service's website for its country (scripts/country-sites.mjs).
 # Empty = every country file. Nov 28: Build 19 audit NEW-06/NEW-12.
 # Nov 28: again, with the corrected rule (visits break ties, not length; same organisation only)
+# Nov 28: again, to record where each bank, shop, line and school operates (l)
