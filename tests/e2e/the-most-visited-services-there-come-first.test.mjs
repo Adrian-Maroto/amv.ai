@@ -49,9 +49,14 @@ section('In every country: most visited first, the better known first inside a b
          America and Chase): Wikipedia editions over the fourth root of how
          many countries list it. */
       const R = e => (+e.r > 0 ? +e.r : 1e9), K = e => (+e.w || 0) / Math.pow(Math.max(1, +e.x || 1), 0.25);
-      const svc = ccServices(d).map(x => x.e);
+      /* Nov 28 (Build 19 audit NEW-05): a bank, shop or line not shown to
+         operate in the country comes after every one that is, whatever its
+         visits - then the same order inside each half. */
+      const xs = ccServices(d), svc = xs.map(x => x.e), nh = xs.map(x => _ccNotHere(x, cc));
       for (let i = 1; i < svc.length; i++) {
         const a = svc[i - 1], b = svc[i];
+        if (nh[i - 1] && !nh[i]) { bad.push(cc + ': ' + a.n + ' (not confirmed there) before ' + b.n); break; }
+        if (nh[i - 1] !== nh[i]) continue;
         if (R(a) > R(b)) { bad.push(cc + ': ' + a.n + ' (' + R(a) + ') before ' + b.n + ' (' + R(b) + ')'); break; }
         if (R(a) === R(b) && K(a) < K(b)) { bad.push(cc + ': ' + a.n + ' (' + K(a).toFixed(1) + ') before the better known ' + b.n + ' (' + K(b).toFixed(1) + ')'); break; }
       }
