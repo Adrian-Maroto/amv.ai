@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { siteBetter, siteRelated } from './site-fit.mjs';
+import { siteBetter, siteRelated, siteFit, LOCAL_KINDS } from './site-fit.mjs';
 import { crux, rankOf } from './country-popular.mjs';
 import { listed } from './not-listed.mjs';
 
@@ -60,6 +60,27 @@ async function main() {
   const data = Object.fromEntries(files.map(cc => [cc, JSON.parse(readFileSync(join(OUT, cc + '.json'), 'utf8'))]));
   const qs = [...new Set(Object.values(data).flatMap(d => Object.values(d.kinds || {}).flat().map(e => e.q)))];
   console.log(files.length, 'files,', qs.length, 'organisations');
+  /* WHERE EACH ORGANISATION OPERATES (Build 19 audit B19-R-03, R-15, NEW-05).
+     The visit ranking adds any site people in a country visit, so Pakistan's
+     only supermarkets were Sam's Club and Walmart Canada. For the kinds that
+     are no use unless they operate in the country (LOCAL_KINDS), each entry
+     gets `l`: 1 when Wikidata places it there - its country, its
+     headquarters' country, its operating area, the jurisdiction it applies
+     to, or the place it is in - or its site is on the country's own domain;
+     0 when it was checked and none of those says so. The page puts 0 after
+     the rest of its kind and says it is not confirmed there. Nothing is
+     removed: Wikidata misses some real local branches, and a missing fact is
+     not a proof of absence. */
+  const where = new Map();
+  for (let i = 0; i < qs.length; i += BATCH) {
+    const part = qs.slice(i, i + BATCH);
+    const rows = await sparql(`SELECT ?i ?c WHERE { VALUES ?i { ${part.map(q => 'wd:' + q).join(' ')} }
+      { ?i wdt:P17 ?c } UNION { ?i wdt:P159/wdt:P17 ?c } UNION { ?i wdt:P2541 ?c } UNION { ?i wdt:P2541/wdt:P17 ?c }
+      UNION { ?i wdt:P1001 ?c } UNION { ?i wdt:P1001/wdt:P17 ?c } UNION { ?i wdt:P131/wdt:P17 ?c } }`);
+    for (const b of rows) { const q = qid(b.i.value); (where.get(q) || where.set(q, new Set()).get(q)).add(qid(b.c.value)); }
+    if ((i / BATCH) % 20 === 0) console.log('placed', Math.min(qs.length, i + BATCH), 'of', qs.length);
+    await sleep(250);
+  }
   const sites = new Map();
   for (let i = 0; i < qs.length; i += BATCH) {
     const part = qs.slice(i, i + BATCH);
@@ -82,7 +103,16 @@ async function main() {
       for (const h of sites.get(e.q) || []) if (!used.has(h) && siteRelated(h, e.n, e.s) && siteBetter(h, best, cc, rank)) best = h;
       if (best !== e.s) { moves.push([e, best]); used.delete(e.s); used.add(best); }
     }
-    if (!moves.length) continue;
+    let placed = 0;
+    for (const [kind, list] of Object.entries(d.kinds || {})) {
+      if (!LOCAL_KINDS.has(kind)) { for (const e of list) delete e.l; continue; }
+      for (const e of list) {
+        const l = (siteFit(e.s, cc) === 0 || (where.get(e.q) || new Set()).has(d.qid)) ? 1 : 0;
+        if (e.l !== l) { e.l = l; placed++; }
+      }
+    }
+    if (!moves.length && !placed) continue;
+    if (placed) console.log(cc, placed, 'entries placed or not placed in the country');
     for (const [e, best] of moves) {
       console.log(cc, e.q, e.n, ':', e.s, '->', best);
       e.s = best;

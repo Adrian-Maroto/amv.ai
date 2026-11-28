@@ -260,6 +260,11 @@ Companion docs (do not duplicate them here - read them):
   first rows are drawn; `ccAllRows` builds the rest. `docs/COUNTRY-DATA.md`
   (`node scripts/country-report.mjs`) holds the real count per country - never
   claim 500 for a country it does not show. LESSONS 639-642.
+  After `country-popular` (it adds visited sites without asking where they
+  operate), run the `country-sites` workflow: it picks each service's site
+  for the country and records `l` - whether Wikidata places a bank, shop,
+  line, school or government body in the country - and the page puts the
+  unplaced after the rest, marked "Not confirmed in ..." (`_ccNotHere`).
   Every list is MOST VISITED FIRST (`_ccByPop`): the Chrome UX Report bucket
   for visits from that country, then the country's own before the world's
   (`x`, how many countries list a service - run `node scripts/country-reach.mjs`

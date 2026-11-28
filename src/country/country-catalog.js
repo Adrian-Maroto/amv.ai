@@ -611,6 +611,25 @@ const _ccTitle = (t, e, cc) => { const tr = T(t); return _ccFill(tr, e, tr === t
    it did. Jobs and tasks follow their services, ranked first by what each
    is for (_ccByUse, Nov 27) and then in this order. What people in the country actually switch on reorders Crew on
    top of this (crew-view.js, _cjList). */
+/* NOT SHOWN TO OPERATE HERE (Nov 28, Build 19 audit B19-R-03, R-15, NEW-05).
+   For the kinds that are no use unless they operate in the country (the same
+   list as LOCAL_KINDS in scripts/site-fit.mjs), an entry Wikidata does not
+   place in the country - `l: 0`, from scripts/country-sites.mjs - or, before
+   that was checked, one whose site is on another country's domain, goes
+   after the rest and its row says it is not confirmed there. Pakistan's only
+   supermarkets were Sam's Club and Walmart Canada: visited from Pakistan,
+   operating in neither. Kept, because a missing fact is not proof of
+   absence; never first. */
+const CC_LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'retail', 'supermarket', 'mall',
+  'rail', 'bus', 'hospital', 'school', 'college', 'university', 'agency', 'ministry']);
+const CC_LOOSE_TLD = new Set(['co', 'io', 'tv', 'me', 'ai']);
+function _ccNotHere(x, cc){
+  if(!x || !x.e || !CC_LOCAL_KINDS.has(x.kind)) return false;
+  const tld = String(x.e.s || '').toLowerCase().split('.').pop(), own = String(cc || '').toUpperCase() === 'GB' ? 'uk' : String(cc || '').toLowerCase();
+  if(tld === own || x.e.l === 1) return false;
+  return x.e.l === 0 || (tld.length === 2 && !CC_LOOSE_TLD.has(tld));
+}
+try{ window._ccNotHere = _ccNotHere; }catch(e){}
 function _ccByPop(d){
   const out = [];
   for(const [kind, list] of Object.entries((d && d.kinds) || {})) (list || []).forEach((e, i) => out.push({ kind, e, i }));
@@ -626,7 +645,8 @@ function _ccByPop(d){
      once the visit ranking listed it in 33 countries - it is visited from
      abroad, which makes it no less the United States' own. */
   const R = x => (+x.e.r > 0 ? +x.e.r : 1e9), K = x => (+x.e.w || 0) / Math.pow(Math.max(1, +x.e.x || 1), 0.25);
-  return out.sort((a, b) => (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
+  const cc = d && d.cc, N = x => (_ccNotHere(x, cc) ? 1 : 0);
+  return out.sort((a, b) => (N(a) - N(b)) || (R(a) - R(b)) || (K(b) - K(a)) || (a.i - b.i) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
 }
 /* THE USEFUL FIRST (Nov 27), now for Crew's jobs: Tasks name no service
    since Nov 28 (ccLeads), so the per-service task tiers that ranked "Find
@@ -1431,9 +1451,12 @@ try{ window._ccJobsOrder = _ccJobsOrder; }catch(e){}
 function _ccFillDraw(root, by){
   /* A row is registered when it is drawn - its Use / Link reads it there. */
   const svcRow = (x) => _ccSvcRowHTML(x);
+  const here = (() => { try{ return _cwCountryGuess(); }catch(e){ return ''; } })();
+  const notHere = (x) => _ccNotHere(x, here)
+    ? ' <span class="cc-where">' + escH(T('Not confirmed in {0}').replace('{0}', _ccPlace(here))) + '</span>' : '';
   const _ccSvcRowHTML = (x) => `<div class="int-card cc-svc" data-cc="${escH(x.kind)}"${x.f ? ' data-crew="' + escH(x.f) + '"' : ''}>
       <div class="int-ic" aria-hidden="true">${_appMarkHTML(x.e.n)}</div>
-      <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}</div></div>
+      <div class="int-body"><div class="int-top"><span class="int-name" data-no-i18n>${escH(x.e.n)}</span></div><div class="int-desc" data-no-i18n>${escH(x.e.s)}${notHere(x)}</div></div>
       <div class="int-act">${_ccAct(x)}</div></div>`;
   for(let [topic, rows] of Object.entries(by)){
     let sec = root.querySelector('[data-topic="' + topic + '"]');

@@ -70,3 +70,10 @@ export function siteRelated(host, name, was) {
   if (l.length < 2) return false;
   return n.indexOf(l) >= 0 || (!!w && (w.indexOf(l) >= 0 || l.indexOf(w) >= 0));
 }
+/* The kinds that are no use to somebody unless they operate in their country:
+   an account, a line, a shop, a ticket, a place to go. Not restaurants or
+   hotels (chains are franchised locally), not airlines (they fly in), not
+   online shops (they ship). The page's copy of this list is CC_LOCAL_KINDS
+   in country-catalog.js, and a suite holds them equal. */
+export const LOCAL_KINDS = new Set(['bank', 'insurer', 'telecom', 'isp', 'utility', 'retail', 'supermarket', 'mall',
+  'rail', 'bus', 'hospital', 'school', 'college', 'university', 'agency', 'ministry']);

@@ -16,7 +16,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { siteFit, siteBetter, siteRelated } from '../../scripts/site-fit.mjs';
+import { siteFit, siteBetter, siteRelated, LOCAL_KINDS } from '../../scripts/site-fit.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -75,6 +75,33 @@ section('The page remembers a service by its id AND its site');
   ok(a !== b && _ccSvc[a].e.s === 'the-independent.com' && _ccSvc[b].e.s === 'independent.co.uk',
      'the same organisation in two countries is two rows, each with its own site', { a, b });
   ok(_ccSvcKey(gb) === b, 'and a row\'s button names its own key');
+}
+
+section('A shop, bank or line not shown to operate in the country is never first (B19-R-03, NEW-05)');
+{
+  const src = readFileSync(join(ROOT, 'public', 'country-catalog.js'), 'utf8');
+  const ctx = { window: {}, console, T: (s) => s, escH: (s) => String(s) };
+  vm.createContext(ctx);
+  vm.runInContext(src + ';window.__l = { _ccNotHere, _ccByPop, CC_LOCAL_KINDS };', ctx);
+  const { _ccNotHere, _ccByPop, CC_LOCAL_KINDS } = ctx.window.__l;
+  ok([...CC_LOCAL_KINDS].sort().join() === [...LOCAL_KINDS].sort().join(), 'the page and the data script agree on which kinds must operate locally', [...CC_LOCAL_KINDS]);
+  /* Pakistan's file as it was: its only supermarkets were Sam's Club and
+     Walmart Canada, both visited from Pakistan, neither operating there. */
+  const pk = { cc: 'PK', kinds: { supermarket: [
+    { q: 'Q1', n: "Sam's Club", s: 'samsclub.com', r: 10000, l: 0 },
+    { q: 'Q2', n: 'Walmart Canada', s: 'walmart.ca', r: 10000 },
+    { q: 'Q3', n: 'Imtiaz', s: 'imtiaz.com.pk', r: 50000 },
+    { q: 'Q4', n: 'Carrefour', s: 'carrefour.com', r: 100000, l: 1 } ] } };
+  const order = _ccByPop(pk).map(x => x.e.n + (_ccNotHere(x, 'PK') ? ' (not confirmed)' : ''));
+  ok(order[0] === 'Imtiaz' && order[1] === 'Carrefour', 'the ones placed in Pakistan come first, even less visited', order);
+  ok(order.slice(2).every(n => /not confirmed/.test(n)), 'and Sam\'s Club (checked: not there) and Walmart Canada (another country\'s domain) after them, marked', order);
+  ok(!_ccNotHere({ kind: 'restaurant', e: { s: 'mcdonalds.com', l: 0 } }, 'PK') && !_ccNotHere({ kind: 'jobsite', e: { s: 'indeed.com' } }, 'PK'),
+     'a restaurant chain or a job site is not held to it - they franchise or work from anywhere');
+  ok(!_ccNotHere({ kind: 'bank', e: { s: 'barclays.co.uk' } }, 'GB') && !_ccNotHere({ kind: 'telecom', e: { s: 'jazz.com.pk' } }, 'PK'),
+     'and a site on the country\'s own domain needs no other evidence');
+  const sites = readFileSync(join(ROOT, 'scripts', 'country-sites.mjs'), 'utf8');
+  ok(/wdt:P17 \?c/.test(sites) && /wdt:P159\/wdt:P17/.test(sites) && /wdt:P2541/.test(sites) && /has\(d\.qid\)/.test(sites),
+     'the data pass places each entry by country, headquarters and operating area against the country\'s own Wikidata id');
 }
 
 report();
