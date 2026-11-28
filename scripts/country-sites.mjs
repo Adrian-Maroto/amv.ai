@@ -4,7 +4,9 @@
    For every entry in data/countries/<CC>.json, asks Wikidata for all of the
    organisation's official websites (P856) and keeps the one that fits the
    country best (scripts/site-fit.mjs) - replacing a site only when another
-   fits strictly better, and never with a host another entry in the same file
+   fits strictly better (scripts/site-fit.mjs: the country's own domain, then
+   fewer labels, then more visits from the country) and is recognisably the
+   same organisation, and never with a host another entry in the same file
    already uses. An entry whose site changes is ranked again on the new site,
    by the same Chrome UX Report month as the rest of its file, so the order
    stays one measurement.
@@ -17,7 +19,7 @@
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { siteBetter } from './site-fit.mjs';
+import { siteBetter, siteRelated } from './site-fit.mjs';
 import { crux, rankOf } from './country-popular.mjs';
 import { listed } from './not-listed.mjs';
 
@@ -69,20 +71,22 @@ async function main() {
   let changed = 0;
   for (const cc of files) {
     const d = data[cc], used = new Set(Object.values(d.kinds || {}).flat().map(e => e.s));
+    /* The file's own Chrome month, read first: between two sites that fit
+       the country equally, the one more visited from it wins. */
+    const ym = (/Chrome UX Report (\d{6})/.exec(String(d.popular || '')) || [])[1];
+    const c = ym ? await crux(cc, ym) : null;
+    const rank = (h) => (c ? rankOf(c, h) : 0) || 0;
     const moves = [];
     for (const list of Object.values(d.kinds || {})) for (const e of list) {
       let best = e.s;
-      for (const h of sites.get(e.q) || []) if (!used.has(h) && siteBetter(h, best, cc)) best = h;
+      for (const h of sites.get(e.q) || []) if (!used.has(h) && siteRelated(h, e.n, e.s) && siteBetter(h, best, cc, rank)) best = h;
       if (best !== e.s) { moves.push([e, best]); used.delete(e.s); used.add(best); }
     }
     if (!moves.length) continue;
-    const ym = (/Chrome UX Report (\d{6})/.exec(String(d.popular || '')) || [])[1];
-    const c = ym ? await crux(cc, ym) : null;
     for (const [e, best] of moves) {
       console.log(cc, e.q, e.n, ':', e.s, '->', best);
       e.s = best;
-      if (c) { const r = rankOf(c, best); if (r) e.r = r; else delete e.r; }
-      else delete e.r;
+      const r = rank(best); if (r) e.r = r; else delete e.r;
     }
     changed += moves.length;
     if (!dry) writeFileSync(join(OUT, cc + '.json'), JSON.stringify(d));
