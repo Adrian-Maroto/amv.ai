@@ -50,8 +50,8 @@ section('The name people say finds the service');
   const renfe = await find('ES', 'book a Renfe train to Sevilla');
   ok(renfe[0] && renfe[0].site === 'renfe.com', '"a Renfe train" is Renfe Operadora', names(renfe));
   const two = await find('ES', 'compare Santander and BBVA savings');
-  ok(two.length === 2 && two.some(x => x.site === 'santander.com') && two.some(x => x.site === 'bbva.com'),
-     'two names said are two answers - Spain’s Santander and Spain’s BBVA, not three Santanders or BBVA Colombia', two.map(x => x.site));
+  ok(two.length === 2 && two.some(x => x.site === 'santander.com') && two.some(x => x.site === 'bbva.es'),
+     'two names said are two answers - Spain’s Santander and Spain’s BBVA, not three Santanders or BBVA Colombia (since Nov 28 bbva.es, its Spanish site, scripts/site-fit.mjs)', two.map(x => x.site));
   const monzo = await find('ES', 'connect my Monzo account and tell me what I spent');
   ok(monzo[0] && monzo[0].site === 'monzo.com', 'a British bank asked for from Spain is still found', names(monzo));
   const meezan = await find('US', 'check my Meezan Bank balance every morning');

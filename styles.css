@@ -18370,11 +18370,13 @@ body.light #anav{ background:var(--bg); }
   :root:not(#_a):not(#_b) .cc-actions .btn{flex:1 1 auto;padding:0 var(--sp-2)!important;white-space:nowrap!important;font-size:var(--t-sm)}
 }
 /* And Crew's country button: the grid gave it what "Browse more examples"
-   left - 59px at 320, "Pak" for Pakistan. A row that wraps: side by side
-   when both fit, one above the other when they do not, any country name. */
+   left - 59px at 320, "Pak" for Pakistan. One above the other, always: a row
+   that wrapped only when they did not fit moved the jobs down the moment the
+   country's name arrived ("Choose your country" -> "China"), a layout shift
+   the-top-ten-is-what-people-there-use measured at 0.05. */
 @media (max-width:640px){
   #app .cj .cj-tools{display:flex;flex-wrap:wrap}
-  #app .cj .cj-tools > *{flex:1 1 auto}
+  #app .cj .cj-tools > *{flex:1 1 100%}
   #app .cj .cj-tools .cj-country{overflow:visible}
 }
 /* The header at 320px: the account button ran 8-23px off the right edge and

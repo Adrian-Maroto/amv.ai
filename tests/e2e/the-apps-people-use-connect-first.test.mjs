@@ -73,9 +73,10 @@ section('Every topic is the same shape, and there is no "everything else"');
   ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');
   ok(r.count >= 400, 'the list is hundreds of real apps', r.count);
-  /* The intro says what Connect and Use do and states no number (Nov 15): a
-     count is only on the page where it is the length of a list. */
-  ok(!/\d/.test(r.intro) && /Connect/.test(r.intro) && /Use/.test(r.intro), 'and the intro claims no number, only what Connect and Use do', r.intro.slice(0, 80));
+  /* The intro says what Connect and Ask AMV do and states no number (Nov 15;
+     the services' button became Ask AMV on Nov 28): a count is only on the
+     page where it is the length of a list. */
+  ok(!/\d/.test(r.intro) && /Connect/.test(r.intro) && /Ask AMV/.test(r.intro) && !/\bUse opens\b/.test(r.intro), 'and the intro claims no number, only what Connect and Ask AMV do', r.intro.slice(0, 120));
 }
 
 section('The apps people named are there');
