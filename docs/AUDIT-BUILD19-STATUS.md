@@ -73,9 +73,9 @@ owner decision and declined, with the reason.
 | B19-S-16 | Live | Needs an advisory service. The deps stage of the gate checks the lockfile. |
 | B19-S-17 | Live | Tracing and on-call. |
 | B19-S-18 | Live | Load and soak tests. |
-| B19-S-19 | Partly | Global spend cap plus GLOBAL_KILL exist. **Proposed, owner's decision:** per-feature kill switches (buying, hosted browser, Crew runs) as KV control keys - a KV schema change, so not built unasked. |
+| B19-S-19 | Done (M) | Global spend cap and GLOBAL_KILL, plus per-part switches from the owner's console (`80-switches.js`: 13 features, any engine, any connector, any kind of write, a one-action brownout). **Corrected Nov 28:** an earlier version of this row said per-feature switches did not exist; they have since Oct 26. Added: `feature:buying` stops new purchases while settling and releasing money already held go on. Suite `one-part-of-amv-can-be-switched-off`, mutation-checked. Spend at scale against invoices is live. |
 | B19-S-20 | Done (settled) | The host publishes only `public/`. Suite `the-host-publishes-only-what-a-visitor-needs`; the owner confirmed it. |
-| B19-S-21 | Partly | See S-19. |
+| B19-S-21 | Partly | The switches exist and are tested (S-19). A smoke test against real providers is live. |
 | B19-S-22 | Live | Model task evaluations. |
 | B19-S-23 | Done (M) | Nothing is published below 25 distinct accounts in a place, or below 3 behind a job, not even the totals. Suite. |
 | B19-S-24 | Partly | Every country run is told to check deadlines, fees and rules against the official source (`_countryRunNote`). A legal review per jurisdiction is the owner's. |

@@ -50577,6 +50577,10 @@ const SWITCH_FEATURES = {
   speech:      { what: 'Speech',                        prefixes: ['/v1/audio'] },
   meaning:     { what: 'Searching by meaning',          prefixes: ['/v1/meaning'] },
   marketplace: { what: 'Buying in the marketplace',     prefixes: ['/v1/market/buy'] },
+  /* AMV buying for somebody (69-buying.js). Only a NEW purchase stops:
+     settling and releasing close money already held, and a switch that
+     stranded a hold would be the incident, not the cure (Nov 28). */
+  buying:      { what: 'Buying for you',                prefixes: ['/v1/spend/hold'] },
   finance:     { what: 'Bank connections',              prefixes: ['/v1/finance'] },
   telegram:    { what: 'Telegram',                      prefixes: ['/v1/telegram'] },
   sms:         { what: 'Text messages',                 prefixes: ['/sms/'] },

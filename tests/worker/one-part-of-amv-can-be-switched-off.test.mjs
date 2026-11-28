@@ -120,6 +120,26 @@ section('One feature off: exactly that feature stops');
   ok(r2.status !== 503, 'switched back on, it answers again', r2.status);
 }
 
+section('Buying off: no new purchase starts, and money already held still closes (Nov 28)');
+{
+  const env = mkEnv();
+  const tok = await signedIn(env);
+  const auth = { Authorization: 'Bearer ' + tok };
+  await flipSwitch(env, 'feature:buying', true, 'a store is charging twice');
+  const h = await call(env, '/v1/spend/hold', { amount: 10, currency: 'USD', store: 'shop.example.com', item: 'socks', key: 'k1' }, auth);
+  const d = await h.json();
+  ok(h.status === 503 && d.code === 'paused' && d.switch === 'feature:buying', 'a new purchase is refused as paused', d);
+  for (const p of ['/v1/spend/settle', '/v1/spend/release']) {
+    const r = await call(env, p, { id: 'nothing-here' }, auth);
+    ok(r.status !== 503, p + ' still answers - closing a hold is never switched off', r.status);
+  }
+  const lim = await call(env, '/v1/spend/limits', undefined, auth);
+  ok(lim.status !== 503, 'and the spending page still reads', lim.status);
+  await flipSwitch(env, 'feature:buying', false);
+  const h2 = await call(env, '/v1/spend/hold', { amount: 10, currency: 'USD', store: 'shop.example.com', item: 'socks', key: 'k1' }, auth);
+  ok(h2.status !== 503, 'switched back on, a purchase can start again', h2.status);
+}
+
 section('Saving changes off - what a restore runs under: every change waits, reading and the console go on (Nov 3 audit DR-009)');
 {
   const env = mkEnv({ AMV_FILES: { async get() { return null; }, async put() {}, async delete() {}, async list() { return { objects: [] }; } } });
