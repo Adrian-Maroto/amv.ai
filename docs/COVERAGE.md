@@ -78,7 +78,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `15a-job-queue.js` | 12/12 | 92.8% |
 | `16-site-deploys.js` | 6/6 | 92.9% |
 | `17-error-reporting.js` | 2/2 | 99.5% |
-| `18-web-agent.js` | 11/11 | 96.2% |
+| `18-web-agent.js` | 11/11 | 96.4% |
 | `19-outbound-requests.js` | 5/5 | 92.1% |
 | `20-school.js` | 10/10 | 85.6% |
 | `21-web-agent-secrets.js` | 13/13 | 98.3% |
@@ -107,7 +107,7 @@ Functions 52/52 (100.0%), code 93.3%.
 | `42-deploy-routes.js` | 0/0 | 100.0% |
 | `43-sms-agent.js` | 9/9 | 90.0% |
 | `44-payments.js` | 2/2 | 99.4% |
-| `45-abuse-and-activity.js` | 6/6 | 96.7% |
+| `45-abuse-and-activity.js` | 6/6 | 96.8% |
 | `46-referrals.js` | 27/27 | 96.3% |
 | `47-renewal-sweep.js` | 7/7 | 94.2% |
 | `48-other-calendars.js` | 10/10 | 80.1% |
